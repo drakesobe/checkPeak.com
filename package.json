@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^1.2.0",
     "airtable": "^0.12.2",
     "axios": "^1.11.0",
     "formidable": "^2.1.5",

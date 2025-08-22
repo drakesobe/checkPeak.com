@@ -1,11 +1,10 @@
 // pages/_app.js
 import '../styles/globals.css';
-import SpeedInsights from '@vercel/speed-insights';
+import SpeedInsights from '@vercel/speed-insights'; // <- note: NO /next
 
 export default function MyApp({ Component, pageProps }) {
-  // Run Speed Insights in the background
   if (typeof window === "undefined") {
-    // Only run on the server
+    // run only on the server
     SpeedInsights();
   }
 

@@ -1,0 +1,29 @@
+{
+  "name": "checksupp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "airtable": "^0.12.2",
+    "axios": "^1.11.0",
+    "formidable": "^2.1.5",
+    "framer-motion": "^12.23.12",
+    "next": "^14.2.5",
+    "pdf-lib": "^1.17.1",
+    "pdf2pic": "^3.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tesseract.js": "^2.1.5",
+    "tesseract.js-node": "^0.1.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17"
+  }
+}

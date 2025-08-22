@@ -2,7 +2,6 @@ import { useState } from "react";
 import NavBar from "../components/NavBar";
 import SearchBar from "../components/SearchBar";
 import OCRResults from "../components/OCRResults";
-import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState("Search");

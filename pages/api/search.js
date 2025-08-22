@@ -1,34 +1,27 @@
-// pages/api/search.js
 import Airtable from "airtable";
-import { rateLimiter } from "../../lib/rateLimiter"; // use relative path
+import { ratelimiter } from "../../lib/ratelimiter";
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
   process.env.AIRTABLE_BASE_ID
 );
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  if (!rateLimiter(req, res)) return;
+  // Apply enhanced rate limiter for this endpoint
+  if (!ratelimiter(req, res, 'search')) return;
 
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: "Query is required" });
 
   try {
     const lowerQuery = query.toLowerCase();
+    const records = await base(process.env.AIRTABLE_TABLE_NAME).select({ view: "Grid view" }).all();
 
-    const records = await base(process.env.AIRTABLE_TABLE_NAME)
-      .select({ view: "Grid view" })
-      .all();
-
-    // Filter by Substance Name, Synonyms, or Banned By
     const matchedRecords = records.filter((rec) => {
       const substanceName = rec.get("Substance Name") || "";
       const synonyms = rec.get("Synonyms") || "";
       const bannedBy = rec.get("Banned By") || "";
-
       return (
         substanceName.toLowerCase().includes(lowerQuery) ||
         synonyms.toLowerCase().includes(lowerQuery) ||
@@ -36,9 +29,6 @@ export default async function handler(req, res) {
       );
     });
 
-    console.log("Search matchedRecords:", matchedRecords.map(r => r.fields)); // debug
-
-    // Normalize records for OCRResults
     const results = matchedRecords.map((rec) => ({
       id: rec.id,
       fields: {

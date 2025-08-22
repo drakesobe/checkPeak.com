@@ -90,14 +90,14 @@ export default function OCRPage() {
         {activeTab === "Scan" && (
           <>
             {/* Upload Card */}
-            <div className="w-full max-w-4xl bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100">
+            <div className="w-full bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100">
               <OCRUpload onScan={handleOCRScan} />
             </div>
 
             {error && <p className="text-red-500 mt-2 text-center">{error}</p>}
 
             {/* Results Card */}
-            <div className="w-full max-w-4xl bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100">
+            <div className="w-full bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100">
               <OCRResults
                 ocrText={ocrText}
                 matchedSubstances={matchedSubstances}
@@ -119,7 +119,7 @@ export default function OCRPage() {
 
             {error && <p className="text-red-500 mt-2">{error}</p>}
 
-            <div className="w-full max-w-4xl bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
+            <div className="w-full bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
               <OCRResults ocrText={query} matchedSubstances={matchedSubstances} />
             </div>
           </>

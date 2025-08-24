@@ -1,7 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Escape regex special characters safely
 const escapeRegex = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export default function OCRResultsBase({
@@ -10,7 +9,7 @@ export default function OCRResultsBase({
   showOCR = false,
   hideTitle = false,
 }) {
-  const [activeBanType, setActiveBanType] = useState(null); // <-- Add filter state
+  const [activeBanType, setActiveBanType] = useState(null);
 
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
@@ -22,21 +21,25 @@ export default function OCRResultsBase({
     setActiveBanType(activeBanType === label ? null : label);
   };
 
-  const filteredSubstances = activeBanType
-    ? detectedSubstances.filter((record) => (record.fields["Ban Type"] || "None") === activeBanType)
-    : detectedSubstances;
+  const filteredSubstances = useMemo(() => {
+    return activeBanType
+      ? detectedSubstances.filter(
+          (record) => (record.fields["Ban Type"] || "None") === activeBanType
+        )
+      : detectedSubstances;
+  }, [detectedSubstances, activeBanType]);
 
   const getBanTypeHighlight = (banType) => {
     const color = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
     return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
   };
 
-  // Highlight exact matches in OCR text (only when showOCR is true)
-  const getHighlightedText = () => {
+  // Memoize OCR text highlighting
+  const highlightedOCRText = useMemo(() => {
     if (!ocrText) return "No text scanned yet.";
     let highlighted = ocrText;
 
-    filteredSubstances?.forEach((record) => {
+    filteredSubstances.forEach((record) => {
       const fields = record.fields || {};
       const banType = fields["Ban Type"] || "None";
       const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
@@ -63,11 +66,49 @@ export default function OCRResultsBase({
     });
 
     return highlighted;
-  };
+  }, [ocrText, filteredSubstances]);
+
+  // Precompute highlighted table cells per record
+  const highlightedTableCells = useMemo(() => {
+    const map = {};
+    filteredSubstances.forEach((record) => {
+      const fields = record.fields || {};
+      const banType = fields["Ban Type"] || "None";
+      const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
+
+      const highlightText = (text) => {
+        if (!ocrText || !text) return text || "";
+        let cellText = text;
+        const names = [
+          (fields["Substance Name"] || "").trim(),
+          ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
+        ];
+        names.forEach((name) => {
+          if (!name) return;
+          const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
+          cellText = cellText.replace(regex, (match) => {
+            return `<span style="
+              color: ${textColor};
+              font-weight: 600;
+              text-decoration: underline;
+              text-decoration-color: ${textColor};
+              text-underline-offset: 2px;
+            ">${match}</span>`;
+          });
+        });
+        return cellText;
+      };
+
+      map[record.id] = {
+        substanceName: highlightText(fields["Substance Name"]?.trim() || ""),
+        synonyms: highlightText(fields["Synonyms"]?.trim() || ""),
+      };
+    });
+    return map;
+  }, [filteredSubstances, ocrText]);
 
   return (
     <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6">
-      {/* OCR Raw Text */}
       {showOCR && !hideTitle && (
         <motion.section
           initial={{ opacity: 0, y: 6 }}
@@ -76,17 +117,15 @@ export default function OCRResultsBase({
         >
           <h2 className="text-2xl font-bold mb-4">OCR Result</h2>
           <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-md whitespace-pre-wrap break-words">
-            <div dangerouslySetInnerHTML={{ __html: getHighlightedText() }} />
+            <div dangerouslySetInnerHTML={{ __html: highlightedOCRText }} />
           </div>
         </motion.section>
       )}
 
-      {/* Detected Substances Section */}
       {!hideTitle && (
         <section>
           <h2 className="text-2xl font-bold mb-2">Detected Banned Substances</h2>
 
-          {/* Ban Type Color Legend */}
           <div className="overflow-x-auto mb-4">
             <div className="flex gap-4 w-[420px] min-w-max pl-2">
               {banTypeColors.map((type) => (
@@ -96,7 +135,9 @@ export default function OCRResultsBase({
                   onClick={() => handleLegendClick(type.label)}
                 >
                   <div
-                    className={`w-3 h-3 rounded-full border-2 ${activeBanType === type.label ? "border-gray-700" : "border-transparent"}`}
+                    className={`w-3 h-3 rounded-full border-2 ${
+                      activeBanType === type.label ? "border-gray-700" : "border-transparent"
+                    }`}
                     style={{ backgroundColor: type.color }}
                   />
                   <span className="text-gray-800 text-sm font-medium">{type.label}</span>
@@ -134,35 +175,6 @@ export default function OCRResultsBase({
                       const fields = record.fields || {};
                       const banType = fields["Ban Type"] || "None";
 
-                      const highlightCell = (text) => {
-                        if (!ocrText || !text) return text || "";
-                        let cellText = text;
-
-                        const names = [
-                          (fields["Substance Name"] || "").trim(),
-                          ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
-                        ];
-
-                        const textColor =
-                          banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
-
-                        names.forEach((name) => {
-                          if (!name) return;
-                          const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
-                          cellText = cellText.replace(regex, (match) => {
-                            return `<span style="
-                              color: ${textColor};
-                              font-weight: 600;
-                              text-decoration: underline;
-                              text-decoration-color: ${textColor};
-                              text-underline-offset: 2px;
-                            ">${match}</span>`;
-                          });
-                        });
-
-                        return <span dangerouslySetInnerHTML={{ __html: cellText }} />;
-                      };
-
                       return (
                         <motion.tr
                           key={record.id}
@@ -172,15 +184,19 @@ export default function OCRResultsBase({
                           exit={{ opacity: 0, y: -6 }}
                           transition={{ duration: 0.18 }}
                         >
-                          <td className="px-4 py-2">{highlightCell(fields["Substance Name"]?.trim() || "")}</td>
-                          <td className="px-4 py-2">{highlightCell(fields["Synonyms"]?.trim() || "")}</td>
+                          <td
+                            className="px-4 py-2"
+                            dangerouslySetInnerHTML={{ __html: highlightedTableCells[record.id].substanceName }}
+                          />
+                          <td
+                            className="px-4 py-2"
+                            dangerouslySetInnerHTML={{ __html: highlightedTableCells[record.id].synonyms }}
+                          />
                           <td className="px-4 py-2">{fields["Banned By"]?.trim() || ""}</td>
                           <td className="px-4 py-2">{getBanTypeHighlight(banType)}</td>
                           <td className="px-4 py-2">{fields["Dosage Limit"]?.trim() || ""}</td>
                           <td className="px-4 py-2">{fields["Notes"]?.trim() || ""}</td>
-                          <td className="px-4 py-2 max-w-xs break-words whitespace-normal">
-                            {fields["Source / Citation"]?.trim() || ""}
-                          </td>
+                          <td className="px-4 py-2 max-w-xs break-words whitespace-normal">{fields["Source / Citation"]?.trim() || ""}</td>
                         </motion.tr>
                       );
                     })}
@@ -193,14 +209,6 @@ export default function OCRResultsBase({
           </AnimatePresence>
         </section>
       )}
-
-      <style jsx>{`
-        @keyframes singlePulse {
-          0% { background-color: rgba(214,40,40,0.3); }
-          50% { background-color: rgba(214,40,40,0.6); }
-          100% { background-color: rgba(214,40,40,0.3); }
-        }
-      `}</style>
     </div>
   );
 }

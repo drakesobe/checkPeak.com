@@ -19,9 +19,9 @@ export default function ProgressBar({ progress }) {
   }, [progress, displayProgress]);
 
   return (
-    <div className="w-full h-2 bg-gray-700">
+    <div className="w-full h-1 bg-gray-300 rounded-full mt-2 overflow-hidden">
       <div
-        className="h-2 bg-blue-500 rounded-full transition-all duration-300 ease-out"
+        className="h-1 bg-blue-500 rounded-full transition-all duration-300 ease-out"
         style={{ width: `${displayProgress}%` }}
       />
     </div>

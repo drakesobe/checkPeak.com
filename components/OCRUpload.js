@@ -1,3 +1,4 @@
+// components/OCRUpload.js
 import { useState, useEffect } from "react";
 
 export default function OCRUpload({ onScan }) {
@@ -7,6 +8,9 @@ export default function OCRUpload({ onScan }) {
   const [previewURL, setPreviewURL] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+  // Detect mobile OS
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   // Validate file type and size
   const validateFile = (selectedFile) => {
@@ -147,7 +151,8 @@ export default function OCRUpload({ onScan }) {
         <input
           type="file"
           accept="image/*"
-          capture="environment"
+          // iOS only: use camera by default, but allow gallery
+          capture={isIOS() ? "environment" : undefined}
           onChange={handleFileChange}
           className="hidden"
         />
@@ -172,10 +177,9 @@ export default function OCRUpload({ onScan }) {
         onClick={handleScan}
         disabled={scanning || !file}
         className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition
-          ${
-            scanning || !file
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-[#46769B] hover:bg-blue-700"
+          ${scanning || !file
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-[#46769B] hover:bg-blue-700"
           }`}
       >
         {scanning ? "Scanning..." : "Scan Label"}

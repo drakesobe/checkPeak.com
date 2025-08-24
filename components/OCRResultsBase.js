@@ -1,46 +1,45 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function OCRResults({ ocrText, matchedSubstances, hideTitle = false }) {
-  if (!matchedSubstances) return null;
+// Escape regex special characters safely
+const escapeRegex = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  const [activeBanType, setActiveBanType] = useState(null);
+export default function OCRResultsBase({
+  ocrText,
+  detectedSubstances = [],
+  showOCR = false,
+  hideTitle = false,
+}) {
+  const [activeBanType, setActiveBanType] = useState(null); // <-- Add filter state
 
-  const normalizedOCRText = (ocrText || "").replace(/\s+/g, " ").toLowerCase();
+  const banTypeColors = [
+    { label: "Prohibited", color: "#d62828" },
+    { label: "Limited to Out of Competition", color: "#f77f00" },
+    { label: "Particular Sports", color: "#003049" },
+  ];
 
-  const detectedSubstances = matchedSubstances?.filter((record) => {
-    const fields = record.fields || {};
-    const names = [
-      (fields["Substance Name"] || "").trim(),
-      ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
-    ];
-
-    if (!ocrText) return true;
-
-    return names.some((name) => {
-      if (!name) return false;
-      return normalizedOCRText.includes(name.toLowerCase());
-    });
-  });
+  const handleLegendClick = (label) => {
+    setActiveBanType(activeBanType === label ? null : label);
+  };
 
   const filteredSubstances = activeBanType
     ? detectedSubstances.filter((record) => (record.fields["Ban Type"] || "None") === activeBanType)
     : detectedSubstances;
 
+  const getBanTypeHighlight = (banType) => {
+    const color = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
+    return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
+  };
+
+  // Highlight exact matches in OCR text (only when showOCR is true)
   const getHighlightedText = () => {
     if (!ocrText) return "No text scanned yet.";
-
     let highlighted = ocrText;
 
-    detectedSubstances?.forEach((record) => {
+    filteredSubstances?.forEach((record) => {
       const fields = record.fields || {};
       const banType = fields["Ban Type"] || "None";
-      const colorMap = {
-        "Prohibited": "#d62828",
-        "Limited to Out of Competition": "#f77f00",
-        "Particular Sports": "#003049",
-      };
-      const textColor = colorMap[banType] || "#d62828";
+      const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
 
       const names = [
         (fields["Substance Name"] || "").trim(),
@@ -49,8 +48,8 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
 
       names.forEach((name) => {
         if (!name) return;
-        const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(`(\\b${escapedName}\\b)(?![^<]*>)`, "gi");
+        const safe = escapeRegex(name);
+        const regex = new RegExp(`\\b${safe}\\b`, "gi");
         highlighted = highlighted.replace(regex, (match) => {
           return `<span style="
             color: ${textColor};
@@ -66,41 +65,20 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
     return highlighted;
   };
 
-  const getBanTypeHighlight = (banType) => {
-    const colorMap = {
-      "Prohibited": "#d62828",
-      "Limited to Out of Competition": "#f77f00",
-      "Particular Sports": "#003049",
-    };
-    const color = colorMap[banType] || "#d62828";
-
-    return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
-  };
-
-  const banTypeColors = [
-    { label: "Prohibited", color: "#d62828" },
-    { label: "Limited to Out of Competition", color: "#f77f00" },
-    { label: "Particular Sports", color: "#003049" },
-  ];
-
-  const handleLegendClick = (label) => {
-    setActiveBanType(activeBanType === label ? null : label);
-  };
-
   return (
     <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6">
-      {/* OCR Scan Section */}
-      {ocrText && !hideTitle && (
-        <section>
+      {/* OCR Raw Text */}
+      {showOCR && !hideTitle && (
+        <motion.section
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 6 }}
+        >
           <h2 className="text-2xl font-bold mb-4">OCR Result</h2>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="p-6 bg-white border border-gray-200 rounded-xl shadow-md whitespace-pre-wrap break-words"
-          >
+          <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-md whitespace-pre-wrap break-words">
             <div dangerouslySetInnerHTML={{ __html: getHighlightedText() }} />
-          </motion.div>
-        </section>
+          </div>
+        </motion.section>
       )}
 
       {/* Detected Substances Section */}
@@ -108,19 +86,17 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
         <section>
           <h2 className="text-2xl font-bold mb-2">Detected Banned Substances</h2>
 
-          {/* Ban Type Color Legend - Interactive */}
+          {/* Ban Type Color Legend */}
           <div className="overflow-x-auto mb-4">
             <div className="flex gap-4 w-[420px] min-w-max pl-2">
               {banTypeColors.map((type) => (
                 <div
                   key={type.label}
-                  className="flex items-center gap-1 cursor-pointer transition-transform hover:scale-110"
+                  className={`flex items-center gap-1 cursor-pointer transition-transform hover:scale-110`}
                   onClick={() => handleLegendClick(type.label)}
                 >
                   <div
-                    className={`w-3 h-3 rounded-full border-2 ${
-                      activeBanType === type.label ? "border-gray-700" : "border-transparent"
-                    }`}
+                    className={`w-3 h-3 rounded-full border-2 ${activeBanType === type.label ? "border-gray-700" : "border-transparent"}`}
                     style={{ backgroundColor: type.color }}
                   />
                   <span className="text-gray-800 text-sm font-medium">{type.label}</span>
@@ -149,9 +125,7 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
                         "Notes",
                         "Source / Citation",
                       ].map((h) => (
-                        <th key={h} className="px-4 py-2 text-left font-medium">
-                          {h}
-                        </th>
+                        <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -159,19 +133,47 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
                     {filteredSubstances.map((record) => {
                       const fields = record.fields || {};
                       const banType = fields["Ban Type"] || "None";
-                      const isFiltered = activeBanType === banType;
+
+                      const highlightCell = (text) => {
+                        if (!ocrText || !text) return text || "";
+                        let cellText = text;
+
+                        const names = [
+                          (fields["Substance Name"] || "").trim(),
+                          ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
+                        ];
+
+                        const textColor =
+                          banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
+
+                        names.forEach((name) => {
+                          if (!name) return;
+                          const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
+                          cellText = cellText.replace(regex, (match) => {
+                            return `<span style="
+                              color: ${textColor};
+                              font-weight: 600;
+                              text-decoration: underline;
+                              text-decoration-color: ${textColor};
+                              text-underline-offset: 2px;
+                            ">${match}</span>`;
+                          });
+                        });
+
+                        return <span dangerouslySetInnerHTML={{ __html: cellText }} />;
+                      };
 
                       return (
                         <motion.tr
                           key={record.id}
-                          className={`hover:bg-gray-100 transition ${isFiltered ? "single-pulse-row" : ""}`}
-                          initial={{ opacity: 0, y: 10 }}
+                          className="hover:bg-gray-100 transition"
+                          initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          transition={{ duration: 0.3 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.18 }}
                         >
-                          <td className="px-4 py-2">{fields["Substance Name"]?.trim() || ""}</td>
-                          <td className="px-4 py-2">{fields["Synonyms"]?.trim() || ""}</td>
+                          <td className="px-4 py-2">{highlightCell(fields["Substance Name"]?.trim() || "")}</td>
+                          <td className="px-4 py-2">{highlightCell(fields["Synonyms"]?.trim() || "")}</td>
                           <td className="px-4 py-2">{fields["Banned By"]?.trim() || ""}</td>
                           <td className="px-4 py-2">{getBanTypeHighlight(banType)}</td>
                           <td className="px-4 py-2">{fields["Dosage Limit"]?.trim() || ""}</td>
@@ -186,9 +188,7 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
                 </table>
               </motion.div>
             ) : (
-              <p className="italic text-gray-500">
-                No banned substances detected in this label.
-              </p>
+              <p className="italic text-gray-500">No banned substances detected in this label.</p>
             )}
           </AnimatePresence>
         </section>
@@ -199,10 +199,6 @@ export default function OCRResults({ ocrText, matchedSubstances, hideTitle = fal
           0% { background-color: rgba(214,40,40,0.3); }
           50% { background-color: rgba(214,40,40,0.6); }
           100% { background-color: rgba(214,40,40,0.3); }
-        }
-
-        .single-pulse-row {
-          animation: singlePulse 1s ease-in-out forwards;
         }
       `}</style>
     </div>

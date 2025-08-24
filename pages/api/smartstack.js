@@ -1,99 +1,94 @@
 // pages/api/smartstack.js
+import fetch from "node-fetch";
 
-export default function handler(req, res) {
-  // SmartStack data with categories
-  const stacks = [
-    {
-      id: "1",
-      name: "Energy Boost Stack",
-      supplements: ["Caffeine", "L-Theanine", "B-Vitamins"],
-      valueRating: "bestValue",
-      banType: "None",
-      category: "Pre-Workout",
-      notes: "Optimized for alertness without crash.",
-      affiliateLink: "https://www.amazon.com/dp/B01N5IB20Q?tag=youraffiliateid",
-    },
-    {
-      id: "2",
-      name: "Recovery Stack",
-      supplements: ["Creatine Monohydrate", "L-Glutamine", "BCAAs"],
-      valueRating: "moderate",
-      banType: "Particular Sports",
-      category: "Protein Powder",
-      notes: "Supports muscle recovery post-training.",
-      affiliateLink: "https://www.amazon.com/dp/B00L4FR0YE?tag=youraffiliateid",
-    },
-    {
-      id: "3",
-      name: "Focus Stack",
-      supplements: ["Omega-3", "Bacopa Monnieri", "Rhodiola Rosea"],
-      valueRating: "highPrice",
-      banType: "Limited to Out of Competition",
-      category: "Misc",
-      notes: "Enhances cognitive focus and memory.",
-      affiliateLink: "https://www.amazon.com/dp/B07P8VZKJ2?tag=youraffiliateid",
-    },
-    {
-      id: "4",
-      name: "Endurance Stack",
-      supplements: ["Beta-Alanine", "L-Citrulline", "Electrolytes"],
-      valueRating: "bestValue",
-      banType: "Prohibited",
-      category: "Pre-Workout",
-      notes: "For long-duration performance; check regulations.",
-      affiliateLink: "https://www.amazon.com/dp/B08HR3F7HX?tag=youraffiliateid",
-    },
-    {
-      id: "5",
-      name: "Immune Support Stack",
-      supplements: ["Vitamin C", "Zinc", "Elderberry"],
-      valueRating: "moderate",
-      banType: "None",
-      category: "Misc",
-      notes: "Supports overall immune health.",
-      affiliateLink: "https://www.amazon.com/dp/B07R7M1ZXM?tag=youraffiliateid",
-    },
-    {
-      id: "6",
-      name: "Morning Energy Stack",
-      supplements: ["Caffeine", "B-Vitamins", "Electrolytes"],
-      valueRating: "bestValue",
-      banType: "None",
-      category: "Energy Drinks",
-      notes: "Kickstart your day with sustained energy.",
-      affiliateLink: "https://www.amazon.com/dp/B01LTHP2ZK?tag=youraffiliateid",
-    },
-    {
-      id: "7",
-      name: "Protein Power Stack",
-      supplements: ["Whey Protein", "Creatine Monohydrate", "BCAAs"],
-      valueRating: "moderate",
-      banType: "Particular Sports",
-      category: "Protein Powder",
-      notes: "Supports muscle growth and recovery.",
-      affiliateLink: "https://www.amazon.com/dp/B00J074W94?tag=youraffiliateid",
-    },
-    {
-      id: "8",
-      name: "Snack & Recover Stack",
-      supplements: ["Protein Bars", "Vitamin C", "Zinc"],
-      valueRating: "bestValue",
-      banType: "None",
-      category: "Protein Bars",
-      notes: "Healthy snacking with recovery benefits.",
-      affiliateLink: "https://www.amazon.com/dp/B07K1XNL9D?tag=youraffiliateid",
-    },
-    {
-      id: "9",
-      name: "BCAA Endurance Stack",
-      supplements: ["BCAAs", "Electrolytes", "Beta-Alanine"],
-      valueRating: "highPrice",
-      banType: "Limited to Out of Competition",
-      category: "BCAAs",
-      notes: "Ideal for long workouts and endurance training.",
-      affiliateLink: "https://www.amazon.com/dp/B08HR7N1F1?tag=youraffiliateid",
+export default async function handler(req, res) {
+  const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
+  if (!AIRTABLE_API_KEY) {
+    return res.status(500).json({ error: "Missing AIRTABLE_API_KEY env var" });
+  }
+
+  const BASE_ID = "appspE640Pggw1VP9"; // your base ID
+  const TABLE_ID = "tblF4rxxbnn6z9lGr"; // your table id (as provided)
+  const VIEW_ID = "viwUcs1qpyxyLqkIM"; // optional view id
+
+  // Build Airtable URL
+  const URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}${VIEW_ID ? `?view=${VIEW_ID}` : ""}`;
+
+  try {
+    const response = await fetch(URL, {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Airtable fetch error:", response.status, text);
+      return res.status(500).json({ error: "Failed to fetch Airtable: " + response.status });
     }
-  ];
 
-  res.status(200).json({ records: stacks });
+    const data = await response.json();
+
+    // Map Airtable records into the shape the front-end expects
+    const stacks = (data.records || []).map((record) => {
+      const f = record.fields || {};
+
+      // Prefer existing supplements array; if string, split by comma, else empty
+      let supplements = [];
+      if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
+      else if (typeof f["Supplements"] === "string") supplements = f["Supplements"].split(",").map(s => s.trim()).filter(Boolean);
+      // If there isn't a dedicated supplements column, try pulling from Product Name / Category heuristics (optional)
+      if (!supplements.length && f["Supplement List"]) {
+        supplements = Array.isArray(f["Supplement List"]) ? f["Supplement List"] : (typeof f["Supplement List"] === "string" ? f["Supplement List"].split(",").map(s => s.trim()) : []);
+      }
+
+      // Rating to internal valueRating mapping
+      let valueRating = "moderate";
+      if (f["Rating"]) {
+        // handle numeric or string rating: 4.5+ -> bestValue, 3-4.5 -> moderate, <3 -> highPrice (you can change)
+        const r = typeof f["Rating"] === "number" ? f["Rating"] : parseFloat(String(f["Rating"]).replace(/[^\d.]/g, "")) || 0;
+        if (r >= 4.5) valueRating = "bestValue";
+        else if (r >= 3.0) valueRating = "moderate";
+        else valueRating = "highPrice";
+      }
+
+      // Ban type: prefer explicit column, otherwise infer from Safe column (Yes/No)
+      let banType = "None";
+      if (f["Ban Type"]) banType = f["Ban Type"];
+      else if (typeof f["Safe"] === "string") banType = String(f["Safe"]).toLowerCase() === "yes" ? "None" : "Prohibited";
+      else if (f["Safe"] === true) banType = "None";
+      else if (f["Safe"] === false) banType = "Prohibited";
+
+      // Price & servings
+      const priceNumber = (typeof f["Price"] === "number") ? f["Price"] : parseFloat(String(f["Price"] || "").replace(/[^0-9.]/g, "")) || 0;
+      const servings = f["Servings"] || "";
+
+      // Nutrition label field (map common typos)
+      const nutritionLabel = f["Nutrition Label URL"] || f["Nutrtion Label URL"] || f["Nutrition Label"] || f["Nutrtion Label"] || "";
+
+      // Affiliate link preference: long first, fallback to short
+      const affiliateLink = f["Lo. Amazon/Stripe Link"] || f["Sh. Amazon/Stripe Link"] || f["AffiliateLink"] || "";
+
+      return {
+        id: record.id,
+        name: f["Product Name"] || "No Name",
+        category: f["Category"] || "Misc",
+        supplements,
+        valueRating,
+        banType,
+        notes: `Servings: ${servings || "N/A"} • Price: $${priceNumber.toFixed(2)}`,
+        affiliateLink,
+        imageUrl: f["Image url"] || f["Image"] || "",
+        nutritionLabel,
+        rawFields: f, // keep original fields if you want more detail in the front-end
+      };
+    });
+
+    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300"); // short cache for Vercel
+    return res.status(200).json({ records: stacks });
+  } catch (error) {
+    console.error("API error:", error);
+    return res.status(500).json({ error: "Failed to fetch Airtable data" });
+  }
 }

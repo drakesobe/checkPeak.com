@@ -1,7 +1,8 @@
+// pages/index.js
 import { useState } from "react";
 import NavBar from "../components/NavBar";
 import SearchBar from "../components/SearchBar";
-import OCRResults from "../components/OCRResults";
+import OCRSearchResults from "../components/OCRSearchResults";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState("Search");
@@ -51,7 +52,10 @@ export default function HomePage() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-md border border-blue-100">
-          <OCRResults ocrText="" matchedSubstances={searchResults} />
+          <OCRSearchResults
+            searchTerm={searchQuery}
+            matchedSubstances={searchResults}
+          />
         </div>
       </main>
     </div>

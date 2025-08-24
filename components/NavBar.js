@@ -1,3 +1,4 @@
+// components/NavBar.js
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -11,12 +12,18 @@ export default function NavBar() {
   const [animateLogo, setAnimateLogo] = useState(false);
   const [hoverLogo, setHoverLogo] = useState(false);
 
-  // Updated routes: Search -> /search, Home click -> /home
-  const tabs = [
+  // Mock authentication state
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+  const leftTabs = [
     { name: "Scan", href: "/ocr" },
     { name: "Search", href: "/search" },
     { name: "Info", href: "/info" },
     { name: "Blogs", href: "/blogs" },
+  ];
+
+  const rightTabs = [
     { name: "SmartStack", href: "/smartstack" },
   ];
 
@@ -31,9 +38,13 @@ export default function NavBar() {
     <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-6">
         <div className="flex justify-between items-center h-24">
-          {/* Logo container - clickable to /home */}
-          <Link href="/home" legacyBehavior>
-            <a className="flex-shrink-0 relative flex items-center cursor-pointer h-full" onMouseEnter={() => setHoverLogo(true)} onMouseLeave={() => setHoverLogo(false)}>
+          {/* Logo container */}
+          <Link href="/" legacyBehavior>
+            <a
+              className="flex-shrink-0 relative flex items-center cursor-pointer h-full"
+              onMouseEnter={() => setHoverLogo(true)}
+              onMouseLeave={() => setHoverLogo(false)}
+            >
               <motion.div
                 animate={{ y: hoverLogo ? -5 : 0 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
@@ -46,10 +57,7 @@ export default function NavBar() {
                     opacity: hoverLogo ? 0.9 : 0,
                     scale: hoverLogo ? 1.15 : 1,
                   }}
-                  transition={{
-                    duration: 0.4,
-                    ease: [0.4, 0, 0.2, 1],
-                  }}
+                  transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
                   style={{
                     background:
                       "radial-gradient(circle, rgba(100,150,200,0.5) 0%, rgba(100,150,200,0) 80%)",
@@ -117,53 +125,94 @@ export default function NavBar() {
           </Link>
 
           {/* Desktop menu */}
-          <div className="hidden md:flex space-x-6 relative">
-            {tabs.map((tab) => {
-              const isActive = router.pathname === tab.href;
-              const showUnderline = isActive || hoveredTab === tab.name;
-              return (
-                <Link key={tab.name} href={tab.href} legacyBehavior>
-                  <a
-                    onMouseEnter={() => setHoveredTab(tab.name)}
-                    onMouseLeave={() => setHoveredTab(null)}
-                    className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-102"
-                  >
-                    {tab.name}
-                    {/* SmartStack magnifying glass */}
-                    {tab.name === "SmartStack" && (
-                      <span className="absolute -top-1 right-0 translate-x-1/2">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5 text-[#46769B]"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2.5}
-                            d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z"
-                          />
-                        </svg>
-                      </span>
-                    )}
-                    {showUnderline && (
-                      <motion.span
-                        layoutId="underline"
-                        className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
-                        transition={{
-                          type: "spring",
-                          stiffness: 400,
-                          damping: 25,
-                        }}
+          <div className="hidden md:flex flex-1 justify-between items-center">
+            <div className="flex space-x-6">
+              {leftTabs.map((tab) => {
+                const isActive = router.pathname === tab.href;
+                const showUnderline = isActive || hoveredTab === tab.name;
+                return (
+                  <Link key={tab.name} href={tab.href} legacyBehavior>
+                    <a
+                      onMouseEnter={() => setHoveredTab(tab.name)}
+                      onMouseLeave={() => setHoveredTab(null)}
+                      className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-102"
+                    >
+                      {tab.name}
+                      {showUnderline && (
+                        <motion.span
+                          layoutId="underline"
+                          className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
+                          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                        />
+                      )}
+                    </a>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Right-aligned Login/Profile + SmartStack */}
+            <div className="flex items-center space-x-4 relative">
+              {/* SmartStack */}
+              <Link href="/smartstack" legacyBehavior>
+                <a className="px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-102 relative">
+                  SmartStack
+                  <span className="absolute -top-1 right-0 translate-x-1/2">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 text-[#46769B]"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.5}
+                        d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z"
                       />
-                    )}
-                  </a>
-                </Link>
-              );
-            })}
+                    </svg>
+                  </span>
+                </a>
+              </Link>
+
+              {/* Login / Profile */}
+              <div className="relative">
+                <button
+                  onClick={() => loggedIn ? setProfileDropdownOpen((p) => !p) : setLoggedIn(true)}
+                  className="px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] border border-gray-200 hover:border-[#46769B] transition"
+                >
+                  {loggedIn ? "Profile" : "Login"}
+                </button>
+
+                {/* Dropdown */}
+                {loggedIn && profileDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 mt-2 w-48 bg-white shadow-md rounded-xl border border-gray-200 z-50 overflow-hidden"
+                  >
+                    <Link href="/organization" legacyBehavior>
+                      <a className="block px-4 py-3 hover:bg-gray-50">Organization Dashboard</a>
+                    </Link>
+                    <Link href="/athlete-profile" legacyBehavior>
+                      <a className="block px-4 py-3 hover:bg-gray-50">Athlete Profile</a>
+                    </Link>
+                    <Link href="/account" legacyBehavior>
+                      <a className="block px-4 py-3 hover:bg-gray-50">Account</a>
+                    </Link>
+                    <button
+                      onClick={() => setLoggedIn(false)}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                    >
+                      Logout
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Mobile hamburger */}
@@ -173,19 +222,13 @@ export default function NavBar() {
               className="flex flex-col justify-center items-center w-10 h-10 focus:outline-none"
             >
               <span
-                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${
-                  menuOpen ? "rotate-45 translate-y-1.5" : ""
-                }`}
+                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${menuOpen ? "rotate-45 translate-y-1.5" : ""}`}
               />
               <span
-                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${
-                  menuOpen ? "opacity-0" : "opacity-100"
-                }`}
+                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${menuOpen ? "opacity-0" : "opacity-100"}`}
               />
               <span
-                className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${
-                  menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-                }`}
+                className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${menuOpen ? "-rotate-45 -translate-y-1.5" : ""}`}
               />
             </button>
           </div>
@@ -201,37 +244,15 @@ export default function NavBar() {
             exit={{ height: 0, opacity: 0 }}
             className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
           >
-            {tabs.map((tab) => {
+            {[...leftTabs, ...rightTabs, { name: loggedIn ? "Profile" : "Login", href: "#" }].map((tab) => {
               const isActive = router.pathname === tab.href;
               return (
                 <Link key={tab.name} href={tab.href} legacyBehavior>
                   <a
                     onClick={() => setMenuOpen(false)}
-                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
-                      isActive ? "bg-blue-50 text-[#46769B]" : ""
-                    }`}
+                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${isActive ? "bg-blue-50 text-[#46769B]" : ""}`}
                   >
                     {tab.name}
-                    {/* SmartStack magnifying glass mobile */}
-                    {tab.name === "SmartStack" && (
-                      <span className="absolute -top-0.5 right-3 translate-x-1/2">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4 text-[#46769B]"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2.5}
-                            d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z"
-                          />
-                        </svg>
-                      </span>
-                    )}
                   </a>
                 </Link>
               );

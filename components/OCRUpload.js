@@ -7,8 +7,8 @@ import ProgressBar from "./ProgressBar";
 export default function OCRUpload({ multiple = false }) {
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
-  const [ocrTexts, setOcrTexts] = useState([]); // store OCR per file
-  const [matchedRecordsArr, setMatchedRecordsArr] = useState([]); // store records per file
+  const [ocrTexts, setOcrTexts] = useState([]); // OCR per file
+  const [matchedRecordsArr, setMatchedRecordsArr] = useState([]); // records per file
   const [loading, setLoading] = useState(false);
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
@@ -27,8 +27,6 @@ export default function OCRUpload({ multiple = false }) {
     }, 500);
     return () => clearInterval(interval);
   }, [loading]);
-
-  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   const validateFile = (file) => {
     if (!file.type.startsWith("image/")) {
@@ -57,6 +55,8 @@ export default function OCRUpload({ multiple = false }) {
   };
 
   const handleFileChange = (e) => handleFiles(e.target.files);
+
+  // Drag & drop
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -76,6 +76,7 @@ export default function OCRUpload({ multiple = false }) {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
 
+  // Downscale for speed
   const resizeImage = (file) =>
     new Promise((resolve) => {
       const img = new Image();
@@ -106,6 +107,7 @@ export default function OCRUpload({ multiple = false }) {
       reader.readAsDataURL(file);
     });
 
+  // SmartStack-style preprocessing
   const preprocessImage = async (img, canvas) => {
     const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth;
@@ -115,7 +117,7 @@ export default function OCRUpload({ multiple = false }) {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Grayscale + contrast
+    // Grayscale + contrast stretch
     let min = 255,
       max = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -131,7 +133,7 @@ export default function OCRUpload({ multiple = false }) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Detect darker region
+    // Roughly locate darker text region (nutrition panel)
     let top = canvas.height,
       bottom = 0,
       left = canvas.width,
@@ -155,7 +157,17 @@ export default function OCRUpload({ multiple = false }) {
     croppedCanvas.width = (right - left) * scaleFactor;
     croppedCanvas.height = (bottom - top) * scaleFactor;
     const cctx = croppedCanvas.getContext("2d");
-    cctx.drawImage(canvas, left, top, right - left, bottom - top, 0, 0, croppedCanvas.width, croppedCanvas.height);
+    cctx.drawImage(
+      canvas,
+      left,
+      top,
+      right - left,
+      bottom - top,
+      0,
+      0,
+      croppedCanvas.width,
+      croppedCanvas.height
+    );
 
     return croppedCanvas;
   };
@@ -173,15 +185,13 @@ export default function OCRUpload({ multiple = false }) {
       for (let i = 0; i < resizedFiles.length; i++) {
         const file = resizedFiles[i];
 
-        // Wait for image to load
-        const img = await new Promise((resolve, reject) => {
-          const image = new Image();
-          const reader = new FileReader();
-          reader.onload = (e) => (image.src = e.target.result);
-          image.onload = () => resolve(image);
-          image.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        // Build an <img> to feed our preprocessing pipeline
+        const img = new Image();
+        const reader = new FileReader();
+        const imgLoaded = new Promise((res) => (img.onload = res));
+        reader.onload = (e) => (img.src = e.target.result);
+        reader.readAsDataURL(file);
+        await imgLoaded;
 
         const canvas = document.createElement("canvas");
         canvasRefs.current[i] = canvas;
@@ -189,7 +199,8 @@ export default function OCRUpload({ multiple = false }) {
 
         const result = await Tesseract.recognize(preprocessed, "eng", {
           logger: (m) => console.log("OCR progress:", m),
-          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
+          tessedit_char_whitelist:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
           oem: 1,
           psm: 6,
         });
@@ -201,14 +212,14 @@ export default function OCRUpload({ multiple = false }) {
           return updated;
         });
 
-        // Send OCR to API for banned substance check
+        // Send OCR text to the backend to match against Airtable
         const res = await fetch("/api/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
         });
         const data = await res.json();
-        const records = data.records || [];
+        const records = Array.isArray(data.records) ? data.records : [];
         setMatchedRecordsArr((prev) => {
           const updated = [...prev];
           updated[i] = records;
@@ -242,12 +253,12 @@ export default function OCRUpload({ multiple = false }) {
         <span className="text-gray-600 text-center font-medium">
           {files.length
             ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Click to select a file, take a photo, or drag & drop"}
+            : "Tap to choose a photo or take one (camera or gallery)"}
         </span>
+        {/* IMPORTANT: no 'capture' attribute so mobile shows Camera *and* Photo Library */}
         <input
           type="file"
           accept="image/*"
-          capture={isIOS() ? "environment" : undefined}
           multiple={multiple}
           onChange={handleFileChange}
           className="hidden"
@@ -278,7 +289,9 @@ export default function OCRUpload({ multiple = false }) {
 
       {/* Progress Bar */}
       {loading && (
-        <ProgressBar progress={Math.round((ocrTexts.filter((r) => r).length / files.length) * 100)} />
+        <ProgressBar
+          progress={Math.round((ocrTexts.filter((r) => r).length / files.length) * 100)}
+        />
       )}
 
       {/* Scan Button */}

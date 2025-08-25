@@ -1,16 +1,32 @@
 // components/OCRUpload.js
-import { useState, useEffect } from "react";
+"use client";
+import { useState, useEffect, useRef } from "react";
+import OCRScanResults from "./OCRScanResults";
 import ProgressBar from "./ProgressBar";
 
-export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
+export default function OCRUpload({ multiple = false }) {
   const [files, setFiles] = useState([]);
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState("");
   const [previewURLs, setPreviewURLs] = useState([]);
-  const [isDragging, setIsDragging] = useState(false);
+  const [ocrTexts, setOcrTexts] = useState([]); // store OCR per file
+  const [matchedRecordsArr, setMatchedRecordsArr] = useState([]); // store records per file
+  const [loading, setLoading] = useState(false);
+  const [animDots, setAnimDots] = useState("");
+  const [error, setError] = useState("");
   const [athleteNames, setAthleteNames] = useState([]);
-  const [results, setResults] = useState([]);
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+  const [isDragging, setIsDragging] = useState(false);
+
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const imageRefs = useRef([]);
+  const canvasRefs = useRef([]);
+
+  // Animate dots during loading
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(() => {
+      setAnimDots((prev) => (prev.length >= 3 ? "" : prev + "."));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
 
@@ -20,7 +36,7 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
       return false;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setError("File is too large. Max 5 MB.");
+      setError("File too large. Max 5 MB.");
       return false;
     }
     setError("");
@@ -30,15 +46,17 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
   const handleFiles = (selectedFiles) => {
     const validFiles = Array.from(selectedFiles).filter(validateFile);
     if (!validFiles.length) return;
+
     setFiles(validFiles);
     setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
+    setOcrTexts(new Array(validFiles.length).fill(""));
+    setMatchedRecordsArr(new Array(validFiles.length).fill([]));
     setAthleteNames(validFiles.map(() => ""));
-    setResults(new Array(validFiles.length).fill(""));
+    imageRefs.current = new Array(validFiles.length).fill(null);
+    canvasRefs.current = new Array(validFiles.length).fill(null);
   };
 
   const handleFileChange = (e) => handleFiles(e.target.files);
-
-  // Drag-and-drop handlers
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -58,7 +76,6 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
 
-  // Resize image for faster OCR
   const resizeImage = (file) =>
     new Promise((resolve) => {
       const img = new Image();
@@ -89,55 +106,126 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
       reader.readAsDataURL(file);
     });
 
-  // Browser-safe Tesseract.js v6 scan
+  const preprocessImage = async (img, canvas) => {
+    const ctx = canvas.getContext("2d");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // Grayscale + contrast
+    let min = 255,
+      max = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+      if (gray < min) min = gray;
+      if (gray > max) max = gray;
+    }
+    const scale = 255 / (max - min || 1);
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+      gray = Math.max(0, Math.min(255, (gray - min) * scale));
+      data[i] = data[i + 1] = data[i + 2] = gray;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Detect darker region
+    let top = canvas.height,
+      bottom = 0,
+      left = canvas.width,
+      right = 0;
+    for (let y = 0; y < canvas.height; y += 2) {
+      for (let x = 0; x < canvas.width; x += 2) {
+        const idx = (y * canvas.width + x) * 4;
+        if (data[idx] < 100) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
+    }
+
+    if (right - left < 20 || bottom - top < 20) return canvas;
+
+    const scaleFactor = 3;
+    const croppedCanvas = document.createElement("canvas");
+    croppedCanvas.width = (right - left) * scaleFactor;
+    croppedCanvas.height = (bottom - top) * scaleFactor;
+    const cctx = croppedCanvas.getContext("2d");
+    cctx.drawImage(canvas, left, top, right - left, bottom - top, 0, 0, croppedCanvas.width, croppedCanvas.height);
+
+    return croppedCanvas;
+  };
+
   const handleScan = async () => {
     if (!files.length) return;
-    setScanning(true);
-    setError("");
-    setResults(new Array(files.length).fill(""));
+    setLoading(true);
+    setOcrTexts(new Array(files.length).fill(""));
+    setMatchedRecordsArr(new Array(files.length).fill([]));
 
     try {
       const Tesseract = (await import("tesseract.js")).default;
-
-      // Convert resized files to base64
       const resizedFiles = await Promise.all(files.map(resizeImage));
-      const base64Files = await Promise.all(
-        resizedFiles.map(
-          (f) =>
-            new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onload = (e) => resolve(e.target.result);
-              reader.readAsDataURL(f);
-            })
-        )
-      );
 
-      for (let i = 0; i < base64Files.length; i++) {
-        // Direct recognize call avoids createWorker issues
-        const { data } = await Tesseract.recognize(base64Files[i], "eng");
+      for (let i = 0; i < resizedFiles.length; i++) {
+        const file = resizedFiles[i];
 
-        setResults((prev) => {
+        // Wait for image to load
+        const img = await new Promise((resolve, reject) => {
+          const image = new Image();
+          const reader = new FileReader();
+          reader.onload = (e) => (image.src = e.target.result);
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const canvas = document.createElement("canvas");
+        canvasRefs.current[i] = canvas;
+        const preprocessed = await preprocessImage(img, canvas);
+
+        const result = await Tesseract.recognize(preprocessed, "eng", {
+          logger: (m) => console.log("OCR progress:", m),
+          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
+          oem: 1,
+          psm: 6,
+        });
+
+        const text = result.data.text || "";
+        setOcrTexts((prev) => {
           const updated = [...prev];
-          updated[i] = data.text;
+          updated[i] = text;
           return updated;
         });
 
-        // Call callbacks progressively
-        if (!multiple && onScan) onScan(data.text);
-        else if (multiple && onBatchScan)
-          onBatchScan([...results.slice(0, i + 1), data.text]);
+        // Send OCR to API for banned substance check
+        const res = await fetch("/api/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        const records = data.records || [];
+        setMatchedRecordsArr((prev) => {
+          const updated = [...prev];
+          updated[i] = records;
+          return updated;
+        });
       }
     } catch (err) {
-      console.error(err);
+      console.error("OCR failed:", err);
       setError("OCR failed. Please try again.");
     } finally {
-      setScanning(false);
+      setLoading(false);
     }
   };
 
-  const handleNameChange = (index, value) => {
+  const handleNameChange = (idx, value) => {
     const newNames = [...athleteNames];
-    newNames[index] = value;
+    newNames[idx] = value;
     setAthleteNames(newNames);
   };
 
@@ -166,7 +254,7 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
         />
       </label>
 
-      {/* Athlete Names & Previews */}
+      {/* Previews & Names */}
       {files.map((file, idx) => (
         <div key={idx} className="flex flex-col items-start space-y-1 max-w-3xl mx-auto">
           <span className="font-medium">{file.name}</span>
@@ -186,25 +274,31 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
         </div>
       ))}
 
-      {/* Inline Error */}
       {error && <p className="text-red-500 text-center">{error}</p>}
 
       {/* Progress Bar */}
-      {scanning && (
-        <ProgressBar
-          progress={Math.round((results.filter((r) => r).length / files.length) * 100)}
-        />
+      {loading && (
+        <ProgressBar progress={Math.round((ocrTexts.filter((r) => r).length / files.length) * 100)} />
       )}
 
       {/* Scan Button */}
       <button
         onClick={handleScan}
-        disabled={scanning || !files.length}
+        disabled={loading || !files.length}
         className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition
-          ${scanning || !files.length ? "bg-gray-400 cursor-not-allowed" : "bg-[#46769B] hover:bg-blue-700"}`}
+          ${loading || !files.length ? "bg-gray-400 cursor-not-allowed" : "bg-[#46769B] hover:bg-blue-700"}`}
       >
-        {scanning ? "Scanning..." : multiple ? "Scan All Labels" : "Scan Label"}
+        {loading ? `Scanning${animDots}` : multiple ? "Scan All Labels" : "Scan Label"}
       </button>
+
+      {/* Results */}
+      {files.map((file, idx) => (
+        <OCRScanResults
+          key={idx}
+          ocrText={ocrTexts[idx]}
+          matchedSubstances={matchedRecordsArr[idx]}
+        />
+      ))}
     </div>
   );
 }

@@ -1,58 +1,47 @@
+// pages/api/check.js
 import Airtable from "airtable";
-import { ratelimiter } from "../../lib/ratelimiter";
-import fs from "fs";
-import path from "path";
-import Tesseract from "tesseract.js";
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
   process.env.AIRTABLE_BASE_ID
 );
 
+// Escape regex special characters safely
+const escapeRegex = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!ratelimiter(req, res, "check")) return;
 
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: "Text is required" });
 
   try {
-    let ocrText = "";
+    const lowerText = text.toLowerCase();
 
-    // SmartStack image path handling
-    if (text.startsWith("/uploads/")) {
-      const localPath = path.join(process.cwd(), "public", text);
-      if (!fs.existsSync(localPath))
-        return res.status(400).json({ error: "Local image not found at " + localPath });
+    // Fetch all records from Airtable table
+    const records = await base(process.env.AIRTABLE_TABLE_NAME)
+      .select({ view: "Grid view" })
+      .all();
 
-      // Browser-safe Tesseract usage
-      const { data } = await Tesseract.recognize(localPath, "eng", { logger: undefined });
-      ocrText = data.text;
-    } else {
-      ocrText = text; // Normal text input
-    }
-
-    const normalizedOCRText = ocrText.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").toLowerCase();
-
-    // Airtable lookup
-    const records = await base(process.env.AIRTABLE_TABLE_NAME).select({ view: "Grid view" }).all();
+    // Filter records: check Substance Name + Synonyms against OCR text
     const matchedRecords = records.filter((rec) => {
       const names = [
         rec.get("Substance Name") || "",
         ...(rec.get("Synonyms")?.split(",") || []),
-      ].map((s) => s.trim().toLowerCase());
+      ].map((s) => s.trim());
 
       return names.some((name) => {
-        if (!name || name.length < 2 || /^[0-9]+$/.test(name)) return false;
-
+        if (!name) return false;
+        const safeName = escapeRegex(name);
         try {
-          const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-          return regex.test(normalizedOCRText);
-        } catch {
-          return normalizedOCRText.includes(name);
+          const regex = new RegExp(`\\b${safeName}\\b`, "i"); // whole-word match, case-insensitive
+          return regex.test(lowerText);
+        } catch (err) {
+          return lowerText.includes(name.toLowerCase());
         }
       });
     });
 
+    // Map to same structure as SmartStack expects
     const results = matchedRecords.map((rec) => ({
       id: rec.id,
       fields: {
@@ -66,9 +55,9 @@ export default async function handler(req, res) {
       },
     }));
 
-    res.status(200).json({ ocrText, records: results });
+    res.status(200).json({ records: results });
   } catch (err) {
-    console.error("Check API Error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Check API error:", err);
+    res.status(500).json({ error: "Internal server error", records: [] });
   }
 }

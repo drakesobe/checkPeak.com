@@ -1,3 +1,4 @@
+// components/OCRUpload.js
 import { useState, useEffect } from "react";
 import ProgressBar from "./ProgressBar";
 
@@ -37,7 +38,7 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
 
   const handleFileChange = (e) => handleFiles(e.target.files);
 
-  // Drag-and-drop
+  // Drag-and-drop handlers
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -52,32 +53,29 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
     handleFiles(e.dataTransfer.files);
   };
 
-  // Cleanup preview URLs
+  // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
 
+  // Resize image for faster OCR
   const resizeImage = (file) =>
     new Promise((resolve) => {
       const img = new Image();
       const reader = new FileReader();
-
       reader.onload = (e) => (img.src = e.target.result);
-
       img.onload = () => {
-        const MAX_DIM = 800; // smaller for speed
+        const MAX_DIM = 800;
         let { width, height } = img;
         if (width > MAX_DIM || height > MAX_DIM) {
           const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
           width *= scale;
           height *= scale;
         }
-
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-
         canvas.toBlob(
           (blob) =>
             resolve(
@@ -88,28 +86,35 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
           file.type
         );
       };
-
       reader.readAsDataURL(file);
     });
 
+  // Browser-safe Tesseract.js v6 scan
   const handleScan = async () => {
     if (!files.length) return;
-
     setScanning(true);
     setError("");
     setResults(new Array(files.length).fill(""));
 
     try {
       const Tesseract = (await import("tesseract.js")).default;
-      const worker = Tesseract.createWorker({ logger: () => {} });
-      await worker.load();
-      await worker.loadLanguage("eng");
-      await worker.initialize("eng");
 
-      const resizedFiles = await Promise.all(files.map((f) => resizeImage(f)));
+      // Convert resized files to base64
+      const resizedFiles = await Promise.all(files.map(resizeImage));
+      const base64Files = await Promise.all(
+        resizedFiles.map(
+          (f) =>
+            new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve(e.target.result);
+              reader.readAsDataURL(f);
+            })
+        )
+      );
 
-      for (let i = 0; i < resizedFiles.length; i++) {
-        const { data } = await worker.recognize(resizedFiles[i]);
+      for (let i = 0; i < base64Files.length; i++) {
+        // Direct recognize call avoids createWorker issues
+        const { data } = await Tesseract.recognize(base64Files[i], "eng");
 
         setResults((prev) => {
           const updated = [...prev];
@@ -122,11 +127,9 @@ export default function OCRUpload({ onScan, onBatchScan, multiple = false }) {
         else if (multiple && onBatchScan)
           onBatchScan([...results.slice(0, i + 1), data.text]);
       }
-
-      await worker.terminate();
     } catch (err) {
-      setError("OCR failed. Please try again.");
       console.error(err);
+      setError("OCR failed. Please try again.");
     } finally {
       setScanning(false);
     }

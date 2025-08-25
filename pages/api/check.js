@@ -10,7 +10,6 @@ const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   if (!ratelimiter(req, res, "check")) return;
 
   const { text } = req.body;
@@ -19,23 +18,20 @@ export default async function handler(req, res) {
   try {
     let ocrText = "";
 
-    // Check if this is a SmartStack local image path
+    // SmartStack image path handling
     if (text.startsWith("/uploads/")) {
-      const localPath = path.join(process.cwd(), "public", text); // Keep /uploads/ structure
-      if (fs.existsSync(localPath)) {
-        const { data } = await Tesseract.recognize(localPath, "eng", {
-          logger: (m) => console.log("OCR:", m.status, m.progress?.toFixed(2)),
-        });
-        ocrText = data.text;
-      } else {
+      const localPath = path.join(process.cwd(), "public", text);
+      if (!fs.existsSync(localPath))
         return res.status(400).json({ error: "Local image not found at " + localPath });
-      }
+
+      // Browser-safe Tesseract usage
+      const { data } = await Tesseract.recognize(localPath, "eng", { logger: undefined });
+      ocrText = data.text;
     } else {
-      // Normal site scan: just use the text string from input
-      ocrText = text;
+      ocrText = text; // Normal text input
     }
 
-    const lowerText = ocrText.toLowerCase();
+    const normalizedOCRText = ocrText.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").toLowerCase();
 
     // Airtable lookup
     const records = await base(process.env.AIRTABLE_TABLE_NAME).select({ view: "Grid view" }).all();
@@ -44,7 +40,17 @@ export default async function handler(req, res) {
         rec.get("Substance Name") || "",
         ...(rec.get("Synonyms")?.split(",") || []),
       ].map((s) => s.trim().toLowerCase());
-      return names.some((name) => name && lowerText.includes(name));
+
+      return names.some((name) => {
+        if (!name || name.length < 2 || /^[0-9]+$/.test(name)) return false;
+
+        try {
+          const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+          return regex.test(normalizedOCRText);
+        } catch {
+          return normalizedOCRText.includes(name);
+        }
+      });
     });
 
     const results = matchedRecords.map((rec) => ({

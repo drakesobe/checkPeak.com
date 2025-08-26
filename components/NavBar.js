@@ -1,3 +1,4 @@
+// components/NavBar.js
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
@@ -16,7 +17,6 @@ export default function NavBar() {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [stackIconBroken, setStackIconBroken] = useState(false);
 
-  // Ensure client-only dynamic bits mount after hydration
   useEffect(() => setIsMounted(true), []);
 
   const role = useMemo(() => (user?.Role || user?.role || "").trim(), [user]);
@@ -27,29 +27,31 @@ export default function NavBar() {
       { name: "Scan", href: "/ocr" },
       { name: "Search", href: "/search" },
       { name: "Info", href: "/info" },
-      // If you want Blogs back, uncomment:
-      // { name: "Blogs", href: "/blogs" },
     ],
     []
   );
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  const handleAuthClick = useCallback(async () => {
-    if (loggedIn) {
-      setProfileDropdownOpen((prev) => !prev);
-      return;
-    }
-    const email = typeof window !== "undefined" ? window.prompt("Enter your email to log in:") : null;
-    if (!email) return;
+  const handleAuthClick = useCallback(
+    async () => {
+      if (loggedIn) {
+        setProfileDropdownOpen((prev) => !prev);
+        return;
+      }
+      const email =
+        typeof window !== "undefined" ? window.prompt("Enter your email to log in:") : null;
+      if (!email) return;
 
-    try {
-      await login(email);
-      setProfileDropdownOpen(true);
-    } catch {
-      alert("Could not look up user. Please check the API route or Airtable config.");
-    }
-  }, [loggedIn, login]);
+      try {
+        await login(email);
+        setProfileDropdownOpen(true);
+      } catch {
+        alert("Could not look up user. Please check the API route or Airtable config.");
+      }
+    },
+    [loggedIn, login]
+  );
 
   const RoleLinks = () => {
     const L = ({ href, children }) => (
@@ -92,9 +94,10 @@ export default function NavBar() {
 
   return (
     <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-24 gap-4">
-          {/* LEFT NAV LINKS (desktop) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        {/* NAVBAR GRID */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 md:h-24 gap-2">
+          {/* LEFT NAV LINKS (desktop only) */}
           <div className="hidden md:flex items-center space-x-6 justify-start">
             {leftTabs.map((tab) => {
               const isActive = pathname === tab.href;
@@ -121,17 +124,23 @@ export default function NavBar() {
             })}
           </div>
 
-          {/* CENTER LOGO (desktop & mobile) */}
-          <div className="flex justify-center items-center">
+          {/* CENTER LOGO */}
+          <div className="flex justify-center items-center md:py-0 py-1">
             <Link href="/" aria-label="PEAK Home">
-              {/* Animated SVG lives in components/Logo.js */}
-              <Logo size="large" />
+              {/* Mobile gets a slightly smaller logo so it doesn't hug the top.
+                  Desktop keeps the larger logo. */}
+              <div className="md:hidden block -mt-0.5">
+                <Logo size="medium" />
+              </div>
+              <div className="hidden md:block">
+                <Logo size="large" />
+              </div>
             </Link>
           </div>
 
-          {/* RIGHT NAV (desktop) */}
+          {/* RIGHT NAV (desktop only) */}
           <div className="hidden md:flex items-center justify-end space-x-6">
-            {/* SmartStack */}
+            {/* SmartStack link */}
             <Link
               href="/smartstack"
               className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-[1.02] text-center"
@@ -164,7 +173,7 @@ export default function NavBar() {
               )}
             </Link>
 
-            {/* Profile/Login (hydrate-safe) */}
+            {/* Profile/Login */}
             {isMounted && (
               <div className="relative">
                 <button
@@ -199,12 +208,13 @@ export default function NavBar() {
             )}
           </div>
 
-          {/* MOBILE HAMBURGER (separate row) */}
-          <div className="md:hidden flex items-center justify-end col-span-3">
+          {/* MOBILE HAMBURGER (aligned with logo vertically) */}
+          <div className="md:hidden flex items-center justify-end pr-1">
             <button
               onClick={toggleMenu}
-              className="flex flex-col justify-center items-center w-10 h-10"
               aria-label="Toggle Menu"
+              aria-expanded={menuOpen}
+              className="flex flex-col justify-center items-center w-10 h-10"
             >
               <span
                 className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${
@@ -226,7 +236,7 @@ export default function NavBar() {
         </div>
       </div>
 
-      {/* MOBILE MENU (with Logo header) */}
+      {/* MOBILE MENU DRAWER */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
@@ -235,8 +245,7 @@ export default function NavBar() {
             exit={{ height: 0, opacity: 0 }}
             className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
           >
-            {/* Drawer header with animated logo */}
-            <div className="px-6 pt-4 pb-2 flex items-center justify-between">
+            <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
               <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)}>
                 <Logo size="small" />
               </Link>
@@ -266,7 +275,7 @@ export default function NavBar() {
               );
             })}
 
-            {/* Mobile Login/Profile */}
+            {/* Mobile login/profile */}
             {isMounted && !loggedIn ? (
               <button
                 onClick={async () => {

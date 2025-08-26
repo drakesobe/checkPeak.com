@@ -17,6 +17,7 @@ export default function NavBar() {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [stackIconBroken, setStackIconBroken] = useState(false);
 
+  // Ensure client-only dynamic bits mount after hydration
   useEffect(() => setIsMounted(true), []);
 
   const role = useMemo(() => (user?.Role || user?.role || "").trim(), [user]);
@@ -33,25 +34,21 @@ export default function NavBar() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  const handleAuthClick = useCallback(
-    async () => {
-      if (loggedIn) {
-        setProfileDropdownOpen((prev) => !prev);
-        return;
-      }
-      const email =
-        typeof window !== "undefined" ? window.prompt("Enter your email to log in:") : null;
-      if (!email) return;
+  const handleAuthClick = useCallback(async () => {
+    if (loggedIn) {
+      setProfileDropdownOpen((prev) => !prev);
+      return;
+    }
+    const email = typeof window !== "undefined" ? window.prompt("Enter your email to log in:") : null;
+    if (!email) return;
 
-      try {
-        await login(email);
-        setProfileDropdownOpen(true);
-      } catch {
-        alert("Could not look up user. Please check the API route or Airtable config.");
-      }
-    },
-    [loggedIn, login]
-  );
+    try {
+      await login(email);
+      setProfileDropdownOpen(true);
+    } catch {
+      alert("Could not look up user. Please check the API route or Airtable config.");
+    }
+  }, [loggedIn, login]);
 
   const RoleLinks = () => {
     const L = ({ href, children }) => (
@@ -93,10 +90,10 @@ export default function NavBar() {
   };
 
   return (
-    <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50">
+    <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        {/* NAVBAR GRID */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 md:h-24 gap-2">
+        {/* NAVBAR GRID: 3 equal columns ensures center logo remains centered */}
+        <div className="grid grid-cols-3 items-center h-16 md:h-24 gap-2">
           {/* LEFT NAV LINKS (desktop only) */}
           <div className="hidden md:flex items-center space-x-6 justify-start">
             {leftTabs.map((tab) => {
@@ -124,11 +121,10 @@ export default function NavBar() {
             })}
           </div>
 
-          {/* CENTER LOGO */}
-          <div className="flex justify-center items-center md:py-0 py-1">
+          {/* CENTER LOGO (always centered) */}
+          <div className="flex justify-center items-center py-2">
             <Link href="/" aria-label="PEAK Home">
-              {/* Mobile gets a slightly smaller logo so it doesn't hug the top.
-                  Desktop keeps the larger logo. */}
+              {/* Mobile uses medium logo, desktop large */}
               <div className="md:hidden block -mt-0.5">
                 <Logo size="medium" />
               </div>
@@ -138,100 +134,105 @@ export default function NavBar() {
             </Link>
           </div>
 
-          {/* RIGHT NAV (desktop only) */}
-          <div className="hidden md:flex items-center justify-end space-x-6">
-            {/* SmartStack link */}
-            <Link
-              href="/smartstack"
-              className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-[1.02] text-center"
-              onMouseEnter={() => setHoveredTab("SmartStack")}
-              onMouseLeave={() => setHoveredTab(null)}
-              aria-current={pathname === "/smartstack" ? "page" : undefined}
-            >
-              <span className="flex flex-col items-center leading-none">
-                {!stackIconBroken ? (
-                  <img
-                    src="/mountain.svg"
-                    alt="SmartStack"
-                    className="h-5 w-auto mb-1"
-                    onError={() => setStackIconBroken(true)}
-                    draggable={false}
-                  />
-                ) : (
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 mb-1" aria-hidden="true">
-                    <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
-                  </svg>
-                )}
-                SmartStack
-              </span>
-              {(pathname === "/smartstack" || hoveredTab === "SmartStack") && (
-                <motion.span
-                  layoutId="underline"
-                  className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
-                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                />
-              )}
-            </Link>
-
-            {/* Profile/Login */}
-            {isMounted && (
-              <div className="relative">
-                <button
-                  onClick={handleAuthClick}
-                  className="px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] border border-gray-200 hover:border-[#46769B] transition"
-                >
-                  {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
-                </button>
-
-                <AnimatePresence>
-                  {loggedIn && profileDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute right-0 mt-2 w-56 bg-white shadow-md rounded-xl border border-gray-200 z-50 overflow-hidden"
-                    >
-                      <RoleLinks />
-                      <button
-                        onClick={() => {
-                          logout();
-                          setProfileDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                      >
-                        Logout
-                      </button>
-                    </motion.div>
+          {/* RIGHT SIDE: desktop nav OR mobile hamburger (kept in same column) */}
+          <div className="flex items-center justify-end">
+            {/* Desktop right nav */}
+            <div className="hidden md:flex items-center justify-end space-x-6">
+              {/* SmartStack */}
+              <Link
+                href="/smartstack"
+                className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-[1.02] text-center"
+                onMouseEnter={() => setHoveredTab("SmartStack")}
+                onMouseLeave={() => setHoveredTab(null)}
+                aria-current={pathname === "/smartstack" ? "page" : undefined}
+              >
+                <span className="flex flex-col items-center leading-none">
+                  {!stackIconBroken ? (
+                    <img
+                      src="/mountain.svg"
+                      alt="SmartStack"
+                      className="h-5 w-auto mb-1"
+                      onError={() => setStackIconBroken(true)}
+                      draggable={false}
+                    />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5 mb-1" aria-hidden="true">
+                      <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
+                    </svg>
                   )}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
+                  SmartStack
+                </span>
+                {(pathname === "/smartstack" || hoveredTab === "SmartStack") && (
+                  <motion.span
+                    layoutId="underline"
+                    className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
+                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  />
+                )}
+              </Link>
 
-          {/* MOBILE HAMBURGER (aligned with logo vertically) */}
-          <div className="md:hidden flex items-center justify-end pr-1">
-            <button
-              onClick={toggleMenu}
-              aria-label="Toggle Menu"
-              aria-expanded={menuOpen}
-              className="flex flex-col justify-center items-center w-10 h-10"
-            >
-              <span
-                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${
-                  menuOpen ? "rotate-45 translate-y-1.5" : ""
-                }`}
-              />
-              <span
-                className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${
-                  menuOpen ? "opacity-0" : "opacity-100"
-                }`}
-              />
-              <span
-                className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${
-                  menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-                }`}
-              />
-            </button>
+              {/* Profile/Login */}
+              {isMounted && (
+                <div className="relative">
+                  <button
+                    onClick={handleAuthClick}
+                    className="px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] border border-gray-200 hover:border-[#46769B] transition"
+                    aria-haspopup="true"
+                    aria-expanded={profileDropdownOpen}
+                  >
+                    {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
+                  </button>
+
+                  <AnimatePresence>
+                    {loggedIn && profileDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute right-0 mt-2 w-56 bg-white shadow-md rounded-xl border border-gray-200 z-50 overflow-hidden"
+                      >
+                        <RoleLinks />
+                        <button
+                          onClick={() => {
+                            logout();
+                            setProfileDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                        >
+                          Logout
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+
+            {/* Mobile hamburger */}
+            <div className="md:hidden flex items-center justify-end pr-1">
+              <button
+                onClick={toggleMenu}
+                aria-label="Toggle Menu"
+                aria-expanded={menuOpen}
+                className="flex flex-col justify-center items-center w-10 h-10"
+              >
+                <span
+                  className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${
+                    menuOpen ? "rotate-45 translate-y-1.5" : ""
+                  }`}
+                />
+                <span
+                  className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${
+                    menuOpen ? "opacity-0" : "opacity-100"
+                  }`}
+                />
+                <span
+                  className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${
+                    menuOpen ? "-rotate-45 -translate-y-1.5" : ""
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
       </div>

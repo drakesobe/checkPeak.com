@@ -4,14 +4,16 @@ import { useState, createContext, useContext } from "react";
 // --- Context creation for global auth
 const AuthContext = createContext(null);
 
+// --- AuthProvider to wrap _app.js
 export function AuthProvider({ children }) {
   const auth = useProvideAuth();
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
+// --- Custom hook to consume context
 export const useAuthContext = () => useContext(AuthContext);
 
-// --- Main hook
+// --- Main hook providing auth logic
 function useProvideAuth() {
   const [user, setUser] = useState(null);
 
@@ -38,7 +40,7 @@ function useProvideAuth() {
     setUser(null);
   };
 
-  // --- Signup athlete with token
+  // --- Signup athlete with invite token
   const signupAthlete = async ({ token, name, email }) => {
     try {
       const res = await fetch("/api/athlete-signup", {
@@ -50,7 +52,7 @@ function useProvideAuth() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Signup failed");
 
-      // --- Auto login the athlete after signup
+      // --- Auto-login the athlete after successful signup
       await login(email);
 
       return data; // contains { athleteId, organization }

@@ -2,12 +2,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/router";
-import { useAuth } from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
+import { useAuthContext } from "@/context/AuthContext"; // <-- updated import
 import { motion } from "framer-motion";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login } = useAuthContext(); // <-- use context hook
   const router = useRouter();
 
   const [email, setEmail] = useState("");

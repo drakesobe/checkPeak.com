@@ -1,14 +1,15 @@
+// pages/athlete-signup/[token].js
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import useAuth from "@/hooks/useAuth";
+import { useAuthContext } from "@/context/AuthContext"; // <-- context-based hook
 
 export default function AthleteSignup({ params }) {
   const { token } = params;
   const router = useRouter();
-  const { signupAthlete, login } = useAuth();
+  const { signupAthlete, login } = useAuthContext(); // <-- use context
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -26,19 +27,25 @@ export default function AthleteSignup({ params }) {
       const signupData = await signupAthlete({ token, name, email });
       setSuccess(signupData);
 
-      // Immediately log them in
-      await login(email);
+      // Immediately log them in via context
+      await login(email.trim());
 
-      // Redirect after short delay
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 2500);
+      // Optional: auto-redirect after signup
+      // router.push("/dashboard");
     } catch (err) {
       setError(err?.message || "Failed to join organization.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Auto-redirect 2.5s after successful signup
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => router.push("/dashboard"), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [success, router]);
 
   if (success) {
     return (
@@ -49,12 +56,9 @@ export default function AthleteSignup({ params }) {
       >
         <h2 className="text-xl font-bold mb-2">Success!</h2>
         <p className="text-gray-700 mb-2">
-          You’ve joined the organization:{" "}
-          <span className="font-semibold">{success.organization}</span>
+          You’ve joined the organization: <strong>{success.organization}</strong>
         </p>
-        <p className="mt-2 text-sm text-gray-600">
-          You are now logged in. Redirecting to your dashboard...
-        </p>
+        <p className="text-gray-500 text-sm">Redirecting to your dashboard...</p>
       </motion.div>
     );
   }

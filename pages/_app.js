@@ -1,5 +1,5 @@
 // pages/_app.js
-import "@/styles/globals.css";
+import "@/styles/globals.css"; // your global styles
 import { AuthProvider } from "@/hooks/useAuth";
 
 export default function MyApp({ Component, pageProps }) {

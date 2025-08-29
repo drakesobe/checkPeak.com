@@ -11,7 +11,9 @@ export default async function handler(req, res) {
   const TABLE_ID = "tblF4rxxbnn6z9lGr"; // your table ID
   const VIEW_ID = "viwUcs1qpyxyLqkIM"; // optional view
 
-  const URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}${VIEW_ID ? `?view=${VIEW_ID}` : ""}`;
+  const URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}${
+    VIEW_ID ? `?view=${VIEW_ID}` : ""
+  }`;
 
   try {
     const response = await fetch(URL, {
@@ -24,7 +26,9 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const text = await response.text();
       console.error("Airtable fetch error:", response.status, text);
-      return res.status(500).json({ error: "Failed to fetch Airtable: " + response.status });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch Airtable: " + response.status });
     }
 
     const data = await response.json();
@@ -36,22 +40,10 @@ export default async function handler(req, res) {
       let supplements = [];
       if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
       else if (typeof f["Supplements"] === "string")
-        supplements = f["Supplements"].split(",").map((s) => s.trim()).filter(Boolean);
-
-      // Value rating (based on your old logic)
-      let valueRating = "moderate";
-      if (f["Rating"]) {
-        const r = parseFloat(f["Rating"]) || 0;
-        if (r >= 4.5) valueRating = "bestValue";
-        else if (r >= 3.0) valueRating = "moderate";
-        else valueRating = "highPrice";
-      }
-
-      // Ban type
-      let banType = "None";
-      if (f["Ban Type"]) banType = f["Ban Type"];
-      else if (f["Safe"] === true) banType = "None";
-      else if (f["Safe"] === false) banType = "Prohibited";
+        supplements = f["Supplements"]
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
       // Price & servings
       const priceNumber = parseFloat(f["Price"] || 0);
@@ -61,26 +53,38 @@ export default async function handler(req, res) {
       const nutritionLabel = f["Nutrition Label URL"] || "";
 
       // Affiliate link
-      const affiliateLink = f["Lo. Amazon/Stripe Link"] || f["Sh. Amazon/Stripe Link"] || f["AffiliateLink"] || "";
+      const affiliateLink =
+        f["Lo. Amazon/Stripe Link"] ||
+        f["Sh. Amazon/Stripe Link"] ||
+        f["AffiliateLink"] ||
+        "";
 
       // Image URL
       const imageUrl = f["Image URL"] || "";
 
-      // Rating (your new column)
+      // Rating
       const rating = parseFloat(f["Rating"]) || null;
+
+      // Value Rating from Airtable
+      let valueScore = parseFloat(f["Value Rating"]) || null;
+
+      // Fallback: calculate valueScore from servings / price
+      if (!valueScore && priceNumber && servings) {
+        const servingsNumber = parseFloat(servings) || 1;
+        valueScore = (servingsNumber / priceNumber) * 10; // scale factor for badge
+      }
 
       return {
         id: record.id,
         name: f["Product Name"] || "No Name",
         category: f["Category"] || "Misc",
         supplements,
-        valueRating,
-        banType,
         notes: `Servings: ${servings || "N/A"} • Price: $${priceNumber.toFixed(2)}`,
         affiliateLink,
         imageUrl,
         nutritionLabel,
         rating,
+        valueScore, // ✅ include computed valueScore
         rawFields: f,
       };
     });

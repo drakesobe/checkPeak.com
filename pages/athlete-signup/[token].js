@@ -1,97 +1,103 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import NavBar from '../../components/NavBar';
+"use client";
 
-export default function AthleteSignupPage() {
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import { motion } from "framer-motion";
+import useAuth from "@/hooks/useAuth";
+
+export default function AthleteSignup({ params }) {
+  const { token } = params;
   const router = useRouter();
-  const { token } = router.query;
+  const { signupAthlete, login } = useAuth();
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [orgName, setOrgName] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(null);
 
-  // Fetch organization info based on token
-  useEffect(() => {
-    if (!token) return;
-
-    const fetchOrg = async () => {
-      try {
-        const res = await fetch(`/api/get-org-by-token?token=${token}`);
-        const data = await res.json();
-        if (data.success) {
-          setOrgName(data.organization);
-        } else {
-          setOrgName('Unknown Organization');
-        }
-      } catch (err) {
-        console.error('Failed to fetch org:', err);
-        setOrgName('Unknown Organization');
-      }
-    };
-
-    fetchOrg();
-  }, [token]);
-
-  const handleSignup = async () => {
-    if (!name || !email) return alert('Please fill out all fields');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
     setLoading(true);
 
     try {
-      const res = await fetch('/api/athlete-signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, name, email }),
-      });
-      const data = await res.json();
+      // Signup the athlete
+      const signupData = await signupAthlete({ token, name, email });
+      setSuccess(signupData);
 
-      if (data.success) {
-        alert(`Account created successfully for ${data.organization || 'your team'}!`);
-        router.push('/ocr'); // redirect to OCR page
-      } else {
-        alert(data.error || 'Signup failed');
-      }
+      // Immediately log them in
+      await login(email);
+
+      // Redirect after short delay
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 2500);
     } catch (err) {
-      console.error(err);
-      alert('Signup failed due to server error');
+      setError(err?.message || "Failed to join organization.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
-      <NavBar activeTab="" />
-      <div className="max-w-md w-full bg-white shadow-lg rounded-xl p-8">
-        <h1 className="text-2xl font-bold mb-2 text-center">Athlete Signup</h1>
-        <p className="text-gray-600 mb-6 text-center">
-          Join your organization's PEAK account: <strong>{orgName || 'Loading...'}</strong>
+  if (success) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-6 max-w-md mx-auto mt-10 bg-green-50 rounded-xl shadow-lg text-center"
+      >
+        <h2 className="text-xl font-bold mb-2">Success!</h2>
+        <p className="text-gray-700 mb-2">
+          You’ve joined the organization:{" "}
+          <span className="font-semibold">{success.organization}</span>
         </p>
+        <p className="mt-2 text-sm text-gray-600">
+          You are now logged in. Redirecting to your dashboard...
+        </p>
+      </motion.div>
+    );
+  }
 
-        <input
-          type="text"
-          placeholder="Full Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full mb-4 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
+  return (
+    <motion.form
+      onSubmit={handleSubmit}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="max-w-md mx-auto mt-10 space-y-4 p-6 bg-gray-50 rounded-xl shadow"
+    >
+      <h2 className="text-xl font-bold text-gray-700">Join Organization</h2>
 
-        <input
-          type="email"
-          placeholder="Email Address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-6 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
+      {error && <p className="text-red-600">{error}</p>}
 
-        <button
-          onClick={handleSignup}
-          disabled={loading}
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
-        >
-          {loading ? 'Creating Account...' : 'Sign Up'}
-        </button>
-      </div>
-    </div>
+      <input
+        type="text"
+        placeholder="Full Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        required
+      />
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        required
+      />
+
+      <motion.button
+        type="submit"
+        whileHover={{ scale: 1.03 }}
+        whileTap={{ scale: 0.97 }}
+        className={`w-full py-3 rounded-xl text-white font-semibold ${
+          loading ? "bg-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+        }`}
+        disabled={loading}
+      >
+        {loading ? "Joining..." : "Join & Log In"}
+      </motion.button>
+    </motion.form>
   );
 }

@@ -16,7 +16,6 @@ export default function OrgLogin() {
     setError("");
     try {
       const user = await login(email, password);
-      console.log("Logged in:", user);
       router.push("/dashboard");
     } catch (err) {
       setError(err.message);
@@ -24,9 +23,10 @@ export default function OrgLogin() {
   };
 
   return (
-    <form onSubmit={handleLogin} className="max-w-md mx-auto mt-10 p-6 bg-gray-50 rounded-xl shadow space-y-4">
+    <form className="max-w-md mx-auto mt-10 p-6 bg-gray-50 rounded-xl shadow space-y-4" onSubmit={handleLogin}>
       <h2 className="text-xl font-bold">Organization Login</h2>
       {error && <p className="text-red-600">{error}</p>}
+
       <input
         type="email"
         placeholder="Email"
@@ -43,6 +43,7 @@ export default function OrgLogin() {
         className="w-full p-3 rounded-lg border border-gray-300"
         required
       />
+
       <button className="w-full bg-green-600 text-white py-3 rounded-xl hover:bg-green-700 transition">Login</button>
     </form>
   );

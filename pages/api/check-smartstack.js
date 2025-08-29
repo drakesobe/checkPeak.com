@@ -15,7 +15,6 @@ export default async function handler(req, res) {
 
   if (!ratelimiter(req, res, "check")) return;
 
-  // Accept both `text` and `ocrText` for backward compatibility
   const text = req.body.text || req.body.ocrText;
 
   if (!text) {
@@ -26,7 +25,7 @@ export default async function handler(req, res) {
   try {
     let ocrText = "";
 
-    // Check if this is a SmartStack local image path
+    // Local image OCR
     if (text.startsWith("/uploads/")) {
       const localPath = path.join(process.cwd(), "public", text);
       if (!fs.existsSync(localPath)) {
@@ -46,57 +45,58 @@ export default async function handler(req, res) {
       ocrText = text;
     }
 
-    // Normalize OCR text: collapse spaces, remove line breaks, lowercase
+    // Normalize OCR text
     const normalizedOCRText = ocrText
       .replace(/[\r\n]+/g, " ")
       .replace(/\s+/g, " ")
       .toLowerCase();
 
-    console.log("Normalized OCR text:", normalizedOCRText.slice(0, 200), "...");
+    console.log("Normalized OCR text (first 200 chars):", normalizedOCRText.slice(0, 200));
 
-    // Airtable lookup
+    // Fetch all Airtable records
     const records = await base(process.env.AIRTABLE_TABLE_NAME)
       .select({ view: "Grid view" })
       .all();
 
+    // Match records based on Substance Name and Synonyms
     const matchedRecords = records.filter((rec) => {
       const names = [
         rec.get("Substance Name") || "",
         ...(rec.get("Synonyms")?.split(",") || []),
       ].map((s) => s.trim().toLowerCase());
 
-      // Match if any name exists in OCR text
       return names.some((name) => {
-        if (!name) return false;
-        if (name.length < 2) return false; // skip short tokens
-        if (/^[0-9]+$/.test(name)) return false; // skip numbers only
+        if (!name || name.length < 2) return false;
+        if (/^[0-9]+$/.test(name)) return false;
 
         try {
           const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
           return regex.test(normalizedOCRText);
         } catch (err) {
-          // fallback substring match
           return normalizedOCRText.includes(name);
         }
       });
     });
 
+    // ✅ FIX: wrap matched records in fields object for frontend
     const results = matchedRecords.map((rec) => ({
       id: rec.id,
       fields: {
         "Substance Name": rec.get("Substance Name") || "",
-        Synonyms: rec.get("Synonyms") || "",
-        "Banned By": rec.get("Banned By") || "",
         "Ban Type": rec.get("Ban Type") || "",
+        "Synonyms": rec.get("Synonyms") || "",
+        "Banned By": rec.get("Banned By") || "",
         "Dosage Limit": rec.get("Dosage Limit") || "",
-        Notes: rec.get("Notes") || "",
+        "Notes": rec.get("Notes") || "",
         "Source / Citation": rec.get("Source / Citation") || "",
       },
     }));
 
     console.log("Matched records count:", results.length);
+    results.forEach((r) => console.log("Matched:", r.fields["Substance Name"]));
 
-    res.status(200).json({ ocrText, records: results });
+    // Send results
+    res.status(200).json({ ocrText, matchedRecords: results, records: results });
   } catch (err) {
     console.error("Check SmartStack API Error:", err);
     res.status(500).json({ error: "Internal server error" });

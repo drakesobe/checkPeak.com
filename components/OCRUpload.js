@@ -1,23 +1,27 @@
-// components/OCRUpload.js
 "use client";
+
 import { useState, useEffect, useRef } from "react";
-import OCRScanResults from "./OCRScanResults";
 import ProgressBar from "./ProgressBar";
 
-export default function OCRUpload({ multiple = false }) {
+/**
+ * OCRUpload
+ * - full uploader + OCR pipeline preserved (resize, preprocess, Tesseract)
+ * - calls `onScan(text)` for each scanned file if provided
+ */
+export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
-  const [ocrTexts, setOcrTexts] = useState([]); // OCR per file
-  const [matchedRecordsArr, setMatchedRecordsArr] = useState([]); // records per file
+  const [ocrTexts, setOcrTexts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
   const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
   const imageRefs = useRef([]);
   const canvasRefs = useRef([]);
+
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
   // Animate dots during loading
   useEffect(() => {
@@ -28,6 +32,7 @@ export default function OCRUpload({ multiple = false }) {
     return () => clearInterval(interval);
   }, [loading]);
 
+  // Validate files
   const validateFile = (file) => {
     if (!file.type.startsWith("image/")) {
       setError("Only image files are allowed.");
@@ -48,7 +53,6 @@ export default function OCRUpload({ multiple = false }) {
     setFiles(validFiles);
     setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
     setOcrTexts(new Array(validFiles.length).fill(""));
-    setMatchedRecordsArr(new Array(validFiles.length).fill([]));
     setAthleteNames(validFiles.map(() => ""));
     imageRefs.current = new Array(validFiles.length).fill(null);
     canvasRefs.current = new Array(validFiles.length).fill(null);
@@ -71,12 +75,12 @@ export default function OCRUpload({ multiple = false }) {
     handleFiles(e.dataTransfer.files);
   };
 
-  // Cleanup preview URLs on unmount
+  // Cleanup preview URLs
   useEffect(() => {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
 
-  // Downscale for speed
+  // Resize image
   const resizeImage = (file) =>
     new Promise((resolve) => {
       const img = new Image();
@@ -107,7 +111,7 @@ export default function OCRUpload({ multiple = false }) {
       reader.readAsDataURL(file);
     });
 
-  // SmartStack-style preprocessing
+  // Preprocess image (grayscale + normalize + crop)
   const preprocessImage = async (img, canvas) => {
     const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth;
@@ -117,7 +121,7 @@ export default function OCRUpload({ multiple = false }) {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Grayscale + contrast stretch
+    // Normalize contrast
     let min = 255,
       max = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -133,7 +137,7 @@ export default function OCRUpload({ multiple = false }) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Roughly locate darker text region (nutrition panel)
+    // Crop dark edges
     let top = canvas.height,
       bottom = 0,
       left = canvas.width,
@@ -149,7 +153,6 @@ export default function OCRUpload({ multiple = false }) {
         }
       }
     }
-
     if (right - left < 20 || bottom - top < 20) return canvas;
 
     const scaleFactor = 3;
@@ -168,15 +171,14 @@ export default function OCRUpload({ multiple = false }) {
       croppedCanvas.width,
       croppedCanvas.height
     );
-
     return croppedCanvas;
   };
 
+  // Main OCR
   const handleScan = async () => {
     if (!files.length) return;
     setLoading(true);
     setOcrTexts(new Array(files.length).fill(""));
-    setMatchedRecordsArr(new Array(files.length).fill([]));
 
     try {
       const Tesseract = (await import("tesseract.js")).default;
@@ -184,8 +186,6 @@ export default function OCRUpload({ multiple = false }) {
 
       for (let i = 0; i < resizedFiles.length; i++) {
         const file = resizedFiles[i];
-
-        // Build an <img> to feed our preprocessing pipeline
         const img = new Image();
         const reader = new FileReader();
         const imgLoaded = new Promise((res) => (img.onload = res));
@@ -195,6 +195,7 @@ export default function OCRUpload({ multiple = false }) {
 
         const canvas = document.createElement("canvas");
         canvasRefs.current[i] = canvas;
+
         const preprocessed = await preprocessImage(img, canvas);
 
         const result = await Tesseract.recognize(preprocessed, "eng", {
@@ -212,19 +213,13 @@ export default function OCRUpload({ multiple = false }) {
           return updated;
         });
 
-        // Send OCR text to the backend to match against Airtable
-        const res = await fetch("/api/check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-        const data = await res.json();
-        const records = Array.isArray(data.records) ? data.records : [];
-        setMatchedRecordsArr((prev) => {
-          const updated = [...prev];
-          updated[i] = records;
-          return updated;
-        });
+        if (typeof onScan === "function") {
+          try {
+            await onScan(text); // pass text to parent
+          } catch (err) {
+            console.error("onScan callback error:", err);
+          }
+        }
       }
     } catch (err) {
       console.error("OCR failed:", err);
@@ -244,8 +239,11 @@ export default function OCRUpload({ multiple = false }) {
     <div className="mt-6 font-sans space-y-4">
       {/* Drag-and-drop + click area */}
       <label
-        className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition
-          ${isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-gray-50 hover:bg-gray-100"}`}
+        className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
+          isDragging
+            ? "border-blue-400 bg-blue-50"
+            : "border-gray-300 bg-gray-50 hover:bg-gray-100"
+        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -255,7 +253,6 @@ export default function OCRUpload({ multiple = false }) {
             ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
             : "Tap to choose a photo or take one (camera or gallery)"}
         </span>
-        {/* IMPORTANT: no 'capture' attribute so mobile shows Camera *and* Photo Library */}
         <input
           type="file"
           accept="image/*"
@@ -267,7 +264,10 @@ export default function OCRUpload({ multiple = false }) {
 
       {/* Previews & Names */}
       {files.map((file, idx) => (
-        <div key={idx} className="flex flex-col items-start space-y-1 max-w-3xl mx-auto">
+        <div
+          key={idx}
+          className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
+        >
           <span className="font-medium">{file.name}</span>
           <input
             type="text"
@@ -298,20 +298,14 @@ export default function OCRUpload({ multiple = false }) {
       <button
         onClick={handleScan}
         disabled={loading || !files.length}
-        className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition
-          ${loading || !files.length ? "bg-gray-400 cursor-not-allowed" : "bg-[#46769B] hover:bg-blue-700"}`}
+        className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
+          loading || !files.length
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-[#46769B] hover:bg-blue-700"
+        }`}
       >
         {loading ? `Scanning${animDots}` : multiple ? "Scan All Labels" : "Scan Label"}
       </button>
-
-      {/* Results */}
-      {files.map((file, idx) => (
-        <OCRScanResults
-          key={idx}
-          ocrText={ocrTexts[idx]}
-          matchedSubstances={matchedRecordsArr[idx]}
-        />
-      ))}
     </div>
   );
 }

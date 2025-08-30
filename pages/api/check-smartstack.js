@@ -1,11 +1,16 @@
+// pages/api/check-smartstack.js
 import Airtable from "airtable";
 import { ratelimiter } from "../../lib/ratelimiter";
 import fs from "fs";
 import path from "path";
 import Tesseract from "tesseract.js";
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-  process.env.AIRTABLE_BASE_ID
+// --- Airtable bases
+const affiliateBase = new Airtable({ apiKey: process.env.AFFILIATE_API_KEY }).base(
+  process.env.AFFILIATE_BASE_ID
+);
+const bannedBase = new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
+  process.env.BANNED_BASE_ID
 );
 
 export default async function handler(req, res) {
@@ -16,7 +21,6 @@ export default async function handler(req, res) {
   if (!ratelimiter(req, res, "check")) return;
 
   const text = req.body.text || req.body.ocrText;
-
   if (!text) {
     console.log("Incoming body:", req.body);
     return res.status(400).json({ error: "No text field in request body!" });
@@ -25,7 +29,7 @@ export default async function handler(req, res) {
   try {
     let ocrText = "";
 
-    // Local image OCR
+    // --- Local image OCR
     if (text.startsWith("/uploads/")) {
       const localPath = path.join(process.cwd(), "public", text);
       if (!fs.existsSync(localPath)) {
@@ -41,11 +45,11 @@ export default async function handler(req, res) {
 
       ocrText = data.text;
     } else {
-      // Normal site scan: just use the text string from input
+      // --- Normal site scan: just use the text string from input
       ocrText = text;
     }
 
-    // Normalize OCR text
+    // --- Normalize OCR text
     const normalizedOCRText = ocrText
       .replace(/[\r\n]+/g, " ")
       .replace(/\s+/g, " ")
@@ -53,13 +57,14 @@ export default async function handler(req, res) {
 
     console.log("Normalized OCR text (first 200 chars):", normalizedOCRText.slice(0, 200));
 
-    // Fetch all Airtable records
-    const records = await base(process.env.AIRTABLE_TABLE_NAME)
-      .select({ view: "Grid view" })
-      .all();
+    // --- Fetch Affiliate Products and Banned Substances
+    const [affiliateRecords, bannedRecords] = await Promise.all([
+      affiliateBase(process.env.AFFILIATE_TABLE_NAME).select({ view: "Grid view" }).all(),
+      bannedBase(process.env.BANNED_TABLE_NAME).select({ view: "Grid view" }).all(),
+    ]);
 
-    // Match records based on Substance Name and Synonyms
-    const matchedRecords = records.filter((rec) => {
+    // --- Match Banned Substances against OCR
+    const matchedBanned = bannedRecords.filter((rec) => {
       const names = [
         rec.get("Substance Name") || "",
         ...(rec.get("Synonyms")?.split(",") || []),
@@ -72,14 +77,13 @@ export default async function handler(req, res) {
         try {
           const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
           return regex.test(normalizedOCRText);
-        } catch (err) {
+        } catch {
           return normalizedOCRText.includes(name);
         }
       });
     });
 
-    // ✅ FIX: wrap matched records in fields object for frontend
-    const results = matchedRecords.map((rec) => ({
+    const bannedResults = matchedBanned.map((rec) => ({
       id: rec.id,
       fields: {
         "Substance Name": rec.get("Substance Name") || "",
@@ -92,11 +96,72 @@ export default async function handler(req, res) {
       },
     }));
 
-    console.log("Matched records count:", results.length);
-    results.forEach((r) => console.log("Matched:", r.fields["Substance Name"]));
+    console.log("Matched banned count:", bannedResults.length);
+    bannedResults.forEach((r) => console.log("Matched banned:", r.fields["Substance Name"]));
 
-    // Send results
-    res.status(200).json({ ocrText, matchedRecords: results, records: results });
+    // --- Wrap Affiliate Products for frontend
+    const affiliateResults = affiliateRecords.map((record) => {
+      const f = record.fields || {};
+
+      // Supplements array
+      let supplements = [];
+      if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
+      else if (typeof f["Supplements"] === "string")
+        supplements = f["Supplements"]
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+      // Price & servings
+      const priceNumber = parseFloat(f["Price"] || 0);
+      const servings = f["Servings"] || "";
+
+      // Nutrition label
+      const nutritionLabel = f["Nutrition Label URL"] || "";
+
+      // Affiliate link
+      const affiliateLink =
+        f["Lo. Amazon/Stripe Link"] ||
+        f["Sh. Amazon/Stripe Link"] ||
+        f["AffiliateLink"] ||
+        "";
+
+      // Image URL
+      const imageUrl = f["Image URL"] || "";
+
+      // Rating
+      const rating = parseFloat(f["Rating"]) || null;
+
+      // Value Rating from Airtable
+      let valueScore = parseFloat(f["Value Rating"]) || null;
+
+      // Fallback: calculate valueScore from servings / price
+      if (!valueScore && priceNumber && servings) {
+        const servingsNumber = parseFloat(servings) || 1;
+        valueScore = (servingsNumber / priceNumber) * 10; // scale factor for badge
+      }
+
+      return {
+        id: record.id,
+        name: f["Product Name"] || "No Name",
+        category: f["Category"] || "Misc",
+        supplements,
+        notes: `Servings: ${servings || "N/A"} • Price: $${priceNumber.toFixed(2)}`,
+        affiliateLink,
+        imageUrl,
+        nutritionLabel,
+        rating,
+        valueScore,
+        rawFields: f,
+      };
+    });
+
+    // --- Send results
+    res.status(200).json({
+      ocrText,
+      matchedBanned: bannedResults,
+      affiliateRecords: affiliateResults,
+    });
   } catch (err) {
     console.error("Check SmartStack API Error:", err);
     res.status(500).json({ error: "Internal server error" });

@@ -1,27 +1,36 @@
 import Airtable from "airtable";
 import { ratelimiter } from "../../lib/ratelimiter";
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-  process.env.AIRTABLE_BASE_ID
+// Initialize Airtable with correct env vars for Banned Substances
+const base = new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
+  process.env.BANNED_BASE_ID
 );
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
-  // Apply enhanced rate limiter for this endpoint
-  if (!ratelimiter(req, res, 'search')) return;
+  // Enhanced rate limiter
+  if (!ratelimiter(req, res, "search")) return;
 
   const { query } = req.body;
-  if (!query) return res.status(400).json({ error: "Query is required" });
+  if (!query || query.trim().length < 2)
+    return res.status(400).json({ error: "Query is required and must be at least 2 characters" });
 
   try {
     const lowerQuery = query.toLowerCase();
-    const records = await base(process.env.AIRTABLE_TABLE_NAME).select({ view: "Grid view" }).all();
 
+    // Fetch all records from the banned substances table
+    const records = await base(process.env.BANNED_TABLE_NAME)
+      .select({ view: "Grid view" })
+      .all();
+
+    // Filter by partial matches in substance name, synonyms, or banned by
     const matchedRecords = records.filter((rec) => {
       const substanceName = rec.get("Substance Name") || "";
       const synonyms = rec.get("Synonyms") || "";
       const bannedBy = rec.get("Banned By") || "";
+
       return (
         substanceName.toLowerCase().includes(lowerQuery) ||
         synonyms.toLowerCase().includes(lowerQuery) ||
@@ -29,6 +38,7 @@ export default async function handler(req, res) {
       );
     });
 
+    // Map to clean JSON
     const results = matchedRecords.map((rec) => ({
       id: rec.id,
       fields: {

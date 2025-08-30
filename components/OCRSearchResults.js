@@ -8,7 +8,7 @@ export default function OCRSearchResults({
   searchTerm = "",
   matchedSubstances = [],
 }) {
-  const [activeBanType, setActiveBanType] = useState(null); // filter state
+  const [activeBanType, setActiveBanType] = useState(null);
 
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
@@ -31,31 +31,22 @@ export default function OCRSearchResults({
     return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
   };
 
-  // Highlight matches of searchTerm in table
-  const getHighlightedText = (text, record) => {
-    if (!text) return "";
-    let highlighted = text;
+  // Highlight searchTerm in a given text
+  const getHighlightedText = (text = "", record) => {
+    if (!text || !searchTerm) return text;
 
-    const names = [
-      (record.fields["Substance Name"] || "").trim(),
-      ...((record.fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
-    ];
-
+    const regex = new RegExp(escapeRegex(searchTerm), "gi");
     const banType = record.fields["Ban Type"] || "None";
     const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
 
-    names.forEach((name) => {
-      if (!name) return;
-      const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
-      highlighted = highlighted.replace(regex, (match) => {
-        return `<span style="
-          color: ${textColor};
-          font-weight: 600;
-          text-decoration: underline;
-          text-decoration-color: ${textColor};
-          text-underline-offset: 2px;
-        ">${match}</span>`;
-      });
+    const highlighted = text.replace(regex, (match) => {
+      return `<span style="
+        color: ${textColor};
+        font-weight: 600;
+        text-decoration: underline;
+        text-decoration-color: ${textColor};
+        text-underline-offset: 2px;
+      ">${match}</span>`;
     });
 
     return <span dangerouslySetInnerHTML={{ __html: highlighted }} />;
@@ -66,13 +57,13 @@ export default function OCRSearchResults({
       <section>
         <h2 className="text-2xl font-bold mb-2">Search Results</h2>
 
-        {/* Ban Type Color Legend */}
+        {/* Ban Type Legend */}
         <div className="overflow-x-auto mb-4">
           <div className="flex gap-4 w-[420px] min-w-max pl-2">
             {banTypeColors.map((type) => (
               <div
                 key={type.label}
-                className={`flex items-center gap-1 cursor-pointer transition-transform hover:scale-110`}
+                className="flex items-center gap-1 cursor-pointer transition-transform hover:scale-110"
                 onClick={() => handleLegendClick(type.label)}
               >
                 <div

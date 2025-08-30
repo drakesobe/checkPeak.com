@@ -55,6 +55,7 @@ export default function CompareModal({ stacks = [], onClose }) {
         updated[idx] = text;
         return updated;
       });
+
       await fetchRecords(idx, text);
     } catch (err) {
       console.error("OCR error:", err);
@@ -98,8 +99,11 @@ export default function CompareModal({ stacks = [], onClose }) {
         body: JSON.stringify({ ocrText: text }),
       });
       const data = await res.json();
-      const recs = data?.records || [];
+
+      // <-- Use matchedBanned from API
+      const recs = data?.matchedBanned || [];
       recordsCache[imageUrl] = recs;
+
       setMatchedRecordsArr((prev) => {
         const updated = [...prev];
         updated[idx] = recs;

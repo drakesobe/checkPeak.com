@@ -2,15 +2,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { useAuthContext } from "@/context/AuthContext"; // <-- context-based hook
+import { useAuthContext } from "@/hooks/useAuth";
 
-export default function AthleteSignup({ params }) {
-  const { token } = params;
+export default function AthleteSignup() {
   const router = useRouter();
-  const { signupAthlete, login } = useAuthContext(); // <-- use context
+  const params = useParams();
+  const devToken = "TEST123"; // dev default token
 
+  const token = params?.token || (process.env.NODE_ENV === "development" ? devToken : null);
+
+  const { signupAthlete, login } = useAuthContext();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -23,15 +26,9 @@ export default function AthleteSignup({ params }) {
     setLoading(true);
 
     try {
-      // Signup the athlete
       const signupData = await signupAthlete({ token, name, email });
       setSuccess(signupData);
-
-      // Immediately log them in via context
       await login(email.trim());
-
-      // Optional: auto-redirect after signup
-      // router.push("/dashboard");
     } catch (err) {
       setError(err?.message || "Failed to join organization.");
     } finally {
@@ -39,13 +36,16 @@ export default function AthleteSignup({ params }) {
     }
   };
 
-  // Auto-redirect 2.5s after successful signup
   useEffect(() => {
     if (success) {
       const timer = setTimeout(() => router.push("/dashboard"), 2500);
       return () => clearTimeout(timer);
     }
   }, [success, router]);
+
+  if (!token) {
+    return <p className="text-center mt-10 text-red-600">Invalid or missing token.</p>;
+  }
 
   if (success) {
     return (
@@ -71,6 +71,9 @@ export default function AthleteSignup({ params }) {
       className="max-w-md mx-auto mt-10 space-y-4 p-6 bg-gray-50 rounded-xl shadow"
     >
       <h2 className="text-xl font-bold text-gray-700">Join Organization</h2>
+      <p className="text-sm text-gray-500">
+        Using token: <strong>{token}</strong> {process.env.NODE_ENV === "development" && "(DEV TEST TOKEN)"}
+      </p>
 
       {error && <p className="text-red-600">{error}</p>}
 

@@ -1,10 +1,32 @@
+// components/OCRResultsBase.js
 import React, { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import ResultsTable from "./ResultsTable";
 
+// Escape regex special characters
 const escapeRegex = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Normalize ban types
+const normalizeBanType = (s) => {
+  if (!s) return "None";
+  s = s.trim();
+  if (/^prohibited$/i.test(s)) return "Prohibited";
+  if (/^limited(\s+to)?\s+out\s+of\s+competition$/i.test(s))
+    return "Limited Out of Competition";
+  if (/^particular\s+sports$/i.test(s)) return "Particular Sports";
+  return "None";
+};
+
+// Ban type → highlight color
+const banTypeColorsMap = {
+  Prohibited: "#d62828",
+  "Limited Out of Competition": "#f77f00",
+  "Particular Sports": "#2a9d8f",
+  None: "#111827",
+};
+
 export default function OCRResultsBase({
-  ocrText,
+  ocrText = "",
   detectedSubstances = [],
   showOCR = false,
   hideTitle = false,
@@ -13,99 +35,91 @@ export default function OCRResultsBase({
 
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
-    { label: "Limited to Out of Competition", color: "#f77f00" },
-    { label: "Particular Sports", color: "#003049" },
+    { label: "Limited Out of Competition", color: "#f77f00" },
+    { label: "Particular Sports", color: "#2a9d8f" },
   ];
 
   const handleLegendClick = (label) => {
     setActiveBanType(activeBanType === label ? null : label);
   };
 
+  // Filter substances by active legend
   const filteredSubstances = useMemo(() => {
-    return activeBanType
-      ? detectedSubstances.filter(
-          (record) => (record.fields["Ban Type"] || "None") === activeBanType
-        )
-      : detectedSubstances;
+    if (!activeBanType) return detectedSubstances;
+    return detectedSubstances.filter(
+      (r) => normalizeBanType(r.fields?.["Ban Type"]) === activeBanType
+    );
   }, [detectedSubstances, activeBanType]);
 
-  const getBanTypeHighlight = (banType) => {
-    const color = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
-    return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
-  };
+  // Precompute highlighted table cells
+  const highlightedTableCells = useMemo(() => {
+    const map = {};
+    filteredSubstances.forEach((record) => {
+      const fields = record.fields || {};
+      const banType = normalizeBanType(fields["Ban Type"]);
+      const textColor = banTypeColorsMap[banType];
 
-  // Memoize OCR text highlighting
+      const highlightCellText = (text) => {
+        if (!ocrText || !text) return text || "";
+
+        let cellText = text;
+        const terms = [
+          (fields["Substance Name"] || "").trim(),
+          ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
+        ].filter(Boolean);
+
+        // Only highlight terms that appear in OCR
+        terms.forEach((term) => {
+          const regex = new RegExp(`\\b${escapeRegex(term)}\\b`, "gi");
+          if (regex.test(ocrText)) {
+            cellText = cellText.replace(
+              regex,
+              (match) =>
+                `<span style="color:${textColor}; font-weight:600; text-decoration:underline; text-decoration-color:${textColor}; text-underline-offset:2px;">${match}</span>`
+            );
+          }
+        });
+
+        return cellText;
+      };
+
+      map[record.id] = {
+        substanceName: highlightCellText(fields["Substance Name"] || ""),
+        synonyms: highlightCellText(fields["Synonyms"] || ""),
+      };
+    });
+    return map;
+  }, [filteredSubstances, ocrText]);
+
+  // Highlight OCR text for display above table
   const highlightedOCRText = useMemo(() => {
     if (!ocrText) return "No text scanned yet.";
     let highlighted = ocrText;
 
     filteredSubstances.forEach((record) => {
       const fields = record.fields || {};
-      const banType = fields["Ban Type"] || "None";
-      const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
+      const banType = normalizeBanType(fields["Ban Type"]);
+      const textColor = banTypeColorsMap[banType];
 
-      const names = [
+      const terms = [
         (fields["Substance Name"] || "").trim(),
         ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
-      ];
+      ].filter(Boolean);
 
-      names.forEach((name) => {
-        if (!name) return;
-        const safe = escapeRegex(name);
-        const regex = new RegExp(`\\b${safe}\\b`, "gi");
-        highlighted = highlighted.replace(regex, (match) => {
-          return `<span style="
-            color: ${textColor};
-            font-weight: 600;
-            text-decoration: underline;
-            text-decoration-color: ${textColor};
-            text-underline-offset: 2px;
-          ">${match}</span>`;
-        });
+      terms.forEach((term) => {
+        const regex = new RegExp(`\\b${escapeRegex(term)}\\b`, "gi");
+        if (regex.test(highlighted)) {
+          highlighted = highlighted.replace(
+            regex,
+            (match) =>
+              `<span style="color:${textColor}; font-weight:600; text-decoration:underline; text-decoration-color:${textColor}; text-underline-offset:2px;">${match}</span>`
+          );
+        }
       });
     });
 
     return highlighted;
   }, [ocrText, filteredSubstances]);
-
-  // Precompute highlighted table cells per record
-  const highlightedTableCells = useMemo(() => {
-    const map = {};
-    filteredSubstances.forEach((record) => {
-      const fields = record.fields || {};
-      const banType = fields["Ban Type"] || "None";
-      const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
-
-      const highlightText = (text) => {
-        if (!ocrText || !text) return text || "";
-        let cellText = text;
-        const names = [
-          (fields["Substance Name"] || "").trim(),
-          ...((fields["Synonyms"]?.split(",") || []).map((s) => s.trim())),
-        ];
-        names.forEach((name) => {
-          if (!name) return;
-          const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
-          cellText = cellText.replace(regex, (match) => {
-            return `<span style="
-              color: ${textColor};
-              font-weight: 600;
-              text-decoration: underline;
-              text-decoration-color: ${textColor};
-              text-underline-offset: 2px;
-            ">${match}</span>`;
-          });
-        });
-        return cellText;
-      };
-
-      map[record.id] = {
-        substanceName: highlightText(fields["Substance Name"]?.trim() || ""),
-        synonyms: highlightText(fields["Synonyms"]?.trim() || ""),
-      };
-    });
-    return map;
-  }, [filteredSubstances, ocrText]);
 
   return (
     <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6">
@@ -122,93 +136,40 @@ export default function OCRResultsBase({
         </motion.section>
       )}
 
-      {!hideTitle && (
-        <section>
-          <h2 className="text-2xl font-bold mb-2">Detected Banned Substances</h2>
+      <section>
+        <h2 className="text-2xl font-bold mb-2">Detected Banned Substances</h2>
 
-          <div className="overflow-x-auto mb-4">
-            <div className="flex gap-4 w-[420px] min-w-max pl-2">
-              {banTypeColors.map((type) => (
-                <div
-                  key={type.label}
-                  className={`flex items-center gap-1 cursor-pointer transition-transform hover:scale-110`}
-                  onClick={() => handleLegendClick(type.label)}
-                >
-                  <div
-                    className={`w-3 h-3 rounded-full border-2 ${
-                      activeBanType === type.label ? "border-gray-700" : "border-transparent"
-                    }`}
-                    style={{ backgroundColor: type.color }}
-                  />
-                  <span className="text-gray-800 text-sm font-medium">{type.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {filteredSubstances && filteredSubstances.length > 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="overflow-x-auto w-full"
+        {/* Ban Type Legend */}
+        <div className="overflow-x-auto mb-4">
+          <div className="flex gap-4 w-[420px] min-w-max pl-2">
+            {banTypeColors.map((type) => (
+              <div
+                key={type.label}
+                className="flex items-center gap-1 cursor-pointer transition-transform hover:scale-110"
+                onClick={() => handleLegendClick(type.label)}
               >
-                <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
-                  <thead className="bg-[#46769B] text-white">
-                    <tr>
-                      {[
-                        "Substance Name",
-                        "Synonyms",
-                        "Banned By",
-                        "Ban Type",
-                        "Dosage Limit",
-                        "Notes",
-                        "Source / Citation",
-                      ].map((h) => (
-                        <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSubstances.map((record) => {
-                      const fields = record.fields || {};
-                      const banType = fields["Ban Type"] || "None";
+                <div
+                  className={`w-3 h-3 rounded-full border-2 ${
+                    activeBanType === type.label ? "border-gray-700" : "border-transparent"
+                  }`}
+                  style={{ backgroundColor: type.color }}
+                />
+                <span className="text-gray-800 text-sm font-medium">{type.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
-                      return (
-                        <motion.tr
-                          key={record.id}
-                          className="hover:bg-gray-100 transition"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.18 }}
-                        >
-                          <td
-                            className="px-4 py-2"
-                            dangerouslySetInnerHTML={{ __html: highlightedTableCells[record.id].substanceName }}
-                          />
-                          <td
-                            className="px-4 py-2"
-                            dangerouslySetInnerHTML={{ __html: highlightedTableCells[record.id].synonyms }}
-                          />
-                          <td className="px-4 py-2">{fields["Banned By"]?.trim() || ""}</td>
-                          <td className="px-4 py-2">{getBanTypeHighlight(banType)}</td>
-                          <td className="px-4 py-2">{fields["Dosage Limit"]?.trim() || ""}</td>
-                          <td className="px-4 py-2">{fields["Notes"]?.trim() || ""}</td>
-                          <td className="px-4 py-2 max-w-xs break-words whitespace-normal">{fields["Source / Citation"]?.trim() || ""}</td>
-                        </motion.tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </motion.div>
-            ) : (
-              <p className="italic text-gray-500">No banned substances detected in this label.</p>
-            )}
-          </AnimatePresence>
-        </section>
-      )}
+        {/* Table */}
+        {filteredSubstances.length > 0 ? (
+          <ResultsTable
+            records={filteredSubstances}
+            highlightedCells={highlightedTableCells}
+          />
+        ) : (
+          <p className="italic text-gray-500 mt-2">No banned substances detected.</p>
+        )}
+      </section>
     </div>
   );
 }

@@ -1,42 +1,49 @@
-import { AirtableConnect } from '@theo-dev/airtable-connect';
+// pages/api/athlete-signup.js
+import Airtable from "airtable";
 
-const airtable = new AirtableConnect({
-  apiKey: process.env.AIRTABLE_API_KEY,
-  baseId: process.env.AIRTABLE_BASE_ID,
-});
+// --- Dedicated env vars for AthleteScans table
+const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
+  process.env.ATHLETE_BASE_ID
+);
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== "POST") return res.status(405).end();
 
   const { token, name, email } = req.body;
-  if (!token || !name || !email)
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!token || !name || !email) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
 
   try {
-    // Find athlete by token
-    const [athlete] = await airtable.select('Athletes', {
-      filterByFormula: `{Invite Token}='${token}'`,
+    // --- Look for existing athlete by token
+    const [athlete] = await base(process.env.ATHLETE_TABLE_NAME)
+      .select({
+        filterByFormula: `{Token}='${token}'`,
+        maxRecords: 1,
+      })
+      .firstPage();
+
+    if (!athlete) return res.status(404).json({ error: "Invalid token" });
+
+    // --- Update athlete record with Name, Email, and clear Token
+    await base(process.env.ATHLETE_TABLE_NAME).update([
+      {
+        id: athlete.id,
+        fields: {
+          Name: name,
+          Email: email,
+          Token: "",
+        },
+      },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      athleteId: athlete.id,
+      organization: athlete.fields.Organization || "",
     });
-    if (!athlete) return res.status(404).json({ error: 'Invalid token' });
-
-    // Find the organization associated with this token
-    const [org] = await airtable.select('Organizations', {
-      filterByFormula: `{Org Token}='${token}'`,
-    });
-
-    const orgName = org ? org.Name : '';
-
-    // Update athlete info and assign organization
-    await airtable.update('Athletes', athlete.id, {
-      Name: name,
-      Email: email,
-      'Invite Token': '',
-      'Team/Organization': orgName,
-    });
-
-    res.status(200).json({ success: true, athleteId: athlete.id, organization: orgName });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to sign up athlete' });
+    console.error("Signup API error:", err);
+    res.status(500).json({ error: "Failed to sign up athlete" });
   }
 }

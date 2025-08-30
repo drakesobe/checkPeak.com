@@ -2,14 +2,14 @@
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
-  const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
+  const AIRTABLE_API_KEY = process.env.AFFILIATE_API_KEY;
+  const BASE_ID = process.env.AFFILIATE_BASE_ID;
+  const TABLE_ID = process.env.AFFILIATE_TABLE_NAME;
+  const VIEW_ID = "viwUcs1qpyxyLqkIM";
+
   if (!AIRTABLE_API_KEY) {
     return res.status(500).json({ error: "Missing AIRTABLE_API_KEY env var" });
   }
-
-  const BASE_ID = "appspE640Pggw1VP9"; // your base ID
-  const TABLE_ID = "tblF4rxxbnn6z9lGr"; // your table ID
-  const VIEW_ID = "viwUcs1qpyxyLqkIM"; // optional view
 
   const URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}${
     VIEW_ID ? `?view=${VIEW_ID}` : ""
@@ -35,8 +35,6 @@ export default async function handler(req, res) {
 
     const stacks = (data.records || []).map((record) => {
       const f = record.fields || {};
-
-      // Supplements array
       let supplements = [];
       if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
       else if (typeof f["Supplements"] === "string")
@@ -45,33 +43,21 @@ export default async function handler(req, res) {
           .map((s) => s.trim())
           .filter(Boolean);
 
-      // Price & servings
       const priceNumber = parseFloat(f["Price"] || 0);
       const servings = f["Servings"] || "";
-
-      // Nutrition label
       const nutritionLabel = f["Nutrition Label URL"] || "";
-
-      // Affiliate link
       const affiliateLink =
         f["Lo. Amazon/Stripe Link"] ||
         f["Sh. Amazon/Stripe Link"] ||
         f["AffiliateLink"] ||
         "";
-
-      // Image URL
       const imageUrl = f["Image URL"] || "";
-
-      // Rating
       const rating = parseFloat(f["Rating"]) || null;
 
-      // Value Rating from Airtable
       let valueScore = parseFloat(f["Value Rating"]) || null;
-
-      // Fallback: calculate valueScore from servings / price
       if (!valueScore && priceNumber && servings) {
         const servingsNumber = parseFloat(servings) || 1;
-        valueScore = (servingsNumber / priceNumber) * 10; // scale factor for badge
+        valueScore = (servingsNumber / priceNumber) * 10;
       }
 
       return {
@@ -84,7 +70,7 @@ export default async function handler(req, res) {
         imageUrl,
         nutritionLabel,
         rating,
-        valueScore, // ✅ include computed valueScore
+        valueScore,
         rawFields: f,
       };
     });

@@ -2,23 +2,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuthContext } from "@/hooks/useAuth";
 
-export default function AthleteSignup() {
+export default function AthleteSignupPage({ params }) {
   const router = useRouter();
-  const params = useParams();
-  const devToken = "TEST123"; // dev default token
-
-  const token = params?.token || (process.env.NODE_ENV === "development" ? devToken : null);
-
+  const { token: paramToken } = params || {};
   const { signupAthlete, login } = useAuthContext();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
+
+  // Dev fallback token
+  const devToken = "TEST123";
+  const token = paramToken || (process.env.NODE_ENV === "development" ? devToken : null);
+
+  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
+
+  const handleChange = (e) =>
+    setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,10 +29,12 @@ export default function AthleteSignup() {
     setLoading(true);
 
     try {
-      const signupData = await signupAthlete({ token, name, email });
-      setSuccess(signupData);
-      await login(email.trim());
+      const data = await signupAthlete({ token, ...formData });
+      setSuccess(data);
+      // Auto-login after signup
+      await login(formData.email.trim(), formData.password);
     } catch (err) {
+      console.error("Signup error:", err);
       setError(err?.message || "Failed to join organization.");
     } finally {
       setLoading(false);
@@ -72,24 +77,36 @@ export default function AthleteSignup() {
     >
       <h2 className="text-xl font-bold text-gray-700">Join Organization</h2>
       <p className="text-sm text-gray-500">
-        Using token: <strong>{token}</strong> {process.env.NODE_ENV === "development" && "(DEV TEST TOKEN)"}
+        Using token: <strong>{token}</strong>{" "}
+        {process.env.NODE_ENV === "development" && "(DEV TEST TOKEN)"}
       </p>
 
       {error && <p className="text-red-600">{error}</p>}
 
       <input
         type="text"
+        name="name"
         placeholder="Full Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        value={formData.name}
+        onChange={handleChange}
         className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
         required
       />
       <input
         type="email"
+        name="email"
         placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        value={formData.email}
+        onChange={handleChange}
+        className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        required
+      />
+      <input
+        type="password"
+        name="password"
+        placeholder="Password"
+        value={formData.password}
+        onChange={handleChange}
         className="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
         required
       />

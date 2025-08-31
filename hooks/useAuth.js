@@ -1,7 +1,7 @@
 // hooks/useAuth.js
 import { useState, createContext, useContext } from "react";
 
-// --- Context creation for global auth
+// --- Context creation
 const AuthContext = createContext(null);
 
 // --- AuthProvider to wrap _app.js
@@ -17,11 +17,11 @@ export const useAuthContext = () => useContext(AuthContext);
 function useProvideAuth() {
   const [user, setUser] = useState(null);
 
-  // --- Login existing user by email
-  const login = async (email) => {
+  // --- Login with email + password
+  const login = async (email, password) => {
     try {
       const res = await fetch(
-        `/api/lookupUser?email=${encodeURIComponent(email)}&t=${Date.now()}`,
+        `/api/lookupUser?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&t=${Date.now()}`,
         { cache: "no-store" }
       );
       const data = await res.json();
@@ -36,28 +36,58 @@ function useProvideAuth() {
   };
 
   // --- Logout user
-  const logout = () => {
-    setUser(null);
-  };
+  const logout = () => setUser(null);
 
-  // --- Signup athlete with invite token
-  const signupAthlete = async ({ token, name, email }) => {
+  // --- Signup athlete with token + email + password
+  const signupAthlete = async ({ token, name, email, password }) => {
     try {
       const res = await fetch("/api/athlete-signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, name, email }),
+        body: JSON.stringify({ token, name, email, password }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Signup failed");
+      if (!res.ok) throw new Error(data?.error || "Athlete signup failed");
 
-      // --- Auto-login the athlete after successful signup
-      await login(email);
+      // Auto-login after signup
+      const loggedInUser = await login(email, password);
 
-      return data; // contains { athleteId, organization }
+      return {
+        ...data,
+        user: loggedInUser,
+        role: "Athlete",
+        message: `Athlete account created and logged in as ${loggedInUser.Name}`,
+      };
     } catch (err) {
-      console.error("Signup error:", err);
+      console.error("Athlete signup error:", err);
+      throw err;
+    }
+  };
+
+  // --- Signup organization
+  const signupOrg = async ({ orgName, contactName, email, password }) => {
+    try {
+      const res = await fetch("/api/org-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgName, contactName, email, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Organization signup failed");
+
+      // Auto-login after signup
+      const loggedInUser = await login(email, password);
+
+      return {
+        ...data,
+        user: loggedInUser,
+        role: "Organization",
+        message: `Organization account created and logged in as ${loggedInUser.Name}`,
+      };
+    } catch (err) {
+      console.error("Organization signup error:", err);
       throw err;
     }
   };
@@ -67,6 +97,7 @@ function useProvideAuth() {
     login,
     logout,
     signupAthlete,
+    signupOrg,
   };
 }
 

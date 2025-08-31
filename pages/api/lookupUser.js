@@ -1,43 +1,66 @@
+// pages/api/lookupUser.js
 import Airtable from "airtable";
+import bcrypt from "bcryptjs";
+
+// Athlete Airtable connection
+const baseAthlete = new Airtable({
+  apiKey: process.env.ATHLETE_API_KEY,
+}).base(process.env.ATHLETE_BASE_ID);
+
+// Organization Airtable connection (same base as athletes)
+const baseUsers = new Airtable({
+  apiKey: process.env.ATHLETE_API_KEY,
+}).base(process.env.ATHLETE_BASE_ID);
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  const { email, password } = req.query;
 
-  const { email } = req.query;
-
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password required" });
   }
 
   try {
-    // --- Debug log for request with timestamp
-    console.log(`[LOOKUP_USER] ${new Date().toISOString()} - Incoming request for email: ${email}`);
-
-    const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-      process.env.AIRTABLE_BASE_ID
-    );
-
-    const records = await base(process.env.AIRTABLE_TABLE_NAME)
-      .select({ filterByFormula: `{Email} = '${email}'` })
+    // --- 1. Check Athletes table
+    const athleteRecords = await baseAthlete(process.env.ATHLETE_TABLE_NAME)
+      .select({ filterByFormula: `{Email}='${email}'`, maxRecords: 1 })
       .firstPage();
 
-    if (records.length === 0) {
-      console.log(`[LOOKUP_USER] No user found for: ${email}`);
-      res.setHeader("Cache-Control", "no-store, max-age=0");
-      return res.status(404).json({ error: "User not found" });
+    if (athleteRecords.length) {
+      const athlete = athleteRecords[0].fields;
+      const match = await bcrypt.compare(password, athlete.Password);
+      if (!match) return res.status(401).json({ error: "Invalid credentials" });
+
+      return res.status(200).json({
+        user: {
+          id: athleteRecords[0].id,
+          ...athlete,
+          role: "Athlete",
+        },
+      });
     }
 
-    const user = records[0].fields;
-    console.log(`[LOOKUP_USER] User found: ${user.Name} (${email})`);
+    // --- 2. Check Orgs table
+    const orgRecords = await baseUsers("Users")
+      .select({ filterByFormula: `{Email}='${email}'`, maxRecords: 1 })
+      .firstPage();
 
-    // --- Prevent all caching
-    res.setHeader("Cache-Control", "no-store, max-age=0");
+    if (orgRecords.length) {
+      const org = orgRecords[0].fields;
+      const match = await bcrypt.compare(password, org.Password);
+      if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
-    return res.status(200).json({ user });
+      return res.status(200).json({
+        user: {
+          id: orgRecords[0].id,
+          ...org,
+          role: "Organization",
+        },
+      });
+    }
+
+    return res.status(404).json({ error: "User not found" });
   } catch (err) {
-    console.error(`[LOOKUP_USER] ${new Date().toISOString()} - Error:`, err);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error("Lookup user error:", err);
+    return res.status(500).json({ error: "Failed to lookup user" });
   }
 }

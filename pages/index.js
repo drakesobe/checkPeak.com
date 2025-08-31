@@ -10,7 +10,7 @@ import { FaUser, FaUsers, FaBolt, FaCheckCircle, FaHistory } from "react-icons/f
 export default function HomePage() {
   const [userType, setUserType] = useState("");
 
-  // Balanced particle definitions (positions, sizes, durations, delays)
+  // Balanced particle definitions
   const particles = [
     { cx: 100, cy: 120, r: 2.3, dur: 11, delay: 0 },
     { cx: 400, cy: 180, r: 2, dur: 12, delay: 0.3 },
@@ -45,26 +45,21 @@ export default function HomePage() {
           <div className="absolute inset-0 z-0 pointer-events-none">
             <svg className="w-full h-full block" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden>
               <defs>
-                {/* Brand-matched radial gradients (dimmed) */}
                 <radialGradient id="g1" cx="30%" cy="30%" r="80%">
                   <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
                   <stop offset="60%" stopColor="rgba(70,118,155,1)" stopOpacity="0.18" />
                   <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.06" />
                 </radialGradient>
-
                 <radialGradient id="g2" cx="60%" cy="40%" r="80%">
                   <stop offset="0%" stopColor="rgba(255,255,255,0.85)" />
                   <stop offset="60%" stopColor="rgba(100,130,180,1)" stopOpacity="0.16" />
                   <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
                 </radialGradient>
-
                 <radialGradient id="g3" cx="40%" cy="70%" r="80%">
                   <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
                   <stop offset="60%" stopColor="rgba(120,140,200,1)" stopOpacity="0.14" />
                   <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
                 </radialGradient>
-
-                {/* Blur filters */}
                 <filter id="blurA" x="-50%" y="-50%" width="200%" height="200%">
                   <feGaussianBlur stdDeviation="28" result="bA" />
                   <feBlend in="SourceGraphic" in2="bA" mode="normal" />
@@ -79,7 +74,7 @@ export default function HomePage() {
                 </filter>
               </defs>
 
-              {/* Blob 1 (left/top) - dimmed */}
+              {/* Blobs */}
               <motion.ellipse
                 cx="220"
                 cy="160"
@@ -97,8 +92,6 @@ export default function HomePage() {
                 }}
                 transition={{ duration: 14, repeat: Infinity, repeatType: "loop", ease: "easeInOut" }}
               />
-
-              {/* Blob 2 (right/center) - dimmed */}
               <motion.ellipse
                 cx="820"
                 cy="360"
@@ -116,8 +109,6 @@ export default function HomePage() {
                 }}
                 transition={{ duration: 18, repeat: Infinity, repeatType: "loop", ease: "easeInOut" }}
               />
-
-              {/* Blob 3 (bottom/center-left) - dimmed */}
               <motion.ellipse
                 cx="520"
                 cy="620"
@@ -136,7 +127,7 @@ export default function HomePage() {
                 transition={{ duration: 22, repeat: Infinity, repeatType: "loop", ease: "easeInOut" }}
               />
 
-              {/* Particles - spread for balance */}
+              {/* Particles */}
               {particles.map((p, i) => (
                 <motion.circle
                   key={i}
@@ -156,7 +147,7 @@ export default function HomePage() {
             </svg>
           </div>
 
-          {/* HERO CONTENT (front) */}
+          {/* HERO CONTENT */}
           <motion.h1
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -181,30 +172,28 @@ export default function HomePage() {
             transition={{ delay: 0.6, duration: 0.8 }}
             className="flex flex-col md:flex-row gap-6 z-10"
           >
-            {/* Individual -> go to /ocr */}
-            <Link href="/ocr" legacyBehavior>
-              <a
-                onClick={() => setUserType("individual")}
-                aria-label="I am an Individual"
-                className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-semibold shadow-md transition-transform hover:scale-105 ${
-                  userType === "individual" ? "bg-blue-700" : "bg-[#46769B]"
-                }`}
-              >
-                <FaUser size={20} /> I am an Individual
-              </a>
+            {/* Individual Button */}
+            <Link
+              href="/login"
+              onClick={() => setUserType("individual")}
+              aria-label="I am an Individual"
+              className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-semibold shadow-md transition-transform hover:scale-105 ${
+                userType === "individual" ? "bg-blue-700" : "bg-[#46769B]"
+              }`}
+            >
+              <FaUser size={20} /> I am an Individual
             </Link>
 
-            {/* Organization -> go to /signup (create account) */}
-            <Link href="/signup" legacyBehavior>
-              <a
-                onClick={() => setUserType("organization")}
-                aria-label="I am an Organization"
-                className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-semibold shadow-md transition-transform hover:scale-105 ${
-                  userType === "organization" ? "bg-blue-700" : "bg-[#46769B]"
-                }`}
-              >
-                <FaUsers size={20} /> I am an Organization
-              </a>
+            {/* Organization Button */}
+            <Link
+              href="/org-login"
+              onClick={() => setUserType("organization")}
+              aria-label="I am an Organization"
+              className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-semibold shadow-md transition-transform hover:scale-105 ${
+                userType === "organization" ? "bg-blue-700" : "bg-[#46769B]"
+              }`}
+            >
+              <FaUsers size={20} /> I am an Organization
             </Link>
           </motion.div>
         </section>
@@ -234,12 +223,18 @@ export default function HomePage() {
 
                 <div className="mt-6">
                   {userType === "individual" ? (
-                    <Link href="/ocr">
-                      <a className="px-8 py-3 bg-green-600 text-white font-bold rounded-2xl shadow-md hover:bg-green-700 transition">Start Scanning</a>
+                    <Link
+                      href="/login"
+                      className="px-8 py-3 bg-green-600 text-white font-bold rounded-2xl shadow-md hover:bg-green-700 transition"
+                    >
+                      Start Scanning
                     </Link>
                   ) : (
-                    <Link href="/signup">
-                      <a className="px-8 py-3 bg-purple-600 text-white font-bold rounded-2xl shadow-md hover:bg-purple-700 transition">Create Organization Account</a>
+                    <Link
+                      href="/org-login"
+                      className="px-8 py-3 bg-purple-600 text-white font-bold rounded-2xl shadow-md hover:bg-purple-700 transition"
+                    >
+                      Create Organization Account
                     </Link>
                   )}
                 </div>

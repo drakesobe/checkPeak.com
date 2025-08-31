@@ -1,49 +1,37 @@
 // pages/api/athlete-signup.js
 import Airtable from "airtable";
+import bcrypt from "bcryptjs";
 
-// --- Dedicated env vars for AthleteScans table
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
-  process.env.ATHLETE_BASE_ID
-);
+const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { token, name, email } = req.body;
-  if (!token || !name || !email) {
-    return res.status(400).json({ error: "Missing required fields" });
+  const { token, name, email, password } = req.body;
+  if (!token || !name || !email || !password) {
+    return res.status(400).json({ error: "All fields are required." });
   }
 
   try {
-    // --- Look for existing athlete by token
-    const [athlete] = await base(process.env.ATHLETE_TABLE_NAME)
-      .select({
-        filterByFormula: `{Token}='${token}'`,
-        maxRecords: 1,
-      })
-      .firstPage();
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    if (!athlete) return res.status(404).json({ error: "Invalid token" });
+    // Create athlete record
+    const newAthlete = await base(process.env.ATHLETE_TABLE_NAME).create({
+      Name: name,
+      Email: email,
+      Password: hashedPassword,
+      Token: token,
+      Title: "Athlete",
+    });
 
-    // --- Update athlete record with Name, Email, and clear Token
-    await base(process.env.ATHLETE_TABLE_NAME).update([
-      {
-        id: athlete.id,
-        fields: {
-          Name: name,
-          Email: email,
-          Token: "",
-        },
-      },
-    ]);
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      athleteId: athlete.id,
-      organization: athlete.fields.Organization || "",
+      athleteId: newAthlete.id,
+      organization: token,
     });
   } catch (err) {
-    console.error("Signup API error:", err);
-    res.status(500).json({ error: "Failed to sign up athlete" });
+    console.error("Athlete signup error:", err);
+    return res.status(500).json({ error: "Failed to create athlete." });
   }
 }

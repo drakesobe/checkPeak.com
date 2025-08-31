@@ -3,14 +3,12 @@
 import { useState } from "react";
 import { useAuthContext } from "@/hooks/useAuth";
 
-export default function OrgSignupPage() {
-  const { signupOrg, login } = useAuthContext();
+export default function AthleteSignupPage({ token }) {
+  const { signupAthlete } = useAuthContext();
   const [formData, setFormData] = useState({
-    orgName: "",
-    contactName: "",
+    name: "",
     email: "",
     password: "",
-    token: "", // include token if required
   });
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -26,14 +24,11 @@ export default function OrgSignupPage() {
     setSuccessMessage("");
 
     try {
-      const data = await signupOrg(formData);
-      setSuccessMessage(`Organization created successfully! Logged in as ${data.name}`);
-      setFormData({ orgName: "", contactName: "", email: "", password: "", token: "" });
-
-      // Optional: immediately login the org after signup
-      await login(formData.email, formData.password);
+      const data = await signupAthlete({ token, ...formData });
+      setSuccessMessage(data.message || "Athlete account created successfully!");
+      setFormData({ name: "", email: "", password: "" });
     } catch (err) {
-      setErrorMessage(err?.message || "Failed to create organization.");
+      setErrorMessage(err?.message || "Failed to create athlete account.");
     }
 
     setLoading(false);
@@ -45,25 +40,16 @@ export default function OrgSignupPage() {
         onSubmit={handleSubmit}
         className="bg-white p-10 rounded-3xl shadow-xl max-w-md space-y-4"
       >
-        <h2 className="text-2xl font-bold text-center">Organization Sign-Up</h2>
+        <h2 className="text-2xl font-bold text-center">Athlete Sign-Up</h2>
 
         {errorMessage && <p className="text-red-600">{errorMessage}</p>}
         {successMessage && <p className="text-green-600">{successMessage}</p>}
 
         <input
           type="text"
-          name="orgName"
-          placeholder="Organization Name"
-          value={formData.orgName}
-          onChange={handleChange}
-          required
-          className="w-full p-3 rounded-lg border border-gray-300"
-        />
-        <input
-          type="text"
-          name="contactName"
-          placeholder="Contact Name"
-          value={formData.contactName}
+          name="name"
+          placeholder="Full Name"
+          value={formData.name}
           onChange={handleChange}
           required
           className="w-full p-3 rounded-lg border border-gray-300"
@@ -86,24 +72,15 @@ export default function OrgSignupPage() {
           required
           className="w-full p-3 rounded-lg border border-gray-300"
         />
-        <input
-          type="text"
-          name="token"
-          placeholder="Token"
-          value={formData.token}
-          onChange={handleChange}
-          required
-          className="w-full p-3 rounded-lg border border-gray-300"
-        />
 
         <button
           type="submit"
           disabled={loading}
           className={`w-full py-3 rounded-xl text-white font-semibold ${
-            loading ? "bg-gray-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+            loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
           }`}
         >
-          {loading ? "Creating..." : "Create Organization Account"}
+          {loading ? "Creating..." : "Create Athlete Account"}
         </button>
       </form>
     </div>

@@ -1,3 +1,4 @@
+// pages/ocr.js
 "use client";
 
 import { useState, useEffect } from "react";
@@ -5,15 +6,11 @@ import NavBar from "../components/NavBar";
 import OCRUpload from "../components/OCRUpload";
 import ResultsTable from "../components/ResultsTable";
 import ProgressBar from "../components/ProgressBar";
+import { useAuthContext } from "../hooks/useAuth";
+import { toast } from "react-hot-toast";
 
-/**
- * OCRPage
- * - Handles OCR scanning and banned substance detection
- * - Displays detected banned substances with ban-type colored matches
- * - Raw OCR is above the results and minimized on scan
- * - Highlights banned substances in the raw OCR with correct ban type color
- */
 export default function OCRPage() {
+  const { user } = useAuthContext();
   const [activeTab, setActiveTab] = useState("Scan");
   const [ocrTexts, setOcrTexts] = useState([]);
   const [rawOCR, setRawOCR] = useState("");
@@ -35,10 +32,41 @@ export default function OCRPage() {
   const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   /**
+   * Save scan to Airtable
+   */
+  const saveScanToAirtable = async (scanName, resultSummary, stackDetails) => {
+    if (!user || !user.Email) return;
+
+    try {
+      const scanDate = new Date().toISOString(); // ISO format for Airtable
+
+      const res = await fetch("/api/saveScan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: user.Email,
+          scanName,
+          scanDate,
+          stackDetails,
+          resultSummary,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) toast.success("Scan saved to your account!");
+      else toast.error(`Failed to save scan: ${data.error}`);
+    } catch (err) {
+      console.error("Error saving scan:", err);
+      toast.error("Failed to save scan. Try again later.");
+    }
+  };
+
+  /**
    * Handle OCR scan from OCRUpload
    */
   const handleOCRScan = async (text) => {
     if (!text) return;
+
     setOcrTexts((prev) => [...prev, text]);
     setRawOCR((prev) => (prev ? prev + " " + text : text));
     setShowRawOCR(false);
@@ -86,7 +114,6 @@ export default function OCRPage() {
             const color =
               banTypeColors.find((b) => b.label === banType)?.color || "#111827";
 
-            // Highlight only terms actually in OCR for table
             const wrapWithColor = (textToWrap) => {
               if (!textToWrap) return textToWrap;
               const terms = textToWrap
@@ -113,7 +140,6 @@ export default function OCRPage() {
               color,
             };
 
-            // Highlight in raw OCR for each term found
             [substanceName, ...synonyms.split(",")]
               .map((t) => t.trim())
               .filter(Boolean)
@@ -130,6 +156,16 @@ export default function OCRPage() {
 
           setHighlightedCells(highlights);
           setHighlightedOCR(ocrCopy);
+
+          // Save scan automatically if user is logged in
+          if (user && user.Email) {
+            const scanName = `Scan - ${new Date().toLocaleString()}`;
+            const resultSummary = data.matchedBanned
+              .map((rec) => rec.fields["Substance Name"] || "")
+              .join(", ");
+            const stackDetails = rawOCR;
+            saveScanToAirtable(scanName, resultSummary, stackDetails);
+          }
         }
 
         clearInterval(interval);
@@ -171,7 +207,6 @@ export default function OCRPage() {
 
             {error && <p className="text-red-500 mt-2 text-center">{error}</p>}
 
-            {/* Raw OCR Section */}
             {rawOCR && (
               <section className="w-full bg-white p-4 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
                 <div
@@ -194,13 +229,11 @@ export default function OCRPage() {
               </section>
             )}
 
-            {/* Detected Banned Substances Section */}
             <section className="w-full bg-white p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
               <h2 className="text-2xl font-bold mb-2">
                 Detected Banned Substances
               </h2>
 
-              {/* Ban Type Legend */}
               <div className="overflow-x-auto mb-4">
                 <div className="flex gap-4 w-[420px] min-w-max pl-2">
                   {banTypeColors.map((type) => (

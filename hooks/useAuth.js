@@ -14,16 +14,17 @@ export function AuthProvider({ children }) {
 export const useAuthContext = () => useContext(AuthContext);
 
 // --- Main hook providing auth logic
-function useProvideAuth() {
+export function useProvideAuth() {
   const [user, setUser] = useState(null);
 
-  // --- Login with email + password
+  // --- Login user (checks Airtable Athlete table)
   const login = async (email, password) => {
     try {
       const res = await fetch(
         `/api/lookupUser?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&t=${Date.now()}`,
         { cache: "no-store" }
       );
+
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Login failed");
 
@@ -36,9 +37,12 @@ function useProvideAuth() {
   };
 
   // --- Logout user
-  const logout = () => setUser(null);
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("user");
+  };
 
-  // --- Signup athlete with token + email + password
+  // --- Signup athlete using token + email + password
   const signupAthlete = async ({ token, name, email, password }) => {
     try {
       const res = await fetch("/api/athlete-signup", {
@@ -65,7 +69,7 @@ function useProvideAuth() {
     }
   };
 
-  // --- Signup organization
+  // --- Signup organization using email + password
   const signupOrg = async ({ orgName, contactName, email, password }) => {
     try {
       const res = await fetch("/api/org-signup", {

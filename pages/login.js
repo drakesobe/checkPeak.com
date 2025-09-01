@@ -1,119 +1,143 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import NavBar from "../components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 
 export default function LoginPage() {
-  const { login } = useAuthContext();
   const router = useRouter();
+  const { user, login } = useAuthContext();
 
+  const [activeTab, setActiveTab] = useState("Login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  useEffect(() => {
+    if (user) router.push("/dashboard");
+  }, [user, router]);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
+    if (!email.includes("@")) {
+      setError("Please enter a valid email.");
+      setLoading(false);
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      // send both email and password
       const userData = await login(email.trim(), password);
+
+      if (rememberMe) localStorage.setItem("user", JSON.stringify(userData));
+
       router.push("/dashboard");
     } catch (err) {
-      setError(err?.message || "Login failed. Please try again.");
+      console.error(err);
+      setError(err?.message || "Failed to login. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const particles = [
-    { cx: 50, cy: 80, r: 2.3, dur: 10, delay: 0 },
-    { cx: 300, cy: 150, r: 2, dur: 12, delay: 0.3 },
-    { cx: 600, cy: 200, r: 2.5, dur: 11, delay: 0.6 },
-    { cx: 150, cy: 350, r: 1.8, dur: 14, delay: 0.4 },
-    { cx: 500, cy: 450, r: 2.1, dur: 13, delay: 0.7 },
-    { cx: 800, cy: 550, r: 2.2, dur: 12, delay: 0.2 },
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans flex items-center justify-center relative overflow-hidden">
-      {/* Background particles */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" aria-hidden>
-        {particles.map((p, i) => (
-          <motion.circle
-            key={i}
-            cx={p.cx}
-            cy={p.cy}
-            r={p.r}
-            fill="rgba(70,118,155,0.15)"
-            initial={{ opacity: 0 }}
-            animate={{
-              cx: [p.cx, p.cx + 30, p.cx - 20, p.cx],
-              cy: [p.cy, p.cy + 20, p.cy - 15, p.cy],
-              opacity: [0, 0.4, 0.4],
-            }}
-            transition={{ duration: p.dur, repeat: Infinity, ease: "linear", delay: p.delay }}
-          />
-        ))}
-      </svg>
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
+      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Login Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md z-10"
-      >
-        <h2 className="text-3xl font-bold text-gray-800 text-center mb-6">Welcome Back</h2>
-        <p className="text-gray-500 text-center mb-6">Log in to continue to your dashboard.</p>
+      <main className="max-w-md mx-auto px-4 py-12">
+        <div className="bg-white p-8 rounded-2xl shadow-md border border-blue-100 space-y-6">
+          <h1 className="text-2xl font-bold text-gray-800 text-center">Log In</h1>
+          <p className="text-gray-500 text-center text-sm mb-4">
+            Access your dashboard and manage your supplements
+          </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-gray-600 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="you@example.com"
-              className="w-full p-3 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
+          <form onSubmit={handleLogin} className="space-y-4">
+            {/* Email Field */}
+            <div>
+              <label className="block font-medium mb-1 text-gray-800">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full border border-blue-100 rounded-2xl px-4 py-2 text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+
+            {/* Password Field */}
+            <div>
+              <label className="block font-medium mb-1 text-gray-800">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-blue-100 rounded-2xl px-4 py-2 text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-200 focus:outline-none pr-10"
+                  placeholder="Enter your password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-3 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+
+            {/* Remember Me */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm text-gray-800">Remember me</span>
+              </label>
+            </div>
+
+            {/* Error Message */}
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
+            {/* Login Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ backgroundColor: "#46769B" }}
+              className={`w-full px-6 py-3 rounded-2xl text-white font-medium transition hover:brightness-110 ${
+                loading ? "opacity-60 cursor-not-allowed" : ""
+              }`}
+            >
+              {loading ? "Logging in..." : "Log In"}
+            </button>
+          </form>
+
+          {/* Social Login Buttons */}
+          <div className="border-t border-gray-200 pt-4 space-y-2 text-center">
+            <button className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-800 font-medium border border-gray-300 hover:bg-gray-100">
+              Continue with Google
+            </button>
+            <button className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-800 font-medium border border-gray-300 hover:bg-gray-100">
+              Continue with Apple
+            </button>
           </div>
-
-          <div>
-            <label className="block text-gray-600 mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              className="w-full p-3 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          <motion.button
-            type="submit"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className={`w-full py-3 rounded-xl text-white font-semibold ${
-              loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-500"
-            }`}
-            disabled={loading}
-          >
-            {loading ? "Logging in..." : "Login"}
-          </motion.button>
-        </form>
-
-        <p className="text-gray-400 text-sm text-center mt-4">
-          Need an invite? Contact your coach or organization admin.
-        </p>
-      </motion.div>
+        </div>
+      </main>
     </div>
   );
 }

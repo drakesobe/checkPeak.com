@@ -2,27 +2,27 @@
 import Airtable from "airtable";
 import bcrypt from "bcryptjs";
 
-// Athlete Airtable connection
-const baseAthlete = new Airtable({
-  apiKey: process.env.ATHLETE_API_KEY,
-}).base(process.env.ATHLETE_BASE_ID);
-
-// Organization Airtable connection (same base as athletes)
-const baseUsers = new Airtable({
-  apiKey: process.env.ATHLETE_API_KEY,
-}).base(process.env.ATHLETE_BASE_ID);
+const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
+  process.env.ATHLETE_BASE_ID
+);
 
 export default async function handler(req, res) {
-  const { email, password } = req.query;
+  if (req.method !== "GET")
+    return res.status(405).json({ error: "Method not allowed" });
 
-  if (!email || !password) {
+  const { email, password } = req.query;
+  if (!email || !password)
     return res.status(400).json({ error: "Email and password required" });
-  }
 
   try {
-    // --- 1. Check Athletes table
-    const athleteRecords = await baseAthlete(process.env.ATHLETE_TABLE_NAME)
-      .select({ filterByFormula: `{Email}='${email}'`, maxRecords: 1 })
+    const emailLower = email.toLowerCase();
+
+    // --- Check Athletes table
+    const athleteRecords = await base(process.env.ATHLETE_TABLE_NAME)
+      .select({
+        filterByFormula: `LOWER({Email})='${emailLower}'`,
+        maxRecords: 1,
+      })
       .firstPage();
 
     if (athleteRecords.length) {
@@ -39,9 +39,12 @@ export default async function handler(req, res) {
       });
     }
 
-    // --- 2. Check Orgs table
-    const orgRecords = await baseUsers("Users")
-      .select({ filterByFormula: `{Email}='${email}'`, maxRecords: 1 })
+    // --- Check Users/Orgs table (same base)
+    const orgRecords = await base(process.env.ATHLETE_TABLE_NAME)
+      .select({
+        filterByFormula: `LOWER({Email})='${emailLower}'`,
+        maxRecords: 1,
+      })
       .firstPage();
 
     if (orgRecords.length) {
@@ -60,7 +63,6 @@ export default async function handler(req, res) {
 
     return res.status(404).json({ error: "User not found" });
   } catch (err) {
-    console.error("Lookup user error:", err);
     return res.status(500).json({ error: "Failed to lookup user" });
   }
 }

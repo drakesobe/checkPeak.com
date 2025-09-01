@@ -1,14 +1,19 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 
 const banTypeColors = [
   { label: "Prohibited", color: "#d62828" },
   { label: "Limited to Out of Competition", color: "#f77f00" },
-  { label: "Particular Sports", color: "#3fb0ac" }, // slightly brighter for dark bg
+  { label: "Particular Sports", color: "#3fb0ac" },
 ];
 
 export default function ResultsTableSmartstack({ matchedRecords = [] }) {
   const [activeBanType, setActiveBanType] = useState(null);
+  const [showLeftShadow, setShowLeftShadow] = useState(false);
+  const [showRightShadow, setShowRightShadow] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [fadeHint, setFadeHint] = useState(false);
+  const scrollRef = useRef(null);
 
   const filtered = useMemo(() => {
     if (!activeBanType) return matchedRecords;
@@ -33,8 +38,44 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
     );
   };
 
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowLeftShadow(el.scrollLeft > 0);
+    setShowRightShadow(el.scrollLeft + el.clientWidth < el.scrollWidth);
+    if (showSwipeHint && el.scrollLeft > 5) setShowSwipeHint(false);
+  };
+
+  const checkScrollable = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth) {
+      setShowSwipeHint(true);
+      setFadeHint(true);
+    } else {
+      setShowSwipeHint(false);
+      setFadeHint(false);
+    }
+    handleScroll();
+  };
+
+  useEffect(() => {
+    checkScrollable();
+  }, [filtered]);
+
+  // Auto-hide swipe hint after 3 seconds
+  useEffect(() => {
+    if (!showSwipeHint) return;
+    const timer = setTimeout(() => setFadeHint(false), 2500);
+    const timerHide = setTimeout(() => setShowSwipeHint(false), 3000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(timerHide);
+    };
+  }, [showSwipeHint]);
+
   return (
-    <div className="w-full">
+    <div className="w-full relative">
       {/* Legend */}
       <div className="flex flex-wrap gap-3 mb-4">
         {banTypeColors.map((b) => (
@@ -68,9 +109,33 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-gray-900/60">
+      <div
+        className="relative rounded-xl border border-white/10 bg-gray-900/60 overflow-x-auto overflow-y-auto max-h-72"
+        ref={scrollRef}
+        onScroll={handleScroll}
+        style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+      >
+        {/* Left shadow/gradient peek */}
+        {showLeftShadow && (
+          <div className="pointer-events-none absolute top-0 left-0 h-full w-6 bg-gradient-to-r from-gray-900/80 to-transparent z-10" />
+        )}
+        {/* Right shadow/gradient peek */}
+        {showRightShadow && (
+          <div className="pointer-events-none absolute top-0 right-0 h-full w-6 bg-gradient-to-l from-gray-900/80 to-transparent z-10" />
+        )}
+        {/* Mobile swipe hint */}
+        {showSwipeHint && (
+          <div
+            className={`pointer-events-none absolute top-1/2 right-2 transform -translate-y-1/2 text-white/50 z-20 select-none text-sm transition-opacity duration-500 ${
+              fadeHint ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            ← Swipe to scroll →
+          </div>
+        )}
+
         <table className="min-w-full text-sm">
-          <thead className="bg-[#2a3d4d] text-white/95">
+          <thead className="bg-[#2a3d4d] text-white/95 sticky top-0 z-10">
             <tr>
               {[
                 "Substance Name",
@@ -90,10 +155,7 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-6 text-center text-white/70"
-                >
+                <td colSpan={7} className="px-4 py-6 text-center text-white/70">
                   No banned substances detected for this filter.
                 </td>
               </tr>
@@ -106,22 +168,12 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
                     className={i % 2 === 0 ? "bg-white/5" : "bg-white/0"}
                   >
                     <td className="px-4 py-2 text-white">{f["Substance Name"] || "-"}</td>
-                    <td className="px-4 py-2 text-white/80">
-                      {f["Synonyms"] || "-"}
-                    </td>
-                    <td className="px-4 py-2 text-white/80">
-                      {f["Banned By"] || "-"}
-                    </td>
+                    <td className="px-4 py-2 text-white/80">{f["Synonyms"] || "-"}</td>
+                    <td className="px-4 py-2 text-white/80">{f["Banned By"] || "-"}</td>
                     <td className="px-4 py-2">{getBadge(f["Ban Type"])}</td>
-                    <td className="px-4 py-2 text-white/80">
-                      {f["Dosage Limit"] || "-"}
-                    </td>
-                    <td className="px-4 py-2 text-white/80">
-                      {f["Notes"] || "-"}
-                    </td>
-                    <td className="px-4 py-2 text-white/80 break-words">
-                      {f["Source / Citation"] || "-"}
-                    </td>
+                    <td className="px-4 py-2 text-white/80">{f["Dosage Limit"] || "-"}</td>
+                    <td className="px-4 py-2 text-white/80">{f["Notes"] || "-"}</td>
+                    <td className="px-4 py-2 text-white/80 break-words">{f["Source / Citation"] || "-"}</td>
                   </tr>
                 );
               })

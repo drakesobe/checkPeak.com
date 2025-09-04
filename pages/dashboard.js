@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 import { LogOut, Search, Folder, Settings } from "lucide-react";
+import { Bookmark } from "lucide-react"; // Add icon for Saved Stacks
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [showWelcome, setShowWelcome] = useState(false);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [savedStacks, setSavedStacks] = useState([]);
 
   const [stats, setStats] = useState({
     totalScans: 0,
@@ -23,25 +25,39 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!user) {
       router.push("/login");
-    } else {
-      setShowWelcome(true);
-      const timer = setTimeout(() => setShowWelcome(false), 3000);
-      return () => clearTimeout(timer);
-
-      // Fetch recent activity from API
-      fetch(`/api/getScans?userEmail=${user.Email}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setRecentActivity(data.scans || []);
-          setStats({
-            totalScans: data.scans.length,
-            recentSearches: 5, // Placeholder
-            stacksSaved: 3,    // Placeholder
-            accountCompletion: 80, // Placeholder
-          });
-        })
-        .catch((err) => console.error(err));
+      return;
     }
+
+    setShowWelcome(true);
+    const timer = setTimeout(() => setShowWelcome(false), 3000);
+
+    // --- Fetch scans
+    const emailParam = encodeURIComponent(user.Email); // keep exact casing
+    fetch(`/api/getScans?userEmail=${emailParam}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const scans = data.scans || [];
+        setRecentActivity(scans);
+        setStats((prev) => ({
+          ...prev,
+          totalScans: scans.length,
+          recentSearches: 5, // placeholder
+          accountCompletion: 80, // placeholder
+        }));
+      })
+      .catch(console.error);
+
+    // --- Fetch saved stacks
+    fetch(`/api/getSavedStacks?UserEmail=${emailParam}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const saved = data.savedStacks || [];
+        setSavedStacks(saved);
+        setStats((prev) => ({ ...prev, stacksSaved: saved.length }));
+      })
+      .catch(console.error);
+
+    return () => clearTimeout(timer);
   }, [user, router]);
 
   if (!user) return null;
@@ -83,7 +99,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div
             onClick={() => router.push("/search")}
             className="cursor-pointer bg-gradient-to-b from-white to-blue-50 p-6 rounded-2xl shadow-md flex flex-col items-center space-y-3 hover:shadow-xl hover:scale-105 transition"
@@ -120,6 +136,19 @@ export default function DashboardPage() {
             <h3 className="font-semibold text-gray-800">Manage Account</h3>
             <p className="text-sm text-gray-500 text-center">
               Update your account and preferences.
+            </p>
+          </div>
+
+          <div
+            onClick={() => router.push("/saved-stacks")}
+            className="cursor-pointer bg-gradient-to-b from-white to-blue-50 p-6 rounded-2xl shadow-md flex flex-col items-center space-y-3 hover:shadow-xl hover:scale-105 transition"
+          >
+            <div className="bg-blue-100 p-3 rounded-full">
+              <Bookmark className="w-8 h-8 text-[#46769B]" />
+            </div>
+            <h3 className="font-semibold text-gray-800">Saved Stacks</h3>
+            <p className="text-sm text-gray-500 text-center">
+              Access all stacks you’ve saved for later.
             </p>
           </div>
         </div>

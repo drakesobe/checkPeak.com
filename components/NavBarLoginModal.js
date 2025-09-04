@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
+import { useAuthContext } from "@/hooks/useAuth";
 
-export default function NavBarLoginModal({ isOpen, onClose, onLogin }) {
+export default function NavBarLoginModal({ isOpen, onClose }) {
+  const { login } = useAuthContext(); // get login function from context
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -15,7 +17,6 @@ export default function NavBarLoginModal({ isOpen, onClose, onLogin }) {
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
 
-  // Detect mobile screen
   const isMobile = useMediaQuery({ maxWidth: 768 });
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function NavBarLoginModal({ isOpen, onClose, onLogin }) {
     }
 
     try {
-      const userData = await onLogin(email.trim(), password);
+      const userData = await login(email.trim(), password); // login updates context
 
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
@@ -50,7 +51,7 @@ export default function NavBarLoginModal({ isOpen, onClose, onLogin }) {
       setEmail("");
       setPassword("");
       setRememberMe(false);
-      onClose();
+      onClose(); // close modal
     } catch (err) {
       console.error(err);
       setError(err?.message || "Login failed. Check email/password.");

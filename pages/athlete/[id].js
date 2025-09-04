@@ -1,54 +1,93 @@
 // pages/athlete/[id].js
+"use client";
+
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import Head from "next/head";
 import NavBar from "../../components/NavBar";
 import OCRUpload from "../../components/OCRUpload";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaFileUpload, FaHistory, FaUser } from "react-icons/fa";
+import { FaFileUpload } from "react-icons/fa";
 
 export default function AthleteProfile() {
   const router = useRouter();
   const { id } = router.query;
   const [athlete, setAthlete] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showUpload, setShowUpload] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    // Fetch athlete info from API / DB (placeholder for now)
+
     const fetchAthlete = async () => {
-      // Example static data
-      const data = {
-        id,
-        name: "John Doe",
-        sport: "Basketball",
-        email: "johndoe@example.com",
-        scans: [
-          { id: 1, label: "Protein Powder A", result: "No banned substances", date: "2025-08-01" },
-          { id: 2, label: "Vitamin Complex B", result: "Contains banned substance: DMAA", date: "2025-08-10" },
-        ],
-      };
-      setAthlete(data);
+      try {
+        setLoading(true);
+        setError("");
+
+        const res = await fetch(`/api/get-athlete?id=${id}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data?.error || "Failed to fetch athlete");
+
+        setAthlete(data.athlete);
+      } catch (err) {
+        console.error("Fetch athlete error:", err);
+        setError(err.message || "Error loading athlete");
+      } finally {
+        setLoading(false);
+      }
     };
+
     fetchAthlete();
   }, [id]);
 
-  if (!athlete) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-600 text-lg">Loading athlete profile...</p>
+      </div>
+    );
+  }
+
+  if (error || !athlete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-red-600 font-medium">
+          {error || "Athlete not found"}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
       <Head>
-        <title>PEAK — {athlete.name}'s Profile</title>
-        <meta name="description" content={`Athlete profile for ${athlete.name} in PEAK`} />
+        <title>PEAK — {athlete.Name}'s Profile</title>
+        <meta
+          name="description"
+          content={`Athlete profile for ${athlete.Name} in PEAK`}
+        />
       </Head>
 
       <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
         <NavBar activeTab="Organization" setActiveTab={() => {}} />
 
+        {/* Header */}
         <section className="py-12 bg-blue-600 text-white text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-2">{athlete.name}</h1>
-          <p className="text-lg md:text-xl">{athlete.sport}</p>
-          <p className="mt-1 text-sm">{athlete.email}</p>
+          <h1 className="text-4xl md:text-5xl font-bold mb-2">
+            {athlete.Name}
+          </h1>
+          {athlete.Title && (
+            <p className="text-lg md:text-xl">{athlete.Title}</p>
+          )}
+          {athlete.Organization && (
+            <p className="mt-1 text-sm">{athlete.Organization}</p>
+          )}
+          <p className="mt-1 text-sm">{athlete.Email}</p>
+          {athlete.Phone && (
+            <p className="mt-1 text-sm">📞 {athlete.Phone}</p>
+          )}
         </section>
 
         {/* Upload Section */}
@@ -57,7 +96,8 @@ export default function AthleteProfile() {
             onClick={() => setShowUpload(!showUpload)}
             className="flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold px-6 py-3 rounded-2xl shadow hover:scale-105 transition"
           >
-            <FaFileUpload /> {showUpload ? "Hide Upload" : "Upload Supplement Label"}
+            <FaFileUpload />{" "}
+            {showUpload ? "Hide Upload" : "Upload Supplement Label"}
           </button>
 
           <AnimatePresence>
@@ -76,21 +116,15 @@ export default function AthleteProfile() {
           </AnimatePresence>
         </section>
 
-        {/* Scan History */}
+        {/* Placeholder Scan History (future: tie into Airtable scans table) */}
         <section className="py-12 bg-white">
           <div className="max-w-5xl mx-auto px-4">
-            <h2 className="text-3xl font-bold mb-6 text-center">Scan History</h2>
-            <div className="grid md:grid-cols-2 gap-6">
-              {athlete.scans.map((scan) => (
-                <div key={scan.id} className="p-6 bg-gray-50 rounded-xl shadow hover:shadow-lg transition hover:scale-105">
-                  <h3 className="text-xl font-semibold mb-1">{scan.label}</h3>
-                  <p className={`text-sm font-medium ${scan.result.includes("banned") ? "text-red-600" : "text-green-600"}`}>
-                    {scan.result}
-                  </p>
-                  <p className="text-gray-500 text-sm mt-1">{scan.date}</p>
-                </div>
-              ))}
-            </div>
+            <h2 className="text-3xl font-bold mb-6 text-center">
+              Scan History
+            </h2>
+            <p className="text-gray-500 text-center">
+              No scans yet. Upload a label above to get started.
+            </p>
           </div>
         </section>
       </div>

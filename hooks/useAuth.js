@@ -1,8 +1,20 @@
-// hooks/useAuth.js
-import { useState, createContext, useContext } from "react";
+import { useState, createContext, useContext, useEffect } from "react";
 
 // --- Context creation
 const AuthContext = createContext(null);
+
+// --- Helper to parse user from cookie
+function getUserFromCookie() {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/user=([^;]+)/);
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match[1]));
+  } catch (e) {
+    console.error("Failed to parse user cookie", e);
+    return null;
+  }
+}
 
 // --- AuthProvider to wrap _app.js
 export function AuthProvider({ children }) {
@@ -17,7 +29,18 @@ export const useAuthContext = () => useContext(AuthContext);
 export function useProvideAuth() {
   const [user, setUser] = useState(null);
 
-  // --- Login user (checks Airtable Athlete table)
+  // --- Restore persisted user from localStorage or cookies on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedUser = localStorage.getItem("user");
+      const cookieUser = getUserFromCookie();
+
+      if (storedUser) setUser(JSON.parse(storedUser));
+      else if (cookieUser) setUser(cookieUser);
+    }
+  }, []);
+
+  // --- Login user
   const login = async (email, password) => {
     try {
       const res = await fetch(
@@ -29,6 +52,13 @@ export function useProvideAuth() {
       if (!res.ok) throw new Error(data?.error || "Login failed");
 
       setUser(data.user);
+
+      // Persist login in localStorage and cookie
+      if (typeof window !== "undefined") {
+        localStorage.setItem("user", JSON.stringify(data.user));
+        document.cookie = `user=${encodeURIComponent(JSON.stringify(data.user))}; path=/;`;
+      }
+
       return data.user;
     } catch (err) {
       console.error("Login error:", err);
@@ -39,10 +69,13 @@ export function useProvideAuth() {
   // --- Logout user
   const logout = () => {
     setUser(null);
-    localStorage.removeItem("user");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("user");
+      document.cookie = "user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    }
   };
 
-  // --- Signup athlete using token + email + password
+  // --- Signup athlete
   const signupAthlete = async ({ token, name, email, password }) => {
     try {
       const res = await fetch("/api/athlete-signup", {
@@ -54,7 +87,6 @@ export function useProvideAuth() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Athlete signup failed");
 
-      // Auto-login after signup
       const loggedInUser = await login(email, password);
 
       return {
@@ -69,7 +101,7 @@ export function useProvideAuth() {
     }
   };
 
-  // --- Signup organization using email + password
+  // --- Signup organization
   const signupOrg = async ({ orgName, contactName, email, password }) => {
     try {
       const res = await fetch("/api/org-signup", {
@@ -81,7 +113,6 @@ export function useProvideAuth() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Organization signup failed");
 
-      // Auto-login after signup
       const loggedInUser = await login(email, password);
 
       return {

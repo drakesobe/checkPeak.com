@@ -16,6 +16,13 @@ export default function CompareModal({ stacks = [], onClose }) {
   const animDots = useRef(stacks.map(() => 0));
   const imageRefs = useRef(stacks.map(() => null));
 
+  // Swipe/gradient state
+  const scrollRef = useRef(null);
+  const [showLeftShadow, setShowLeftShadow] = useState(false);
+  const [showRightShadow, setShowRightShadow] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [fadeHint, setFadeHint] = useState(false);
+
   // Animate OCR dots while scanning
   useEffect(() => {
     if (!loadingOCR.some(Boolean)) return;
@@ -100,7 +107,6 @@ export default function CompareModal({ stacks = [], onClose }) {
       });
       const data = await res.json();
 
-      // <-- Use matchedBanned from API
       const recs = data?.matchedBanned || [];
       recordsCache[imageUrl] = recs;
 
@@ -136,6 +142,42 @@ export default function CompareModal({ stacks = [], onClose }) {
       ? "grid-cols-1 md:grid-cols-3"
       : "grid-cols-1";
 
+  // ---- Scroll logic for swipe hint + gradients ----
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowLeftShadow(el.scrollLeft > 0);
+    setShowRightShadow(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+    if (showSwipeHint && el.scrollLeft > 5) setShowSwipeHint(false);
+  };
+
+  const checkScrollable = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth) {
+      setShowSwipeHint(true);
+      setFadeHint(true);
+    } else {
+      setShowSwipeHint(false);
+      setFadeHint(false);
+    }
+    handleScroll();
+  };
+
+  useEffect(() => {
+    checkScrollable();
+  }, [stacks]);
+
+  useEffect(() => {
+    if (!showSwipeHint) return;
+    const timer = setTimeout(() => setFadeHint(false), 2500);
+    const timerHide = setTimeout(() => setShowSwipeHint(false), 3000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(timerHide);
+    };
+  }, [showSwipeHint]);
+
   return (
     <AnimatePresence>
       {stacks.length >= 2 && stacks.length <= 3 && (
@@ -145,67 +187,101 @@ export default function CompareModal({ stacks = [], onClose }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <motion.div className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-6xl mx-4 p-6 overflow-y-auto max-h-[90vh] space-y-6">
-            
+          <motion.div
+            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-6xl mx-4 p-6 overflow-hidden max-h-[90vh] flex flex-col"
+            style={{ touchAction: "pan-y" }}
+          >
             {/* Top Actions */}
-            <div className="flex justify-end gap-4 mb-4">
+            <div className="flex justify-end gap-4 mb-4 z-20 relative flex-shrink-0">
               <button
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-2xl text-white font-medium"
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-2xl text-white font-medium pointer-events-auto"
                 onClick={onClose}
               >
                 Close
               </button>
               <button
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-2xl text-white font-medium"
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-2xl text-white font-medium pointer-events-auto"
                 onClick={() => stacks.forEach((_, idx) => runOCR(idx))}
               >
                 {loadingOCR.some(Boolean) ? "Scanning..." : "Rescan Labels"}
               </button>
             </div>
 
-            {/* Stacks Grid */}
-            <div className={`grid ${gridColsClass} gap-6`}>
-              {stacks.map((stack, idx) => {
-                const productImage =
-                  getStackField(stack, "nutritionLabel") || getStackField(stack, "image") || "/fallback-image.svg";
+            {/* Scrollable Grid with gradients + swipe hint */}
+            <div className="relative flex-1 overflow-x-auto" ref={scrollRef} onScroll={handleScroll}>
+              {/* Left gradient */}
+              {showLeftShadow && (
+                <div
+                  className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
+                  style={{
+                    background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)`,
+                  }}
+                />
+              )}
+              {/* Right gradient */}
+              {showRightShadow && (
+                <div
+                  className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
+                  style={{
+                    background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)`,
+                  }}
+                />
+              )}
+              {/* Swipe hint */}
+              {showSwipeHint && (
+                <div
+                  className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-white/50 text-xs select-none z-20 transition-opacity duration-500 ${
+                    fadeHint ? "opacity-100" : "opacity-0"
+                  }`}
+                >
+                  ← Swipe to scroll →
+                </div>
+              )}
 
-                return (
-                  <motion.div
-                    key={stack.id || idx}
-                    className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md"
-                    whileHover={{ boxShadow: "0 0 20px 4px #00ffcc", scale: 1.02 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                  >
-                    <ModalHeader
-                      stack={stack}
-                      servingsNumber={getStackField(stack, "servings")}
-                      priceNumber={getStackField(stack, "price")}
-                      matchedRecords={matchedRecordsArr[idx]}
-                      onClose={onClose}
-                    />
+              {/* Stacks Grid */}
+              <div className={`grid ${gridColsClass} gap-6 pr-6`}>
+                {stacks.map((stack, idx) => {
+                  const productImage =
+                    getStackField(stack, "nutritionLabel") || getStackField(stack, "image") || "/fallback-image.svg";
 
-                    <img
-                      ref={(el) => (imageRefs.current[idx] = el)}
-                      src={productImage}
-                      alt={stack.name}
-                      className="w-full h-48 object-cover rounded-lg my-3"
-                      onError={(e) => (e.currentTarget.src = "/fallback-image.svg")}
-                    />
+                  return (
+                    <motion.div
+                      key={stack.id || idx}
+                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10"
+                      whileHover={{ boxShadow: "0 0 20px 4px #00ffcc", scale: 1.02 }}
+                      transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    >
+                      <ModalHeader
+                        stack={stack}
+                        servingsNumber={getStackField(stack, "servings")}
+                        priceNumber={getStackField(stack, "price")}
+                        matchedRecords={matchedRecordsArr[idx]}
+                        onClose={onClose}
+                      />
 
-                    <div className="mt-2">
-                      {loadingOCR[idx] ? (
-                        <p className="text-gray-400 text-sm animate-pulse">
-                          Scanning{".".repeat(animDots.current[idx])}
-                        </p>
-                      ) : (
-                        <DetectedSubstancesTab matchedRecords={matchedRecordsArr[idx]} hideCounts />
-                      )}
-                    </div>
+                      <img
+                        ref={(el) => (imageRefs.current[idx] = el)}
+                        src={productImage}
+                        alt={stack.name}
+                        className="w-full h-48 object-cover rounded-lg my-3"
+                        onError={(e) => (e.currentTarget.src = "/fallback-image.svg")}
+                      />
 
-                    <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
-                  </motion.div>
-                );
-              })}
+                      <div className="mt-2 pointer-events-auto">
+                        {loadingOCR[idx] ? (
+                          <p className="text-gray-400 text-sm animate-pulse">
+                            Scanning{".".repeat(animDots.current[idx])}
+                          </p>
+                        ) : (
+                          <DetectedSubstancesTab matchedRecords={matchedRecordsArr[idx]} hideCounts />
+                        )}
+                      </div>
+
+                      <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
+                    </motion.div>
+                  );
+                })}
+              </div>
             </div>
           </motion.div>
         </motion.div>

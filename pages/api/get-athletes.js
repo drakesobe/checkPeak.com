@@ -1,28 +1,43 @@
-// pages/api/get-athletes.js
+// pages/api/get-athlete.js
 import Airtable from "airtable";
 
-// --- Dedicated env vars for AthleteScans
 const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
   process.env.ATHLETE_BASE_ID
 );
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).end();
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  // --- Organization is passed as query param or fallback
-  const organization = req.query.org || "Default University";
+  const { id } = req.query;
+
+  if (!id) {
+    return res.status(400).json({ error: "Athlete ID is required" });
+  }
 
   try {
-    const records = await base(process.env.ATHLETE_TABLE_NAME)
-      .select({
-        filterByFormula: `{Organization}='${organization}'`,
-        sort: [{ field: "Name", direction: "asc" }],
-      })
-      .all();
+    const record = await base(process.env.ATHLETE_TABLE_NAME).find(id);
 
-    res.status(200).json({ athletes: records });
+    if (!record) {
+      return res.status(404).json({ error: "Athlete not found" });
+    }
+
+    // Normalize the athlete record
+    const athlete = {
+      id: record.id,
+      Name: record.fields.Name || "",
+      Email: record.fields.Email || "",
+      Organization: record.fields.Organization || "",
+      Title: record.fields.Title || "",
+      Phone: record.fields.Phone || "",
+      Created: record.fields.Created || "",
+      Token: record.fields.Token || "",
+    };
+
+    res.status(200).json({ athlete });
   } catch (err) {
-    console.error("Get Athletes API error:", err);
-    res.status(500).json({ error: "Failed to fetch athletes" });
+    console.error("Get Athlete API error:", err);
+    res.status(500).json({ error: "Failed to fetch athlete" });
   }
 }

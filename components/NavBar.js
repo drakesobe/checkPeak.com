@@ -52,7 +52,10 @@ export default function NavBar({ activeTab, setActiveTab }) {
   // Role-based links for dropdown
   const RoleLinks = () => {
     const L = ({ href, children }) => (
-      <Link href={href} className="block px-4 py-3 hover:bg-gray-50">
+      <Link
+        href={href}
+        className="block px-4 py-3 hover:bg-gray-50 text-gray-700"
+      >
         {children}
       </Link>
     );
@@ -91,7 +94,10 @@ export default function NavBar({ activeTab, setActiveTab }) {
 
   return (
     <>
-      <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
+      <nav
+        className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50"
+        aria-label="Main navigation"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-3 items-center h-16 md:h-24 gap-2">
             {/* LEFT NAV LINKS */}
@@ -154,7 +160,11 @@ export default function NavBar({ activeTab, setActiveTab }) {
                         draggable={false}
                       />
                     ) : (
-                      <svg viewBox="0 0 24 24" className="h-5 w-5 mb-1" aria-hidden="true">
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5 mb-1"
+                        aria-hidden="true"
+                      >
                         <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
                       </svg>
                     )}
@@ -195,7 +205,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
                               logout();
                               setProfileDropdownOpen(false);
                             }}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 text-gray-700"
                           >
                             Logout
                           </button>
@@ -245,7 +255,11 @@ export default function NavBar({ activeTab, setActiveTab }) {
               className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
             >
               <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
-                <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)}>
+                <Link
+                  href="/"
+                  aria-label="PEAK Home"
+                  onClick={() => setMenuOpen(false)}
+                >
                   <Logo size="small" />
                 </Link>
                 <button
@@ -257,22 +271,24 @@ export default function NavBar({ activeTab, setActiveTab }) {
                 </button>
               </div>
 
-              {[...leftTabs, { name: "SmartStack", href: "/smartstack" }].map((tab) => {
-                const isActive = pathname === tab.href;
-                return (
-                  <Link
-                    key={tab.name}
-                    href={tab.href}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
-                      isActive ? "bg-blue-50 text-[#46769B]" : ""
-                    }`}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {tab.name}
-                  </Link>
-                );
-              })}
+              {[...leftTabs, { name: "SmartStack", href: "/smartstack" }].map(
+                (tab) => {
+                  const isActive = pathname === tab.href;
+                  return (
+                    <Link
+                      key={tab.name}
+                      href={tab.href}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
+                        isActive ? "bg-blue-50 text-[#46769B]" : ""
+                      }`}
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {tab.name}
+                    </Link>
+                  );
+                }
+              )}
 
               {isMounted && !loggedIn && (
                 <button
@@ -286,46 +302,45 @@ export default function NavBar({ activeTab, setActiveTab }) {
                 </button>
               )}
 
-              {isMounted &&
-                loggedIn && (
-                  <div className="border-t border-gray-100">
-                    <div className="px-6 py-3 text-xs uppercase tracking-wide text-gray-400">
-                      {role || "Profile"}
-                    </div>
-                    <div className="pb-2">
-                      <Link
-                        href="/dashboard"
-                        className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        Athlete Profile
-                      </Link>
-                      <Link
-                        href="/scans"
-                        className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        My Scans
-                      </Link>
-                      <Link
-                        href="/account"
-                        className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        Account
-                      </Link>
-                      <button
-                        onClick={() => {
-                          logout();
-                          setMenuOpen(false);
-                        }}
-                        className="w-full text-left px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                      >
-                        Logout
-                      </button>
-                    </div>
+              {isMounted && loggedIn && (
+                <div className="border-t border-gray-100">
+                  <div className="px-6 py-3 text-xs uppercase tracking-wide text-gray-400">
+                    {role || "Profile"}
                   </div>
-                )}
+                  <div className="pb-2">
+                    <Link
+                      href="/dashboard"
+                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Athlete Profile
+                    </Link>
+                    <Link
+                      href="/scans"
+                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      My Scans
+                    </Link>
+                    <Link
+                      href="/account"
+                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Account
+                    </Link>
+                    <button
+                      onClick={() => {
+                        logout();
+                        setMenuOpen(false);
+                      }}
+                      className="w-full text-left px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

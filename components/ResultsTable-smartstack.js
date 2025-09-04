@@ -1,3 +1,4 @@
+// components/ResultsTable-smartstack.js
 "use client";
 import { useMemo, useState, useRef, useEffect } from "react";
 
@@ -13,8 +14,10 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
   const [showRightShadow, setShowRightShadow] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const [fadeHint, setFadeHint] = useState(false);
+
   const scrollRef = useRef(null);
 
+  // Filtered rows by Ban Type
   const filtered = useMemo(() => {
     if (!activeBanType) return matchedRecords;
     return matchedRecords.filter(
@@ -22,6 +25,7 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
     );
   }, [matchedRecords, activeBanType]);
 
+  // Pill badge for Ban Type
   const getBadge = (banType) => {
     const c = banTypeColors.find((b) => b.label === banType)?.color || "#999";
     return (
@@ -38,14 +42,16 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
     );
   };
 
+  // Update gradient visibility as user scrolls
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     setShowLeftShadow(el.scrollLeft > 0);
-    setShowRightShadow(el.scrollLeft + el.clientWidth < el.scrollWidth);
+    setShowRightShadow(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
     if (showSwipeHint && el.scrollLeft > 5) setShowSwipeHint(false);
   };
 
+  // Check if horizontal scroll is needed; toggle swipe hint
   const checkScrollable = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -59,11 +65,23 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
     handleScroll();
   };
 
+  // Recalculate on data change
   useEffect(() => {
     checkScrollable();
   }, [filtered]);
 
-  // Auto-hide swipe hint after 3 seconds
+  // Recalculate on resize/orientation change
+  useEffect(() => {
+    const onResize = () => checkScrollable();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
+  // Auto-hide swipe hint after a moment
   useEffect(() => {
     if (!showSwipeHint) return;
     const timer = setTimeout(() => setFadeHint(false), 2500);
@@ -76,7 +94,7 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
 
   return (
     <div className="w-full relative">
-      {/* Legend */}
+      {/* Legend / Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         {banTypeColors.map((b) => (
           <button
@@ -108,78 +126,107 @@ export default function ResultsTableSmartstack({ matchedRecords = [] }) {
         )}
       </div>
 
-      {/* Table */}
-      <div
-        className="relative rounded-xl border border-white/10 bg-gray-900/60 overflow-x-auto overflow-y-auto max-h-72"
-        ref={scrollRef}
-        onScroll={handleScroll}
-        style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
-      >
-        {/* Left shadow/gradient peek */}
+      {/* Scrollable wrapper with sticky gradients pinned to viewport edges */}
+      <div className="relative rounded-xl border border-white/10 bg-gray-900/60 overflow-hidden max-h-72">
+        {/* Actual scroll area */}
+        <div
+          ref={scrollRef}
+          className="overflow-x-auto overflow-y-auto"
+          onScroll={handleScroll}
+          style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+        >
+          <table className="min-w-full text-sm">
+            <thead className="bg-[#2a3d4d] text-white/95 sticky top-0 z-10">
+              <tr>
+                {[
+                  "Substance Name",
+                  "Synonyms",
+                  "Banned By",
+                  "Ban Type",
+                  "Dosage Limit",
+                  "Notes",
+                  "Source / Citation",
+                ].map((h) => (
+                  <th key={h} className="px-4 py-2 text-left font-semibold">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-white/70">
+                    No banned substances detected for this filter.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((rec, i) => {
+                  const f = rec.fields || {};
+                  return (
+                    <tr
+                      key={rec.id || i}
+                      className={i % 2 === 0 ? "bg-white/5" : "bg-white/0"}
+                    >
+                      <td className="px-4 py-2 text-white">
+                        {f["Substance Name"] || "-"}
+                      </td>
+                      <td className="px-4 py-2 text-white/80">
+                        {f["Synonyms"] || "-"}
+                      </td>
+                      <td className="px-4 py-2 text-white/80">
+                        {f["Banned By"] || "-"}
+                      </td>
+                      <td className="px-4 py-2">{getBadge(f["Ban Type"])}</td>
+                      <td className="px-4 py-2 text-white/80">
+                        {f["Dosage Limit"] || "-"}
+                      </td>
+                      <td className="px-4 py-2 text-white/80">
+                        {f["Notes"] || "-"}
+                      </td>
+                      <td className="px-4 py-2 text-white/80 break-words">
+                        {f["Source / Citation"] || "-"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Left gradient (pinned to wrapper edges) */}
         {showLeftShadow && (
-          <div className="pointer-events-none absolute top-0 left-0 h-full w-6 bg-gradient-to-r from-gray-900/80 to-transparent z-10" />
+          <div
+            className="pointer-events-none absolute top-0 left-0 bottom-0 w-8 z-20"
+            style={{
+              background:
+                "linear-gradient(to right, rgba(26,32,44,0.95), transparent)",
+            }}
+          />
         )}
-        {/* Right shadow/gradient peek */}
+
+        {/* Right gradient (pinned to wrapper edges) */}
         {showRightShadow && (
-          <div className="pointer-events-none absolute top-0 right-0 h-full w-6 bg-gradient-to-l from-gray-900/80 to-transparent z-10" />
+          <div
+            className="pointer-events-none absolute top-0 right-0 bottom-0 w-8 z-20"
+            style={{
+              background:
+                "linear-gradient(to left, rgba(26,32,44,0.95), transparent)",
+            }}
+          />
         )}
-        {/* Mobile swipe hint */}
+
+        {/* Mobile swipe hint (pinned to wrapper) */}
         {showSwipeHint && (
           <div
-            className={`pointer-events-none absolute top-1/2 right-2 transform -translate-y-1/2 text-white/50 z-20 select-none text-sm transition-opacity duration-500 ${
+            className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-white/60 text-xs select-none z-30 transition-opacity duration-500 ${
               fadeHint ? "opacity-100" : "opacity-0"
             }`}
           >
             ← Swipe to scroll →
           </div>
         )}
-
-        <table className="min-w-full text-sm">
-          <thead className="bg-[#2a3d4d] text-white/95 sticky top-0 z-10">
-            <tr>
-              {[
-                "Substance Name",
-                "Synonyms",
-                "Banned By",
-                "Ban Type",
-                "Dosage Limit",
-                "Notes",
-                "Source / Citation",
-              ].map((h) => (
-                <th key={h} className="px-4 py-2 text-left font-semibold">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-white/70">
-                  No banned substances detected for this filter.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((rec, i) => {
-                const f = rec.fields || {};
-                return (
-                  <tr
-                    key={rec.id || i}
-                    className={i % 2 === 0 ? "bg-white/5" : "bg-white/0"}
-                  >
-                    <td className="px-4 py-2 text-white">{f["Substance Name"] || "-"}</td>
-                    <td className="px-4 py-2 text-white/80">{f["Synonyms"] || "-"}</td>
-                    <td className="px-4 py-2 text-white/80">{f["Banned By"] || "-"}</td>
-                    <td className="px-4 py-2">{getBadge(f["Ban Type"])}</td>
-                    <td className="px-4 py-2 text-white/80">{f["Dosage Limit"] || "-"}</td>
-                    <td className="px-4 py-2 text-white/80">{f["Notes"] || "-"}</td>
-                    <td className="px-4 py-2 text-white/80 break-words">{f["Source / Citation"] || "-"}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
       </div>
     </div>
   );

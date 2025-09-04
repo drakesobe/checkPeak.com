@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuthContext } from "../hooks/useAuth";
 import NavBar from "../components/NavBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaDumbbell, FaBolt, FaLeaf, FaCoffee, FaAppleAlt, FaCapsules } from "react-icons/fa";
@@ -8,19 +9,17 @@ import StackCard from "../components/smartstack-cards/StackCard";
 import NutritionModal from "../components/Modal/NutritionModal";
 import CompareModal from "../components/Modal/CompareModal";
 
-// Utility debounce function
+// Debounce hook
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
-
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedValue(value), delay);
     return () => clearTimeout(handler);
   }, [value, delay]);
-
   return debouncedValue;
 }
 
-// Helper to match ValueBadge thresholds per category
+// Value label helper
 function getValueLabel(stack) {
   if (stack.valueScore == null || isNaN(stack.valueScore)) return "Decent Value";
 
@@ -35,53 +34,103 @@ function getValueLabel(stack) {
   };
 
   const t = thresholds[stack.category] || { good: 0.8, best: 1.5 };
-
   if (stack.valueScore >= t.best) return "Best Value";
   if (stack.valueScore >= t.good) return "Good Value";
   return "Decent Value";
 }
 
 export default function SmartStackPage() {
-  const [activeValueFilters, setActiveValueFilters] = useState([]);
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuthContext();
+  const userEmail = user?.email?.toLowerCase() || null;
 
   const [stacks, setStacks] = useState([]);
   const [filteredStacks, setFilteredStacks] = useState([]);
   const [modalStack, setModalStack] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Compare UX
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeValueFilters, setActiveValueFilters] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
+
   const [selectedCompareStacks, setSelectedCompareStacks] = useState([]);
   const [compareModalOpen, setCompareModalOpen] = useState(false);
 
+  const [savedStacks, setSavedStacks] = useState([]);
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
+  // --- Load all stacks
   useEffect(() => {
-    async function load() {
+    async function loadStacks() {
       setLoading(true);
       try {
         const res = await fetch("/api/smartstack");
         const data = await res.json();
         setStacks(data.records || []);
         setFilteredStacks(data.records || []);
-      } catch (e) {
-        console.error("Failed to load SmartStack data", e);
+      } catch (err) {
+        console.error("Failed to load SmartStack data", err);
       } finally {
         setLoading(false);
       }
     }
-    load();
+    loadStacks();
   }, []);
 
-  const valueFilters = ["Best Value", "Good Value", "Decent Value"];
+  // --- Load saved stacks from Airtable
+  useEffect(() => {
+    if (!userEmail) return;
 
-  const toggleValueFilter = (key) => {
-    setActiveValueFilters((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
-  };
+    async function loadSavedStacks() {
+      try {
+        const res = await fetch(`/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}`);
+        if (res.ok) {
+          const data = await res.json();
 
+          const normalizedSaved = (data.savedStacks || []).flatMap((s) => {
+            if (Array.isArray(s.StackID)) return s.StackID.map((id) => id.toString());
+            return s.StackID ? [s.StackID.toString()] : [];
+          });
+
+          setSavedStacks(normalizedSaved);
+        } else {
+          setSavedStacks([]);
+        }
+      } catch (err) {
+        console.error("Error fetching saved stacks:", err);
+        setSavedStacks([]);
+      }
+    }
+
+    loadSavedStacks();
+  }, [userEmail]);
+
+  // --- Filtering logic
+  useEffect(() => {
+    let result = stacks;
+
+    if (activeCategory !== "All") {
+      result = result.filter((stack) => stack.category === activeCategory);
+    }
+
+    if (activeValueFilters.length > 0) {
+      result = result.filter((stack) => activeValueFilters.includes(getValueLabel(stack)));
+    }
+
+    if (showSavedOnly) {
+      result = result.filter((stack) => savedStacks.includes(stack.id.toString()));
+    }
+
+    if (debouncedSearchQuery) {
+      result = result.filter((stack) =>
+        stack.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+      );
+    }
+
+    setFilteredStacks(result);
+  }, [stacks, activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, savedStacks]);
+
+  // --- Categories & Value filters
   const categories = [
     { name: "All", icon: null },
     { name: "Pre-Workout", icon: <FaBolt /> },
@@ -93,31 +142,13 @@ export default function SmartStackPage() {
     { name: "Misc", icon: <FaCapsules /> },
   ];
 
-  // Filtering logic
-  useEffect(() => {
-    let result = stacks;
+  const valueFilters = ["Best Value", "Good Value", "Decent Value"];
 
-    // Category filter
-    if (activeCategory !== "All") {
-      result = result.filter((stack) => stack.category === activeCategory);
-    }
-
-    // Value filter
-    if (activeValueFilters.length > 0) {
-      result = result.filter((stack) =>
-        activeValueFilters.includes(getValueLabel(stack))
-      );
-    }
-
-    // Search by stack name
-    if (debouncedSearchQuery) {
-      result = result.filter((stack) =>
-        stack.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
-      );
-    }
-
-    setFilteredStacks(result);
-  }, [stacks, activeCategory, activeValueFilters, debouncedSearchQuery]);
+  const toggleValueFilter = (key) => {
+    setActiveValueFilters((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
@@ -126,15 +157,13 @@ export default function SmartStackPage() {
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         {/* Hero */}
         <section className="text-center mb-6">
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">
-            SmartStack
-          </h1>
+          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SmartStack</h1>
           <p className="text-gray-300 text-lg">
             Discover and filter supplements with verified safety and value insights.
           </p>
         </section>
 
-        {/* Search Bar */}
+        {/* Search */}
         <div className="flex justify-center mb-6">
           <div className="relative w-full max-w-md">
             <input
@@ -144,13 +173,11 @@ export default function SmartStackPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full p-3 pl-10 rounded-xl border border-gray-700 bg-gray-800 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
             />
-            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-              🔍
-            </span>
+            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
           </div>
         </div>
 
-        {/* Category Filters */}
+        {/* Category & Value Filters */}
         <div className="flex flex-wrap gap-3 mb-4 justify-center">
           {categories.map((cat) => {
             const active = activeCategory === cat.name;
@@ -159,9 +186,7 @@ export default function SmartStackPage() {
                 key={cat.name}
                 onClick={() => setActiveCategory(cat.name)}
                 className={`px-4 py-2 rounded-full font-semibold flex items-center gap-2 transition-all ${
-                  active
-                    ? "bg-indigo-600 text-white shadow-lg"
-                    : "bg-gray-700 text-gray-300"
+                  active ? "bg-indigo-600 text-white shadow-lg" : "bg-gray-700 text-gray-300"
                 }`}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -173,7 +198,6 @@ export default function SmartStackPage() {
           })}
         </div>
 
-        {/* Value Filters */}
         <div className="flex gap-3 flex-wrap justify-center mb-6">
           {valueFilters.map((filter) => {
             const active = activeValueFilters.includes(filter);
@@ -200,7 +224,7 @@ export default function SmartStackPage() {
           })}
         </div>
 
-        {/* Loading or Grid */}
+        {/* Grid */}
         {loading ? (
           <div className="text-center py-12 text-gray-300">Loading SmartStack…</div>
         ) : (
@@ -210,7 +234,8 @@ export default function SmartStackPage() {
                 key={
                   activeCategory +
                   activeValueFilters.join(",") +
-                  debouncedSearchQuery.toLowerCase()
+                  debouncedSearchQuery.toLowerCase() +
+                  showSavedOnly
                 }
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -224,13 +249,14 @@ export default function SmartStackPage() {
                     setModalStack={setModalStack}
                     selectedCompareStacks={selectedCompareStacks}
                     setSelectedCompareStacks={setSelectedCompareStacks}
+                    savedStacks={savedStacks}
+                    setSavedStacks={setSavedStacks}
+                    userEmail={userEmail}
                   />
                 ))}
               </motion.div>
             ) : (
-              <p className="italic text-gray-400 text-center">
-                No stacks match your filters.
-              </p>
+              <p className="italic text-gray-400 text-center">No stacks match your filters.</p>
             )}
           </AnimatePresence>
         )}
@@ -244,9 +270,7 @@ export default function SmartStackPage() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 50 }}
         >
-          <span className="text-sm text-gray-300 font-medium">
-            Selected for Compare:
-          </span>
+          <span className="text-sm text-gray-300 font-medium">Selected for Compare:</span>
           {selectedCompareStacks.map((stack) => (
             <div
               key={stack.id}
@@ -266,8 +290,6 @@ export default function SmartStackPage() {
               </button>
             </div>
           ))}
-
-          {/* Compare button */}
           <div className="relative">
             <button
               disabled={selectedCompareStacks.length < 2}
@@ -281,23 +303,12 @@ export default function SmartStackPage() {
               Compare {selectedCompareStacks.length} Stack
               {selectedCompareStacks.length > 1 ? "s" : ""}
             </button>
-
-            {/* Tooltip for max 3 stacks */}
-            {selectedCompareStacks.length > 3 && (
-              <div className="absolute -top-8 right-0 bg-red-600 text-white text-xs px-2 py-1 rounded shadow-md z-50">
-                Max 3 stacks can be selected
-              </div>
-            )}
           </div>
         </motion.div>
       )}
 
-      {/* Nutrition Modal */}
-      {modalStack && (
-        <NutritionModal stack={modalStack} onClose={() => setModalStack(null)} />
-      )}
-
-      {/* Compare Modal */}
+      {/* Modals */}
+      {modalStack && <NutritionModal stack={modalStack} onClose={() => setModalStack(null)} />}
       {compareModalOpen && selectedCompareStacks.length >= 2 && selectedCompareStacks.length <= 3 && (
         <CompareModal
           stacks={selectedCompareStacks}

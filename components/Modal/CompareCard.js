@@ -25,66 +25,95 @@ export default function CompareCard({
   const stackBrand = stack.brand || stack.rawFields?.Brand || "Unknown Brand";
 
   return (
-    <div
-      onClick={toggleCompare}
-      className={`bg-gray-800 rounded-lg p-4 shadow-md hover:shadow-lg cursor-pointer transition relative border-2 ${
-        isSelected ? "border-green-500" : "border-transparent"
-      }`}
-    >
-      {isSelected && (
-        <div className="absolute inset-0 bg-green-500/20 rounded-lg pointer-events-none"></div>
-      )}
-
-      {productImage ? (
-        <img
-          src={productImage}
-          alt={stackName}
-          className="w-full h-40 object-contain rounded mb-3 border border-gray-600"
-        />
-      ) : (
-        <div className="w-full h-40 bg-gray-600 flex items-center justify-center text-gray-400 mb-3 rounded text-xs">
-          No Image
-        </div>
-      )}
-
-      <h3 className="text-lg font-semibold text-white truncate">{stackName}</h3>
-      <p className="text-gray-400 text-sm truncate">{stackBrand}</p>
-
-      {stack.rating !== undefined && (
-        <div className="mt-2">
-          <ValueRatingSlim valueScore={stack.rating} />
-        </div>
-      )}
-
-      <div className="mt-2 text-gray-300 text-sm space-y-0.5">
-        {stack.servings && (
-          <p>
-            <span className="font-semibold">Servings:</span> {stack.servings}
-          </p>
+    <>
+      {/* Product Card */}
+      <div
+        onClick={toggleCompare}
+        className={`bg-gray-800 rounded-lg p-4 shadow-md hover:shadow-lg cursor-pointer transition relative border-2 ${
+          isSelected ? "border-green-500" : "border-transparent"
+        }`}
+      >
+        {isSelected && (
+          <div className="absolute inset-0 bg-green-500/20 rounded-lg pointer-events-none"></div>
         )}
-        {stack.price && (
-          <p>
-            <span className="font-semibold">Price:</span> ${Number(stack.price).toFixed(2)}
-          </p>
+
+        {productImage ? (
+          <img
+            src={productImage}
+            alt={stackName}
+            className="w-full h-40 object-contain rounded mb-3 border border-gray-600"
+          />
+        ) : (
+          <div className="w-full h-40 bg-gray-600 flex items-center justify-center text-gray-400 mb-3 rounded text-xs">
+            No Image
+          </div>
         )}
+
+        <h3 className="text-lg font-semibold text-white truncate">{stackName}</h3>
+        <p className="text-gray-400 text-sm truncate">{stackBrand}</p>
+
+        {stack.rating !== undefined && (
+          <div className="mt-2">
+            <ValueRatingSlim valueScore={stack.rating} />
+          </div>
+        )}
+
+        <div className="mt-2 text-gray-300 text-sm space-y-0.5">
+          {stack.servings && (
+            <p>
+              <span className="font-semibold">Servings:</span> {stack.servings}
+            </p>
+          )}
+          {stack.price && (
+            <p>
+              <span className="font-semibold">Price:</span> ${Number(stack.price).toFixed(2)}
+            </p>
+          )}
+        </div>
+
+        {stack.affiliateLink && (
+          <a
+            href={stack.affiliateLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 w-full text-center bg-[#46769B] hover:bg-[#3b5c81] text-white font-semibold px-2 py-1 rounded-md text-sm"
+          >
+            Get This Stack
+          </a>
+        )}
+
+        <p className="mt-2 text-gray-400 text-xs">
+          {isSelected
+            ? "Selected for comparison"
+            : "Click to select for comparison (up to 3)"}
+        </p>
       </div>
 
-      {stack.affiliateLink && (
-        <a
-          href={stack.affiliateLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 w-full text-center bg-[#46769B] hover:bg-[#3b5c81] text-white font-semibold px-2 py-1 rounded-md text-sm"
-        >
-          Get This Stack
-        </a>
-      )}
+      {/* Sticky Compare Button for Mobile */}
+      {selectedCompareStacks.length >= 2 && (
+        <>
+          {/* Mobile */}
+          <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden safe-area-inset-bottom">
+            <button
+              onClick={openCompareModal}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg"
+            >
+              Compare {selectedCompareStacks.length} Stacks
+            </button>
+          </div>
 
-      <p className="mt-2 text-gray-400 text-xs">
-        {isSelected
-          ? "Selected for comparison"
-          : "Click to select for comparison (up to 3)"}
-      </p>
-    </div>
+          {/* Desktop */}
+          <div className="hidden md:flex fixed bottom-0 left-0 right-0 justify-center px-4 py-4 bg-gray-900 border-t border-white/10 shadow-lg z-50">
+            <button
+              onClick={openCompareModal}
+              className="w-full max-w-3xl bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-2xl text-lg"
+            >
+              Compare {selectedCompareStacks.length} Stack
+              {selectedCompareStacks.length > 1 ? "s" : ""}
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 }

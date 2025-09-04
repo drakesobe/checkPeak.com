@@ -18,6 +18,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [stackIconBroken, setStackIconBroken] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [defaultAuthTab, setDefaultAuthTab] = useState("login"); // 👈 track login/signup tab
 
   useEffect(() => setIsMounted(true), []);
 
@@ -36,18 +37,14 @@ export default function NavBar({ activeTab, setActiveTab }) {
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   // Login button handler
-  const handleAuthClick = useCallback(async () => {
+  const handleAuthClick = useCallback(() => {
     if (loggedIn) {
       setProfileDropdownOpen((prev) => !prev);
       return;
     }
+    setDefaultAuthTab("login");  // 👈 open on login tab
     setLoginModalOpen(true);
   }, [loggedIn]);
-
-  const handleLogin = async (email, password) => {
-    await login(email, password);
-    setProfileDropdownOpen(true);
-  };
 
   // Role-based links for dropdown
   const RoleLinks = () => {
@@ -94,10 +91,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
 
   return (
     <>
-      <nav
-        className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50"
-        aria-label="Main navigation"
-      >
+      <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-3 items-center h-16 md:h-24 gap-2">
             {/* LEFT NAV LINKS */}
@@ -160,11 +154,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
                         draggable={false}
                       />
                     ) : (
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5 mb-1"
-                        aria-hidden="true"
-                      >
+                      <svg viewBox="0 0 24 24" className="h-5 w-5 mb-1" aria-hidden="true">
                         <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
                       </svg>
                     )}
@@ -225,19 +215,13 @@ export default function NavBar({ activeTab, setActiveTab }) {
                   className="flex flex-col justify-center items-center w-10 h-10"
                 >
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${
-                      menuOpen ? "rotate-45 translate-y-1.5" : ""
-                    }`}
+                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${menuOpen ? "rotate-45 translate-y-1.5" : ""}`}
                   />
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${
-                      menuOpen ? "opacity-0" : "opacity-100"
-                    }`}
+                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${menuOpen ? "opacity-0" : "opacity-100"}`}
                   />
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${
-                      menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-                    }`}
+                    className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${menuOpen ? "-rotate-45 -translate-y-1.5" : ""}`}
                   />
                 </button>
               </div>
@@ -255,51 +239,54 @@ export default function NavBar({ activeTab, setActiveTab }) {
               className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
             >
               <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
-                <Link
-                  href="/"
-                  aria-label="PEAK Home"
-                  onClick={() => setMenuOpen(false)}
-                >
+                <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)}>
                   <Logo size="small" />
                 </Link>
-                <button
-                  onClick={toggleMenu}
-                  className="p-2 rounded-lg border border-gray-200"
-                  aria-label="Close Menu"
-                >
+                <button onClick={toggleMenu} className="p-2 rounded-lg border border-gray-200" aria-label="Close Menu">
                   ✕
                 </button>
               </div>
 
-              {[...leftTabs, { name: "SmartStack", href: "/smartstack" }].map(
-                (tab) => {
-                  const isActive = pathname === tab.href;
-                  return (
-                    <Link
-                      key={tab.name}
-                      href={tab.href}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
-                        isActive ? "bg-blue-50 text-[#46769B]" : ""
-                      }`}
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      {tab.name}
-                    </Link>
-                  );
-                }
-              )}
+              {[...leftTabs, { name: "SmartStack", href: "/smartstack" }].map((tab) => {
+                const isActive = pathname === tab.href;
+                return (
+                  <Link
+                    key={tab.name}
+                    href={tab.href}
+                    aria-current={isActive ? "page" : undefined}
+                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
+                      isActive ? "bg-blue-50 text-[#46769B]" : ""
+                    }`}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {tab.name}
+                  </Link>
+                );
+              })}
 
               {isMounted && !loggedIn && (
-                <button
-                  onClick={() => {
-                    setLoginModalOpen(true);
-                    setMenuOpen(false);
-                  }}
-                  className="w-full text-left px-6 py-4 font-medium text-gray-700 hover:text-[#46769B]"
-                >
-                  Login
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      setDefaultAuthTab("login");
+                      setLoginModalOpen(true);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-6 py-4 font-medium text-gray-700 hover:text-[#46769B]"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDefaultAuthTab("signup");
+                      setLoginModalOpen(true);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-6 py-4 font-medium text-gray-700 hover:text-[#46769B]"
+                  >
+                    Sign Up
+                  </button>
+                </>
               )}
 
               {isMounted && loggedIn && (
@@ -346,11 +333,11 @@ export default function NavBar({ activeTab, setActiveTab }) {
         </AnimatePresence>
       </nav>
 
-      {/* LOGIN MODAL */}
+      {/* LOGIN/SIGNUP MODAL */}
       <NavBarLoginModal
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
-        onLogin={handleLogin}
+        defaultTab={defaultAuthTab} // 👈 pass "login" or "signup"
       />
     </>
   );

@@ -6,7 +6,7 @@ import ProgressBar from "./ProgressBar";
 /**
  * OCRUpload
  * - full uploader + OCR pipeline preserved (resize, preprocess, Tesseract)
- * - calls `onScan(text)` for each scanned file if provided
+ * - calls `onScan(text)` for each scanned file
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -18,7 +18,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  const imageRefs = useRef([]);
   const canvasRefs = useRef([]);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -32,7 +31,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     return () => clearInterval(interval);
   }, [loading]);
 
-  // Validate files
   const validateFile = (file) => {
     if (!file.type.startsWith("image/")) {
       setError("Only image files are allowed.");
@@ -54,13 +52,11 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
     setOcrTexts(new Array(validFiles.length).fill(""));
     setAthleteNames(validFiles.map(() => ""));
-    imageRefs.current = new Array(validFiles.length).fill(null);
     canvasRefs.current = new Array(validFiles.length).fill(null);
   };
 
   const handleFileChange = (e) => handleFiles(e.target.files);
 
-  // Drag & drop
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -75,12 +71,10 @@ export default function OCRUpload({ multiple = false, onScan }) {
     handleFiles(e.dataTransfer.files);
   };
 
-  // Cleanup preview URLs
   useEffect(() => {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
 
-  // Resize image
   const resizeImage = (file) =>
     new Promise((resolve) => {
       const img = new Image();
@@ -111,7 +105,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
       reader.readAsDataURL(file);
     });
 
-  // Preprocess image (grayscale + normalize + crop)
   const preprocessImage = async (img, canvas) => {
     const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth;
@@ -121,7 +114,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Normalize contrast
     let min = 255,
       max = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -137,7 +129,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Crop dark edges
     let top = canvas.height,
       bottom = 0,
       left = canvas.width,
@@ -174,7 +165,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     return croppedCanvas;
   };
 
-  // Main OCR
   const handleScan = async () => {
     if (!files.length) return;
     setLoading(true);
@@ -215,7 +205,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
         if (typeof onScan === "function") {
           try {
-            await onScan(text); // pass text to parent
+            await onScan(text);
           } catch (err) {
             console.error("onScan callback error:", err);
           }
@@ -237,7 +227,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
   return (
     <div className="mt-6 font-sans space-y-4">
-      {/* Drag-and-drop + click area */}
       <label
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
@@ -262,7 +251,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
         />
       </label>
 
-      {/* Previews & Names */}
       {files.map((file, idx) => (
         <div
           key={idx}
@@ -287,14 +275,12 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       {error && <p className="text-red-500 text-center">{error}</p>}
 
-      {/* Progress Bar */}
       {loading && (
         <ProgressBar
           progress={Math.round((ocrTexts.filter((r) => r).length / files.length) * 100)}
         />
       )}
 
-      {/* Scan Button */}
       <button
         onClick={handleScan}
         disabled={loading || !files.length}

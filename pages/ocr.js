@@ -12,7 +12,7 @@ import { toast } from "react-hot-toast";
 export default function OCRPage() {
   const { user } = useAuthContext();
   const [activeTab, setActiveTab] = useState("Scan");
-  const [scanMode, setScanMode] = useState("OCR");
+  const [scanMode, setScanMode] = useState("Nutrition Label");
   const [ocrTexts, setOcrTexts] = useState([]);
   const [rawOCR, setRawOCR] = useState("");
   const [detectedSubstances, setDetectedSubstances] = useState([]);
@@ -132,7 +132,7 @@ export default function OCRPage() {
       await handleScanResult({ rawIngredients: text, matchedBanned: data.matchedBanned || [] });
     } catch (err) {
       console.error("OCR scan error:", err);
-      setError("OCR scan failed. Please try again.");
+      setError("Nutrition Label scan failed. Please try again.");
     } finally {
       setScanning(false);
       setProgress(100);
@@ -170,7 +170,7 @@ export default function OCRPage() {
         {activeTab === "Scan" && (
           <>
             <div className="relative flex gap-4 mb-6">
-              {["OCR", "Barcode"].map((mode) => (
+              {["Nutrition Label", "Barcode"].map((mode) => (
                 <div
                   key={mode}
                   ref={(el) => (tabRefs.current[mode] = el)}
@@ -192,7 +192,7 @@ export default function OCRPage() {
             </div>
 
             <div className="w-full bg-white p-6 rounded-b-2xl shadow-md mx-auto border border-blue-100">
-              {scanMode === "OCR" ? (
+              {scanMode === "Nutrition Label" ? (
                 <OCRUpload multiple={true} onScan={handleOCRScan} />
               ) : (
                 <BarcodeUpload onResult={handleBarcodeScan} showScanButton={true} />

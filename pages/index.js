@@ -5,13 +5,13 @@ import { useState, useRef } from "react";
 import Link from "next/link";
 import NavBar from "../components/NavBar";
 import OCRUpload from "../components/OCRUpload";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { FaBolt, FaCheckCircle, FaHistory } from "react-icons/fa";
 import SearchBar from "../components/SearchBar";
 import OCRSearchResults from "../components/OCRSearchResults";
 
 export default function HomePage() {
-  const [userType, setUserType] = useState("");
+  const [userType, setUserType] = useState(""); // "individual" | "organization" | ""
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState("");
@@ -44,7 +44,6 @@ export default function HomePage() {
     }
   };
 
-  // Particle background shapes
   const particles = [
     { cx: 100, cy: 120, r: 2.3, dur: 11, delay: 0 },
     { cx: 400, cy: 180, r: 2, dur: 12, delay: 0.3 },
@@ -74,9 +73,11 @@ export default function HomePage() {
         <NavBar />
 
         {/* HERO */}
-        <section className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white h-[70vh] flex flex-col justify-center items-center text-center px-4 overflow-hidden">
-          {/* Animated Background */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none">
+        <section
+          className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white h-[70vh] flex flex-col justify-center items-center text-center px-4 overflow-hidden"
+          aria-labelledby="hero-heading"
+        >
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
             <defs>
               <radialGradient id="g1" cx="30%" cy="30%" r="80%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
@@ -142,8 +143,8 @@ export default function HomePage() {
             ))}
           </svg>
 
-          {/* Hero Content */}
           <motion.h1
+            id="hero-heading"
             className="text-4xl md:text-5xl font-bold z-10 tracking-tight"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -158,24 +159,26 @@ export default function HomePage() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.25, duration: 0.8 }}
           >
-            Know exactly what's in your supplements - fast, accurate, and hassle-free.
+            Know exactly what you're taking – fast, accurate, and hassle-free.
           </motion.p>
 
-          <motion.div className="flex flex-col md:flex-row gap-6 mt-8 z-10">
+          <motion.div className="flex flex-col md:flex-row gap-4 mt-8 z-10">
             <motion.button
               onClick={scrollToSearch}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
               className="px-8 py-4 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+              aria-label="Try a demo search"
             >
-              Try Demo
+              Try a Demo Search
             </motion.button>
 
             <Link href="/smartstack" passHref>
               <motion.a
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="px-8 py-4 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all inline-block text-center"
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.98 }}
+                className="px-8 py-4 bg-white/10 border border-white/20 text-white font-semibold rounded-2xl shadow transition-all inline-block text-center"
+                aria-label="Explore SmartStack"
               >
                 Explore SmartStack
               </motion.a>
@@ -183,86 +186,59 @@ export default function HomePage() {
           </motion.div>
         </section>
 
-        {/* Search Demo Section */}
-        <section ref={searchRef} className="py-16 bg-gray-50">
-          <div className="max-w-5xl mx-auto px-4 text-center">
-            <h2 className="text-3xl font-bold mb-6">Search Substances</h2>
-            <p className="text-gray-600 mb-8">
-              Type a substance, synonym, or banned by to instantly check if it's prohibited.
-            </p>
+        {/* Stats Section: The Most Comprehensive Supplement Scanner */}
+        <section className="py-16 bg-gray-50">
+          <div className="max-w-6xl mx-auto px-4">
+            <h2 className="text-3xl font-bold text-center mb-12">The Most Comprehensive Supplement Scanner</h2>
 
-            <form
-              onSubmit={handleSearch}
-              className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 space-y-4 max-w-2xl mx-auto"
-            >
-              <SearchBar value={searchQuery} onChange={setSearchQuery} />
-              <button
-                type="submit"
-                className="px-6 py-3 rounded-2xl text-white font-medium bg-[#46769B] hover:bg-[#3a5e85] transition-colors"
-              >
-                Search
-              </button>
-              {error && <p className="text-red-500 mt-2">{error}</p>}
-            </form>
+            <div className="grid md:grid-cols-3 gap-8 text-center mb-12">
+              <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+                <p className="text-4xl font-extrabold text-[#46769B] mb-2">20,000+</p>
+                <p className="text-gray-700">Banned substances & synonyms tracked</p>
+              </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 mt-8">
-              <OCRSearchResults searchTerm={searchQuery} matchedSubstances={searchResults} />
+              <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+                <p className="text-4xl font-extrabold text-[#46769B] mb-2">50+</p>
+                <p className="text-gray-700">Categories from global authorities</p>
+              </div>
+
+              <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+                <p className="text-4xl font-extrabold text-[#46769B] mb-2">~10s</p>
+                <p className="text-gray-700">Average time to check a label</p>
+              </div>
+            </div>
+
+            {/* Comparison grid */}
+            <div className="bg-white rounded-2xl shadow-lg p-8">
+              <h3 className="text-2xl font-semibold text-center mb-8">Why Choose PEAK Over Alternatives?</h3>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="p-6 rounded-xl bg-gradient-to-b from-blue-50 to-white border border-blue-100">
+                  <h4 className="text-xl font-semibold text-[#46769B] mb-4">With PEAK</h4>
+                  <ul className="space-y-3 text-gray-700 text-left">
+                    <li>✔ Fast label scanning with OCR</li>
+                    <li>✔ Reliable detection of banned substances</li>
+                    <li>✔ Includes synonyms, slang, and brand names</li>
+                    <li>✔ Save and review your scans anytime</li>
+                    <li>✔ Built with public lists from major authorities in mind</li>
+                  </ul>
+                </div>
+
+                <div className="p-6 rounded-xl bg-gradient-to-b from-gray-50 to-white border border-gray-200">
+                  <h4 className="text-xl font-semibold text-gray-800 mb-4">Without PEAK</h4>
+                  <ul className="space-y-3 text-gray-600 text-left">
+                    <li>✖ Manually searching ingredients on Google</li>
+                    <li>✖ Risk of missing hidden or alternative names</li>
+                    <li>✖ Outdated PDFs or scattered lists</li>
+                    <li>✖ No way to track or save your results</li>
+                    <li>✖ Uncertainty about compliance</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* OCR Upload Section */}
-        <AnimatePresence>
-          {userType && (
-            <motion.section
-              className="py-16 bg-gray-50"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ duration: 0.6 }}
-            >
-              <div className="max-w-5xl mx-auto px-4 text-center">
-                <h2 className="text-3xl font-bold mb-6">
-                  {userType === "individual"
-                    ? "Scan Your Supplement Label"
-                    : "Upload Labels for Your Organization"}
-                </h2>
-                <p className="text-gray-600 mb-8">
-                  Upload one or multiple supplement labels to quickly check for banned substances and maintain compliance.
-                </p>
-
-                <motion.div
-                  className="p-4 rounded-2xl border-2 border-dashed border-blue-200 hover:shadow-lg transition"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6 }}
-                >
-                  <OCRUpload multiple={true} />
-                </motion.div>
-
-                <div className="mt-6">
-                  {userType === "individual" ? (
-                    <Link
-                      href="/login"
-                      className="px-8 py-3 bg-[#46769B] text-white font-bold rounded-2xl shadow-md hover:bg-[#3a5e85] transition hover:shadow-lg"
-                    >
-                      Start Scanning
-                    </Link>
-                  ) : (
-                    <Link
-                      href="/org-login"
-                      className="px-8 py-3 bg-[#46769B] text-white font-bold rounded-2xl shadow-md hover:bg-[#3a5e85] transition hover:shadow-lg"
-                    >
-                      Create Organization Account
-                    </Link>
-                  )}
-                </div>
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
-
-        {/* Features */}
+        {/* Features: Why Choose PEAK */}
         <section className="py-16 bg-white">
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">Why Choose PEAK?</h2>
@@ -297,12 +273,84 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Search Substances */}
+        <section ref={searchRef} className="py-16 bg-gray-50">
+          <div className="max-w-5xl mx-auto px-4 text-center">
+            <h2 className="text-3xl font-bold mb-6">Search Substances</h2>
+            <p className="text-gray-600 mb-8">
+              Type a substance, synonym, or banning authority to check whether it's listed.
+            </p>
+
+            <form
+              onSubmit={handleSearch}
+              className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 space-y-4 max-w-2xl mx-auto"
+            >
+              <SearchBar value={searchQuery} onChange={setSearchQuery} />
+              <div className="flex justify-center gap-4">
+                <button
+                  type="submit"
+                  className="px-6 py-3 rounded-2xl text-white font-medium bg-[#46769B] hover:bg-[#3a5e85] transition-colors"
+                >
+                  Search
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setError("");
+                  }}
+                  className="px-6 py-3 rounded-2xl bg-gray-100 text-gray-800 font-medium border border-gray-200"
+                >
+                  Clear
+                </button>
+              </div>
+              {error && <p className="text-red-500 mt-2">{error}</p>}
+            </form>
+
+            <div className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 mt-8">
+              <OCRSearchResults searchTerm={searchQuery} matchedSubstances={searchResults} />
+            </div>
+          </div>
+        </section>
+
+        {/* Trusted By (logos / placeholders) */}
+        <section className="py-12 bg-white">
+          <div className="max-w-6xl mx-auto px-4 text-center">
+            <h3 className="text-2xl font-semibold mb-8">Built Using Lists Trusted By</h3>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-center">
+              <div className="flex items-center justify-center">
+                <img src="/logos/ncaa.svg" alt="NCAA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
+              </div>
+
+              <div className="flex items-center justify-center">
+                <img src="/logos/ufc.svg" alt="UFC" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
+              </div>
+
+              <div className="flex items-center justify-center">
+                <img src="/logos/wada.svg" alt="WADA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
+              </div>
+
+              <div className="flex items-center justify-center">
+                <img src="/logos/nba.svg" alt="NBA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
+              </div>
+            </div>
+
+            <p className="mt-6 text-gray-600 text-sm max-w-3xl mx-auto">
+              PEAK references banned-substance data published by global and professional organizations to provide reliable insights.
+              We are not officially affiliated or endorsed by these bodies - we simply use their public lists as part of our database.
+            </p>
+          </div>
+        </section>
+
         {/* Disclaimer */}
         <section className="py-12">
           <div className="max-w-3xl mx-auto p-6 bg-yellow-50 border-l-4 border-yellow-300 rounded-lg shadow-sm text-left text-yellow-800 text-sm md:text-base">
             <p className="font-semibold mb-1">Important Notice:</p>
             <p>
-              PEAK provides guidance on banned substances using our database and label analysis. It is <strong>not 100% comprehensive</strong>. Users should verify with a certified authority before consuming any substances.
+              PEAK provides guidance on banned substances using our database and label analysis. It is <strong>not 100% comprehensive</strong>.
+              Users should verify with their certified authority, athletic trainer, or medical professional before consuming any substances.
             </p>
           </div>
         </section>

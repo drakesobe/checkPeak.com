@@ -44,6 +44,7 @@ export default function HomePage() {
     }
   };
 
+  // Particle background shapes
   const particles = [
     { cx: 100, cy: 120, r: 2.3, dur: 11, delay: 0 },
     { cx: 400, cy: 180, r: 2, dur: 12, delay: 0.3 },
@@ -77,6 +78,7 @@ export default function HomePage() {
           className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white h-[70vh] flex flex-col justify-center items-center text-center px-4 overflow-hidden"
           aria-labelledby="hero-heading"
         >
+          {/* Animated background shapes (subtle + performant) */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
             <defs>
               <radialGradient id="g1" cx="30%" cy="30%" r="80%">
@@ -143,6 +145,7 @@ export default function HomePage() {
             ))}
           </svg>
 
+          {/* Hero Content */}
           <motion.h1
             id="hero-heading"
             className="text-4xl md:text-5xl font-bold z-10 tracking-tight"
@@ -167,30 +170,66 @@ export default function HomePage() {
               onClick={scrollToSearch}
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
-              className="px-8 py-4 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+              className="flex items-center gap-3 px-6 md:px-8 py-3 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
               aria-label="Try a demo search"
             >
-              Try a Demo Search
+              <span>Try a Demo Search</span>
             </motion.button>
 
-            <Link href="/smartstack" passHref>
-              <motion.a
+            <Link href="/smartstack">
+              <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.98 }}
-                className="px-8 py-4 bg-white/10 border border-white/20 text-white font-semibold rounded-2xl shadow transition-all inline-block text-center"
+                className="px-6 md:px-8 py-3 bg-white/10 border border-white/20 text-white font-semibold rounded-2xl shadow transition-all"
                 aria-label="Explore SmartStack"
               >
                 Explore SmartStack
-              </motion.a>
+              </motion.button>
             </Link>
           </motion.div>
         </section>
 
-        {/* Stats Section: The Most Comprehensive Supplement Scanner */}
+        {/* Why Choose PEAK */}
+        <section className="py-16 bg-white">
+          <div className="max-w-6xl mx-auto px-4">
+            <h2 className="text-3xl font-bold text-center mb-12">Why Choose PEAK?</h2>
+            <div className="grid md:grid-cols-3 gap-8 text-center">
+              {[
+                {
+                  icon: <FaBolt size={30} className="mx-auto mb-2 text-blue-600" />,
+                  title: "Fast Scanning",
+                  desc: "Instantly scan and analyze supplement labels for banned substances.",
+                },
+                {
+                  icon: <FaCheckCircle size={30} className="mx-auto mb-2 text-green-600" />,
+                  title: "Reliable Detection",
+                  desc: "Identify banned substances accurately, including synonyms and brand variations.",
+                },
+                {
+                  icon: <FaHistory size={30} className="mx-auto mb-2 text-purple-600" />,
+                  title: "Track Your Results",
+                  desc: "Save and review your scans to maintain compliance over time.",
+                },
+              ].map((f, i) => (
+                <div
+                  key={i}
+                  className="p-6 bg-gradient-to-b from-gray-50 to-white rounded-xl shadow hover:shadow-xl transition-transform hover:scale-[1.03]"
+                >
+                  {f.icon}
+                  <h3 className="text-xl font-semibold mb-2">{f.title}</h3>
+                  <p className="text-gray-600">{f.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Trusted Coverage (stats + comparison) */}
         <section className="py-16 bg-gray-50">
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">The Most Comprehensive Supplement Scanner</h2>
 
+            {/* Stats */}
             <div className="grid md:grid-cols-3 gap-8 text-center mb-12">
               <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
                 <p className="text-4xl font-extrabold text-[#46769B] mb-2">20,000+</p>
@@ -234,41 +273,6 @@ export default function HomePage() {
                   </ul>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Features: Why Choose PEAK */}
-        <section className="py-16 bg-white">
-          <div className="max-w-6xl mx-auto px-4">
-            <h2 className="text-3xl font-bold text-center mb-12">Why Choose PEAK?</h2>
-            <div className="grid md:grid-cols-3 gap-8 text-center">
-              {[
-                {
-                  icon: <FaBolt size={30} className="mx-auto mb-2 text-blue-600" />,
-                  title: "Fast Scanning",
-                  desc: "Instantly scan and analyze supplement labels for banned substances.",
-                },
-                {
-                  icon: <FaCheckCircle size={30} className="mx-auto mb-2 text-green-600" />,
-                  title: "Reliable Detection",
-                  desc: "Identify banned substances accurately, including synonyms and brand variations.",
-                },
-                {
-                  icon: <FaHistory size={30} className="mx-auto mb-2 text-purple-600" />,
-                  title: "Track Your Results",
-                  desc: "Save and review your scans to maintain compliance over time.",
-                },
-              ].map((f, i) => (
-                <div
-                  key={i}
-                  className="p-6 bg-gradient-to-b from-gray-50 to-white rounded-xl shadow hover:shadow-xl transition-transform hover:scale-[1.03]"
-                >
-                  {f.icon}
-                  <h3 className="text-xl font-semibold mb-2">{f.title}</h3>
-                  <p className="text-gray-600">{f.desc}</p>
-                </div>
-              ))}
             </div>
           </div>
         </section>
@@ -320,6 +324,7 @@ export default function HomePage() {
             <h3 className="text-2xl font-semibold mb-8">Built Using Lists Trusted By</h3>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-center">
+              {/* Replace these with your actual logos in /public/logos/*.svg */}
               <div className="flex items-center justify-center">
                 <img src="/logos/ncaa.svg" alt="NCAA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
               </div>

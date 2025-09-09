@@ -68,6 +68,26 @@ export default function HomePage() {
           name="description"
           content="PEAK scans supplement labels to detect banned substances and help athletes stay compliant. Fast label scanning, reliable detection, and scan history for teams and individuals."
         />
+
+        {/* Open Graph */}
+        <meta property="og:title" content="PEAK — Supplement Label Scanner" />
+        <meta property="og:description" content="Scan supplement labels fast and accurately. Detect banned substances and stay compliant!" />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://checkpeak.com" />
+        <meta
+          property="og:image"
+          content={`https://checkpeak.com/api/og-image?q=${encodeURIComponent(searchQuery || 'PEAK — Supplement Label Scanner')}`}
+        />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:site" content="@checkPeak_" />
+        <meta name="twitter:title" content="PEAK — Supplement Label Scanner" />
+        <meta name="twitter:description" content="Scan supplement labels fast and accurately. Detect banned substances and stay compliant!" />
+        <meta
+          name="twitter:image"
+          content={`https://checkpeak.com/api/og-image?q=${encodeURIComponent(searchQuery || 'PEAK — Supplement Label Scanner')}`}
+        />
       </Head>
 
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -324,19 +344,15 @@ export default function HomePage() {
             <h3 className="text-2xl font-semibold mb-8">Built Using Lists Trusted By</h3>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-center">
-              {/* Replace these with your actual logos in /public/logos/*.svg */}
               <div className="flex items-center justify-center">
                 <img src="/logos/ncaa.svg" alt="NCAA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
               </div>
-
               <div className="flex items-center justify-center">
                 <img src="/logos/ufc.svg" alt="UFC" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
               </div>
-
               <div className="flex items-center justify-center">
                 <img src="/logos/wada.svg" alt="WADA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
               </div>
-
               <div className="flex items-center justify-center">
                 <img src="/logos/nba.svg" alt="NBA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
               </div>

@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/library";
+import { motion, AnimatePresence } from "framer-motion";
 import ProgressBar from "./ProgressBar";
+import dynamic from "next/dynamic";
+import { X } from "lucide-react";
+
+// Lazy load live scanner so it doesn't bloat initial bundle
+const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), { ssr: false });
 
 export default function BarcodeUpload({ multiple = false, onResult, showScanButton = true }) {
   const [files, setFiles] = useState([]);
@@ -13,6 +19,10 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
   const [error, setError] = useState("");
   const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [showLiveScanner, setShowLiveScanner] = useState(false);
+
+  const fileInputRef = useRef(null);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -59,7 +69,7 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
     setAthleteNames(names);
   };
 
-  // --- Full barcode pipeline from your working code ---
+  // --- Barcode decoding + pipeline ---
   async function decodeBarcodeFromFile(file) {
     return new Promise((resolve, reject) => {
       try {
@@ -170,13 +180,12 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
     setLoading(false);
   };
 
-  // --- UI matches OCRUpload design ---
+  // --- UI ---
   return (
     <div className="mt-6 font-sans space-y-4">
-      <label
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+      {/* Upload Box */}
+      <div
+        onClick={() => setShowChoiceModal(true)}
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-gray-50 hover:bg-gray-100"
         }`}
@@ -184,9 +193,103 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
         <span className="text-gray-600 text-center font-medium">
           {files.length ? `${files.length} file${files.length > 1 ? "s" : ""} selected` : "Tap to choose an image or take a photo"}
         </span>
-        <input type="file" accept="image/*" multiple={multiple} onChange={handleFileInputChange} className="hidden" />
-      </label>
+      </div>
 
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        accept="image/*"
+        multiple={multiple}
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Modal Choice */}
+      <AnimatePresence>
+        {showChoiceModal && (
+          <motion.div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="bg-white rounded-2xl shadow-xl w-80 p-6 space-y-4 hover:shadow-2xl transition-shadow"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+            >
+              {/* Header */}
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-lg font-semibold text-gray-800">Choose Action</h2>
+                <button
+                  onClick={() => setShowChoiceModal(false)}
+                  className="text-gray-400 hover:text-gray-700 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Description */}
+              <p className="text-gray-600 text-sm">
+                Select how you want to add a barcode: live scanning or from an image.
+              </p>
+
+              {/* Buttons */}
+              <div className="flex flex-col gap-3 mt-2">
+                <button
+                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition"
+                  onClick={() => {
+                    setShowChoiceModal(false);
+                    setShowLiveScanner(true);
+                  }}
+                >
+                  Start Live Scanner
+                </button>
+
+                <button
+                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
+                  onClick={() => {
+                    setShowChoiceModal(false);
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  Take Photo / Upload
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live Scanner */}
+      <AnimatePresence>
+        {showLiveScanner && (
+          <motion.div
+            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
+              <button
+                className="absolute top-3 right-3 text-gray-600 hover:text-black"
+                onClick={() => setShowLiveScanner(false)}
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <LiveBarcodeScanner onDetected={(code) => {
+                console.log("Detected:", code);
+                setShowLiveScanner(false);
+                handleDecodedBarcodePipeline(code);
+              }} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Existing Preview / Input */}
       {files.map((file, idx) => (
         <div key={idx} className="flex flex-col items-start space-y-1 max-w-3xl mx-auto">
           <span className="font-medium">{file.name}</span>

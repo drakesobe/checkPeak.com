@@ -3,8 +3,23 @@ import "@/styles/globals.css";
 import { AuthProvider } from "@/hooks/useAuth";
 import { Toaster } from "react-hot-toast";
 import Head from "next/head";
+import Script from "next/script";
+import { useEffect } from "react";
+import { useRouter } from "next/router";
 
 export default function MyApp({ Component, pageProps }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const handleRouteChange = (url) => {
+      if (typeof window.gtag !== "undefined") {
+        window.gtag("config", "G-0HXXN1SJ9K", { page_path: url });
+      }
+    };
+    router.events.on("routeChangeComplete", handleRouteChange);
+    return () => router.events.off("routeChangeComplete", handleRouteChange);
+  }, [router.events]);
+
   return (
     <AuthProvider>
       <Head>
@@ -30,6 +45,20 @@ export default function MyApp({ Component, pageProps }) {
         {/* Theme color for mobile browsers */}
         <meta name="theme-color" content="#000000" />
       </Head>
+
+      {/* Google Analytics */}
+      <Script
+        strategy="afterInteractive"
+        src="https://www.googletagmanager.com/gtag/js?id=G-0HXXN1SJ9K"
+      />
+      <Script id="gtag-init" strategy="afterInteractive">
+        {`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-0HXXN1SJ9K', { page_path: window.location.pathname });
+        `}
+      </Script>
 
       <Component {...pageProps} />
       <Toaster position="top-right" />

@@ -1,0 +1,21 @@
+{
+  "name": "PEAK",
+  "short_name": "PEAK",
+  "description": "Supplement Label Scanner to detect banned substances.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#46769B",
+  "theme_color": "#46769B",
+  "icons": [
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

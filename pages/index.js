@@ -1,48 +1,14 @@
 "use client";
 
 import Head from "next/head";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import NavBar from "../components/NavBar";
-import OCRUpload from "../components/OCRUpload";
 import { motion } from "framer-motion";
 import { FaBolt, FaCheckCircle, FaHistory } from "react-icons/fa";
-import SearchBar from "../components/SearchBar";
-import OCRSearchResults from "../components/OCRSearchResults";
 
 export default function HomePage() {
-  const [userType, setUserType] = useState(""); // "individual" | "organization" | ""
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [error, setError] = useState("");
-
-  const searchRef = useRef(null);
-
-  const scrollToSearch = () => {
-    searchRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleSearch = async (e) => {
-    if (e) e.preventDefault();
-    if (!searchQuery || searchQuery.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setError("");
-    try {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
-      });
-      const data = await res.json();
-      setSearchResults(data.records || []);
-    } catch (err) {
-      console.error("Search error:", err);
-      setSearchResults([]);
-      setError("Search failed. Please try again.");
-    }
-  };
 
   // Particle background shapes
   const particles = [
@@ -98,7 +64,7 @@ export default function HomePage() {
           className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white h-[70vh] flex flex-col justify-center items-center text-center px-4 overflow-hidden"
           aria-labelledby="hero-heading"
         >
-          {/* Animated background shapes (subtle + performant) */}
+          {/* Animated background shapes */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
             <defs>
               <radialGradient id="g1" cx="30%" cy="30%" r="80%">
@@ -186,15 +152,27 @@ export default function HomePage() {
           </motion.p>
 
           <motion.div className="flex flex-col md:flex-row gap-4 mt-8 z-10">
-            <motion.button
-              onClick={scrollToSearch}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-3 px-6 md:px-8 py-3 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
-              aria-label="Try a demo search"
-            >
-              <span>Try a Demo Search</span>
-            </motion.button>
+            <Link href="/search">
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.98 }}
+                className="flex items-center gap-3 px-6 md:px-8 py-3 bg-gradient-to-r from-[#46769B] to-[#3a5e85] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+                aria-label="Try a demo search"
+              >
+                <span>Try a Demo Search</span>
+              </motion.button>
+            </Link>
+
+            <Link href="/scan">
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.98 }}
+                className="px-6 md:px-8 py-3 bg-white/10 border border-white/20 text-white font-semibold rounded-2xl shadow transition-all"
+                aria-label="Scan a label"
+              >
+                Scan a Label
+              </motion.button>
+            </Link>
 
             <Link href="/smartstack">
               <motion.button
@@ -244,12 +222,11 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Trusted Coverage (stats + comparison) */}
+        {/* Stats & Comparison */}
         <section className="py-16 bg-gray-50">
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">The Most Comprehensive Supplement Scanner</h2>
 
-            {/* Stats */}
             <div className="grid md:grid-cols-3 gap-8 text-center mb-12">
               <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
                 <p className="text-4xl font-extrabold text-[#46769B] mb-2">20,000+</p>
@@ -267,7 +244,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Comparison grid */}
             <div className="bg-white rounded-2xl shadow-lg p-8">
               <h3 className="text-2xl font-semibold text-center mb-8">Why Choose PEAK Over Alternatives?</h3>
               <div className="grid md:grid-cols-2 gap-6">
@@ -297,65 +273,22 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Search Substances */}
-        <section ref={searchRef} className="py-16 bg-gray-50">
-          <div className="max-w-5xl mx-auto px-4 text-center">
-            <h2 className="text-3xl font-bold mb-6">Search Substances</h2>
-            <p className="text-gray-600 mb-8">
-              Type a substance, synonym, or banning authority to check whether it's listed.
-            </p>
-
-            <form
-              onSubmit={handleSearch}
-              className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 space-y-4 max-w-2xl mx-auto"
-            >
-              <SearchBar value={searchQuery} onChange={setSearchQuery} />
-              <div className="flex justify-center gap-4">
-                <button
-                  type="submit"
-                  className="px-6 py-3 rounded-2xl text-white font-medium bg-[#46769B] hover:bg-[#3a5e85] transition-colors"
-                >
-                  Search
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setSearchResults([]);
-                    setError("");
-                  }}
-                  className="px-6 py-3 rounded-2xl bg-gray-100 text-gray-800 font-medium border border-gray-200"
-                >
-                  Clear
-                </button>
-              </div>
-              {error && <p className="text-red-500 mt-2">{error}</p>}
-            </form>
-
-            <div className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 mt-8">
-              <OCRSearchResults searchTerm={searchQuery} matchedSubstances={searchResults} />
-            </div>
-          </div>
-        </section>
-
-        {/* Trusted By (logos / placeholders) */}
+        {/* Trusted By */}
         <section className="py-12 bg-white">
           <div className="max-w-6xl mx-auto px-4 text-center">
             <h3 className="text-2xl font-semibold mb-8">Built Using Lists Trusted By</h3>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-center">
-              <div className="flex items-center justify-center">
-                <img src="/logos/ncaa.svg" alt="NCAA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
-              </div>
-              <div className="flex items-center justify-center">
-                <img src="/logos/ufc.svg" alt="UFC" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
-              </div>
-              <div className="flex items-center justify-center">
-                <img src="/logos/wada.svg" alt="WADA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
-              </div>
-              <div className="flex items-center justify-center">
-                <img src="/logos/nba.svg" alt="NBA" className="h-10 object-contain transition" onError={(e)=>{e.currentTarget.style.display='none'}} />
-              </div>
+              {["ncaa", "ufc", "wada", "nba"].map((logo) => (
+                <div key={logo} className="flex items-center justify-center">
+                  <img
+                    src={`/logos/${logo}.svg`}
+                    alt={logo.toUpperCase()}
+                    className="h-10 object-contain transition"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                </div>
+              ))}
             </div>
 
             <p className="mt-6 text-gray-600 text-sm max-w-3xl mx-auto">

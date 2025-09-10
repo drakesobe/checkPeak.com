@@ -4,13 +4,12 @@ import SearchBar from "../components/SearchBar";
 import OCRSearchResults from "../components/OCRSearchResults";
 
 export default function SearchPage() {
-  const [activeTab, setActiveTab] = useState("Search");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [error, setError] = useState("");
 
   const handleSearch = async (e) => {
-    if (e) e.preventDefault(); // Prevent page reload on Enter
+    if (e) e.preventDefault();
     if (!searchQuery || searchQuery.length < 2) {
       setSearchResults([]);
       return;
@@ -33,12 +32,11 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <NavBar activeTab="Search" setActiveTab={() => {}} />
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        <h1 className="text-3xl font-bold text-gray-900">Search Substances</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Search Substances & Ingredients</h1>
 
-        {/* Wrap input + button in form for Enter key */}
         <form
           onSubmit={handleSearch}
           className="bg-white p-6 rounded-2xl shadow-md border border-blue-100 space-y-4"
@@ -55,10 +53,7 @@ export default function SearchPage() {
         </form>
 
         <div className="bg-white p-6 rounded-2xl shadow-md border border-blue-100">
-          <OCRSearchResults
-            searchTerm={searchQuery}
-            matchedSubstances={searchResults}
-          />
+          <OCRSearchResults searchTerm={searchQuery} matchedSubstances={searchResults} />
         </div>
       </main>
     </div>

@@ -1,147 +1,499 @@
-import React, { useState } from "react";
+// components/OCRSearchResults.js
+"use client";
+
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Escape regex special characters safely
-const escapeRegex = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * OCRSearchResults
+ *
+ * Props:
+ *  - searchTerm: string
+ *  - matchedSubstances: array of records in unified shape (or fields)
+ *
+ * This component:
+ *  - shows Banned Substances and Ingredients (non-banned) in two collapsible tables
+ *  - highlights the searchTerm in Substance Name / Synonyms and other fields
+ *  - has sticky table headers and a sticky footer legend wheel
+ *  - allows filtering by ban type (multi-select)
+ */
+
+// safety: escape regex special chars
+const escapeRegex = (string = "") =>
+  String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// minimal HTML escape to keep innerHTML safe for raw text (we still inject highlight spans)
+const escapeHtml = (unsafe = "") =>
+  String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
 export default function OCRSearchResults({
   searchTerm = "",
   matchedSubstances = [],
 }) {
-  const [activeBanType, setActiveBanType] = useState(null);
+  // UI state
+  const [activeBanType, setActiveBanType] = useState(null); // single-select (keeps old UX); can easily be switched to multi-select
+  const [bannedOpen, setBannedOpen] = useState(true);
+  const [ingredientsOpen, setIngredientsOpen] = useState(true);
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
+  // Ban type palette (consistent across site)
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
     { label: "Particular Sports", color: "#003049" },
   ];
 
-  const handleLegendClick = (label) => {
-    setActiveBanType(activeBanType === label ? null : label);
-  };
+  // Normalize incoming records (accept either {fields: {...}} or flattened shapes)
+  const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
+    const banned = [];
+    const ingredients = [];
+    const counts = {};
+    banTypeColors.forEach((b) => (counts[b.label] = 0));
 
-  const filteredSubstances = activeBanType
-    ? matchedSubstances.filter(
-        (record) => (record.fields["Ban Type"] || "None") === activeBanType
-      )
-    : matchedSubstances;
+    (matchedSubstances || []).forEach((rRaw) => {
+      const r = rRaw.fields ? rRaw.fields : rRaw; // support both shapes
+      const record = {
+        id: rRaw.id || rRaw.recordId || Math.random().toString(36).slice(2),
+        name:
+          r["Substance Name"] ??
+          r.name ??
+          r["Ingredient Name"] ??
+          rRaw.name ??
+          "",
+        synonyms: r["Synonyms"] ?? r.synonyms ?? "",
+        bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
+        banType: r["Ban Type"] ?? r.banType ?? null,
+        dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
+        notes: r["Notes"] ?? r.notes ?? "",
+        source:
+          r["Source / Citation"] ?? r["Source"] ?? r.source ?? r["Source / Notes"] ?? "",
+        benefits: r["Benefits"] ?? r.benefits ?? "",
+        weaknesses: r["Weaknesses"] ?? r.weaknesses ?? "",
+        antagonisms:
+          r["Nutrient Antagonism"] ?? r["Nutrient Antagonisms"] ?? r.antagonisms ?? "",
+      };
 
-  const getBanTypeHighlight = (banType) => {
-    const color = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
-    return <span style={{ color, fontWeight: 600 }}>{banType}</span>;
-  };
-
-  // Highlight searchTerm in a given text
-  const getHighlightedText = (text = "", record) => {
-    if (!text || !searchTerm) return text;
-
-    const regex = new RegExp(escapeRegex(searchTerm), "gi");
-    const banType = record.fields["Ban Type"] || "None";
-    const textColor = banTypeColors.find((b) => b.label === banType)?.color || "#d62828";
-
-    const highlighted = text.replace(regex, (match) => {
-      return `<span style="
-        color: ${textColor};
-        font-weight: 600;
-        text-decoration: underline;
-        text-decoration-color: ${textColor};
-        text-underline-offset: 2px;
-      ">${match}</span>`;
+      if (record.banType) {
+        banned.push(record);
+        const normalized = record.banType.trim();
+        if (counts[normalized] !== undefined) counts[normalized] += 1;
+      } else {
+        ingredients.push(record);
+      }
     });
 
-    return <span dangerouslySetInnerHTML={{ __html: highlighted }} />;
+    return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
+  }, [matchedSubstances]);
+
+  // Filter banned by legend (single-select activeBanType)
+  const filteredBanned = useMemo(() => {
+    if (!activeBanType) return bannedRecords;
+    return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
+  }, [bannedRecords, activeBanType]);
+
+  // Ingredients shown excluding ones already present in banned (by name)
+  const filteredIngredients = useMemo(() => {
+    const bannedNames = new Set(bannedRecords.map((b) => (b.name || "").toLowerCase()));
+    return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
+  }, [ingredientRecords, bannedRecords]);
+
+  // Highlight function: highlights occurrences of searchTerm in `text`.
+  // If color provided, it sets inline color on highlights (useful for ban-type highlighting).
+  const highlightHTML = (text = "", color = "") => {
+    const raw = String(text ?? "");
+    if (!raw) return "";
+    const term = String(searchTerm ?? "").trim();
+    if (!term) return escapeHtml(raw);
+
+    try {
+      const regex = new RegExp(escapeRegex(term), "gi");
+      // Wrap matches with a span; apply inline color style if provided
+      return escapeHtml(raw).replace(regex, (match) => {
+        if (color) {
+          return `<span style="color:${color}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${match}</span>`;
+        }
+        return `<span class="highlight-match">${match}</span>`;
+      });
+    } catch (err) {
+      // If regex fails for any reason, fallback to plain escaping
+      return escapeHtml(raw);
+    }
   };
 
+  const handleLegendClick = (label) => {
+    setActiveBanType((cur) => (cur === label ? null : label));
+    // smooth scroll to top of results for clarity
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const clearFilters = () => {
+    setActiveBanType(null);
+    setLegendCollapsed(false);
+  };
+
+  const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
+
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6">
+    <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6 relative">
       <section>
         <h2 className="text-2xl font-bold mb-2">Search Results</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned /{" "}
+          {ingredientRecords.length} ingredients
+        </p>
 
-        {/* Ban Type Legend */}
-        <div className="overflow-x-auto mb-4">
-          <div className="flex gap-4 w-[420px] min-w-max pl-2">
-            {banTypeColors.map((type) => (
-              <div
-                key={type.label}
-                className="flex items-center gap-1 cursor-pointer transition-transform hover:scale-110"
-                onClick={() => handleLegendClick(type.label)}
+        {/* Banned Substances Collapsible */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setBannedOpen((s) => !s)}
+                aria-expanded={bannedOpen}
+                aria-label={collapseLabel(bannedOpen, "Banned Substances")}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200 shadow-sm hover:shadow-md transition"
               >
-                <div
-                  className={`w-3 h-3 rounded-full border-2 ${
-                    activeBanType === type.label ? "border-gray-700" : "border-transparent"
-                  }`}
-                  style={{ backgroundColor: type.color }}
-                />
-                <span className="text-gray-800 text-sm font-medium">{type.label}</span>
-              </div>
-            ))}
+                <span className="text-sm font-semibold">Banned Substances</span>
+                <span className="text-xs text-gray-500">({bannedRecords.length})</span>
+                <span className="text-gray-500">{bannedOpen ? "▾" : "▸"}</span>
+              </button>
+              <div className="text-sm text-gray-600">Filter by ban type using legend below.</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const next = !(bannedOpen && ingredientsOpen);
+                  setBannedOpen(next);
+                  setIngredientsOpen(next);
+                }}
+                className="px-3 py-2 text-sm bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50"
+              >
+                Toggle All
+              </button>
+            </div>
           </div>
+
+          <AnimatePresence initial={false}>
+            {bannedOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="mt-3 overflow-x-auto"
+              >
+                {filteredBanned && filteredBanned.length > 0 ? (
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                    <thead className="bg-[#46769B] text-white sticky top-0 z-20">
+                      <tr>
+                        {[
+                          "Substance Name",
+                          "Synonyms",
+                          "Banned By",
+                          "Ban Type",
+                          "Dosage Limit",
+                          "Notes",
+                          "Source / Citation",
+                          "Benefits",
+                          "Weaknesses",
+                          "Nutrient Antagonisms",
+                        ].map((h) => (
+                          <th
+                            key={h}
+                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            scope="col"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {filteredBanned.map((rec) => {
+                        const banType = (rec.banType || "").trim();
+                        const colorEntry = banTypeColors.find((b) => b.label === banType);
+                        const matchColor = colorEntry?.color || "";
+
+                        const nameHTML = highlightHTML(rec.name || "", matchColor);
+                        const synHTML = highlightHTML(rec.synonyms || "", matchColor);
+                        const bannedByHTML = highlightHTML(rec.bannedBy || "", matchColor);
+                        const notesHTML = highlightHTML(rec.notes || "", matchColor);
+                        const sourceHTML = highlightHTML(rec.source || "", matchColor);
+                        const benefitsHTML = highlightHTML(rec.benefits || "", matchColor);
+                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", matchColor);
+                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", matchColor);
+
+                        return (
+                          <motion.tr
+                            key={rec.id}
+                            className="hover:bg-gray-50 transition"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.14 }}
+                          >
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: nameHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: synHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: bannedByHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <span
+                                className="px-2 py-1 rounded-full text-sm font-medium"
+                                style={{
+                                  backgroundColor: colorEntry ? `${colorEntry.color}20` : "#11182710",
+                                  color: colorEntry ? colorEntry.color : "#111827",
+                                }}
+                              >
+                                {banType || "—"}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div className="text-sm">{rec.dosageLimit || ""}</div>
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: notesHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="italic text-gray-500">No banned substances match your filters/search.</p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        <AnimatePresence>
-          {filteredSubstances && filteredSubstances.length > 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="overflow-x-auto w-full"
-            >
-              <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
-                <thead className="bg-[#46769B] text-white">
-                  <tr>
-                    {[
-                      "Substance Name",
-                      "Synonyms",
-                      "Banned By",
-                      "Ban Type",
-                      "Dosage Limit",
-                      "Notes",
-                      "Source / Citation",
-                    ].map((h) => (
-                      <th key={h} className="px-4 py-2 text-left font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSubstances.map((record) => {
-                    const fields = record.fields || {};
-                    const banType = fields["Ban Type"] || "None";
+        {/* Ingredients Collapsible */}
+        <div className="mb-24">{/* spacing so sticky footer doesn't overlap */ }
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIngredientsOpen((s) => !s)}
+                aria-expanded={ingredientsOpen}
+                aria-label={collapseLabel(ingredientsOpen, "Ingredients")}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200 shadow-sm hover:shadow-md transition"
+              >
+                <span className="text-sm font-semibold">Ingredients (non-banned)</span>
+                <span className="text-xs text-gray-500">({ingredientRecords.length})</span>
+                <span className="text-gray-500">{ingredientsOpen ? "▾" : "▸"}</span>
+              </button>
+              <div className="text-sm text-gray-600">Ingredients database results and nutrient info.</div>
+            </div>
+          </div>
 
-                    return (
-                      <motion.tr
-                        key={record.id}
-                        className="hover:bg-gray-100 transition"
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.18 }}
-                      >
-                        <td className="px-4 py-2">
-                          {getHighlightedText(fields["Substance Name"]?.trim(), record)}
-                        </td>
-                        <td className="px-4 py-2">
-                          {getHighlightedText(fields["Synonyms"]?.trim(), record)}
-                        </td>
-                        <td className="px-4 py-2">{fields["Banned By"]?.trim() || ""}</td>
-                        <td className="px-4 py-2">{getBanTypeHighlight(banType)}</td>
-                        <td className="px-4 py-2">{fields["Dosage Limit"]?.trim() || ""}</td>
-                        <td className="px-4 py-2">{fields["Notes"]?.trim() || ""}</td>
-                        <td className="px-4 py-2 max-w-xs break-words whitespace-normal">
-                          {fields["Source / Citation"]?.trim() || ""}
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </motion.div>
-          ) : (
-            <p className="italic text-gray-500">No results found for this search.</p>
-          )}
-        </AnimatePresence>
+          <AnimatePresence initial={false}>
+            {ingredientsOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="mt-3 overflow-x-auto"
+              >
+                {filteredIngredients && filteredIngredients.length > 0 ? (
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                    <thead className="bg-[#334E63] text-white sticky top-0 z-20">
+                      <tr>
+                        {[
+                          "Ingredient Name",
+                          "Synonyms",
+                          "Benefits",
+                          "Weaknesses",
+                          "Nutrient Antagonisms",
+                          "Source / Notes",
+                        ].map((h) => (
+                          <th
+                            key={h}
+                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            scope="col"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {filteredIngredients.map((rec) => {
+                        const nameHTML = highlightHTML(rec.name || "");
+                        const synHTML = highlightHTML(rec.synonyms || "");
+                        const benefitsHTML = highlightHTML(rec.benefits || "");
+                        const weaknessesHTML = highlightHTML(rec.weaknesses || "");
+                        const antagonismsHTML = highlightHTML(rec.antagonisms || "");
+                        const sourceHTML = highlightHTML(rec.source || "");
+
+                        return (
+                          <motion.tr
+                            key={rec.id}
+                            className="hover:bg-gray-50 transition"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.14 }}
+                          >
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: nameHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top">
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: synHTML }}
+                              />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
+                            </td>
+
+                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="italic text-gray-500">No ingredient-only results found for this search.</p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </section>
+
+      {/* Sticky Legend / Footer (bottom of viewport) */}
+      <div
+        className="sticky bottom-0 left-0 right-0 z-40"
+        style={{ pointerEvents: "auto" }}
+      >
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
+            <div className="flex items-center gap-3 overflow-x-auto py-1">
+              <button
+                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm"
+                onClick={() => setLegendCollapsed((c) => !c)}
+                aria-expanded={!legendCollapsed}
+                aria-label={legendCollapsed ? "Expand legend" : "Collapse legend"}
+              >
+                {legendCollapsed ? "▸ Legend" : "Legend ▾"}
+              </button>
+
+              {!legendCollapsed &&
+                banTypeColors.map((t) => {
+                  const active = activeBanType === t.label;
+                  return (
+                    <button
+                      key={t.label}
+                      onClick={() => handleLegendClick(t.label)}
+                      aria-pressed={active}
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm ${
+                        active ? "shadow-md" : "bg-white"
+                      }`}
+                      style={{ borderColor: active ? "#444" : "transparent" }}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: t.color, display: "inline-block" }}
+                      />
+                      <span className="font-medium">{t.label}</span>
+                      <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-gray-600">
+                Showing: {filteredBanned.length} banned · {filteredIngredients.length} ingredients
+              </div>
+              <button
+                onClick={clearFilters}
+                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105"
+                aria-label="Clear filters"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Local styles for highlight-match */}
+      <style jsx>{`
+        .highlight-match {
+          background: transparent;
+          padding: 0 0.12rem;
+          border-radius: 3px;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+          font-weight: 600;
+        }
+
+        /* Ensure table header cells remain visually on top */
+        thead.sticky {
+          z-index: 20;
+        }
+      `}</style>
     </div>
   );
 }

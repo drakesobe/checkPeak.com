@@ -8,16 +8,20 @@ const ingredientBase = new Airtable({ apiKey: process.env.INGREDIENT_API_KEY }).
   process.env.INGREDIENT_BASE_ID
 );
 
+// Fetch all records from a table
 const fetchAllRecords = async (base, tableName) => {
   const records = await base(tableName).select({ view: "Grid view" }).all();
   return records.map((rec) => ({ id: rec.id, fields: rec.fields }));
 };
 
+// Match ingredient to banned substance by name or synonyms
 const findIngredientMatch = (name, ingredients) => {
   const lowerName = name.toLowerCase();
   return ingredients.find((ing) => {
-    const ingName = ing.fields["Ingredient Name"] || "";
-    const synonyms = (ing.fields["Synonyms"] || "").split(",").map((s) => s.trim().toLowerCase());
+    const ingName = ing.fields["Name"] || "";
+    const synonyms = (ing.fields["Synonyms (Extended)"] || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase());
     return ingName.toLowerCase() === lowerName || synonyms.includes(lowerName);
   });
 };
@@ -32,13 +36,14 @@ export default async function handler(req, res) {
   const lowerQuery = query.toLowerCase();
 
   try {
+    // --- Fetch all records
     const bannedRecords = await fetchAllRecords(bannedBase, process.env.BANNED_TABLE_NAME);
     const ingredientRecords = await fetchAllRecords(
       ingredientBase,
       process.env.INGREDIENT_TABLE_NAME
     );
 
-    // --- Filter Banned by query
+    // --- Filter Banned Substances by query
     const matchedBanned = bannedRecords.filter((rec) => {
       const name = rec.fields["Substance Name"] || "";
       const synonyms = rec.fields["Synonyms"] || "";
@@ -50,7 +55,7 @@ export default async function handler(req, res) {
       );
     });
 
-    // --- Merge Banned with Ingredients
+    // --- Merge Banned with Ingredients for additional info
     const mergedBanned = matchedBanned.map((banned) => {
       const name = banned.fields["Substance Name"] || "";
       const ingredientMatch = findIngredientMatch(name, ingredientRecords);
@@ -69,12 +74,13 @@ export default async function handler(req, res) {
       };
     });
 
-    // --- Filter Ingredients by query, exclude already merged banned substances
+    // --- Filter Ingredients by query, exclude ones already in mergedBanned
     const matchedIngredients = ingredientRecords.filter((ing) => {
-      const name = ing.fields["Ingredient Name"] || "";
-      const synonyms = ing.fields["Synonyms"] || "";
+      const name = ing.fields["Name"] || "";
+      const synonyms = ing.fields["Synonyms (Extended)"] || "";
       const alreadyMerged = mergedBanned.some((b) => b.name.toLowerCase() === name.toLowerCase());
       if (alreadyMerged) return false;
+
       return (
         name.toLowerCase().includes(lowerQuery) ||
         synonyms.toLowerCase().includes(lowerQuery)
@@ -83,13 +89,13 @@ export default async function handler(req, res) {
 
     const mergedIngredients = matchedIngredients.map((ing) => ({
       id: ing.id,
-      name: ing.fields["Ingredient Name"] || "",
-      synonyms: ing.fields["Synonyms"] || "",
+      name: ing.fields["Name"] || "",
+      synonyms: ing.fields["Synonyms (Extended)"] || "",
       bannedBy: "",
       banType: null,
       dosageLimit: "",
-      notes: "",
-      source: "",
+      notes: ing.fields["Pharmacology Notes"] || "",
+      source: ing.fields["Sources / References"] || "",
       benefits: ing.fields["Benefits"] || "",
       weaknesses: ing.fields["Weaknesses"] || "",
       antagonisms: ing.fields["Nutrient Antagonism"] || "",

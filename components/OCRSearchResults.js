@@ -3,6 +3,7 @@
 
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
  * OCRSearchResults
@@ -11,11 +12,11 @@ import { motion, AnimatePresence } from "framer-motion";
  *  - searchTerm: string
  *  - matchedSubstances: array of records in unified shape (or fields)
  *
- * This component:
+ * Behavior:
  *  - shows Banned Substances and Ingredients (non-banned) in two collapsible tables
  *  - highlights the searchTerm in Substance Name / Synonyms and other fields
  *  - has sticky table headers and a sticky footer legend wheel
- *  - allows filtering by ban type (multi-select)
+ *  - allows filtering by ban type (single-select)
  */
 
 // safety: escape regex special chars
@@ -36,7 +37,7 @@ export default function OCRSearchResults({
   matchedSubstances = [],
 }) {
   // UI state
-  const [activeBanType, setActiveBanType] = useState(null); // single-select (keeps old UX); can easily be switched to multi-select
+  const [activeBanType, setActiveBanType] = useState(null); // single-select (keeps old UX)
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
@@ -47,6 +48,9 @@ export default function OCRSearchResults({
     { label: "Limited to Out of Competition", color: "#f77f00" },
     { label: "Particular Sports", color: "#003049" },
   ];
+
+  // Ingredient highlight color (user chose #8556da)
+  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
   // Normalize incoming records (accept either {fields: {...}} or flattened shapes)
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
@@ -59,28 +63,43 @@ export default function OCRSearchResults({
       const r = rRaw.fields ? rRaw.fields : rRaw; // support both shapes
       const record = {
         id: rRaw.id || rRaw.recordId || Math.random().toString(36).slice(2),
+        // Banned Airtable uses "Substance Name"; Ingredients use "Name"
         name:
           r["Substance Name"] ??
           r.name ??
-          r["Ingredient Name"] ??
+          r["Name"] ??
           rRaw.name ??
           "",
-        synonyms: r["Synonyms"] ?? r.synonyms ?? "",
+        // Synonyms could be "Synonyms" (banned) or "Synonyms (Extended)" (ingredients)
+        synonyms:
+          r["Synonyms"] ??
+          r["Synonyms (Extended)"] ??
+          r.synonyms ??
+          "",
         bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
         banType: r["Ban Type"] ?? r.banType ?? null,
         dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
-        notes: r["Notes"] ?? r.notes ?? "",
+        // Notes mapping: banned uses "Notes", ingredients use "Pharmacology Notes"
+        notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
+        // Sources mapping: banned might have "Source / Citation", ingredients "Sources / References"
         source:
-          r["Source / Citation"] ?? r["Source"] ?? r.source ?? r["Source / Notes"] ?? "",
+          r["Source / Citation"] ??
+          r["Source"] ??
+          r["Sources / References"] ??
+          r.source ??
+          "",
         benefits: r["Benefits"] ?? r.benefits ?? "",
         weaknesses: r["Weaknesses"] ?? r.weaknesses ?? "",
         antagonisms:
-          r["Nutrient Antagonism"] ?? r["Nutrient Antagonisms"] ?? r.antagonisms ?? "",
+          r["Nutrient Antagonism"] ??
+          r["Nutrient Antagonisms"] ??
+          r.antagonisms ??
+          "",
       };
 
       if (record.banType) {
         banned.push(record);
-        const normalized = record.banType.trim();
+        const normalized = (record.banType || "").trim();
         if (counts[normalized] !== undefined) counts[normalized] += 1;
       } else {
         ingredients.push(record);
@@ -114,10 +133,8 @@ export default function OCRSearchResults({
       const regex = new RegExp(escapeRegex(term), "gi");
       // Wrap matches with a span; apply inline color style if provided
       return escapeHtml(raw).replace(regex, (match) => {
-        if (color) {
-          return `<span style="color:${color}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${match}</span>`;
-        }
-        return `<span class="highlight-match">${match}</span>`;
+        const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
+        return `<span style="color:${appliedColor}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${match}</span>`;
       });
     } catch (err) {
       // If regex fails for any reason, fallback to plain escaping
@@ -139,6 +156,10 @@ export default function OCRSearchResults({
   };
 
   const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
+
+  // Show AnimatedEllipsis when user has typed a query but no results yet
+  const showSearchingIndicator =
+    String(searchTerm || "").trim().length >= 2 && (matchedSubstances?.length ?? 0) === 0;
 
   return (
     <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6 relative">
@@ -312,7 +333,7 @@ export default function OCRSearchResults({
         </div>
 
         {/* Ingredients Collapsible */}
-        <div className="mb-24">{/* spacing so sticky footer doesn't overlap */ }
+        <div className="mb-24">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -362,12 +383,12 @@ export default function OCRSearchResults({
 
                     <tbody>
                       {filteredIngredients.map((rec) => {
-                        const nameHTML = highlightHTML(rec.name || "");
-                        const synHTML = highlightHTML(rec.synonyms || "");
-                        const benefitsHTML = highlightHTML(rec.benefits || "");
-                        const weaknessesHTML = highlightHTML(rec.weaknesses || "");
-                        const antagonismsHTML = highlightHTML(rec.antagonisms || "");
-                        const sourceHTML = highlightHTML(rec.source || "");
+                        const nameHTML = highlightHTML(rec.name || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const synHTML = highlightHTML(rec.synonyms || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const benefitsHTML = highlightHTML(rec.benefits || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const sourceHTML = highlightHTML(rec.source || "", INGREDIENT_HIGHLIGHT_COLOR);
 
                         return (
                           <motion.tr
@@ -379,17 +400,11 @@ export default function OCRSearchResults({
                             transition={{ duration: 0.14 }}
                           >
                             <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: nameHTML }}
-                              />
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
                             </td>
 
                             <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: synHTML }}
-                              />
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
                             </td>
 
                             <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
@@ -412,6 +427,10 @@ export default function OCRSearchResults({
                       })}
                     </tbody>
                   </table>
+                ) : showSearchingIndicator ? (
+                  <div className="flex items-center justify-center py-12">
+                    <AnimatedEllipsis text="Searching for ingredients" />
+                  </div>
                 ) : (
                   <p className="italic text-gray-500">No ingredient-only results found for this search.</p>
                 )}
@@ -447,12 +466,14 @@ export default function OCRSearchResults({
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm ${
-                        active ? "shadow-md" : "bg-white"
+                        active ? "shadow-md bg-gray-800 text-white" : "bg-white"
                       }`}
-                      style={{ borderColor: active ? "#444" : "transparent" }}
+                      style={{
+                        borderColor: active ? "#444" : "transparent",
+                      }}
                     >
                       <span
-                        className="w-3 h-3 rounded-full"
+                        className="w-4 h-4 rounded-full flex-shrink-0"
                         style={{ backgroundColor: t.color, display: "inline-block" }}
                       />
                       <span className="font-medium">{t.label}</span>

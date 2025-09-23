@@ -3,36 +3,36 @@
 import { useEffect, useState, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
-import ProgressBar from "./ProgressBar";
 import dynamic from "next/dynamic";
 import { X } from "lucide-react";
+import ProgressBar from "./ProgressBar";
 
-// Lazy load live scanner so it doesn't bloat initial bundle
+// Lazy load live scanner
 const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), { ssr: false });
 
 export default function BarcodeUpload({ multiple = false, onResult, showScanButton = true }) {
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
+  const [athleteNames, setAthleteNames] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
-  const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
 
   const fileInputRef = useRef(null);
-
   const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-  // Animate dots during loading
+  // Animate loading dots
   useEffect(() => {
     if (!loading) return;
     const interval = setInterval(() => setAnimDots((d) => (d.length >= 3 ? "" : d + ".")), 450);
     return () => clearInterval(interval);
   }, [loading]);
 
+  // Cleanup preview URLs
   useEffect(() => {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
@@ -62,31 +62,23 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); };
+  const handleNameChange = (idx, value) => { const names = [...athleteNames]; names[idx] = value; setAthleteNames(names); };
 
-  const handleNameChange = (idx, value) => {
-    const names = [...athleteNames];
-    names[idx] = value;
-    setAthleteNames(names);
-  };
-
-  // --- Barcode decoding + pipeline ---
+  // --- Barcode decoding ---
   async function decodeBarcodeFromFile(file) {
     return new Promise((resolve, reject) => {
       try {
         const reader = new FileReader();
-        reader.onload = async (ev) => {
+        reader.onload = (ev) => {
           const img = new Image();
           img.onload = async () => {
             try {
               const codeReader = new BrowserMultiFormatReader();
               const result = await codeReader.decodeFromImageElement(img);
-              const barcodeText =
-                result && (typeof result.getText === "function" ? result.getText() : result.text || "");
+              const barcodeText = result?.getText?.() || result?.text || "";
               codeReader.reset();
               resolve(barcodeText);
-            } catch (err) {
-              reject(err);
-            }
+            } catch (err) { reject(err); }
           };
           img.onerror = () => reject(new Error("Failed to load image for decoding."));
           img.src = ev.target.result;
@@ -99,7 +91,8 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
     });
   }
 
-  async function fetchIngredientsAndCheck(barcode, labelImage) {
+  // --- Fetch matches from server ---
+  async function fetchMatches(barcode, labelImage) {
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -118,49 +111,29 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
     setProgress(5);
     try {
       setProgress(20);
-      const data = await fetchIngredientsAndCheck(barcodeText, labelImage);
-
-      const rawIngredients = data?.ocrText || "";
-      const matched = data?.matchedBanned || [];
-      const source = data?.debug?.fetchedIngredients
-        ? data.debug.fetchedIngredients.includes("OFF")
-          ? "OpenFoodFacts"
-          : data.debug.fetchedIngredients.includes("USDA")
-          ? "USDA"
-          : data.debug.fetchedIngredients.includes("FoodRepo")
-          ? "FoodRepo"
-          : "OCR"
-        : "OCR";
+      const data = await fetchMatches(barcodeText, labelImage);
 
       setProgress(90);
       const result = {
         barcode: barcodeText,
         productName: data?.productName || "Unknown product",
-        rawIngredients,
-        matchedBanned: matched,
-        source,
+        rawIngredients: data?.ocrText || "",
+        matchedBanned: data?.matchedBanned || [],
+        matchedIngredients: data?.matchedIngredients || [],
+        source: data?.debug?.fetchedIngredientsSource || "OCR",
         idx,
       };
 
-      if (typeof onResult === "function") {
-        try {
-          await onResult(result);
-        } catch (cbErr) {
-          console.warn("onResult callback threw:", cbErr);
-        }
-      }
+      if (typeof onResult === "function") await onResult(result);
 
       setProgress(100);
       return result;
     } catch (err) {
-      console.error("handleDecodedBarcodePipeline error:", err);
+      console.error(err);
       setError(err.message || "Failed to process barcode.");
       throw err;
     } finally {
-      setTimeout(() => {
-        setLoading(false);
-        setProgress(0);
-      }, 350);
+      setTimeout(() => { setLoading(false); setProgress(0); }, 350);
     }
   }
 
@@ -220,40 +193,23 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
             >
-              {/* Header */}
               <div className="flex justify-between items-center mb-2">
                 <h2 className="text-lg font-semibold text-gray-800">Choose Action</h2>
-                <button
-                  onClick={() => setShowChoiceModal(false)}
-                  className="text-gray-400 hover:text-gray-700 transition"
-                >
+                <button onClick={() => setShowChoiceModal(false)} className="text-gray-400 hover:text-gray-700 transition">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-
-              {/* Description */}
-              <p className="text-gray-600 text-sm">
-                Select how you want to add a barcode: live scanning or from an image.
-              </p>
-
-              {/* Buttons */}
+              <p className="text-gray-600 text-sm">Select how you want to add a barcode: live scanning or from an image.</p>
               <div className="flex flex-col gap-3 mt-2">
                 <button
                   className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition"
-                  onClick={() => {
-                    setShowChoiceModal(false);
-                    setShowLiveScanner(true);
-                  }}
+                  onClick={() => { setShowChoiceModal(false); setShowLiveScanner(true); }}
                 >
                   Start Live Scanner
                 </button>
-
                 <button
                   className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
-                  onClick={() => {
-                    setShowChoiceModal(false);
-                    fileInputRef.current?.click();
-                  }}
+                  onClick={() => { setShowChoiceModal(false); fileInputRef.current?.click(); }}
                 >
                   Take Photo / Upload
                 </button>
@@ -273,23 +229,16 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
             exit={{ opacity: 0 }}
           >
             <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
-              <button
-                className="absolute top-3 right-3 text-gray-600 hover:text-black"
-                onClick={() => setShowLiveScanner(false)}
-              >
+              <button className="absolute top-3 right-3 text-gray-600 hover:text-black" onClick={() => setShowLiveScanner(false)}>
                 <X className="w-6 h-6" />
               </button>
-              <LiveBarcodeScanner onDetected={(code) => {
-                console.log("Detected:", code);
-                setShowLiveScanner(false);
-                handleDecodedBarcodePipeline(code);
-              }} />
+              <LiveBarcodeScanner onDetected={(code) => { setShowLiveScanner(false); handleDecodedBarcodePipeline(code); }} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Existing Preview / Input */}
+      {/* Preview / Input */}
       {files.map((file, idx) => (
         <div key={idx} className="flex flex-col items-start space-y-1 max-w-3xl mx-auto">
           <span className="font-medium">{file.name}</span>
@@ -300,12 +249,7 @@ export default function BarcodeUpload({ multiple = false, onResult, showScanButt
             onChange={(e) => handleNameChange(idx, e.target.value)}
             className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
-          <img
-            src={previewURLs[idx]}
-            alt="Preview"
-            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1"
-            loading="lazy"
-          />
+          <img src={previewURLs[idx]} alt="Preview" className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1" loading="lazy" />
         </div>
       ))}
 

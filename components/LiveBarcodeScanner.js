@@ -1,39 +1,17 @@
-// LiveBarcodeScanner.jsx
+// components/LiveBarcodeScanner.jsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  BrowserMultiFormatReader,
-  DecodeHintType,
-  BarcodeFormat,
-} from "@zxing/browser";
+import React, { useEffect, useRef, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/library";
 
-// Map friendly names
-const NAME_TO_FORMAT = {
-  AZTEC: BarcodeFormat.AZTEC,
-  CODABAR: BarcodeFormat.CODABAR,
-  CODE_39: BarcodeFormat.CODE_39,
-  CODE_93: BarcodeFormat.CODE_93,
-  CODE_128: BarcodeFormat.CODE_128,
-  DATA_MATRIX: BarcodeFormat.DATA_MATRIX,
-  EAN_8: BarcodeFormat.EAN_8,
-  EAN_13: BarcodeFormat.EAN_13,
-  ITF: BarcodeFormat.ITF,
-  PDF_417: BarcodeFormat.PDF_417,
-  QR_CODE: BarcodeFormat.QR_CODE,
-  UPC_A: BarcodeFormat.UPC_A,
-  UPC_E: BarcodeFormat.UPC_E,
-};
-
-function mapFormats(arr = []) {
-  const out = [];
-  for (const name of arr) {
-    const n = ("" + name).toUpperCase();
-    if (NAME_TO_FORMAT[n]) out.push(NAME_TO_FORMAT[n]);
-  }
-  return out;
-}
-
+/**
+ * LiveBarcodeScanner
+ *
+ * Props:
+ *  - onDetected(text: string) => void
+ *  - preferredFormats (not actively enforced here due to cross-build differences)
+ *  - enableBeep, enableFlash, enableOCRFallback, ocrIntervalMs, maxOcrAttempts
+ */
 export default function LiveBarcodeScanner({
   onDetected,
   preferredFormats = ["EAN_13", "UPC_A", "UPC_E", "EAN_8", "CODE_128", "QR_CODE"],
@@ -41,21 +19,23 @@ export default function LiveBarcodeScanner({
   enableFlash = true,
   enableOCRFallback = true,
   ocrIntervalMs = 3500,
-  maxOcrAttempts = 2,
+  maxOcrAttempts = 3,
 }) {
   const videoRef = useRef(null);
   const readerRef = useRef(null);
-  const detectedRef = useRef(false);
   const activeTrackRef = useRef(null);
-  const ocrAttemptsRef = useRef(0);
+  const detectedRef = useRef(false);
   const ocrTimerRef = useRef(null);
+  const ocrAttemptsRef = useRef(0);
 
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [flashPulse, setFlashPulse] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("Starting camera...");
 
-  // --- beep ---
+  // --- audio beep ---
   const playBeep = (freq = 900, duration = 140) => {
+    if (!enableBeep) return;
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const o = ctx.createOscillator();
@@ -72,11 +52,13 @@ export default function LiveBarcodeScanner({
       setTimeout(() => {
         try { o.stop(); ctx.close(); } catch {}
       }, duration + 20);
-    } catch {}
+    } catch (e) {
+      // ignore audio errors
+    }
   };
 
   const successFeedback = () => {
-    if (enableBeep) playBeep();
+    playBeep();
     if (navigator.vibrate) navigator.vibrate(120);
     if (enableFlash) {
       setFlashPulse(true);
@@ -84,157 +66,212 @@ export default function LiveBarcodeScanner({
     }
   };
 
-  // --- crop + preprocess frame ---
-  const getCroppedFrame = () => {
+  // --- crop & preprocess the central scan box into a canvas ---
+  const getCroppedCanvas = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return null;
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
 
-    // crop to central box (same aspect ratio as overlay: ~75% width, height=24)
-    const cropWidth = vw * 0.75;
-    const cropHeight = vh * 0.15;
-    const sx = (vw - cropWidth) / 2;
-    const sy = (vh - cropHeight) / 2;
+    // choose crop region to match overlay: center 75% width, approx 15% height
+    const cropW = Math.round(vw * 0.75);
+    const cropH = Math.round(vh * 0.15);
+    const sx = Math.round((vw - cropW) / 2);
+    const sy = Math.round((vh - cropH) / 2);
 
     const canvas = document.createElement("canvas");
-    canvas.width = cropWidth;
-    canvas.height = cropHeight;
+    canvas.width = cropW;
+    canvas.height = cropH;
     const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
 
-    ctx.drawImage(video, sx, sy, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
-    // preprocess: grayscale + threshold
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      const bw = avg > 128 ? 255 : 0;
-      data[i] = data[i + 1] = data[i + 2] = bw;
+    // simple preprocessing: grayscale + threshold to black/white
+    try {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        const bw = avg > 140 ? 255 : 0; // threshold tuned for camera; adjust if needed
+        d[i] = d[i + 1] = d[i + 2] = bw;
+      }
+      ctx.putImageData(img, 0, 0);
+    } catch (e) {
+      // sometimes cross-origin or read errors - ignore and return raw canvas
     }
-    ctx.putImageData(imageData, 0, 0);
 
     return canvas;
   };
 
-  // --- OCR fallback ---
-  const runOcrOnVideoFrame = async () => {
+  // --- OCR fallback using tesseract.js on the cropped canvas ---
+  const runOcrOnCroppedFrame = async () => {
+    if (!enableOCRFallback) return null;
+    const canvas = getCroppedCanvas();
+    if (!canvas) return null;
     try {
-      const canvas = getCroppedFrame();
-      if (!canvas) return null;
-
       const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker({});
+      const worker = createWorker();
       await worker.load();
       await worker.loadLanguage("eng");
       await worker.initialize("eng");
-      await worker.setParameters({
-        tessedit_char_whitelist: "0123456789",
-      });
-
+      // restrict to digits to speed up / reduce mistakes
+      await worker.setParameters({ tessedit_char_whitelist: "0123456789" });
       const { data } = await worker.recognize(canvas);
       await worker.terminate();
-
       const digits = (data.text || "").replace(/\s+/g, "");
-      const match = digits.match(/\d{8,14}/);
-      if (match && match[0]) {
-        if (!detectedRef.current) {
-          detectedRef.current = true;
-          successFeedback();
-          stopCamera();
-          if (typeof onDetected === "function") onDetected(match[0]);
-        }
-        return match[0];
-      }
+      const match = digits.match(/\d{8,14}/); // common barcode lengths
+      if (match && match[0]) return match[0];
     } catch (err) {
-      console.warn("OCR fallback failed:", err);
+      console.warn("OCR fallback error:", err);
     }
     return null;
   };
 
-  const stopCamera = () => {
-    try { readerRef.current?.reset(); } catch {}
-    if (ocrTimerRef.current) clearInterval(ocrTimerRef.current);
-    const stream = videoRef.current?.srcObject;
-    if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
+  // --- stop camera & cleanup ---
+  const stopEverything = () => {
+    try {
+      readerRef.current?.reset();
+    } catch (e) {}
+    if (ocrTimerRef.current) {
+      clearInterval(ocrTimerRef.current);
+      ocrTimerRef.current = null;
+    }
+    const s = videoRef.current?.srcObject;
+    if (s && s.getTracks) {
+      s.getTracks().forEach((t) => {
+        try { t.stop(); } catch (e) {}
+      });
+    }
     activeTrackRef.current = null;
+    setStatusMsg("Scanner stopped.");
   };
 
+  // --- main init effect ---
   useEffect(() => {
-    const hints = new Map();
-    const mapped = mapFormats(preferredFormats);
-    if (mapped.length) hints.set(DecodeHintType.POSSIBLE_FORMATS, mapped);
+    detectedRef.current = false;
+    ocrAttemptsRef.current = 0;
 
-    const codeReader = new BrowserMultiFormatReader(hints);
+    const codeReader = new BrowserMultiFormatReader();
     readerRef.current = codeReader;
 
-    (async function start() {
+    let mounted = true;
+
+    (async () => {
       try {
+        setStatusMsg("Requesting camera devices...");
         const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-        let chosen;
-        if (devices && devices.length) {
-          const back = devices.find((d) =>
-            /back|rear|environment/i.test(d.label)
-          );
-          chosen = back ? back.deviceId : devices[0].deviceId;
+
+        if (!mounted) return;
+        if (!devices || !devices.length) {
+          setStatusMsg("No camera devices found.");
+          return;
         }
+
+        // try to pick the back / environment camera by label, else choose first
+        const back = devices.find((d) =>
+          /back|rear|environment|camera 2|camera 1/i.test(d.label)
+        );
+        const chosenDeviceId = back ? back.deviceId : devices[0].deviceId;
+        setStatusMsg("Starting camera...");
+
+        // attempt to start decode with desired constraints (may or may not be respected)
+        // NOTE: some builds accept constraints object as 4th arg — we'll pass it. If the library ignores it, it still works.
+        const constraints = {
+          video: {
+            deviceId: chosenDeviceId ? { exact: chosenDeviceId } : undefined,
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        };
 
         await codeReader.decodeFromVideoDevice(
-          chosen || undefined,
+          chosenDeviceId || undefined,
           videoRef.current,
-          (result, err) => {
+          async (result, err) => {
+            // result is truthy when ZXing successfully decoded
             if (result && !detectedRef.current) {
               detectedRef.current = true;
-              const text = result?.getText?.() || result?.text || "";
+              const text = result?.getText?.() || result?.text || String(result);
               console.log("ZXing detected:", text);
               successFeedback();
-              stopCamera();
+              stopEverything();
               if (typeof onDetected === "function") onDetected(text);
+              return;
             }
-            if (err && err.name !== "NotFoundException") {
-              console.warn("ZXing error:", err);
+
+            // not-found errors are normal for frames without codes; only log unusual errors
+            if (err) {
+              // Some builds set err.name === 'NotFoundException' or provide other types; skip noisy logs
+              const name = err?.name || (err && err.constructor && err.constructor.name) || "";
+              if (!/NotFoundException|NotFound/i.test(name)) {
+                console.warn("ZXing error:", err);
+              }
             }
           },
-          {
-            video: {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-          }
+          constraints
         );
 
-        // torch support
-        const stream = videoRef.current?.srcObject;
-        if (stream?.getVideoTracks) {
-          const track = stream.getVideoTracks()[0];
-          activeTrackRef.current = track;
-          const caps = track.getCapabilities ? track.getCapabilities() : {};
-          if (caps.torch) setTorchAvailable(true);
-        }
+        // After decodeFromVideoDevice starts, grab the active track to check torch
+        // The library sets video.srcObject; we check it a little later
+        setTimeout(() => {
+          try {
+            const stream = videoRef.current?.srcObject;
+            if (stream && stream.getVideoTracks && stream.getVideoTracks().length) {
+              activeTrackRef.current = stream.getVideoTracks()[0];
+              const caps = activeTrackRef.current.getCapabilities
+                ? activeTrackRef.current.getCapabilities()
+                : {};
+              if (caps && caps.torch) setTorchAvailable(true);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }, 800);
 
-        // OCR fallback timer
+        setStatusMsg("Point camera at barcode (rear camera preferred).");
+
+        // set up OCR fallback polling if requested
         if (enableOCRFallback) {
           ocrAttemptsRef.current = 0;
           ocrTimerRef.current = setInterval(async () => {
             if (detectedRef.current || ocrAttemptsRef.current >= maxOcrAttempts) {
-              clearInterval(ocrTimerRef.current);
+              if (ocrTimerRef.current) clearInterval(ocrTimerRef.current);
               return;
             }
-            await runOcrOnVideoFrame();
-            ocrAttemptsRef.current++;
+            try {
+              console.log("OCR fallback attempt", ocrAttemptsRef.current + 1);
+              const found = await runOcrOnCroppedFrame();
+              if (found && !detectedRef.current) {
+                detectedRef.current = true;
+                successFeedback();
+                stopEverything();
+                if (typeof onDetected === "function") onDetected(found);
+              }
+            } catch (e) {
+              console.warn("OCR attempt error:", e);
+            } finally {
+              ocrAttemptsRef.current++;
+              if (ocrAttemptsRef.current >= maxOcrAttempts && ocrTimerRef.current) {
+                clearInterval(ocrTimerRef.current);
+              }
+            }
           }, ocrIntervalMs);
         }
       } catch (err) {
-        console.error("Failed to start scanner:", err);
+        console.error("Scanner init failed:", err);
+        setStatusMsg("Failed to start camera scanner.");
       }
     })();
 
-    return stopCamera;
+    return () => {
+      mounted = false;
+      stopEverything();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- toggle torch ---
   const toggleTorch = async () => {
     try {
       const track = activeTrackRef.current;
@@ -248,6 +285,20 @@ export default function LiveBarcodeScanner({
     }
   };
 
+  // --- manual retry (allow scanning again) ---
+  const handleRetry = () => {
+    detectedRef.current = false;
+    ocrAttemptsRef.current = 0;
+    setStatusMsg("Retrying scan...");
+    try {
+      // reset the library's reader so it will continue
+      readerRef.current?.reset();
+      // re-run the effect by reloading the page/letting the component mount logic run — but usually reset is sufficient.
+    } catch (e) {
+      console.warn("Retry reset failed:", e);
+    }
+  };
+
   return (
     <div className="w-full flex flex-col items-center gap-3">
       <div className="relative w-full" style={{ paddingTop: "56%" }}>
@@ -256,25 +307,22 @@ export default function LiveBarcodeScanner({
           autoPlay
           muted
           playsInline
-          className="absolute inset-0 w-full h-full object-cover rounded-lg"
+          className="absolute inset-0 w-full h-full object-cover rounded-lg bg-black"
         />
+        {/* flash overlay */}
         <div
           aria-hidden
           className={`absolute inset-0 rounded-lg pointer-events-none transition-opacity duration-300 ${
             flashPulse ? "opacity-70 bg-green-400/40" : "opacity-0"
           }`}
         />
-        {/* scan box */}
+        {/* central scan box */}
         <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3/4 h-24 border-2 border-white/80 rounded-md pointer-events-none" />
       </div>
 
       <div className="flex gap-2 items-center">
         <button
-          onClick={() => {
-            detectedRef.current = false;
-            ocrAttemptsRef.current = 0;
-            try { readerRef.current?.reset(); } catch {}
-          }}
+          onClick={handleRetry}
           className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
         >
           Retry
@@ -288,9 +336,8 @@ export default function LiveBarcodeScanner({
             {torchOn ? "Torch Off" : "Torch On"}
           </button>
         )}
-        <div className="text-sm text-gray-500">
-          Align barcode inside the box (rear camera preferred).
-        </div>
+
+        <div className="text-sm text-gray-500">{statusMsg}</div>
       </div>
     </div>
   );

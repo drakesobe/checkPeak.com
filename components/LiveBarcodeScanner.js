@@ -5,41 +5,48 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   BrowserMultiFormatReader,
   listVideoInputDevices,
+  BarcodeFormat,
 } from "@zxing/library";
 
 /**
  * LiveBarcodeScanner
  *
- * - Props:
- *    onDetected(text: string) => void
- *    enableBeep / enableFlash / enableOCRFallback / ocrIntervalMs / maxOcrAttempts
+ * Props:
+ *  - onDetected(text: string) => void   // called immediately when a barcode is decoded
+ *  - enableBeep (bool)                 // short beep on detection
+ *  - enableFlash (bool)                // brief flash overlay on detection
+ *  - enableOCRFallback (bool)          // use tesseract.js on cropped frames if ZXing misses
+ *  - ocrIntervalMs (number)            // how often to run OCR fallback (ms)
+ *  - maxOcrAttempts (number)
  *
- * Notes:
- * - Uses getUserMedia + decodeFromVideoElementContinuously for live scanning.
- * - Has an Upload / Choose File flow that preprocesses and attempts ZXing then Tesseract fallback.
- * - Looser camera constraints (facingMode: 'environment') to avoid silent failures.
+ * Behavior:
+ *  1. Ask for camera via getUserMedia() (ensures permission prompt)
+ *  2. Attach stream to <video> and call video.play()
+ *  3. Start continuous ZXing decode from the video element
+ *  4. When ZXing returns a result -> call onDetected(result) and stop camera
+ *  5. If ZXing can't decode, a periodic OCR fallback will capture a cropped canvas and attempt numeric OCR
  */
+
 export default function LiveBarcodeScanner({
   onDetected,
   enableBeep = true,
   enableFlash = true,
   enableOCRFallback = true,
-  ocrIntervalMs = 3500,
+  ocrIntervalMs = 1500,
   maxOcrAttempts = 3,
 }) {
   const videoRef = useRef(null);
-  const readerRef = useRef(null);
+  const readerRef = useRef(null); // ZXing reader instance
+  const streamRef = useRef(null);
   const activeTrackRef = useRef(null);
   const detectedRef = useRef(false);
   const ocrTimerRef = useRef(null);
   const ocrAttemptsRef = useRef(0);
-  const streamRef = useRef(null);
 
-  const [mode, setMode] = useState("live"); // 'live' or 'file'
   const [statusMsg, setStatusMsg] = useState("Idle");
+  const [flashPulse, setFlashPulse] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
-  const [flashPulse, setFlashPulse] = useState(false);
 
   // --- audio beep ---
   const playBeep = (freq = 900, duration = 140) => {
@@ -54,14 +61,14 @@ export default function LiveBarcodeScanner({
       o.connect(g);
       g.connect(ctx.destination);
       const now = ctx.currentTime;
-      g.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
       o.start(now);
       g.gain.exponentialRampToValueAtTime(0.0001, now + duration / 1000);
       setTimeout(() => {
         try { o.stop(); ctx.close(); } catch (e) {}
       }, duration + 20);
     } catch (e) {
-      // ignore audio errors
+      console.warn("beep failed", e);
     }
   };
 
@@ -74,36 +81,16 @@ export default function LiveBarcodeScanner({
     }
   };
 
-  // --- helper: crop & preprocess central scan box from video or image canvas ---
-  const preprocessCanvas = (canvas) => {
-    try {
-      const ctx = canvas.getContext("2d");
-      const w = canvas.width;
-      const h = canvas.height;
-      // simple grayscale + threshold
-      const img = ctx.getImageData(0, 0, w, h);
-      const d = img.data;
-      const THRESH = 140; // tweakable
-      for (let i = 0; i < d.length; i += 4) {
-        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-        const bw = avg > THRESH ? 255 : 0;
-        d[i] = d[i + 1] = d[i + 2] = bw;
-      }
-      ctx.putImageData(img, 0, 0);
-    } catch (e) {
-      // ignore readback/preprocessing errors
-      console.warn("preprocessCanvas error", e);
-    }
-  };
-
-  // Build a cropped canvas from current video element (center box)
+  // --- crop & preprocess central scan box from video ---
   const getCroppedCanvasFromVideo = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return null;
+
+    // crop central region (wider/taller to catch barcode area)
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-    const cropW = Math.round(vw * 0.75);
-    const cropH = Math.round(vh * 0.18); // slightly larger than before
+    const cropW = Math.round(vw * 0.8);
+    const cropH = Math.round(vh * 0.25);
     const sx = Math.round((vw - cropW) / 2);
     const sy = Math.round((vh - cropH) / 2);
 
@@ -112,83 +99,31 @@ export default function LiveBarcodeScanner({
     canvas.height = cropH;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-    preprocessCanvas(canvas);
+
+    // simple preprocess: convert to grayscale and adjust contrast/threshold
+    try {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      const THRESH = 140;
+      for (let i = 0; i < d.length; i += 4) {
+        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        // boost contrast slightly then threshold
+        const v = Math.max(0, Math.min(255, (avg - 128) * 1.1 + 128));
+        const bw = v > THRESH ? 255 : 0;
+        d[i] = d[i + 1] = d[i + 2] = bw;
+      }
+      ctx.putImageData(img, 0, 0);
+    } catch (e) {
+      // if readback fails, return raw canvas
+      console.warn("preprocess failed", e);
+    }
+
     return canvas;
   };
 
-  // Build a canvas from an Image object, scaled down if very large
-  const getCanvasFromImage = (img) => {
-    const maxSide = 1600;
-    let w = img.naturalWidth || img.width;
-    let h = img.naturalHeight || img.height;
-    const scale = Math.min(1, maxSide / Math.max(w, h));
-    w = Math.round(w * scale);
-    h = Math.round(h * scale);
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, w, h);
-    // center crop region similar to video crop to focus on barcode area
-    const cropW = Math.round(w * 0.9);
-    const cropH = Math.round(h * 0.25);
-    const sx = Math.round((w - cropW) / 2);
-    const sy = Math.round((h - cropH) / 2);
-    const cropped = document.createElement("canvas");
-    cropped.width = cropW;
-    cropped.height = cropH;
-    const cctx = cropped.getContext("2d");
-    cctx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-    preprocessCanvas(cropped);
-    return cropped;
-  };
-
-  // --- ZXing attempt on a canvas or image element ---
-  const tryZXingOnCanvasOrImage = async (canvasOrImage) => {
-    try {
-      // Try decodeFromImageElement if it's an HTMLImageElement
-      if (canvasOrImage instanceof HTMLImageElement) {
-        try {
-          const res = await readerRef.current.decodeFromImageElement(canvasOrImage);
-          return res?.getText?.() || res?.text || String(res);
-        } catch (e) {
-          // fallback to canvas method below
-          console.warn("decodeFromImageElement failed", e);
-        }
-      }
-
-      // If it's a canvas, we attempt to use decodeFromCanvas (may not exist on all builds)
-      if (canvasOrImage instanceof HTMLCanvasElement) {
-        try {
-          // many builds support decodeFromCanvas
-          if (typeof readerRef.current.decodeFromCanvas === "function") {
-            const res = await readerRef.current.decodeFromCanvas(canvasOrImage);
-            return res?.getText?.() || res?.text || String(res);
-          }
-        } catch (e) {
-          console.warn("decodeFromCanvas failed", e);
-        }
-
-        // As an alternative, create an Image from canvas and call decodeFromImageElement
-        try {
-          const img = new Image();
-          img.src = canvasOrImage.toDataURL("image/png");
-          await new Promise((r) => (img.onload = r));
-          const res = await readerRef.current.decodeFromImageElement(img);
-          return res?.getText?.() || res?.text || String(res);
-        } catch (e) {
-          console.warn("decodeFromCanvas->Image fallback failed", e);
-        }
-      }
-    } catch (e) {
-      console.warn("tryZXingOnCanvasOrImage error", e);
-    }
-    return null;
-  };
-
-  // --- OCR fallback using tesseract.js ---
+  // --- OCR fallback using tesseract.js (digits only) ---
   const runOcrOnCanvas = async (canvas) => {
-    if (!enableOCRFallback) return null;
+    if (!enableOCRFallback || !canvas) return null;
     try {
       const { createWorker } = await import("tesseract.js");
       const worker = createWorker();
@@ -200,116 +135,66 @@ export default function LiveBarcodeScanner({
       await worker.terminate();
       const digits = (data.text || "").replace(/\s+/g, "");
       const match = digits.match(/\d{8,14}/);
-      if (match && match[0]) return match[0];
+      if (match) return match[0];
     } catch (e) {
-      console.warn("OCR error", e);
+      console.warn("OCR failed", e);
     }
     return null;
   };
 
-  // --- file upload handler ---
-  const handleFileInput = async (file) => {
-    if (!file) return;
-    // stop camera if active
-    stopCamera();
-
-    setMode("file");
-    setStatusMsg("Processing image...");
+  // --- core: start camera and continuous ZXing decode ---
+  const startScanner = async () => {
     detectedRef.current = false;
+    ocrAttemptsRef.current = 0;
+    setStatusMsg("Requesting camera...");
 
-    try {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.src = url;
-      await new Promise((res, rej) => {
-        img.onload = () => res();
-        img.onerror = (e) => rej(e);
-      });
+    // ensure previous stream stopped
+    stopScanner();
 
-      const canvas = getCanvasFromImage(img);
-
-      // First try ZXing on the processed canvas
-      const zres = await tryZXingOnCanvasOrImage(canvas);
-      if (zres) {
-        detectedRef.current = true;
-        successFeedback();
-        setStatusMsg("Detected (ZXing): " + zres);
-        if (typeof onDetected === "function") onDetected(zres);
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      // Next fallback to OCR digits
-      const ores = await runOcrOnCanvas(canvas);
-      if (ores) {
-        detectedRef.current = true;
-        successFeedback();
-        setStatusMsg("Detected (OCR): " + ores);
-        if (typeof onDetected === "function") onDetected(ores);
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      setStatusMsg("No barcode found in image.");
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("File processing failed:", e);
-      setStatusMsg("Failed to process image.");
+    // create reader if needed
+    if (!readerRef.current) {
+      readerRef.current = new BrowserMultiFormatReader();
     }
-  };
+    const reader = readerRef.current;
 
-  // --- camera startup (getUserMedia first, then ZXing decode loop) ---
-  const startCamera = async () => {
-    detectedRef.current = false;
-    setStatusMsg("Requesting camera access...");
-
-    // ensure old stream stopped
-    stopCamera();
-
-    const reader = readerRef.current || new BrowserMultiFormatReader();
-    readerRef.current = reader;
-
-    // looser constraints - just prefer environment
+    // Prefer environment camera (no hard width/height so permission prompt shows reliably)
     const constraintsPref = { video: { facingMode: { ideal: "environment" } }, audio: false };
 
     let stream = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraintsPref);
-      // success
     } catch (err) {
-      console.warn("Environment camera constraint failed, trying generic video", err);
+      console.warn("getUserMedia with facingMode failed, trying default video", err);
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       } catch (err2) {
-        console.error("getUserMedia failed entirely:", err2);
-        setStatusMsg("Camera access denied or not available.");
+        console.error("Camera access failed", err2);
+        setStatusMsg("Camera access denied or unavailable.");
         return;
       }
     }
 
     if (!stream) {
-      setStatusMsg("Unable to get camera stream.");
+      setStatusMsg("Unable to access camera.");
       return;
     }
 
     streamRef.current = stream;
-    // attach stream and play
+
+    // attach stream to video element
     try {
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // ensure muted & playsInline
-        videoRef.current.muted = true;
-        videoRef.current.playsInline = true;
-        await videoRef.current.play().catch((e) => {
-          // some recoverable autoplay issues
-          console.warn("video.play() error:", e);
-        });
-      }
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.muted = true; // required by many autoplay policies
+      video.playsInline = true; // iOS
+      await video.play().catch((e) => {
+        console.warn("video.play() failed:", e);
+      });
     } catch (e) {
       console.warn("attach stream error", e);
     }
 
-    // save track for torch toggling
+    // save primary track for torch toggling
     try {
       const tracks = stream.getVideoTracks();
       if (tracks && tracks.length) {
@@ -318,54 +203,53 @@ export default function LiveBarcodeScanner({
         if (caps?.torch) setTorchAvailable(true);
       }
     } catch (e) {
-      // ignore
+      console.warn("track capability check failed", e);
     }
 
-    setMode("live");
-    setStatusMsg("Point camera at barcode (rear camera preferred).");
+    setStatusMsg("Scanning for barcodes...");
 
-    // start ZXing continuous decode on the video element
+    // Prefer the continuously-decoding method if available
     try {
-      // prefer decodeFromVideoElementContinuously if available
       if (typeof reader.decodeFromVideoElementContinuously === "function") {
-        reader.decodeFromVideoElementContinuously(videoRef.current, async (result, err) => {
+        reader.decodeFromVideoElementContinuously(videoRef.current, (result, err) => {
           if (result && !detectedRef.current) {
             detectedRef.current = true;
-            const text = result?.getText?.() || result?.text || String(result);
-            console.log("ZXing detected:", text);
+            const txt = result?.getText?.() || result?.text || String(result);
+            console.log("ZXing detected:", txt);
             successFeedback();
-            stopCamera();
-            if (typeof onDetected === "function") onDetected(text);
+            setStatusMsg("Detected: " + txt);
+            // stop camera & call onDetected
+            stopScanner();
+            if (typeof onDetected === "function") onDetected(txt);
             return;
           }
           if (err) {
-            // ignore noisy NotFound errors
+            // ignore not-found noise
             const name = err?.name || (err && err.constructor && err.constructor.name) || "";
-            if (!/NotFound/i.test(name)) {
-              console.warn("ZXing error:", err);
-            }
+            if (!/NotFound/i.test(name)) console.warn("ZXing error:", err);
           }
         });
       } else {
-        // fallback: use decodeFromVideoDevice (some builds)
+        // fallback to decodeFromVideoDevice if continuous method not present
+        // pick back camera if possible
         try {
           const devices = await listVideoInputDevices();
           const back = devices?.find((d) => /back|rear|environment/i.test(d.label));
           const chosen = back?.deviceId;
-          await reader.decodeFromVideoDevice(chosen || undefined, videoRef.current, (result, err) => {
+          reader.decodeFromVideoDevice(chosen || undefined, videoRef.current, (result, err) => {
             if (result && !detectedRef.current) {
               detectedRef.current = true;
-              const text = result?.getText?.() || result?.text || String(result);
-              console.log("ZXing detected (device):", text);
+              const txt = result?.getText?.() || result?.text || String(result);
+              console.log("ZXing detected (device):", txt);
               successFeedback();
-              stopCamera();
-              if (typeof onDetected === "function") onDetected(text);
+              setStatusMsg("Detected: " + txt);
+              stopScanner();
+              if (typeof onDetected === "function") onDetected(txt);
+              return;
             }
             if (err) {
               const name = err?.name || "";
-              if (!/NotFound/i.test(name)) {
-                console.warn("ZXing error (device):", err);
-              }
+              if (!/NotFound/i.test(name)) console.warn("ZXing error (device):", err);
             }
           });
         } catch (e) {
@@ -373,13 +257,13 @@ export default function LiveBarcodeScanner({
         }
       }
     } catch (e) {
-      console.warn("Start decode loop failed:", e);
+      console.warn("start decode loop failed", e);
     }
 
-    // set up OCR fallback polling on the cropped video frame (if enabled)
+    // start OCR fallback polling (cropped canvas) to improve chance for UPC/EAN
     if (enableOCRFallback) {
-      ocrAttemptsRef.current = 0;
       if (ocrTimerRef.current) clearInterval(ocrTimerRef.current);
+      ocrAttemptsRef.current = 0;
       ocrTimerRef.current = setInterval(async () => {
         if (detectedRef.current || ocrAttemptsRef.current >= maxOcrAttempts) {
           if (ocrTimerRef.current) clearInterval(ocrTimerRef.current);
@@ -388,24 +272,54 @@ export default function LiveBarcodeScanner({
         try {
           const canvas = getCroppedCanvasFromVideo();
           if (!canvas) return;
-          const z = await tryZXingOnCanvasOrImage(canvas);
-          if (z && !detectedRef.current) {
-            detectedRef.current = true;
-            successFeedback();
-            stopCamera();
-            if (typeof onDetected === "function") onDetected(z);
-            return;
+          // try ZXing on the cropped canvas first (works well for some builds)
+          try {
+            // many builds accept decodeFromCanvas or decodeFromImageElement - try both
+            let zres = null;
+            if (typeof reader.decodeFromCanvas === "function") {
+              try {
+                const res = reader.decodeFromCanvas(canvas);
+                zres = res?.getText?.() || res?.text || String(res);
+              } catch (e) {
+                // ignore
+              }
+            }
+            if (!zres) {
+              // fallback: image element
+              const tmp = new Image();
+              tmp.src = canvas.toDataURL("image/png");
+              await new Promise((r) => (tmp.onload = r));
+              try {
+                const res = await reader.decodeFromImageElement(tmp);
+                zres = res?.getText?.() || res?.text || String(res);
+              } catch (e) {
+                // ignore
+              }
+            }
+            if (zres && !detectedRef.current) {
+              detectedRef.current = true;
+              successFeedback();
+              setStatusMsg("Detected (cropped ZXing): " + zres);
+              stopScanner();
+              if (typeof onDetected === "function") onDetected(zres);
+              return;
+            }
+          } catch (e) {
+            // ignore canvas decode errors
           }
-          const o = await runOcrOnCanvas(canvas);
-          if (o && !detectedRef.current) {
+
+          // then OCR fallback
+          const ocrRes = await runOcrOnCanvas(canvas);
+          if (ocrRes && !detectedRef.current) {
             detectedRef.current = true;
             successFeedback();
-            stopCamera();
-            if (typeof onDetected === "function") onDetected(o);
+            setStatusMsg("Detected (OCR): " + ocrRes);
+            stopScanner();
+            if (typeof onDetected === "function") onDetected(ocrRes);
             return;
           }
         } catch (e) {
-          console.warn("OCR polling error", e);
+          console.warn("OCR poll error", e);
         } finally {
           ocrAttemptsRef.current++;
           if (ocrAttemptsRef.current >= maxOcrAttempts && ocrTimerRef.current) {
@@ -416,113 +330,77 @@ export default function LiveBarcodeScanner({
     }
   };
 
-  // --- stop camera only (keeps readerRef intact) ---
-  const stopCamera = () => {
+  // --- stop everything & cleanup ---
+  const stopScanner = () => {
     try {
-      // if reader has a reset or stop method, call it
+      // reset ZXing reader decode loop if possible
       try { readerRef.current?.reset(); } catch (e) {}
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
     if (ocrTimerRef.current) {
       clearInterval(ocrTimerRef.current);
       ocrTimerRef.current = null;
     }
-    if (streamRef.current) {
-      try {
+    try {
+      if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => {
           try { t.stop(); } catch (e) {}
         });
-      } catch (e) {}
-      streamRef.current = null;
-    }
+      }
+    } catch (e) {}
+    streamRef.current = null;
     if (videoRef.current) {
-      try {
-        videoRef.current.srcObject = null;
-      } catch (e) {}
+      try { videoRef.current.srcObject = null; } catch (e) {}
     }
     activeTrackRef.current = null;
     setTorchAvailable(false);
   };
 
-  // --- full cleanup ---
-  const cleanupAll = () => {
-    stopCamera();
-    try { readerRef.current = null; } catch {}
-    detectedRef.current = false;
-  };
-
+  // full cleanup on unmount
   useEffect(() => {
-    // instantiate reader once
+    // create reader instance
     readerRef.current = new BrowserMultiFormatReader();
-    // start camera automatically
-    startCamera();
+    // start scanner automatically
+    startScanner();
 
     return () => {
-      cleanupAll();
+      stopScanner();
+      try { readerRef.current = null; } catch (e) {}
+      detectedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- toggle torch ---
+  // --- toggle torch (if available) ---
   const toggleTorch = async () => {
     try {
       const track = activeTrackRef.current;
       if (!track) return;
       const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (!caps.torch) return;
+      if (!caps.torch) {
+        console.warn("Torch not available on this device.");
+        return;
+      }
       await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
       setTorchOn((s) => !s);
     } catch (err) {
-      console.warn("Torch toggle failed:", err);
+      console.warn("Torch toggle failed", err);
     }
   };
 
-  // --- retry (reset detection and restart camera if live) ---
+  // retry scanning (clears detection and restarts)
   const handleRetry = async () => {
     detectedRef.current = false;
-    ocrAttemptsRef.current = 0;
-    setStatusMsg("Retrying...");
-    stopCamera();
-    // small delay to ensure camera freed
+    setStatusMsg("Retrying scanner...");
+    stopScanner();
+    // slight delay to ensure resources freed
     setTimeout(() => {
-      if (mode === "live") startCamera();
-    }, 250);
+      startScanner();
+    }, 300);
   };
 
-  // --- UI handlers ---
-  const handleSwitchToLive = async () => {
-    setMode("live");
-    setStatusMsg("Starting live scanner...");
-    detectedRef.current = false;
-    // ensure file processing cleared
-    stopCamera();
-    setTimeout(() => startCamera(), 200);
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e?.target?.files?.[0];
-    if (!file) return;
-    await handleFileInput(file);
-  };
-
-  // --- render ---
+  // small UI
   return (
     <div className="w-full flex flex-col items-center gap-3">
-      <div className="flex gap-2">
-        <button
-          onClick={handleSwitchToLive}
-          className={`px-3 py-2 rounded-lg ${mode === "live" ? "bg-blue-500 text-white" : "bg-gray-100"}`}
-        >
-          Live Scan
-        </button>
-
-        <label className={`px-3 py-2 rounded-lg ${mode === "file" ? "bg-blue-500 text-white" : "bg-gray-100"}`}>
-          Choose File
-          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-        </label>
-      </div>
-
       <div className="relative w-full" style={{ paddingTop: "56%" }}>
         <video
           ref={videoRef}
@@ -543,12 +421,18 @@ export default function LiveBarcodeScanner({
       </div>
 
       <div className="flex gap-2 items-center">
-        <button onClick={handleRetry} className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">
+        <button
+          onClick={handleRetry}
+          className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+        >
           Retry
         </button>
 
         {torchAvailable && (
-          <button onClick={toggleTorch} className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">
+          <button
+            onClick={toggleTorch}
+            className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+          >
             {torchOn ? "Torch Off" : "Torch On"}
           </button>
         )}

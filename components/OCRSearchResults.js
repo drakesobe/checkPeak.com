@@ -178,11 +178,11 @@ export default function OCRSearchResults({
                 onClick={() => setBannedOpen((s) => !s)}
                 aria-expanded={bannedOpen}
                 aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200 shadow-sm hover:shadow-md transition"
+                className={`search-toggle-btn ${bannedOpen ? "active" : ""}`}
               >
-                <span className="text-sm font-semibold">Banned Substances</span>
-                <span className="text-xs text-gray-500">({bannedRecords.length})</span>
-                <span className="text-gray-500">{bannedOpen ? "▾" : "▸"}</span>
+                <span className="section-label">Banned Substances</span>
+                <span className="badge">{bannedRecords.length}</span>
+                <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
               <div className="text-sm text-gray-600">Filter by ban type using legend below.</div>
             </div>
@@ -340,11 +340,11 @@ export default function OCRSearchResults({
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
                 aria-label={collapseLabel(ingredientsOpen, "Ingredients")}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200 shadow-sm hover:shadow-md transition"
+                className={`search-toggle-btn ${ingredientsOpen ? "active" : ""}`}
               >
-                <span className="text-sm font-semibold">Ingredients (non-banned)</span>
-                <span className="text-xs text-gray-500">({ingredientRecords.length})</span>
-                <span className="text-gray-500">{ingredientsOpen ? "▾" : "▸"}</span>
+                <span className="section-label">Ingredients (non-banned)</span>
+                <span className="badge">{ingredientRecords.length}</span>
+                <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
               <div className="text-sm text-gray-600">Ingredients database results and nutrient info.</div>
             </div>
@@ -499,7 +499,7 @@ export default function OCRSearchResults({
         </div>
       </div>
 
-      {/* Local styles for highlight-match */}
+      {/* Local styles for highlight-match and updated search-toggle buttons */}
       <style jsx>{`
         .highlight-match {
           background: transparent;
@@ -513,6 +513,67 @@ export default function OCRSearchResults({
         /* Ensure table header cells remain visually on top */
         thead.sticky {
           z-index: 20;
+        }
+
+        /* Clean, noticeable toggle button to match OCRScanResults style */
+        .search-toggle-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 16px;
+          border-radius: 10px;
+          border: 2px solid transparent;
+          font-size: 1rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.18s ease-in-out;
+          background: rgba(255, 255, 255, 0.88);
+          color: #0f172a;
+          box-shadow: 0 1px 0 rgba(16,24,40,0.03);
+        }
+
+        .search-toggle-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px rgba(16,24,40,0.06);
+        }
+
+        .search-toggle-btn .section-label {
+          letter-spacing: -0.2px;
+        }
+
+        .search-toggle-btn .badge {
+          background-color: #46769B;
+          color: #fff;
+          font-size: 0.825rem;
+          padding: 4px 8px;
+          border-radius: 999px;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .search-toggle-btn .caret {
+          color: #6b7280;
+          font-weight: 600;
+        }
+
+        .search-toggle-btn.active {
+          border-color: #46769B;
+          background-color: rgba(70, 118, 155, 0.08);
+        }
+
+        /* Slight responsive scaling for small screens so the button stays prominent */
+        @media (max-width: 640px) {
+          .search-toggle-btn {
+            padding: 10px 12px;
+            gap: 8px;
+            font-size: 0.98rem;
+          }
+          .search-toggle-btn .badge {
+            font-size: 0.78rem;
+            padding: 3px 6px;
+          }
         }
       `}</style>
     </div>

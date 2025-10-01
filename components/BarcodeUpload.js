@@ -1,4 +1,4 @@
-// BarcodeUpload.jsx
+// components/BarcodeUpload.jsx
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -346,12 +346,57 @@ export default function BarcodeUpload({
     }
   }
 
+  // Convert File/Blob -> data:<mime>;base64,... string for server OCR
+  async function convertFileToDataUrl(fileOrBlob) {
+    if (!fileOrBlob) return null;
+    return await new Promise((resolve, reject) => {
+      try {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(fileOrBlob);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   // --- server fetch matches ---
   async function fetchMatches(barcode, labelImage) {
+    // labelImage may be:
+    //  - undefined/null (no image)
+    //  - a File/Blob (preferred) — we'll convert to data URL
+    //  - a data:... string (already a data URL) — pass through
+    //  - a blob:... preview URL — cannot be fetched by server, so we will warn and not send it
+    let labelImageData = null;
+    try {
+      if (labelImage) {
+        if (typeof labelImage === "string") {
+          if (labelImage.startsWith("data:")) {
+            labelImageData = labelImage;
+          } else if (labelImage.startsWith("blob:")) {
+            // blob URLs are not accessible to the server — prefer sending the File instead
+            console.warn("labelImage is a blob: URL; server cannot fetch it. Consider passing File instead.");
+            labelImageData = null;
+          } else {
+            // some other URL (http(s)...) — pass as-is
+            labelImageData = labelImage;
+          }
+        } else {
+          // assume File/Blob
+          labelImageData = await convertFileToDataUrl(labelImage);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to convert labelImage to data URL", e);
+      labelImageData = null;
+    }
+
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcode, labelImage, barcode: true }),
+      // send labelImage as data URL (base64) so server-side OCR can consume it
+      body: JSON.stringify({ barcode, labelImage: labelImageData, isBarcodeFlow: true }),
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => null);
@@ -362,11 +407,24 @@ export default function BarcodeUpload({
 
   async function handleDecodedBarcodePipeline(barcodeText, labelImage = null, idx = null) {
     setError("");
+    // quick client-side validation: must contain at least one digit
+    if (!barcodeText || !/\d/.test(String(barcodeText))) {
+      setError("Decoded value doesn't look like a barcode (no digits).");
+      return;
+    }
+
     setLoading(true);
     setProgress(5);
     try {
       setProgress(20);
+      // Pass the File (if we have it) rather than the blob URL so server can OCR it.
+      // In handleScanAllBarcodes we'll pass `files[i]`. If called from live scanner,
+      // labelImage will be null (that's fine).
       const data = await fetchMatches(barcodeText, labelImage);
+
+      // helpful logging for debugging provider attempts / candidates
+      console.log("[BarcodeUpload] API check response:", data);
+      console.log("[BarcodeUpload] API debug:", data?.debug || null);
 
       setProgress(90);
       const result = {
@@ -375,7 +433,7 @@ export default function BarcodeUpload({
         rawIngredients: data?.ocrText || "",
         matchedBanned: data?.matchedBanned || [],
         matchedIngredients: data?.matchedIngredients || [],
-        source: data?.debug?.fetchedIngredientsSource || "OCR",
+        source: data?.debug?.fetchedFrom || "OCR",
         idx,
       };
 
@@ -413,8 +471,9 @@ export default function BarcodeUpload({
       try {
         const code = await decodeBarcodeFromFile(files[i]);
         if (!code) throw new Error("No barcode decoded");
-        const labelImage = previewURLs[i] || null;
-        await handleDecodedBarcodePipeline(code, labelImage, i);
+        // IMPORTANT: pass the File (not the preview blob URL) so we can convert to data URL and send it
+        const labelFile = files[i] || null;
+        await handleDecodedBarcodePipeline(code, labelFile, i);
       } catch (err) {
         console.warn("Scan failed for index", i, err);
       }

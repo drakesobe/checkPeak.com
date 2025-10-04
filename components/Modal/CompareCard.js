@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ValueRatingSlim from "./modal/ValueRatingSlim";
 
 export default function CompareCard({
@@ -23,6 +23,25 @@ export default function CompareCard({
     stack.nutritionLabel || stack.image || stack.rawFields?.["Image"] || "";
   const stackName = stack.name || "Unknown Product";
   const stackBrand = stack.brand || stack.rawFields?.Brand || "Unknown Brand";
+
+  // New: responsive label shrink for very narrow devices
+  const [isVeryNarrow, setIsVeryNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 360px)");
+    const update = (e) => setIsVeryNarrow(!!e.matches);
+    // set initial
+    setIsVeryNarrow(!!mq.matches);
+    // add listener (use addEventListener if available)
+    if (mq.addEventListener) mq.addEventListener("change", update);
+    else mq.addListener(update);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", update);
+      else mq.removeListener(update);
+    };
+  }, []);
+
+  const selectedCount = selectedCompareStacks.length;
 
   return (
     <>
@@ -66,8 +85,7 @@ export default function CompareCard({
           )}
           {stack.price && (
             <p>
-              <span className="font-semibold">Price:</span> $
-              {Number(stack.price).toFixed(2)}
+              <span className="font-semibold">Price:</span> ${Number(stack.price).toFixed(2)}
             </p>
           )}
         </div>
@@ -84,42 +102,34 @@ export default function CompareCard({
         )}
 
         <p className="mt-2 text-gray-400 text-xs">
-          {isSelected
-            ? "Selected for comparison"
-            : "Click to select for comparison (up to 3)"}
+          {isSelected ? "Selected for comparison" : "Click to select for comparison (up to 3)"}
         </p>
       </div>
 
       {/* Sticky Compare Button */}
-      {selectedCompareStacks.length >= 2 && (
+      {selectedCount >= 2 && (
         <>
-          {/* Mobile */}
+          {/* Mobile sticky button (hidden at md and up) */}
           <div
             className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
           >
             <button
               onClick={openCompareModal}
-              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg truncate"
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg"
             >
-              {/* Short label for small screens */}
-              <span className="sm:hidden">Compare</span>
-              {/* Full label for bigger screens */}
-              <span className="hidden sm:inline">
-                Compare {selectedCompareStacks.length} Stack
-                {selectedCompareStacks.length > 1 ? "s" : ""}
-              </span>
+              {/* Use short label on very narrow screens */}
+              {isVeryNarrow ? "Compare" : `Compare ${selectedCount} Stack${selectedCount > 1 ? "s" : ""}`}
             </button>
           </div>
 
-          {/* Desktop */}
+          {/* Desktop sticky button (visible at md and up) */}
           <div className="hidden md:flex fixed bottom-0 left-0 right-0 justify-center px-4 py-4 bg-gray-900 border-t border-white/10 shadow-lg z-50">
             <button
               onClick={openCompareModal}
               className="w-full max-w-3xl bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-2xl text-lg"
             >
-              Compare {selectedCompareStacks.length} Stack
-              {selectedCompareStacks.length > 1 ? "s" : ""}
+              Compare {selectedCount} Stack{selectedCount > 1 ? "s" : ""}
             </button>
           </div>
         </>

@@ -122,14 +122,19 @@ export default function NavBar({ activeTab, setActiveTab }) {
             </div>
 
             {/* CENTER LOGO */}
-            <div className="flex justify-center items-center py-2">
-              <Link href="/" aria-label="PEAK Home">
-                <div className="md:hidden block -mt-0.5">
-                  <Logo size="medium" />
-                </div>
-                <div className="hidden md:block">
-                  <Logo size="large" />
-                </div>
+            <div className="relative flex justify-center items-center py-2">
+              {/* Mobile absolute center */}
+              <Link
+                href="/"
+                aria-label="PEAK Home"
+                className="block md:hidden absolute left-1/2 -translate-x-1/2"
+              >
+                <Logo size="medium" />
+              </Link>
+
+              {/* Desktop centered via grid */}
+              <Link href="/" aria-label="PEAK Home" className="hidden md:block">
+                <Logo size="large" />
               </Link>
             </div>
 
@@ -240,7 +245,6 @@ export default function NavBar({ activeTab, setActiveTab }) {
             >
               <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
                 <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)}>
-                  <Logo size="small" />
                 </Link>
                 <button onClick={toggleMenu} className="p-2 rounded-lg border border-gray-200" aria-label="Close Menu">
                   ✕

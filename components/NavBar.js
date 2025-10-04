@@ -93,7 +93,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
     <>
       <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-3 items-center h-16 md:h-24 gap-2">
+          <div className="flex items-center justify-between h-16 md:grid md:grid-cols-3 md:h-24 gap-2">
             {/* LEFT NAV LINKS */}
             <div className="hidden md:flex items-center space-x-6 justify-start">
               {leftTabs.map((tab) => {

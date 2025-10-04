@@ -16,7 +16,6 @@ export default function CompareModal({ stacks = [], onClose }) {
   const animDots = useRef(stacks.map(() => 0));
   const imageRefs = useRef(stacks.map(() => null));
 
-  // Swipe/gradient state
   const scrollRef = useRef(null);
   const [showLeftShadow, setShowLeftShadow] = useState(false);
   const [showRightShadow, setShowRightShadow] = useState(false);
@@ -134,7 +133,6 @@ export default function CompareModal({ stacks = [], onClose }) {
     });
   }, [stacks]);
 
-  // Dynamic grid based on stacks
   const gridColsClass =
     stacks.length === 2
       ? "grid-cols-1 md:grid-cols-2"
@@ -142,7 +140,7 @@ export default function CompareModal({ stacks = [], onClose }) {
       ? "grid-cols-1 md:grid-cols-3"
       : "grid-cols-1";
 
-  // ---- Scroll logic for swipe hint + gradients ----
+  // Scroll / swipe hint logic
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -188,7 +186,7 @@ export default function CompareModal({ stacks = [], onClose }) {
           exit={{ opacity: 0 }}
         >
           <motion.div
-            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-6xl mx-4 p-6 overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-lg md:max-w-6xl mx-4 md:mx-auto p-4 md:p-6 overflow-hidden max-h-[90vh] flex flex-col"
             style={{ touchAction: "pan-y" }}
           >
             {/* Top Actions */}
@@ -207,27 +205,20 @@ export default function CompareModal({ stacks = [], onClose }) {
               </button>
             </div>
 
-            {/* Scrollable Grid with gradients + swipe hint */}
+            {/* Scrollable Grid */}
             <div className="relative flex-1 overflow-x-auto" ref={scrollRef} onScroll={handleScroll}>
-              {/* Left gradient */}
               {showLeftShadow && (
                 <div
                   className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
-                  style={{
-                    background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)`,
-                  }}
+                  style={{ background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)` }}
                 />
               )}
-              {/* Right gradient */}
               {showRightShadow && (
                 <div
                   className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
-                  style={{
-                    background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)`,
-                  }}
+                  style={{ background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)` }}
                 />
               )}
-              {/* Swipe hint */}
               {showSwipeHint && (
                 <div
                   className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-white/50 text-xs select-none z-20 transition-opacity duration-500 ${
@@ -238,8 +229,7 @@ export default function CompareModal({ stacks = [], onClose }) {
                 </div>
               )}
 
-              {/* Stacks Grid */}
-              <div className={`grid ${gridColsClass} gap-6 pr-6`}>
+              <div className={`grid ${gridColsClass} gap-6`}>
                 {stacks.map((stack, idx) => {
                   const productImage =
                     getStackField(stack, "nutritionLabel") || getStackField(stack, "image") || "/fallback-image.svg";
@@ -247,7 +237,7 @@ export default function CompareModal({ stacks = [], onClose }) {
                   return (
                     <motion.div
                       key={stack.id || idx}
-                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10"
+                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10 min-w-[250px]"
                       whileHover={{ boxShadow: "0 0 20px 4px #00ffcc", scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 200, damping: 20 }}
                     >
@@ -277,7 +267,10 @@ export default function CompareModal({ stacks = [], onClose }) {
                         )}
                       </div>
 
-                      <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
+                      <ModalFooter
+                        affiliateLink={getStackField(stack, "affiliateLink")}
+                        className="break-words max-w-full"
+                      />
                     </motion.div>
                   );
                 })}

@@ -18,7 +18,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [stackIconBroken, setStackIconBroken] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [defaultAuthTab, setDefaultAuthTab] = useState("login"); // 👈 track login/signup tab
+  const [defaultAuthTab, setDefaultAuthTab] = useState("login");
 
   useEffect(() => setIsMounted(true), []);
 
@@ -36,17 +36,15 @@ export default function NavBar({ activeTab, setActiveTab }) {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // Login button handler
   const handleAuthClick = useCallback(() => {
     if (loggedIn) {
       setProfileDropdownOpen((prev) => !prev);
       return;
     }
-    setDefaultAuthTab("login");  // 👈 open on login tab
+    setDefaultAuthTab("login");
     setLoginModalOpen(true);
   }, [loggedIn]);
 
-  // Role-based links for dropdown
   const RoleLinks = () => {
     const L = ({ href, children }) => (
       <Link
@@ -93,9 +91,11 @@ export default function NavBar({ activeTab, setActiveTab }) {
     <>
       <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          {/* ✅ Responsive Layout Fix — flex on mobile, grid on desktop */}
           <div className="flex items-center justify-between h-16 md:grid md:grid-cols-3 md:h-24 gap-2">
-            {/* LEFT NAV LINKS */}
-            <div className="hidden md:flex items-center space-x-6 justify-start">
+            
+            {/* LEFT NAV LINKS (Desktop) / Spacer (Mobile) */}
+            <div className="hidden md:flex items-center space-x-6 justify-start md:visible">
               {leftTabs.map((tab) => {
                 const isActive = pathname === tab.href;
                 const showUnderline = isActive || hoveredTab === tab.name;
@@ -121,20 +121,18 @@ export default function NavBar({ activeTab, setActiveTab }) {
               })}
             </div>
 
-            {/* CENTER LOGO */}
-            <div className="relative flex justify-center items-center py-2">
-              {/* Mobile absolute center */}
-              <Link
-                href="/"
-                aria-label="PEAK Home"
-                className="block md:hidden absolute left-1/2 -translate-x-1/2"
-              >
-                <Logo size="medium" />
-              </Link>
+            {/* 👻 Ghost spacer to balance mobile layout */}
+            <div className="w-10 md:hidden" />
 
-              {/* Desktop centered via grid */}
-              <Link href="/" aria-label="PEAK Home" className="hidden md:block">
-                <Logo size="large" />
+            {/* CENTER LOGO */}
+            <div className="flex justify-center items-center flex-1 py-2 relative">
+              <Link href="/" aria-label="PEAK Home">
+                <div className="block md:hidden -mt-0.5">
+                  <Logo size="medium" />
+                </div>
+                <div className="hidden md:block">
+                  <Logo size="large" />
+                </div>
               </Link>
             </div>
 
@@ -244,8 +242,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
               className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
             >
               <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
-                <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)}>
-                </Link>
+                <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)} />
                 <button onClick={toggleMenu} className="p-2 rounded-lg border border-gray-200" aria-label="Close Menu">
                   ✕
                 </button>
@@ -258,9 +255,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
                     key={tab.name}
                     href={tab.href}
                     aria-current={isActive ? "page" : undefined}
-                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${
-                      isActive ? "bg-blue-50 text-[#46769B]" : ""
-                    }`}
+                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${isActive ? "bg-blue-50 text-[#46769B]" : ""}`}
                     onClick={() => setMenuOpen(false)}
                   >
                     {tab.name}
@@ -341,7 +336,7 @@ export default function NavBar({ activeTab, setActiveTab }) {
       <NavBarLoginModal
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
-        defaultTab={defaultAuthTab} // 👈 pass "login" or "signup"
+        defaultTab={defaultAuthTab}
       />
     </>
   );

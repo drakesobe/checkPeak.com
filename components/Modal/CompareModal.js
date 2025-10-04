@@ -253,8 +253,8 @@ export default function CompareModal({ stacks = [], onClose }) {
                     >
                       <ModalHeader
                         stack={stack}
-                        servingsNumber={getStackField(stack, "servings")}
-                        priceNumber={getStackField(stack, "price")}
+                        servingsNumber={getStackField(stack, "Servings")}
+                        priceNumber={getStackField(stack, "Price")}
                         matchedRecords={matchedRecordsArr[idx]}
                         onClose={onClose}
                       />

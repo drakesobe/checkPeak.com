@@ -37,7 +37,19 @@ export default function MyApp({ Component, pageProps }) {
         `}
       </Script>
 
-      {/* 3️⃣ Your app */}
+      {/* 3️⃣ Load OpenCV.js */}
+      <Script
+        src="https://docs.opencv.org/4.x/opencv.js"
+        strategy="beforeInteractive"
+        onLoad={() => {
+          console.log("✅ OpenCV.js loaded");
+        }}
+        onError={(e) => {
+          console.error("❌ Failed to load OpenCV.js", e);
+        }}
+      />
+
+      {/* 4️⃣ Your app */}
       <AuthProvider>
         <Component {...pageProps} />
         <Toaster position="top-right" />

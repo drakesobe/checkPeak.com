@@ -66,7 +66,8 @@ export default function CompareCard({
           )}
           {stack.price && (
             <p>
-              <span className="font-semibold">Price:</span> ${Number(stack.price).toFixed(2)}
+              <span className="font-semibold">Price:</span> $
+              {Number(stack.price).toFixed(2)}
             </p>
           )}
         </div>
@@ -89,16 +90,25 @@ export default function CompareCard({
         </p>
       </div>
 
-      {/* Sticky Compare Button for Mobile */}
+      {/* Sticky Compare Button */}
       {selectedCompareStacks.length >= 2 && (
         <>
           {/* Mobile */}
-          <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden safe-area-inset-bottom">
+          <div
+            className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+          >
             <button
               onClick={openCompareModal}
-              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg"
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg truncate"
             >
-              Compare {selectedCompareStacks.length} Stacks
+              {/* Short label for small screens */}
+              <span className="sm:hidden">Compare</span>
+              {/* Full label for bigger screens */}
+              <span className="hidden sm:inline">
+                Compare {selectedCompareStacks.length} Stack
+                {selectedCompareStacks.length > 1 ? "s" : ""}
+              </span>
             </button>
           </div>
 

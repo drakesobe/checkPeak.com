@@ -264,47 +264,64 @@ export default function SmartStackPage() {
 
       {/* Persistent Compare Bar */}
       {selectedCompareStacks.length > 0 && (
-        <motion.div
-          className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-xl px-4 py-2 flex items-center gap-4 shadow-lg z-50"
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 50 }}
-        >
-          <span className="text-sm text-gray-300 font-medium">Selected for Compare:</span>
-          {selectedCompareStacks.map((stack) => (
-            <div
-              key={stack.id}
-              className="flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full text-sm relative"
-            >
-              <span className="font-medium">{stack.name}</span>
-              <button
-                className="text-gray-400 hover:text-red-400"
-                onClick={() =>
-                  setSelectedCompareStacks(
-                    selectedCompareStacks.filter((s) => s.id !== stack.id)
-                  )
-                }
-                title="Remove from compare"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <div className="relative">
+        <>
+          {/* Mobile: full-width sticky button */}
+          <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden safe-area-inset-bottom">
             <button
               disabled={selectedCompareStacks.length < 2}
               onClick={() => setCompareModalOpen(true)}
-              className={`px-4 py-2 rounded-2xl font-medium text-white ${
-                selectedCompareStacks.length >= 2 && selectedCompareStacks.length <= 3
-                  ? "bg-green-600 hover:bg-green-500 shadow-lg"
-                  : "bg-gray-700 cursor-not-allowed"
+              className={`w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg ${
+                selectedCompareStacks.length < 2 ? "opacity-50 cursor-not-allowed" : ""
               }`}
             >
               Compare {selectedCompareStacks.length} Stack
               {selectedCompareStacks.length > 1 ? "s" : ""}
             </button>
           </div>
-        </motion.div>
+
+          {/* Desktop: chip-style bar */}
+          <motion.div
+            className="hidden md:flex fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-xl px-4 py-2 items-center gap-4 shadow-lg z-50"
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+          >
+            <span className="text-sm text-gray-300 font-medium">Selected for Compare:</span>
+            {selectedCompareStacks.map((stack) => (
+              <div
+                key={stack.id}
+                className="flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full text-sm relative"
+              >
+                <span className="font-medium">{stack.name}</span>
+                <button
+                  className="text-gray-400 hover:text-red-400"
+                  onClick={() =>
+                    setSelectedCompareStacks(
+                      selectedCompareStacks.filter((s) => s.id !== stack.id)
+                    )
+                  }
+                  title="Remove from compare"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <div className="relative">
+              <button
+                disabled={selectedCompareStacks.length < 2}
+                onClick={() => setCompareModalOpen(true)}
+                className={`px-4 py-2 rounded-2xl font-medium text-white ${
+                  selectedCompareStacks.length >= 2 && selectedCompareStacks.length <= 3
+                    ? "bg-green-600 hover:bg-green-500 shadow-lg"
+                    : "bg-gray-700 cursor-not-allowed"
+                }`}
+              >
+                Compare {selectedCompareStacks.length} Stack
+                {selectedCompareStacks.length > 1 ? "s" : ""}
+              </button>
+            </div>
+          </motion.div>
+        </>
       )}
 
       {/* Modals */}

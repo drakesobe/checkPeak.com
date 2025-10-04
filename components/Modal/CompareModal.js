@@ -1,3 +1,4 @@
+// components/Modal/CompareModal.jsx
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -16,6 +17,7 @@ export default function CompareModal({ stacks = [], onClose }) {
   const animDots = useRef(stacks.map(() => 0));
   const imageRefs = useRef(stacks.map(() => null));
 
+  // Swipe/gradient state
   const scrollRef = useRef(null);
   const [showLeftShadow, setShowLeftShadow] = useState(false);
   const [showRightShadow, setShowRightShadow] = useState(false);
@@ -131,8 +133,10 @@ export default function CompareModal({ stacks = [], onClose }) {
       if (img?.complete) runOCR(idx);
       else if (img) img.onload = () => runOCR(idx);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stacks]);
 
+  // Dynamic grid based on stacks
   const gridColsClass =
     stacks.length === 2
       ? "grid-cols-1 md:grid-cols-2"
@@ -140,7 +144,7 @@ export default function CompareModal({ stacks = [], onClose }) {
       ? "grid-cols-1 md:grid-cols-3"
       : "grid-cols-1";
 
-  // Scroll / swipe hint logic
+  // ---- Scroll logic for swipe hint + gradients ----
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -164,6 +168,11 @@ export default function CompareModal({ stacks = [], onClose }) {
 
   useEffect(() => {
     checkScrollable();
+    // re-check when window resizes (helps with orientation changes)
+    const onResize = () => checkScrollable();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stacks]);
 
   useEffect(() => {
@@ -185,40 +194,52 @@ export default function CompareModal({ stacks = [], onClose }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
+          {/* Modal container: reduced padding on very small screens, bounded height, hidden horizontal overflow */}
           <motion.div
-            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-lg md:max-w-6xl mx-4 md:mx-auto p-4 md:p-6 overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-6xl mx-4 p-3 sm:p-6 overflow-hidden max-h-[90vh] flex flex-col break-words"
             style={{ touchAction: "pan-y" }}
           >
             {/* Top Actions */}
-            <div className="flex justify-end gap-4 mb-4 z-20 relative flex-shrink-0">
+            <div className="flex justify-end gap-4 mb-3 sm:mb-4 z-20 relative flex-shrink-0">
               <button
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-2xl text-white font-medium pointer-events-auto"
+                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-2xl text-white font-medium pointer-events-auto text-sm"
                 onClick={onClose}
               >
                 Close
               </button>
               <button
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-2xl text-white font-medium pointer-events-auto"
+                className="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-2xl text-white font-medium pointer-events-auto text-sm"
                 onClick={() => stacks.forEach((_, idx) => runOCR(idx))}
               >
                 {loadingOCR.some(Boolean) ? "Scanning..." : "Rescan Labels"}
               </button>
             </div>
 
-            {/* Scrollable Grid */}
-            <div className="relative flex-1 overflow-x-auto" ref={scrollRef} onScroll={handleScroll}>
+            {/* Content area: this is scrollable (both axis if needed) */}
+            <div
+              className="relative flex-1 overflow-auto"
+              ref={scrollRef}
+              onScroll={handleScroll}
+            >
+              {/* Left gradient */}
               {showLeftShadow && (
                 <div
                   className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
-                  style={{ background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)` }}
+                  style={{
+                    background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)`,
+                  }}
                 />
               )}
+              {/* Right gradient */}
               {showRightShadow && (
                 <div
                   className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
-                  style={{ background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)` }}
+                  style={{
+                    background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)`,
+                  }}
                 />
               )}
+              {/* Swipe hint */}
               {showSwipeHint && (
                 <div
                   className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-white/50 text-xs select-none z-20 transition-opacity duration-500 ${
@@ -229,7 +250,12 @@ export default function CompareModal({ stacks = [], onClose }) {
                 </div>
               )}
 
-              <div className={`grid ${gridColsClass} gap-6`}>
+              {/* Stacks Grid
+                  - keep the grid responsive
+                  - add min-w-0 on items so text can truncate/wrap instead of overflowing
+                  - ensure card contents wrap long words (break-words & break-all where appropriate)
+              */}
+              <div className={`grid ${gridColsClass} gap-6 pr-6`}>
                 {stacks.map((stack, idx) => {
                   const productImage =
                     getStackField(stack, "nutritionLabel") || getStackField(stack, "image") || "/fallback-image.svg";
@@ -237,27 +263,32 @@ export default function CompareModal({ stacks = [], onClose }) {
                   return (
                     <motion.div
                       key={stack.id || idx}
-                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10 min-w-[250px]"
+                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10 min-w-0"
                       whileHover={{ boxShadow: "0 0 20px 4px #00ffcc", scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 200, damping: 20 }}
                     >
-                      <ModalHeader
-                        stack={stack}
-                        servingsNumber={getStackField(stack, "Servings")}
-                        priceNumber={getStackField(stack, "Price")}
-                        matchedRecords={matchedRecordsArr[idx]}
-                        onClose={onClose}
-                      />
+                      {/* Header: ensure the text inside header can wrap */}
+                      <div className="min-w-0">
+                        <ModalHeader
+                          stack={stack}
+                          servingsNumber={getStackField(stack, "Servings")}
+                          priceNumber={getStackField(stack, "Price")}
+                          matchedRecords={matchedRecordsArr[idx]}
+                          onClose={onClose}
+                        />
+                      </div>
 
+                      {/* Image: constrained height, object-contain to avoid overflow */}
                       <img
                         ref={(el) => (imageRefs.current[idx] = el)}
                         src={productImage}
                         alt={stack.name}
-                        className="w-full h-48 object-cover rounded-lg my-3"
+                        className="w-full h-48 object-contain rounded-lg my-3 max-h-[42vh]"
                         onError={(e) => (e.currentTarget.src = "/fallback-image.svg")}
                       />
 
-                      <div className="mt-2 pointer-events-auto">
+                      {/* Content: OCR results or detected substances */}
+                      <div className="mt-2 pointer-events-auto min-w-0">
                         {loadingOCR[idx] ? (
                           <p className="text-gray-400 text-sm animate-pulse">
                             Scanning{".".repeat(animDots.current[idx])}
@@ -267,10 +298,10 @@ export default function CompareModal({ stacks = [], onClose }) {
                         )}
                       </div>
 
-                      <ModalFooter
-                        affiliateLink={getStackField(stack, "affiliateLink")}
-                        className="break-words max-w-full"
-                      />
+                      {/* Footer: affiliate link etc — ensure long URLs/words wrap */}
+                      <div className="mt-3">
+                        <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
+                      </div>
                     </motion.div>
                   );
                 })}

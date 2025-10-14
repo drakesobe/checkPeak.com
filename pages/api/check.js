@@ -5,19 +5,19 @@
  * Accepts POST { text?, ocrText?, barcode?, labelImage?, isBarcodeFlow? }
  *
  * Behavior:
- *  - Normalize barcode into UPC-A candidate(s) (handles EAN-13 -> UPC-A,
- *    UPC-E -> UPC-A expansion, 11-digit -> add check digit).
+ *  - Normalize barcode into UPC-A candidate(s).
  *  - For each candidate, query providers in this order:
  *      1) OpenFoodFacts
- *      2) Nutritionix (v2 POST, fallback v1_1)
+ *      2) Nutritionix (v2 POST + v1 GET; combine both results)
  *      3) USDA (if configured)
  *      4) FoodRepo (if configured)
- *    Stop when a provider returns ingredient text or nutrition data.
- *  - If still no text found, DO NOT run OCR automatically. Instead return
- *    a friendly "no product data found" response with debug so the UI can
- *    present a user-friendly message and options.
+ *    For a candidate we attempt all providers and merge their outputs; Nutritionix
+ *    returned data is always captured (v2+v1 combined) even if partial.
+ *  - If we get either ingredientsText OR nutrition facts from any provider,
+ *    we consider the candidate successful and stop trying other candidates.
+ *  - If still no text found, DO NOT run OCR automatically. Return helpful debug.
  *  - If ingredients/nutrition found, match normalized ingredient text
- *    against Airtable banned/ingredient tables.
+ *    against Airtable banned/ingredient tables (if configured).
  *
  * Response includes:
  *  { found: boolean, message?, ocrText?, productName?, ingredientsText?, nutritionFacts?,
@@ -25,7 +25,7 @@
  */
 
 import Airtable from "airtable";
-import Tesseract from "tesseract.js"; // retained only if you ever re-add OCR; safe to keep
+import Tesseract from "tesseract.js"; // kept in case OCR is re-enabled later
 
 const DEFAULT_FETCH_TIMEOUT = 10000;
 
@@ -286,46 +286,109 @@ function extractNutritionFromNutritionixFood(f = {}) {
   return nutrition;
 }
 
+/*
+  extractIngredientsFromNutritionixFood:
+  Robust extractor that tries many possible fields/nested shapes.
+  It returns a best-effort ingredient string or null.
+*/
 function extractIngredientsFromNutritionixFood(chosen = {}) {
   if (!chosen) return null;
 
-  // Try common fields first (v2 and v1 variations)
-  let ingredientsText =
-    chosen.nf_ingredient_statement ||
-    chosen.ingredient_statement ||
-    chosen.ingredients_text ||
-    chosen.ingredient_list ||
-    chosen.ingredients ||
-    "";
+  const possible = [];
 
-  // If ingredients is an array of objects [{text: "..."}], join them
-  if (!ingredientsText && Array.isArray(chosen.ingredients)) {
-    ingredientsText = chosen.ingredients.map((i) => i?.text).filter(Boolean).join(", ");
+  // Common fields and variants
+  possible.push(chosen.ingredient_statement || null); // documented field
+  possible.push(chosen.nf_ingredient_statement || null); // older variant
+  possible.push(chosen.ingredients_text || null);
+  possible.push(chosen.ingredient_list || null);
+  possible.push(chosen.ingredients || null);
+
+  // Nested food object
+  if (chosen?.food) {
+    possible.push(chosen.food.ingredient_statement || null);
+    possible.push(chosen.food.ingredients_text || null);
+    possible.push(chosen.food.ingredients || null);
   }
 
-  // Some responses may contain nested fields like chosen.food?.ingredients_text
-  if (!ingredientsText && chosen?.food && chosen.food.ingredients_text) {
-    ingredientsText = chosen.food.ingredients_text;
+  // If chosen is an array of items
+  if (Array.isArray(chosen)) {
+    possible.push(
+      chosen
+        .map((c) => c.ingredient_statement || c.nf_ingredient_statement || c.ingredients_text || "")
+        .filter(Boolean)
+        .join(", ")
+    );
   }
 
-  return ingredientsText && ingredientsText.trim() ? ingredientsText.trim() : null;
+  // If ingredients is an array of {text}
+  if (!possible.some(Boolean) && Array.isArray(chosen.ingredients)) {
+    possible.push(chosen.ingredients.map((i) => (i && i.text) || "").filter(Boolean).join(", "));
+  }
+
+  for (const p of possible) {
+    if (!p) continue;
+    const s = (typeof p === "string" ? p : String(p)).trim();
+    if (s) return s;
+  }
+
+  return null;
 }
 
-function extractIngredientsFromOpenFoodProduct(p = {}) {
-  if (!p) return { productName: null, ingredientsText: null, nutrition: null };
-  const productName = p.product_name || p.generic_name || p.product_name_en || null;
+/*
+  flattenNutritionixRawToText:
+  Given a raw v2/v1 Nutritionix object, extract readable text labels including
+  nutrition facts fields, ingredient statements, and common name fields.
+  This attempts to capture "everything" Nutritionix provides in a readable form.
+*/
+function flattenNutritionixRawToText(itemOrJson) {
+  if (!itemOrJson) return "";
+  const parts = [];
 
-  let ingredientsText = p.ingredients_text || p.ingredients_text_en || "";
-  if (!ingredientsText && Array.isArray(p.ingredients)) {
-    ingredientsText = p.ingredients.map((i) => i?.text).filter(Boolean).join(", ");
+  // If this is a top-level response (v2 search) with foods array:
+  if (itemOrJson && Array.isArray(itemOrJson.foods)) {
+    for (const f of itemOrJson.foods) {
+      // capture common name fields
+      const names = [f.food_name, f.brand_name, f.brand_name_item_name, f.item_name].filter(Boolean);
+      if (names.length) parts.push(`NAME: ${names.join(" / ")}`);
+
+      // ingredient statements
+      const ing = extractIngredientsFromNutritionixFood(f);
+      if (ing) parts.push(`INGREDIENTS: ${ing}`);
+
+      // nutrition nf_ fields
+      const nut = extractNutritionFromNutritionixFood(f);
+      if (nut && Object.keys(nut).length) {
+        const nutParts = Object.keys(nut).map((k) => `${k}: ${nut[k]}`);
+        parts.push(`NUTRITION: ${nutParts.join(" | ")}`);
+      }
+
+      // fallback: any raw text fields
+      const fallbackFields = ["serving_size", "serving_qty", "serving_unit", "serving_weight_grams"];
+      for (const ff of fallbackFields) {
+        if (f[ff]) parts.push(`${ff}: ${String(f[ff])}`);
+      }
+    }
+    return parts.join("\n\n");
   }
-  if (!ingredientsText && p.ingredients_from_or_that_may_be_from_palm_oil) {
-    ingredientsText = p.ingredients_from_or_that_may_be_from_palm_oil;
+
+  // If this is a single item (v1 result or single food object)
+  const obj = itemOrJson || {};
+  const topNames = [obj.brand_name, obj.item_name, obj.food_name, obj.display_name].filter(Boolean);
+  if (topNames.length) parts.push(`NAME: ${topNames.join(" / ")}`);
+
+  const ing = extractIngredientsFromNutritionixFood(obj);
+  if (ing) parts.push(`INGREDIENTS: ${ing}`);
+
+  const nut = extractNutritionFromNutritionixFood(obj);
+  if (nut && Object.keys(nut).length) {
+    const nutParts = Object.keys(nut).map((k) => `${k}: ${nut[k]}`);
+    parts.push(`NUTRITION: ${nutParts.join(" | ")}`);
   }
 
-  const nutrition = p.nutriments || null;
+  if (obj.ingredient_statement) parts.push(`INGREDIENT_STATEMENT: ${obj.ingredient_statement}`);
+  if (obj.ingredients_text) parts.push(`INGREDIENTS_TEXT: ${obj.ingredients_text}`);
 
-  return { productName, ingredientsText: (ingredientsText || "").trim() || null, nutrition };
+  return parts.join("\n\n");
 }
 
 /* --------------------
@@ -345,12 +408,24 @@ async function tryOpenFoodFacts(upcCandidate) {
     const json = await resp.json();
     if (!json || json.status !== 1 || !json.product) return { ok: false, provider: "openfoodfacts", raw: json };
     const p = json.product;
-    const { productName, ingredientsText, nutrition } = extractIngredientsFromOpenFoodProduct(p);
+    const productName = p.product_name || p.generic_name || p.product_name_en || null;
+
+    let ingredientsText = p.ingredients_text || p.ingredients_text_en || "";
+    if (!ingredientsText && Array.isArray(p.ingredients)) {
+      ingredientsText = p.ingredients.map((i) => i?.text).filter(Boolean).join(", ");
+    }
+    if (!ingredientsText && p.ingredients_from_or_that_may_be_from_palm_oil) {
+      ingredientsText = p.ingredients_from_or_that_may_be_from_palm_oil;
+    }
+
+    const nutrition = p.nutriments || null;
+
+    const ok = !!(ingredientsText || nutrition);
     return {
-      ok: !!(ingredientsText || nutrition),
+      ok,
       provider: "openfoodfacts",
       productName,
-      ingredientsText,
+      ingredientsText: (ingredientsText || "").trim() || null,
       nutrition,
       raw: p,
     };
@@ -360,24 +435,32 @@ async function tryOpenFoodFacts(upcCandidate) {
 }
 
 /* --------------------
-   Nutritionix (robust extraction + v2/v1 fallback)
+   Nutritionix Combined (v2 + v1)
+   Returns combined object with v2 and v1 raw responses and merged fields.
+   Always returns any data found from Nutritionix so the main loop can merge.
    -------------------- */
 async function tryNutritionix(upcCandidate) {
   const appId =
     process.env.NUTRITIONIX_APP_ID ||
-    process.env.NUTRITIONIX_BASE_ID ||
     process.env.NUTRITIONIX_APPID ||
-    process.env.NUTRITIONIX_APP_ID;
+    null;
   const appKey =
     process.env.NUTRITIONIX_APP_KEY ||
-    process.env.NUTRITIONIX_API_KEY ||
-    process.env.NUTRITIONIX_APIKEY ||
-    process.env.NUTRITIONIX_APP_KEY;
+    process.env.NUTRITIONIX_APP_KEY ||
+    null;
 
   if (!appId || !appKey) return { ok: false, provider: "nutritionix", reason: "no-api-key" };
 
   try {
-    // Try v2 POST /v2/search/item
+    let v2Json = null;
+    let v1Json = null;
+    let rawTextV2 = "";
+    let rawTextV1 = "";
+    let productName = null;
+    let mergedNutrition = {};
+    let explicitIngredients = null;
+
+    // ---- v2 attempt ----
     try {
       const url = `https://trackapi.nutritionix.com/v2/search/item`;
       const resp = await fetchWithTimeout(
@@ -395,58 +478,65 @@ async function tryNutritionix(upcCandidate) {
       );
 
       if (resp.ok) {
-        const json = await resp.json();
-        const foods = Array.isArray(json.foods) ? json.foods : [];
-        if (foods.length === 0) {
-          return { ok: false, provider: "nutritionix", raw: json, note: "no-foods" };
+        v2Json = await resp.json();
+        rawTextV2 = flattenNutritionixRawToText(v2Json);
+        if (Array.isArray(v2Json.foods) && v2Json.foods.length) {
+          const f = v2Json.foods[0];
+          productName = productName || (f.food_name || f.brand_name || f.item_name || null);
+          mergedNutrition = { ...mergedNutrition, ...extractNutritionFromNutritionixFood(f) };
+          explicitIngredients =
+            explicitIngredients ||
+            f.ingredient_statement ||
+            f.nf_ingredient_statement ||
+            f.ingredients_text ||
+            null;
         }
-        // Prefer first food with ingredient statement
-        const chosen = foods.find((f) => extractIngredientsFromNutritionixFood(f)) || foods[0];
-        const ingredientsText = extractIngredientsFromNutritionixFood(chosen);
-        const productName =
-          (chosen.food_name || chosen.brand_name || chosen.brand_name_item_name || "").trim() || null;
-        const nutrition = extractNutritionFromNutritionixFood(chosen);
-
-        return {
-          ok: !!(ingredientsText || Object.keys(nutrition || {}).length),
-          provider: "nutritionix",
-          productName,
-          ingredientsText,
-          nutrition: Object.keys(nutrition || {}).length ? nutrition : null,
-          raw: json,
-        };
       }
-    } catch (v2Err) {
-      // continue to v1 fallback
+    } catch (v2err) {
+      console.warn("[/api/check] Nutritionix v2 error:", String(v2err));
     }
 
-    // v1_1 fallback
+    // ---- v1 fallback ----
     try {
-      const url = `https://api.nutritionix.com/v1_1/item?upc=${encodeURIComponent(String(upcCandidate))}&appId=${encodeURIComponent(
+      const urlV1 = `https://api.nutritionix.com/v1_1/item?upc=${encodeURIComponent(String(upcCandidate))}&appId=${encodeURIComponent(
         appId
       )}&appKey=${encodeURIComponent(appKey)}`;
-      const resp = await fetchWithTimeout(url, { method: "GET", headers: { Accept: "application/json" } }, 9000);
-      if (!resp.ok) return { ok: false, provider: "nutritionix", status: resp.status, note: "v1-failed" };
-      const json = await resp.json();
-      const ingredientsText = extractIngredientsFromNutritionixFood(json);
-      const productName = [json.brand_name, json.item_name].filter(Boolean).join(" - ") || null;
+      const respV1 = await fetchWithTimeout(urlV1, { method: "GET", headers: { Accept: "application/json" } }, 9000);
+      if (respV1.ok) {
+        v1Json = await respV1.json();
+        rawTextV1 = flattenNutritionixRawToText(v1Json) || "";
+        productName = productName || (v1Json.brand_name ? `${v1Json.brand_name} - ${v1Json.item_name || ""}`.trim() : v1Json.item_name || null);
 
-      const nutrition = {};
-      for (const k of Object.keys(json || {})) {
-        if (k.startsWith("nf_")) nutrition[k.replace(/^nf_/, "")] = json[k];
+        // Extract v1 nutrition fields
+        for (const k of Object.keys(v1Json || {})) {
+          if (k.startsWith("nf_")) mergedNutrition[k.replace(/^nf_/, "")] = v1Json[k];
+        }
+
+        explicitIngredients =
+          explicitIngredients ||
+          v1Json.ingredient_statement ||
+          v1Json.nf_ingredient_statement ||
+          v1Json.ingredients_text ||
+          null;
       }
-
-      return {
-        ok: !!(ingredientsText || Object.keys(nutrition).length),
-        provider: "nutritionix",
-        productName,
-        ingredientsText,
-        nutrition: Object.keys(nutrition).length ? nutrition : null,
-        raw: json,
-      };
-    } catch (v1Err) {
-      return { ok: false, provider: "nutritionix", error: String(v1Err) };
+    } catch (v1err) {
+      console.warn("[/api/check] Nutritionix v1 error:", String(v1err));
     }
+
+    const combinedText = [rawTextV1, rawTextV2].filter(Boolean).join("\n\n--- Nutritionix Combined ---\n\n");
+
+    const combinedData = {
+      ok: !!(v1Json || v2Json),
+      provider: "nutritionix",
+      productName: productName || null,
+      // prefer explicit ingredient statements if present, otherwise provide flattened combined text
+      ingredientsText: explicitIngredients || (combinedText ? combinedText : null),
+      nutrition: mergedNutrition && Object.keys(mergedNutrition).length ? mergedNutrition : null,
+      raw: { v1: v1Json || null, v2: v2Json || null },
+      note: !v1Json && !v2Json ? "no-response-from-nutritionix" : "nutritionix-v1-v2-combined",
+    };
+
+    return combinedData;
   } catch (err) {
     return { ok: false, provider: "nutritionix", error: String(err) };
   }
@@ -576,10 +666,12 @@ export default async function handler(req, res) {
     // structured result holder
     let structured = {
       productName: null,
-      ingredientsText: text || null,
+      ingredientsText: text || null, // if UI passed text already, take that first
       nutrition: null,
       rawProvider: null,
       providerName: null,
+      rawNutritionix: null,
+      rawText: text || "",
     };
 
     if (isBarcodeFlow && barcodeRaw) {
@@ -596,103 +688,131 @@ export default async function handler(req, res) {
       debug.candidates = candidates.slice();
       console.log("[/api/check] Candidates:", debug.candidates);
 
-      // Order: OpenFoodFacts -> Nutritionix -> USDA -> FoodRepo
-      for (const cand of candidates) {
-        // 1) OpenFoodFacts
-        try {
-          console.log("[/api/check] Trying OpenFoodFacts candidate:", cand);
-          const off = await tryOpenFoodFacts(cand);
-          debug.externalAttempts.push({ candidate: cand, provider: "openfoodfacts", ok: !!off.ok, note: off.reason || off.status || off.error || null });
-          if (off.ok && (off.ingredientsText || off.nutrition)) {
-            structured.productName = off.productName || structured.productName;
-            structured.ingredientsText = off.ingredientsText || structured.ingredientsText;
-            structured.nutrition = off.nutrition || structured.nutrition;
-            structured.rawProvider = off.raw || null;
-            structured.providerName = "openfoodfacts";
-            debug.fetchedFrom = "openfoodfacts";
-            debug.fetchedCandidate = cand;
-            debug.fetchedTextPreview = (off.ingredientsText || "").slice(0, 400);
-            debug.fetchedProductName = off.productName || null;
-            debug.fetchedNutritionPreview = off.nutrition ? Object.keys(off.nutrition).slice(0,10) : null;
-            break;
+      // For each candidate, attempt all providers and merge results (Nutritionix v2+v1 captured)
+      outer: for (const cand of candidates) {
+        console.log("[/api/check] Starting candidate:", cand);
+
+        // per-candidate holder for merging providers for this candidate
+        const perCandidate = {
+          productName: null,
+          ingredientsText: null,
+          nutrition: null,
+          rawProviders: {},
+        };
+
+        const providers = [
+          { fn: tryOpenFoodFacts, name: "openfoodfacts" },
+          { fn: tryNutritionix, name: "nutritionix" },
+          { fn: tryUSDA, name: "usda" },
+          { fn: tryFoodRepo, name: "foodrepo" },
+        ];
+
+        for (const p of providers) {
+          try {
+            console.log(`[/api/check] Trying ${p.name} candidate:`, cand);
+            const result = await p.fn(cand);
+
+            debug.externalAttempts.push({
+              candidate: cand,
+              provider: p.name,
+              ok: !!(result && result.ok),
+              note: result?.reason || result?.status || result?.note || result?.error || null,
+            });
+
+            // store raw result for debug/inspection
+            perCandidate.rawProviders[p.name] = result?.raw ?? null;
+
+            if (!result) {
+              console.log(`[/api/check] ${p.name} returned no object for candidate:`, cand);
+              continue;
+            }
+
+            // Nutritionix: always capture v1 & v2 combined data if available.
+            if (p.name === "nutritionix") {
+              structured.rawNutritionix = structured.rawNutritionix || result.raw || null;
+
+              if (result.productName && !perCandidate.productName) perCandidate.productName = result.productName;
+              if (result.ingredientsText && !perCandidate.ingredientsText) perCandidate.ingredientsText = result.ingredientsText;
+              if (result.nutrition) {
+                perCandidate.nutrition = perCandidate.nutrition || {};
+                for (const k of Object.keys(result.nutrition || {})) {
+                  if (!perCandidate.nutrition[k]) perCandidate.nutrition[k] = result.nutrition[k];
+                }
+              }
+
+              console.log(`[/api/check] nutritionix produced data for candidate ${cand}: productName=${!!perCandidate.productName}, ingredients=${!!perCandidate.ingredientsText}, nutrition=${!!perCandidate.nutrition}`);
+              // Continue to other providers to augment
+              continue;
+            }
+
+            // For non-nutritionix providers (openfoodfacts/usda/foodrepo), prefer ingredientsText or nutrition
+            if (result.productName && !perCandidate.productName) perCandidate.productName = result.productName;
+            if (result.ingredientsText && !perCandidate.ingredientsText) perCandidate.ingredientsText = result.ingredientsText;
+            if (result.nutrition) {
+              perCandidate.nutrition = perCandidate.nutrition || {};
+              for (const k of Object.keys(result.nutrition || {})) {
+                if (!perCandidate.nutrition[k]) perCandidate.nutrition[k] = result.nutrition[k];
+              }
+            }
+
+            if (result.ok && (result.ingredientsText || (result.nutrition && Object.keys(result.nutrition).length))) {
+              console.log(`[/api/check] ${p.name} returned usable data for candidate:`, cand);
+            } else {
+              console.log(`[/api/check] ${p.name} returned no useful structured ingredients/nutrition for candidate:`, cand);
+            }
+          } catch (err) {
+            console.error(`[/api/check] Error calling provider ${p.name} for candidate ${cand}:`, err);
+            debug.externalAttempts.push({
+              candidate: cand,
+              provider: p.name,
+              ok: false,
+              note: String(err),
+            });
+            // continue to next provider
           }
-        } catch (e) {
-          debug.externalAttempts.push({ candidate: cand, provider: "openfoodfacts", ok: false, note: String(e) });
+        } // end providers loop
+
+        // Merge perCandidate into structured (preferring explicit ingredient statements)
+        if (perCandidate.productName && !structured.productName) structured.productName = perCandidate.productName;
+        if (perCandidate.ingredientsText && !structured.ingredientsText) {
+          structured.ingredientsText = perCandidate.ingredientsText;
+          structured.rawProvider = structured.rawProvider || (perCandidate.rawProviders && Object.keys(perCandidate.rawProviders).find(k => perCandidate.rawProviders[k]));
+          structured.providerName = structured.providerName || "merged";
+          if (!debug.fetchedFrom) {
+            debug.fetchedFrom = "merged";
+            debug.fetchedCandidate = cand;
+            debug.fetchedTextPreview = (structured.ingredientsText || "").slice(0, 400);
+            debug.fetchedProductName = structured.productName || null;
+          }
         }
 
-        // 2) Nutritionix
-        try {
-          console.log("[/api/check] Trying Nutritionix candidate:", cand);
-          const nx = await tryNutritionix(cand);
-          debug.externalAttempts.push({ candidate: cand, provider: "nutritionix", ok: !!nx.ok, note: nx.reason || nx.status || nx.note || nx.error || null });
-          if (nx.ok && (nx.ingredientsText || nx.nutrition)) {
-            structured.productName = nx.productName || structured.productName;
-            structured.ingredientsText = nx.ingredientsText || structured.ingredientsText;
-            structured.nutrition = nx.nutrition || structured.nutrition;
-            structured.rawProvider = nx.raw || null;
-            structured.providerName = "nutritionix";
-            debug.fetchedFrom = "nutritionix";
-            debug.fetchedCandidate = cand;
-            debug.fetchedTextPreview = (nx.ingredientsText || "").slice(0, 400);
-            debug.fetchedProductName = nx.productName || null;
-            debug.fetchedNutritionPreview = nx.nutrition ? Object.keys(nx.nutrition).slice(0,10) : null;
-            break;
+        // Merge nutrition
+        if (perCandidate.nutrition && Object.keys(perCandidate.nutrition).length) {
+          structured.nutrition = structured.nutrition || {};
+          for (const k of Object.keys(perCandidate.nutrition)) {
+            if (!structured.nutrition[k]) structured.nutrition[k] = perCandidate.nutrition[k];
           }
-        } catch (e) {
-          debug.externalAttempts.push({ candidate: cand, provider: "nutritionix", ok: false, note: String(e) });
+          if (!debug.fetchedFrom) {
+            debug.fetchedFrom = "merged-nutrition";
+            debug.fetchedCandidate = cand;
+            debug.fetchedNutritionPreview = Object.keys(structured.nutrition).slice(0, 10);
+          }
         }
 
-        // 3) USDA
-        try {
-          console.log("[/api/check] Trying USDA candidate:", cand);
-          const usda = await tryUSDA(cand);
-          debug.externalAttempts.push({ candidate: cand, provider: "usda", ok: !!usda.ok, note: usda.reason || usda.status || usda.error || null });
-          if (usda.ok && (usda.ingredientsText || usda.nutrition)) {
-            structured.productName = usda.productName || structured.productName;
-            structured.ingredientsText = usda.ingredientsText || structured.ingredientsText;
-            structured.nutrition = usda.nutrition || structured.nutrition;
-            structured.rawProvider = usda.raw || null;
-            structured.providerName = "usda";
-            debug.fetchedFrom = "usda";
-            debug.fetchedCandidate = cand;
-            debug.fetchedTextPreview = (usda.ingredientsText || "").slice(0, 400);
-            debug.fetchedProductName = usda.productName || null;
-            debug.fetchedNutritionPreview = usda.nutrition ? Object.keys(usda.nutrition).slice(0,10) : null;
-            break;
-          }
-        } catch (e) {
-          debug.externalAttempts.push({ candidate: cand, provider: "usda", ok: false, note: String(e) });
+        // If we've got ingredientsText OR nutrition now (nutrition qualifies too), stop trying other candidates
+        if ((structured.ingredientsText && structured.ingredientsText.trim()) || (structured.nutrition && Object.keys(structured.nutrition).length)) {
+          console.log("[/api/check] Found ingredients/raw text or nutrition for candidate:", cand);
+          break outer; // stop trying other candidates
         }
 
-        // 4) FoodRepo
-        try {
-          console.log("[/api/check] Trying FoodRepo candidate:", cand);
-          const fr = await tryFoodRepo(cand);
-          debug.externalAttempts.push({ candidate: cand, provider: "foodrepo", ok: !!fr.ok, note: fr.reason || fr.status || fr.error || null });
-          if (fr.ok && (fr.ingredientsText || fr.nutrition)) {
-            structured.productName = fr.productName || structured.productName;
-            structured.ingredientsText = fr.ingredientsText || structured.ingredientsText;
-            structured.nutrition = fr.nutrition || structured.nutrition;
-            structured.rawProvider = fr.raw || null;
-            structured.providerName = "foodrepo";
-            debug.fetchedFrom = "foodrepo";
-            debug.fetchedCandidate = cand;
-            debug.fetchedTextPreview = (fr.ingredientsText || "").slice(0, 400);
-            debug.fetchedProductName = fr.productName || null;
-            debug.fetchedNutritionPreview = fr.nutrition ? Object.keys(fr.nutrition).slice(0,10) : null;
-            break;
-          }
-        } catch (e) {
-          debug.externalAttempts.push({ candidate: cand, provider: "foodrepo", ok: false, note: String(e) });
-        }
+        // If no ingredientsText and no nutrition, continue to next candidate
+        console.log("[/api/check] Candidate provided no ingredients or nutrition, continuing to next candidate:", cand);
       } // end candidate loop
     } // end barcode flow
 
-    // If we still have no provider-sourced ingredients/nutrition, do NOT run OCR here.
-    if (!structured.ingredientsText || !structured.ingredientsText.trim()) {
-      // Provide a user-friendly response that the UI can render a helpful message
-      debug.note = debug.note || "no-ingredient-text-from-providers";
-      // include provider attempt details in debug so frontend can show why (which providers were tried)
+    // If we still have no provider-sourced ingredients/nutrition, do NOT run OCR here automatically.
+    if (!(structured.ingredientsText && structured.ingredientsText.trim()) && !(structured.nutrition && Object.keys(structured.nutrition).length)) {
+      debug.note = debug.note || "no-ingredient-text-or-nutrition-from-providers";
       return res.status(200).json({
         found: false,
         message:
@@ -701,14 +821,18 @@ export default async function handler(req, res) {
       });
     }
 
-    // We have ingredient text — proceed to matching against Airtable
-    const rawText = String(structured.ingredientsText).trim();
-    console.log("[/api/check] Final ingredient text (preview):", rawText.slice(0, 300));
+    // We have ingredient/raw text and/or nutrition — proceed to matching against Airtable (use ingredientsText OR flattened nutritionix text)
+    const rawText = String(structured.ingredientsText || structured.rawText || "").trim();
+    console.log("[/api/check] Final ingredient/raw text (preview):", rawText.slice(0, 300));
 
     // Match against Airtable banned + ingredient DBs
     let matchedBanned = [];
     try {
-      matchedBanned = await matchAgainstBannedRecords(rawText);
+      if (rawText) {
+        matchedBanned = await matchAgainstBannedRecords(rawText);
+      } else {
+        matchedBanned = [];
+      }
       debug.totalBannedMatches = matchedBanned.length;
     } catch (err) {
       console.error("[/api/check] Error matching banned records:", err);
@@ -717,7 +841,11 @@ export default async function handler(req, res) {
 
     let matchedIngredients = [];
     try {
-      matchedIngredients = await matchAgainstIngredientRecords(rawText);
+      if (rawText) {
+        matchedIngredients = await matchAgainstIngredientRecords(rawText);
+      } else {
+        matchedIngredients = [];
+      }
       debug.totalIngredientMatches = matchedIngredients.length;
     } catch (err) {
       console.error("[/api/check] Error matching ingredients DB:", err);
@@ -759,7 +887,8 @@ export default async function handler(req, res) {
     // Return success + structured data
     return res.status(200).json({
       found: true,
-      ocrText: rawText,
+      // ocrText field preserves ingredient text (or flattened text) for UI highlight
+      ocrText: structured.ingredientsText || (structured.rawNutritionix ? flattenNutritionixRawToText(structured.rawNutritionix?.v2 || structured.rawNutritionix?.v1 || {}) : null),
       productName: structured.productName || null,
       ingredientsText: structured.ingredientsText || null,
       nutritionFacts: structured.nutrition || null,

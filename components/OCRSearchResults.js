@@ -1,22 +1,16 @@
 // components/OCRSearchResults.js
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
- * OCRSearchResults
- *
- * Props:
- *  - searchTerm: string
- *  - matchedSubstances: array of records in unified shape (or fields)
- *
- * Behavior:
- *  - shows Banned Substances and Ingredients (non-banned) in two collapsible tables
- *  - highlights the searchTerm in Substance Name / Synonyms and other fields
- *  - has sticky table headers and a sticky footer legend wheel
- *  - allows filtering by ban type (single-select)
+ * Desktop visuals preserved 1:1.
+ * Mobile adds:
+ *  - horizontal scroll with momentum
+ *  - brand-blue gradient fades on left/right edges of scroll containers
+ *  - small padding/typography tweaks, wrapping controls
  */
 
 // safety: escape regex special chars
@@ -41,6 +35,47 @@ export default function OCRSearchResults({
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
+
+  // gradient visibility state (mobile scroll hint)
+  const bannedScrollRef = useRef(null);
+  const ingScrollRef = useRef(null);
+  const [banFade, setBanFade] = useState({ left: false, right: false });
+  const [ingFade, setIngFade] = useState({ left: false, right: false });
+
+  const updateFadeFor = (el, setState) => {
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const max = Math.max(scrollWidth - clientWidth, 0);
+    setState({
+      left: scrollLeft > 2,
+      right: scrollLeft < max - 2,
+    });
+  };
+
+  useEffect(() => {
+    const b = bannedScrollRef.current;
+    const i = ingScrollRef.current;
+    if (b) updateFadeFor(b, setBanFade);
+    if (i) updateFadeFor(i, setIngFade);
+
+    const onScrollB = () => updateFadeFor(bannedScrollRef.current, setBanFade);
+    const onScrollI = () => updateFadeFor(ingScrollRef.current, setIngFade);
+
+    b && b.addEventListener("scroll", onScrollB, { passive: true });
+    i && i.addEventListener("scroll", onScrollI, { passive: true });
+
+    const onResize = () => {
+      if (b) updateFadeFor(b, setBanFade);
+      if (i) updateFadeFor(i, setIngFade);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      b && b.removeEventListener("scroll", onScrollB);
+      i && i.removeEventListener("scroll", onScrollI);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [matchedSubstances, bannedOpen, ingredientsOpen]);
 
   // Ban type palette (consistent across site)
   const banTypeColors = [
@@ -137,14 +172,12 @@ export default function OCRSearchResults({
         return `<span style="color:${appliedColor}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${match}</span>`;
       });
     } catch (err) {
-      // If regex fails for any reason, fallback to plain escaping
       return escapeHtml(raw);
     }
   };
 
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
-    // smooth scroll to top of results for clarity
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -162,18 +195,18 @@ export default function OCRSearchResults({
     String(searchTerm || "").trim().length >= 2 && (matchedSubstances?.length ?? 0) === 0;
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6 relative">
+    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 sm:py-6 font-sans space-y-6 relative">
       <section>
-        <h2 className="text-2xl font-bold mb-2">Search Results</h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <h2 className="text-2xl font-bold mb-2 text-center sm:text-left">Search Results</h2>
+        <p className="text-sm text-gray-600 mb-4 text-center sm:text-left">
           {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned /{" "}
           {ingredientRecords.length} ingredients
         </p>
 
         {/* Banned Substances Collapsible */}
         <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               <button
                 onClick={() => setBannedOpen((s) => !s)}
                 aria-expanded={bannedOpen}
@@ -184,10 +217,12 @@ export default function OCRSearchResults({
                 <span className="badge">{bannedRecords.length}</span>
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-sm text-gray-600">Filter by ban type using legend below.</div>
+              <div className="text-xs sm:text-sm text-gray-600">
+                Filter by ban type using legend below.
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 onClick={() => {
                   const next = !(bannedOpen && ingredientsOpen);
@@ -207,10 +242,22 @@ export default function OCRSearchResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto"
+                className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
+                style={{ WebkitOverflowScrolling: "touch" }}
+                ref={bannedScrollRef}
               >
+                {/* Left/Right gradient scroll hints (mobile only) */}
+                {banFade.left && (
+                  <div className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
+                       style={{ background: "linear-gradient(to right, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                )}
+                {banFade.right && (
+                  <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
+                       style={{ background: "linear-gradient(to left, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                )}
+
                 {filteredBanned && filteredBanned.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
                     <thead className="bg-[#46769B] text-white sticky top-0 z-20">
                       <tr>
                         {[
@@ -227,7 +274,7 @@ export default function OCRSearchResults({
                         ].map((h) => (
                           <th
                             key={h}
-                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
                             scope="col"
                           >
                             {h}
@@ -260,30 +307,21 @@ export default function OCRSearchResults({
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.14 }}
                           >
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: nameHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: synHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: bannedByHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: bannedByHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <span
-                                className="px-2 py-1 rounded-full text-sm font-medium"
+                                className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
                                 style={{
                                   backgroundColor: colorEntry ? `${colorEntry.color}20` : "#11182710",
                                   color: colorEntry ? colorEntry.color : "#111827",
@@ -293,30 +331,27 @@ export default function OCRSearchResults({
                               </span>
                             </td>
 
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm">{rec.dosageLimit || ""}</div>
                             </td>
 
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: notesHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: notesHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
                             </td>
                           </motion.tr>
@@ -334,8 +369,8 @@ export default function OCRSearchResults({
 
         {/* Ingredients Collapsible */}
         <div className="mb-24">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
@@ -346,7 +381,9 @@ export default function OCRSearchResults({
                 <span className="badge">{ingredientRecords.length}</span>
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-sm text-gray-600">Ingredients database results and nutrient info.</div>
+              <div className="text-xs sm:text-sm text-gray-600">
+                Ingredients database results and nutrient info.
+              </div>
             </div>
           </div>
 
@@ -356,10 +393,22 @@ export default function OCRSearchResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto"
+                className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
+                style={{ WebkitOverflowScrolling: "touch" }}
+                ref={ingScrollRef}
               >
+                {/* Left/Right gradient scroll hints (mobile only) */}
+                {ingFade.left && (
+                  <div className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
+                       style={{ background: "linear-gradient(to right, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                )}
+                {ingFade.right && (
+                  <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
+                       style={{ background: "linear-gradient(to left, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                )}
+
                 {filteredIngredients && filteredIngredients.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
                     <thead className="bg-[#334E63] text-white sticky top-0 z-20">
                       <tr>
                         {[
@@ -372,7 +421,7 @@ export default function OCRSearchResults({
                         ].map((h) => (
                           <th
                             key={h}
-                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
                             scope="col"
                           >
                             {h}
@@ -399,27 +448,27 @@ export default function OCRSearchResults({
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.14 }}
                           >
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
                             </td>
 
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
                             </td>
                           </motion.tr>
@@ -446,10 +495,10 @@ export default function OCRSearchResults({
         style={{ pointerEvents: "auto" }}
       >
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
-            <div className="flex items-center gap-3 overflow-x-auto py-1">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
+            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto" style={{ WebkitOverflowScrolling: "touch" }}>
               <button
-                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm"
+                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap"
                 onClick={() => setLegendCollapsed((c) => !c)}
                 aria-expanded={!legendCollapsed}
                 aria-label={legendCollapsed ? "Expand legend" : "Collapse legend"}
@@ -465,7 +514,7 @@ export default function OCRSearchResults({
                       key={t.label}
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm ${
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm whitespace-nowrap ${
                         active ? "shadow-md bg-gray-800 text-white" : "bg-white"
                       }`}
                       style={{
@@ -483,13 +532,13 @@ export default function OCRSearchResults({
                 })}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="text-sm text-gray-600 hidden sm:block">
                 Showing: {filteredBanned.length} banned · {filteredIngredients.length} ingredients
               </div>
               <button
                 onClick={clearFilters}
-                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105"
+                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105 w-full sm:w-auto"
                 aria-label="Clear filters"
               >
                 Clear Filters
@@ -515,7 +564,7 @@ export default function OCRSearchResults({
           z-index: 20;
         }
 
-        /* Clean, noticeable toggle button to match OCRScanResults style */
+        /* Clean, noticeable toggle button to match site style */
         .search-toggle-btn {
           display: inline-flex;
           align-items: center;

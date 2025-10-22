@@ -6,26 +6,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
- * OCRScanResults
- *
- * Props:
- *  - ocrText: string (raw OCR text from scan)
- *  - detectedSubstances: array of Airtable records (banned) in { id, fields } shape (or flattened)
- *  - detectedIngredients: array of Airtable records (ingredients) in { id, fields } shape (or flattened)
- *  - showOCR: boolean (optional) - whether to enable OCR-based highlighting behavior (defaults true)
- *
- * Behavior:
- *  - shows Banned Substances and Ingredients (non-banned) in two collapsible tables
- *  - highlights the table cell text when that text (or synonym) appears in the OCR text
- *  - has sticky table headers and a sticky footer legend wheel
- *  - allows filtering by ban type (single-select)
+ * Mobile-friendly (desktop unchanged) version.
+ * - Desktop: identical visuals & layout.
+ * - Mobile: horizontal table scroll, smaller paddings/fonts, flexible legend/wrap.
  */
 
 // safety: escape regex special chars
 const escapeRegex = (string = "") =>
   String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// minimal HTML escape to keep innerHTML safe for raw text (we still inject highlight spans)
+// minimal HTML escape
 const escapeHtml = (unsafe = "") =>
   String(unsafe)
     .replace(/&/g, "&amp;")
@@ -41,22 +31,20 @@ export default function OCRScanResults({
   showOCR = true,
 }) {
   // UI state
-  const [activeBanType, setActiveBanType] = useState(null); // single-select (keeps old UX)
+  const [activeBanType, setActiveBanType] = useState(null); // single-select
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
-  // Ban type palette (consistent across site)
+  // Colors
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
     { label: "Particular Sports", color: "#003049" },
   ];
-
-  // Ingredient highlight color (user chose #8556da)
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
-  // Combine incoming detected arrays into one list for normalization (accept both {fields} or flattened)
+  // Merge + normalize
   const mergedInput = useMemo(() => {
     const arr = [];
     (detectedSubstances || []).forEach((r) => arr.push(r));
@@ -64,7 +52,6 @@ export default function OCRScanResults({
     return arr;
   }, [detectedSubstances, detectedIngredients]);
 
-  // Normalize incoming records (accept either {fields: {...}} or flattened shapes)
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
     const banned = [];
     const ingredients = [];
@@ -72,28 +59,15 @@ export default function OCRScanResults({
     banTypeColors.forEach((b) => (counts[b.label] = 0));
 
     (mergedInput || []).forEach((rRaw) => {
-      const r = rRaw && rRaw.fields ? rRaw.fields : rRaw || {}; // support both shapes
+      const r = rRaw && rRaw.fields ? rRaw.fields : rRaw || {};
       const record = {
         id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
-        // Banned Airtable uses "Substance Name"; Ingredients use "Name"
-        name:
-          r["Substance Name"] ??
-          r.name ??
-          r["Name"] ??
-          rRaw?.name ??
-          "",
-        // Synonyms could be "Synonyms" (banned) or "Synonyms (Extended)" (ingredients)
-        synonyms:
-          r["Synonyms"] ??
-          r["Synonyms (Extended)"] ??
-          r.synonyms ??
-          "",
+        name: r["Substance Name"] ?? r.name ?? r["Name"] ?? rRaw?.name ?? "",
+        synonyms: r["Synonyms"] ?? r["Synonyms (Extended)"] ?? r.synonyms ?? "",
         bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
         banType: r["Ban Type"] ?? r.banType ?? null,
         dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
-        // Notes mapping: banned uses "Notes", ingredients use "Pharmacology Notes"
         notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
-        // Sources mapping: banned might have "Source / Citation", ingredients "Sources / References"
         source:
           r["Source / Citation"] ??
           r["Source"] ??
@@ -107,7 +81,6 @@ export default function OCRScanResults({
           r["Nutrient Antagonisms"] ??
           r.antagonisms ??
           "",
-        // include the original fields object so we can access any original names if needed
         rawFields: r,
       };
 
@@ -123,38 +96,28 @@ export default function OCRScanResults({
     return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
   }, [mergedInput]);
 
-  // Filter banned by legend (single-select activeBanType)
   const filteredBanned = useMemo(() => {
     if (!activeBanType) return bannedRecords;
     return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
   }, [bannedRecords, activeBanType]);
 
-  // Ingredients shown excluding ones already present in banned (by name)
   const filteredIngredients = useMemo(() => {
     const bannedNames = new Set(bannedRecords.map((b) => (b.name || "").toLowerCase()));
     return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
   }, [ingredientRecords, bannedRecords]);
 
-  // Show AnimatedEllipsis when user has no OCR text but results exist? (not typical)
   const showSearchingIndicator = false;
 
-  // Highlight function: highlights occurrences of terms in the field `text` when they appear in OCR text.
-  // It inserts <span> highlights only for the matched terms and returns a safe HTML string.
+  // highlight terms that appear in OCR
   const highlightHTML = (text = "", color = "") => {
     const raw = String(text ?? "");
     if (!raw) return "";
     const ocr = String(ocrText ?? "").trim();
-    if (!ocr) {
-      // if no OCR present, return plain escaped text (no highlight)
-      return escapeHtml(raw);
-    }
+    if (!ocr) return escapeHtml(raw);
 
-    // split by commas to treat synonyms / multi-values as separate matchable terms
     const terms = raw.split(/,\s*/).map((t) => t.trim()).filter(Boolean);
     if (!terms.length) return escapeHtml(raw);
 
-    // We'll replace matches in the *raw* string with unique placeholders first,
-    // then HTML-escape the whole string and swap placeholders to final span-wrapped escaped values.
     let working = raw;
     const placeholders = [];
 
@@ -162,29 +125,16 @@ export default function OCRScanResults({
       if (!term) return;
       try {
         const termRx = new RegExp(escapeRegex(term), "i");
-        if (!termRx.test(ocr)) {
-          // only highlight if the OCR contains this term (case-insensitive)
-          return;
-        }
+        if (!termRx.test(ocr)) return; // only highlight if OCR contained the term
         const placeholder = `@@HIGHLIGHT_${Math.random().toString(36).slice(2)}_${idx}@@`;
-        // replace all occurrences in the working string with placeholder (case-insensitive)
-        const replaceRx = new RegExp(escapeRegex(term), "gi");
-        working = working.replace(replaceRx, placeholder);
+        working = working.replace(new RegExp(escapeRegex(term), "gi"), placeholder);
         placeholders.push({ placeholder, term });
-      } catch (err) {
-        // if regex fails, ignore that term
-      }
+      } catch {}
     });
 
-    // If no placeholders were added, nothing matched; return escaped original
-    if (!placeholders.length) {
-      return escapeHtml(raw);
-    }
+    if (!placeholders.length) return escapeHtml(raw);
 
-    // Escape the string now (placeholders remain intact)
     let escaped = escapeHtml(working);
-
-    // Replace placeholders back with highlighted spans (term also escaped)
     placeholders.forEach(({ placeholder, term }) => {
       const escapedTerm = escapeHtml(term);
       const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
@@ -197,7 +147,6 @@ export default function OCRScanResults({
 
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
-    // smooth scroll to top of results for clarity
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -211,18 +160,17 @@ export default function OCRScanResults({
   const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-6 relative">
+    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 sm:py-6 font-sans space-y-6 relative">
       <section>
-        <h2 className="text-2xl font-bold mb-2">Scan Results</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          {(mergedInput?.length ?? 0)} total results — {bannedRecords.length} banned /{" "}
-          {ingredientRecords.length} ingredients
+        <h2 className="text-2xl font-bold mb-2 text-center sm:text-left">Scan Results</h2>
+        <p className="text-sm text-gray-600 mb-4 text-center sm:text-left">
+          {(mergedInput?.length ?? 0)} total results — {bannedRecords.length} banned · {ingredientRecords.length} ingredients
         </p>
 
         {/* Banned Substances Collapsible */}
         <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setBannedOpen((s) => !s)}
                 aria-expanded={bannedOpen}
@@ -233,10 +181,10 @@ export default function OCRScanResults({
                 <span className="badge">{bannedRecords.length}</span>
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-sm text-gray-600">Filter by ban type using legend below.</div>
+              <div className="text-xs sm:text-sm text-gray-600">Filter by ban type using legend below.</div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 onClick={() => {
                   const next = !(bannedOpen && ingredientsOpen);
@@ -256,10 +204,11 @@ export default function OCRScanResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto"
+                className="mt-3 overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
+                style={{ WebkitOverflowScrolling: "touch" }}
               >
                 {filteredBanned && filteredBanned.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
                     <thead className="bg-[#46769B] text-white sticky top-0 z-20">
                       <tr>
                         {[
@@ -276,7 +225,7 @@ export default function OCRScanResults({
                         ].map((h) => (
                           <th
                             key={h}
-                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
                             scope="col"
                           >
                             {h}
@@ -309,30 +258,18 @@ export default function OCRScanResults({
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.14 }}
                           >
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: nameHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: synHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: bannedByHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: bannedByHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <span
-                                className="px-2 py-1 rounded-full text-sm font-medium"
+                                className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
                                 style={{
                                   backgroundColor: colorEntry ? `${colorEntry.color}20` : "#11182710",
                                   color: colorEntry ? colorEntry.color : "#111827",
@@ -341,31 +278,22 @@ export default function OCRScanResults({
                                 {banType || "—"}
                               </span>
                             </td>
-
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm">{rec.dosageLimit || ""}</div>
                             </td>
-
-                            <td className="px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: notesHTML }}
-                              />
+                            <td className="px-3 sm:px-4 py-3 align-top">
+                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: notesHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
                             </td>
                           </motion.tr>
@@ -383,8 +311,8 @@ export default function OCRScanResults({
 
         {/* Ingredients Collapsible */}
         <div className="mb-24">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
@@ -395,7 +323,7 @@ export default function OCRScanResults({
                 <span className="badge">{ingredientRecords.length}</span>
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-sm text-gray-600">Ingredients database results and nutrient info.</div>
+              <div className="text-xs sm:text-sm text-gray-600">Ingredients database results and nutrient info.</div>
             </div>
           </div>
 
@@ -405,10 +333,11 @@ export default function OCRScanResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto"
+                className="mt-3 overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
+                style={{ WebkitOverflowScrolling: "touch" }}
               >
                 {filteredIngredients && filteredIngredients.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden">
+                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
                     <thead className="bg-[#334E63] text-white sticky top-0 z-20">
                       <tr>
                         {[
@@ -421,7 +350,7 @@ export default function OCRScanResults({
                         ].map((h) => (
                           <th
                             key={h}
-                            className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
                             scope="col"
                           >
                             {h}
@@ -448,27 +377,22 @@ export default function OCRScanResults({
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.14 }}
                           >
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 sm:px-4 py-3 align-top">
                               <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
                             </td>
-
-                            <td className="px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
                               <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
                             </td>
                           </motion.tr>
@@ -489,16 +413,13 @@ export default function OCRScanResults({
         </div>
       </section>
 
-      {/* Sticky Legend / Footer (bottom of viewport) */}
-      <div
-        className="sticky bottom-0 left-0 right-0 z-40"
-        style={{ pointerEvents: "auto" }}
-      >
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
-            <div className="flex items-center gap-3 overflow-x-auto py-1">
+      {/* Sticky Legend / Footer */}
+      <div className="sticky bottom-0 left-0 right-0 z-40" style={{ pointerEvents: "auto" }}>
+        <div className="max-w-6xl mx-auto px-3 sm:px-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
+            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto" style={{ WebkitOverflowScrolling: "touch" }}>
               <button
-                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm"
+                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap"
                 onClick={() => setLegendCollapsed((c) => !c)}
                 aria-expanded={!legendCollapsed}
                 aria-label={legendCollapsed ? "Expand legend" : "Collapse legend"}
@@ -514,17 +435,12 @@ export default function OCRScanResults({
                       key={t.label}
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm ${
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm whitespace-nowrap ${
                         active ? "shadow-md bg-gray-800 text-white" : "bg-white"
                       }`}
-                      style={{
-                        borderColor: active ? "#444" : "transparent",
-                      }}
+                      style={{ borderColor: active ? "#444" : "transparent" }}
                     >
-                      <span
-                        className="w-4 h-4 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: t.color, display: "inline-block" }}
-                      />
+                      <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: t.color, display: "inline-block" }} />
                       <span className="font-medium">{t.label}</span>
                       <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
                     </button>
@@ -532,13 +448,13 @@ export default function OCRScanResults({
                 })}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="text-sm text-gray-600 hidden sm:block">
                 Showing: {filteredBanned.length} banned · {filteredIngredients.length} ingredients
               </div>
               <button
                 onClick={clearFilters}
-                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105"
+                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105 w-full sm:w-auto"
                 aria-label="Clear filters"
               >
                 Clear Filters
@@ -548,7 +464,7 @@ export default function OCRScanResults({
         </div>
       </div>
 
-      {/* Local styles for highlight-match and new toggle buttons */}
+      {/* Local styles (retain your premium look) */}
       <style jsx>{`
         .highlight-match {
           background: transparent;
@@ -558,13 +474,9 @@ export default function OCRScanResults({
           text-underline-offset: 2px;
           font-weight: 600;
         }
-
-        /* Ensure table header cells remain visually on top */
         thead.sticky {
           z-index: 20;
         }
-
-        /* New cleaner, more noticeable toggle button */
         .toggle-section-btn {
           display: inline-flex;
           align-items: center;
@@ -578,20 +490,17 @@ export default function OCRScanResults({
           transition: all 0.18s ease-in-out;
           background: rgba(255, 255, 255, 0.88);
           color: #0f172a;
-          box-shadow: 0 1px 0 rgba(16,24,40,0.03);
+          box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
         }
-
         .toggle-section-btn:hover {
           transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(16,24,40,0.06);
+          box-shadow: 0 6px 16px rgba(16, 24, 40, 0.06);
         }
-
         .toggle-section-btn .section-label {
           letter-spacing: -0.2px;
         }
-
         .toggle-section-btn .badge {
-          background-color: #46769B;
+          background-color: #46769b;
           color: #fff;
           font-size: 0.825rem;
           padding: 4px 8px;
@@ -601,18 +510,16 @@ export default function OCRScanResults({
           align-items: center;
           justify-content: center;
         }
-
         .toggle-section-btn .caret {
           color: #6b7280;
           font-weight: 600;
         }
-
         .toggle-section-btn.active {
-          border-color: #46769B;
+          border-color: #46769b;
           background-color: rgba(70, 118, 155, 0.08);
         }
 
-        /* Slight responsive scaling for small screens so the button stays prominent */
+        /* Mobile fine-tuning without touching desktop look */
         @media (max-width: 640px) {
           .toggle-section-btn {
             padding: 10px 12px;

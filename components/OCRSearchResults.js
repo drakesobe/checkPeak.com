@@ -1,3 +1,4 @@
+// components/OCRSearchResults.js
 "use client";
 
 /**
@@ -6,23 +7,31 @@
  * Desktop visuals preserved 1:1.
  * Mobile adds:
  *  - horizontal scroll with momentum (iOS friendly)
- *  - brand-blue gradient fades on left/right edges of the scroll containers
- *  - gradients follow the visible edge and disappear at extremes
- *  - small, careful tweaks for spacing/typography at small breakpoints
+ *  - brand-blue moving gradient fades that FOLLOW the visible content edge (0px offset)
+ *  - gradients appear only when more content exists on that side and disappear at limits
+ *  - careful mobile spacing/typography tweaks without altering desktop layout
  *
- * Notes:
- *  - This file preserves your original structure, props, and normalized data mapping.
- *  - Gradients are rendered INSIDE each scroll container, absolutely positioned,
- *    and visibility is driven by a rAF-powered watcher (more reliable than scroll events alone).
- *  - Desktop behavior is unchanged; gradients are hidden at `sm` and above.
+ * Implementation details:
+ *  - For each horizontally scrollable section (Banned / Ingredients), we render a "glass" overlay
+ *    (absolute, pointer-events: none) the size of the viewport of the scroll container.
+ *  - Inside that overlay, we position *two* gradient blocks using `translateX()` to the current
+ *    left and right *visible* content edges: `scrollLeft` and `scrollLeft + clientWidth - GRADIENT_W`.
+ *  - Values are recomputed via a requestAnimationFrame loop while actively scrolling/touching (perf-friendly).
+ *  - This ensures gradients "hug" the content edge as it moves rather than sticking to the container edge.
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+  useCallback,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /* -------------------------------------------------------------------------- */
-/* Utilities: safe regex + HTML escape                                        */
+/* Utilities                                                                  */
 /* -------------------------------------------------------------------------- */
 
 const escapeRegex = (string = "") =>
@@ -36,77 +45,106 @@ const escapeHtml = (unsafe = "") =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+/** Convert hex like #46769B to rgba(r,g,b,a). Falls back if parse fails. */
+function hexToRgba(hex, alpha = 1) {
+  try {
+    const h = hex.replace("#", "");
+    const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+    const int = parseInt(full, 16);
+    const r = (int >> 16) & 255;
+    const g = (int >> 8) & 255;
+    const b = int & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  } catch {
+    return hex;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
-/* Hook: useScrollFade — rAF-driven scroll edge detection for gradients       */
+/* Hook: useMovingEdgeGradients                                               */
 /* -------------------------------------------------------------------------- */
 /**
- * useScrollFade
- * - Watches a scroll container's horizontal position and determines
- *   if there is more content to the left or right (to show gradient hints).
- * - Uses requestAnimationFrame while actively scrolling for smooth updates
- *   and stops automatically when scrolling ends (perf-friendly).
- * - Returns:
- *    { left: boolean, right: boolean, bind: { ref, onScroll? } }
+ * Tracks the *visible content edge* inside a horizontal scroll container
+ * and returns coordinates + visibility for left/right gradient blocks.
+ *
+ * Gradients must be positioned relative to the scroll container (overlay layer),
+ * but anchored to the *content edge* (scrollLeft, scrollLeft+clientWidth),
+ * so we compute:
+ *  - leftX  = scrollLeft
+ *  - rightX = scrollLeft + clientWidth - GRADIENT_W
+ *
+ * We also compute whether we *should* show left/right gradient (if more content exists).
  */
-function useScrollFade() {
-  const ref = useRef(null);
-  const [fade, setFade] = useState({ left: false, right: false });
-  const runningRef = useRef(false);
-  const rafRef = useRef(0);
+function useMovingEdgeGradients(gradWidth = 6, tolerance = 2) {
+  const containerRef = useRef(null);
+  const [state, setState] = useState({
+    leftX: 0,
+    rightX: 0,
+    showLeft: false,
+    showRight: false,
+  });
+
+  const running = useRef(false);
+  const rafId = useRef(0);
 
   const compute = useCallback(() => {
-    const el = ref.current;
+    const el = containerRef.current;
     if (!el) return;
+
     const { scrollLeft, scrollWidth, clientWidth } = el;
-    const max = Math.max(scrollWidth - clientWidth, 0);
+    const maxScroll = Math.max(scrollWidth - clientWidth, 0);
 
-    // 2px tolerance to avoid flicker at boundaries
-    const next = {
-      left: scrollLeft > 2,
-      right: scrollLeft < max - 2,
-    };
+    // Positions relative to the container overlay
+    const leftX = Math.max(scrollLeft, 0);
+    const rightX = Math.max(scrollLeft + clientWidth - gradWidth, 0);
 
-    // Only set state if changed (prevents re-renders)
-    setFade((prev) => {
-      if (prev.left === next.left && prev.right === next.right) return prev;
-      return next;
+    // Visibility (avoid flicker at edges)
+    const showLeft = scrollLeft > tolerance;
+    const showRight = scrollLeft < maxScroll - tolerance;
+
+    setState((prev) => {
+      if (
+        prev.leftX === leftX &&
+        prev.rightX === rightX &&
+        prev.showLeft === showLeft &&
+        prev.showRight === showRight
+      ) {
+        return prev;
+      }
+      return { leftX, rightX, showLeft, showRight };
     });
-  }, []);
+  }, [gradWidth, tolerance]);
 
   const tick = useCallback(() => {
     compute();
-    if (runningRef.current) {
-      rafRef.current = requestAnimationFrame(tick);
-    }
+    if (running.current) rafId.current = requestAnimationFrame(tick);
   }, [compute]);
 
   const start = useCallback(() => {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    rafRef.current = requestAnimationFrame(tick);
+    if (running.current) return;
+    running.current = true;
+    rafId.current = requestAnimationFrame(tick);
   }, [tick]);
 
   const stop = useCallback(() => {
-    runningRef.current = false;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    running.current = false;
+    if (rafId.current) cancelAnimationFrame(rafId.current);
   }, []);
 
-  // Attach listeners and do initial compute
   useEffect(() => {
-    const el = ref.current;
+    const el = containerRef.current;
     if (!el) return;
 
-    // Initial compute on mount
+    // initial compute
     compute();
 
-    // Event listeners
+    // Listeners to start/stop rAF
     el.addEventListener("scroll", start, { passive: true });
     el.addEventListener("touchstart", start, { passive: true });
     el.addEventListener("touchend", stop, { passive: true });
     el.addEventListener("mouseenter", start, { passive: true });
     el.addEventListener("mouseleave", stop, { passive: true });
 
-    // On resize, recompute (layout changes)
     const onResize = () => compute();
     window.addEventListener("resize", onResize);
 
@@ -121,7 +159,7 @@ function useScrollFade() {
     };
   }, [compute, start, stop]);
 
-  return { fade, bind: { ref } };
+  return { containerRef, state };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -133,13 +171,15 @@ export default function OCRSearchResults({
   matchedSubstances = [],
 }) {
   /* ------------------------------ UI State -------------------------------- */
-  const [activeBanType, setActiveBanType] = useState(null); // single-select
+  const [activeBanType, setActiveBanType] = useState(null);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   /* -------------------------- Brand / UI Palette -------------------------- */
-  const BRAND_BLUE = "#46769B"; // for gradients
+  const BRAND_BLUE = "#46769B"; // gradients + brand accents
+  const GRAD_ALPHA = 0.35; // per your request
+  const GRAD_W = 6; // px; thin and elegant
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
   const banTypeColors = [
@@ -148,10 +188,10 @@ export default function OCRSearchResults({
     { label: "Particular Sports", color: "#003049" },
   ];
 
-  /* ----------------------------- Scroll Fades ----------------------------- */
-  // One watcher per table for precise, independent behavior on mobile
-  const bannedFadeApi = useScrollFade();      // { fade: {left,right}, bind: {ref} }
-  const ingredientsFadeApi = useScrollFade(); // { fade: {left,right}, bind: {ref} }
+  /* ----------------------------- Scroll Hooks ----------------------------- */
+  // Independent, moving-edge gradients for each scroll container
+  const bannedGrad = useMovingEdgeGradients(GRAD_W, 2);
+  const ingGrad = useMovingEdgeGradients(GRAD_W, 2);
 
   /* ---------------------------- Data Normalize ---------------------------- */
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
@@ -165,25 +205,13 @@ export default function OCRSearchResults({
 
       const record = {
         id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
-        // Banned Airtable uses "Substance Name"; Ingredients use "Name"
-        name:
-          r["Substance Name"] ??
-          r.name ??
-          r["Name"] ??
-          rRaw?.name ??
-          "",
-        // Synonyms could be "Synonyms" (banned) or "Synonyms (Extended)" (ingredients)
+        name: r["Substance Name"] ?? r.name ?? r["Name"] ?? rRaw?.name ?? "",
         synonyms:
-          r["Synonyms"] ??
-          r["Synonyms (Extended)"] ??
-          r.synonyms ??
-          "",
+          r["Synonyms"] ?? r["Synonyms (Extended)"] ?? r.synonyms ?? "",
         bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
         banType: r["Ban Type"] ?? r.banType ?? null,
         dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
-        // Notes mapping: banned uses "Notes", ingredients use "Pharmacology Notes"
         notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
-        // Sources mapping: banned might have "Source / Citation", ingredients "Sources / References"
         source:
           r["Source / Citation"] ??
           r["Source"] ??
@@ -208,11 +236,7 @@ export default function OCRSearchResults({
       }
     });
 
-    return {
-      bannedRecords: banned,
-      ingredientRecords: ingredients,
-      countsByBanType: counts,
-    };
+    return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
   }, [matchedSubstances, banTypeColors]);
 
   /* ----------------------------- Data Filters ----------------------------- */
@@ -302,7 +326,6 @@ export default function OCRSearchResults({
                 <span className="badge">{bannedRecords.length}</span>
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
-
               <div className="text-xs sm:text-sm text-gray-600">
                 Filter by ban type using legend below.
               </div>
@@ -328,182 +351,189 @@ export default function OCRSearchResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
-                style={{ WebkitOverflowScrolling: "touch" }}
-                {...bannedFadeApi.bind}
+                className="mt-3 relative -mx-4 sm:mx-0"
               >
-                {/* Mobile-only gradient fades that follow the visible edge */}
-                {bannedFadeApi.fade.left && (
-                  <div
-                    className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
-                    style={{
-                      background: `linear-gradient(to right, ${hexToRgba(
-                        BRAND_BLUE,
-                        0.25
-                      )}, rgba(70,118,155,0))`,
-                    }}
-                  />
-                )}
-                {bannedFadeApi.fade.right && (
-                  <div
-                    className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
-                    style={{
-                      background: `linear-gradient(to left, ${hexToRgba(
-                        BRAND_BLUE,
-                        0.25
-                      )}, rgba(70,118,155,0))`,
-                    }}
-                  />
-                )}
+                {/* Scroll container */}
+                <div
+                  className="relative overflow-x-auto px-4 sm:px-0"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                  ref={bannedGrad.containerRef}
+                >
+                  {/* TABLE */}
+                  {filteredBanned && filteredBanned.length > 0 ? (
+                    <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
+                      <thead className="bg-[#46769B] text-white sticky top-0 z-20">
+                        <tr>
+                          {[
+                            "Substance Name",
+                            "Synonyms",
+                            "Banned By",
+                            "Ban Type",
+                            "Dosage Limit",
+                            "Notes",
+                            "Source / Citation",
+                            "Benefits",
+                            "Weaknesses",
+                            "Nutrient Antagonisms",
+                          ].map((h) => (
+                            <th
+                              key={h}
+                              className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
+                              scope="col"
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
 
-                {filteredBanned && filteredBanned.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
-                    <thead className="bg-[#46769B] text-white sticky top-0 z-20">
-                      <tr>
-                        {[
-                          "Substance Name",
-                          "Synonyms",
-                          "Banned By",
-                          "Ban Type",
-                          "Dosage Limit",
-                          "Notes",
-                          "Source / Citation",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
+                      <tbody>
+                        {filteredBanned.map((rec) => {
+                          const banType = (rec.banType || "").trim();
+                          const colorEntry = banTypeColors.find(
+                            (b) => b.label === banType
+                          );
+                          const matchColor = colorEntry?.color || "";
 
-                    <tbody>
-                      {filteredBanned.map((rec) => {
-                        const banType = (rec.banType || "").trim();
-                        const colorEntry = banTypeColors.find(
-                          (b) => b.label === banType
-                        );
-                        const matchColor = colorEntry?.color || "";
+                          const nameHTML = highlightHTML(rec.name || "", matchColor);
+                          const synHTML = highlightHTML(rec.synonyms || "", matchColor);
+                          const bannedByHTML = highlightHTML(
+                            rec.bannedBy || "",
+                            matchColor
+                          );
+                          const notesHTML = highlightHTML(rec.notes || "", matchColor);
+                          const sourceHTML = highlightHTML(rec.source || "", matchColor);
+                          const benefitsHTML = highlightHTML(
+                            rec.benefits || "",
+                            matchColor
+                          );
+                          const weaknessesHTML = highlightHTML(
+                            rec.weaknesses || "",
+                            matchColor
+                          );
+                          const antagonismsHTML = highlightHTML(
+                            rec.antagonisms || "",
+                            matchColor
+                          );
 
-                        const nameHTML = highlightHTML(rec.name || "", matchColor);
-                        const synHTML = highlightHTML(rec.synonyms || "", matchColor);
-                        const bannedByHTML = highlightHTML(
-                          rec.bannedBy || "",
-                          matchColor
-                        );
-                        const notesHTML = highlightHTML(rec.notes || "", matchColor);
-                        const sourceHTML = highlightHTML(rec.source || "", matchColor);
-                        const benefitsHTML = highlightHTML(
-                          rec.benefits || "",
-                          matchColor
-                        );
-                        const weaknessesHTML = highlightHTML(
-                          rec.weaknesses || "",
-                          matchColor
-                        );
-                        const antagonismsHTML = highlightHTML(
-                          rec.antagonisms || "",
-                          matchColor
-                        );
+                          return (
+                            <motion.tr
+                              key={rec.id}
+                              className="hover:bg-gray-50 transition"
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -6 }}
+                              transition={{ duration: 0.14 }}
+                            >
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: nameHTML }}
+                                />
+                              </td>
 
-                        return (
-                          <motion.tr
-                            key={rec.id}
-                            className="hover:bg-gray-50 transition"
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.14 }}
-                          >
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: nameHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: synHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: synHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: bannedByHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: bannedByHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <span
+                                  className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
+                                  style={{
+                                    backgroundColor: colorEntry
+                                      ? `${colorEntry.color}20`
+                                      : "#11182710",
+                                    color: colorEntry ? colorEntry.color : "#111827",
+                                  }}
+                                >
+                                  {banType || "—"}
+                                </span>
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <span
-                                className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
-                                style={{
-                                  backgroundColor: colorEntry
-                                    ? `${colorEntry.color}20`
-                                    : "#11182710",
-                                  color: colorEntry
-                                    ? colorEntry.color
-                                    : "#111827",
-                                }}
-                              >
-                                {banType || "—"}
-                              </span>
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div className="text-sm">{rec.dosageLimit || ""}</div>
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm">
-                                {rec.dosageLimit || ""}
-                              </div>
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: notesHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: notesHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: sourceHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: benefitsHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: weaknessesHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div
+                                  dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
+                                />
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="italic text-gray-500">
+                      No banned substances match your filters/search.
+                    </p>
+                  )}
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
-                              />
-                            </td>
-                          </motion.tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="italic text-gray-500">
-                    No banned substances match your filters/search.
-                  </p>
-                )}
+                  {/* MOVING EDGE GRADIENT OVERLAY (mobile only) */}
+                  <div className="sm:hidden pointer-events-none absolute inset-0">
+                    {/* Left gradient — follows visible left edge (0px offset) */}
+                    {bannedGrad.state.showLeft && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute top-0 bottom-0"
+                        style={{
+                          width: `${GRAD_W}px`,
+                          transform: `translateX(${bannedGrad.state.leftX}px)`,
+                          background: `linear-gradient(to right, ${hexToRgba(
+                            BRAND_BLUE,
+                            GRAD_ALPHA
+                          )}, rgba(70,118,155,0))`,
+                        }}
+                      />
+                    )}
+
+                    {/* Right gradient — follows visible right edge (0px offset) */}
+                    {bannedGrad.state.showRight && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute top-0 bottom-0"
+                        style={{
+                          width: `${GRAD_W}px`,
+                          transform: `translateX(${bannedGrad.state.rightX}px)`,
+                          background: `linear-gradient(to left, ${hexToRgba(
+                            BRAND_BLUE,
+                            GRAD_ALPHA
+                          )}, rgba(70,118,155,0))`,
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -523,7 +553,6 @@ export default function OCRSearchResults({
                 <span className="badge">{ingredientRecords.length}</span>
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
-
               <div className="text-xs sm:text-sm text-gray-600">
                 Ingredients database results and nutrient info.
               </div>
@@ -536,148 +565,159 @@ export default function OCRSearchResults({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
-                style={{ WebkitOverflowScrolling: "touch" }}
-                {...ingredientsFadeApi.bind}
+                className="mt-3 relative -mx-4 sm:mx-0"
               >
-                {/* Mobile-only gradient fades that follow the visible edge */}
-                {ingredientsFadeApi.fade.left && (
-                  <div
-                    className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
-                    style={{
-                      background: `linear-gradient(to right, ${hexToRgba(
-                        BRAND_BLUE,
-                        0.25
-                      )}, rgba(70,118,155,0))`,
-                    }}
-                  />
-                )}
-                {ingredientsFadeApi.fade.right && (
-                  <div
-                    className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
-                    style={{
-                      background: `linear-gradient(to left, ${hexToRgba(
-                        BRAND_BLUE,
-                        0.25
-                      )}, rgba(70,118,155,0))`,
-                    }}
-                  />
-                )}
+                {/* Scroll container */}
+                <div
+                  className="relative overflow-x-auto px-4 sm:px-0"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                  ref={ingGrad.containerRef}
+                >
+                  {/* TABLE */}
+                  {filteredIngredients && filteredIngredients.length > 0 ? (
+                    <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
+                      <thead className="bg-[#334E63] text-white sticky top-0 z-20">
+                        <tr>
+                          {[
+                            "Ingredient Name",
+                            "Synonyms",
+                            "Benefits",
+                            "Weaknesses",
+                            "Nutrient Antagonisms",
+                            "Source / Notes",
+                          ].map((h) => (
+                            <th
+                              key={h}
+                              className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
+                              scope="col"
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
 
-                {filteredIngredients && filteredIngredients.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
-                    <thead className="bg-[#334E63] text-white sticky top-0 z-20">
-                      <tr>
-                        {[
-                          "Ingredient Name",
-                          "Synonyms",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                          "Source / Notes",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
+                      <tbody>
+                        {filteredIngredients.map((rec) => {
+                          const nameHTML = highlightHTML(
+                            rec.name || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
+                          const synHTML = highlightHTML(
+                            rec.synonyms || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
+                          const benefitsHTML = highlightHTML(
+                            rec.benefits || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
+                          const weaknessesHTML = highlightHTML(
+                            rec.weaknesses || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
+                          const antagonismsHTML = highlightHTML(
+                            rec.antagonisms || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
+                          const sourceHTML = highlightHTML(
+                            rec.source || "",
+                            INGREDIENT_HIGHLIGHT_COLOR
+                          );
 
-                    <tbody>
-                      {filteredIngredients.map((rec) => {
-                        const nameHTML = highlightHTML(
-                          rec.name || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
-                        const synHTML = highlightHTML(
-                          rec.synonyms || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
-                        const benefitsHTML = highlightHTML(
-                          rec.benefits || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
-                        const weaknessesHTML = highlightHTML(
-                          rec.weaknesses || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
-                        const antagonismsHTML = highlightHTML(
-                          rec.antagonisms || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
-                        const sourceHTML = highlightHTML(
-                          rec.source || "",
-                          INGREDIENT_HIGHLIGHT_COLOR
-                        );
+                          return (
+                            <motion.tr
+                              key={rec.id}
+                              className="hover:bg-gray-50 transition"
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -6 }}
+                              transition={{ duration: 0.14 }}
+                            >
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: nameHTML }}
+                                />
+                              </td>
 
-                        return (
-                          <motion.tr
-                            key={rec.id}
-                            className="hover:bg-gray-50 transition"
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.14 }}
-                          >
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: nameHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top">
+                                <div
+                                  className="text-sm"
+                                  dangerouslySetInnerHTML={{ __html: synHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div
-                                className="text-sm"
-                                dangerouslySetInnerHTML={{ __html: synHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div
+                                  dangerouslySetInnerHTML={{ __html: benefitsHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: benefitsHTML }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div
+                                  dangerouslySetInnerHTML={{ __html: weaknessesHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{
-                                  __html: weaknessesHTML,
-                                }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div
+                                  dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
+                                />
+                              </td>
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{
-                                  __html: antagonismsHTML,
-                                }}
-                              />
-                            </td>
+                              <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
+                                <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : showSearchingIndicator ? (
+                    <div className="flex items-center justify-center py-12">
+                      <AnimatedEllipsis text="Searching for ingredients" />
+                    </div>
+                  ) : (
+                    <p className="italic text-gray-500">
+                      No ingredient-only results found for this search.
+                    </p>
+                  )}
 
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div
-                                dangerouslySetInnerHTML={{ __html: sourceHTML }}
-                              />
-                            </td>
-                          </motion.tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : showSearchingIndicator ? (
-                  <div className="flex items-center justify-center py-12">
-                    <AnimatedEllipsis text="Searching for ingredients" />
+                  {/* MOVING EDGE GRADIENT OVERLAY (mobile only) */}
+                  <div className="sm:hidden pointer-events-none absolute inset-0">
+                    {/* Left gradient — follows visible left edge (0px offset) */}
+                    {ingGrad.state.showLeft && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute top-0 bottom-0"
+                        style={{
+                          width: `${GRAD_W}px`,
+                          transform: `translateX(${ingGrad.state.leftX}px)`,
+                          background: `linear-gradient(to right, ${hexToRgba(
+                            BRAND_BLUE,
+                            GRAD_ALPHA
+                          )}, rgba(70,118,155,0))`,
+                        }}
+                      />
+                    )}
+
+                    {/* Right gradient — follows visible right edge (0px offset) */}
+                    {ingGrad.state.showRight && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute top-0 bottom-0"
+                        style={{
+                          width: `${GRAD_W}px`,
+                          transform: `translateX(${ingGrad.state.rightX}px)`,
+                          background: `linear-gradient(to left, ${hexToRgba(
+                            BRAND_BLUE,
+                            GRAD_ALPHA
+                          )}, rgba(70,118,155,0))`,
+                        }}
+                      />
+                    )}
                   </div>
-                ) : (
-                  <p className="italic text-gray-500">
-                    No ingredient-only results found for this search.
-                  </p>
-                )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -718,10 +758,7 @@ export default function OCRSearchResults({
                     >
                       <span
                         className="w-4 h-4 rounded-full flex-shrink-0"
-                        style={{
-                          backgroundColor: t.color,
-                          display: "inline-block",
-                        }}
+                        style={{ backgroundColor: t.color, display: "inline-block" }}
                       />
                       <span className="font-medium">{t.label}</span>
                       <span className="text-gray-500">
@@ -759,12 +796,10 @@ export default function OCRSearchResults({
           font-weight: 600;
         }
 
-        /* Ensure table header cells remain visually on top */
         thead.sticky {
           z-index: 20;
         }
 
-        /* Clean, noticeable toggle button to match site style */
         .search-toggle-btn {
           display: inline-flex;
           align-items: center;
@@ -812,7 +847,6 @@ export default function OCRSearchResults({
           background-color: rgba(70, 118, 155, 0.08);
         }
 
-        /* Slight responsive scaling for small screens so the button stays prominent */
         @media (max-width: 640px) {
           .search-toggle-btn {
             padding: 10px 12px;
@@ -827,24 +861,4 @@ export default function OCRSearchResults({
       `}</style>
     </div>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Helper: hexToRgba                                                         */
-/* -------------------------------------------------------------------------- */
-/**
- * Converts a hex color like "#46769B" to "rgba(r,g,b,a)".
- * Falls back to the original hex if parsing fails.
- */
-function hexToRgba(hex, alpha = 1) {
-  try {
-    const h = hex.replace("#", "");
-    const bigint = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  } catch {
-    return hex;
-  }
 }

@@ -1,21 +1,26 @@
 // components/OCRScanResults.js
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
- * Mobile-friendly (desktop unchanged) version.
- * - Desktop: identical visuals & layout.
- * - Mobile: horizontal table scroll, smaller paddings/fonts, flexible legend/wrap.
+ * OCRScanResults
+ *
+ * Desktop visuals preserved.
+ * Mobile UX:
+ *  - Vertical stacking of controls so nothing collides
+ *  - No "Toggle All"
+ *  - Native horizontal scrollbars only (no gradients/overlays)
+ *  - Clear separation between sections with a neutral gray divider
+ *  - New: "Scanned Text (OCR)" collapsible section ABOVE tables (collapsed by default)
+ *  - OCR text highlights terms found in tables, using ban-type colors and ingredient color
  */
 
-// safety: escape regex special chars
+// ---------- utilities ----------
 const escapeRegex = (string = "") =>
   String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// minimal HTML escape
 const escapeHtml = (unsafe = "") =>
   String(unsafe)
     .replace(/&/g, "&amp;")
@@ -24,27 +29,40 @@ const escapeHtml = (unsafe = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
+// ---------- component ----------
 export default function OCRScanResults({
   ocrText = "",
   detectedSubstances = [],
   detectedIngredients = [],
-  showOCR = true,
 }) {
   // UI state
-  const [activeBanType, setActiveBanType] = useState(null); // single-select
+  const [ocrOpen, setOcrOpen] = useState(false); // collapsed by default
+  const [activeBanType, setActiveBanType] = useState(null);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
-  // Colors
-  const banTypeColors = [
-    { label: "Prohibited", color: "#d62828" },
-    { label: "Limited to Out of Competition", color: "#f77f00" },
-    { label: "Particular Sports", color: "#003049" },
-  ];
-  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
+  // Refs to enable momentum scroll on iOS
+  const bannedScrollRef = useRef(null);
+  const ingScrollRef = useRef(null);
 
-  // Merge + normalize
+  useEffect(() => {
+    const b = bannedScrollRef.current;
+    const i = ingScrollRef.current;
+    if (b) b.style.WebkitOverflowScrolling = "touch";
+    if (i) i.style.WebkitOverflowScrolling = "touch";
+  }, []);
+
+  // Colors (brand-consistent)
+  const banTypeColors = [
+    { label: "Prohibited", color: "#d62828", priority: 3 },
+    { label: "Limited to Out of Competition", color: "#f77f00", priority: 2 },
+    { label: "Particular Sports", color: "#003049", priority: 1 },
+  ];
+  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da"; // for non-banned ingredients
+  const INGREDIENT_PRIORITY = 0;
+
+  // Merge inputs (support fields-embedded or flattened records)
   const mergedInput = useMemo(() => {
     const arr = [];
     (detectedSubstances || []).forEach((r) => arr.push(r));
@@ -52,6 +70,7 @@ export default function OCRScanResults({
     return arr;
   }, [detectedSubstances, detectedIngredients]);
 
+  // Normalize & split banned vs ingredients
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
     const banned = [];
     const ingredients = [];
@@ -81,7 +100,6 @@ export default function OCRScanResults({
           r["Nutrient Antagonisms"] ??
           r.antagonisms ??
           "",
-        rawFields: r,
       };
 
       if (record.banType) {
@@ -94,8 +112,9 @@ export default function OCRScanResults({
     });
 
     return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
-  }, [mergedInput]);
+  }, [mergedInput, banTypeColors]);
 
+  // Filters
   const filteredBanned = useMemo(() => {
     if (!activeBanType) return bannedRecords;
     return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
@@ -103,113 +122,240 @@ export default function OCRScanResults({
 
   const filteredIngredients = useMemo(() => {
     const bannedNames = new Set(bannedRecords.map((b) => (b.name || "").toLowerCase()));
-    return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
+    return ingredientRecords.filter(
+      (ing) => !bannedNames.has((ing.name || "").toLowerCase())
+    );
   }, [ingredientRecords, bannedRecords]);
 
-  const showSearchingIndicator = false;
-
-  // highlight terms that appear in OCR
-  const highlightHTML = (text = "", color = "") => {
+  // ---------- Table highlighting (only if term appears in OCR) ----------
+  // Same behavior as before: highlight a cell term when OCR text contains that term/synonym
+  const highlightInTableIfOCRHas = (ocr, text = "", color = "") => {
     const raw = String(text ?? "");
     if (!raw) return "";
-    const ocr = String(ocrText ?? "").trim();
-    if (!ocr) return escapeHtml(raw);
+    const o = String(ocr ?? "").trim();
+    if (!o) return escapeHtml(raw);
 
     const terms = raw.split(/,\s*/).map((t) => t.trim()).filter(Boolean);
     if (!terms.length) return escapeHtml(raw);
 
+    // placeholder technique to keep HTML-escaping safe
     let working = raw;
     const placeholders = [];
 
+    // Only highlight if OCR has the term (case-insensitive)
     terms.forEach((term, idx) => {
-      if (!term) return;
       try {
-        const termRx = new RegExp(escapeRegex(term), "i");
-        if (!termRx.test(ocr)) return; // only highlight if OCR contained the term
-        const placeholder = `@@HIGHLIGHT_${Math.random().toString(36).slice(2)}_${idx}@@`;
-        working = working.replace(new RegExp(escapeRegex(term), "gi"), placeholder);
-        placeholders.push({ placeholder, term });
-      } catch {}
+        const hasRx = new RegExp(escapeRegex(term), "i");
+        if (!hasRx.test(o)) return;
+        const placeholder = `@@HL_${Math.random().toString(36).slice(2)}_${idx}@@`;
+        const replaceRx = new RegExp(escapeRegex(term), "gi");
+        working = working.replace(replaceRx, placeholder);
+        placeholders.push({ placeholder, display: term });
+      } catch {
+        /* ignore broken term */
+      }
     });
 
     if (!placeholders.length) return escapeHtml(raw);
 
     let escaped = escapeHtml(working);
-    placeholders.forEach(({ placeholder, term }) => {
-      const escapedTerm = escapeHtml(term);
-      const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
-      const span = `<span style="color:${appliedColor}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${escapedTerm}</span>`;
+    const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
+    placeholders.forEach(({ placeholder, display }) => {
+      const span =
+        `<span style="color:${appliedColor};font-weight:600;text-decoration:underline;text-underline-offset:2px;">` +
+        `${escapeHtml(display)}</span>`;
       escaped = escaped.split(placeholder).join(span);
     });
 
     return escaped;
   };
 
+  // ---------- OCR text highlighting (reflects table contents) ----------
+  // Build a unified term → color map with priority (banned > ingredient).
+  const ocrTermsSorted = useMemo(() => {
+    // Map: termLower -> { color, priority }
+    const termMap = new Map();
+
+    const upsert = (termRaw, color, priority) => {
+      const t = String(termRaw || "").trim();
+      if (!t) return;
+      const key = t.toLowerCase();
+      const existing = termMap.get(key);
+      if (!existing || priority > existing.priority) {
+        termMap.set(key, { color, priority, term: t });
+      }
+    };
+
+    // BANNED: names + synonyms, with per-ban color and priority
+    bannedRecords.forEach((rec) => {
+      const banType = (rec.banType || "").trim();
+      const entry = banTypeColors.find((b) => b.label === banType);
+      const color = entry?.color || "#111827";
+      const prio = entry?.priority ?? 1;
+      upsert(rec.name, color, prio);
+      (rec.synonyms || "")
+        .split(/,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((s) => upsert(s, color, prio));
+    });
+
+    // INGREDIENTS (non-banned): names + synonyms, lower priority
+    ingredientRecords.forEach((rec) => {
+      upsert(rec.name, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY);
+      (rec.synonyms || "")
+        .split(/,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((s) => upsert(s, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY));
+    });
+
+    // Sort by priority desc, then by length desc (avoid partials beating longer terms)
+    const entries = Array.from(termMap.entries()).map(([key, v]) => ({
+      key,
+      color: v.color,
+      priority: v.priority,
+      term: v.term,
+      length: v.term.length,
+    }));
+
+    entries.sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return b.length - a.length;
+    });
+
+    return entries;
+  }, [bannedRecords, ingredientRecords, banTypeColors]);
+
+  const { ocrHTML, ocrMatchCount } = useMemo(() => {
+    const base = String(ocrText || "");
+    if (!base) return { ocrHTML: "", ocrMatchCount: 0 };
+
+    let working = base;
+    const replacements = [];
+    let idx = 0;
+
+    ocrTermsSorted.forEach(({ term, color }) => {
+      try {
+        const rx = new RegExp(escapeRegex(term), "gi");
+        working = working.replace(rx, (m) => {
+          const placeholder = `@@OCRHL_${idx++}@@`;
+          replacements.push({
+            placeholder,
+            match: m, // keep original case
+            color,
+          });
+          return placeholder;
+        });
+      } catch {
+        /* ignore malformed term */
+      }
+    });
+
+    // Escape entire text, then swap placeholders for colored spans
+    let escaped = escapeHtml(working);
+    replacements.forEach(({ placeholder, match, color }) => {
+      const span =
+        `<span style="color:${color};font-weight:600;text-decoration:underline;text-underline-offset:2px;">` +
+        `${escapeHtml(match)}</span>`;
+      escaped = escaped.split(placeholder).join(span);
+    });
+
+    return { ocrHTML: escaped, ocrMatchCount: replacements.length };
+  }, [ocrText, ocrTermsSorted]);
+
+  // Legend handlers
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
-
   const clearFilters = () => {
     setActiveBanType(null);
     setLegendCollapsed(false);
   };
-
   const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 sm:py-6 font-sans space-y-6 relative">
+    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative">
       <section>
-        <h2 className="text-2xl font-bold mb-2 text-center sm:text-left">Scan Results</h2>
-        <p className="text-sm text-gray-600 mb-4 text-center sm:text-left">
-          {(mergedInput?.length ?? 0)} total results — {bannedRecords.length} banned · {ingredientRecords.length} ingredients
+        {/* ======= OCR TEXT (collapsed by default) ======= */}
+        <div className="mb-2">
+          <button
+            onClick={() => setOcrOpen((s) => !s)}
+            aria-expanded={ocrOpen}
+            aria-label={collapseLabel(ocrOpen, "Scanned Text (OCR)")}
+            className={`section-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
+          >
+            <span className="section-label">Scanned Text (OCR)</span>
+            <span className="badge">{ocrMatchCount}</span>
+            <span className="caret">{ocrOpen ? "▾" : "▸"}</span>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {ocrOpen && (
+              <motion.div
+                key="ocr-box"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+                className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm leading-relaxed"
+              >
+                {ocrText ? (
+                  <div dangerouslySetInnerHTML={{ __html: ocrHTML }} />
+                ) : (
+                  <p className="text-gray-500 italic">No OCR text available.</p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Heading + summary */}
+        <h2 className="text-2xl font-bold text-center sm:text-left">Scan Results</h2>
+        <p className="text-sm text-gray-600 text-center sm:text-left mt-1">
+          {(mergedInput?.length ?? 0)} total results — {bannedRecords.length} banned ·{" "}
+          {ingredientRecords.length} ingredients
         </p>
 
-        {/* Banned Substances Collapsible */}
-        <div className="mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        {/* ===================== BANNED ===================== */}
+        <div className="mt-6">
+          {/* Controls: vertical stack on mobile */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
               <button
                 onClick={() => setBannedOpen((s) => !s)}
                 aria-expanded={bannedOpen}
                 aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-                className={`toggle-section-btn ${bannedOpen ? "active" : ""}`}
+                className={`section-toggle-btn ${bannedOpen ? "active" : ""} w-full sm:w-auto`}
               >
                 <span className="section-label">Banned Substances</span>
                 <span className="badge">{bannedRecords.length}</span>
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-xs sm:text-sm text-gray-600">Filter by ban type using legend below.</div>
-            </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                onClick={() => {
-                  const next = !(bannedOpen && ingredientsOpen);
-                  setBannedOpen(next);
-                  setIngredientsOpen(next);
-                }}
-                className="px-3 py-2 text-sm bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50"
-              >
-                Toggle All
-              </button>
+              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+                Filter by ban type using legend below.
+              </p>
             </div>
           </div>
 
           <AnimatePresence initial={false}>
             {bannedOpen && (
               <motion.div
+                key="banned-table"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
-                style={{ WebkitOverflowScrolling: "touch" }}
+                transition={{ duration: 0.18 }}
+                ref={bannedScrollRef}
+                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
               >
-                {filteredBanned && filteredBanned.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
-                    <thead className="bg-[#46769B] text-white sticky top-0 z-20">
+                {filteredBanned?.length > 0 ? (
+                  <table className="min-w-full w-full text-xs sm:text-sm">
+                    <thead className="bg-[#46769B] text-white sticky top-0 z-10">
                       <tr>
                         {[
                           "Substance Name",
@@ -233,112 +379,153 @@ export default function OCRScanResults({
                         ))}
                       </tr>
                     </thead>
-
                     <tbody>
                       {filteredBanned.map((rec) => {
                         const banType = (rec.banType || "").trim();
-                        const colorEntry = banTypeColors.find((b) => b.label === banType);
-                        const matchColor = colorEntry?.color || "";
-
-                        const nameHTML = highlightHTML(rec.name || "", matchColor);
-                        const synHTML = highlightHTML(rec.synonyms || "", matchColor);
-                        const bannedByHTML = highlightHTML(rec.bannedBy || "", matchColor);
-                        const notesHTML = highlightHTML(rec.notes || "", matchColor);
-                        const sourceHTML = highlightHTML(rec.source || "", matchColor);
-                        const benefitsHTML = highlightHTML(rec.benefits || "", matchColor);
-                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", matchColor);
-                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", matchColor);
+                        const colorEntry =
+                          banTypeColors.find((b) => b.label === banType) || null;
+                        const c = colorEntry?.color || "#111827";
 
                         return (
                           <motion.tr
                             key={rec.id}
                             className="hover:bg-gray-50 transition"
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.14 }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
                           >
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: bannedByHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(ocrText, rec.name, c),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(
+                                  ocrText,
+                                  rec.synonyms,
+                                  c
+                                ),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(
+                                  ocrText,
+                                  rec.bannedBy,
+                                  c
+                                ),
+                              }}
+                            />
+                            <td className="px-3 py-2 align-top">
                               <span
-                                className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
+                                className="px-2 py-1 rounded-full text-xs font-medium"
                                 style={{
-                                  backgroundColor: colorEntry ? `${colorEntry.color}20` : "#11182710",
-                                  color: colorEntry ? colorEntry.color : "#111827",
+                                  backgroundColor: `${c}20`,
+                                  color: c,
                                 }}
                               >
                                 {banType || "—"}
                               </span>
                             </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm">{rec.dosageLimit || ""}</div>
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: notesHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
-                            </td>
+                            <td className="px-3 py-2 align-top">{rec.dosageLimit || ""}</td>
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(ocrText, rec.notes, c),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(ocrText, rec.source, c),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(
+                                  ocrText,
+                                  rec.benefits,
+                                  c
+                                ),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(
+                                  ocrText,
+                                  rec.weaknesses,
+                                  c
+                                ),
+                              }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{
+                                __html: highlightInTableIfOCRHas(
+                                  ocrText,
+                                  rec.antagonisms,
+                                  c
+                                ),
+                              }}
+                            />
                           </motion.tr>
                         );
                       })}
                     </tbody>
                   </table>
                 ) : (
-                  <p className="italic text-gray-500">No banned substances match your scan.</p>
+                  <p className="italic text-gray-500 p-4">No banned substances match your scan.</p>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Ingredients Collapsible */}
-        <div className="mb-24">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2 sm:gap-3">
+        {/* neutral divider between sections */}
+        <div className="border-t border-gray-300 my-8" />
+
+        {/* ===================== INGREDIENTS ===================== */}
+        <div className="mb-16">
+          {/* Controls: vertical stack on mobile */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
               <button
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
-                aria-label={collapseLabel(ingredientsOpen, "Ingredients")}
-                className={`toggle-section-btn ${ingredientsOpen ? "active" : ""}`}
+                aria-label={collapseLabel(ingredientsOpen, "Ingredients (non-banned)")}
+                className={`section-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
               >
                 <span className="section-label">Ingredients (non-banned)</span>
                 <span className="badge">{ingredientRecords.length}</span>
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
-              <div className="text-xs sm:text-sm text-gray-600">Ingredients database results and nutrient info.</div>
+
+              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+                Ingredient database results and nutrient info.
+              </p>
             </div>
           </div>
 
           <AnimatePresence initial={false}>
             {ingredientsOpen && (
               <motion.div
+                key="ingredients-table"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="mt-3 overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
-                style={{ WebkitOverflowScrolling: "touch" }}
+                transition={{ duration: 0.18 }}
+                ref={ingScrollRef}
+                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
               >
-                {filteredIngredients && filteredIngredients.length > 0 ? (
-                  <table className="min-w-full w-full bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden text-xs sm:text-sm">
-                    <thead className="bg-[#334E63] text-white sticky top-0 z-20">
+                {filteredIngredients?.length > 0 ? (
+                  <table className="min-w-full w-full text-xs sm:text-sm">
+                    <thead className="bg-[#334E63] text-white sticky top-0 z-10">
                       <tr>
                         {[
                           "Ingredient Name",
@@ -358,54 +545,81 @@ export default function OCRScanResults({
                         ))}
                       </tr>
                     </thead>
-
                     <tbody>
-                      {filteredIngredients.map((rec) => {
-                        const nameHTML = highlightHTML(rec.name || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const synHTML = highlightHTML(rec.synonyms || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const benefitsHTML = highlightHTML(rec.benefits || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const sourceHTML = highlightHTML(rec.source || "", INGREDIENT_HIGHLIGHT_COLOR);
-
-                        return (
-                          <motion.tr
-                            key={rec.id}
-                            className="hover:bg-gray-50 transition"
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.14 }}
-                          >
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
-                            </td>
-                            <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
-                            </td>
-                          </motion.tr>
-                        );
-                      })}
+                      {filteredIngredients.map((rec) => (
+                        <motion.tr
+                          key={rec.id}
+                          className="hover:bg-gray-50 transition"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.name,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.synonyms,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.benefits,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.weaknesses,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.antagonisms,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightInTableIfOCRHas(
+                                ocrText,
+                                rec.source,
+                                INGREDIENT_HIGHLIGHT_COLOR
+                              ),
+                            }}
+                          />
+                        </motion.tr>
+                      ))}
                     </tbody>
                   </table>
-                ) : showSearchingIndicator ? (
-                  <div className="flex items-center justify-center py-12">
-                    <AnimatedEllipsis text="Searching for ingredients" />
-                  </div>
                 ) : (
-                  <p className="italic text-gray-500">No ingredient-only results found for this scan.</p>
+                  <p className="italic text-gray-500 p-4">No ingredient-only results found for this scan.</p>
                 )}
               </motion.div>
             )}
@@ -413,11 +627,14 @@ export default function OCRScanResults({
         </div>
       </section>
 
-      {/* Sticky Legend / Footer */}
-      <div className="sticky bottom-0 left-0 right-0 z-40" style={{ pointerEvents: "auto" }}>
-        <div className="max-w-6xl mx-auto px-3 sm:px-4">
+      {/* ===================== STICKY LEGEND ===================== */}
+      <div className="sticky bottom-0 left-0 right-0 z-40">
+        <div className="max-w-6xl mx-auto px-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
-            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div
+              className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
               <button
                 className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap"
                 onClick={() => setLegendCollapsed((c) => !c)}
@@ -435,12 +652,15 @@ export default function OCRScanResults({
                       key={t.label}
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition transform hover:scale-[1.02] text-sm whitespace-nowrap ${
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition text-sm whitespace-nowrap ${
                         active ? "shadow-md bg-gray-800 text-white" : "bg-white"
                       }`}
                       style={{ borderColor: active ? "#444" : "transparent" }}
                     >
-                      <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: t.color, display: "inline-block" }} />
+                      <span
+                        className="w-4 h-4 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: t.color, display: "inline-block" }}
+                      />
                       <span className="font-medium">{t.label}</span>
                       <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
                     </button>
@@ -464,20 +684,9 @@ export default function OCRScanResults({
         </div>
       </div>
 
-      {/* Local styles (retain your premium look) */}
+      {/* Local styles (flat toggles + sticky header support) */}
       <style jsx>{`
-        .highlight-match {
-          background: transparent;
-          padding: 0 0.12rem;
-          border-radius: 3px;
-          text-decoration: underline;
-          text-underline-offset: 2px;
-          font-weight: 600;
-        }
-        thead.sticky {
-          z-index: 20;
-        }
-        .toggle-section-btn {
+        .section-toggle-btn {
           display: inline-flex;
           align-items: center;
           gap: 10px;
@@ -487,20 +696,21 @@ export default function OCRScanResults({
           font-size: 1rem;
           font-weight: 700;
           cursor: pointer;
-          transition: all 0.18s ease-in-out;
+          transition: box-shadow 0.18s ease-in-out, transform 0.18s ease-in-out,
+            background-color 0.18s ease-in-out, border-color 0.18s ease-in-out;
           background: rgba(255, 255, 255, 0.88);
           color: #0f172a;
           box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
         }
-        .toggle-section-btn:hover {
-          transform: translateY(-2px);
+        .section-toggle-btn:hover {
+          transform: translateY(-1px);
           box-shadow: 0 6px 16px rgba(16, 24, 40, 0.06);
         }
-        .toggle-section-btn .section-label {
+        .section-toggle-btn .section-label {
           letter-spacing: -0.2px;
         }
-        .toggle-section-btn .badge {
-          background-color: #46769b;
+        .section-toggle-btn .badge {
+          background-color: #46769b; /* brand */
           color: #fff;
           font-size: 0.825rem;
           padding: 4px 8px;
@@ -510,23 +720,28 @@ export default function OCRScanResults({
           align-items: center;
           justify-content: center;
         }
-        .toggle-section-btn .caret {
+        .section-toggle-btn .caret {
           color: #6b7280;
           font-weight: 600;
         }
-        .toggle-section-btn.active {
+        .section-toggle-btn.active {
           border-color: #46769b;
-          background-color: rgba(70, 118, 155, 0.08);
+          background-color: rgba(70, 118, 155, 0.08); /* subtle brand tint */
+        }
+
+        /* Keep table header on top when horizontally scrolling */
+        thead.sticky {
+          z-index: 20;
         }
 
         /* Mobile fine-tuning without touching desktop look */
         @media (max-width: 640px) {
-          .toggle-section-btn {
+          .section-toggle-btn {
             padding: 10px 12px;
             gap: 8px;
             font-size: 0.98rem;
           }
-          .toggle-section-btn .badge {
+          .section-toggle-btn .badge {
             font-size: 0.78rem;
             padding: 3px 6px;
           }

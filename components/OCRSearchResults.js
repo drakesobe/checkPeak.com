@@ -1,22 +1,21 @@
-// components/OCRScanResults.js
+// components/OCRSearchResults.js
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
- * Matches OCRSearchResults design:
- * - OCR text card at the top, collapsed by default
- * - Mobile-friendly: vertical stacking, native horizontal scrollbars
- * - Sticky legend/footer (collapsed by default)
- * - Highlights in OCR text:
- *   - Prohibited: #d62828
- *   - Limited to Out of Competition: #f77f00
- *   - Particular Sports: #003049
- *   - Ingredients: #8556da
+ * Desktop visuals preserved.
+ * Mobile UX:
+ *  - Vertical stacking of controls so nothing collides
+ *  - No "Toggle All" (redundant with section toggles)
+ *  - Native horizontal scrollbars only (no gradients/overlays)
+ *  - Clear separation between sections with a neutral gray divider
+ *  - "Searching..." appears above heading, fades in/out
  */
 
-// ---------- helpers ----------
+// --------- small safety helpers ----------
 const escapeRegex = (string = "") =>
   String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -28,24 +27,22 @@ const escapeHtml = (unsafe = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-// ---------- component ----------
-export default function OCRScanResults({
-  ocrText = "",
-  detectedSubstances = [],
-  detectedIngredients = [],
+// --------- component ----------
+export default function OCRSearchResults({
+  searchTerm = "",
+  matchedSubstances = [],
 }) {
   // UI state
-  const [ocrOpen, setOcrOpen] = useState(false); // collapsed by default
   const [activeBanType, setActiveBanType] = useState(null);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
-  const [legendCollapsed, setLegendCollapsed] = useState(true); // collapsed by default
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
-  // Scroll containers (native momentum on iOS)
+  // Refs kept in case you later want to add any scroll-linked behavior
   const bannedScrollRef = useRef(null);
   const ingScrollRef = useRef(null);
 
-  // Colors
+  // Palette
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
@@ -53,50 +50,49 @@ export default function OCRScanResults({
   ];
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
-  // Merge + normalize input
-  const mergedInput = useMemo(
-    () => [...(detectedSubstances || []), ...(detectedIngredients || [])],
-    [detectedSubstances, detectedIngredients]
-  );
-
+  // Normalize + split into banned vs ingredients
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
     const banned = [];
     const ingredients = [];
     const counts = {};
     banTypeColors.forEach((b) => (counts[b.label] = 0));
 
-    (mergedInput || []).forEach((rRaw) => {
+    (matchedSubstances || []).forEach((rRaw) => {
       const r = rRaw?.fields ? rRaw.fields : rRaw || {};
-      const rec = {
+      const record = {
         id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
         name: r["Substance Name"] ?? r.name ?? r["Name"] ?? "",
-        synonyms: r["Synonyms"] ?? r["Synonyms (Extended)"] ?? "",
-        bannedBy: r["Banned By"] ?? "",
-        banType: r["Ban Type"] ?? null,
-        dosageLimit: r["Dosage Limit"] ?? "",
-        notes: r["Notes"] ?? r["Pharmacology Notes"] ?? "",
+        synonyms: r["Synonyms"] ?? r["Synonyms (Extended)"] ?? r.synonyms ?? "",
+        bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
+        banType: r["Ban Type"] ?? r.banType ?? null,
+        dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
+        notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
         source:
           r["Source / Citation"] ??
-          r["Source"] ??
           r["Sources / References"] ??
+          r["Source"] ??
+          r.source ??
           "",
-        benefits: r["Benefits"] ?? "",
-        weaknesses: r["Weaknesses"] ?? "",
+        benefits: r["Benefits"] ?? r.benefits ?? "",
+        weaknesses: r["Weaknesses"] ?? r.weaknesses ?? "",
         antagonisms:
-          r["Nutrient Antagonism"] ?? r["Nutrient Antagonisms"] ?? "",
+          r["Nutrient Antagonisms"] ??
+          r["Nutrient Antagonism"] ??
+          r.antagonisms ??
+          "",
       };
 
-      if (rec.banType) {
-        banned.push(rec);
-        const normalized = (rec.banType || "").trim();
+      if (record.banType) {
+        banned.push(record);
+        const normalized = (record.banType || "").trim();
         if (counts[normalized] !== undefined) counts[normalized] += 1;
       } else {
-        ingredients.push(rec);
+        ingredients.push(record);
       }
     });
 
     return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
-  }, [mergedInput]);
+  }, [matchedSubstances]);
 
   // Filters
   const filteredBanned = useMemo(() => {
@@ -109,41 +105,25 @@ export default function OCRScanResults({
     return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
   }, [ingredientRecords, bannedRecords]);
 
-  // OCR highlighting (names only, to avoid noisy false positives from long synonym lists)
-  const highlightOCRText = (text = "") => {
-    if (!text) return "";
-    let highlighted = escapeHtml(text);
-
-    // highlight banned with their specific color
-    bannedRecords.forEach((rec) => {
-      if (!rec.name) return;
-      const colorEntry = banTypeColors.find((b) => b.label === (rec.banType || "").trim());
-      const color = colorEntry?.color || "#d62828";
-      try {
-        const rx = new RegExp(escapeRegex(rec.name), "gi");
-        highlighted = highlighted.replace(
-          rx,
-          `<span style="color:${color};font-weight:600;text-decoration:underline;text-underline-offset:2px;">$&</span>`
-        );
-      } catch {}
-    });
-
-    // highlight ingredients with ingredient color
-    ingredientRecords.forEach((rec) => {
-      if (!rec.name) return;
-      try {
-        const rx = new RegExp(escapeRegex(rec.name), "gi");
-        highlighted = highlighted.replace(
-          rx,
-          `<span style="color:${INGREDIENT_HIGHLIGHT_COLOR};font-weight:600;text-decoration:underline;text-underline-offset:2px;">$&</span>`
-        );
-      } catch {}
-    });
-
-    return highlighted;
+  // Highlight searchTerm in text (color optionally passed for banned)
+  const highlightHTML = (text = "", color = "") => {
+    const raw = String(text ?? "");
+    const term = String(searchTerm ?? "").trim();
+    if (!term) return escapeHtml(raw);
+    try {
+      const regex = new RegExp(escapeRegex(term), "gi");
+      const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
+      return escapeHtml(raw).replace(
+        regex,
+        (m) =>
+          `<span style="color:${appliedColor};font-weight:600;text-decoration:underline;text-underline-offset:2px;">${m}</span>`
+      );
+    } catch {
+      return escapeHtml(raw);
+    }
   };
 
-  // Legend handlers
+  // Legend
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
     if (typeof window !== "undefined") {
@@ -152,11 +132,15 @@ export default function OCRScanResults({
   };
   const clearFilters = () => {
     setActiveBanType(null);
-    setLegendCollapsed(true);
+    setLegendCollapsed(false);
   };
   const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
 
-  // iOS momentum scroll
+  // Search status
+  const showSearchingIndicator =
+    String(searchTerm || "").trim().length >= 2 && (matchedSubstances?.length ?? 0) === 0;
+
+  // Ensure native scrollbars appear when needed (mobile momentum)
   useEffect(() => {
     const b = bannedScrollRef.current;
     const i = ingScrollRef.current;
@@ -165,61 +149,51 @@ export default function OCRScanResults({
   }, []);
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 py-6 font-sans space-y-8 relative">
+    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative">
       <section>
+        {/* Searching indicator (above heading) */}
+        <AnimatePresence>
+          {showSearchingIndicator && (
+            <motion.div
+              key="searching"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18 }}
+              className="flex justify-center sm:justify-start text-gray-500 text-sm mb-1"
+            >
+              <AnimatedEllipsis text="Searching..." />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Heading + summary */}
-        <h2 className="text-2xl font-bold text-center sm:text-left">Scan Results</h2>
+        <h2 className="text-2xl font-bold text-center sm:text-left">Search Results</h2>
         <p className="text-sm text-gray-600 text-center sm:text-left mt-1">
-          {(mergedInput?.length ?? 0)} total — {bannedRecords.length} banned ·{" "}
+          {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned ·{" "}
           {ingredientRecords.length} ingredients
         </p>
 
-        {/* ===================== OCR TEXT (collapsed by default) ===================== */}
-        <div className="mt-6">
-          <button
-            onClick={() => setOcrOpen((o) => !o)}
-            aria-expanded={ocrOpen}
-            aria-label={collapseLabel(ocrOpen, "Scanned Text (OCR)")}
-            className={`search-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
-          >
-            <span className="section-label">Scanned Text (OCR)</span>
-            <span className="caret">{ocrOpen ? "▾" : "▸"}</span>
-          </button>
-
-          <AnimatePresence initial={false}>
-            {ocrOpen && (
-              <motion.div
-                key="ocr-card"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="mt-3 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm text-gray-800 leading-relaxed"
-              >
-                <div dangerouslySetInnerHTML={{ __html: highlightOCRText(ocrText) }} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
         {/* ===================== BANNED ===================== */}
-        <div className="mt-8">
-          {/* Controls: stacked on mobile so nothing collides */}
+        <div className="mt-6">
+          {/* Controls: stack vertically on mobile so nothing collides */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <button
-              onClick={() => setBannedOpen((s) => !s)}
-              aria-expanded={bannedOpen}
-              aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-              className={`search-toggle-btn ${bannedOpen ? "active" : ""} w-full sm:w-auto`}
-            >
-              <span className="section-label">Banned Substances</span>
-              <span className="badge">{bannedRecords.length}</span>
-              <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
-            </button>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <button
+                onClick={() => setBannedOpen((s) => !s)}
+                aria-expanded={bannedOpen}
+                aria-label={collapseLabel(bannedOpen, "Banned Substances")}
+                className={`search-toggle-btn ${bannedOpen ? "active" : ""} w-full sm:w-auto`}
+              >
+                <span className="section-label">Banned Substances</span>
+                <span className="badge">{bannedRecords.length}</span>
+                <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
+              </button>
 
-            <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-              Filter by ban type using legend below.
-            </p>
+              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+                Filter by ban type using legend below.
+              </p>
+            </div>
           </div>
 
           <AnimatePresence initial={false}>
@@ -261,29 +235,64 @@ export default function OCRScanResults({
                     </thead>
                     <tbody>
                       {filteredBanned.map((rec) => {
-                        const color =
-                          banTypeColors.find((b) => b.label === (rec.banType || "").trim())
-                            ?.color || "#111827";
+                        const banType = (rec.banType || "").trim();
+                        const colorEntry =
+                          banTypeColors.find((b) => b.label === banType) || null;
+                        const c = colorEntry?.color || "#111827";
+
                         return (
-                          <tr key={rec.id} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 align-top">{rec.name}</td>
-                            <td className="px-3 py-2 align-top">{rec.synonyms}</td>
-                            <td className="px-3 py-2 align-top">{rec.bannedBy}</td>
+                          <motion.tr
+                            key={rec.id}
+                            className="hover:bg-gray-50 transition"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                          >
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.name, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.synonyms, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.bannedBy, c) }}
+                            />
                             <td className="px-3 py-2 align-top">
                               <span
                                 className="px-2 py-1 rounded-full text-xs font-medium"
-                                style={{ backgroundColor: `${color}20`, color }}
+                                style={{
+                                  backgroundColor: `${c}20`,
+                                  color: c,
+                                }}
                               >
-                                {rec.banType || "—"}
+                                {banType || "—"}
                               </span>
                             </td>
-                            <td className="px-3 py-2 align-top">{rec.dosageLimit}</td>
-                            <td className="px-3 py-2 align-top">{rec.notes}</td>
-                            <td className="px-3 py-2 align-top">{rec.source}</td>
-                            <td className="px-3 py-2 align-top">{rec.benefits}</td>
-                            <td className="px-3 py-2 align-top">{rec.weaknesses}</td>
-                            <td className="px-3 py-2 align-top">{rec.antagonisms}</td>
-                          </tr>
+                            <td className="px-3 py-2 align-top">{rec.dosageLimit || ""}</td>
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.notes, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.source, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.benefits, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.weaknesses, c) }}
+                            />
+                            <td
+                              className="px-3 py-2 align-top"
+                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.antagonisms, c) }}
+                            />
+                          </motion.tr>
                         );
                       })}
                     </tbody>
@@ -296,21 +305,30 @@ export default function OCRScanResults({
           </AnimatePresence>
         </div>
 
-        {/* Neutral divider keeps sections distinct on mobile */}
+        {/* neutral divider keeps sections distinct on mobile */}
         <div className="border-t border-gray-300 my-8" />
 
         {/* ===================== INGREDIENTS ===================== */}
         <div className="mb-16">
-          <button
-            onClick={() => setIngredientsOpen((s) => !s)}
-            aria-expanded={ingredientsOpen}
-            aria-label={collapseLabel(ingredientsOpen, "Ingredients (non-banned)")}
-            className={`search-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
-          >
-            <span className="section-label">Ingredients (non-banned)</span>
-            <span className="badge">{ingredientRecords.length}</span>
-            <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
-          </button>
+          {/* Controls: stack vertically on mobile so nothing collides */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <button
+                onClick={() => setIngredientsOpen((s) => !s)}
+                aria-expanded={ingredientsOpen}
+                aria-label={collapseLabel(ingredientsOpen, "Ingredients (non-banned)")}
+                className={`search-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
+              >
+                <span className="section-label">Ingredients (non-banned)</span>
+                <span className="badge">{ingredientRecords.length}</span>
+                <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
+              </button>
+
+              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+                Ingredient database results and nutrient info.
+              </p>
+            </div>
+          </div>
 
           <AnimatePresence initial={false}>
             {ingredientsOpen && (
@@ -347,17 +365,45 @@ export default function OCRScanResults({
                     </thead>
                     <tbody>
                       {filteredIngredients.map((rec) => (
-                        <tr key={rec.id} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 align-top">{rec.name}</td>
-                          <td className="px-3 py-2 align-top">{rec.synonyms}</td>
-                          <td className="px-3 py-2 align-top">{rec.benefits}</td>
-                          <td className="px-3 py-2 align-top">{rec.weaknesses}</td>
-                          <td className="px-3 py-2 align-top">{rec.antagonisms}</td>
-                          <td className="px-3 py-2 align-top">{rec.source}</td>
-                        </tr>
+                        <motion.tr
+                          key={rec.id}
+                          className="hover:bg-gray-50 transition"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.name) }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.synonyms) }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.benefits) }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.weaknesses) }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.antagonisms) }}
+                          />
+                          <td
+                            className="px-3 py-2 align-top"
+                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.source) }}
+                          />
+                        </motion.tr>
                       ))}
                     </tbody>
                   </table>
+                ) : showSearchingIndicator ? (
+                  <div className="flex items-center justify-center py-12">
+                    <AnimatedEllipsis text="Searching for ingredients" />
+                  </div>
                 ) : (
                   <p className="italic text-gray-500 p-4">No ingredients found.</p>
                 )}
@@ -424,7 +470,7 @@ export default function OCRScanResults({
         </div>
       </div>
 
-      {/* Local styles (same flat toggles as Search) */}
+      {/* Local styles for the flat toggle buttons */}
       <style jsx>{`
         .search-toggle-btn {
           display: inline-flex;
@@ -463,7 +509,6 @@ export default function OCRScanResults({
         .search-toggle-btn .caret {
           color: #6b7280;
           font-weight: 600;
-          margin-left: 6px;
         }
         .search-toggle-btn.active {
           border-color: #46769b;

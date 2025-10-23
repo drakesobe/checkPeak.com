@@ -1,93 +1,159 @@
-// components/OCRSearchResults.js
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+/**
+ * OCRSearchResults
+ *
+ * Desktop visuals preserved 1:1.
+ * Mobile adds:
+ *  - horizontal scroll with momentum (iOS friendly)
+ *  - brand-blue gradient fades on left/right edges of the scroll containers
+ *  - gradients follow the visible edge and disappear at extremes
+ *  - small, careful tweaks for spacing/typography at small breakpoints
+ *
+ * Notes:
+ *  - This file preserves your original structure, props, and normalized data mapping.
+ *  - Gradients are rendered INSIDE each scroll container, absolutely positioned,
+ *    and visibility is driven by a rAF-powered watcher (more reliable than scroll events alone).
+ *  - Desktop behavior is unchanged; gradients are hidden at `sm` and above.
+ */
+
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedEllipsis from "./AnimatedEllipsis";
 
-/**
- * Desktop visuals preserved 1:1.
- * Mobile adds:
- *  - horizontal scroll with momentum
- *  - brand-blue gradient fades on left/right edges of scroll containers
- *  - small padding/typography tweaks, wrapping controls
- */
+/* -------------------------------------------------------------------------- */
+/* Utilities: safe regex + HTML escape                                        */
+/* -------------------------------------------------------------------------- */
 
-// safety: escape regex special chars
 const escapeRegex = (string = "") =>
   String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// minimal HTML escape to keep innerHTML safe for raw text (we still inject highlight spans)
 const escapeHtml = (unsafe = "") =>
   String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+/* -------------------------------------------------------------------------- */
+/* Hook: useScrollFade — rAF-driven scroll edge detection for gradients       */
+/* -------------------------------------------------------------------------- */
+/**
+ * useScrollFade
+ * - Watches a scroll container's horizontal position and determines
+ *   if there is more content to the left or right (to show gradient hints).
+ * - Uses requestAnimationFrame while actively scrolling for smooth updates
+ *   and stops automatically when scrolling ends (perf-friendly).
+ * - Returns:
+ *    { left: boolean, right: boolean, bind: { ref, onScroll? } }
+ */
+function useScrollFade() {
+  const ref = useRef(null);
+  const [fade, setFade] = useState({ left: false, right: false });
+  const runningRef = useRef(false);
+  const rafRef = useRef(0);
+
+  const compute = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const max = Math.max(scrollWidth - clientWidth, 0);
+
+    // 2px tolerance to avoid flicker at boundaries
+    const next = {
+      left: scrollLeft > 2,
+      right: scrollLeft < max - 2,
+    };
+
+    // Only set state if changed (prevents re-renders)
+    setFade((prev) => {
+      if (prev.left === next.left && prev.right === next.right) return prev;
+      return next;
+    });
+  }, []);
+
+  const tick = useCallback(() => {
+    compute();
+    if (runningRef.current) {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+  }, [compute]);
+
+  const start = useCallback(() => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    rafRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+
+  const stop = useCallback(() => {
+    runningRef.current = false;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  // Attach listeners and do initial compute
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    // Initial compute on mount
+    compute();
+
+    // Event listeners
+    el.addEventListener("scroll", start, { passive: true });
+    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchend", stop, { passive: true });
+    el.addEventListener("mouseenter", start, { passive: true });
+    el.addEventListener("mouseleave", stop, { passive: true });
+
+    // On resize, recompute (layout changes)
+    const onResize = () => compute();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      el.removeEventListener("scroll", start);
+      el.removeEventListener("touchstart", start);
+      el.removeEventListener("touchend", stop);
+      el.removeEventListener("mouseenter", start);
+      el.removeEventListener("mouseleave", stop);
+      window.removeEventListener("resize", onResize);
+      stop();
+    };
+  }, [compute, start, stop]);
+
+  return { fade, bind: { ref } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export default function OCRSearchResults({
   searchTerm = "",
   matchedSubstances = [],
 }) {
-  // UI state
-  const [activeBanType, setActiveBanType] = useState(null); // single-select (keeps old UX)
+  /* ------------------------------ UI State -------------------------------- */
+  const [activeBanType, setActiveBanType] = useState(null); // single-select
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
-  // gradient visibility state (mobile scroll hint)
-  const bannedScrollRef = useRef(null);
-  const ingScrollRef = useRef(null);
-  const [banFade, setBanFade] = useState({ left: false, right: false });
-  const [ingFade, setIngFade] = useState({ left: false, right: false });
+  /* -------------------------- Brand / UI Palette -------------------------- */
+  const BRAND_BLUE = "#46769B"; // for gradients
+  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
-  const updateFadeFor = (el, setState) => {
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    const max = Math.max(scrollWidth - clientWidth, 0);
-    setState({
-      left: scrollLeft > 2,
-      right: scrollLeft < max - 2,
-    });
-  };
-
-  useEffect(() => {
-    const b = bannedScrollRef.current;
-    const i = ingScrollRef.current;
-    if (b) updateFadeFor(b, setBanFade);
-    if (i) updateFadeFor(i, setIngFade);
-
-    const onScrollB = () => updateFadeFor(bannedScrollRef.current, setBanFade);
-    const onScrollI = () => updateFadeFor(ingScrollRef.current, setIngFade);
-
-    b && b.addEventListener("scroll", onScrollB, { passive: true });
-    i && i.addEventListener("scroll", onScrollI, { passive: true });
-
-    const onResize = () => {
-      if (b) updateFadeFor(b, setBanFade);
-      if (i) updateFadeFor(i, setIngFade);
-    };
-    window.addEventListener("resize", onResize);
-
-    return () => {
-      b && b.removeEventListener("scroll", onScrollB);
-      i && i.removeEventListener("scroll", onScrollI);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [matchedSubstances, bannedOpen, ingredientsOpen]);
-
-  // Ban type palette (consistent across site)
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
     { label: "Particular Sports", color: "#003049" },
   ];
 
-  // Ingredient highlight color (user chose #8556da)
-  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
+  /* ----------------------------- Scroll Fades ----------------------------- */
+  // One watcher per table for precise, independent behavior on mobile
+  const bannedFadeApi = useScrollFade();      // { fade: {left,right}, bind: {ref} }
+  const ingredientsFadeApi = useScrollFade(); // { fade: {left,right}, bind: {ref} }
 
-  // Normalize incoming records (accept either {fields: {...}} or flattened shapes)
+  /* ---------------------------- Data Normalize ---------------------------- */
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
     const banned = [];
     const ingredients = [];
@@ -95,15 +161,16 @@ export default function OCRSearchResults({
     banTypeColors.forEach((b) => (counts[b.label] = 0));
 
     (matchedSubstances || []).forEach((rRaw) => {
-      const r = rRaw.fields ? rRaw.fields : rRaw; // support both shapes
+      const r = rRaw?.fields ? rRaw.fields : rRaw;
+
       const record = {
-        id: rRaw.id || rRaw.recordId || Math.random().toString(36).slice(2),
+        id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
         // Banned Airtable uses "Substance Name"; Ingredients use "Name"
         name:
           r["Substance Name"] ??
           r.name ??
           r["Name"] ??
-          rRaw.name ??
+          rRaw?.name ??
           "",
         // Synonyms could be "Synonyms" (banned) or "Synonyms (Extended)" (ingredients)
         synonyms:
@@ -135,29 +202,38 @@ export default function OCRSearchResults({
       if (record.banType) {
         banned.push(record);
         const normalized = (record.banType || "").trim();
-        if (counts[normalized] !== undefined) counts[normalized] += 1;
+        if (normalized in counts) counts[normalized] += 1;
       } else {
         ingredients.push(record);
       }
     });
 
-    return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
-  }, [matchedSubstances]);
+    return {
+      bannedRecords: banned,
+      ingredientRecords: ingredients,
+      countsByBanType: counts,
+    };
+  }, [matchedSubstances, banTypeColors]);
 
-  // Filter banned by legend (single-select activeBanType)
+  /* ----------------------------- Data Filters ----------------------------- */
   const filteredBanned = useMemo(() => {
     if (!activeBanType) return bannedRecords;
-    return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
+    return bannedRecords.filter(
+      (r) => (r.banType || "").trim() === activeBanType
+    );
   }, [bannedRecords, activeBanType]);
 
-  // Ingredients shown excluding ones already present in banned (by name)
   const filteredIngredients = useMemo(() => {
-    const bannedNames = new Set(bannedRecords.map((b) => (b.name || "").toLowerCase()));
-    return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
+    const bannedNames = new Set(
+      bannedRecords.map((b) => (b.name || "").toLowerCase())
+    );
+    return ingredientRecords.filter(
+      (ing) => !bannedNames.has((ing.name || "").toLowerCase())
+    );
   }, [ingredientRecords, bannedRecords]);
 
-  // Highlight function: highlights occurrences of searchTerm in `text`.
-  // If color provided, it sets inline color on highlights (useful for ban-type highlighting).
+  /* ---------------------------- Highlight Helper -------------------------- */
+  // Highlights occurrences of searchTerm in `text`.
   const highlightHTML = (text = "", color = "") => {
     const raw = String(text ?? "");
     if (!raw) return "";
@@ -166,16 +242,16 @@ export default function OCRSearchResults({
 
     try {
       const regex = new RegExp(escapeRegex(term), "gi");
-      // Wrap matches with a span; apply inline color style if provided
       return escapeHtml(raw).replace(regex, (match) => {
         const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
         return `<span style="color:${appliedColor}; font-weight:600; text-decoration:underline; text-underline-offset:2px;">${match}</span>`;
       });
-    } catch (err) {
+    } catch {
       return escapeHtml(raw);
     }
   };
 
+  /* ----------------------------- Legend Actions --------------------------- */
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
     if (typeof window !== "undefined") {
@@ -188,22 +264,31 @@ export default function OCRSearchResults({
     setLegendCollapsed(false);
   };
 
-  const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
+  const collapseLabel = (open, name) =>
+    open ? `Collapse ${name}` : `Expand ${name}`;
 
-  // Show AnimatedEllipsis when user has typed a query but no results yet
+  /* -------------------------- Searching Indicator ------------------------- */
   const showSearchingIndicator =
-    String(searchTerm || "").trim().length >= 2 && (matchedSubstances?.length ?? 0) === 0;
+    String(searchTerm || "").trim().length >= 2 &&
+    (matchedSubstances?.length ?? 0) === 0;
+
+  /* -------------------------------------------------------------------------- */
+  /* Render                                                                      */
+  /* -------------------------------------------------------------------------- */
 
   return (
     <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 sm:py-6 font-sans space-y-6 relative">
       <section>
-        <h2 className="text-2xl font-bold mb-2 text-center sm:text-left">Search Results</h2>
+        <h2 className="text-2xl font-bold mb-2 text-center sm:text-left">
+          Search Results
+        </h2>
+
         <p className="text-sm text-gray-600 mb-4 text-center sm:text-left">
-          {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned /{" "}
+          {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned ·{" "}
           {ingredientRecords.length} ingredients
         </p>
 
-        {/* Banned Substances Collapsible */}
+        {/* ============================ BANNED ============================ */}
         <div className="mb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -217,6 +302,7 @@ export default function OCRSearchResults({
                 <span className="badge">{bannedRecords.length}</span>
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
+
               <div className="text-xs sm:text-sm text-gray-600">
                 Filter by ban type using legend below.
               </div>
@@ -244,16 +330,30 @@ export default function OCRSearchResults({
                 exit={{ opacity: 0, y: -6 }}
                 className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
                 style={{ WebkitOverflowScrolling: "touch" }}
-                ref={bannedScrollRef}
+                {...bannedFadeApi.bind}
               >
-                {/* Left/Right gradient scroll hints (mobile only) */}
-                {banFade.left && (
-                  <div className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
-                       style={{ background: "linear-gradient(to right, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                {/* Mobile-only gradient fades that follow the visible edge */}
+                {bannedFadeApi.fade.left && (
+                  <div
+                    className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
+                    style={{
+                      background: `linear-gradient(to right, ${hexToRgba(
+                        BRAND_BLUE,
+                        0.25
+                      )}, rgba(70,118,155,0))`,
+                    }}
+                  />
                 )}
-                {banFade.right && (
-                  <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
-                       style={{ background: "linear-gradient(to left, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                {bannedFadeApi.fade.right && (
+                  <div
+                    className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
+                    style={{
+                      background: `linear-gradient(to left, ${hexToRgba(
+                        BRAND_BLUE,
+                        0.25
+                      )}, rgba(70,118,155,0))`,
+                    }}
+                  />
                 )}
 
                 {filteredBanned && filteredBanned.length > 0 ? (
@@ -286,17 +386,31 @@ export default function OCRSearchResults({
                     <tbody>
                       {filteredBanned.map((rec) => {
                         const banType = (rec.banType || "").trim();
-                        const colorEntry = banTypeColors.find((b) => b.label === banType);
+                        const colorEntry = banTypeColors.find(
+                          (b) => b.label === banType
+                        );
                         const matchColor = colorEntry?.color || "";
 
                         const nameHTML = highlightHTML(rec.name || "", matchColor);
                         const synHTML = highlightHTML(rec.synonyms || "", matchColor);
-                        const bannedByHTML = highlightHTML(rec.bannedBy || "", matchColor);
+                        const bannedByHTML = highlightHTML(
+                          rec.bannedBy || "",
+                          matchColor
+                        );
                         const notesHTML = highlightHTML(rec.notes || "", matchColor);
                         const sourceHTML = highlightHTML(rec.source || "", matchColor);
-                        const benefitsHTML = highlightHTML(rec.benefits || "", matchColor);
-                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", matchColor);
-                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", matchColor);
+                        const benefitsHTML = highlightHTML(
+                          rec.benefits || "",
+                          matchColor
+                        );
+                        const weaknessesHTML = highlightHTML(
+                          rec.weaknesses || "",
+                          matchColor
+                        );
+                        const antagonismsHTML = highlightHTML(
+                          rec.antagonisms || "",
+                          matchColor
+                        );
 
                         return (
                           <motion.tr
@@ -308,23 +422,36 @@ export default function OCRSearchResults({
                             transition={{ duration: 0.14 }}
                           >
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: nameHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: synHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: bannedByHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: bannedByHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
                               <span
                                 className="px-2 py-1 rounded-full text-xs sm:text-sm font-medium"
                                 style={{
-                                  backgroundColor: colorEntry ? `${colorEntry.color}20` : "#11182710",
-                                  color: colorEntry ? colorEntry.color : "#111827",
+                                  backgroundColor: colorEntry
+                                    ? `${colorEntry.color}20`
+                                    : "#11182710",
+                                  color: colorEntry
+                                    ? colorEntry.color
+                                    : "#111827",
                                 }}
                               >
                                 {banType || "—"}
@@ -332,27 +459,40 @@ export default function OCRSearchResults({
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm">{rec.dosageLimit || ""}</div>
+                              <div className="text-sm">
+                                {rec.dosageLimit || ""}
+                              </div>
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: notesHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: notesHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: sourceHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: benefitsHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: weaknessesHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
+                              />
                             </td>
                           </motion.tr>
                         );
@@ -360,14 +500,16 @@ export default function OCRSearchResults({
                     </tbody>
                   </table>
                 ) : (
-                  <p className="italic text-gray-500">No banned substances match your filters/search.</p>
+                  <p className="italic text-gray-500">
+                    No banned substances match your filters/search.
+                  </p>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Ingredients Collapsible */}
+        {/* ========================== INGREDIENTS ========================== */}
         <div className="mb-24">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -381,6 +523,7 @@ export default function OCRSearchResults({
                 <span className="badge">{ingredientRecords.length}</span>
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
+
               <div className="text-xs sm:text-sm text-gray-600">
                 Ingredients database results and nutrient info.
               </div>
@@ -395,16 +538,30 @@ export default function OCRSearchResults({
                 exit={{ opacity: 0, y: -6 }}
                 className="mt-3 relative overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0"
                 style={{ WebkitOverflowScrolling: "touch" }}
-                ref={ingScrollRef}
+                {...ingredientsFadeApi.bind}
               >
-                {/* Left/Right gradient scroll hints (mobile only) */}
-                {ingFade.left && (
-                  <div className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
-                       style={{ background: "linear-gradient(to right, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                {/* Mobile-only gradient fades that follow the visible edge */}
+                {ingredientsFadeApi.fade.left && (
+                  <div
+                    className="sm:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-6"
+                    style={{
+                      background: `linear-gradient(to right, ${hexToRgba(
+                        BRAND_BLUE,
+                        0.25
+                      )}, rgba(70,118,155,0))`,
+                    }}
+                  />
                 )}
-                {ingFade.right && (
-                  <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
-                       style={{ background: "linear-gradient(to left, rgba(70,118,155,0.25), rgba(70,118,155,0))" }} />
+                {ingredientsFadeApi.fade.right && (
+                  <div
+                    className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-6"
+                    style={{
+                      background: `linear-gradient(to left, ${hexToRgba(
+                        BRAND_BLUE,
+                        0.25
+                      )}, rgba(70,118,155,0))`,
+                    }}
+                  />
                 )}
 
                 {filteredIngredients && filteredIngredients.length > 0 ? (
@@ -432,12 +589,30 @@ export default function OCRSearchResults({
 
                     <tbody>
                       {filteredIngredients.map((rec) => {
-                        const nameHTML = highlightHTML(rec.name || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const synHTML = highlightHTML(rec.synonyms || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const benefitsHTML = highlightHTML(rec.benefits || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const weaknessesHTML = highlightHTML(rec.weaknesses || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const antagonismsHTML = highlightHTML(rec.antagonisms || "", INGREDIENT_HIGHLIGHT_COLOR);
-                        const sourceHTML = highlightHTML(rec.source || "", INGREDIENT_HIGHLIGHT_COLOR);
+                        const nameHTML = highlightHTML(
+                          rec.name || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
+                        const synHTML = highlightHTML(
+                          rec.synonyms || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
+                        const benefitsHTML = highlightHTML(
+                          rec.benefits || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
+                        const weaknessesHTML = highlightHTML(
+                          rec.weaknesses || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
+                        const antagonismsHTML = highlightHTML(
+                          rec.antagonisms || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
+                        const sourceHTML = highlightHTML(
+                          rec.source || "",
+                          INGREDIENT_HIGHLIGHT_COLOR
+                        );
 
                         return (
                           <motion.tr
@@ -449,27 +624,45 @@ export default function OCRSearchResults({
                             transition={{ duration: 0.14 }}
                           >
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: nameHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: nameHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top">
-                              <div className="text-sm" dangerouslySetInnerHTML={{ __html: synHTML }} />
+                              <div
+                                className="text-sm"
+                                dangerouslySetInnerHTML={{ __html: synHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: benefitsHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: benefitsHTML }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: weaknessesHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{
+                                  __html: weaknessesHTML,
+                                }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: antagonismsHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{
+                                  __html: antagonismsHTML,
+                                }}
+                              />
                             </td>
 
                             <td className="px-3 sm:px-4 py-3 align-top max-w-xs break-words whitespace-normal text-sm">
-                              <div dangerouslySetInnerHTML={{ __html: sourceHTML }} />
+                              <div
+                                dangerouslySetInnerHTML={{ __html: sourceHTML }}
+                              />
                             </td>
                           </motion.tr>
                         );
@@ -481,7 +674,9 @@ export default function OCRSearchResults({
                     <AnimatedEllipsis text="Searching for ingredients" />
                   </div>
                 ) : (
-                  <p className="italic text-gray-500">No ingredient-only results found for this search.</p>
+                  <p className="italic text-gray-500">
+                    No ingredient-only results found for this search.
+                  </p>
                 )}
               </motion.div>
             )}
@@ -489,14 +684,14 @@ export default function OCRSearchResults({
         </div>
       </section>
 
-      {/* Sticky Legend / Footer (bottom of viewport) */}
-      <div
-        className="sticky bottom-0 left-0 right-0 z-40"
-        style={{ pointerEvents: "auto" }}
-      >
+      {/* ============================ LEGEND / FOOTER ============================ */}
+      <div className="sticky bottom-0 left-0 right-0 z-40" style={{ pointerEvents: "auto" }}>
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
-            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div
+              className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
               <button
                 className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap"
                 onClick={() => setLegendCollapsed((c) => !c)}
@@ -523,10 +718,15 @@ export default function OCRSearchResults({
                     >
                       <span
                         className="w-4 h-4 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: t.color, display: "inline-block" }}
+                        style={{
+                          backgroundColor: t.color,
+                          display: "inline-block",
+                        }}
                       />
                       <span className="font-medium">{t.label}</span>
-                      <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
+                      <span className="text-gray-500">
+                        ({countsByBanType[t.label] || 0})
+                      </span>
                     </button>
                   );
                 })}
@@ -548,7 +748,7 @@ export default function OCRSearchResults({
         </div>
       </div>
 
-      {/* Local styles for highlight-match and updated search-toggle buttons */}
+      {/* ================================ Styles ================================ */}
       <style jsx>{`
         .highlight-match {
           background: transparent;
@@ -578,12 +778,12 @@ export default function OCRSearchResults({
           transition: all 0.18s ease-in-out;
           background: rgba(255, 255, 255, 0.88);
           color: #0f172a;
-          box-shadow: 0 1px 0 rgba(16,24,40,0.03);
+          box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
         }
 
         .search-toggle-btn:hover {
           transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(16,24,40,0.06);
+          box-shadow: 0 6px 16px rgba(16, 24, 40, 0.06);
         }
 
         .search-toggle-btn .section-label {
@@ -627,4 +827,24 @@ export default function OCRSearchResults({
       `}</style>
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Helper: hexToRgba                                                         */
+/* -------------------------------------------------------------------------- */
+/**
+ * Converts a hex color like "#46769B" to "rgba(r,g,b,a)".
+ * Falls back to the original hex if parsing fails.
+ */
+function hexToRgba(hex, alpha = 1) {
+  try {
+    const h = hex.replace("#", "");
+    const bigint = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  } catch {
+    return hex;
+  }
 }

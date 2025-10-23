@@ -7,17 +7,16 @@
  * Desktop visuals preserved 1:1.
  * Mobile adds:
  *  - horizontal scroll with momentum (iOS friendly)
- *  - brand-blue moving gradient fades that FOLLOW the visible content edge (0px offset)
- *  - gradients appear only when more content exists on that side and disappear at limits
- *  - careful mobile spacing/typography tweaks without altering desktop layout
+ *  - brand-blue gradient fades anchored to container edges (no lag)
+ *  - fades smoothly in/out as you scroll (CSS opacity transitions)
+ *  - small mobile spacing/typography tweaks without altering desktop layout
  *
- * Implementation details:
- *  - For each horizontally scrollable section (Banned / Ingredients), we render a "glass" overlay
- *    (absolute, pointer-events: none) the size of the viewport of the scroll container.
- *  - Inside that overlay, we position *two* gradient blocks using `translateX()` to the current
- *    left and right *visible* content edges: `scrollLeft` and `scrollLeft + clientWidth - GRADIENT_W`.
- *  - Values are recomputed via a requestAnimationFrame loop while actively scrolling/touching (perf-friendly).
- *  - This ensures gradients "hug" the content edge as it moves rather than sticking to the container edge.
+ * This file keeps all the prior behavior we aligned on:
+ *  - Collapsible sections
+ *  - Sticky headers
+ *  - Legend filters
+ *  - Highlighting
+ *  - Framer motion table row animations
  */
 
 import React, {
@@ -45,7 +44,7 @@ const escapeHtml = (unsafe = "") =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-/** Convert hex like #46769B to rgba(r,g,b,a). Falls back if parse fails. */
+/** Convert hex like #46769B to rgba(r,g,b,a). */
 function hexToRgba(hex, alpha = 1) {
   try {
     const h = hex.replace("#", "");
@@ -61,105 +60,46 @@ function hexToRgba(hex, alpha = 1) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hook: useMovingEdgeGradients                                               */
+/* Hook: useAnchoredEdgeFades                                                 */
 /* -------------------------------------------------------------------------- */
 /**
- * Tracks the *visible content edge* inside a horizontal scroll container
- * and returns coordinates + visibility for left/right gradient blocks.
+ * Anchors left/right gradient blocks to the container edges.
+ * Shows/hides (and smoothly fades) based on scroll position.
  *
- * Gradients must be positioned relative to the scroll container (overlay layer),
- * but anchored to the *content edge* (scrollLeft, scrollLeft+clientWidth),
- * so we compute:
- *  - leftX  = scrollLeft
- *  - rightX = scrollLeft + clientWidth - GRADIENT_W
- *
- * We also compute whether we *should* show left/right gradient (if more content exists).
+ * We compute showLeft / showRight booleans and let CSS handle smooth opacity.
+ * This avoids any lag even on very long lists.
  */
-function useMovingEdgeGradients(gradWidth = 6, tolerance = 2) {
+function useAnchoredEdgeFades() {
   const containerRef = useRef(null);
-  const [state, setState] = useState({
-    leftX: 0,
-    rightX: 0,
-    showLeft: false,
-    showRight: false,
-  });
-
-  const running = useRef(false);
-  const rafId = useRef(0);
+  const [show, setShow] = useState({ left: false, right: false });
 
   const compute = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-
     const { scrollLeft, scrollWidth, clientWidth } = el;
     const maxScroll = Math.max(scrollWidth - clientWidth, 0);
-
-    // Positions relative to the container overlay
-    const leftX = Math.max(scrollLeft, 0);
-    const rightX = Math.max(scrollLeft + clientWidth - gradWidth, 0);
-
-    // Visibility (avoid flicker at edges)
-    const showLeft = scrollLeft > tolerance;
-    const showRight = scrollLeft < maxScroll - tolerance;
-
-    setState((prev) => {
-      if (
-        prev.leftX === leftX &&
-        prev.rightX === rightX &&
-        prev.showLeft === showLeft &&
-        prev.showRight === showRight
-      ) {
-        return prev;
-      }
-      return { leftX, rightX, showLeft, showRight };
-    });
-  }, [gradWidth, tolerance]);
-
-  const tick = useCallback(() => {
-    compute();
-    if (running.current) rafId.current = requestAnimationFrame(tick);
-  }, [compute]);
-
-  const start = useCallback(() => {
-    if (running.current) return;
-    running.current = true;
-    rafId.current = requestAnimationFrame(tick);
-  }, [tick]);
-
-  const stop = useCallback(() => {
-    running.current = false;
-    if (rafId.current) cancelAnimationFrame(rafId.current);
+    const left = scrollLeft > 2;
+    const right = scrollLeft < maxScroll - 2;
+    setShow((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
   }, []);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // initial compute
-    compute();
+    compute(); // initial
 
-    // Listeners to start/stop rAF
-    el.addEventListener("scroll", start, { passive: true });
-    el.addEventListener("touchstart", start, { passive: true });
-    el.addEventListener("touchend", stop, { passive: true });
-    el.addEventListener("mouseenter", start, { passive: true });
-    el.addEventListener("mouseleave", stop, { passive: true });
-
+    el.addEventListener("scroll", compute, { passive: true });
     const onResize = () => compute();
     window.addEventListener("resize", onResize);
 
     return () => {
-      el.removeEventListener("scroll", start);
-      el.removeEventListener("touchstart", start);
-      el.removeEventListener("touchend", stop);
-      el.removeEventListener("mouseenter", start);
-      el.removeEventListener("mouseleave", stop);
+      el.removeEventListener("scroll", compute);
       window.removeEventListener("resize", onResize);
-      stop();
     };
-  }, [compute, start, stop]);
+  }, [compute]);
 
-  return { containerRef, state };
+  return { containerRef, show };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -177,9 +117,9 @@ export default function OCRSearchResults({
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   /* -------------------------- Brand / UI Palette -------------------------- */
-  const BRAND_BLUE = "#46769B"; // gradients + brand accents
-  const GRAD_ALPHA = 0.35; // per your request
-  const GRAD_W = 6; // px; thin and elegant
+  const BRAND_BLUE = "#46769B";
+  const GRAD_ALPHA = 0.35; // your chosen opacity peak
+  const GRAD_W = 10;       // slightly wider per your request
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
   const banTypeColors = [
@@ -189,9 +129,9 @@ export default function OCRSearchResults({
   ];
 
   /* ----------------------------- Scroll Hooks ----------------------------- */
-  // Independent, moving-edge gradients for each scroll container
-  const bannedGrad = useMovingEdgeGradients(GRAD_W, 2);
-  const ingGrad = useMovingEdgeGradients(GRAD_W, 2);
+  // Anchored gradients (no lag): visibility toggles based on scroll position.
+  const bannedFades = useAnchoredEdgeFades();
+  const ingredientsFades = useAnchoredEdgeFades();
 
   /* ---------------------------- Data Normalize ---------------------------- */
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
@@ -357,7 +297,7 @@ export default function OCRSearchResults({
                 <div
                   className="relative overflow-x-auto px-4 sm:px-0"
                   style={{ WebkitOverflowScrolling: "touch" }}
-                  ref={bannedGrad.containerRef}
+                  ref={bannedFades.containerRef}
                 >
                   {/* TABLE */}
                   {filteredBanned && filteredBanned.length > 0 ? (
@@ -499,39 +439,34 @@ export default function OCRSearchResults({
                     </p>
                   )}
 
-                  {/* MOVING EDGE GRADIENT OVERLAY (mobile only) */}
+                  {/* ANCHORED EDGE GRADIENTS (mobile only) */}
                   <div className="sm:hidden pointer-events-none absolute inset-0">
-                    {/* Left gradient — follows visible left edge (0px offset) */}
-                    {bannedGrad.state.showLeft && (
-                      <div
-                        aria-hidden="true"
-                        className="absolute top-0 bottom-0"
-                        style={{
-                          width: `${GRAD_W}px`,
-                          transform: `translateX(${bannedGrad.state.leftX}px)`,
-                          background: `linear-gradient(to right, ${hexToRgba(
-                            BRAND_BLUE,
-                            GRAD_ALPHA
-                          )}, rgba(70,118,155,0))`,
-                        }}
-                      />
-                    )}
-
-                    {/* Right gradient — follows visible right edge (0px offset) */}
-                    {bannedGrad.state.showRight && (
-                      <div
-                        aria-hidden="true"
-                        className="absolute top-0 bottom-0"
-                        style={{
-                          width: `${GRAD_W}px`,
-                          transform: `translateX(${bannedGrad.state.rightX}px)`,
-                          background: `linear-gradient(to left, ${hexToRgba(
-                            BRAND_BLUE,
-                            GRAD_ALPHA
-                          )}, rgba(70,118,155,0))`,
-                        }}
-                      />
-                    )}
+                    {/* Left edge */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute top-0 bottom-0 left-0 transition-opacity duration-200"
+                      style={{
+                        width: `${GRAD_W}px`,
+                        opacity: bannedFades.show.left ? GRAD_ALPHA : 0,
+                        background: `linear-gradient(to right, ${hexToRgba(
+                          BRAND_BLUE,
+                          1
+                        )}, rgba(70,118,155,0))`,
+                      }}
+                    />
+                    {/* Right edge */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute top-0 bottom-0 right-0 transition-opacity duration-200"
+                      style={{
+                        width: `${GRAD_W}px`,
+                        opacity: bannedFades.show.right ? GRAD_ALPHA : 0,
+                        background: `linear-gradient(to left, ${hexToRgba(
+                          BRAND_BLUE,
+                          1
+                        )}, rgba(70,118,155,0))`,
+                      }}
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -571,7 +506,7 @@ export default function OCRSearchResults({
                 <div
                   className="relative overflow-x-auto px-4 sm:px-0"
                   style={{ WebkitOverflowScrolling: "touch" }}
-                  ref={ingGrad.containerRef}
+                  ref={ingredientsFades.containerRef}
                 >
                   {/* TABLE */}
                   {filteredIngredients && filteredIngredients.length > 0 ? (
@@ -683,39 +618,34 @@ export default function OCRSearchResults({
                     </p>
                   )}
 
-                  {/* MOVING EDGE GRADIENT OVERLAY (mobile only) */}
+                  {/* ANCHORED EDGE GRADIENTS (mobile only) */}
                   <div className="sm:hidden pointer-events-none absolute inset-0">
-                    {/* Left gradient — follows visible left edge (0px offset) */}
-                    {ingGrad.state.showLeft && (
-                      <div
-                        aria-hidden="true"
-                        className="absolute top-0 bottom-0"
-                        style={{
-                          width: `${GRAD_W}px`,
-                          transform: `translateX(${ingGrad.state.leftX}px)`,
-                          background: `linear-gradient(to right, ${hexToRgba(
-                            BRAND_BLUE,
-                            GRAD_ALPHA
-                          )}, rgba(70,118,155,0))`,
-                        }}
-                      />
-                    )}
-
-                    {/* Right gradient — follows visible right edge (0px offset) */}
-                    {ingGrad.state.showRight && (
-                      <div
-                        aria-hidden="true"
-                        className="absolute top-0 bottom-0"
-                        style={{
-                          width: `${GRAD_W}px`,
-                          transform: `translateX(${ingGrad.state.rightX}px)`,
-                          background: `linear-gradient(to left, ${hexToRgba(
-                            BRAND_BLUE,
-                            GRAD_ALPHA
-                          )}, rgba(70,118,155,0))`,
-                        }}
-                      />
-                    )}
+                    {/* Left edge */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute top-0 bottom-0 left-0 transition-opacity duration-200"
+                      style={{
+                        width: `${GRAD_W}px`,
+                        opacity: ingredientsFades.show.left ? GRAD_ALPHA : 0,
+                        background: `linear-gradient(to right, ${hexToRgba(
+                          BRAND_BLUE,
+                          1
+                        )}, rgba(70,118,155,0))`,
+                      }}
+                    />
+                    {/* Right edge */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute top-0 bottom-0 right-0 transition-opacity duration-200"
+                      style={{
+                        width: `${GRAD_W}px`,
+                        opacity: ingredientsFades.show.right ? GRAD_ALPHA : 0,
+                        background: `linear-gradient(to left, ${hexToRgba(
+                          BRAND_BLUE,
+                          1
+                        )}, rgba(70,118,155,0))`,
+                      }}
+                    />
                   </div>
                 </div>
               </motion.div>

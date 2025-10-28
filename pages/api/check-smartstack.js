@@ -1,17 +1,8 @@
-// pages/api/check-smartstack.js
 /**
  * /pages/api/check-smartstack
  *
- * Accepts POST { text?, ocrText?, labelImage? }
- *
- * Behavior:
- *  - Uses OCR text (or text from request) as the primary input.
- *  - Matches normalized text against Ingredients Base and Banned Substances Base in Airtable.
- *  - Enriches banned substances matches with Benefits, Weaknesses, Nutrient Antagonism from Ingredients Base.
- *
- * Response includes:
- *  { found: boolean, ocrText?, productName?, ingredientsText?, nutritionFacts?,
- *    matchedBanned?, matchedIngredients?, debug }
+ * Enhanced to include "Nutrient Antagonism" for both Banned Substances and Ingredients.
+ * Includes enriched cross-linking and full debug output.
  */
 
 import Airtable from "airtable";
@@ -51,7 +42,7 @@ async function fetchAllAirtableRecordsUsingClient(baseInstance, tableName) {
 }
 
 /* --------------------
-   Helpers: text normalization + matching
+   Helpers
    -------------------- */
 const escapeRegex = (s = "") => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -90,7 +81,7 @@ function termInText(term = "", normalizedText = "") {
 }
 
 /* --------------------
-   Airtable matching functions
+   Airtable matching
    -------------------- */
 async function matchAgainstBannedRecords(ingredientsText) {
   if (!bannedBase || !process.env.BANNED_TABLE_NAME) return [];
@@ -118,17 +109,22 @@ async function matchAgainstBannedRecords(ingredientsText) {
           "Ban Type": fields["Ban Type"] || "",
           "Dosage Limit": fields["Dosage Limit"] || "",
           "Source / Citation": fields["Source / Citation"] || "",
+          Benefits: fields["Benefits"] || "",
+          Weaknesses: fields["Weaknesses"] || "",
+          "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
         },
         matchedTerms,
       });
     }
   }
 
+  console.log(`[check-smartstack] Banned Matches Found: ${matches.length}`);
   return matches;
 }
 
 async function matchAgainstIngredientRecords(ingredientsText) {
-  if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME) throw new Error("Ingredients Airtable not configured");
+  if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME)
+    throw new Error("Ingredients Airtable not configured");
   const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
   const raw = await fetchAllAirtableRecordsUsingClient(ingredientsBase, process.env.INGREDIENT_TABLE_NAME);
   const matches = [];
@@ -158,14 +154,16 @@ async function matchAgainstIngredientRecords(ingredientsText) {
     }
   }
 
+  console.log(`[check-smartstack] Ingredient Matches Found: ${matches.length}`);
   return matches;
 }
 
 /* --------------------
-   Main handler
+   Main Handler
    -------------------- */
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed. Use POST." });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
 
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -207,7 +205,7 @@ export default async function handler(req, res) {
       debug.airtableBannedError = String(err?.message || err);
     }
 
-    // Enrich banned substances with ingredient info
+    // Enrich banned substances with ingredient info (shared nutrient antagonism)
     if (matchedBanned.length && matchedIngredients.length) {
       const ingByName = new Map();
       for (const ing of matchedIngredients) {
@@ -229,19 +227,24 @@ export default async function handler(req, res) {
           enriched.fields["Benefits"] = enriched.fields["Benefits"] || maybe.fields?.Benefits || "";
           enriched.fields["Weaknesses"] = enriched.fields["Weaknesses"] || maybe.fields?.Weaknesses || "";
           enriched.fields["Nutrient Antagonism"] =
-            enriched.fields["Nutrient Antagonism"] || maybe.fields?.["Nutrient Antagonism"] || "";
+            enriched.fields["Nutrient Antagonism"] ||
+            maybe.fields?.["Nutrient Antagonism"] ||
+            "";
           return enriched;
         }
         return b;
       });
     }
 
+    // Debug summary
+    console.log("[check-smartstack] ✅ Matches Summary:", {
+      banned: matchedBanned.length,
+      ingredients: matchedIngredients.length,
+    });
+
     return res.status(200).json({
       found: true,
       ocrText: rawText,
-      productName: null,
-      ingredientsText: rawText,
-      nutritionFacts: null,
       matchedBanned,
       matchedIngredients,
       debug: {
@@ -252,6 +255,9 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("[check-smartstack] Unexpected error:", err);
-    return res.status(500).json({ error: "Internal server error", details: String(err?.message || err) });
+    return res.status(500).json({
+      error: "Internal server error",
+      details: String(err?.message || err),
+    });
   }
 }

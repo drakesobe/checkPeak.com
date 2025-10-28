@@ -325,16 +325,24 @@ export default function SmartStackPage() {
       )}
 
       {/* Modals */}
-      {modalStack && <NutritionModal stack={modalStack} onClose={() => setModalStack(null)} />}
-      {compareModalOpen && selectedCompareStacks.length >= 2 && selectedCompareStacks.length <= 3 && (
-        <CompareModal
-          stacks={selectedCompareStacks}
-          onClose={() => {
-            setCompareModalOpen(false);
-            setSelectedCompareStacks([]);
-          }}
-        />
-      )}
-    </div>
-  );
+{modalStack && (
+  <NutritionModal
+    key={modalStack.id}               // 👈 ensures React remounts modal fresh each time
+    stack={modalStack}
+    onClose={() => setModalStack(null)}
+  />
+)}
+{compareModalOpen &&
+  selectedCompareStacks.length >= 2 &&
+  selectedCompareStacks.length <= 3 && (
+    <CompareModal
+      stacks={selectedCompareStacks}
+      onClose={() => {
+        setCompareModalOpen(false);
+        setSelectedCompareStacks([]);
+      }}
+    />
+  )}
+</div>
+);
 }

@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
+import { SpeedInsights } from "@vercel/speed-insights/next"; // ✅ Add this line
 
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
@@ -53,6 +54,7 @@ export default function MyApp({ Component, pageProps }) {
       <AuthProvider>
         <Component {...pageProps} />
         <Toaster position="top-right" />
+        <SpeedInsights /> {/* ✅ Add this inside the app wrapper */}
       </AuthProvider>
     </>
   );

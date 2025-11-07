@@ -5,7 +5,6 @@ import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { SpeedInsights } from "@vercel/speed-insights/next"; // ✅ Add this line
 
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
@@ -22,13 +21,11 @@ export default function MyApp({ Component, pageProps }) {
 
   return (
     <>
-      {/* 1️⃣ Load GA script */}
+      {/* 1️⃣ Google Analytics */}
       <Script
         src="https://www.googletagmanager.com/gtag/js?id=G-0HXXN1SJ9K"
         strategy="afterInteractive"
       />
-
-      {/* 2️⃣ Initialize GA */}
       <Script id="gtag-init" strategy="afterInteractive">
         {`
           window.dataLayer = window.dataLayer || [];
@@ -38,7 +35,18 @@ export default function MyApp({ Component, pageProps }) {
         `}
       </Script>
 
-      {/* 3️⃣ Load OpenCV.js */}
+      {/* 2️⃣ Microsoft Clarity (heatmaps + session recordings) */}
+      <Script id="microsoft-clarity" strategy="afterInteractive">
+        {`
+          (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/u244y5muc2";
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+          })(window, document, "clarity", "script", "u244y5muc2");
+        `}
+      </Script>
+
+      {/* 3️⃣ OpenCV.js */}
       <Script
         src="https://docs.opencv.org/4.x/opencv.js"
         strategy="beforeInteractive"
@@ -50,11 +58,10 @@ export default function MyApp({ Component, pageProps }) {
         }}
       />
 
-      {/* 4️⃣ Your app */}
+      {/* 4️⃣ App */}
       <AuthProvider>
         <Component {...pageProps} />
         <Toaster position="top-right" />
-        <SpeedInsights /> {/* ✅ Add this inside the app wrapper */}
       </AuthProvider>
     </>
   );

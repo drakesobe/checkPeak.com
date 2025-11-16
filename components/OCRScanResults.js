@@ -285,10 +285,10 @@ export default function OCRScanResults({
           <button
             onClick={() => setOcrOpen((s) => !s)}
             aria-expanded={ocrOpen}
-            aria-label={collapseLabel(ocrOpen, "Scanned Text (OCR)")}
+            aria-label={collapseLabel(ocrOpen, "Base Label Text")}
             className={`section-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
           >
-            <span className="section-label">Scanned Text (OCR)</span>
+            <span className="section-label">Base Label Text</span>
             <span className="badge">{ocrMatchCount}</span>
             <span className="caret">{ocrOpen ? "▾" : "▸"}</span>
           </button>

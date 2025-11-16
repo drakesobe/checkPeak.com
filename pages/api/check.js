@@ -100,16 +100,28 @@ async function fetchAllAirtableRecordsUsingClient(baseInstance, tableName) {
 const escapeRegex = (s = "") =>
   String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// 🔥 UPDATED: better normalization for accents, β, curly quotes, etc.
 function splitNormalizedTextToTerms(text) {
   if (!text) return [];
-  const lower = text.toLowerCase();
-  const cleaned = lower.replace(
-    /\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi,
-    " "
-  );
+
+  const lower = text
+    .normalize("NFKD") // split accents from base chars
+    .toLowerCase()
+    .replace(/[\u0300-\u036f]/g, ""); // strip combining marks (café -> cafe)
+
+  const cleaned = lower
+    .replace(/β/g, "beta") // β-alanine -> beta alanine
+    .replace(/\u2019|\u2018/g, "'") // curly single quotes -> '
+    .replace(/\u201c|\u201d/g, '"') // curly double quotes -> "
+    .replace(
+      /\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi,
+      " "
+    );
+
   const rawTerms = cleaned.split(
     /[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•]/
   );
+
   return rawTerms
     .map((t) => t.trim())
     .filter((t) => t.length > 1);
@@ -972,7 +984,10 @@ export default async function handler(req, res) {
           }
         }
 
-        if (perCandidate.nutrition && Object.keys(perCandidate.nutrition).length) {
+        if (
+          perCandidate.nutrition &&
+          Object.keys(perCandidate.nutrition).length
+        ) {
           structured.nutrition = structured.nutrition || {};
           for (const k of Object.keys(perCandidate.nutrition)) {
             if (!structured.nutrition[k])
@@ -1152,7 +1167,7 @@ export default async function handler(req, res) {
       OtherBannedCount: otherBannedCount,
     };
 
-    // ------------- NEW: Save to Scans Airtable if userEmail is provided -------------
+    // ------------- Save to Scans Airtable if userEmail is provided -------------
     if (body.userEmail && scansBase && process.env.SCANS_TABLE_NAME) {
       try {
         const now = new Date();
@@ -1201,7 +1216,7 @@ export default async function handler(req, res) {
         debug.scansSaveSkipped = "Scans Airtable not configured";
       }
     }
-    // -------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     // Return success + structured data
     return res.status(200).json({

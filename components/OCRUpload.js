@@ -5,8 +5,8 @@ import ProgressBar from "./ProgressBar";
 
 /**
  * OCRUpload
- * - full uploader + OCR pipeline preserved (resize, preprocess, Tesseract)
- * - calls `onScan(text)` for each scanned file
+ * - full uploader + OCR pipeline (resize, preprocess, Tesseract)
+ * - calls `onScan(text, { avgConfidence })` for each scanned file
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -21,6 +21,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const canvasRefs = useRef([]);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const MAX_DIM = 2400; // higher resolution for small text
 
   // Animate dots during loading
   useEffect(() => {
@@ -81,17 +82,17 @@ export default function OCRUpload({ multiple = false, onScan }) {
       const reader = new FileReader();
       reader.onload = (e) => (img.src = e.target.result);
       img.onload = () => {
-        const MAX_DIM = 800;
         let { width, height } = img;
         if (width > MAX_DIM || height > MAX_DIM) {
           const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
-          width *= scale;
-          height *= scale;
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
         }
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
         canvas.toBlob(
           (blob) =>
             resolve(
@@ -111,9 +112,10 @@ export default function OCRUpload({ multiple = false, onScan }) {
     canvas.height = img.naturalHeight;
     ctx.drawImage(img, 0, 0);
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
+    // --- grayscale + dynamic contrast stretch ---
     let min = 255,
       max = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -127,8 +129,52 @@ export default function OCRUpload({ multiple = false, onScan }) {
       gray = Math.max(0, Math.min(255, (gray - min) * scale));
       data[i] = data[i + 1] = data[i + 2] = gray;
     }
+
+    // --- light sharpening to crisp text edges ---
+    const applySharpen = () => {
+      const copy = new Uint8ClampedArray(data);
+      const width = canvas.width;
+      const height = canvas.height;
+      const kernel = [
+        0, -1, 0,
+        -1, 5, -1,
+        0, -1, 0,
+      ];
+      const kSize = 3;
+      const half = Math.floor(kSize / 2);
+
+      for (let y = half; y < height - half; y++) {
+        for (let x = half; x < width - half; x++) {
+          let r = 0,
+            g = 0,
+            b = 0;
+          let kIndex = 0;
+
+          for (let ky = -half; ky <= half; ky++) {
+            for (let kx = -half; kx <= half; kx++) {
+              const px = x + kx;
+              const py = y + ky;
+              const pIdx = (py * width + px) * 4;
+              const w = kernel[kIndex++];
+              r += copy[pIdx] * w;
+              g += copy[pIdx + 1] * w;
+              b += copy[pIdx + 2] * w;
+            }
+          }
+
+          const idx = (y * width + x) * 4;
+          data[idx] = Math.max(0, Math.min(255, r));
+          data[idx + 1] = Math.max(0, Math.min(255, g));
+          data[idx + 2] = Math.max(0, Math.min(255, b));
+          // alpha unchanged
+        }
+      }
+    };
+
+    applySharpen();
     ctx.putImageData(imageData, 0, 0);
 
+    // --- auto-crop dark text block, then scale up ---
     let top = canvas.height,
       bottom = 0,
       left = canvas.width,
@@ -144,6 +190,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
         }
       }
     }
+    // If we didn't find a clear block, just return current canvas
     if (right - left < 20 || bottom - top < 20) return canvas;
 
     const scaleFactor = 3;
@@ -151,6 +198,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
     croppedCanvas.width = (right - left) * scaleFactor;
     croppedCanvas.height = (bottom - top) * scaleFactor;
     const cctx = croppedCanvas.getContext("2d");
+    cctx.imageSmoothingEnabled = true;
+    cctx.imageSmoothingQuality = "high";
     cctx.drawImage(
       canvas,
       left,
@@ -176,6 +225,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       for (let i = 0; i < resizedFiles.length; i++) {
         const file = resizedFiles[i];
+
+        // load image
         const img = new Image();
         const reader = new FileReader();
         const imgLoaded = new Promise((res) => (img.onload = res));
@@ -187,25 +238,35 @@ export default function OCRUpload({ multiple = false, onScan }) {
         canvasRefs.current[i] = canvas;
 
         const preprocessed = await preprocessImage(img, canvas);
+        const dataUrl = preprocessed.toDataURL("image/jpeg", 0.9);
 
-        const result = await Tesseract.recognize(preprocessed, "eng", {
+        const result = await Tesseract.recognize(dataUrl, "eng", {
           logger: (m) => console.log("OCR progress:", m),
           tessedit_char_whitelist:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
-          oem: 1,
-          psm: 6,
+          psm: 6, // dense block of text
+          preserve_interword_spaces: 1,
+          user_defined_dpi: 300,
         });
 
-        const text = result.data.text || "";
+        const { text, words, confidence } = result.data || {};
+        const cleanText = text || "";
+
+        const avgConfidence =
+          words && words.length
+            ? words.reduce((sum, w) => sum + (w.confidence || 0), 0) /
+              words.length
+            : confidence || 0;
+
         setOcrTexts((prev) => {
           const updated = [...prev];
-          updated[i] = text;
+          updated[i] = cleanText;
           return updated;
         });
 
         if (typeof onScan === "function") {
           try {
-            await onScan(text);
+            await onScan(cleanText, { avgConfidence });
           } catch (err) {
             console.error("onScan callback error:", err);
           }
@@ -275,9 +336,11 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       {error && <p className="text-red-500 text-center">{error}</p>}
 
-      {loading && (
+      {loading && files.length > 0 && (
         <ProgressBar
-          progress={Math.round((ocrTexts.filter((r) => r).length / files.length) * 100)}
+          progress={Math.round(
+            (ocrTexts.filter((r) => r).length / files.length) * 100
+          )}
         />
       )}
 
@@ -290,7 +353,11 @@ export default function OCRUpload({ multiple = false, onScan }) {
             : "bg-[#46769B] hover:bg-blue-700"
         }`}
       >
-        {loading ? `Scanning${animDots}` : multiple ? "Scan All Labels" : "Scan Label"}
+        {loading
+          ? `Scanning${animDots}`
+          : multiple
+          ? "Scan All Labels"
+          : "Scan Label"}
       </button>
     </div>
   );

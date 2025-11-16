@@ -49,55 +49,38 @@ export default function OCRPage() {
   const escapeRegex = (s = "") =>
     String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  /**
-   * Save a scan row into the Scans Airtable via /api/saveScan
-   * Expects: { scanName, resultSummary, stackDetails, bannedDetails }
-   */
-  const saveScanToAirtable = async ({
-    scanName,
-    resultSummary,
-    stackDetails,
-    bannedDetails,
-  }) => {
-    const email = user?.Email || user?.email;
-    if (!email) return; // no logged-in user, skip saving
-
+  const saveScanToAirtable = async (scanName, resultSummary, stackDetails) => {
+    if (!user || !user.Email) return;
     try {
       const scanDate = new Date().toISOString();
-      const payload = {
-        userEmail: email,
-        scanName,
-        scanDate,
-        stackDetails,
-        resultSummary,
-        bannedDetails,
-      };
-
       const res = await fetch("/api/saveScan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          userEmail: user.Email,
+          scanName,
+          scanDate,
+          stackDetails,
+          resultSummary,
+        }),
       });
-
       const data = await res.json();
-
-      if (res.ok) {
-        toast.success("Scan saved to your account!");
-      } else {
-        console.error("Failed to save scan:", data);
-        toast.error(`Failed to save scan: ${data.error || "Unknown error"}`);
-      }
+      if (res.ok) toast.success("Scan saved to your account!");
+      else toast.error(`Failed to save scan: ${data.error}`);
     } catch (err) {
       console.error("Error saving scan:", err);
       toast.error("Failed to save scan. Try again later.");
     }
   };
 
-  const generateCombinedHighlightedOCR = (rawText = "", bannedRecs = [], ingredientRecs = []) => {
+  const generateCombinedHighlightedOCR = (
+    rawText = "",
+    bannedRecs = [],
+    ingredientRecs = []
+  ) => {
     if (!rawText) return "";
     let out = rawText;
-    // (You can drop your highlight logic back in here later if you want;
-    // leaving as a stub so existing code compiles.)
+    // TODO: could add OCR-side highlighting if you want
     return out;
   };
 
@@ -108,24 +91,11 @@ export default function OCRPage() {
     return { id, fields: r };
   };
 
-  /**
-   * Handle final scan result (from OCR or barcode)
-   * - Normalizes banned + ingredient matches
-   * - Updates UI
-   * - Auto-saves to Scans Airtable using /api/saveScan
-   */
   const handleScanResult = async (result) => {
     if (!result) return;
-
-    const raw =
-      result.rawIngredients ||
-      result.ocrText ||
-      result.text ||
-      "";
-
+    const raw = result.rawIngredients || result.ocrText || result.text || "";
     if (!raw) return;
 
-    // Append to raw OCR buffer
     setOcrTexts((prev) => [...prev, raw]);
     setRawOCR((prev) => (prev ? prev + " " + raw : raw));
     setShowRawOCR(false);
@@ -135,11 +105,9 @@ export default function OCRPage() {
       result.matchedBannedRecords ||
       result.matched_banned ||
       [];
-
     const bannedMatches = Array.isArray(bannedMatchesRaw)
-      ? bannedMatchesRaw.map(normalizeRecord).filter(Boolean)
+      ? bannedMatchesRaw.map(normalizeRecord)
       : [];
-
     setDetectedBanned(bannedMatches);
 
     const ingredientMatchesRaw =
@@ -148,79 +116,45 @@ export default function OCRPage() {
       result.matched_ingredients ||
       result.matchedIngredientRecords ||
       [];
-
     const ingredientMatches = Array.isArray(ingredientMatchesRaw)
-      ? ingredientMatchesRaw.map(normalizeRecord).filter(Boolean)
+      ? ingredientMatchesRaw.map(normalizeRecord)
       : [];
-
     setDetectedIngredients(ingredientMatches);
 
-    // ----- Auto-save to Scans Airtable -----
-    try {
-      const email = user?.Email || user?.email;
-      if (!email) return; // not logged in, just show results
-
-      const bannedDetails = result.bannedDetails || null;
-
-      // Build a nice scan name
-      const scanName =
-        result.productName ||
-        `Scan - ${new Date().toLocaleString("en-US", { hour12: false })}`;
-
-      // Build summary string using bannedDetails if present
-      let resultSummary = "No banned details available.";
-      if (bannedDetails) {
-        const {
-          ProhibitedCount = 0,
-          LimitedCount = 0,
-          OtherBannedCount = 0,
-        } = bannedDetails;
-
-        if (
-          ProhibitedCount === 0 &&
-          LimitedCount === 0 &&
-          OtherBannedCount === 0
-        ) {
-          resultSummary = "No banned substances detected.";
-        } else {
-          resultSummary = `Prohibited: ${ProhibitedCount}, Limited: ${LimitedCount}, Other: ${OtherBannedCount}`;
-        }
-      }
-
-      // Use the raw OCR/ingredients blob as StackDetails
-      const stackDetails = raw;
-
-      await saveScanToAirtable({
-        scanName,
-        resultSummary,
-        stackDetails,
-        bannedDetails,
-      });
-    } catch (err) {
-      console.error("Error during auto-save:", err);
-      // We already toast inside saveScanToAirtable for errors, so this can stay silent
-    }
+    // Optional: regenerate combinedHighlightedOCR if you wire that up
+    setCombinedHighlightedOCR(
+      generateCombinedHighlightedOCR(raw, bannedMatches, ingredientMatches)
+    );
   };
 
-  const handleOCRScan = async (text) => {
+  // 🔥 UPDATED: now receives avgConfidence from OCRUpload
+  const handleOCRScan = async (text, meta = {}) => {
     if (!text) return;
+    const { avgConfidence } = meta;
+
+    // Warn users if the scan looked sketchy
+    if (avgConfidence && avgConfidence < 70) {
+      toast(
+        (t) => (
+          <span>
+            ⚠️ This scan looked a bit blurry (confidence{" "}
+            {Math.round(avgConfidence)}%). Please double-check the ingredients
+            text below or re-scan if this product is important for competition.
+          </span>
+        ),
+        { duration: 7000 }
+      );
+    }
+
     setScanning(true);
     setProgress(0);
     setError("");
-
     try {
-      const email = user?.Email || user?.email || null;
-
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          // optional: include userEmail so /api/check can use it in debug/logs if needed
-          userEmail: email,
-        }),
+        body: JSON.stringify({ text }),
       });
-
       const data = await res.json();
       await handleScanResult({ rawIngredients: text, ...data });
     } catch (err) {
@@ -237,9 +171,7 @@ export default function OCRPage() {
     setScanning(true);
     setProgress(0);
     setError("");
-
     try {
-      // BarcodeUpload should already have called /api/check and returned its response
       await handleScanResult(result);
     } catch (err) {
       console.error("Barcode scan error:", err);
@@ -287,7 +219,10 @@ export default function OCRPage() {
               {scanMode === "Nutrition Label" ? (
                 <OCRUpload multiple={true} onScan={handleOCRScan} />
               ) : (
-                <BarcodeUpload onResult={handleBarcodeScan} showScanButton={true} />
+                <BarcodeUpload
+                  onResult={handleBarcodeScan}
+                  showScanButton={true}
+                />
               )}
             </div>
 
@@ -295,32 +230,6 @@ export default function OCRPage() {
               <p className="text-red-500 mt-2 text-center text-sm sm:text-base">
                 {error}
               </p>
-            )}
-
-            {/* Raw OCR */}
-            {rawOCR && (
-              <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
-                <div
-                  className="cursor-pointer flex justify-between items-center"
-                  onClick={() => setShowRawOCR((s) => !s)}
-                >
-                  <h2 className="text-lg sm:text-xl font-bold">
-                    All Ingredients (Raw OCR)
-                  </h2>
-                  <span className="text-gray-500 text-sm">
-                    {showRawOCR ? "Hide" : "Show"}
-                  </span>
-                </div>
-
-                {showRawOCR && (
-                  <pre
-                    className="bg-gray-100 p-3 sm:p-4 rounded-xl max-h-64 sm:max-h-80 overflow-y-auto whitespace-pre-wrap break-words mt-2 text-sm sm:text-base"
-                    dangerouslySetInnerHTML={{
-                      __html: combinedHighlightedOCR || rawOCR,
-                    }}
-                  />
-                )}
-              </section>
             )}
 
             {/* Scan results */}

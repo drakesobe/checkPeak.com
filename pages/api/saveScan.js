@@ -7,36 +7,39 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { userEmail, stackDetails, resultSummary, scanId } = req.body;
+    const {
+      userEmail,
+      stackDetails,
+      resultSummary,
+      scanId,
+      bannedDetails, // from /api/check
+    } = req.body;
 
     if (!userEmail) {
       console.error("❌ Missing userEmail in request body");
       return res.status(400).json({ error: "Missing userEmail" });
     }
 
-    // Build the record payload for Airtable
+    const scanDate = new Date();
+
     const recordPayload = {
       UserEmail: userEmail,
-      ScanName: `Scan - ${new Date().toLocaleString("en-US", { hour12: false })}`,
-      ScanDate: new Date().toISOString(), // ✅ ISO string works for Date + Time field in Airtable
+      ScanName: `Scan - ${scanDate.toLocaleString("en-US", { hour12: false })}`,
+      ScanDate: scanDate.toISOString(),
       StackDetails: stackDetails || "No stack details provided",
-      ResultsSummary: resultSummary || "No summary available", // ✅ fixed typo (was ResultsSumary)
+      ResultsSummary: resultSummary || "No summary available",
       ID: scanId || `scan-${Date.now()}`,
+      BannedDetails: bannedDetails ? JSON.stringify(bannedDetails) : null,
     };
 
-    // Debug log payload before sending
     console.log("🚀 Preparing to save scan record to Airtable:");
     console.log(JSON.stringify(recordPayload, null, 2));
 
-    // Use SCANS env vars (matches your .env.local)
     const base = new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
       process.env.SCANS_BASE_ID
     );
-
-    // Use table name from env too
     const tableName = process.env.SCANS_TABLE_NAME || "Scans";
 
-    // Attempt to save to Airtable
     const createdRecord = await base(tableName).create([
       {
         fields: recordPayload,
@@ -52,7 +55,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error("❌ Error saving scan:", error);
-    res.status(400).json({
+    res.status(500).json({
       success: false,
       error: error.message || "Unknown error while saving scan",
     });

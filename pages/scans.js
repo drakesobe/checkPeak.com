@@ -1,10 +1,11 @@
-// pages/scans/index.js (or pages/scans.js)
+// pages/scans/index.js  (or pages/scans.js)
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import NavBar from "@/components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
+import { trackEvent } from "@/lib/analytics";
 
 export default function ScansPage() {
   const router = useRouter();
@@ -19,12 +20,24 @@ export default function ScansPage() {
       return;
     }
 
+    // 🔥 Analytics: page view for My Scans
+    try {
+      trackEvent("page_view_my_scans", {
+        eventType: "page_view",
+        userEmail: user.Email || user.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "my_scans_page",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      });
+    } catch (err) {
+      console.error("page_view_my_scans tracking failed:", err);
+    }
+
     async function fetchScans() {
       try {
         setLoading(true);
-        const email = user?.Email || user?.email;
+        const email = user.Email || user.email;
         if (!email) {
-          console.warn("No email on user object, cannot load scans");
           setLoading(false);
           return;
         }
@@ -33,42 +46,7 @@ export default function ScansPage() {
           `/api/getScans?userEmail=${encodeURIComponent(email)}`
         );
         const data = await res.json();
-
-        // 🔍 Normalize bannedDetails into counts so the UI can use them
-        const normalizedScans = (data.scans || []).map((scan) => {
-          let prohibitedCount = 0;
-          let limitedCount = 0;
-          let otherCount = 0;
-
-          let bannedDetails = scan.bannedDetails;
-
-          // If Airtable stored it as a JSON string, parse it
-          if (bannedDetails) {
-            if (typeof bannedDetails === "string") {
-              try {
-                bannedDetails = JSON.parse(bannedDetails);
-              } catch {
-                // leave counts as 0 if bad JSON
-                bannedDetails = null;
-              }
-            }
-
-            if (bannedDetails && typeof bannedDetails === "object") {
-              prohibitedCount = bannedDetails.ProhibitedCount || 0;
-              limitedCount = bannedDetails.LimitedCount || 0;
-              otherCount = bannedDetails.OtherBannedCount || 0;
-            }
-          }
-
-          return {
-            ...scan,
-            prohibitedCount,
-            limitedCount,
-            otherCount,
-          };
-        });
-
-        setScans(normalizedScans);
+        setScans(data.scans || []);
       } catch (error) {
         console.error("Failed to fetch scans:", error);
         setScans([]);
@@ -139,7 +117,7 @@ export default function ScansPage() {
                   formattedDate = new Date(scan.date).toLocaleString();
                 }
               } catch {
-                // keep raw if parsing fails
+                // keep raw
               }
 
               return (
@@ -157,7 +135,35 @@ export default function ScansPage() {
                     <div className="mt-2">{renderRiskPill(scan)}</div>
                   </div>
                   <button
-                    onClick={() => router.push(`/scans/${scan.id}`)}
+                    onClick={async () => {
+                      // 🔥 Analytics: user viewing a specific scan
+                      try {
+                        await trackEvent("scan_viewed", {
+                          eventType: "scan_view",
+                          userEmail: user.Email || user.email || "",
+                          path:
+                            typeof window !== "undefined"
+                              ? window.location.pathname
+                              : "",
+                          source: "my_scans_page",
+                          device:
+                            typeof navigator !== "undefined"
+                              ? navigator.userAgent
+                              : "",
+                          payload: {
+                            scanId: scan.id,
+                            scanName: scan.name || "Unnamed Scan",
+                            prohibitedCount: scan.prohibitedCount || 0,
+                            limitedCount: scan.limitedCount || 0,
+                            otherCount: scan.otherCount || 0,
+                          },
+                        });
+                      } catch (err) {
+                        console.error("scan_viewed tracking failed:", err);
+                      }
+
+                      router.push(`/scans/${scan.id}`);
+                    }}
                     className="text-blue-600 hover:underline"
                   >
                     View

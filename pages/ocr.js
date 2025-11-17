@@ -9,6 +9,7 @@ import OCRScanResults from "../components/OCRScanResults";
 import ProgressBar from "../components/ProgressBar";
 import { useAuthContext } from "../hooks/useAuth";
 import { toast } from "react-hot-toast";
+import { trackEvent } from "@/lib/analytics";
 
 export default function OCRPage() {
   const { user } = useAuthContext();
@@ -36,6 +37,7 @@ export default function OCRPage() {
   ];
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
+  // Tab underline animation
   useEffect(() => {
     const currentTab = tabRefs.current[scanMode];
     const underline = underlineRef.current;
@@ -46,9 +48,35 @@ export default function OCRPage() {
     }
   }, [scanMode]);
 
+  // 🔥 Analytics: Scan page view
+  useEffect(() => {
+    if (activeTab !== "Scan") return;
+
+    try {
+      trackEvent("page_view_scan", {
+        eventType: "page_view",
+        userEmail: user?.Email || user?.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "ocr_page",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      });
+    } catch (err) {
+      console.error("page_view_scan tracking failed:", err);
+    }
+  }, [activeTab, user]);
+
   const escapeRegex = (s = "") =>
     String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+  // Not wired yet, but left in case you want smart OCR highlighting later
+  const generateCombinedHighlightedOCR = (rawText = "", bannedRecs = [], ingredientRecs = []) => {
+    if (!rawText) return "";
+    let out = rawText;
+    // You can plug in your OCR highlight logic here later
+    return out;
+  };
+
+  // For legacy / future separate scan saving (still available)
   const saveScanToAirtable = async (scanName, resultSummary, stackDetails) => {
     if (!user || !user.Email) return;
     try {
@@ -73,17 +101,6 @@ export default function OCRPage() {
     }
   };
 
-  const generateCombinedHighlightedOCR = (
-    rawText = "",
-    bannedRecs = [],
-    ingredientRecs = []
-  ) => {
-    if (!rawText) return "";
-    let out = rawText;
-    // TODO: could add OCR-side highlighting if you want
-    return out;
-  };
-
   const normalizeRecord = (r) => {
     if (!r) return null;
     if (r.fields) return r;
@@ -91,8 +108,10 @@ export default function OCRPage() {
     return { id, fields: r };
   };
 
+  // 🔥 Core: handle scan results + analytics
   const handleScanResult = async (result) => {
     if (!result) return;
+
     const raw = result.rawIngredients || result.ocrText || result.text || "";
     if (!raw) return;
 
@@ -121,39 +140,62 @@ export default function OCRPage() {
       : [];
     setDetectedIngredients(ingredientMatches);
 
-    // Optional: regenerate combinedHighlightedOCR if you wire that up
-    setCombinedHighlightedOCR(
-      generateCombinedHighlightedOCR(raw, bannedMatches, ingredientMatches)
-    );
+    // Optional: keep a hook here if you want OCR highlighting later
+    // setCombinedHighlightedOCR(
+    //   generateCombinedHighlightedOCR(raw, bannedMatches, ingredientMatches)
+    // );
+
+    // 🔥 Analytics: log completed scan
+    try {
+      const bannedDetails = result.bannedDetails || {};
+      await trackEvent("scan_completed", {
+        eventType: "scan",
+        userEmail: user?.Email || user?.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: scanMode === "Nutrition Label" ? "nutrition_label" : "barcode",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        payload: {
+          scanMode,
+          productName: result.productName || null,
+          bannedCount: bannedMatches.length,
+          ingredientCount: ingredientMatches.length,
+          bannedDetails,
+          found: result.found ?? true,
+        },
+      });
+    } catch (err) {
+      console.error("scan_completed tracking failed:", err);
+    }
   };
 
-  // 🔥 UPDATED: now receives avgConfidence from OCRUpload
-  const handleOCRScan = async (text, meta = {}) => {
+  const handleOCRScan = async (text) => {
     if (!text) return;
-    const { avgConfidence } = meta;
-
-    // Warn users if the scan looked sketchy
-    if (avgConfidence && avgConfidence < 70) {
-      toast(
-        (t) => (
-          <span>
-            ⚠️ This scan looked a bit blurry (confidence{" "}
-            {Math.round(avgConfidence)}%). Please double-check the ingredients
-            text below or re-scan if this product is important for competition.
-          </span>
-        ),
-        { duration: 7000 }
-      );
-    }
-
     setScanning(true);
     setProgress(0);
     setError("");
+
+    // 🔥 Analytics: scan start (nutrition label)
+    try {
+      trackEvent("scan_started", {
+        eventType: "scan_start",
+        userEmail: user?.Email || user?.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "nutrition_label",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      });
+    } catch (err) {
+      console.error("scan_started tracking failed:", err);
+    }
+
     try {
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          text,
+          // Optional: if you want /api/check to also save to Scans Airtable internally
+          userEmail: user?.Email || user?.email || "",
+        }),
       });
       const data = await res.json();
       await handleScanResult({ rawIngredients: text, ...data });
@@ -171,6 +213,20 @@ export default function OCRPage() {
     setScanning(true);
     setProgress(0);
     setError("");
+
+    // 🔥 Analytics: scan start (barcode)
+    try {
+      trackEvent("scan_started", {
+        eventType: "scan_start",
+        userEmail: user?.Email || user?.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "barcode",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      });
+    } catch (err) {
+      console.error("scan_started tracking failed:", err);
+    }
+
     try {
       await handleScanResult(result);
     } catch (err) {
@@ -219,17 +275,36 @@ export default function OCRPage() {
               {scanMode === "Nutrition Label" ? (
                 <OCRUpload multiple={true} onScan={handleOCRScan} />
               ) : (
-                <BarcodeUpload
-                  onResult={handleBarcodeScan}
-                  showScanButton={true}
-                />
+                <BarcodeUpload onResult={handleBarcodeScan} showScanButton={true} />
               )}
             </div>
 
             {error && (
-              <p className="text-red-500 mt-2 text-center text-sm sm:text-base">
-                {error}
-              </p>
+              <p className="text-red-500 mt-2 text-center text-sm sm:text-base">{error}</p>
+            )}
+
+            {/* Raw OCR */}
+            {rawOCR && (
+              <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
+                <div
+                  className="cursor-pointer flex justify-between items-center"
+                  onClick={() => setShowRawOCR((s) => !s)}
+                >
+                  <h2 className="text-lg sm:text-xl font-bold">All Ingredients (Raw OCR)</h2>
+                  <span className="text-gray-500 text-sm">
+                    {showRawOCR ? "Hide" : "Show"}
+                  </span>
+                </div>
+
+                {showRawOCR && (
+                  <pre
+                    className="bg-gray-100 p-3 sm:p-4 rounded-xl max-h-64 sm:max-h-80 overflow-y-auto whitespace-pre-wrap break-words mt-2 text-sm sm:text-base"
+                    dangerouslySetInnerHTML={{
+                      __html: combinedHighlightedOCR || rawOCR,
+                    }}
+                  />
+                )}
+              </section>
             )}
 
             {/* Scan results */}

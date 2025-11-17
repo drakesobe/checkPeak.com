@@ -4,42 +4,10 @@
 import { useState } from "react";
 
 /**
- * Normalize to UPC-A (12-digit).
- * - Strips all non-digits
- * - Expands UPC-E where possible
- * - Pads/truncates to 12
- * - Recomputes check digit if length == 11
+ * Simple manual barcode checker.
+ * - Sends the raw input to /api/check (which handles all candidate logic)
+ * - Shows product name, ingredient preview, and banned/ingredient matches
  */
-function normalizeToUPCA(input) {
-  if (!input) return null;
-  let digits = String(input).replace(/\D+/g, "");
-
-  if (!digits) return null;
-
-  // Handle UPC-E (8 digits, last is check digit)
-  if (digits.length === 8 && digits.startsWith("0")) {
-    // Simplified: drop leading 0 → pad to 12
-    digits = digits.slice(0, 6) + "0000" + digits.slice(6, 7);
-    // recompute later
-  }
-
-  if (digits.length === 11) {
-    // Compute UPC-A check digit
-    const sum = digits
-      .split("")
-      .map((d, i) => parseInt(d, 10) * (i % 2 === 0 ? 3 : 1))
-      .reduce((a, b) => a + b, 0);
-    const check = (10 - (sum % 10)) % 10;
-    digits += String(check);
-  }
-
-  if (digits.length > 12) digits = digits.slice(0, 12);
-
-  if (digits.length < 12) digits = digits.padStart(12, "0");
-
-  return digits;
-}
-
 export default function BarcodeChecker({ onResult }) {
   const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,24 +15,40 @@ export default function BarcodeChecker({ onResult }) {
   const [result, setResult] = useState(null);
 
   const handleCheck = async () => {
-    if (!barcode.trim()) return;
+    const raw = barcode.trim();
+    if (!raw) return;
 
     setLoading(true);
     setError("");
     setResult(null);
 
     try {
-      const normalized = normalizeToUPCA(barcode);
-      console.log("[BarcodeChecker] Normalized UPC-A:", normalized);
+      const payload = {
+        barcode: raw,
+        isBarcodeFlow: true, // tells /api/check to treat this as a barcode path
+      };
 
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barcode: normalized }),
+        body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error(`Barcode lookup failed: ${res.status}`);
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Barcode lookup failed: ${res.status}`);
+      }
+
+      // If API explicitly says "not found"
+      if (data.found === false) {
+        setError(
+          data.message ||
+            "We couldn't find this barcode in our product databases."
+        );
+        setResult(null);
+        return;
+      }
 
       console.log("[BarcodeChecker] API response:", data);
       setResult(data);
@@ -78,123 +62,190 @@ export default function BarcodeChecker({ onResult }) {
     }
   };
 
-  return (
-    <div className="p-4 bg-white rounded-2xl shadow-md mt-4">
-      <h2 className="text-lg font-semibold mb-2">Check Barcode</h2>
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCheck();
+    }
+  };
 
-      <div className="flex items-center gap-2">
+  const ingredientsPreview = (() => {
+    if (!result) return "";
+    const text =
+      result.ingredientsText ||
+      result.ocrText ||
+      ""; // /api/check returns ingredientsText + ocrText
+    if (!text) return "";
+    const trimmed = String(text).trim();
+    if (trimmed.length <= 260) return trimmed;
+    return trimmed.slice(0, 260) + "…";
+  })();
+
+  const bannedMatches = result?.matchedBanned || [];
+  const ingredientMatches = result?.matchedIngredients || [];
+  const bannedDetails = result?.bannedDetails || null;
+
+  return (
+    <div className="p-4 bg-white rounded-2xl shadow-md mt-4 border border-blue-100">
+      <h2 className="text-lg font-semibold mb-3 text-gray-900">
+        Check Barcode (Manual)
+      </h2>
+
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <input
           type="text"
-          placeholder="Enter or scan a barcode"
+          placeholder="Enter or paste a barcode number"
           value={barcode}
           onChange={(e) => setBarcode(e.target.value)}
-          className="flex-1 border p-2 rounded-md text-sm"
+          onKeyDown={handleKeyDown}
+          className="flex-1 border border-gray-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
         />
         <button
           onClick={handleCheck}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 disabled:opacity-50"
+          disabled={loading || !barcode.trim()}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold text-white shadow-md transition ${
+            loading || !barcode.trim()
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-[#46769B] hover:bg-blue-700"
+          }`}
         >
-          {loading ? "Checking..." : "Check"}
+          {loading ? "Checking…" : "Check"}
         </button>
       </div>
 
-      {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+      {error && (
+        <p className="text-red-600 text-sm mt-2 whitespace-pre-line">
+          {error}
+        </p>
+      )}
 
-      {result && (
+      {/* Results */}
+      {result && !error && (
         <div className="mt-4 space-y-4">
-          <div>
-            <h3 className="font-bold text-gray-800">
-              Product: {result.productName || "Unknown"}
+          {/* Basic product info */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+            <h3 className="font-bold text-gray-900 text-sm sm:text-base">
+              Product:{" "}
+              <span className="font-semibold">
+                {result.productName || "Unknown product"}
+              </span>
             </h3>
-            <p className="text-sm text-gray-700 mt-1">
-              <strong>Ingredients:</strong>{" "}
-              {result.ingredients || "Not available"}
-            </p>
+            {ingredientsPreview && (
+              <p className="text-xs sm:text-sm text-gray-700 mt-2">
+                <span className="font-semibold">Ingredients (preview): </span>
+                {ingredientsPreview}
+              </p>
+            )}
           </div>
 
-          {/* Banned substances */}
-          {result.matchedBanned?.length > 0 ? (
-            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
-              <h4 className="font-semibold text-red-700 mb-1">
-                🚨 Banned Substances Found
-              </h4>
-              <ul className="list-disc pl-5 text-red-600 text-sm">
-                {result.matchedBanned.map((item) => (
-                  <li key={item.id}>
-                    <span className="font-medium">
-                      {item.fields?.["Substance Name"] ||
-                        item.fields?.name ||
-                        "Unknown"}
-                    </span>{" "}
-                    {item.matchedTerms?.length > 0 && (
-                      <span>(matched: {item.matchedTerms.join(", ")})</span>
-                    )}
-                    {item.fields?.["Banned By"] && (
-                      <div className="text-xs text-gray-600">
-                        Banned by: {item.fields["Banned By"]}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
+          {/* Summary badges */}
+          {bannedDetails && (
+            <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">
+                <span className="w-2 h-2 rounded-full bg-red-600 mr-2" />
+                Prohibited: {bannedDetails.ProhibitedCount ?? 0}
+              </span>
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                <span className="w-2 h-2 rounded-full bg-orange-500 mr-2" />
+                Limited / Out-of-Competition:{" "}
+                {bannedDetails.LimitedCount ?? 0}
+              </span>
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                <span className="w-2 h-2 rounded-full bg-blue-600 mr-2" />
+                Other / Unspecified: {bannedDetails.OtherBannedCount ?? 0}
+              </span>
             </div>
-          ) : (
-            <p className="mt-3 text-green-600 font-medium">
-              ✅ No banned substances detected
-            </p>
           )}
 
+          {/* Banned substances */}
+          <div className="mt-2">
+            {bannedMatches.length > 0 ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <h4 className="font-semibold text-red-700 mb-1 text-sm">
+                  🚨 Banned Substances Detected
+                </h4>
+                <ul className="list-disc pl-5 text-red-700 text-xs sm:text-sm space-y-1">
+                  {bannedMatches.map((item) => (
+                    <li key={item.id}>
+                      <span className="font-medium">
+                        {item.fields?.["Substance Name"] ||
+                          item.fields?.name ||
+                          "Unknown"}
+                      </span>
+                      {item.matchedTerms?.length > 0 && (
+                        <span> (matched: {item.matchedTerms.join(", ")})</span>
+                      )}
+                      {item.fields?.["Ban Type"] && (
+                        <div className="text-[11px] text-red-800 mt-0.5">
+                          Ban type: {item.fields["Ban Type"]}
+                        </div>
+                      )}
+                      {item.fields?.["Banned By"] && (
+                        <div className="text-[11px] text-gray-700">
+                          Banned by: {item.fields["Banned By"]}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="mt-2 text-green-600 font-medium text-sm">
+                ✅ No banned substances detected in this product based on our
+                current database.
+              </p>
+            )}
+          </div>
+
           {/* Matched ingredients */}
-          {result.matchedIngredients?.length > 0 ? (
-            <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <h4
-                className="font-semibold"
-                style={{ color: "#5b3fa8" }}
-              >
-                🟣 Detected Ingredients
+          {ingredientMatches.length > 0 && (
+            <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <h4 className="font-semibold text-sm" style={{ color: "#5b3fa8" }}>
+                🟣 Detected Ingredients (From Ingredient DB)
               </h4>
-              <ul className="list-disc pl-5 text-purple-700 text-sm">
-                {result.matchedIngredients.map((item) => (
+              <ul className="list-disc pl-5 text-purple-800 text-xs sm:text-sm space-y-1 mt-1">
+                {ingredientMatches.map((item) => (
                   <li key={item.id}>
                     <span className="font-medium">
                       {item.fields?.["Name"] ||
+                        item.fields?.["Ingredient Name"] ||
                         item.fields?.name ||
                         "Unknown"}
-                    </span>{" "}
+                    </span>
                     {item.matchedTerms?.length > 0 && (
-                      <span className="text-sm text-gray-700">
+                      <span className="text-xs text-gray-700">
                         {" "}
                         (matched: {item.matchedTerms.join(", ")})
                       </span>
                     )}
                     {item.fields?.Benefits && (
-                      <div className="text-xs text-gray-600">
-                        Benefits:{" "}
-                        {String(item.fields.Benefits).slice(0, 120)}
-                        {String(item.fields.Benefits).length > 120
-                          ? "…"
-                          : ""}
+                      <div className="text-[11px] text-gray-700 mt-0.5">
+                        <span className="font-medium">Benefits: </span>
+                        {String(item.fields.Benefits).slice(0, 140)}
+                        {String(item.fields.Benefits).length > 140 ? "…" : ""}
                       </div>
                     )}
                     {item.fields?.Weaknesses && (
-                      <div className="text-xs text-gray-600">
-                        Weaknesses:{" "}
-                        {String(item.fields.Weaknesses).slice(0, 120)}
-                        {String(item.fields.Weaknesses).length > 120
-                          ? "…"
-                          : ""}
+                      <div className="text-[11px] text-gray-700">
+                        <span className="font-medium">Weaknesses: </span>
+                        {String(item.fields.Weaknesses).slice(0, 140)}
+                        {String(item.fields.Weaknesses).length > 140 ? "…" : ""}
                       </div>
                     )}
                   </li>
                 ))}
               </ul>
             </div>
-          ) : result.ingredients ? (
-            <p className="text-gray-600 text-sm">
-              No known ingredients matched in our database.
-            </p>
-          ) : null}
+          )}
+
+          {ingredientMatches.length === 0 &&
+            !bannedMatches.length &&
+            ingredientsPreview && (
+              <p className="text-gray-600 text-xs sm:text-sm">
+                We parsed the ingredient text but didn&apos;t find any matches
+                in our ingredient database yet.
+              </p>
+            )}
         </div>
       )}
     </div>

@@ -1,49 +1,75 @@
 // pages/api/getScanById.js
 import Airtable from "airtable";
 
-const base = new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
-  process.env.SCANS_BASE_ID
-);
+const scansBase =
+  process.env.SCANS_API_KEY && process.env.SCANS_BASE_ID
+    ? new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
+        process.env.SCANS_BASE_ID
+      )
+    : null;
 
 export default async function handler(req, res) {
-  const { id } = req.query;
+  if (req.method !== "GET") {
+    return res
+      .status(405)
+      .json({ error: "Method not allowed. Use GET." });
+  }
 
-  if (!id) return res.status(400).json({ error: "Missing scan ID" });
+  if (!scansBase || !process.env.SCANS_TABLE_NAME) {
+    return res.status(500).json({
+      error: "Scans Airtable not configured.",
+    });
+  }
+
+  const { id } = req.query;
+  if (!id) {
+    return res.status(400).json({ error: "Missing id parameter." });
+  }
 
   try {
-    const tableName = process.env.SCANS_TABLE_NAME || "Scans";
+    const record = await scansBase(process.env.SCANS_TABLE_NAME).find(id);
 
-    const record = await base(tableName).find(id);
+    const f = record.fields || {};
+    let bannedDetails = null;
+    let prohibitedCount = 0;
+    let limitedCount = 0;
+    let otherCount = 0;
 
-    const prohibitedCount = Number(record.get("ProhibitedCount") || 0);
-    const limitedCount = Number(record.get("LimitedCount") || 0);
-    const otherCount =
-      Number(record.get("OtherBannedCount") || record.get("OtherCount") || 0);
-
-    let riskLevel = "safe";
-    if (prohibitedCount > 0) riskLevel = "prohibited";
-    else if (limitedCount > 0 || otherCount > 0) riskLevel = "limited";
+    if (f.BannedDetails) {
+      try {
+        bannedDetails =
+          typeof f.BannedDetails === "string"
+            ? JSON.parse(f.BannedDetails)
+            : f.BannedDetails;
+        prohibitedCount = bannedDetails.ProhibitedCount || 0;
+        limitedCount = bannedDetails.LimitedCount || 0;
+        otherCount = bannedDetails.OtherBannedCount || 0;
+      } catch {
+        // ignore bad JSON
+      }
+    }
 
     const scan = {
       id: record.id,
-      name: record.get("ScanName") || "Unnamed Scan",
-      date: record.get("ScanDate") || null,
-      summary:
-        record.get("ResultsSummary") ||
-        record.get("ResultSummary") ||
-        "",
-      stackDetails: record.get("StackDetails") || "",
+      name: f.ScanName || f.Name || null,
+      date: f.ScanDate || null,
+      productName: f.ProductName || null,
+      stackDetails: f.StackDetails || "",
+      resultsSummary: f.ResultsSummary || "",
       prohibitedCount,
       limitedCount,
       otherCount,
-      riskLevel,
     };
 
-    res.status(200).json({ scan });
-  } catch (error) {
-    console.error("❌ getScanById error:", error);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch scan from Airtable" });
+    return res.status(200).json({ scan });
+  } catch (err) {
+    console.error("[/api/getScanById] error:", err);
+    if (err?.statusCode === 404) {
+      return res.status(404).json({ error: "Scan not found." });
+    }
+    return res.status(500).json({
+      error: "Failed to fetch scan.",
+      details: String(err?.message || err),
+    });
   }
 }

@@ -283,30 +283,6 @@ export default function OCRPage() {
               <p className="text-red-500 mt-2 text-center text-sm sm:text-base">{error}</p>
             )}
 
-            {/* Raw OCR */}
-            {rawOCR && (
-              <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
-                <div
-                  className="cursor-pointer flex justify-between items-center"
-                  onClick={() => setShowRawOCR((s) => !s)}
-                >
-                  <h2 className="text-lg sm:text-xl font-bold">All Ingredients (Raw OCR)</h2>
-                  <span className="text-gray-500 text-sm">
-                    {showRawOCR ? "Hide" : "Show"}
-                  </span>
-                </div>
-
-                {showRawOCR && (
-                  <pre
-                    className="bg-gray-100 p-3 sm:p-4 rounded-xl max-h-64 sm:max-h-80 overflow-y-auto whitespace-pre-wrap break-words mt-2 text-sm sm:text-base"
-                    dangerouslySetInnerHTML={{
-                      __html: combinedHighlightedOCR || rawOCR,
-                    }}
-                  />
-                )}
-              </section>
-            )}
-
             {/* Scan results */}
             <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
               <OCRScanResults

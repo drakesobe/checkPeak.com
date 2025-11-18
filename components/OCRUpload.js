@@ -1,3 +1,4 @@
+// components/OCRUpload.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -6,7 +7,8 @@ import ProgressBar from "./ProgressBar";
 /**
  * OCRUpload
  * - full uploader + OCR pipeline (resize, preprocess, Tesseract)
- * - calls `onScan(text, { avgConfidence })` for each scanned file
+ * - calls `onScan(text)` for each scanned file
+ * - hardened for mobile (iPhone HEIC handling, better errors)
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -21,7 +23,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const canvasRefs = useRef([]);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-  const MAX_DIM = 2400; // higher resolution for small text
+  const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"];
 
   // Animate dots during loading
   useEffect(() => {
@@ -32,23 +34,55 @@ export default function OCRUpload({ multiple = false, onScan }) {
     return () => clearInterval(interval);
   }, [loading]);
 
+  // Cleanup blob URLs
+  useEffect(() => {
+    return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
+  }, [previewURLs]);
+
+  const detectHeic = (file) => {
+    const type = (file.type || "").toLowerCase();
+    const name = (file.name || "").toLowerCase();
+    return (
+      type.includes("heic") ||
+      type.includes("heif") ||
+      name.endsWith(".heic") ||
+      name.endsWith(".heif")
+    );
+  };
+
   const validateFile = (file) => {
-    if (!file.type.startsWith("image/")) {
-      setError("Only image files are allowed.");
-      return false;
-    }
+    // Size check
     if (file.size > MAX_FILE_SIZE) {
-      setError("File too large. Max 5 MB.");
+      setError("File too large. Max 5 MB. Try zooming in on just the label.");
       return false;
     }
+
+    // Explicitly handle iPhone HEIC
+    if (detectHeic(file)) {
+      setError(
+        "This photo is in HEIC format, which browsers can't reliably scan yet. " +
+          "On iPhone, either:\n\n" +
+          "• Take a screenshot of the label and upload the screenshot, OR\n" +
+          "• Go to Settings → Camera → Formats → select “Most Compatible”, then retake the photo."
+      );
+      return false;
+    }
+
+    // Allow only JPEG/PNG
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setError("Unsupported image type. Please upload a JPG or PNG photo of the label.");
+      return false;
+    }
+
     setError("");
     return true;
   };
 
   const handleFiles = (selectedFiles) => {
-    const validFiles = Array.from(selectedFiles).filter(validateFile);
+    const validFiles = Array.from(selectedFiles || []).filter(validateFile);
     if (!validFiles.length) return;
 
+    // Reset state for new batch
     setFiles(validFiles);
     setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
     setOcrTexts(new Array(validFiles.length).fill(""));
@@ -72,37 +106,56 @@ export default function OCRUpload({ multiple = false, onScan }) {
     handleFiles(e.dataTransfer.files);
   };
 
-  useEffect(() => {
-    return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
-  }, [previewURLs]);
-
   const resizeImage = (file) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       const img = new Image();
       const reader = new FileReader();
-      reader.onload = (e) => (img.src = e.target.result);
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) =>
-            resolve(
-              new File([blob], file.name, {
-                type: file.type,
-              })
-            ),
-          file.type
-        );
+
+      const fail = (err) => {
+        console.warn("Image load/resize failed:", err);
+        reject(err || new Error("Failed to load image for OCR."));
       };
+
+      reader.onload = (e) => {
+        img.src = e.target.result;
+      };
+      reader.onerror = fail;
+      img.onerror = fail;
+
+      img.onload = () => {
+        try {
+          const MAX_DIM = 800;
+          let { width, height } = img;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Convert back to File so the rest of pipeline is unchanged
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return fail("Canvas toBlob returned null.");
+              resolve(
+                new File([blob], file.name, {
+                  type: "image/jpeg",
+                })
+              );
+            },
+            "image/jpeg",
+            0.9
+          );
+        } catch (err) {
+          fail(err);
+        }
+      };
+
       reader.readAsDataURL(file);
     });
 
@@ -112,10 +165,10 @@ export default function OCRUpload({ multiple = false, onScan }) {
     canvas.height = img.naturalHeight;
     ctx.drawImage(img, 0, 0);
 
-    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // --- grayscale + dynamic contrast stretch ---
+    // Contrast stretch in grayscale
     let min = 255,
       max = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -129,52 +182,9 @@ export default function OCRUpload({ multiple = false, onScan }) {
       gray = Math.max(0, Math.min(255, (gray - min) * scale));
       data[i] = data[i + 1] = data[i + 2] = gray;
     }
-
-    // --- light sharpening to crisp text edges ---
-    const applySharpen = () => {
-      const copy = new Uint8ClampedArray(data);
-      const width = canvas.width;
-      const height = canvas.height;
-      const kernel = [
-        0, -1, 0,
-        -1, 5, -1,
-        0, -1, 0,
-      ];
-      const kSize = 3;
-      const half = Math.floor(kSize / 2);
-
-      for (let y = half; y < height - half; y++) {
-        for (let x = half; x < width - half; x++) {
-          let r = 0,
-            g = 0,
-            b = 0;
-          let kIndex = 0;
-
-          for (let ky = -half; ky <= half; ky++) {
-            for (let kx = -half; kx <= half; kx++) {
-              const px = x + kx;
-              const py = y + ky;
-              const pIdx = (py * width + px) * 4;
-              const w = kernel[kIndex++];
-              r += copy[pIdx] * w;
-              g += copy[pIdx + 1] * w;
-              b += copy[pIdx + 2] * w;
-            }
-          }
-
-          const idx = (y * width + x) * 4;
-          data[idx] = Math.max(0, Math.min(255, r));
-          data[idx + 1] = Math.max(0, Math.min(255, g));
-          data[idx + 2] = Math.max(0, Math.min(255, b));
-          // alpha unchanged
-        }
-      }
-    };
-
-    applySharpen();
     ctx.putImageData(imageData, 0, 0);
 
-    // --- auto-crop dark text block, then scale up ---
+    // Auto-crop darker region (text area) + upscale slightly
     let top = canvas.height,
       bottom = 0,
       left = canvas.width,
@@ -190,7 +200,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
         }
       }
     }
-    // If we didn't find a clear block, just return current canvas
     if (right - left < 20 || bottom - top < 20) return canvas;
 
     const scaleFactor = 3;
@@ -198,8 +207,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     croppedCanvas.width = (right - left) * scaleFactor;
     croppedCanvas.height = (bottom - top) * scaleFactor;
     const cctx = croppedCanvas.getContext("2d");
-    cctx.imageSmoothingEnabled = true;
-    cctx.imageSmoothingQuality = "high";
     cctx.drawImage(
       canvas,
       left,
@@ -215,22 +222,43 @@ export default function OCRUpload({ multiple = false, onScan }) {
   };
 
   const handleScan = async () => {
-    if (!files.length) return;
+    if (!files.length) {
+      setError("Please add a label photo first.");
+      return;
+    }
     setLoading(true);
+    setError("");
     setOcrTexts(new Array(files.length).fill(""));
 
     try {
       const Tesseract = (await import("tesseract.js")).default;
-      const resizedFiles = await Promise.all(files.map(resizeImage));
+      const resizedFiles = await Promise.all(
+        files.map((file) =>
+          resizeImage(file).catch((err) => {
+            console.warn("Resize failed for file:", file.name, err);
+            throw new Error(
+              `We couldn't process the image "${file.name}". Try cropping closer to the label or taking a screenshot and uploading that.`
+            );
+          })
+        )
+      );
 
       for (let i = 0; i < resizedFiles.length; i++) {
         const file = resizedFiles[i];
-
-        // load image
         const img = new Image();
         const reader = new FileReader();
-        const imgLoaded = new Promise((res) => (img.onload = res));
-        reader.onload = (e) => (img.src = e.target.result);
+
+        const imgLoaded = new Promise((res, rej) => {
+          img.onload = res;
+          img.onerror = (err) => rej(err || new Error("Failed to load image."));
+        });
+
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+        reader.onerror = (err) =>
+          console.warn("FileReader error during OCR:", err);
+
         reader.readAsDataURL(file);
         await imgLoaded;
 
@@ -238,35 +266,25 @@ export default function OCRUpload({ multiple = false, onScan }) {
         canvasRefs.current[i] = canvas;
 
         const preprocessed = await preprocessImage(img, canvas);
-        const dataUrl = preprocessed.toDataURL("image/jpeg", 0.9);
 
-        const result = await Tesseract.recognize(dataUrl, "eng", {
+        const result = await Tesseract.recognize(preprocessed, "eng", {
           logger: (m) => console.log("OCR progress:", m),
           tessedit_char_whitelist:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
-          psm: 6, // dense block of text
-          preserve_interword_spaces: 1,
-          user_defined_dpi: 300,
+          oem: 1,
+          psm: 6,
         });
 
-        const { text, words, confidence } = result.data || {};
-        const cleanText = text || "";
-
-        const avgConfidence =
-          words && words.length
-            ? words.reduce((sum, w) => sum + (w.confidence || 0), 0) /
-              words.length
-            : confidence || 0;
-
+        const text = result.data.text || "";
         setOcrTexts((prev) => {
           const updated = [...prev];
-          updated[i] = cleanText;
+          updated[i] = text;
           return updated;
         });
 
         if (typeof onScan === "function") {
           try {
-            await onScan(cleanText, { avgConfidence });
+            await onScan(text);
           } catch (err) {
             console.error("onScan callback error:", err);
           }
@@ -274,7 +292,10 @@ export default function OCRUpload({ multiple = false, onScan }) {
       }
     } catch (err) {
       console.error("OCR failed:", err);
-      setError("OCR failed. Please try again.");
+      setError(
+        err?.message ||
+          "OCR failed on this photo. Try zooming in on the ingredients panel or taking a screenshot and uploading that."
+      );
     } finally {
       setLoading(false);
     }
@@ -288,6 +309,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
   return (
     <div className="mt-6 font-sans space-y-4">
+      {/* Upload box */}
       <label
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
@@ -301,45 +323,62 @@ export default function OCRUpload({ multiple = false, onScan }) {
         <span className="text-gray-600 text-center font-medium">
           {files.length
             ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to choose a photo or take one (camera or gallery)"}
+            : "Tap to choose a photo or take one (JPG/PNG only)"}
+        </span>
+        <span className="mt-1 text-xs text-gray-500 text-center">
+          Tip: On iPhone, screenshot the label or set Camera → Formats → “Most
+          Compatible” for best results.
         </span>
         <input
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png"
           multiple={multiple}
           onChange={handleFileChange}
           className="hidden"
+          capture="environment"
         />
       </label>
 
+      {/* File previews */}
       {files.map((file, idx) => (
         <div
           key={idx}
           className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
         >
-          <span className="font-medium">{file.name}</span>
+          <span className="font-medium text-sm sm:text-base">{file.name}</span>
           <input
             type="text"
             placeholder="Athlete or Team Name (optional)"
             value={athleteNames[idx]}
             onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
           />
           <img
             src={previewURLs[idx]}
             alt="Preview"
-            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1"
+            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1 w-full sm:w-auto bg-white"
             loading="lazy"
           />
         </div>
       ))}
 
-      {error && <p className="text-red-500 text-center">{error}</p>}
+      {/* Inline tip row */}
+      <div className="flex items-center justify-between max-w-3xl mx-auto">
+        <p className="text-xs sm:text-sm text-gray-500">
+          Aim for a clear, close shot of just the ingredients panel.
+        </p>
+      </div>
 
-      {loading && files.length > 0 && (
+      {error && (
+        <p className="whitespace-pre-line text-red-500 text-center text-sm mt-1">
+          {error}
+        </p>
+      )}
+
+      {loading && (
         <ProgressBar
           progress={Math.round(
-            (ocrTexts.filter((r) => r).length / files.length) * 100
+            (ocrTexts.filter((r) => r).length / (files.length || 1)) * 100
           )}
         />
       )}
@@ -347,7 +386,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
       <button
         onClick={handleScan}
         disabled={loading || !files.length}
-        className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
+        className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
           loading || !files.length
             ? "bg-gray-400 cursor-not-allowed"
             : "bg-[#46769B] hover:bg-blue-700"

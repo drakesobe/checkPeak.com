@@ -1,4 +1,4 @@
-// pages/api/getScanById.js
+// pages/api/getSharedScan.js
 import Airtable from "airtable";
 
 const scansBase =
@@ -21,15 +21,30 @@ export default async function handler(req, res) {
     });
   }
 
-  const { id } = req.query;
-  if (!id) {
-    return res.status(400).json({ error: "Missing id parameter." });
+  const { token } = req.query;
+  if (!token) {
+    return res.status(400).json({ error: "Missing token parameter." });
   }
 
   try {
-    const record = await scansBase(process.env.SCANS_TABLE_NAME).find(id);
+    const records = await scansBase(process.env.SCANS_TABLE_NAME)
+      .select({
+        maxRecords: 1,
+        filterByFormula: `{ShareToken} = '${token}'`,
+      })
+      .firstPage();
 
+    if (!records || !records.length) {
+      return res.status(404).json({ error: "Shared scan not found." });
+    }
+
+    const record = records[0];
     const f = record.fields || {};
+
+    if (!f.ShareEnabled) {
+      return res.status(403).json({ error: "Sharing disabled for this scan." });
+    }
+
     let bannedDetails = null;
     let prohibitedCount = 0;
     let limitedCount = 0;
@@ -45,7 +60,7 @@ export default async function handler(req, res) {
         limitedCount = bannedDetails.LimitedCount || 0;
         otherCount = bannedDetails.OtherBannedCount || 0;
       } catch {
-        // ignore bad JSON
+        // ignore
       }
     }
 
@@ -55,23 +70,16 @@ export default async function handler(req, res) {
       date: f.ScanDate || null,
       productName: f.ProductName || null,
       stackDetails: f.StackDetails || "",
-      resultsSummary: f.ResultsSummary || "",
       prohibitedCount,
       limitedCount,
       otherCount,
-      shareToken: f.ShareToken || null,
-      shareEnabled: Boolean(f.ShareEnabled),
-      userEmail: f.UserEmail || null, // used for permission checks client-side
     };
 
     return res.status(200).json({ scan });
   } catch (err) {
-    console.error("[/api/getScanById] error:", err);
-    if (err?.statusCode === 404) {
-      return res.status(404).json({ error: "Scan not found." });
-    }
+    console.error("[/api/getSharedScan] error:", err);
     return res.status(500).json({
-      error: "Failed to fetch scan.",
+      error: "Failed to fetch shared scan.",
       details: String(err?.message || err),
     });
   }

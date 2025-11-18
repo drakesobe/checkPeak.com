@@ -128,7 +128,6 @@ export default function OCRScanResults({
   }, [ingredientRecords, bannedRecords]);
 
   // ---------- Table highlighting (only if term appears in OCR) ----------
-  // Same behavior as before: highlight a cell term when OCR text contains that term/synonym
   const highlightInTableIfOCRHas = (ocr, text = "", color = "") => {
     const raw = String(text ?? "");
     if (!raw) return "";
@@ -171,9 +170,7 @@ export default function OCRScanResults({
   };
 
   // ---------- OCR text highlighting (reflects table contents) ----------
-  // Build a unified term → color map with priority (banned > ingredient).
   const ocrTermsSorted = useMemo(() => {
-    // Map: termLower -> { color, priority }
     const termMap = new Map();
 
     const upsert = (termRaw, color, priority) => {
@@ -186,7 +183,7 @@ export default function OCRScanResults({
       }
     };
 
-    // BANNED: names + synonyms, with per-ban color and priority
+    // BANNED
     bannedRecords.forEach((rec) => {
       const banType = (rec.banType || "").trim();
       const entry = banTypeColors.find((b) => b.label === banType);
@@ -200,7 +197,7 @@ export default function OCRScanResults({
         .forEach((s) => upsert(s, color, prio));
     });
 
-    // INGREDIENTS (non-banned): names + synonyms, lower priority
+    // INGREDIENTS
     ingredientRecords.forEach((rec) => {
       upsert(rec.name, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY);
       (rec.synonyms || "")
@@ -210,7 +207,6 @@ export default function OCRScanResults({
         .forEach((s) => upsert(s, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY));
     });
 
-    // Sort by priority desc, then by length desc (avoid partials beating longer terms)
     const entries = Array.from(termMap.entries()).map(([key, v]) => ({
       key,
       color: v.color,
@@ -242,7 +238,7 @@ export default function OCRScanResults({
           const placeholder = `@@OCRHL_${idx++}@@`;
           replacements.push({
             placeholder,
-            match: m, // keep original case
+            match: m,
             color,
           });
           return placeholder;
@@ -252,7 +248,6 @@ export default function OCRScanResults({
       }
     });
 
-    // Escape entire text, then swap placeholders for colored spans
     let escaped = escapeHtml(working);
     replacements.forEach(({ placeholder, match, color }) => {
       const span =
@@ -278,17 +273,17 @@ export default function OCRScanResults({
   const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative">
+    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative text-gray-900">
       <section>
         {/* ======= OCR TEXT (collapsed by default) ======= */}
         <div className="mb-2">
           <button
             onClick={() => setOcrOpen((s) => !s)}
             aria-expanded={ocrOpen}
-            aria-label={collapseLabel(ocrOpen, "Base Label Text")}
+            aria-label={collapseLabel(ocrOpen, "Scanned Text (OCR)")}
             className={`section-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
           >
-            <span className="section-label">Base Label Text</span>
+            <span className="section-label">Scanned Text (OCR)</span>
             <span className="badge">{ocrMatchCount}</span>
             <span className="caret">{ocrOpen ? "▾" : "▸"}</span>
           </button>
@@ -301,7 +296,7 @@ export default function OCRScanResults({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
-                className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm leading-relaxed"
+                className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm leading-relaxed text-gray-900"
               >
                 {ocrText ? (
                   <div dangerouslySetInnerHTML={{ __html: ocrHTML }} />
@@ -354,7 +349,7 @@ export default function OCRScanResults({
                 className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
               >
                 {filteredBanned?.length > 0 ? (
-                  <table className="min-w-full w-full text-xs sm:text-sm">
+                  <table className="min-w-full w-full text-xs sm:text-sm text-gray-900">
                     <thead className="bg-[#46769B] text-white sticky top-0 z-10">
                       <tr>
                         {[
@@ -389,19 +384,19 @@ export default function OCRScanResults({
                         return (
                           <motion.tr
                             key={rec.id}
-                            className="hover:bg-gray-50 transition"
+                            className="hover:bg-gray-50 transition text-gray-900"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                           >
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(ocrText, rec.name, c),
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(
                                   ocrText,
@@ -411,7 +406,7 @@ export default function OCRScanResults({
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(
                                   ocrText,
@@ -420,7 +415,7 @@ export default function OCRScanResults({
                                 ),
                               }}
                             />
-                            <td className="px-3 py-2 align-top">
+                            <td className="px-3 py-2 align-top text-gray-900">
                               <span
                                 className="px-2 py-1 rounded-full text-xs font-medium"
                                 style={{
@@ -431,21 +426,23 @@ export default function OCRScanResults({
                                 {banType || "—"}
                               </span>
                             </td>
-                            <td className="px-3 py-2 align-top">{rec.dosageLimit || ""}</td>
+                            <td className="px-3 py-2 align-top text-gray-900">
+                              {rec.dosageLimit || ""}
+                            </td>
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(ocrText, rec.notes, c),
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(ocrText, rec.source, c),
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(
                                   ocrText,
@@ -455,7 +452,7 @@ export default function OCRScanResults({
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(
                                   ocrText,
@@ -465,7 +462,7 @@ export default function OCRScanResults({
                               }}
                             />
                             <td
-                              className="px-3 py-2 align-top"
+                              className="px-3 py-2 align-top text-gray-900"
                               dangerouslySetInnerHTML={{
                                 __html: highlightInTableIfOCRHas(
                                   ocrText,
@@ -480,7 +477,9 @@ export default function OCRScanResults({
                     </tbody>
                   </table>
                 ) : (
-                  <p className="italic text-gray-500 p-4">No banned substances match your scan.</p>
+                  <p className="italic text-gray-500 p-4">
+                    No banned substances match your scan.
+                  </p>
                 )}
               </motion.div>
             )}
@@ -499,7 +498,9 @@ export default function OCRScanResults({
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
                 aria-label={collapseLabel(ingredientsOpen, "Ingredients (non-banned)")}
-                className={`section-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
+                className={`section-toggle-btn ${
+                  ingredientsOpen ? "active" : ""
+                } w-full sm:w-auto`}
               >
                 <span className="section-label">Ingredients (non-banned)</span>
                 <span className="badge">{ingredientRecords.length}</span>
@@ -524,7 +525,7 @@ export default function OCRScanResults({
                 className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
               >
                 {filteredIngredients?.length > 0 ? (
-                  <table className="min-w-full w-full text-xs sm:text-sm">
+                  <table className="min-w-full w-full text-xs sm:text-sm text-gray-900">
                     <thead className="bg-[#334E63] text-white sticky top-0 z-10">
                       <tr>
                         {[
@@ -549,13 +550,13 @@ export default function OCRScanResults({
                       {filteredIngredients.map((rec) => (
                         <motion.tr
                           key={rec.id}
-                          className="hover:bg-gray-50 transition"
+                          className="hover:bg-gray-50 transition text-gray-900"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                         >
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -565,7 +566,7 @@ export default function OCRScanResults({
                             }}
                           />
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -575,7 +576,7 @@ export default function OCRScanResults({
                             }}
                           />
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -585,7 +586,7 @@ export default function OCRScanResults({
                             }}
                           />
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -595,7 +596,7 @@ export default function OCRScanResults({
                             }}
                           />
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -605,7 +606,7 @@ export default function OCRScanResults({
                             }}
                           />
                           <td
-                            className="px-3 py-2 align-top"
+                            className="px-3 py-2 align-top text-gray-900"
                             dangerouslySetInnerHTML={{
                               __html: highlightInTableIfOCRHas(
                                 ocrText,
@@ -619,7 +620,9 @@ export default function OCRScanResults({
                     </tbody>
                   </table>
                 ) : (
-                  <p className="italic text-gray-500 p-4">No ingredient-only results found for this scan.</p>
+                  <p className="italic text-gray-500 p-4">
+                    No ingredient-only results found for this scan.
+                  </p>
                 )}
               </motion.div>
             )}
@@ -653,7 +656,7 @@ export default function OCRScanResults({
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition text-sm whitespace-nowrap ${
-                        active ? "shadow-md bg-gray-800 text-white" : "bg-white"
+                        active ? "shadow-md bg-gray-800 text-white" : "bg-white text-gray-900"
                       }`}
                       style={{ borderColor: active ? "#444" : "transparent" }}
                     >
@@ -662,7 +665,9 @@ export default function OCRScanResults({
                         style={{ backgroundColor: t.color, display: "inline-block" }}
                       />
                       <span className="font-medium">{t.label}</span>
-                      <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
+                      <span className="text-gray-500">
+                        ({countsByBanType[t.label] || 0})
+                      </span>
                     </button>
                   );
                 })}
@@ -729,12 +734,10 @@ export default function OCRScanResults({
           background-color: rgba(70, 118, 155, 0.08); /* subtle brand tint */
         }
 
-        /* Keep table header on top when horizontally scrolling */
         thead.sticky {
           z-index: 20;
         }
 
-        /* Mobile fine-tuning without touching desktop look */
         @media (max-width: 640px) {
           .section-toggle-btn {
             padding: 10px 12px;

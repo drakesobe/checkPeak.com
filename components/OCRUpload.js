@@ -9,6 +9,7 @@ import ProgressBar from "./ProgressBar";
  * - full uploader + OCR pipeline (resize, preprocess, Tesseract)
  * - calls `onScan(text)` for each scanned file
  * - hardened for mobile (iPhone HEIC handling, better errors)
+ * - improved UX: explicit Camera vs Photo Library choice
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -19,8 +20,12 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const [error, setError] = useState("");
   const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [showChoiceModal, setShowChoiceModal] = useState(false);
 
   const canvasRefs = useRef([]);
+
+  const cameraInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"];
@@ -51,7 +56,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
   };
 
   const validateFile = (file) => {
-    // Size check
     if (file.size > MAX_FILE_SIZE) {
       setError("File too large. Max 5 MB. Try zooming in on just the label.");
       return false;
@@ -60,15 +64,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
     // Explicitly handle iPhone HEIC
     if (detectHeic(file)) {
       setError(
-        "This photo is in HEIC format, which browsers can't reliably scan yet. " +
-          "On iPhone, either:\n\n" +
-          "• Take a screenshot of the label and upload the screenshot, OR\n" +
+        "This photo is in HEIC format, which browsers can't reliably scan yet.\n\n" +
+          "On iPhone, either:\n" +
+          "• Take a screenshot of the label and upload the screenshot, or\n" +
           "• Go to Settings → Camera → Formats → select “Most Compatible”, then retake the photo."
       );
       return false;
     }
 
-    // Allow only JPEG/PNG
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       setError("Unsupported image type. Please upload a JPG or PNG photo of the label.");
       return false;
@@ -82,7 +85,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
     const validFiles = Array.from(selectedFiles || []).filter(validateFile);
     if (!validFiles.length) return;
 
-    // Reset state for new batch
     setFiles(validFiles);
     setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
     setOcrTexts(new Array(validFiles.length).fill(""));
@@ -90,7 +92,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
     canvasRefs.current = new Array(validFiles.length).fill(null);
   };
 
-  const handleFileChange = (e) => handleFiles(e.target.files);
+  const handleCameraInputChange = (e) => handleFiles(e.target.files);
+  const handleFileInputChange = (e) => handleFiles(e.target.files);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -138,7 +141,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Convert back to File so the rest of pipeline is unchanged
           canvas.toBlob(
             (blob) => {
               if (!blob) return fail("Canvas toBlob returned null.");
@@ -250,7 +252,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
         const imgLoaded = new Promise((res, rej) => {
           img.onload = res;
-          img.onerror = (err) => rej(err || new Error("Failed to load image."));
+          img.onerror = (err) =>
+            rej(err || new Error("Failed to load image."));
         });
 
         reader.onload = (e) => {
@@ -309,43 +312,102 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
   return (
     <div className="mt-6 font-sans space-y-4">
-      {/* Upload box */}
-      <label
+      {/* Upload card */}
+      <div
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
             ? "border-blue-400 bg-blue-50"
             : "border-gray-300 bg-gray-50 hover:bg-gray-100"
         }`}
+        onClick={() => setShowChoiceModal(true)}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <span className="text-gray-600 text-center font-medium">
+        <span className="text-gray-700 text-center font-semibold">
           {files.length
             ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to choose a photo or take one (JPG/PNG only)"}
+            : "Tap to add a label photo"}
         </span>
         <span className="mt-1 text-xs text-gray-500 text-center">
-          Tip: On iPhone, screenshot the label or set Camera → Formats → “Most
-          Compatible” for best results.
+          Use your camera or photo library. JPG/PNG only for best OCR results.
         </span>
-        <input
-          type="file"
-          accept="image/jpeg,image/png"
-          multiple={multiple}
-          onChange={handleFileChange}
-          className="hidden"
-          capture="environment"
-        />
-      </label>
+      </div>
 
-      {/* File previews */}
+      {/* Hidden inputs */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        capture="environment"
+        multiple={multiple}
+        className="hidden"
+        onChange={handleCameraInputChange}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        multiple={multiple}
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Choice modal: Camera vs Photo Library */}
+      {showChoiceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Add Label Photo
+              </h2>
+              <button
+                onClick={() => setShowChoiceModal(false)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-sm text-gray-600">
+              Choose how you want to add your nutrition label.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setShowChoiceModal(false);
+                  cameraInputRef.current?.click();
+                }}
+                className="w-full py-3 rounded-xl bg-[#46769B] text-white font-medium hover:bg-[#365b7a] transition shadow-sm"
+              >
+                Use Camera
+              </button>
+              <button
+                onClick={() => {
+                  setShowChoiceModal(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-50 transition"
+              >
+                Choose from Photos / Files
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              iPhone tip: If photos fail to scan, take a screenshot of the label
+              and upload the screenshot instead.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Previews */}
       {files.map((file, idx) => (
         <div
           key={idx}
           className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
         >
-          <span className="font-medium text-sm sm:text-base">{file.name}</span>
+          <span className="font-medium text-sm sm:text-base">
+            {file.name}
+          </span>
           <input
             type="text"
             placeholder="Athlete or Team Name (optional)"
@@ -362,7 +424,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
         </div>
       ))}
 
-      {/* Inline tip row */}
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <p className="text-xs sm:text-sm text-gray-500">
           Aim for a clear, close shot of just the ingredients panel.

@@ -2,24 +2,18 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import {
-  BrowserMultiFormatReader,
-  BarcodeFormat,
-  DecodeHintType,
-} from "@zxing/library";
+import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { X, Check } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 
 // Lazy load live scanner
-const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
-  ssr: false,
-});
+const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), { ssr: false });
 
-// Tiny beep (short 8-bit-ish click) — replace if you want a different sound
+// Tiny beep (placeholder) — swap for a real sound if desired
 const BEEP_SRC =
-  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="; // extremely short silent-ish placeholder
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
 export default function BarcodeUpload({
   multiple = false,
@@ -36,10 +30,10 @@ export default function BarcodeUpload({
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
-  const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
+  const [showChoiceModal, setShowChoiceModal] = useState(false);
 
   const fileInputRef = useRef(null);
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -47,7 +41,7 @@ export default function BarcodeUpload({
   // ZXing reader reuse
   const codeReaderRef = useRef(null);
 
-  // OCR worker reuse
+  // OCR worker reuse (for digits-only fallback)
   const ocrWorkerRef = useRef(null);
   const ocrInitializingRef = useRef(false);
 
@@ -55,8 +49,7 @@ export default function BarcodeUpload({
   const audioRef = useRef(null);
 
   useEffect(() => {
-    audioRef.current =
-      typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
+    audioRef.current = typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
   }, []);
 
   // animate dots while loading
@@ -69,7 +62,7 @@ export default function BarcodeUpload({
     return () => clearInterval(interval);
   }, [loading]);
 
-  // cleanup object URLs
+  // cleanup objectURLs
   useEffect(() => {
     return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
   }, [previewURLs]);
@@ -142,6 +135,7 @@ export default function BarcodeUpload({
   };
 
   const handleFileInputChange = (e) => handleFiles(e.target.files);
+
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -155,17 +149,17 @@ export default function BarcodeUpload({
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
   };
+
   const handleNameChange = (idx, value) => {
     const names = [...athleteNames];
     names[idx] = value;
     setAthleteNames(names);
   };
 
-  // --- OCR worker init (reused) ---
+  // --- OCR worker init (digits-only) ---
   const initOCRWorker = useCallback(async () => {
     if (ocrWorkerRef.current) return ocrWorkerRef.current;
     if (ocrInitializingRef.current) {
-      // another init in progress -> wait
       while (ocrInitializingRef.current && !ocrWorkerRef.current) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, 100));
@@ -206,133 +200,138 @@ export default function BarcodeUpload({
     }
   }
 
-  // ---- Image -> ZXing decode (fixed & iOS-safe) ----
+  // robust image-file barcode decoding with preprocessing, rotations, and OCR fallback
   async function decodeBarcodeFromFile(file) {
-    // 1) File -> data URL
-    const reader = new FileReader();
-    const dataUrl = await new Promise((resolve, reject) => {
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    // 2) Data URL -> Image
-    const img = await new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = dataUrl;
-    });
-
-    // 3) Draw to canvas (for scaling + contrast + rotation)
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-
-    const MAX_SIDE = 1400;
-    const longestSide = Math.max(img.width, img.height);
-    const scale = longestSide > MAX_SIDE ? MAX_SIDE / longestSide : 1;
-
-    const rotations = [0, 90, 180, 270];
-    let lastErr = null;
-
-    const readerZX = codeReaderRef.current || new BrowserMultiFormatReader();
-
-    // If preferred formats provided, we prepare hints (future-friendly)
-    if (preferredFormats && Array.isArray(preferredFormats)) {
+    try {
+      // Use createImageBitmap (fast) with fallback
+      let bitmap;
       try {
-        const formats = mapFormats(preferredFormats);
-        if (formats.length) {
-          const hints = new Map();
-          hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-          // Some builds allow passing hints via constructor — we're leaving this
-          // here as a hook if you want to re-instantiate with hints later.
-        }
-      } catch (e) {
-        // non-fatal
+        bitmap = await createImageBitmap(file);
+      } catch (err) {
+        const dataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(file);
+        });
+        bitmap = await new Promise((res, rej) => {
+          const img = new Image();
+          img.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = img.width;
+            c.height = img.height;
+            const ctx = c.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            createImageBitmap(c).then(res).catch(rej);
+          };
+          img.onerror = rej;
+          img.src = dataUrl;
+        });
       }
-    }
 
-    for (const rot of rotations) {
-      try {
-        // set canvas size for this rotation
-        if (rot % 180 === 0) {
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-        } else {
-          canvas.width = Math.round(img.height * scale);
-          canvas.height = Math.round(img.width * scale);
-        }
+      const reader = codeReaderRef.current || new BrowserMultiFormatReader();
 
-        ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate((rot * Math.PI) / 180);
-        ctx.drawImage(
-          img,
-          -(img.width * scale) / 2,
-          -(img.height * scale) / 2,
-          img.width * scale,
-          img.height * scale
-        );
-        ctx.restore();
-
-        // light grayscale + contrast boost
+      if (preferredFormats && Array.isArray(preferredFormats)) {
         try {
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const d = imageData.data;
+          const formats = mapFormats(preferredFormats);
+          if (formats.length) {
+            const hints = new Map();
+            hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+            // you could rebuild reader with hints here if needed
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const MAX_SIDE = 1600;
+      const rotations = [0, 90, 180, 270];
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+
+      const preprocessCanvas = () => {
+        try {
+          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = id.data;
           const contrast = 1.25;
           for (let i = 0; i < d.length; i += 4) {
-            const r = d[i];
-            const g = d[i + 1];
-            const b = d[i + 2];
+            const r = d[i],
+              g = d[i + 1],
+              b = d[i + 2];
             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
             let v = (gray - 128) * contrast + 128;
             v = Math.max(0, Math.min(255, v));
             d[i] = d[i + 1] = d[i + 2] = v;
           }
-          ctx.putImageData(imageData, 0, 0);
-        } catch (e) {
-          // not fatal
-        }
+          ctx.putImageData(id, 0, 0);
+        } catch (_) {}
+      };
 
-        // 4) Canvas -> temp Image -> ZXing decode
-        const rotatedDataUrl = canvas.toDataURL("image/png");
-        const tmpImg = await new Promise((resolve, reject) => {
-          const el = new Image();
-          el.onload = () => resolve(el);
-          el.onerror = reject;
-          el.src = rotatedDataUrl;
-        });
+      let lastErr = null;
 
-        // eslint-disable-next-line no-await-in-loop
-        const result = await readerZX.decodeFromImageElement(tmpImg);
-
-        const text =
-          (result && result.getText && result.getText()) ||
-          result?.text ||
-          "";
-
+      for (const rot of rotations) {
         try {
-          readerZX.reset?.();
-        } catch (e) {}
+          if (rot % 180 === 0) {
+            canvas.width = Math.round(bitmap.width * scale);
+            canvas.height = Math.round(bitmap.height * scale);
+          } else {
+            canvas.width = Math.round(bitmap.height * scale);
+            canvas.height = Math.round(bitmap.width * scale);
+          }
 
-        if (text && /\d/.test(text)) {
-          return text;
+          ctx.save();
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((rot * Math.PI) / 180);
+          ctx.drawImage(
+            bitmap,
+            -(bitmap.width * scale) / 2,
+            -(bitmap.height * scale) / 2,
+            bitmap.width * scale,
+            bitmap.height * scale
+          );
+          ctx.restore();
+
+          preprocessCanvas();
+
+          const dataUrl = canvas.toDataURL("image/png");
+          const tmpImg = new Image();
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((res, rej) => {
+            tmpImg.onload = res;
+            tmpImg.onerror = rej;
+            tmpImg.src = dataUrl;
+          });
+
+          // eslint-disable-next-line no-await-in-loop
+          const result = await reader.decodeFromImageElement(tmpImg);
+          const barcodeText = result?.getText?.() || result?.text || "";
+          try {
+            reader.reset?.();
+          } catch (e) {}
+          if (barcodeText) return barcodeText;
+        } catch (err) {
+          lastErr = err;
         }
-      } catch (err) {
-        lastErr = err;
-        // try next rotation
       }
+
+      // ZXing failed → OCR fallback
+      try {
+        const ocrResult = await performOCROnCanvas(canvas);
+        if (ocrResult) return ocrResult;
+      } catch (e) {
+        // ignore
+      }
+
+      throw lastErr || new Error("No barcode decoded from image.");
+    } catch (err) {
+      throw err;
     }
-
-    // 5) If ZXing failed for all rotations, last-resort OCR
-    const ocrGuess = await performOCROnCanvas(canvas);
-    if (ocrGuess) return ocrGuess;
-
-    throw lastErr || new Error("No barcode decoded from image.");
   }
 
-  // Convert File/Blob -> data:<mime>;base64,... string for server OCR
+  // Convert File/Blob -> data:... string for server OCR
   async function convertFileToDataUrl(fileOrBlob) {
     if (!fileOrBlob) return null;
     return await new Promise((resolve, reject) => {
@@ -347,7 +346,6 @@ export default function BarcodeUpload({
     });
   }
 
-  // --- server fetch matches ---
   async function fetchMatches(barcode, labelImage) {
     let labelImageData = null;
     try {
@@ -361,11 +359,9 @@ export default function BarcodeUpload({
             );
             labelImageData = null;
           } else {
-            // http(s) URL — pass as-is
             labelImageData = labelImage;
           }
         } else {
-          // assume File/Blob
           labelImageData = await convertFileToDataUrl(labelImage);
         }
       }
@@ -377,46 +373,36 @@ export default function BarcodeUpload({
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        barcode,
-        labelImage: labelImageData,
-        isBarcodeFlow: true,
-      }),
+      body: JSON.stringify({ barcode, labelImage: labelImageData, isBarcodeFlow: true }),
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => null);
-      throw new Error(
-        txt || `Barcode check failed with status ${resp.status}`
-      );
+      throw new Error(txt || `Barcode check failed with status ${resp.status}`);
     }
     return resp.json();
   }
 
-  async function handleDecodedBarcodePipeline(
-    barcodeText,
-    labelImage = null,
-    idx = null
-  ) {
+  async function handleDecodedBarcodePipeline(barcodeText, labelImage = null, idx = null) {
     setError("");
+
     if (!barcodeText || !/\d/.test(String(barcodeText))) {
       setError("Decoded value doesn't look like a barcode (no digits).");
       return;
     }
 
     setLoading(true);
-    setProgress(5);
+    setProgress(10);
     try {
-      setProgress(20);
       const data = await fetchMatches(barcodeText, labelImage);
-
-      console.log("[BarcodeUpload] API check response:", data);
+      console.log("[BarcodeUpload] API response:", data);
       console.log("[BarcodeUpload] API debug:", data?.debug || null);
 
       setProgress(90);
+
       const result = {
         barcode: barcodeText,
         productName: data?.productName || "Unknown product",
-        rawIngredients: data?.ocrText || "",
+        rawIngredients: data?.ocrText || data?.ingredientsText || "",
         matchedBanned: data?.matchedBanned || [],
         matchedIngredients: data?.matchedIngredients || [],
         source: data?.debug?.fetchedFrom || "OCR",
@@ -449,8 +435,12 @@ export default function BarcodeUpload({
   }
 
   const handleScanAllBarcodes = async () => {
-    if (!files.length) return;
+    if (!files.length) {
+      setError("Add a barcode photo first.");
+      return;
+    }
     setLoading(true);
+    setError("");
     for (let i = 0; i < files.length; i++) {
       try {
         const code = await decodeBarcodeFromFile(files[i]);
@@ -466,22 +456,25 @@ export default function BarcodeUpload({
 
   return (
     <div className="mt-6 font-sans space-y-4">
-      {/* Upload Box */}
+      {/* Upload box (opens choice modal) */}
       <div
-        onClick={() => setShowChoiceModal(true)}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
             ? "border-blue-400 bg-blue-50"
             : "border-gray-300 bg-gray-50 hover:bg-gray-100"
         }`}
+        onClick={() => setShowChoiceModal(true)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
-        <span className="text-gray-600 text-center font-medium">
+        <span className="text-gray-700 text-center font-semibold">
           {files.length
-            ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to choose an image or take a photo"}
+            ? `${files.length} barcode photo${files.length > 1 ? "s" : ""} selected`
+            : "Tap to scan a barcode"}
+        </span>
+        <span className="mt-1 text-xs text-gray-500 text-center">
+          Use your camera or upload a barcode photo.
         </span>
       </div>
 
@@ -495,77 +488,91 @@ export default function BarcodeUpload({
         onChange={handleFileInputChange}
       />
 
-      {/* Modal Choice */}
+      {/* Choice modal: Live scanner vs Upload */}
       <AnimatePresence>
         {showChoiceModal && (
           <motion.div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-xl w-80 p-6 space-y-4 hover:shadow-2xl transition-shadow"
+              className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5 space-y-4"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
             >
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  Choose Action
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Scan Barcode
                 </h2>
                 <button
                   onClick={() => setShowChoiceModal(false)}
-                  className="text-gray-400 hover:text-gray-700 transition"
+                  className="text-gray-400 hover:text-gray-700"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <p className="text-gray-600 text-sm">
-                Select how you want to add a barcode: live scanning or from an
-                image.
+              <p className="text-sm text-gray-600">
+                Choose how you want to scan your barcode.
               </p>
-              <div className="flex flex-col gap-3 mt-2">
+              <div className="space-y-3">
                 <button
-                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition"
                   onClick={() => {
                     setShowChoiceModal(false);
                     setShowLiveScanner(true);
                   }}
+                  className="w-full py-3 rounded-xl bg-[#46769B] text-white font-medium hover:bg-[#365b7a] transition shadow-sm"
                 >
-                  Start Live Scanner
+                  Use Live Scanner
                 </button>
                 <button
-                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
                   onClick={() => {
                     setShowChoiceModal(false);
                     fileInputRef.current?.click();
                   }}
+                  className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-50 transition"
                 >
-                  Take Photo / Upload
+                  Upload Barcode Photo
                 </button>
               </div>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 pt-1">
+                <input
+                  type="checkbox"
+                  checked={enableChime}
+                  onChange={(e) => setEnableChime(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Beep on successful scan
+              </label>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Live Scanner */}
+      {/* Live Scanner Modal */}
       <AnimatePresence>
         {showLiveScanner && (
           <motion.div
-            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50"
+            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50 px-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 relative">
               <button
                 className="absolute top-3 right-3 text-gray-600 hover:text-black"
                 onClick={() => setShowLiveScanner(false)}
               >
                 <X className="w-6 h-6" />
               </button>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                Live Barcode Scanner
+              </h2>
+              <p className="text-xs text-gray-500 mb-3">
+                Point your camera at the barcode and hold still for a moment.
+              </p>
               <LiveBarcodeScanner
                 onDetected={(code) => {
                   setShowLiveScanner(false);
@@ -587,48 +594,46 @@ export default function BarcodeUpload({
           key={idx}
           className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
         >
-          <span className="font-medium">{file.name}</span>
+          <span className="font-medium text-sm sm:text-base">
+            {file.name}
+          </span>
           <input
             type="text"
             placeholder="Athlete or Team Name (optional)"
             value={athleteNames[idx]}
             onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
           />
           <img
             src={previewURLs[idx]}
             alt="Preview"
-            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1"
+            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1 w-full sm:w-auto bg-white"
             loading="lazy"
           />
         </div>
       ))}
 
-      {/* small controls row */}
       <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <div className="text-sm text-gray-500">
-          Tip: crop your photo to the barcode and label area for faster,
-          cleaner scans.
-        </div>
+        <p className="text-xs sm:text-sm text-gray-500">
+          Tip: avoid glare and blur; keep the barcode flat and well lit.
+        </p>
       </div>
 
-      {error && <p className="text-red-500 text-center">{error}</p>}
+      {error && (
+        <p className="text-red-500 text-center text-sm mt-1">{error}</p>
+      )}
 
       {showScanButton && (
         <button
           onClick={handleScanAllBarcodes}
           disabled={!files.length || loading}
-          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
+          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
             !files.length || loading
               ? "bg-gray-400 cursor-not-allowed"
               : "bg-[#46769B] hover:bg-blue-700"
           }`}
         >
-          {loading
-            ? `Scanning${animDots}`
-            : multiple
-            ? "Scan All Barcodes"
-            : "Scan Barcode"}
+          {loading ? `Scanning${animDots}` : multiple ? "Scan All Barcodes" : "Scan Barcode"}
         </button>
       )}
 

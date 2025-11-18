@@ -11,11 +11,12 @@
  *      2) Nutritionix (v2 POST + v1 GET; combine both results)
  *      3) USDA (if configured)
  *      4) FoodRepo (if configured)
- *    For a candidate we attempt all providers and merge their outputs; Nutritionix
- *    returned data is always captured (v2+v1 combined) even if partial.
- *  - If we get either ingredientsText OR nutrition facts from any provider,
- *    we consider the candidate successful and stop trying other candidates.
- *  - If still no text found, DO NOT run OCR automatically. Return helpful debug.
+ *    For each candidate we attempt all providers and merge their outputs.
+ *  - After trying all candidates, we pick the "best" candidate by a score:
+ *      score = ingredientsText.length + 50 * nutritionFieldCount
+ *    and use that candidate's merged ingredients/nutrition.
+ *  - If still no text found for any candidate, DO NOT run OCR automatically.
+ *    Return helpful debug.
  *  - If ingredients/nutrition found, match normalized ingredient text
  *    against Airtable banned/ingredient tables (if configured).
  *
@@ -37,7 +38,8 @@
  *    bannedDetails?: {
  *      ProhibitedCount: number,
  *      LimitedCount: number,
- *      OtherBannedCount: number
+ *      OtherBannedCount: number,
+ *      OtherFlagsCount?: number
  *    },
  *    debug
  *  }
@@ -76,7 +78,7 @@ const ingredientsBase =
       )
     : null;
 
-// 👇 NEW: Scans DB (for My Scans)
+// Scans DB (for My Scans)
 const scansBase =
   process.env.SCANS_API_KEY && process.env.SCANS_BASE_ID
     ? new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
@@ -100,28 +102,16 @@ async function fetchAllAirtableRecordsUsingClient(baseInstance, tableName) {
 const escapeRegex = (s = "") =>
   String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// 🔥 UPDATED: better normalization for accents, β, curly quotes, etc.
 function splitNormalizedTextToTerms(text) {
   if (!text) return [];
-
-  const lower = text
-    .normalize("NFKD") // split accents from base chars
-    .toLowerCase()
-    .replace(/[\u0300-\u036f]/g, ""); // strip combining marks (café -> cafe)
-
-  const cleaned = lower
-    .replace(/β/g, "beta") // β-alanine -> beta alanine
-    .replace(/\u2019|\u2018/g, "'") // curly single quotes -> '
-    .replace(/\u201c|\u201d/g, '"') // curly double quotes -> "
-    .replace(
-      /\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi,
-      " "
-    );
-
+  const lower = text.toLowerCase();
+  const cleaned = lower.replace(
+    /\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi,
+    " "
+  );
   const rawTerms = cleaned.split(
     /[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•]/
   );
-
   return rawTerms
     .map((t) => t.trim())
     .filter((t) => t.length > 1);
@@ -812,6 +802,7 @@ export default async function handler(req, res) {
       fetchedTextPreview: null,
       fetchedProductName: null,
       fetchedNutritionPreview: null,
+      candidateResults: [],
       airtable: {
         bannedConfigured: Boolean(
           bannedBase && process.env.BANNED_TABLE_NAME
@@ -836,6 +827,7 @@ export default async function handler(req, res) {
       rawText: text || "",
     };
 
+    // ---------------- BARCODE FLOW: evaluate all candidates, then choose best ----------------
     if (isBarcodeFlow && barcodeRaw) {
       console.log("[/api/check] Raw barcode:", barcodeRaw);
 
@@ -856,14 +848,19 @@ export default async function handler(req, res) {
       debug.candidates = candidates.slice();
       console.log("[/api/check] Candidates:", debug.candidates);
 
-      outer: for (const cand of candidates) {
+      let bestCandidate = null;
+      let bestScore = -1;
+
+      for (const cand of candidates) {
         console.log("[/api/check] Starting candidate:", cand);
 
         const perCandidate = {
+          candidate: cand,
           productName: null,
           ingredientsText: null,
           nutrition: null,
           rawProviders: {},
+          providersOk: {},
         };
 
         const providers = [
@@ -891,6 +888,7 @@ export default async function handler(req, res) {
             });
 
             perCandidate.rawProviders[p.name] = result?.raw ?? null;
+            perCandidate.providersOk[p.name] = !!(result && result.ok);
 
             if (!result) {
               console.log(
@@ -901,6 +899,7 @@ export default async function handler(req, res) {
             }
 
             if (p.name === "nutritionix") {
+              // keep full raw Nutritionix for optional flattening later
               structured.rawNutritionix =
                 structured.rawNutritionix || result.raw || null;
 
@@ -908,6 +907,7 @@ export default async function handler(req, res) {
                 perCandidate.productName = result.productName;
               if (result.ingredientsText && !perCandidate.ingredientsText)
                 perCandidate.ingredientsText = result.ingredientsText;
+
               if (result.nutrition) {
                 perCandidate.nutrition = perCandidate.nutrition || {};
                 for (const k of Object.keys(result.nutrition || {})) {
@@ -919,9 +919,11 @@ export default async function handler(req, res) {
               console.log(
                 `[/api/check] nutritionix produced data for candidate ${cand}: productName=${!!perCandidate.productName}, ingredients=${!!perCandidate.ingredientsText}, nutrition=${!!perCandidate.nutrition}`
               );
+              // continue to next provider for this candidate (we still want all providers)
               continue;
             }
 
+            // Non-Nutritionix providers: merge in productName / ingredients / nutrition
             if (result.productName && !perCandidate.productName)
               perCandidate.productName = result.productName;
             if (result.ingredientsText && !perCandidate.ingredientsText)
@@ -962,66 +964,63 @@ export default async function handler(req, res) {
               note: String(err),
             });
           }
-        }
+        } // end providers loop
 
-        if (perCandidate.productName && !structured.productName)
-          structured.productName = perCandidate.productName;
-        if (perCandidate.ingredientsText && !structured.ingredientsText) {
-          structured.ingredientsText = perCandidate.ingredientsText;
-          structured.rawProvider =
-            structured.rawProvider ||
-            (perCandidate.rawProviders &&
-              Object.keys(perCandidate.rawProviders).find(
-                (k) => perCandidate.rawProviders[k]
-              ));
-          structured.providerName = structured.providerName || "merged";
-          if (!debug.fetchedFrom) {
-            debug.fetchedFrom = "merged";
-            debug.fetchedCandidate = cand;
-            debug.fetchedTextPreview =
-              (structured.ingredientsText || "").slice(0, 400);
-            debug.fetchedProductName = structured.productName || null;
-          }
-        }
+        const candidateText = (perCandidate.ingredientsText || "").trim();
+        const nutritionFieldCount = perCandidate.nutrition
+          ? Object.keys(perCandidate.nutrition).length
+          : 0;
 
-        if (
-          perCandidate.nutrition &&
-          Object.keys(perCandidate.nutrition).length
-        ) {
-          structured.nutrition = structured.nutrition || {};
-          for (const k of Object.keys(perCandidate.nutrition)) {
-            if (!structured.nutrition[k])
-              structured.nutrition[k] = perCandidate.nutrition[k];
-          }
-          if (!debug.fetchedFrom) {
-            debug.fetchedFrom = "merged-nutrition";
-            debug.fetchedCandidate = cand;
-            debug.fetchedNutritionPreview = Object.keys(
-              structured.nutrition
-            ).slice(0, 10);
-          }
-        }
+        // Heuristic: longer ingredients text + richer nutrition = better
+        const score =
+          candidateText.length + nutritionFieldCount * 50;
 
-        if (
-          (structured.ingredientsText &&
-            structured.ingredientsText.trim()) ||
-          (structured.nutrition &&
-            Object.keys(structured.nutrition).length)
-        ) {
-          console.log(
-            "[/api/check] Found ingredients/raw text or nutrition for candidate:",
-            cand
-          );
-          break outer;
-        }
+        debug.candidateResults.push({
+          candidate: cand,
+          hasIngredients: !!candidateText,
+          ingredientsLength: candidateText.length,
+          nutritionFieldCount,
+          score,
+          productNamePreview: perCandidate.productName || null,
+        });
 
-        console.log(
-          "[/api/check] Candidate provided no ingredients or nutrition, continuing to next candidate:",
-          cand
-        );
+        if ((candidateText || nutritionFieldCount > 0) && score > bestScore) {
+          bestScore = score;
+          bestCandidate = perCandidate;
+        }
+      } // end candidates loop
+
+      if (!bestCandidate) {
+        debug.note =
+          debug.note || "no-ingredient-text-or-nutrition-from-any-candidate";
+        return res.status(200).json({
+          found: false,
+          message:
+            "We couldn't find product data for that barcode in our databases. Try a clearer photo, check the barcode, or enter the product/ingredients manually.",
+          debug,
+        });
       }
-    }
 
+      // Apply the best candidate to our structured output
+      debug.fetchedCandidate = bestCandidate.candidate;
+      debug.fetchedFrom = "best-candidate";
+      debug.fetchedTextPreview = (
+        bestCandidate.ingredientsText || ""
+      ).slice(0, 400);
+      debug.fetchedProductName = bestCandidate.productName || null;
+
+      structured.productName =
+        structured.productName || bestCandidate.productName || null;
+      structured.ingredientsText =
+        structured.ingredientsText ||
+        bestCandidate.ingredientsText ||
+        null;
+      structured.nutrition =
+        structured.nutrition || bestCandidate.nutrition || null;
+    }
+    // ---------------- END BARCODE FLOW ----------------
+
+    // If after barcode logic we still don't have useful data, bail out
     if (
       !(
         structured.ingredientsText &&
@@ -1033,8 +1032,7 @@ export default async function handler(req, res) {
       )
     ) {
       debug.note =
-        debug.note ||
-        "no-ingredient-text-or-nutrition-from-providers";
+        debug.note || "no-ingredient-text-or-nutrition-from-providers";
       return res.status(200).json({
         found: false,
         message:
@@ -1051,6 +1049,7 @@ export default async function handler(req, res) {
       rawText.slice(0, 300)
     );
 
+    // ---------------- Airtable matching ----------------
     let matchedBanned = [];
     try {
       if (rawText) {

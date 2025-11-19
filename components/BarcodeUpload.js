@@ -1,47 +1,24 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from "@zxing/library";
+import {
+  BrowserMultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+} from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { X, Check } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 
-// Lazy load live scanner (using the updated Beta component)
-const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), { ssr: false });
+// Lazy load live scanner (Beta)
+const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
+  ssr: false,
+});
 
-// Tiny beep placeholder
+// Tiny beep (placeholder; update if you want)
 const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
-
-function calculateUPCACheckDigit(upcaWithoutChecksum) {
-  const digits = String(upcaWithoutChecksum).replace(/\D/g, "");
-  if (digits.length !== 11) return null;
-  let sum = 0;
-  for (let i = 0; i < digits.length; i++) {
-    const n = parseInt(digits[i], 10);
-    sum += (i % 2 === 0 ? 3 : 1) * n;
-  }
-  const mod = sum % 10;
-  return String((10 - mod) % 10);
-}
-
-function normalizeToUPCAClient(rawValue) {
-  if (!rawValue) return null;
-  let digits = String(rawValue).replace(/\D/g, "");
-  if (!digits) return null;
-
-  if (digits.length === 13 && digits.startsWith("0")) {
-    digits = digits.slice(1);
-  }
-  if (digits.length === 12) return digits;
-  if (digits.length === 11) {
-    const check = calculateUPCACheckDigit(digits);
-    if (!check) return null;
-    return digits + check;
-  }
-  return null;
-}
 
 export default function BarcodeUpload({
   multiple = false,
@@ -52,57 +29,25 @@ export default function BarcodeUpload({
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
   const [athleteNames, setAthleteNames] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+
   const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
 
   const fileInputRef = useRef(null);
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-
   const codeReaderRef = useRef(null);
   const audioRef = useRef(null);
 
-  useEffect(() => {
-    audioRef.current = typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
-  }, []);
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-  // loading dots
-  useEffect(() => {
-    if (!loading) return;
-    const interval = setInterval(
-      () => setAnimDots((d) => (d.length >= 3 ? "" : d + ".")),
-      450
-    );
-    return () => clearInterval(interval);
-  }, [loading]);
-
-  // cleanup objectURLs
-  useEffect(() => {
-    return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
-  }, [previewURLs]);
-
-  // instantiate ZXing once
-  useEffect(() => {
-    try {
-      codeReaderRef.current = new BrowserMultiFormatReader();
-    } catch (err) {
-      console.warn("Failed to create ZXing reader:", err);
-      codeReaderRef.current = null;
-    }
-    return () => {
-      try {
-        codeReaderRef.current?.reset?.();
-      } catch (e) {}
-      codeReaderRef.current = null;
-    };
-  }, []);
-
+  // Map string names to ZXing formats
   const NAME_TO_FORMAT = {
     AZTEC: BarcodeFormat.AZTEC,
     CODABAR: BarcodeFormat.CODABAR,
@@ -132,6 +77,41 @@ export default function BarcodeUpload({
     return out;
   };
 
+  useEffect(() => {
+    audioRef.current =
+      typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
+  }, []);
+
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(
+      () =>
+        setAnimDots((d) => (d.length >= 3 ? "" : d + ".")),
+      450
+    );
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => {
+    return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
+  }, [previewURLs]);
+
+  // instantiate ZXing once
+  useEffect(() => {
+    try {
+      codeReaderRef.current = new BrowserMultiFormatReader();
+    } catch (err) {
+      console.warn("Failed to create ZXing reader:", err);
+      codeReaderRef.current = null;
+    }
+    return () => {
+      try {
+        codeReaderRef.current?.reset?.();
+      } catch (e) {}
+      codeReaderRef.current = null;
+    };
+  }, []);
+
   const validateFile = (file) => {
     if (!file.type.startsWith("image/")) {
       setError("Only image files are allowed.");
@@ -154,26 +134,30 @@ export default function BarcodeUpload({
   };
 
   const handleFileInputChange = (e) => handleFiles(e.target.files);
+
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
   };
+
   const handleDragLeave = (e) => {
     e.preventDefault();
     setIsDragging(false);
   };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
   };
+
   const handleNameChange = (idx, value) => {
     const names = [...athleteNames];
     names[idx] = value;
     setAthleteNames(names);
   };
 
-  // ---- decode barcode from still image file (ZXing only, no OCR) ----
+  // --- Decode barcode from an image file using ZXing (no OCR) ---
   async function decodeBarcodeFromFile(file) {
     try {
       let bitmap;
@@ -201,32 +185,37 @@ export default function BarcodeUpload({
         });
       }
 
-      const reader = codeReaderRef.current || new BrowserMultiFormatReader();
+      const reader =
+        codeReaderRef.current || new BrowserMultiFormatReader();
 
+      // If preferred formats are present, prepare hints (some builds might not use them directly)
       if (preferredFormats && Array.isArray(preferredFormats)) {
         try {
           const formats = mapFormats(preferredFormats);
           if (formats.length) {
             const hints = new Map();
             hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            // Note: not all builds let us pass hints easily here; this is mostly future-proofing.
+            // Some BrowserMultiFormatReader builds accept hints in constructor;
+            // here we just prepare them if you later want to recreate reader with hints.
           }
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) {}
       }
 
-      const MAX_SIDE = 1400;
+      const MAX_SIDE = 1600;
       const rotations = [0, 90, 180, 270];
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
-      const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+
+      const scale = Math.min(
+        1,
+        MAX_SIDE / Math.max(bitmap.width, bitmap.height)
+      );
 
       const preprocessCanvas = () => {
         try {
           const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const d = id.data;
-          const contrast = 1.2;
+          const contrast = 1.25;
           for (let i = 0; i < d.length; i += 4) {
             const r = d[i];
             const g = d[i + 1];
@@ -269,24 +258,28 @@ export default function BarcodeUpload({
 
           const dataUrl = canvas.toDataURL("image/png");
           const tmpImg = new Image();
+          // eslint-disable-next-line no-await-in-loop
           await new Promise((res, rej) => {
             tmpImg.onload = res;
             tmpImg.onerror = rej;
             tmpImg.src = dataUrl;
           });
 
+          // eslint-disable-next-line no-await-in-loop
           const result = await reader.decodeFromImageElement(tmpImg);
-          const barcodeText = result?.getText?.() || result?.text || "";
+          const barcodeText =
+            result?.getText?.() || result?.text || "";
           try {
             reader.reset?.();
           } catch (e) {}
-          if (!barcodeText) continue;
-
-          const normalized = normalizeToUPCAClient(barcodeText);
-          if (!normalized) {
-            throw new Error("Decoded value is not a valid UPC-A style code.");
+          if (barcodeText) {
+            const digits = barcodeText.replace(/\D/g, "");
+            if (!digits) throw new Error("No digits in decoded code");
+            if (digits.length < 8 || digits.length > 14) {
+              throw new Error("Decoded value not plausible barcode length");
+            }
+            return digits;
           }
-          return normalized;
         } catch (err) {
           lastErr = err;
         }
@@ -298,48 +291,42 @@ export default function BarcodeUpload({
     }
   }
 
-  // ---- server fetch for matches (barcode-only, no image upload) ----
+  // --- Server request: send ONLY barcode, no large image body ---
   async function fetchMatches(barcode) {
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Only send barcode and isBarcodeFlow; no labelImage to avoid 1MB+ payloads.
       body: JSON.stringify({ barcode, isBarcodeFlow: true }),
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => null);
-      throw new Error(txt || `Barcode check failed with status ${resp.status}`);
+      throw new Error(
+        txt || `Barcode check failed with status ${resp.status}`
+      );
     }
     return resp.json();
   }
 
   async function handleDecodedBarcodePipeline(barcodeText, idx = null) {
     setError("");
-
-    if (!barcodeText || !/\d/.test(String(barcodeText))) {
-      setError("Decoded value doesn't look like a barcode.");
-      return;
-    }
-
-    const normalized = normalizeToUPCAClient(barcodeText);
-    if (!normalized) {
-      setError("This barcode format is not supported yet.");
+    const digits = String(barcodeText || "").replace(/\D/g, "");
+    if (!digits) {
+      setError("Decoded value doesn't look like a barcode (no digits).");
       return;
     }
 
     setLoading(true);
     setProgress(5);
-
     try {
       setProgress(20);
-      const data = await fetchMatches(normalized);
-
+      const data = await fetchMatches(digits);
       console.log("[BarcodeUpload] API check response:", data);
       console.log("[BarcodeUpload] API debug:", data?.debug || null);
 
       setProgress(90);
+
       const result = {
-        barcode: normalized,
+        barcode: digits,
         productName: data?.productName || "Unknown product",
         rawIngredients: data?.ocrText || "",
         matchedBanned: data?.matchedBanned || [],
@@ -363,7 +350,9 @@ export default function BarcodeUpload({
       return result;
     } catch (err) {
       console.error(err);
-      setError(err.message || "Failed to process barcode.");
+      setError(
+        err.message || "Failed to process barcode. Try a clearer photo."
+      );
       throw err;
     } finally {
       setTimeout(() => {
@@ -376,6 +365,7 @@ export default function BarcodeUpload({
   const handleScanAllBarcodes = async () => {
     if (!files.length) return;
     setLoading(true);
+    setError("");
     for (let i = 0; i < files.length; i++) {
       try {
         const code = await decodeBarcodeFromFile(files[i]);
@@ -383,6 +373,7 @@ export default function BarcodeUpload({
         await handleDecodedBarcodePipeline(code, i);
       } catch (err) {
         console.warn("Scan failed for index", i, err);
+        setError("One or more images could not be read. Try closer, sharper photos.");
       }
     }
     setLoading(false);
@@ -390,7 +381,7 @@ export default function BarcodeUpload({
 
   return (
     <div className="mt-6 font-sans space-y-4">
-      {/* Upload box that opens choice modal */}
+      {/* Upload / entry card */}
       <div
         onClick={() => setShowChoiceModal(true)}
         onDragOver={handleDragOver}
@@ -402,10 +393,15 @@ export default function BarcodeUpload({
             : "border-gray-300 bg-gray-50 hover:bg-gray-100"
         }`}
       >
-        <span className="text-gray-600 text-center font-medium">
+        <span className="text-gray-700 text-center font-medium text-sm md:text-base">
           {files.length
-            ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to scan a barcode or upload an image"}
+            ? `${files.length} file${
+                files.length > 1 ? "s" : ""
+              } selected`
+            : "Tap to choose a photo of the barcode or open live scanner"}
+        </span>
+        <span className="mt-1 text-xs text-gray-500">
+          Tip: Fill the frame with the barcode and avoid glare.
         </span>
       </div>
 
@@ -435,9 +431,14 @@ export default function BarcodeUpload({
               exit={{ scale: 0.95, opacity: 0 }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  Scan a Barcode
-                </h2>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    Scan a Barcode
+                  </h2>
+                  <p className="text-xs uppercase tracking-wide text-yellow-600 font-semibold mt-0.5">
+                    Live Scanner · Beta
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowChoiceModal(false)}
                   className="text-gray-400 hover:text-gray-700 transition"
@@ -446,27 +447,27 @@ export default function BarcodeUpload({
                 </button>
               </div>
               <p className="text-gray-600 text-sm">
-                Choose how you want to scan: use your camera live, or upload a
-                photo of the barcode.
+                Choose whether to scan live or use a saved photo of the
+                barcode.
               </p>
               <div className="flex flex-col gap-3 mt-2">
                 <button
-                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition"
+                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition text-sm"
                   onClick={() => {
                     setShowChoiceModal(false);
                     setShowLiveScanner(true);
                   }}
                 >
-                  Start Live Scanner
+                  Start Live Scanner (Beta)
                 </button>
                 <button
-                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
+                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition text-sm"
                   onClick={() => {
                     setShowChoiceModal(false);
                     fileInputRef.current?.click();
                   }}
                 >
-                  Take Photo / Upload
+                  Take Photo / Upload Image
                 </button>
               </div>
             </motion.div>
@@ -474,7 +475,7 @@ export default function BarcodeUpload({
         )}
       </AnimatePresence>
 
-      {/* Live scanner full screen-ish modal */}
+      {/* Live scanner modal */}
       <AnimatePresence>
         {showLiveScanner && (
           <motion.div
@@ -483,7 +484,7 @@ export default function BarcodeUpload({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
+            <div className="bg-white rounded-2xl shadow-xl w-[92%] max-w-md p-4 relative">
               <button
                 className="absolute top-3 right-3 text-gray-600 hover:text-black"
                 onClick={() => setShowLiveScanner(false)}
@@ -493,9 +494,9 @@ export default function BarcodeUpload({
               <LiveBarcodeScanner
                 onDetected={(code) => {
                   setShowLiveScanner(false);
+                  // run the same pipeline as uploaded images
                   handleDecodedBarcodePipeline(code);
                 }}
-                readers={["ean_reader", "ean_8_reader", "upc_reader", "code_128_reader"]}
                 enableBeep
                 enableFlash
                 keepScanning={false}
@@ -506,19 +507,21 @@ export default function BarcodeUpload({
         )}
       </AnimatePresence>
 
-      {/* Preview of uploaded images */}
+      {/* File previews */}
       {files.map((file, idx) => (
         <div
           key={idx}
           className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
         >
-          <span className="font-medium">{file.name}</span>
+          <span className="font-medium text-sm text-gray-800">
+            {file.name}
+          </span>
           <input
             type="text"
             placeholder="Athlete or Team Name (optional)"
             value={athleteNames[idx]}
             onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
           />
           <img
             src={previewURLs[idx]}
@@ -529,18 +532,24 @@ export default function BarcodeUpload({
         </div>
       ))}
 
-      {/* Tips / info row */}
-      <div className="flex items-center justify-between max-w-3xl mx-auto text-xs text-gray-500">
-        <div>Tip: Fill the frame with just the barcode, then hold still.</div>
+      {/* Helper text row */}
+      <div className="flex items-center justify-between max-w-3xl mx-auto mt-1">
+        <div className="text-xs text-gray-500">
+          For best results, fill the frame with the barcode and hold
+          still for a moment before scanning.
+        </div>
       </div>
 
-      {error && <p className="text-red-500 text-center text-sm">{error}</p>}
+      {error && (
+        <p className="text-red-500 text-sm text-center mt-1">{error}</p>
+      )}
 
+      {/* Scan button */}
       {showScanButton && (
         <button
           onClick={handleScanAllBarcodes}
           disabled={!files.length || loading}
-          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
+          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm ${
             !files.length || loading
               ? "bg-gray-400 cursor-not-allowed"
               : "bg-[#46769B] hover:bg-blue-700"
@@ -554,9 +563,11 @@ export default function BarcodeUpload({
         </button>
       )}
 
-      {loading && <ProgressBar progress={progress} scanning={loading} />}
+      {loading && (
+        <ProgressBar progress={progress} scanning={loading} />
+      )}
 
-      {/* success checkmark */}
+      {/* Success checkmark */}
       <AnimatePresence>
         {showSuccess && (
           <motion.div

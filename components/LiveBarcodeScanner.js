@@ -6,95 +6,69 @@ import Quagga from "@ericblade/quagga2";
 /**
  * LiveBarcodeScanner (Beta)
  *
- * Improvements:
- *  - Uses native BarcodeDetector when available (fast, hardware-accelerated).
- *  - Falls back to Quagga when BarcodeDetector fails or is unavailable.
- *  - Only accepts **stable** barcodes:
- *      • numeric-only
- *      • length 8–14
- *      • same code must appear across multiple frames and a minimum duration
- *  - Requests continuous focus where supported (via track constraints).
- *  - Shows status text to reassure the user it's "locking on" instead of glitching.
- *"use client";
-
-import React, { useEffect, useRef, useState } from "react";
-import Quagga from "@ericblade/quagga2";
-
-/**
- * LiveBarcodeScanner (BETA)
+ * - Uses the native BarcodeDetector API when available (fast, hardware-accelerated).
+ * - Falls back to Quagga when BarcodeDetector isn't available or fails.
  *
- * - Uses native BarcodeDetector when available (fast & hardware-accelerated).
- * - Falls back to Quagga when BarcodeDetector is missing or fails.
- * - NO OCR: only real barcode decoding from bars.
- *
- * Reliability features:
- *  - UPC-A style normalization + check digit validation.
- *  - Multi-frame consensus: only accept codes seen multiple times over time.
- *  - Debounces duplicates.
+ * Safety / Accuracy:
+ *  - NEVER uses OCR for barcodes (only real barcode decoders).
+ *  - Validates numeric codes with UPC-A / EAN-13 check digits when possible.
+ *  - Requires multi-frame consensus: same valid code must appear several times
+ *    over ~700ms before we accept it.
  *
  * Props:
- *  - onDetected(code: string)           : callback when a final stable barcode is detected
+ *  - onDetected(code: string)           : callback when a barcode is confidently detected
  *  - readers = [...]                    : list of Quagga reader names
- *  - enableBeep = true                  : short beep on detection
- *  - enableFlash = true                 : white flash overlay on detection
- *  - keepScanning = false               : keep scanning after a detection
+ *  - enableBeep = true                  : play a short beep on detection
+ *  - enableFlash = true                 : small UI flash pulse on detection
+ *  - keepScanning = false               : if true, scanner remains running after a detection
  *  - duplicateDelayMs = 3000            : debounce time for duplicate detections
- *  - autoStart = false                  : auto-start scanning on mount
+ *  - autoStart = false                  : start automatically on mount
  */
 
-// ---- Helpers: UPC normalization & validation ----
-function calculateUPCACheckDigit(upcaWithoutChecksum) {
-  const digits = String(upcaWithoutChecksum).replace(/\D/g, "");
-  if (digits.length !== 11) return null;
-  let sum = 0;
-  for (let i = 0; i < digits.length; i++) {
-    const n = parseInt(digits[i], 10);
-    // odd positions (0,2,4...) are multiplied by 3 in UPC-A
-    sum += (i % 2 === 0 ? 3 : 1) * n;
-  }
-  const mod = sum % 10;
-  const check = (10 - mod) % 10;
-  return String(check);
-}
+function isLikelyValidBarcodeDigits(digits) {
+  if (!digits) return false;
+  const len = digits.length;
+  if (len < 8 || len > 14) return false;
 
-/**
- * Very focused normalize for product barcodes:
- * - Accepts EAN-13 and UPC-A style
- * - If 13 digits and starts with 0 -> treat as UPC-A by dropping leading 0
- * - If 12 digits -> assume already UPC-A
- * - If 11 digits -> compute check digit
- */
-function normalizeToUPCAClient(rawValue) {
-  if (!rawValue) return null;
-  let digits = String(rawValue).replace(/\D/g, "");
-  if (!digits) return null;
+  // Helper for UPC-A (12 digits)
+  const isValidUPCA = (d) => {
+    if (d.length !== 12) return true; // don't block if not correct length for UPC-A
+    const base = d.slice(0, 11);
+    const check = d.slice(11);
+    const sum = base
+      .split("")
+      .map((ch, i) => {
+        const n = parseInt(ch, 10);
+        return (i % 2 === 0 ? 3 * n : n);
+      })
+      .reduce((a, b) => a + b, 0);
+    const expected = (10 - (sum % 10)) % 10;
+    return String(expected) === check;
+  };
 
-  // EAN-13 with leading 0 -> UPC-A
-  if (digits.length === 13 && digits.startsWith("0")) {
-    digits = digits.slice(1);
-  }
+  // Helper for EAN-13 (13 digits)
+  const isValidEAN13 = (d) => {
+    if (d.length !== 13) return true; // don't block if not correct length for EAN-13
+    const base = d.slice(0, 12);
+    const check = d.slice(12);
+    const sum = base
+      .split("")
+      .map((ch, i) => {
+        const n = parseInt(ch, 10);
+        // Right to left weighting but easier: from left:
+        // positions starting at 0: even -> 1x, odd -> 3x
+        return (i % 2 === 0 ? n : 3 * n);
+      })
+      .reduce((a, b) => a + b, 0);
+    const expected = (10 - (sum % 10)) % 10;
+    return String(expected) === check;
+  };
 
-  if (digits.length === 12) {
-    return digits;
-  }
+  if (len === 12 && !isValidUPCA(digits)) return false;
+  if (len === 13 && !isValidEAN13(digits)) return false;
 
-  if (digits.length === 11) {
-    const check = calculateUPCACheckDigit(digits);
-    if (!check) return null;
-    return digits + check;
-  }
-
-  // For now, ignore other lengths (8,7,6, etc.) for robustness.
-  return null;
-}
-
-function isValidUPCA(code) {
-  const digits = String(code).replace(/\D/g, "");
-  if (digits.length !== 12) return false;
-  const base = digits.slice(0, 11);
-  const expected = calculateUPCACheckDigit(base);
-  const actual = digits[11];
-  return expected !== null && expected === actual;
+  // For EAN-8 / internal codes we don't block here; consensus will help.
+  return true;
 }
 
 export default function LiveBarcodeScanner({
@@ -112,7 +86,8 @@ export default function LiveBarcodeScanner({
   const detectorLoopRef = useRef(null);
   const streamRef = useRef(null);
   const lastDetectedRef = useRef({ code: null, time: 0 });
-  const lastConfirmedRef = useRef(null);
+  const recentDetectionsRef = useRef([]); // for multi-frame consensus
+
   const [usingNative, setUsingNative] = useState(false);
   const [scannerStarted, setScannerStarted] = useState(false);
   const [statusMsg, setStatusMsg] = useState("Idle");
@@ -120,14 +95,11 @@ export default function LiveBarcodeScanner({
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [facingMode, setFacingMode] = useState("environment");
+  const [lastStableCode, setLastStableCode] = useState("");
   const fpsRef = useRef({ lastTs: 0, frames: 0, fps: 0 });
   const barcodeDetectorRef = useRef(null);
 
-  // Rolling buffer of detections for multi-frame consensus
-  const recentDetectionsRef = useRef([]);
-  const [candidateCode, setCandidateCode] = useState("");
-
-  // Helper: beep + vibration + flash pulse UI
+  // --- Feedback helpers (beep + vibrate + flash overlay) ---
   const playBeep = (freq = 900, duration = 120) => {
     if (!enableBeep) return;
     try {
@@ -148,9 +120,9 @@ export default function LiveBarcodeScanner({
           osc.stop();
           ctx.close();
         } catch (e) {}
-      }, duration + 20);
+      }, duration + 30);
     } catch (e) {
-      // ignore
+      // ignore audio failures
     }
   };
 
@@ -163,7 +135,7 @@ export default function LiveBarcodeScanner({
     }
   };
 
-  // Overlay helpers
+  // --- Overlay drawing helpers ---
   const clearOverlay = () => {
     try {
       const canvas = overlayRef.current;
@@ -178,24 +150,25 @@ export default function LiveBarcodeScanner({
       const canvas = overlayRef.current;
       const ctx = canvas?.getContext("2d");
       const container = containerRef.current;
-      if (!canvas || !ctx || !container) return;
+      if (!canvas || !ctx || !container || !videoEl) return;
+
       const rect = container.getBoundingClientRect();
       if (canvas.width !== rect.width || canvas.height !== rect.height) {
         canvas.width = rect.width;
         canvas.height = rect.height;
       }
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.lineWidth = 3;
       ctx.strokeStyle = "rgba(0,255,0,0.9)";
       ctx.fillStyle = "rgba(0,255,0,0.12)";
 
       if (Array.isArray(boxes) && boxes.length) {
+        const scaleX = canvas.width / videoEl.videoWidth || 1;
+        const scaleY = canvas.height / videoEl.videoHeight || 1;
         boxes.forEach((box) => {
           ctx.beginPath();
           box.forEach((p, i) => {
-            const scaleX = canvas.width / videoEl.videoWidth || 1;
-            const scaleY = canvas.height / videoEl.videoHeight || 1;
             const x = (p.x || 0) * scaleX;
             const y = (p.y || 0) * scaleY;
             i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
@@ -214,12 +187,10 @@ export default function LiveBarcodeScanner({
         ctx.fillRect(x, y, w, h);
         ctx.strokeRect(x, y, w, h);
       }
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   };
 
-  // track fps (used when native detection is running)
+  // FPS tracking for debug/status
   const trackFps = () => {
     try {
       const now = performance.now();
@@ -234,7 +205,7 @@ export default function LiveBarcodeScanner({
     } catch (e) {}
   };
 
-  // Torch detection & toggling
+  // --- Torch detection & toggle ---
   const detectTorch = async () => {
     try {
       const stream = streamRef.current;
@@ -253,13 +224,13 @@ export default function LiveBarcodeScanner({
       if (!track) return;
       const constraints = { advanced: [{ torch: !torchOn }] };
       await track.applyConstraints(constraints);
-      setTorchOn((s) => !s);
+      setTorchOn((prev) => !prev);
     } catch (e) {
       console.warn("toggleTorch failed", e);
     }
   };
 
-  // Map Quagga readers to BarcodeDetector formats (best-effort)
+  // readers -> BarcodeDetector formats
   const readersToBarcodeDetectorFormats = (readerList = []) => {
     const out = new Set();
     for (const r of readerList) {
@@ -279,45 +250,41 @@ export default function LiveBarcodeScanner({
     return Array.from(out);
   };
 
-  // ---- Multi-frame consensus logic ----
-  function considerStableCode(rawValue) {
+  // --- Multi-frame consensus: only accept a code if it shows up consistently ---
+  const considerCode = (rawValue) => {
     const now = Date.now();
-    const normalized = normalizeToUPCAClient(rawValue);
-    if (!normalized || !isValidUPCA(normalized)) {
+    const digits = String(rawValue || "").replace(/\D/g, "");
+    if (!digits) return null;
+
+    if (!isLikelyValidBarcodeDigits(digits)) {
+      // obvious failure → ignore
       return null;
     }
 
-    // Add to rolling window
-    const arr = recentDetectionsRef.current;
-    arr.push({ code: normalized, ts: now });
+    // push current detection
+    recentDetectionsRef.current.push({ code: digits, ts: now });
 
-    // Keep only last 2500ms
-    const cutoff = now - 2500;
-    recentDetectionsRef.current = arr.filter((d) => d.ts >= cutoff);
-
-    const occ = recentDetectionsRef.current.filter(
-      (d) => d.code === normalized
+    // keep ~2.5s worth of detections
+    recentDetectionsRef.current = recentDetectionsRef.current.filter(
+      (d) => now - d.ts < 2500
     );
 
-    if (occ.length < 3) {
-      // Not enough hits yet
-      setCandidateCode(normalized);
-      return null;
+    const occurrences = recentDetectionsRef.current.filter(
+      (d) => d.code === digits
+    );
+
+    // require at least 3 frames over at least 700ms
+    if (
+      occurrences.length >= 3 &&
+      occurrences[occurrences.length - 1].ts - occurrences[0].ts >= 700
+    ) {
+      return digits;
     }
 
-    const spanMs = occ[occ.length - 1].ts - occ[0].ts;
-    if (spanMs < 700) {
-      // seen but too fast, keep waiting for more stable readings
-      setCandidateCode(normalized);
-      return null;
-    }
+    return null;
+  };
 
-    // stable enough
-    setCandidateCode(normalized);
-    return normalized;
-  }
-
-  // ---- Native BarcodeDetector loop ----
+  // --- Native BarcodeDetector loop ---
   const startNativeLoop = async () => {
     if (!("BarcodeDetector" in window)) {
       setStatusMsg("Native BarcodeDetector not available");
@@ -330,6 +297,7 @@ export default function LiveBarcodeScanner({
         try {
           barcodeDetectorRef.current = new window.BarcodeDetector({ formats });
         } catch (e) {
+          // Some browsers only accept default
           barcodeDetectorRef.current = new window.BarcodeDetector();
         }
       }
@@ -396,33 +364,19 @@ export default function LiveBarcodeScanner({
                 r.rawValue || (r.rawData ? String(r.rawData) : null);
               if (!rawValue) continue;
 
-              // visually show current candidate
-              setCandidateCode(rawValue);
-
-              const stable = considerStableCode(rawValue);
-              if (!stable) {
-                // not yet stable; keep scanning
-                if (r.cornerPoints && r.cornerPoints.length) {
-                  clearOverlay();
-                  drawBoxNative([r.cornerPoints], null, v);
-                } else if (r.boundingBox) {
-                  clearOverlay();
-                  drawBoxNative([], r.boundingBox, v);
-                }
-                continue;
-              }
+              const stableCode = considerCode(rawValue);
+              if (!stableCode) continue;
 
               const now = Date.now();
               const last = lastDetectedRef.current;
               if (
-                last.code === stable &&
+                last.code === stableCode &&
                 now - last.time < duplicateDelayMs
               ) {
                 continue;
               }
-              lastDetectedRef.current = { code: stable, time: now };
+              lastDetectedRef.current = { code: stableCode, time: now };
 
-              // draw stable box
               clearOverlay();
               if (r.cornerPoints && r.cornerPoints.length) {
                 drawBoxNative([r.cornerPoints], null, v);
@@ -430,17 +384,12 @@ export default function LiveBarcodeScanner({
                 drawBoxNative([], r.boundingBox, v);
               }
 
-              if (lastConfirmedRef.current === stable && !keepScanning) {
-                // already handled this code and we stopped before
-                continue;
-              }
-              lastConfirmedRef.current = stable;
-
               successFeedback();
+              setLastStableCode(stableCode);
 
               if (typeof onDetected === "function") {
                 try {
-                  onDetected(stable);
+                  onDetected(stableCode);
                 } catch (e) {
                   console.warn("onDetected handler threw:", e);
                 }
@@ -466,7 +415,7 @@ export default function LiveBarcodeScanner({
     return true;
   };
 
-  // ---- Quagga fallback ----
+  // --- Quagga fallback ---
   const startQuagga = async () => {
     const container = containerRef.current;
     if (!container) {
@@ -523,9 +472,9 @@ export default function LiveBarcodeScanner({
       try {
         const canvas = overlayRef.current;
         const ctx = canvas?.getContext("2d");
-        const cont = containerRef.current;
-        if (!canvas || !ctx || !cont) return;
-        const rect = cont.getBoundingClientRect();
+        const container = containerRef.current;
+        if (!canvas || !ctx || !container) return;
+        const rect = container.getBoundingClientRect();
         if (canvas.width !== rect.width || canvas.height !== rect.height) {
           canvas.width = rect.width;
           canvas.height = rect.height;
@@ -566,28 +515,28 @@ export default function LiveBarcodeScanner({
 
     Quagga.onDetected((data) => {
       try {
-        const raw = data?.codeResult?.code;
-        if (!raw) return;
+        const rawCode = data?.codeResult?.code;
+        if (!rawCode) return;
 
-        setCandidateCode(raw);
-
-        const stable = considerStableCode(raw);
-        if (!stable) return;
+        const stableCode = considerCode(rawCode);
+        if (!stableCode) return;
 
         const now = Date.now();
         const last = lastDetectedRef.current;
-        if (last.code === stable && now - last.time < duplicateDelayMs) return;
-        lastDetectedRef.current = { code: stable, time: now };
-
-        if (lastConfirmedRef.current === stable && !keepScanning) {
+        if (
+          last.code === stableCode &&
+          now - last.time < duplicateDelayMs
+        ) {
           return;
         }
-        lastConfirmedRef.current = stable;
+        lastDetectedRef.current = { code: stableCode, time: now };
 
         successFeedback();
+        setLastStableCode(stableCode);
+
         if (typeof onDetected === "function") {
           try {
-            onDetected(stable);
+            onDetected(stableCode);
           } catch (e) {
             console.warn("onDetected handler threw:", e);
           }
@@ -601,9 +550,10 @@ export default function LiveBarcodeScanner({
     return true;
   };
 
-  // Stop everything
+  // --- Stop everything ---
   const stop = async () => {
     setStatusMsg("Stopping scanner...");
+
     try {
       if (detectorLoopRef.current) {
         cancelAnimationFrame(detectorLoopRef.current);
@@ -636,10 +586,10 @@ export default function LiveBarcodeScanner({
         try {
           v.srcObject = null;
         } catch (e) {}
-        const cont = containerRef.current;
-        if (cont && v.parentElement === cont) {
+        const container = containerRef.current;
+        if (container && v.parentElement === container) {
           try {
-            cont.removeChild(v);
+            container.removeChild(v);
           } catch (e) {}
         }
       }
@@ -648,26 +598,28 @@ export default function LiveBarcodeScanner({
     clearOverlay();
     setScannerStarted(false);
     setUsingNative(false);
-    setCandidateCode("");
     setStatusMsg("Scanner stopped");
   };
 
-  // Start scanner: native first, then Quagga
   const start = async () => {
     if (scannerStarted) return;
     setStatusMsg("Starting scanner...");
     setScannerStarted(true);
+    setLastStableCode("");
     recentDetectionsRef.current = [];
-    lastConfirmedRef.current = null;
-    setCandidateCode("");
 
     let nativeStarted = false;
-    if ("BarcodeDetector" in window && navigator.mediaDevices?.getUserMedia) {
+    if (
+      "BarcodeDetector" in window &&
+      navigator.mediaDevices &&
+      navigator.mediaDevices.getUserMedia
+    ) {
       try {
         const ok = await startNativeLoop();
         if (ok) nativeStarted = true;
       } catch (e) {
         console.warn("Native start failed:", e);
+        nativeStarted = false;
       }
     }
 
@@ -689,12 +641,13 @@ export default function LiveBarcodeScanner({
   };
 
   const switchCamera = async () => {
-    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
+    setFacingMode((prev) =>
+      prev === "environment" ? "user" : "environment"
+    );
     await stop();
     setTimeout(() => start(), 250);
   };
 
-  // Auto-start
   useEffect(() => {
     if (autoStart) {
       start();
@@ -709,7 +662,6 @@ export default function LiveBarcodeScanner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restart when facingMode changes
   useEffect(() => {
     if (!scannerStarted) return;
     (async () => {
@@ -721,31 +673,31 @@ export default function LiveBarcodeScanner({
 
   return (
     <div className="w-full flex flex-col items-center gap-3">
-      {/* Header row with Beta tag */}
-      <div className="flex items-center justify-between w-full max-w-md">
+      {/* Header with Beta tag */}
+      <div className="flex items-center justify-between w-full max-w-md mb-1">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-800">
+          <h2 className="text-sm font-semibold text-gray-800">
             Live Barcode Scanner
           </h2>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 font-semibold uppercase tracking-wide">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 uppercase tracking-wide">
             Beta
           </span>
         </div>
       </div>
 
-      {/* Controls row */}
-      <div className="flex flex-wrap gap-2">
+      {/* Controls */}
+      <div className="flex flex-wrap gap-2 justify-center">
         {!scannerStarted ? (
           <button
             onClick={start}
-            className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium shadow hover:bg-blue-700"
+            className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
           >
             Start Scanner
           </button>
         ) : (
           <button
             onClick={stop}
-            className="px-3 py-2 rounded-lg bg-red-500 text-white text-sm font-medium shadow hover:bg-red-600"
+            className="px-3 py-2 rounded-lg bg-red-500 text-white text-sm shadow hover:bg-red-600"
           >
             Stop Scanner
           </button>
@@ -753,7 +705,7 @@ export default function LiveBarcodeScanner({
 
         <button
           onClick={switchCamera}
-          className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-medium border border-gray-300"
+          className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm text-gray-800"
         >
           Switch Camera
         </button>
@@ -761,58 +713,52 @@ export default function LiveBarcodeScanner({
         {torchAvailable && (
           <button
             onClick={toggleTorch}
-            className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-medium border border-gray-300"
+            className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm text-gray-800"
           >
             {torchOn ? "Torch Off" : "Torch On"}
           </button>
         )}
       </div>
 
-      {/* Video + overlay area */}
+      {/* Video + overlay */}
       <div className="relative w-full max-w-md" style={{ paddingTop: "56%" }}>
         <div
           ref={containerRef}
           className="absolute inset-0 w-full h-full bg-black rounded-lg overflow-hidden"
         />
-
         <canvas
           ref={overlayRef}
           className="absolute inset-0 w-full h-full pointer-events-none"
           style={{ width: "100%", height: "100%" }}
         />
-
-        {/* white flash pulse */}
         <div
           aria-hidden
           className={`absolute inset-0 rounded-lg pointer-events-none transition-opacity duration-300 ${
             flashPulse ? "opacity-60 bg-white/30" : "opacity-0"
           }`}
         />
-
-        {/* center viewfinder box */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-24 border-2 border-white/80 rounded-md pointer-events-none shadow-[0_0_0_1px_rgba(0,0,0,0.3)]" />
-
-        {/* candidate code overlay */}
-        {candidateCode && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/70 text-white text-xs font-mono shadow">
-            Candidate: {String(candidateCode).replace(/\s+/g, "")}
-          </div>
-        )}
+        {/* Center viewfinder */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-24 border-2 border-white/80 rounded-md pointer-events-none" />
       </div>
 
-      {/* status line */}
-      <div className="flex gap-3 items-center text-xs text-gray-500">
-        <span>
+      {/* Status + last code */}
+      <div className="flex flex-col items-center gap-1 text-xs text-gray-600">
+        <div>
           {statusMsg}
           {fpsRef.current && fpsRef.current.fps
             ? ` · ${fpsRef.current.fps} FPS`
             : ""}
           {usingNative
-            ? " · Native detector"
+            ? " (native)"
             : scannerStarted
-            ? " · Software decoder"
+            ? " (software)"
             : ""}
-        </span>
+        </div>
+        {lastStableCode && (
+          <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-800 text-xs">
+            Detected: <span className="font-mono">{lastStableCode}</span>
+          </div>
+        )}
       </div>
     </div>
   );

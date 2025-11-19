@@ -1,19 +1,47 @@
-// components/BarcodeUpload.jsx
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { X, Check } from "lucide-react";
 import ProgressBar from "./ProgressBar";
 
-// Lazy load live scanner
+// Lazy load live scanner (using the updated Beta component)
 const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), { ssr: false });
 
-// Tiny beep (placeholder) — swap for a real sound if desired
+// Tiny beep placeholder
 const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
+function calculateUPCACheckDigit(upcaWithoutChecksum) {
+  const digits = String(upcaWithoutChecksum).replace(/\D/g, "");
+  if (digits.length !== 11) return null;
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    const n = parseInt(digits[i], 10);
+    sum += (i % 2 === 0 ? 3 : 1) * n;
+  }
+  const mod = sum % 10;
+  return String((10 - mod) % 10);
+}
+
+function normalizeToUPCAClient(rawValue) {
+  if (!rawValue) return null;
+  let digits = String(rawValue).replace(/\D/g, "");
+  if (!digits) return null;
+
+  if (digits.length === 13 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  if (digits.length === 12) return digits;
+  if (digits.length === 11) {
+    const check = calculateUPCACheckDigit(digits);
+    if (!check) return null;
+    return digits + check;
+  }
+  return null;
+}
 
 export default function BarcodeUpload({
   multiple = false,
@@ -21,7 +49,6 @@ export default function BarcodeUpload({
   showScanButton = true,
   preferredFormats,
 }) {
-  // UI state
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
   const [athleteNames, setAthleteNames] = useState([]);
@@ -30,29 +57,22 @@ export default function BarcodeUpload({
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
-  const [showChoiceModal, setShowChoiceModal] = useState(false);
 
   const fileInputRef = useRef(null);
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-  // ZXing reader reuse
   const codeReaderRef = useRef(null);
-
-  // OCR worker reuse (for digits-only fallback)
-  const ocrWorkerRef = useRef(null);
-  const ocrInitializingRef = useRef(false);
-
-  // audio ref
   const audioRef = useRef(null);
 
   useEffect(() => {
     audioRef.current = typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
   }, []);
 
-  // animate dots while loading
+  // loading dots
   useEffect(() => {
     if (!loading) return;
     const interval = setInterval(
@@ -83,7 +103,6 @@ export default function BarcodeUpload({
     };
   }, []);
 
-  // mapping for readable preferredFormats -> BarcodeFormat
   const NAME_TO_FORMAT = {
     AZTEC: BarcodeFormat.AZTEC,
     CODABAR: BarcodeFormat.CODABAR,
@@ -135,7 +154,6 @@ export default function BarcodeUpload({
   };
 
   const handleFileInputChange = (e) => handleFiles(e.target.files);
-
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -149,61 +167,15 @@ export default function BarcodeUpload({
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
   };
-
   const handleNameChange = (idx, value) => {
     const names = [...athleteNames];
     names[idx] = value;
     setAthleteNames(names);
   };
 
-  // --- OCR worker init (digits-only) ---
-  const initOCRWorker = useCallback(async () => {
-    if (ocrWorkerRef.current) return ocrWorkerRef.current;
-    if (ocrInitializingRef.current) {
-      while (ocrInitializingRef.current && !ocrWorkerRef.current) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      return ocrWorkerRef.current;
-    }
-    try {
-      ocrInitializingRef.current = true;
-      const tesseract = await import("tesseract.js");
-      const worker = tesseract.createWorker();
-      await worker.load();
-      await worker.loadLanguage("eng");
-      await worker.initialize("eng");
-      await worker.setParameters({ tessedit_char_whitelist: "0123456789" });
-      ocrWorkerRef.current = worker;
-      ocrInitializingRef.current = false;
-      return worker;
-    } catch (err) {
-      console.warn("OCR worker init failed:", err);
-      ocrInitializingRef.current = false;
-      return null;
-    }
-  }, []);
-
-  // OCR recognition on a canvas — returns first numeric 8-14 digit sequence or null
-  async function performOCROnCanvas(canvas) {
-    try {
-      const worker = await initOCRWorker();
-      if (!worker) return null;
-      const { data } = await worker.recognize(canvas);
-      if (!data || !data.text) return null;
-      const digits = (data.text || "").replace(/\s+/g, "");
-      const match = digits.match(/\d{8,14}/);
-      return match ? match[0] : null;
-    } catch (err) {
-      console.warn("Tesseract OCR failed:", err);
-      return null;
-    }
-  }
-
-  // robust image-file barcode decoding with preprocessing, rotations, and OCR fallback
+  // ---- decode barcode from still image file (ZXing only, no OCR) ----
   async function decodeBarcodeFromFile(file) {
     try {
-      // Use createImageBitmap (fast) with fallback
       let bitmap;
       try {
         bitmap = await createImageBitmap(file);
@@ -237,36 +209,35 @@ export default function BarcodeUpload({
           if (formats.length) {
             const hints = new Map();
             hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            // you could rebuild reader with hints here if needed
+            // Note: not all builds let us pass hints easily here; this is mostly future-proofing.
           }
         } catch (e) {
           // ignore
         }
       }
 
-      const MAX_SIDE = 1600;
+      const MAX_SIDE = 1400;
       const rotations = [0, 90, 180, 270];
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
-
       const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
 
       const preprocessCanvas = () => {
         try {
           const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const d = id.data;
-          const contrast = 1.25;
+          const contrast = 1.2;
           for (let i = 0; i < d.length; i += 4) {
-            const r = d[i],
-              g = d[i + 1],
-              b = d[i + 2];
+            const r = d[i];
+            const g = d[i + 1];
+            const b = d[i + 2];
             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
             let v = (gray - 128) * contrast + 128;
             v = Math.max(0, Math.min(255, v));
             d[i] = d[i + 1] = d[i + 2] = v;
           }
           ctx.putImageData(id, 0, 0);
-        } catch (_) {}
+        } catch (e) {}
       };
 
       let lastErr = null;
@@ -298,31 +269,27 @@ export default function BarcodeUpload({
 
           const dataUrl = canvas.toDataURL("image/png");
           const tmpImg = new Image();
-          // eslint-disable-next-line no-await-in-loop
           await new Promise((res, rej) => {
             tmpImg.onload = res;
             tmpImg.onerror = rej;
             tmpImg.src = dataUrl;
           });
 
-          // eslint-disable-next-line no-await-in-loop
           const result = await reader.decodeFromImageElement(tmpImg);
           const barcodeText = result?.getText?.() || result?.text || "";
           try {
             reader.reset?.();
           } catch (e) {}
-          if (barcodeText) return barcodeText;
+          if (!barcodeText) continue;
+
+          const normalized = normalizeToUPCAClient(barcodeText);
+          if (!normalized) {
+            throw new Error("Decoded value is not a valid UPC-A style code.");
+          }
+          return normalized;
         } catch (err) {
           lastErr = err;
         }
-      }
-
-      // ZXing failed → OCR fallback
-      try {
-        const ocrResult = await performOCROnCanvas(canvas);
-        if (ocrResult) return ocrResult;
-      } catch (e) {
-        // ignore
       }
 
       throw lastErr || new Error("No barcode decoded from image.");
@@ -331,49 +298,13 @@ export default function BarcodeUpload({
     }
   }
 
-  // Convert File/Blob -> data:... string for server OCR
-  async function convertFileToDataUrl(fileOrBlob) {
-    if (!fileOrBlob) return null;
-    return await new Promise((resolve, reject) => {
-      try {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (e) => reject(e);
-        reader.readAsDataURL(fileOrBlob);
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
-
-  async function fetchMatches(barcode, labelImage) {
-    let labelImageData = null;
-    try {
-      if (labelImage) {
-        if (typeof labelImage === "string") {
-          if (labelImage.startsWith("data:")) {
-            labelImageData = labelImage;
-          } else if (labelImage.startsWith("blob:")) {
-            console.warn(
-              "labelImage is a blob: URL; server cannot fetch it. Consider passing File instead."
-            );
-            labelImageData = null;
-          } else {
-            labelImageData = labelImage;
-          }
-        } else {
-          labelImageData = await convertFileToDataUrl(labelImage);
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to convert labelImage to data URL", e);
-      labelImageData = null;
-    }
-
+  // ---- server fetch for matches (barcode-only, no image upload) ----
+  async function fetchMatches(barcode) {
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcode, labelImage: labelImageData, isBarcodeFlow: true }),
+      // Only send barcode and isBarcodeFlow; no labelImage to avoid 1MB+ payloads.
+      body: JSON.stringify({ barcode, isBarcodeFlow: true }),
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => null);
@@ -382,30 +313,38 @@ export default function BarcodeUpload({
     return resp.json();
   }
 
-  async function handleDecodedBarcodePipeline(barcodeText, labelImage = null, idx = null) {
+  async function handleDecodedBarcodePipeline(barcodeText, idx = null) {
     setError("");
 
     if (!barcodeText || !/\d/.test(String(barcodeText))) {
-      setError("Decoded value doesn't look like a barcode (no digits).");
+      setError("Decoded value doesn't look like a barcode.");
+      return;
+    }
+
+    const normalized = normalizeToUPCAClient(barcodeText);
+    if (!normalized) {
+      setError("This barcode format is not supported yet.");
       return;
     }
 
     setLoading(true);
-    setProgress(10);
+    setProgress(5);
+
     try {
-      const data = await fetchMatches(barcodeText, labelImage);
-      console.log("[BarcodeUpload] API response:", data);
+      setProgress(20);
+      const data = await fetchMatches(normalized);
+
+      console.log("[BarcodeUpload] API check response:", data);
       console.log("[BarcodeUpload] API debug:", data?.debug || null);
 
       setProgress(90);
-
       const result = {
-        barcode: barcodeText,
+        barcode: normalized,
         productName: data?.productName || "Unknown product",
-        rawIngredients: data?.ocrText || data?.ingredientsText || "",
+        rawIngredients: data?.ocrText || "",
         matchedBanned: data?.matchedBanned || [],
         matchedIngredients: data?.matchedIngredients || [],
-        source: data?.debug?.fetchedFrom || "OCR",
+        source: data?.debug?.fetchedFrom || "barcode",
         idx,
       };
 
@@ -435,18 +374,13 @@ export default function BarcodeUpload({
   }
 
   const handleScanAllBarcodes = async () => {
-    if (!files.length) {
-      setError("Add a barcode photo first.");
-      return;
-    }
+    if (!files.length) return;
     setLoading(true);
-    setError("");
     for (let i = 0; i < files.length; i++) {
       try {
         const code = await decodeBarcodeFromFile(files[i]);
         if (!code) throw new Error("No barcode decoded");
-        const labelFile = files[i] || null;
-        await handleDecodedBarcodePipeline(code, labelFile, i);
+        await handleDecodedBarcodePipeline(code, i);
       } catch (err) {
         console.warn("Scan failed for index", i, err);
       }
@@ -456,29 +390,26 @@ export default function BarcodeUpload({
 
   return (
     <div className="mt-6 font-sans space-y-4">
-      {/* Upload box (opens choice modal) */}
+      {/* Upload box that opens choice modal */}
       <div
+        onClick={() => setShowChoiceModal(true)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
             ? "border-blue-400 bg-blue-50"
             : "border-gray-300 bg-gray-50 hover:bg-gray-100"
         }`}
-        onClick={() => setShowChoiceModal(true)}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
-        <span className="text-gray-700 text-center font-semibold">
+        <span className="text-gray-600 text-center font-medium">
           {files.length
-            ? `${files.length} barcode photo${files.length > 1 ? "s" : ""} selected`
-            : "Tap to scan a barcode"}
-        </span>
-        <span className="mt-1 text-xs text-gray-500 text-center">
-          Use your camera or upload a barcode photo.
+            ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
+            : "Tap to scan a barcode or upload an image"}
         </span>
       </div>
 
-      {/* Hidden File Input */}
+      {/* Hidden file input */}
       <input
         type="file"
         accept="image/*"
@@ -488,152 +419,138 @@ export default function BarcodeUpload({
         onChange={handleFileInputChange}
       />
 
-      {/* Choice modal: Live scanner vs Upload */}
+      {/* Choice modal: Live vs Upload */}
       <AnimatePresence>
         {showChoiceModal && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5 space-y-4"
+              className="bg-white rounded-2xl shadow-xl w-80 p-6 space-y-4 hover:shadow-2xl transition-shadow"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
             >
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Scan Barcode
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-lg font-semibold text-gray-800">
+                  Scan a Barcode
                 </h2>
                 <button
                   onClick={() => setShowChoiceModal(false)}
-                  className="text-gray-400 hover:text-gray-700"
+                  className="text-gray-400 hover:text-gray-700 transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <p className="text-sm text-gray-600">
-                Choose how you want to scan your barcode.
+              <p className="text-gray-600 text-sm">
+                Choose how you want to scan: use your camera live, or upload a
+                photo of the barcode.
               </p>
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3 mt-2">
                 <button
+                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition"
                   onClick={() => {
                     setShowChoiceModal(false);
                     setShowLiveScanner(true);
                   }}
-                  className="w-full py-3 rounded-xl bg-[#46769B] text-white font-medium hover:bg-[#365b7a] transition shadow-sm"
                 >
-                  Use Live Scanner
+                  Start Live Scanner
                 </button>
                 <button
+                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
                   onClick={() => {
                     setShowChoiceModal(false);
                     fileInputRef.current?.click();
                   }}
-                  className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-50 transition"
                 >
-                  Upload Barcode Photo
+                  Take Photo / Upload
                 </button>
               </div>
-              <label className="flex items-center gap-1.5 text-xs text-gray-600 pt-1">
-                <input
-                  type="checkbox"
-                  checked={enableChime}
-                  onChange={(e) => setEnableChime(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                Beep on successful scan
-              </label>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Live Scanner Modal */}
+      {/* Live scanner full screen-ish modal */}
       <AnimatePresence>
         {showLiveScanner && (
           <motion.div
-            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50 px-4"
+            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 relative">
+            <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
               <button
                 className="absolute top-3 right-3 text-gray-600 hover:text-black"
                 onClick={() => setShowLiveScanner(false)}
               >
                 <X className="w-6 h-6" />
               </button>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">
-                Live Barcode Scanner
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">
-                Point your camera at the barcode and hold still for a moment.
-              </p>
               <LiveBarcodeScanner
                 onDetected={(code) => {
                   setShowLiveScanner(false);
                   handleDecodedBarcodePipeline(code);
                 }}
-                preferredFormats={preferredFormats}
+                readers={["ean_reader", "ean_8_reader", "upc_reader", "code_128_reader"]}
                 enableBeep
                 enableFlash
-                enableOCRFallback
+                keepScanning={false}
+                autoStart
               />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Preview / Input */}
+      {/* Preview of uploaded images */}
       {files.map((file, idx) => (
         <div
           key={idx}
           className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
         >
-          <span className="font-medium text-sm sm:text-base">
-            {file.name}
-          </span>
+          <span className="font-medium">{file.name}</span>
           <input
             type="text"
             placeholder="Athlete or Team Name (optional)"
             value={athleteNames[idx]}
             onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
           <img
             src={previewURLs[idx]}
             alt="Preview"
-            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1 w-full sm:w-auto bg-white"
+            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1"
             loading="lazy"
           />
         </div>
       ))}
 
-      <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <p className="text-xs sm:text-sm text-gray-500">
-          Tip: avoid glare and blur; keep the barcode flat and well lit.
-        </p>
+      {/* Tips / info row */}
+      <div className="flex items-center justify-between max-w-3xl mx-auto text-xs text-gray-500">
+        <div>Tip: Fill the frame with just the barcode, then hold still.</div>
       </div>
 
-      {error && (
-        <p className="text-red-500 text-center text-sm mt-1">{error}</p>
-      )}
+      {error && <p className="text-red-500 text-center text-sm">{error}</p>}
 
       {showScanButton && (
         <button
           onClick={handleScanAllBarcodes}
           disabled={!files.length || loading}
-          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
+          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
             !files.length || loading
               ? "bg-gray-400 cursor-not-allowed"
               : "bg-[#46769B] hover:bg-blue-700"
           }`}
         >
-          {loading ? `Scanning${animDots}` : multiple ? "Scan All Barcodes" : "Scan Barcode"}
+          {loading
+            ? `Scanning${animDots}`
+            : multiple
+            ? "Scan All Barcodes"
+            : "Scan Barcode"}
         </button>
       )}
 

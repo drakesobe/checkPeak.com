@@ -7,11 +7,11 @@ import Cropper from "react-easy-crop";
 
 /**
  * Utility: crop a File (image) to the given region and return a new File.
- * `crop` is an object like: { x, y, width, height } in image pixels.
+ * `cropRect` is an object like: { x, y, width, height } in image pixels.
  */
-async function cropFileToRegion(file, crop) {
+async function cropFileToRegion(file, cropRect) {
   return new Promise((resolve, reject) => {
-    if (!crop || crop.width <= 0 || crop.height <= 0) {
+    if (!cropRect || cropRect.width <= 0 || cropRect.height <= 0) {
       return reject(new Error("Invalid crop region"));
     }
 
@@ -26,20 +26,20 @@ async function cropFileToRegion(file, crop) {
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
-        canvas.width = crop.width;
-        canvas.height = crop.height;
+        canvas.width = cropRect.width;
+        canvas.height = cropRect.height;
         const ctx = canvas.getContext("2d");
 
         ctx.drawImage(
           img,
-          crop.x,
-          crop.y,
-          crop.width,
-          crop.height,
+          cropRect.x,
+          cropRect.y,
+          cropRect.width,
+          cropRect.height,
           0,
           0,
-          crop.width,
-          crop.height
+          cropRect.width,
+          cropRect.height
         );
 
         canvas.toBlob(
@@ -74,8 +74,10 @@ async function cropFileToRegion(file, crop) {
  * - full uploader + OCR pipeline (resize, preprocess, Tesseract)
  * - calls `onScan(text)` for each scanned file
  * - hardened for mobile (iPhone HEIC handling, better errors)
- * - improved UX: explicit Camera vs Photo Library choice
- * - NEW: optional crop step so users can crop down to just the label
+ * - Camera vs Photo Library choice
+ * - Mobile-friendly crop step for *labels only*:
+ *    - Presets: Label / Free
+ *    - Drag box + pinch/zoom
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -94,6 +96,9 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
+  // Aspect mode: "label" | "free"
+  const [aspectMode, setAspectMode] = useState("label");
 
   const canvasRefs = useRef([]);
 
@@ -158,6 +163,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setCrop({ x: 0, y: 0 });
     setZoom(1);
     setCroppedAreaPixels(null);
+    setAspectMode("label"); // default to label text
   };
 
   const handleFiles = (selectedFiles) => {
@@ -424,7 +430,6 @@ export default function OCRUpload({ multiple = false, onScan }) {
       setFiles(newFiles);
 
       const newPreviews = [...previewURLs];
-      // revoke old URL to avoid leaks
       if (newPreviews[cropIndex]) {
         URL.revokeObjectURL(newPreviews[cropIndex]);
       }
@@ -446,6 +451,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setShowCropModal(true);
   };
 
+  // Derived aspect value from mode
+  let aspectValue;
+  if (aspectMode === "label") {
+    aspectValue = 3 / 4; // tall-ish for ingredient panels
+  } else {
+    aspectValue = undefined; // free-form
+  }
+
   return (
     <div className="mt-6 font-sans space-y-4">
       {/* Upload card */}
@@ -460,13 +473,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <span className="text-gray-700 text-center font-semibold">
+        <span className="text-gray-800 text-center font-semibold text-sm sm:text-base">
           {files.length
             ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to add a label photo"}
+            : "Tap to add a nutrition label photo"}
         </span>
         <span className="mt-1 text-xs text-gray-500 text-center">
-          Use your camera or photo library. JPG/PNG only for best OCR results.
+          Hold your phone ~6–8&quot; away so text is sharp. You&apos;ll be able to crop
+          down to just the ingredients panel.
         </span>
       </div>
 
@@ -539,10 +553,16 @@ export default function OCRUpload({ multiple = false, onScan }) {
       {showCropModal && cropIndex != null && previewURLs[cropIndex] && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-md bg-neutral-900 rounded-2xl overflow-hidden flex flex-col">
+            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
-              <h2 className="text-sm font-semibold text-white">
-                Crop Label Area
-              </h2>
+              <div className="flex flex-col">
+                <h2 className="text-sm font-semibold text-white">
+                  Crop Label Area
+                </h2>
+                <p className="text-[11px] text-neutral-400">
+                  Drag the box over just the ingredients panel. Pinch/zoom if needed.
+                </p>
+              </div>
               <button
                 onClick={() => setShowCropModal(false)}
                 className="text-neutral-400 hover:text-white text-lg leading-none"
@@ -551,12 +571,13 @@ export default function OCRUpload({ multiple = false, onScan }) {
               </button>
             </div>
 
-            <div className="relative w-full h-[60vh] bg-black">
+            {/* Cropper */}
+            <div className="relative w-full h-[58vh] bg-black">
               <Cropper
                 image={previewURLs[cropIndex]}
                 crop={crop}
                 zoom={zoom}
-                aspect={3 / 4}
+                aspect={aspectValue}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={onCropComplete}
@@ -564,19 +585,56 @@ export default function OCRUpload({ multiple = false, onScan }) {
               />
             </div>
 
-            <div className="flex items-center gap-3 px-4 py-3 bg-neutral-900 border-t border-neutral-800">
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.1}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="flex-1"
-              />
+            {/* Controls */}
+            <div className="flex flex-col gap-3 px-4 py-3 bg-neutral-900 border-t border-neutral-800">
+              {/* Presets */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAspectMode("label")}
+                  className={`flex-1 px-3 py-1.5 rounded-xl text-[11px] font-medium border ${
+                    aspectMode === "label"
+                      ? "border-emerald-400 bg-emerald-500/10 text-emerald-200"
+                      : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
+                  }`}
+                >
+                  🧾 Label Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAspectMode("free")}
+                  className={`flex-1 px-3 py-1.5 rounded-xl text-[11px] font-medium border ${
+                    aspectMode === "free"
+                      ? "border-amber-400 bg-amber-500/10 text-amber-200"
+                      : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
+                  }`}
+                >
+                  🎯 Free
+                </button>
+              </div>
+
+              {/* Zoom slider */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-neutral-300 w-12">
+                  Zoom
+                </span>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="text-[11px] text-neutral-400 w-10 text-right">
+                  {zoom.toFixed(1)}x
+                </span>
+              </div>
+
               <button
                 onClick={handleConfirmCrop}
-                className="px-4 py-2 rounded-xl bg-white text-black text-sm font-semibold"
+                className="mt-1 w-full px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold"
               >
                 Use Crop
               </button>
@@ -591,7 +649,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
           key={idx}
           className="flex flex-col items-start space-y-2 max-w-3xl mx-auto"
         >
-          <span className="font-medium text-sm sm:text-base">
+          <span className="font-medium text-sm sm:text-base text-gray-800">
             {file.name}
           </span>
           <input
@@ -612,14 +670,15 @@ export default function OCRUpload({ multiple = false, onScan }) {
             onClick={() => openCropForIndex(idx)}
             className="mt-1 inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-100"
           >
-            Crop Label Area
+            Re-Crop Label Area
           </button>
         </div>
       ))}
 
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <p className="text-xs sm:text-sm text-gray-500">
-          Aim for a clear shot, then crop down to just the ingredients panel for best results.
+          Tip: For tiny text, stand a bit farther back so it&apos;s sharp, then crop tight
+          around just the ingredients panel here.
         </p>
       </div>
 

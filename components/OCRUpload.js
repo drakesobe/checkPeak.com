@@ -3,6 +3,71 @@
 
 import { useState, useEffect, useRef } from "react";
 import ProgressBar from "./ProgressBar";
+import Cropper from "react-easy-crop";
+
+/**
+ * Utility: crop a File (image) to the given region and return a new File.
+ * `crop` is an object like: { x, y, width, height } in image pixels.
+ */
+async function cropFileToRegion(file, crop) {
+  return new Promise((resolve, reject) => {
+    if (!crop || crop.width <= 0 || crop.height <= 0) {
+      return reject(new Error("Invalid crop region"));
+    }
+
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
+    reader.onerror = (err) => reject(err);
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = crop.width;
+        canvas.height = crop.height;
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(
+          img,
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+          0,
+          0,
+          crop.width,
+          crop.height
+        );
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              return reject(new Error("Crop failed: empty blob"));
+            }
+            const croppedFile = new File(
+              [blob],
+              file.name.replace(/(\.\w+)?$/, "_crop.jpg"),
+              { type: "image/jpeg" }
+            );
+            resolve(croppedFile);
+          },
+          "image/jpeg",
+          0.95
+        );
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    img.onerror = (err) =>
+      reject(err || new Error("Failed to load image for cropping"));
+
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * OCRUpload
@@ -10,6 +75,7 @@ import ProgressBar from "./ProgressBar";
  * - calls `onScan(text)` for each scanned file
  * - hardened for mobile (iPhone HEIC handling, better errors)
  * - improved UX: explicit Camera vs Photo Library choice
+ * - NEW: optional crop step so users can crop down to just the label
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -21,6 +87,13 @@ export default function OCRUpload({ multiple = false, onScan }) {
   const [athleteNames, setAthleteNames] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+
+  // Crop-related state
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropIndex, setCropIndex] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
   const canvasRefs = useRef([]);
 
@@ -81,15 +154,32 @@ export default function OCRUpload({ multiple = false, onScan }) {
     return true;
   };
 
+  const resetCropState = () => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+  };
+
   const handleFiles = (selectedFiles) => {
     const validFiles = Array.from(selectedFiles || []).filter(validateFile);
     if (!validFiles.length) return;
 
+    // Revoke any previous preview URLs before replacing them
+    previewURLs.forEach((url) => URL.revokeObjectURL(url));
+
     setFiles(validFiles);
-    setPreviewURLs(validFiles.map((f) => URL.createObjectURL(f)));
+    const urls = validFiles.map((f) => URL.createObjectURL(f));
+    setPreviewURLs(urls);
     setOcrTexts(new Array(validFiles.length).fill(""));
     setAthleteNames(validFiles.map(() => ""));
     canvasRefs.current = new Array(validFiles.length).fill(null);
+
+    // Open crop modal for the first file to let user crop down to the label
+    if (validFiles.length > 0) {
+      resetCropState();
+      setCropIndex(0);
+      setShowCropModal(true);
+    }
   };
 
   const handleCameraInputChange = (e) => handleFiles(e.target.files);
@@ -127,7 +217,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       img.onload = () => {
         try {
-          const MAX_DIM = 800;
+          // Slightly higher dimension for better text clarity
+          const MAX_DIM = 1400;
           let { width, height } = img;
           if (width > MAX_DIM || height > MAX_DIM) {
             const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
@@ -310,6 +401,51 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setAthleteNames(newNames);
   };
 
+  const onCropComplete = (_, croppedPixels) => {
+    setCroppedAreaPixels(croppedPixels);
+  };
+
+  const handleConfirmCrop = async () => {
+    if (cropIndex == null || croppedAreaPixels == null) {
+      setShowCropModal(false);
+      return;
+    }
+    try {
+      const originalFile = files[cropIndex];
+      if (!originalFile) {
+        setShowCropModal(false);
+        return;
+      }
+
+      const croppedFile = await cropFileToRegion(originalFile, croppedAreaPixels);
+
+      const newFiles = [...files];
+      newFiles[cropIndex] = croppedFile;
+      setFiles(newFiles);
+
+      const newPreviews = [...previewURLs];
+      // revoke old URL to avoid leaks
+      if (newPreviews[cropIndex]) {
+        URL.revokeObjectURL(newPreviews[cropIndex]);
+      }
+      newPreviews[cropIndex] = URL.createObjectURL(croppedFile);
+      setPreviewURLs(newPreviews);
+
+      setShowCropModal(false);
+    } catch (err) {
+      console.error("Crop apply error:", err);
+      setError("Could not crop image. Please try again or retake the photo.");
+      setShowCropModal(false);
+    }
+  };
+
+  const openCropForIndex = (idx) => {
+    if (!previewURLs[idx]) return;
+    resetCropState();
+    setCropIndex(idx);
+    setShowCropModal(true);
+  };
+
   return (
     <div className="mt-6 font-sans space-y-4">
       {/* Upload card */}
@@ -399,11 +535,61 @@ export default function OCRUpload({ multiple = false, onScan }) {
         </div>
       )}
 
+      {/* Crop modal */}
+      {showCropModal && cropIndex != null && previewURLs[cropIndex] && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md bg-neutral-900 rounded-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+              <h2 className="text-sm font-semibold text-white">
+                Crop Label Area
+              </h2>
+              <button
+                onClick={() => setShowCropModal(false)}
+                className="text-neutral-400 hover:text-white text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative w-full h-[60vh] bg-black">
+              <Cropper
+                image={previewURLs[cropIndex]}
+                crop={crop}
+                zoom={zoom}
+                aspect={3 / 4}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+                showGrid={false}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 px-4 py-3 bg-neutral-900 border-t border-neutral-800">
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.1}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="flex-1"
+              />
+              <button
+                onClick={handleConfirmCrop}
+                className="px-4 py-2 rounded-xl bg-white text-black text-sm font-semibold"
+              >
+                Use Crop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Previews */}
       {files.map((file, idx) => (
         <div
           key={idx}
-          className="flex flex-col items-start space-y-1 max-w-3xl mx-auto"
+          className="flex flex-col items-start space-y-2 max-w-3xl mx-auto"
         >
           <span className="font-medium text-sm sm:text-base">
             {file.name}
@@ -421,12 +607,19 @@ export default function OCRUpload({ multiple = false, onScan }) {
             className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1 w-full sm:w-auto bg-white"
             loading="lazy"
           />
+          <button
+            type="button"
+            onClick={() => openCropForIndex(idx)}
+            className="mt-1 inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-100"
+          >
+            Crop Label Area
+          </button>
         </div>
       ))}
 
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <p className="text-xs sm:text-sm text-gray-500">
-          Aim for a clear, close shot of just the ingredients panel.
+          Aim for a clear shot, then crop down to just the ingredients panel for best results.
         </p>
       </div>
 

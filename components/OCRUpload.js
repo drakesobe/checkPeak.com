@@ -71,13 +71,11 @@ async function cropFileToRegion(file, cropRect) {
 
 /**
  * OCRUpload
- * - full uploader + OCR pipeline (resize, preprocess, Tesseract)
- * - calls `onScan(text)` for each scanned file
- * - hardened for mobile (iPhone HEIC handling, better errors)
+ * - Full uploader + OCR pipeline (resize, preprocess, Tesseract)
+ * - Calls `onScan(text)` for each scanned file
+ * - Hardened for mobile (iPhone HEIC handling, better errors)
  * - Camera vs Photo Library choice
- * - Mobile-friendly crop step for *labels only*:
- *    - Presets: Label / Free
- *    - Drag box + pinch/zoom
+ * - Label-only crop step using brand styling and minimal controls
  */
 export default function OCRUpload({ multiple = false, onScan }) {
   const [files, setFiles] = useState([]);
@@ -99,6 +97,12 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
   // Aspect mode: "label" | "free"
   const [aspectMode, setAspectMode] = useState("label");
+
+  // Track which files have been cropped (for UI tags)
+  const [croppedFlags, setCroppedFlags] = useState([]);
+
+  // For better scanning UX: show which file is being processed
+  const [currentScanIndex, setCurrentScanIndex] = useState(null);
 
   const canvasRefs = useRef([]);
 
@@ -178,6 +182,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setPreviewURLs(urls);
     setOcrTexts(new Array(validFiles.length).fill(""));
     setAthleteNames(validFiles.map(() => ""));
+    setCroppedFlags(validFiles.map(() => false));
     canvasRefs.current = new Array(validFiles.length).fill(null);
 
     // Open crop modal for the first file to let user crop down to the label
@@ -328,6 +333,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
     setLoading(true);
     setError("");
     setOcrTexts(new Array(files.length).fill(""));
+    setCurrentScanIndex(0);
 
     try {
       const Tesseract = (await import("tesseract.js")).default;
@@ -343,6 +349,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
       );
 
       for (let i = 0; i < resizedFiles.length; i++) {
+        setCurrentScanIndex(i);
         const file = resizedFiles[i];
         const img = new Image();
         const reader = new FileReader();
@@ -398,6 +405,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
       );
     } finally {
       setLoading(false);
+      setCurrentScanIndex(null);
     }
   };
 
@@ -436,6 +444,10 @@ export default function OCRUpload({ multiple = false, onScan }) {
       newPreviews[cropIndex] = URL.createObjectURL(croppedFile);
       setPreviewURLs(newPreviews);
 
+      const newFlags = [...croppedFlags];
+      newFlags[cropIndex] = true;
+      setCroppedFlags(newFlags);
+
       setShowCropModal(false);
     } catch (err) {
       console.error("Crop apply error:", err);
@@ -460,27 +472,48 @@ export default function OCRUpload({ multiple = false, onScan }) {
   }
 
   return (
-    <div className="mt-6 font-sans space-y-4">
+    <div className="mt-6 font-sans space-y-5">
+      {/* Header / Steps */}
+      <div className="max-w-3xl mx-auto flex flex-col gap-1">
+        <div className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-[#46769B]/30 bg-[#46769B]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#46769B]">
+            Step 1 · Label Scan
+          </span>
+        </div>
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+          Scan a supplement nutrition label
+        </h2>
+        <p className="text-xs sm:text-sm text-gray-500">
+          Upload a clear photo, crop around the ingredients panel, then scan it for
+          banned substances and ingredient details.
+        </p>
+      </div>
+
       {/* Upload card */}
       <div
-        className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
+        className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 rounded-2xl cursor-pointer transition border-2 border-dashed ${
           isDragging
-            ? "border-blue-400 bg-blue-50"
-            : "border-gray-300 bg-gray-50 hover:bg-gray-100"
+            ? "border-[#46769B] bg-[#f0f5fa]"
+            : "border-gray-300 bg-[#f7f9fc] hover:bg-[#edf3fb]"
         }`}
         onClick={() => setShowChoiceModal(true)}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <span className="text-gray-800 text-center font-semibold text-sm sm:text-base">
+        <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
           {files.length
-            ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
+            ? `${files.length} label photo${
+                files.length > 1 ? "s" : ""
+              } selected`
             : "Tap to add a nutrition label photo"}
         </span>
-        <span className="mt-1 text-xs text-gray-500 text-center">
-          Hold your phone ~6–8&quot; away so text is sharp. You&apos;ll be able to crop
-          down to just the ingredients panel.
+        <span className="mt-1 text-[11px] sm:text-xs text-gray-500 text-center max-w-md">
+          Hold your phone about 6–8 inches away until the text looks sharp. You can
+          crop to just the ingredients panel before scanning.
+        </span>
+        <span className="mt-3 text-[11px] text-gray-500 text-center">
+          Drag and drop a label photo, or tap to use your camera or photo library.
         </span>
       </div>
 
@@ -513,13 +546,15 @@ export default function OCRUpload({ multiple = false, onScan }) {
               </h2>
               <button
                 onClick={() => setShowChoiceModal(false)}
-                className="text-gray-400 hover:text-gray-700"
+                className="text-gray-400 hover:text-gray-700 text-lg leading-none"
+                aria-label="Close"
               >
-                ✕
+                ×
               </button>
             </div>
             <p className="text-sm text-gray-600">
-              Choose how you want to add your nutrition label.
+              Choose how you want to add your nutrition label. A single, sharp photo of
+              the ingredients panel works best.
             </p>
             <div className="space-y-3">
               <button
@@ -527,7 +562,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
                   setShowChoiceModal(false);
                   cameraInputRef.current?.click();
                 }}
-                className="w-full py-3 rounded-xl bg-[#46769B] text-white font-medium hover:bg-[#365b7a] transition shadow-sm"
+                className="w-full py-3 rounded-xl bg-[#46769B] text-white font-medium hover:bg-[#365b7a] transition shadow-sm text-sm"
               >
                 Use Camera
               </button>
@@ -536,14 +571,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
                   setShowChoiceModal(false);
                   fileInputRef.current?.click();
                 }}
-                className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-50 transition"
+                className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-50 transition text-sm"
               >
                 Choose from Photos / Files
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              iPhone tip: If photos fail to scan, take a screenshot of the label
-              and upload the screenshot instead.
+            <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+              iPhone tip: If photos fail to scan, take a screenshot of the label and
+              upload the screenshot instead.
             </p>
           </div>
         </div>
@@ -560,14 +595,16 @@ export default function OCRUpload({ multiple = false, onScan }) {
                   Crop Label Area
                 </h2>
                 <p className="text-[11px] text-neutral-400">
-                  Drag the box over just the ingredients panel. Pinch/zoom if needed.
+                  Drag the box over just the ingredients panel. Use the zoom slider if
+                  needed.
                 </p>
               </div>
               <button
                 onClick={() => setShowCropModal(false)}
                 className="text-neutral-400 hover:text-white text-lg leading-none"
+                aria-label="Close crop"
               >
-                ✕
+                ×
               </button>
             </div>
 
@@ -598,7 +635,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
                       : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
                   }`}
                 >
-                  🧾 Label Text
+                  Label Text
                 </button>
                 <button
                   type="button"
@@ -609,7 +646,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
                       : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
                   }`}
                 >
-                  🎯 Free
+                  Free Crop
                 </button>
               </div>
 
@@ -625,7 +662,8 @@ export default function OCRUpload({ multiple = false, onScan }) {
                   step={0.1}
                   value={zoom}
                   onChange={(e) => setZoom(Number(e.target.value))}
-                  className="flex-1"
+                  className="flex-1 accent-[#46769B]"
+                  aria-label="Crop zoom"
                 />
                 <span className="text-[11px] text-neutral-400 w-10 text-right">
                   {zoom.toFixed(1)}x
@@ -634,7 +672,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
               <button
                 onClick={handleConfirmCrop}
-                className="mt-1 w-full px-4 py-2.5 rounded-xl bg-white text-black text-sm font-semibold"
+                className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:bg-[#365b7a] transition shadow-sm"
               >
                 Use Crop
               </button>
@@ -647,70 +685,106 @@ export default function OCRUpload({ multiple = false, onScan }) {
       {files.map((file, idx) => (
         <div
           key={idx}
-          className="flex flex-col items-start space-y-2 max-w-3xl mx-auto"
+          className="flex flex-col items-start space-y-2 max-w-3xl mx-auto rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
         >
-          <span className="font-medium text-sm sm:text-base text-gray-800">
-            {file.name}
-          </span>
-          <input
-            type="text"
-            placeholder="Athlete or Team Name (optional)"
-            value={athleteNames[idx]}
-            onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
-          />
+          <div className="flex items-center justify-between w-full gap-2">
+            <div className="flex flex-col">
+              <span className="font-medium text-xs sm:text-sm text-gray-900 truncate">
+                {file.name}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                Label {idx + 1} of {files.length}
+              </span>
+            </div>
+            {croppedFlags[idx] && (
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                Cropped
+              </span>
+            )}
+          </div>
+
+          <label className="w-full text-[11px] text-gray-600">
+            Athlete or Team Name (optional)
+            <input
+              type="text"
+              value={athleteNames[idx]}
+              onChange={(e) => handleNameChange(idx, e.target.value)}
+              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#46769B] focus:border-transparent text-xs sm:text-sm"
+            />
+          </label>
+
           <img
             src={previewURLs[idx]}
-            alt="Preview"
-            className="max-h-48 rounded-xl border border-gray-200 shadow-md object-contain mt-1 w-full sm:w-auto bg-white"
+            alt={`Label preview ${idx + 1}`}
+            className="max-h-48 rounded-xl border border-gray-200 shadow-sm object-contain mt-1 w-full sm:w-auto bg-white"
             loading="lazy"
           />
-          <button
-            type="button"
-            onClick={() => openCropForIndex(idx)}
-            className="mt-1 inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-100"
-          >
-            Re-Crop Label Area
-          </button>
+
+          <div className="flex items-center justify-between w-full mt-1">
+            <button
+              type="button"
+              onClick={() => openCropForIndex(idx)}
+              className="inline-flex items-center px-3 py-1.5 rounded-xl text-[11px] font-medium border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Re-Crop Label Area
+            </button>
+            {ocrTexts[idx] && (
+              <span className="text-[11px] text-[#46769B] font-medium">
+                OCR ready
+              </span>
+            )}
+          </div>
         </div>
       ))}
 
       <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <p className="text-xs sm:text-sm text-gray-500">
-          Tip: For tiny text, stand a bit farther back so it&apos;s sharp, then crop tight
-          around just the ingredients panel here.
+        <p className="text-[11px] sm:text-xs text-gray-500">
+          Tip: Avoid shadows, glare, and extreme angles on the nutrition panel. If a scan
+          fails, try retaking the photo slightly farther back and re-cropping.
         </p>
       </div>
 
       {error && (
-        <p className="whitespace-pre-line text-red-500 text-center text-sm mt-1">
+        <p className="whitespace-pre-line text-red-500 text-center text-sm mt-1 max-w-3xl mx-auto bg-red-50 border border-red-100 rounded-xl px-3 py-2">
           {error}
         </p>
       )}
 
       {loading && (
-        <ProgressBar
-          progress={Math.round(
-            (ocrTexts.filter((r) => r).length / (files.length || 1)) * 100
+        <div className="max-w-3xl mx-auto space-y-2">
+          <ProgressBar
+            progress={Math.round(
+              (ocrTexts.filter((r) => r).length / (files.length || 1)) * 100
+            )}
+          />
+          {currentScanIndex != null && (
+            <p className="text-[11px] text-gray-500 text-right">
+              Scanning label {currentScanIndex + 1} of {files.length}
+              {animDots}
+            </p>
           )}
-        />
+        </div>
       )}
 
-      <button
-        onClick={handleScan}
-        disabled={loading || !files.length}
-        className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
-          loading || !files.length
-            ? "bg-gray-400 cursor-not-allowed"
-            : "bg-[#46769B] hover:bg-blue-700"
-        }`}
-      >
-        {loading
-          ? `Scanning${animDots}`
-          : multiple
-          ? "Scan All Labels"
-          : "Scan Label"}
-      </button>
+      <div className="max-w-3xl mx-auto flex justify-end">
+        <button
+          onClick={handleScan}
+          disabled={loading || !files.length}
+          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base flex items-center justify-center ${
+            loading || !files.length
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-[#46769B] hover:bg-[#365b7a]"
+          }`}
+        >
+          {loading
+            ? currentScanIndex != null
+              ? `Scanning ${currentScanIndex + 1} of ${files.length}${animDots}`
+              : `Scanning${animDots}`
+            : multiple
+            ? "Scan All Labels"
+            : "Scan Label"}
+        </button>
+      </div>
     </div>
   );
 }

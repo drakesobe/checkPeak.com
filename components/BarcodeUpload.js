@@ -9,9 +9,9 @@ import {
 } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import { X, Check, Crop as CropIcon, ScanLine } from "lucide-react";
+import { X, Check, ScanLine } from "lucide-react";
+import Cropper from "react-easy-crop";
 import ProgressBar from "./ProgressBar";
-import BarcodeCropModal from "./BarcodeCropModal";
 
 // Lazy load live scanner (Beta)
 const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
@@ -21,6 +21,71 @@ const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
 // Tiny beep placeholder (you can swap this for a real sound if you want)
 const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
+/**
+ * Crop a File based on pixel cropRect and return a new File + dataUrl.
+ * `cropRect`: { x, y, width, height } in image pixels.
+ */
+async function cropFileToRegion(file, cropRect) {
+  return new Promise((resolve, reject) => {
+    if (!cropRect || cropRect.width <= 0 || cropRect.height <= 0) {
+      return reject(new Error("Invalid crop region"));
+    }
+
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
+    reader.onerror = (err) => reject(err);
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = cropRect.width;
+        canvas.height = cropRect.height;
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(
+          img,
+          cropRect.x,
+          cropRect.y,
+          cropRect.width,
+          cropRect.height,
+          0,
+          0,
+          cropRect.width,
+          cropRect.height
+        );
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              return reject(new Error("Crop failed: empty blob"));
+            }
+            const croppedFile = new File(
+              [blob],
+              file.name.replace(/(\.\w+)?$/, "_barcode_crop.jpg"),
+              { type: "image/jpeg" }
+            );
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+            resolve({ file: croppedFile, dataUrl });
+          },
+          "image/jpeg",
+          0.95
+        );
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    img.onerror = (err) =>
+      reject(err || new Error("Failed to load image for cropping"));
+
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function BarcodeUpload({
   multiple = false,
@@ -44,9 +109,17 @@ export default function BarcodeUpload({
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
 
-  // Cropping state
-  const [cropSourceUrl, setCropSourceUrl] = useState(null); // URL to crop
-  const [pendingFileIndex, setPendingFileIndex] = useState(null); // which file is being cropped
+  // Cropping state (in-component, matches OCRUpload style)
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropIndex, setCropIndex] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [aspectMode, setAspectMode] = useState("barcode"); // "barcode" | "free"
+  const [croppedFlags, setCroppedFlags] = useState([]);
+
+  // Scan progress (which file is currently being processed)
+  const [currentScanIndex, setCurrentScanIndex] = useState(null);
 
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
@@ -143,19 +216,31 @@ export default function BarcodeUpload({
     return true;
   };
 
+  const resetCropState = () => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+    setAspectMode("barcode");
+  };
+
   const handleFiles = (fileList) => {
     const valid = Array.from(fileList || []).filter(validateFile);
     if (!valid.length) return;
+
+    // Revoke existing preview URLs
+    previewURLs.forEach((url) => URL.revokeObjectURL(url));
 
     const urls = valid.map((f) => URL.createObjectURL(f));
 
     setFiles(valid);
     setPreviewURLs(urls);
     setAthleteNames(valid.map(() => ""));
+    setCroppedFlags(valid.map(() => false));
 
-    // Immediately open cropper on the first file to encourage tight barcode capture
-    setPendingFileIndex(0);
-    setCropSourceUrl(urls[0]);
+    // Auto-open crop modal for the first file to encourage tight barcode capture
+    resetCropState();
+    setCropIndex(0);
+    setShowCropModal(true);
   };
 
   const handleFileInputChange = (e) => handleFiles(e.target.files);
@@ -270,14 +355,14 @@ export default function BarcodeUpload({
 
       const reader = codeReaderRef.current || new BrowserMultiFormatReader();
 
-      // We still map formats (future: could feed hints into ZXing if supported)
+      // Preferred formats mapping (future: pass hints where supported)
       if (preferredFormats && Array.isArray(preferredFormats)) {
         try {
           const formats = mapFormats(preferredFormats);
           if (formats.length) {
             const hints = new Map();
             hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            // Some ZXing builds allow hints in ctor; keeping this for future use.
+            // Some ZXing builds use hints, kept here for forward compatibility.
           }
         } catch (e) {
           // ignore
@@ -383,7 +468,7 @@ export default function BarcodeUpload({
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // We only send the numeric barcode here to avoid 1MB body issues
+      // Only send the numeric barcode here to avoid body size issues
       body: JSON.stringify({ barcode, isBarcodeFlow: true }),
     });
     if (!resp.ok) {
@@ -452,6 +537,7 @@ export default function BarcodeUpload({
 
     for (let i = 0; i < files.length; i++) {
       try {
+        setCurrentScanIndex(i);
         const code = await decodeBarcodeFromFile(files[i]);
         if (!code) throw new Error("No barcode decoded");
         await handleDecodedBarcodePipeline(code, i);
@@ -462,40 +548,98 @@ export default function BarcodeUpload({
 
     setLoading(false);
     setProgress(0);
+    setCurrentScanIndex(null);
   };
 
-  // ---- Crop handlers ----
+  // ---- Crop handlers (react-easy-crop) ----
 
-  const handleCropCancel = () => {
-    setCropSourceUrl(null);
-    setPendingFileIndex(null);
+  const onCropComplete = (_, croppedPixels) => {
+    setCroppedAreaPixels(croppedPixels);
   };
 
-  const handleCropDone = (result) => {
-    // result: { file, blob, dataUrl }
-    if (pendingFileIndex == null) return;
+  const handleConfirmCrop = async () => {
+    if (cropIndex == null || !croppedAreaPixels) {
+      setShowCropModal(false);
+      return;
+    }
+    try {
+      const originalFile = files[cropIndex];
+      if (!originalFile) {
+        setShowCropModal(false);
+        return;
+      }
 
-    setFiles((prev) => {
-      const updated = [...prev];
-      updated[pendingFileIndex] = result.file;
-      return updated;
-    });
+      const { file, dataUrl } = await cropFileToRegion(
+        originalFile,
+        croppedAreaPixels
+      );
 
-    setPreviewURLs((prev) => {
-      const updated = [...prev];
-      updated[pendingFileIndex] = result.dataUrl;
-      return updated;
-    });
+      setFiles((prev) => {
+        const updated = [...prev];
+        updated[cropIndex] = file;
+        return updated;
+      });
 
-    setCropSourceUrl(null);
-    setPendingFileIndex(null);
+      setPreviewURLs((prev) => {
+        const updated = [...prev];
+        // revoke old URL
+        if (updated[cropIndex]) {
+          URL.revokeObjectURL(updated[cropIndex]);
+        }
+        updated[cropIndex] = dataUrl;
+        return updated;
+      });
+
+      setCroppedFlags((prev) => {
+        const updated = [...prev];
+        updated[cropIndex] = true;
+        return updated;
+      });
+
+      setShowCropModal(false);
+    } catch (err) {
+      console.error("Crop apply error:", err);
+      setError("Could not crop image. Please try again or retake the photo.");
+      setShowCropModal(false);
+    }
   };
+
+  const openCropForIndex = (idx) => {
+    if (!previewURLs[idx]) return;
+    resetCropState();
+    setCropIndex(idx);
+    setShowCropModal(true);
+  };
+
+  // Derived aspect value from mode
+  let aspectValue;
+  if (aspectMode === "barcode") {
+    aspectValue = 5 / 2; // wide strip for barcodes
+  } else {
+    aspectValue = undefined; // free-form
+  }
 
   // ---- RENDER ----
 
   return (
-    <div className="mt-6 font-sans space-y-4">
-      {/* Upload Box */}
+    <div className="mt-6 font-sans space-y-5">
+      {/* Header / Steps */}
+      <div className="max-w-3xl mx-auto flex flex-col gap-1">
+        <div className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-[#46769B]/30 bg-[#46769B]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#46769B]">
+            Step 1 · Barcode Scan
+          </span>
+        </div>
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+          Scan a product barcode
+        </h2>
+        <p className="text-xs sm:text-sm text-gray-500">
+          Use the live scanner for quick reads, or upload a photo and crop tightly
+          around the barcode for maximum accuracy.
+        </p>
+      </div>
+
+      {/* Upload card */}
       <div
         onClick={() => setShowChoiceModal(true)}
         onDragOver={handleDragOver}
@@ -503,17 +647,20 @@ export default function BarcodeUpload({
         onDrop={handleDrop}
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
           isDragging
-            ? "border-blue-400 bg-blue-50"
-            : "border-gray-300 bg-gray-50 hover:bg-gray-100"
+            ? "border-[#46769B] bg-[#f0f5fa]"
+            : "border-gray-300 bg-[#f7f9fc] hover:bg-[#edf3fb]"
         }`}
       >
-        <span className="text-gray-600 text-center font-medium">
+        <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
           {files.length
-            ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-            : "Tap to scan a barcode (camera or gallery)"}
+            ? `${files.length} barcode photo${
+                files.length > 1 ? "s" : ""
+              } selected`
+            : "Tap to scan a barcode (live camera or photo)"}
         </span>
-        <span className="text-xs text-gray-400 mt-1">
-          Best results: fill the frame with the barcode, then crop tightly.
+        <span className="text-[11px] sm:text-xs text-gray-500 mt-1 text-center max-w-md">
+          For best results, fill most of the frame with the barcode and its numbers. You
+          can crop to just the barcode stripe before scanning.
         </span>
       </div>
 
@@ -531,13 +678,13 @@ export default function BarcodeUpload({
       <AnimatePresence>
         {showChoiceModal && (
           <motion.div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-xl w-80 p-6 space-y-4 hover:shadow-2xl transition-shadow"
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4 hover:shadow-2xl transition-shadow"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -549,30 +696,31 @@ export default function BarcodeUpload({
                 <button
                   onClick={() => setShowChoiceModal(false)}
                   className="text-gray-400 hover:text-gray-700 transition"
+                  aria-label="Close barcode scan options"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <p className="text-gray-600 text-sm">
-                Choose how you want to scan. Live is great for quick hits.
-                Photo + crop is best for precision.
+                Choose how you want to scan. Live scanning is fastest. Photo + crop
+                gives the cleanest read if lighting is tricky.
               </p>
               <div className="flex flex-col gap-3 mt-2">
                 <button
-                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition flex items-center justify-center gap-2"
+                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition flex items-center justify-center gap-2 text-sm"
                   onClick={() => {
                     setShowChoiceModal(false);
                     setShowLiveScanner(true);
                   }}
                 >
                   <ScanLine className="w-4 h-4" />
-                  Live Barcode Scanner
-                  <span className="ml-1 text-[11px] uppercase tracking-wide bg-white/10 px-1.5 py-0.5 rounded-full border border-white/30">
+                  <span>Live Barcode Scanner</span>
+                  <span className="ml-1 text-[10px] uppercase tracking-wide bg-white/10 px-1.5 py-0.5 rounded-full border border-white/30">
                     Beta
                   </span>
                 </button>
                 <button
-                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
+                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition text-sm"
                   onClick={() => {
                     setShowChoiceModal(false);
                     fileInputRef.current?.click();
@@ -581,6 +729,10 @@ export default function BarcodeUpload({
                   Take Photo / Upload
                 </button>
               </div>
+              <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                Tip: If the live scanner struggles (glare, tiny barcode), take a photo,
+                crop tightly around the barcode, and scan from that.
+              </p>
             </motion.div>
           </motion.div>
         )}
@@ -590,15 +742,16 @@ export default function BarcodeUpload({
       <AnimatePresence>
         {showLiveScanner && (
           <motion.div
-            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50"
+            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50 px-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="bg-white rounded-2xl shadow-xl w-[90%] max-w-md p-4 relative">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 relative">
               <button
                 className="absolute top-3 right-3 text-gray-600 hover:text-black"
                 onClick={() => setShowLiveScanner(false)}
+                aria-label="Close live barcode scanner"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -607,8 +760,8 @@ export default function BarcodeUpload({
                   Live Scanner · Beta
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Hold the barcode in the frame. We&apos;ll auto-detect and
-                  vibrate when we get a clean read.
+                  Hold the barcode in the frame. The scanner will continuously refocus
+                  and read. We will notify you as soon as we get a clean scan.
                 </p>
               </div>
               <LiveBarcodeScanner
@@ -626,80 +779,206 @@ export default function BarcodeUpload({
         )}
       </AnimatePresence>
 
+      {/* Crop modal (matches OCRUpload style, but tuned for barcodes) */}
+      {showCropModal && cropIndex != null && previewURLs[cropIndex] && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md bg-neutral-900 rounded-2xl overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+              <div className="flex flex-col">
+                <h2 className="text-sm font-semibold text-white">
+                  Crop Barcode Area
+                </h2>
+                <p className="text-[11px] text-neutral-400">
+                  Drag the box along the barcode stripe and its numbers. Use the zoom
+                  slider if needed.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCropModal(false)}
+                className="text-neutral-400 hover:text-white text-lg leading-none"
+                aria-label="Close crop"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Cropper */}
+            <div className="relative w-full h-[58vh] bg-black">
+              <Cropper
+                image={previewURLs[cropIndex]}
+                crop={crop}
+                zoom={zoom}
+                aspect={aspectValue}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+                showGrid={false}
+              />
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-col gap-3 px-4 py-3 bg-neutral-900 border-t border-neutral-800">
+              {/* Presets */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAspectMode("barcode")}
+                  className={`flex-1 px-3 py-1.5 rounded-xl text-[11px] font-medium border ${
+                    aspectMode === "barcode"
+                      ? "border-sky-400 bg-sky-500/10 text-sky-200"
+                      : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
+                  }`}
+                >
+                  Barcode Stripe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAspectMode("free")}
+                  className={`flex-1 px-3 py-1.5 rounded-xl text-[11px] font-medium border ${
+                    aspectMode === "free"
+                      ? "border-amber-400 bg-amber-500/10 text-amber-200"
+                      : "border-neutral-700 text-neutral-200 hover:bg-neutral-800"
+                  }`}
+                >
+                  Free Crop
+                </button>
+              </div>
+
+              {/* Zoom slider */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-neutral-300 w-12">
+                  Zoom
+                </span>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="flex-1 accent-[#46769B]"
+                  aria-label="Crop zoom"
+                />
+                <span className="text-[11px] text-neutral-400 w-10 text-right">
+                  {zoom.toFixed(1)}x
+                </span>
+              </div>
+
+              <button
+                onClick={handleConfirmCrop}
+                className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:bg-[#365b7a] transition shadow-sm"
+              >
+                Use Crop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview + per-file controls */}
       {files.map((file, idx) => (
         <div
           key={idx}
-          className="flex flex-col items-start space-y-2 max-w-3xl mx-auto bg-white/70 rounded-2xl border border-gray-200 p-3 shadow-sm"
+          className="flex flex-col items-start space-y-2 max-w-3xl mx-auto bg-white rounded-2xl border border-gray-200 p-3 shadow-sm"
         >
           <div className="flex items-center justify-between w-full gap-3">
-            <span className="font-medium text-gray-800 truncate">
-              {file.name || `Barcode photo ${idx + 1}`}
-            </span>
+            <div className="flex flex-col">
+              <span className="font-medium text-gray-800 truncate text-xs sm:text-sm">
+                {file.name || `Barcode photo ${idx + 1}`}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                Barcode {idx + 1} of {files.length}
+              </span>
+            </div>
             <button
               type="button"
-              onClick={() => {
-                setPendingFileIndex(idx);
-                setCropSourceUrl(previewURLs[idx]);
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-700 hover:bg-gray-100"
+              onClick={() => openCropForIndex(idx)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              <CropIcon className="w-3.5 h-3.5" />
               Crop Barcode
             </button>
           </div>
 
-          <input
-            type="text"
-            placeholder="Athlete or Team Name (optional)"
-            value={athleteNames[idx]}
-            onChange={(e) => handleNameChange(idx, e.target.value)}
-            className="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
+          <label className="w-full text-[11px] text-gray-600">
+            Athlete or Team Name (optional)
+            <input
+              type="text"
+              placeholder=""
+              value={athleteNames[idx]}
+              onChange={(e) => handleNameChange(idx, e.target.value)}
+              className="mt-1 w-full px-3 py-2 border rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B] focus:border-transparent"
+            />
+          </label>
 
           <img
             src={previewURLs[idx]}
-            alt="Preview"
+            alt="Barcode preview"
             className="max-h-48 w-full rounded-xl border border-gray-200 shadow-md object-contain mt-1 bg-white"
             loading="lazy"
           />
 
-          <p className="text-xs text-gray-500">
-            Tip: make sure only the barcode &amp; its numbers are visible. Use
-            the Crop button above for best accuracy.
-          </p>
+          <div className="flex items-center justify-between w-full mt-1">
+            <p className="text-xs text-gray-500 max-w-xs">
+              Make sure only the barcode and its numbers are visible. Use the crop tool
+              to remove extra packaging or labels.
+            </p>
+            {croppedFlags[idx] && (
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                Cropped
+              </span>
+            )}
+          </div>
         </div>
       ))}
 
-      {/* Small tip / controls row */}
+      {/* Info / legal text */}
       <div className="flex items-center justify-between max-w-3xl mx-auto">
-        <div className="text-xs text-gray-500">
-          Photos are kept on-device for decoding. We only send the barcode
-          digits to our servers.
+        <div className="text-[11px] sm:text-xs text-gray-500">
+          Photos stay on your device for decoding. Only the barcode digits are sent to
+          our servers to look up products and ingredients.
         </div>
       </div>
 
-      {error && <p className="text-red-500 text-center text-sm">{error}</p>}
-
-      {showScanButton && (
-        <button
-          onClick={handleScanAllBarcodes}
-          disabled={!files.length || loading}
-          className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition ${
-            !files.length || loading
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-[#46769B] hover:bg-blue-700"
-          }`}
-        >
-          {loading
-            ? `Scanning${animDots}`
-            : multiple
-            ? "Scan All Barcodes"
-            : "Scan Barcode"}
-        </button>
+      {error && (
+        <p className="text-red-500 text-center text-sm mt-1 max-w-3xl mx-auto bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          {error}
+        </p>
       )}
 
-      {loading && <ProgressBar progress={progress} scanning={loading} />}
+      {loading && (
+        <div className="max-w-3xl mx-auto space-y-2">
+          <ProgressBar progress={progress} scanning={loading} />
+          {currentScanIndex != null && (
+            <p className="text-[11px] text-gray-500 text-right">
+              Scanning barcode {currentScanIndex + 1} of {files.length}
+              {animDots}
+            </p>
+          )}
+        </div>
+      )}
+
+      {showScanButton && (
+        <div className="max-w-3xl mx-auto flex justify-end">
+          <button
+            onClick={handleScanAllBarcodes}
+            disabled={!files.length || loading}
+            className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
+              !files.length || loading
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-[#46769B] hover:bg-[#365b7a]"
+            }`}
+          >
+            {loading
+              ? currentScanIndex != null
+                ? `Scanning ${currentScanIndex + 1} of ${files.length}${animDots}`
+                : `Scanning${animDots}`
+              : multiple
+              ? "Scan All Barcodes"
+              : "Scan Barcode"}
+          </button>
+        </div>
+      )}
 
       {/* Success checkmark */}
       <AnimatePresence>
@@ -717,15 +996,6 @@ export default function BarcodeUpload({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Crop modal overlay */}
-      {cropSourceUrl && (
-        <BarcodeCropModal
-          src={cropSourceUrl}
-          onCancel={handleCropCancel}
-          onCropped={handleCropDone}
-        />
-      )}
     </div>
   );
 }

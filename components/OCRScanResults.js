@@ -1,17 +1,18 @@
 // components/OCRScanResults.js
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 /**
  * OCRScanResults
  *
- * - OCR text section (collapsible, above everything else)
- * - Top-level summary card (total results, banned, ingredients)
- * - Banned + Ingredients sections with toggle headers
- * - Highlighting of terms that appear both in OCR and tables
- * - Sticky bottom legend that doubles as a filter by ban type
+ * Mobile-first, card-based results:
+ *  - Simple scan summary card (brand-colored, no gradients)
+ *  - Collapsible OCR text section
+ *  - Banned substances as expandable cards with 3-box layout
+ *  - Ingredients as expandable cards with 3-box layout
+ *  - Ban-type legend filter with brand colors
  */
 
 // ---------- utilities ----------
@@ -26,159 +27,143 @@ const escapeHtml = (unsafe = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-// ---------- component ----------
+// Normalize ban type text for consistent labels
+const normalizeBanType = (s) => {
+  if (!s) return null;
+  const val = String(s).trim().toLowerCase();
+  if (val === "prohibited") return "Prohibited";
+  if (
+    val === "limited to out of competition" ||
+    val === "limited out of competition"
+  )
+    return "Limited to Out of Competition";
+  if (val === "particular sports") return "Particular Sports";
+  return s;
+};
+
 export default function OCRScanResults({
   ocrText = "",
   detectedSubstances = [],
   detectedIngredients = [],
+  showOCR = true,
 }) {
-  // UI state
-  const [ocrOpen, setOcrOpen] = useState(false); // collapsed by default
-  const [activeBanType, setActiveBanType] = useState(null);
+  const [ocrOpen, setOcrOpen] = useState(false);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
-  const [legendCollapsed, setLegendCollapsed] = useState(false);
+  const [activeBanType, setActiveBanType] = useState(null);
 
-  // Refs to enable momentum scroll on iOS
-  const bannedScrollRef = useRef(null);
-  const ingScrollRef = useRef(null);
-
-  useEffect(() => {
-    const b = bannedScrollRef.current;
-    const i = ingScrollRef.current;
-    if (b) b.style.WebkitOverflowScrolling = "touch";
-    if (i) i.style.WebkitOverflowScrolling = "touch";
-  }, []);
-
-  // Colors (brand-consistent)
+  // Brand-consistent colors
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828", priority: 3 },
     { label: "Limited to Out of Competition", color: "#f77f00", priority: 2 },
     { label: "Particular Sports", color: "#003049", priority: 1 },
   ];
-  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da"; // for non-banned ingredients
-  const INGREDIENT_PRIORITY = 0;
+  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
-  // Merge inputs (support fields-embedded or flattened records)
-  const mergedInput = useMemo(() => {
-    const arr = [];
-    (detectedSubstances || []).forEach((r) => arr.push(r));
-    (detectedIngredients || []).forEach((r) => arr.push(r));
-    return arr;
-  }, [detectedSubstances, detectedIngredients]);
+  // Map label -> color for quick lookup
+  const banColorMap = useMemo(() => {
+    const map = {};
+    banTypeColors.forEach((b) => {
+      map[b.label] = b.color;
+    });
+    return map;
+  }, [banTypeColors]);
 
-  // Normalize & split banned vs ingredients
-  const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
-    const banned = [];
-    const ingredients = [];
+  // Normalize incoming records (works with Airtable-style or plain objects)
+  const normalizeRecords = (arr = [], isBannedSet = false) =>
+    (arr || []).map((r) => {
+      const id = r.id || r.recordId || Math.random().toString(36).slice(2);
+      const fields = r.fields || r || {};
+      const banTypeRaw = fields["Ban Type"] || fields["banType"] || null;
+      const banType = normalizeBanType(banTypeRaw);
+      const isBanned = isBannedSet || !!banType;
+
+      return {
+        id,
+        fields: {
+          ...fields,
+          "Ban Type": banType,
+        },
+        isBanned,
+      };
+    });
+
+  const bannedRecordsAll = useMemo(
+    () => normalizeRecords(detectedSubstances, true),
+    [detectedSubstances]
+  );
+
+  const ingredientRecordsAll = useMemo(
+    () => normalizeRecords(detectedIngredients, false),
+    [detectedIngredients]
+  );
+
+  // Build counts + filter banned by active ban type
+  const { bannedRecords, countsByBanType } = useMemo(() => {
     const counts = {};
     banTypeColors.forEach((b) => (counts[b.label] = 0));
 
-    (mergedInput || []).forEach((rRaw) => {
-      const r = rRaw && rRaw.fields ? rRaw.fields : rRaw || {};
-      const record = {
-        id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
-        name: r["Substance Name"] ?? r.name ?? r["Name"] ?? rRaw?.name ?? "",
-        synonyms: r["Synonyms"] ?? r["Synonyms (Extended)"] ?? r.synonyms ?? "",
-        bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
-        banType: r["Ban Type"] ?? r.banType ?? null,
-        dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
-        notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
-        source:
-          r["Source / Citation"] ??
-          r["Source"] ??
-          r["Sources / References"] ??
-          r.source ??
-          "",
-        benefits: r["Benefits"] ?? r.benefits ?? "",
-        weaknesses: r["Weaknesses"] ?? r.weaknesses ?? "",
-        antagonisms:
-          r["Nutrient Antagonism"] ??
-          r["Nutrient Antagonisms"] ??
-          r.antagonisms ??
-          "",
-      };
+    let records = bannedRecordsAll;
 
-      if (record.banType) {
-        banned.push(record);
-        const normalized = (record.banType || "").trim();
-        if (counts[normalized] !== undefined) counts[normalized] += 1;
-      } else {
-        ingredients.push(record);
+    bannedRecordsAll.forEach((rec) => {
+      const bt = rec.fields["Ban Type"];
+      if (bt && counts[bt] !== undefined) {
+        counts[bt] += 1;
       }
     });
 
-    return {
-      bannedRecords: banned,
-      ingredientRecords: ingredients,
-      countsByBanType: counts,
-    };
-  }, [mergedInput, banTypeColors]);
+    if (activeBanType) {
+      records = records.filter((rec) => rec.fields["Ban Type"] === activeBanType);
+    }
 
-  // Filters
-  const filteredBanned = useMemo(() => {
-    if (!activeBanType) return bannedRecords;
-    return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
-  }, [bannedRecords, activeBanType]);
+    return { bannedRecords: records, countsByBanType: counts };
+  }, [bannedRecordsAll, banTypeColors, activeBanType]);
 
-  const filteredIngredients = useMemo(() => {
+  // Filter ingredients so they do not duplicate banned names
+  const ingredientRecords = useMemo(() => {
     const bannedNames = new Set(
-      bannedRecords.map((b) => (b.name || "").toLowerCase())
+      bannedRecordsAll.map(
+        (rec) =>
+          (rec.fields["Substance Name"] ||
+            rec.fields["Name"] ||
+            rec.fields["Ingredient Name"] ||
+            ""
+          ).toLowerCase()
+      )
     );
-    return ingredientRecords.filter(
-      (ing) => !bannedNames.has((ing.name || "").toLowerCase())
-    );
-  }, [ingredientRecords, bannedRecords]);
-
-  // ---------- Table highlighting (only if term appears in OCR) ----------
-  const highlightInTableIfOCRHas = (ocr, text = "", color = "") => {
-    const raw = String(text ?? "");
-    if (!raw) return "";
-    const o = String(ocr ?? "").trim();
-    if (!o) return escapeHtml(raw);
-
-    const terms = raw
-      .split(/,\s*/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (!terms.length) return escapeHtml(raw);
-
-    // placeholder technique to keep HTML-escaping safe
-    let working = raw;
-    const placeholders = [];
-
-    // Only highlight if OCR has the term (case-insensitive)
-    terms.forEach((term, idx) => {
-      try {
-        const hasRx = new RegExp(escapeRegex(term), "i");
-        if (!hasRx.test(o)) return;
-        const placeholder = `@@HL_${Math.random()
-          .toString(36)
-          .slice(2)}_${idx}@@`;
-        const replaceRx = new RegExp(escapeRegex(term), "gi");
-        working = working.replace(replaceRx, placeholder);
-        placeholders.push({ placeholder, display: term });
-      } catch {
-        /* ignore broken term */
-      }
+    return ingredientRecordsAll.filter((rec) => {
+      const name =
+        rec.fields["Name"] ||
+        rec.fields["Ingredient Name"] ||
+        rec.fields["Substance Name"] ||
+        "";
+      return !bannedNames.has(name.toLowerCase());
     });
+  }, [ingredientRecordsAll, bannedRecordsAll]);
 
-    if (!placeholders.length) return escapeHtml(raw);
+  const bannedCount = bannedRecordsAll.length;
+  const ingredientCount = ingredientRecords.length;
+  const totalMatches = bannedCount + ingredientCount;
 
-    let escaped = escapeHtml(working);
-    const appliedColor = color || INGREDIENT_HIGHLIGHT_COLOR;
-    placeholders.forEach(({ placeholder, display }) => {
-      const span =
-        `<span style="color:${appliedColor};font-weight:600;text-decoration:underline;text-underline-offset:2px;">` +
-        `${escapeHtml(display)}</span>`;
-      escaped = escaped.split(placeholder).join(span);
-    });
+  const riskLabel =
+    bannedCount === 0
+      ? "No banned substances detected"
+      : bannedCount >= 3
+      ? "Multiple banned substances detected"
+      : "Some banned substances detected";
 
-    return escaped;
-  };
+  const riskTone =
+    bannedCount === 0
+      ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+      : bannedCount >= 3
+      ? "text-red-700 bg-red-50 border-red-100"
+      : "text-red-600 bg-red-50 border-red-100"; // softer red instead of yellow
 
-  // ---------- OCR text highlighting (reflects table contents) ----------
-  const ocrTermsSorted = useMemo(() => {
+  // ---------- OCR text highlighting (reflect banned + ingredients) ----------
+  const { ocrHTML, ocrMatchCount } = useMemo(() => {
+    const base = String(ocrText || "");
+    if (!base) return { ocrHTML: "", ocrMatchCount: 0 };
+
     const termMap = new Map();
 
     const upsert = (termRaw, color, priority) => {
@@ -187,73 +172,62 @@ export default function OCRScanResults({
       const key = t.toLowerCase();
       const existing = termMap.get(key);
       if (!existing || priority > existing.priority) {
-        termMap.set(key, { color, priority, term: t });
+        termMap.set(key, { term: t, color, priority });
       }
     };
 
-    // BANNED
-    bannedRecords.forEach((rec) => {
-      const banType = (rec.banType || "").trim();
-      const entry = banTypeColors.find((b) => b.label === banType);
-      const color = entry?.color || "#111827";
-      const prio = entry?.priority ?? 1;
-      upsert(rec.name, color, prio);
-      (rec.synonyms || "")
+    // Banned terms
+    bannedRecordsAll.forEach((rec) => {
+      const fields = rec.fields || {};
+      const banType = fields["Ban Type"];
+      const color = banColorMap[banType] || "#111827";
+      const priority =
+        banTypeColors.find((b) => b.label === banType)?.priority ?? 1;
+
+      upsert(fields["Substance Name"], color, priority);
+      (fields["Synonyms"] || "")
         .split(/,\s*/)
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => upsert(s, color, prio));
+        .forEach((s) => upsert(s, color, priority));
     });
 
-    // INGREDIENTS
-    ingredientRecords.forEach((rec) => {
-      upsert(rec.name, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY);
-      (rec.synonyms || "")
+    // Ingredient terms
+    ingredientRecordsAll.forEach((rec) => {
+      const fields = rec.fields || {};
+      const color = INGREDIENT_HIGHLIGHT_COLOR;
+      const priority = 0;
+      upsert(
+        fields["Name"] || fields["Ingredient Name"],
+        color,
+        priority
+      );
+      (fields["Synonyms (Extended)"] || fields["Synonyms"] || "")
         .split(/,\s*/)
         .map((s) => s.trim())
         .filter(Boolean)
-        .forEach((s) => upsert(s, INGREDIENT_HIGHLIGHT_COLOR, INGREDIENT_PRIORITY));
+        .forEach((s) => upsert(s, color, priority));
     });
 
-    const entries = Array.from(termMap.entries()).map(([key, v]) => ({
-      key,
-      color: v.color,
-      priority: v.priority,
-      term: v.term,
-      length: v.term.length,
-    }));
-
-    // Sort by priority then length, so more critical and longer matches win
-    entries.sort((a, b) => {
+    const entries = Array.from(termMap.values()).sort((a, b) => {
       if (b.priority !== a.priority) return b.priority - a.priority;
-      return b.length - a.length;
+      return b.term.length - a.term.length;
     });
-
-    return entries;
-  }, [bannedRecords, ingredientRecords, banTypeColors]);
-
-  const { ocrHTML, ocrMatchCount } = useMemo(() => {
-    const base = String(ocrText || "");
-    if (!base) return { ocrHTML: "", ocrMatchCount: 0 };
 
     let working = base;
     const replacements = [];
     let idx = 0;
 
-    ocrTermsSorted.forEach(({ term, color }) => {
+    entries.forEach(({ term, color }) => {
       try {
         const rx = new RegExp(escapeRegex(term), "gi");
         working = working.replace(rx, (m) => {
-          const placeholder = `@@OCRHL_${idx++}@@`;
-          replacements.push({
-            placeholder,
-            match: m,
-            color,
-          });
+          const placeholder = `@@OCR_${idx++}@@`;
+          replacements.push({ placeholder, match: m, color });
           return placeholder;
         });
       } catch {
-        /* ignore malformed term */
+        // ignore malformed term
       }
     });
 
@@ -266,29 +240,469 @@ export default function OCRScanResults({
     });
 
     return { ocrHTML: escaped, ocrMatchCount: replacements.length };
-  }, [ocrText, ocrTermsSorted]);
+  }, [ocrText, bannedRecordsAll, ingredientRecordsAll, banColorMap, banTypeColors]);
 
-  // Legend handlers
-  const handleLegendClick = (label) => {
-    setActiveBanType((cur) => (cur === label ? null : label));
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  };
-  const clearFilters = () => {
-    setActiveBanType(null);
-    setLegendCollapsed(false);
-  };
   const collapseLabel = (open, name) =>
     open ? `Collapse ${name}` : `Expand ${name}`;
 
-  const totalResults = mergedInput?.length ?? 0;
+  const handleLegendClick = (label) => {
+    setActiveBanType((cur) => (cur === label ? null : label));
+  };
+
+  // ---------- helpers for inline highlighting ----------
+
+  const highlightTermsInline = (text, color, ocr) => {
+    const raw = text || "";
+    if (!raw || !ocr) return raw;
+
+    const normalized = String(ocr || "").toLowerCase();
+    const terms = raw
+      .split(/,\s*/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (!terms.length) return raw;
+
+    return terms.map((term, idx) => {
+      const rx = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
+      const match = rx.test(normalized);
+      const suffix = idx < terms.length - 1 ? ", " : "";
+
+      if (!match) {
+        return (
+          <span key={`${term}-${idx}`}>
+            {term}
+            {suffix}
+          </span>
+        );
+      }
+
+      return (
+        <span
+          key={`${term}-${idx}`}
+          className="font-semibold underline"
+          style={{ color }}
+        >
+          {term}
+          {suffix}
+        </span>
+      );
+    });
+  };
+
+  const highlightBlobWithOCR = (text, terms, color = INGREDIENT_HIGHLIGHT_COLOR) => {
+    if (!text) return "";
+    const normalizedOCR = String(ocrText || "").toLowerCase();
+    let html = escapeHtml(text);
+
+    if (!ocrText || !terms || !terms.length) return html;
+
+    terms.forEach((termRaw) => {
+      const term = (termRaw || "").trim();
+      if (!term) return;
+      const key = term.toLowerCase();
+      if (!normalizedOCR.includes(key)) return;
+
+      try {
+        const rx = new RegExp(escapeRegex(term), "gi");
+        html = html.replace(
+          rx,
+          (m) =>
+            `<span style="color:${color};font-weight:600;text-decoration:underline;text-underline-offset:2px;">${escapeHtml(
+              m
+            )}</span>`
+        );
+      } catch {
+        // ignore malformed term
+      }
+    });
+
+    return html;
+  };
+
+  // ---------- CARD COMPONENTS ----------
+
+  const BannedCards = ({ records }) => {
+    if (!records || !records.length) {
+      return (
+        <p className="italic text-gray-500 p-3 text-sm">
+          No banned substances match your scan.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-4 mt-3">
+        {records.map((rec) => {
+          const fields = rec.fields || {};
+          const banType = fields["Ban Type"] || "Unknown ban classification";
+          const name = fields["Substance Name"] || "Unnamed substance";
+          const synonyms = fields["Synonyms"] || "";
+          const bannedBy = fields["Banned By"] || "";
+          const dosageLimit = fields["Dosage Limit"] || "";
+          const notes = fields["Notes"] || "";
+          const benefits = (fields["Benefits"] || "").toString();
+          const weaknesses = (fields["Weaknesses"] || "").toString();
+          const antagonisms =
+            (fields["Nutrient Antagonism"] ||
+              fields["Nutrient Antagonisms"] ||
+              "") + "";
+          const source = fields["Source / Citation"] || "";
+          const color = banColorMap[banType] || "#111827";
+
+          const allTerms = [
+            name,
+            ...((synonyms || "")
+              .split(/,\s*/)
+              .map((s) => s.trim())
+              .filter(Boolean)),
+          ];
+
+          const whatItDoesText = benefits || notes || "";
+          const whatItDoesHTML = highlightBlobWithOCR(
+            whatItDoesText,
+            allTerms,
+            color
+          );
+          const weaknessesHTML = highlightBlobWithOCR(
+            weaknesses,
+            allTerms,
+            color
+          );
+          const antagonismsHTML = highlightBlobWithOCR(
+            antagonisms,
+            allTerms,
+            color
+          );
+
+          return (
+            <details
+              key={rec.id}
+              className="group rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+            >
+              <summary className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-3 sm:px-4 sm:py-3 cursor-pointer select-none">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-2">
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: `${color}20`,
+                        color,
+                      }}
+                    >
+                      {banType}
+                    </span>
+                    {bannedBy && (
+                      <span className="text-[11px] sm:text-xs text-gray-600">
+                        Banned by: {bannedBy}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900">
+                    {name}
+                  </h3>
+                  {synonyms && (
+                    <p className="text-xs text-gray-600">
+                      Also labeled as:{" "}
+                      {highlightTermsInline(synonyms, color, ocrText)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between sm:flex-col sm:items-end gap-1 text-[11px] sm:text-xs text-gray-500">
+                  {dosageLimit && (
+                    <span className="text-[11px] sm:text-xs">
+                      Dosage: {dosageLimit}
+                    </span>
+                  )}
+                  <span className="group-open:hidden">View details</span>
+                  <span className="hidden group-open:inline">Hide details</span>
+                </div>
+              </summary>
+
+              <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4">
+                {/* Three-card layout like Ingredients: What it does / Things to watch / Interactions */}
+                {(whatItDoesText || weaknesses || antagonisms) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {whatItDoesText && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          What it does
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: whatItDoesHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {weaknesses && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Things to watch for
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: weaknessesHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {antagonisms && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Interactions with other nutrients
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: antagonismsHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Where this information comes from */}
+                {source && (
+                  <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
+                    <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                      Where this information comes from
+                    </p>
+                    <p className="leading-relaxed break-words text-gray-700 text-[11px] sm:text-xs">
+                      {source}
+                    </p>
+                  </div>
+                )}
+
+                {/* OCR snippet for context */}
+                {ocrText && (
+                  <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                    <p className="text-[10px] sm:text-[11px] font-medium text-gray-600 mb-1">
+                      How it showed up on your label
+                    </p>
+                    <p className="text-[10px] sm:text-[11px] leading-snug text-gray-700 line-clamp-3">
+                      {ocrText}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const IngredientCards = ({ records }) => {
+    if (!records || !records.length) {
+      return (
+        <p className="italic text-gray-500 p-3 text-sm">
+          No ingredient-only results found for this scan.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-4 mt-3">
+        {records.map((rec) => {
+          const fields = rec.fields || {};
+          const id = rec.id;
+          const name =
+            fields["Name"] ||
+            fields["Ingredient Name"] ||
+            fields["Substance Name"] ||
+            "Unnamed ingredient";
+          const synonyms =
+            fields["Synonyms (Extended)"] || fields["Synonyms"] || "";
+          const benefits = (fields["Benefits"] || "").toString();
+          const weaknesses = (fields["Weaknesses"] || "").toString();
+          const antagonisms =
+            (fields["Nutrient Antagonism"] ||
+              fields["Nutrient Antagonisms"] ||
+              "") + "";
+          const sources =
+            (fields["Sources / References"] || fields["Source"] || "") + "";
+
+          const terms = [
+            name,
+            ...((synonyms || "")
+              .split(/,\s*/)
+              .map((s) => s.trim())
+              .filter(Boolean)),
+          ];
+
+          const benefitsHTML = highlightBlobWithOCR(
+            benefits,
+            terms,
+            INGREDIENT_HIGHLIGHT_COLOR
+          );
+          const weaknessesHTML = highlightBlobWithOCR(
+            weaknesses,
+            terms,
+            INGREDIENT_HIGHLIGHT_COLOR
+          );
+          const antagonismsHTML = highlightBlobWithOCR(
+            antagonisms,
+            terms,
+            INGREDIENT_HIGHLIGHT_COLOR
+          );
+          const sourcesHTML = highlightBlobWithOCR(
+            sources,
+            terms,
+            INGREDIENT_HIGHLIGHT_COLOR
+          );
+
+          return (
+            <details
+              key={id}
+              className="group rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+            >
+              <summary className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-3 sm:px-4 sm:py-3 cursor-pointer select-none">
+                <div className="space-y-1">
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900">
+                    {name}
+                  </h3>
+                  {synonyms && (
+                    <p className="text-xs text-gray-600">
+                      Also listed as:{" "}
+                      {highlightTermsInline(
+                        synonyms,
+                        INGREDIENT_HIGHLIGHT_COLOR,
+                        ocrText
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between sm:flex-col sm:items-end gap-1 text-[11px] sm:text-xs text-gray-500">
+                  <span className="group-open:hidden">View details</span>
+                  <span className="hidden group-open:inline">Hide details</span>
+                </div>
+              </summary>
+
+              <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4">
+                {(benefits || weaknesses || antagonisms) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {benefits && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          What it does
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: benefitsHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {weaknesses && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Things to watch for
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: weaknessesHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {antagonisms && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Interactions with other nutrients
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          dangerouslySetInnerHTML={{
+                            __html: antagonismsHTML,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sources && (
+                  <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
+                    <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                      Where this information comes from
+                    </p>
+                    <p
+                      className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
+                      dangerouslySetInnerHTML={{
+                        __html: sourcesHTML,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ---------- RENDER ----------
 
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative text-gray-900">
-      <section className="max-w-5xl mx-auto">
-        {/* ======= OCR TEXT (collapsed by default) ======= */}
-        <div className="mb-4">
+    <div className="w-full max-w-[2500px] mx-auto px-3 sm:px-4 py-5 sm:py-6 font-sans space-y-7 text-gray-900">
+      {/* SCAN SUMMARY CARD */}
+      <section>
+        <div className="rounded-2xl bg-white border border-blue-100 shadow-sm px-3 py-3 sm:px-4 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex-1 space-y-1">
+            <p className="text-[11px] uppercase tracking-wide text-[#46769B] font-semibold">
+              Scan summary
+            </p>
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+              {riskLabel}
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 max-w-xl">
+              These results are based on your latest label scan. Use the cards
+              below to review any banned substances and understand how each
+              ingredient behaves in your body.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
+              <p className="text-[11px] font-medium text-gray-500">
+                Total matches
+              </p>
+              <p className="text-base font-semibold text-gray-900">
+                {totalMatches}
+              </p>
+            </div>
+            <div
+              className={`px-3 py-2 rounded-xl border min-w-[90px] ${riskTone}`}
+            >
+              <p className="text-[11px] font-medium">Banned</p>
+              <p className="text-base font-semibold">{bannedCount}</p>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
+              <p className="text-[11px] font-medium text-gray-500">
+                Ingredients
+              </p>
+              <p className="text-base font-semibold text-gray-900">
+                {ingredientCount}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* OCR TEXT SECTION */}
+      {showOCR && (
+        <section>
           <button
             onClick={() => setOcrOpen((s) => !s)}
             aria-expanded={ocrOpen}
@@ -310,473 +724,143 @@ export default function OCRScanResults({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
-                className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm leading-relaxed text-gray-900 max-h-[320px] overflow-y-auto"
+                className="mt-3 rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm text-sm leading-relaxed text-gray-900 max-h-[280px] sm:max-h-[320px] overflow-y-auto"
               >
                 {ocrText ? (
                   <div dangerouslySetInnerHTML={{ __html: ocrHTML }} />
                 ) : (
-                  <p className="text-gray-500 italic">
-                    No OCR text available for this scan.
+                  <p className="text-gray-500 italic text-sm">
+                    No OCR text available.
                   </p>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </section>
+      )}
 
-        {/* ======= TOP SUMMARY CARD ======= */}
-        <div className="mt-2">
-          <div className="rounded-2xl border border-gray-200 bg-white px-4 py-4 sm:px-5 sm:py-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
-                Scan Results
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                Parsed from your nutrition label and cross-checked against our
-                banned-substance and ingredient databases.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-xs sm:text-sm">
-                <span className="font-medium text-gray-800">
-                  {totalResults}
-                </span>
-                <span className="text-gray-600">total matches</span>
-              </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1.5 text-xs sm:text-sm">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#d62828]" />
-                <span className="font-medium text-[#b22222]">
-                  {bannedRecords.length}
-                </span>
-                <span className="text-[#b22222]">banned</span>
-              </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs sm:text-sm">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#8556da]" />
-                <span className="font-medium text-[#4c2ea0]">
-                  {ingredientRecords.length}
-                </span>
-                <span className="text-[#4c2ea0]">ingredients</span>
-              </div>
-            </div>
+      {/* BANNED SUBSTANCES */}
+      <section>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            <button
+              onClick={() => setBannedOpen((s) => !s)}
+              aria-expanded={bannedOpen}
+              aria-label={collapseLabel(bannedOpen, "Banned Substances")}
+              className={`section-toggle-btn ${
+                bannedOpen ? "active" : ""
+              } w-full sm:w-auto`}
+            >
+              <span className="section-label">Banned Substances</span>
+              <span className="badge">{bannedRecordsAll.length}</span>
+              <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
+            </button>
+
+            <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+              These are substances with an active ban classification. Use the
+              chips below to focus on a specific ban type.
+            </p>
           </div>
         </div>
 
-        {/* ===================== BANNED ===================== */}
-        <div className="mt-8">
-          {/* Controls: vertical stack on mobile */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        {/* Legend chips */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {banTypeColors.map((t) => {
+            const active = activeBanType === t.label;
+            const count = countsByBanType[t.label] || 0;
+            return (
               <button
-                onClick={() => setBannedOpen((s) => !s)}
-                aria-expanded={bannedOpen}
-                aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-                className={`section-toggle-btn ${
-                  bannedOpen ? "active" : ""
-                } w-full sm:w-auto`}
+                key={t.label}
+                type="button"
+                onClick={() => handleLegendClick(t.label)}
+                aria-pressed={active}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs sm:text-sm transition ${
+                  active
+                    ? "bg-[#46769B] text-white border-[#46769B] shadow-sm"
+                    : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
+                }`}
               >
-                <span className="section-label">Banned Substances</span>
-                <span className="badge">{bannedRecords.length}</span>
-                <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
+                <span
+                  className="w-3.5 h-3.5 rounded-full"
+                  style={{ backgroundColor: t.color }}
+                />
+                <span className="font-medium">{t.label}</span>
+                <span className="text-gray-500">({count})</span>
               </button>
-
-              <p className="text-xs sm:text-sm text-gray-600 leading-snug max-w-xl">
-                Substances flagged against anti-doping and prohibited lists.
-                Use the legend below to focus on a specific ban type.
-              </p>
-            </div>
-          </div>
-
-          <AnimatePresence initial={false}>
-            {bannedOpen && (
-              <motion.div
-                key="banned-table"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                ref={bannedScrollRef}
-                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
-              >
-                {filteredBanned?.length > 0 ? (
-                  <table className="min-w-[960px] w-full text-xs sm:text-sm text-gray-900">
-                    <thead className="bg-[#46769B] text-white sticky top-0 z-10">
-                      <tr>
-                        {[
-                          "Substance Name",
-                          "Synonyms",
-                          "Banned By",
-                          "Ban Type",
-                          "Dosage Limit",
-                          "Notes",
-                          "Source / Citation",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredBanned.map((rec) => {
-                        const banType = (rec.banType || "").trim();
-                        const colorEntry =
-                          banTypeColors.find((b) => b.label === banType) ||
-                          null;
-                        const c = colorEntry?.color || "#111827";
-
-                        return (
-                          <motion.tr
-                            key={rec.id}
-                            className="hover:bg-gray-50 transition text-gray-900"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                          >
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.name,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.synonyms,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.bannedBy,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td className="px-3 py-2 align-top text-gray-900 whitespace-nowrap">
-                              <span
-                                className="px-2 py-1 rounded-full text-[11px] font-medium"
-                                style={{
-                                  backgroundColor: `${c}20`,
-                                  color: c,
-                                }}
-                              >
-                                {banType || "—"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words">
-                              {rec.dosageLimit || ""}
-                            </td>
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.notes,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.source,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.benefits,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.weaknesses,
-                                  c
-                                ),
-                              }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                              dangerouslySetInnerHTML={{
-                                __html: highlightInTableIfOCRHas(
-                                  ocrText,
-                                  rec.antagonisms,
-                                  c
-                                ),
-                              }}
-                            />
-                          </motion.tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="italic text-gray-500 p-4 text-sm">
-                    No banned substances match your scan.
-                  </p>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+            );
+          })}
         </div>
 
-        {/* neutral divider between sections */}
-        <div className="border-t border-gray-200 my-8" />
-
-        {/* ===================== INGREDIENTS ===================== */}
-        <div className="mb-20">
-          {/* Controls: vertical stack on mobile */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-              <button
-                onClick={() => setIngredientsOpen((s) => !s)}
-                aria-expanded={ingredientsOpen}
-                aria-label={collapseLabel(
-                  ingredientsOpen,
-                  "Ingredients (non-banned)"
-                )}
-                className={`section-toggle-btn ${
-                  ingredientsOpen ? "active" : ""
-                } w-full sm:w-auto`}
-              >
-                <span className="section-label">Ingredients (non-banned)</span>
-                <span className="badge">{ingredientRecords.length}</span>
-                <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
-              </button>
-
-              <p className="text-xs sm:text-sm text-gray-600 leading-snug max-w-xl">
-                Ingredient matches from our nutrient database. These are not
-                currently flagged as banned in your sport.
-              </p>
-            </div>
-          </div>
-
-          <AnimatePresence initial={false}>
-            {ingredientsOpen && (
-              <motion.div
-                key="ingredients-table"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                ref={ingScrollRef}
-                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
-              >
-                {filteredIngredients?.length > 0 ? (
-                  <table className="min-w-[720px] w-full text-xs sm:text-sm text-gray-900">
-                    <thead className="bg-[#334E63] text-white sticky top-0 z-10">
-                      <tr>
-                        {[
-                          "Ingredient Name",
-                          "Synonyms",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                          "Source / Notes",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredIngredients.map((rec) => (
-                        <motion.tr
-                          key={rec.id}
-                          className="hover:bg-gray-50 transition text-gray-900"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                        >
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.name,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.synonyms,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.benefits,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.weaknesses,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.antagonisms,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top text-gray-900 whitespace-normal break-words"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightInTableIfOCRHas(
-                                ocrText,
-                                rec.source,
-                                INGREDIENT_HIGHLIGHT_COLOR
-                              ),
-                            }}
-                          />
-                        </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="italic text-gray-500 p-4 text-sm">
-                    No ingredient-only results found for this scan.
-                  </p>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <AnimatePresence initial={false}>
+          {bannedOpen && (
+            <motion.div
+              key="banned-cards"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="mt-2"
+            >
+              <BannedCards records={bannedRecords} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
-      {/* ===================== STICKY LEGEND ===================== */}
-      <div className="sticky bottom-0 left-0 right-0 z-40">
-        <div className="max-w-5xl mx-auto px-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
-            <div
-              className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto"
-              style={{ WebkitOverflowScrolling: "touch" }}
+      {/* DIVIDER */}
+      <div className="border-t border-gray-300 my-2" />
+
+      {/* INGREDIENTS */}
+      <section className="mb-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            <button
+              onClick={() => setIngredientsOpen((s) => !s)}
+              aria-expanded={ingredientsOpen}
+              aria-label={collapseLabel(ingredientsOpen, "Ingredients")}
+              className={`section-toggle-btn ${
+                ingredientsOpen ? "active" : ""
+              } w-full sm:w-auto`}
             >
-              <button
-                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-xs sm:text-sm whitespace-nowrap"
-                onClick={() => setLegendCollapsed((c) => !c)}
-                aria-expanded={!legendCollapsed}
-                aria-label={legendCollapsed ? "Expand legend" : "Collapse legend"}
-              >
-                {legendCollapsed ? "▸ Legend" : "Legend ▾"}
-              </button>
+              <span className="section-label">Ingredients (non-banned)</span>
+              <span className="badge">{ingredientRecords.length}</span>
+              <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
+            </button>
 
-              {!legendCollapsed &&
-                banTypeColors.map((t) => {
-                  const active = activeBanType === t.label;
-                  return (
-                    <button
-                      key={t.label}
-                      onClick={() => handleLegendClick(t.label)}
-                      aria-pressed={active}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition text-xs sm:text-sm whitespace-nowrap ${
-                        active
-                          ? "shadow-md bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <span
-                        className="w-3.5 h-3.5 rounded-full flex-shrink-0"
-                        style={{
-                          backgroundColor: t.color,
-                          display: "inline-block",
-                        }}
-                      />
-                      <span className="font-medium">{t.label}</span>
-                      <span className="text-gray-500 text-[11px] sm:text-xs">
-                        ({countsByBanType[t.label] || 0})
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:justify-end">
-              <div className="text-xs sm:text-sm text-gray-600 sm:text-right">
-                Showing{" "}
-                <span className="font-semibold">
-                  {filteredBanned.length}
-                </span>{" "}
-                banned ·{" "}
-                <span className="font-semibold">
-                  {filteredIngredients.length}
-                </span>{" "}
-                ingredients
-              </div>
-              <button
-                onClick={clearFilters}
-                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-xs sm:text-sm font-semibold shadow-sm hover:brightness-105 w-full sm:w-auto"
-                aria-label="Clear filters"
-              >
-                Clear Filters
-              </button>
-            </div>
+            <p className="text-xs sm:text-sm text-gray-600 leading-snug">
+              These are ingredients that are not flagged as banned in your scan.
+              Each card explains what it does, potential drawbacks, and
+              interactions.
+            </p>
           </div>
         </div>
-      </div>
 
-      {/* Local styles (flat toggles + sticky header support) */}
+        <AnimatePresence initial={false}>
+          {ingredientsOpen && (
+            <motion.div
+              key="ingredient-cards"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="mt-2"
+            >
+              <IngredientCards records={ingredientRecords} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+
+      {/* Local styles for section buttons */}
       <style jsx>{`
         .section-toggle-btn {
           display: inline-flex;
           align-items: center;
           gap: 10px;
-          padding: 10px 16px;
+          padding: 9px 14px;
           border-radius: 10px;
           border: 2px solid transparent;
-          font-size: 0.98rem;
+          font-size: 0.95rem;
           font-weight: 700;
           cursor: pointer;
           transition: box-shadow 0.18s ease-in-out, transform 0.18s ease-in-out,
@@ -796,7 +880,7 @@ export default function OCRScanResults({
           background-color: #46769b;
           color: #fff;
           font-size: 0.8rem;
-          padding: 4px 8px;
+          padding: 3px 7px;
           border-radius: 999px;
           line-height: 1;
           display: inline-flex;
@@ -814,9 +898,9 @@ export default function OCRScanResults({
 
         @media (max-width: 640px) {
           .section-toggle-btn {
-            padding: 10px 12px;
+            padding: 8px 12px;
             gap: 8px;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
           }
           .section-toggle-btn .badge {
             font-size: 0.78rem;

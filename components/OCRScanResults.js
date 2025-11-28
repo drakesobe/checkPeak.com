@@ -41,6 +41,40 @@ const normalizeBanType = (s) => {
   return s;
 };
 
+// Build an OCR index to catch terms even if spacing/punctuation is weird
+const buildTextIndex = (text) => {
+  const raw = String(text || "").toLowerCase();
+  const compact = raw.replace(/[^a-z0-9]/g, "");
+  return { raw, compact };
+};
+
+// Decide if a banned record *really* appears in OCR text
+const recordAppearsInText = (index, fields = {}) => {
+  const candidates = [
+    fields["Substance Name"],
+    fields["Name"],
+    fields["Ingredient Name"],
+    fields["Synonyms"],
+  ]
+    .filter(Boolean)
+    .flatMap((val) =>
+      String(val)
+        .split(/,\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+
+  if (!candidates.length) return false;
+
+  return candidates.some((term) => {
+    const lower = term.toLowerCase();
+    const compact = lower.replace(/[^a-z0-9]/g, "");
+    if (lower && index.raw.includes(lower)) return true;
+    if (compact && index.compact.includes(compact)) return true;
+    return false;
+  });
+};
+
 export default function OCRScanResults({
   ocrText = "",
   detectedSubstances = [],
@@ -88,10 +122,20 @@ export default function OCRScanResults({
       };
     });
 
-  const bannedRecordsAll = useMemo(
+  // 1) Normalize banned
+  const normalizedBanned = useMemo(
     () => normalizeRecords(detectedSubstances, true),
     [detectedSubstances]
   );
+
+  // 2) Only keep banned records that actually appear in the OCR text
+  const bannedRecordsAll = useMemo(() => {
+    if (!ocrText) return normalizedBanned; // e.g. barcode path – keep all
+    const idx = buildTextIndex(ocrText);
+    return normalizedBanned.filter((rec) =>
+      recordAppearsInText(idx, rec.fields || {})
+    );
+  }, [normalizedBanned, ocrText]);
 
   const ingredientRecordsAll = useMemo(
     () => normalizeRecords(detectedIngredients, false),
@@ -124,7 +168,8 @@ export default function OCRScanResults({
     const bannedNames = new Set(
       bannedRecordsAll.map(
         (rec) =>
-          (rec.fields["Substance Name"] ||
+          (
+            rec.fields["Substance Name"] ||
             rec.fields["Name"] ||
             rec.fields["Ingredient Name"] ||
             ""
@@ -152,12 +197,13 @@ export default function OCRScanResults({
       ? "Multiple banned substances detected"
       : "Some banned substances detected";
 
+  // Softer red instead of yellow for the “middle” state
   const riskTone =
     bannedCount === 0
       ? "text-emerald-700 bg-emerald-50 border-emerald-100"
       : bannedCount >= 3
       ? "text-red-700 bg-red-50 border-red-100"
-      : "text-red-600 bg-red-50 border-red-100"; // softer red instead of yellow
+      : "text-red-600 bg-red-50 border-red-100";
 
   // ---------- OCR text highlighting (reflect banned + ingredients) ----------
   const { ocrHTML, ocrMatchCount } = useMemo(() => {
@@ -197,11 +243,7 @@ export default function OCRScanResults({
       const fields = rec.fields || {};
       const color = INGREDIENT_HIGHLIGHT_COLOR;
       const priority = 0;
-      upsert(
-        fields["Name"] || fields["Ingredient Name"],
-        color,
-        priority
-      );
+      upsert(fields["Name"] || fields["Ingredient Name"], color, priority);
       (fields["Synonyms (Extended)"] || fields["Synonyms"] || "")
         .split(/,\s*/)
         .map((s) => s.trim())
@@ -757,8 +799,9 @@ export default function OCRScanResults({
             </button>
 
             <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-              These are substances with an active ban classification. Use the
-              chips below to focus on a specific ban type.
+              These are substances with an active ban classification. Only
+              entries that actually appear in the scanned text are shown here.
+              Use the chips below to focus on a specific ban type.
             </p>
           </div>
         </div>

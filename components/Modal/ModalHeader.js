@@ -9,7 +9,8 @@ export default function ModalHeader({
   stack,
   servingsNumber,
   priceNumber,
-  matchedRecords = [],
+  matchedRecords = [],       // banned matches
+  matchedIngredients = [],   // ingredient matches
   onClose,
 }) {
   const [displayCounts, setDisplayCounts] = useState({
@@ -21,7 +22,7 @@ export default function ModalHeader({
 
   const [tooltipVisible, setTooltipVisible] = useState(null);
 
-  // Match ModalContent’s brand colors
+  // Must match SmartStack / ModalContent palette
   const filterColors = {
     All: "bg-gray-600 text-white",
     Prohibited: "bg-red-600 text-white",
@@ -30,15 +31,15 @@ export default function ModalHeader({
   };
 
   const tooltips = {
-    All: "Total number of banned / monitored substances detected for this product.",
-    Prohibited: "Substances fully prohibited in competition.",
+    All: "Total banned + ingredient matches found for this product.",
+    Prohibited: "Matches classified as fully prohibited in competition.",
     Limited:
-      "Substances that are limited to out-of-competition use or have special timing rules.",
+      "Matches limited to out-of-competition use or with special timing rules.",
     Other:
-      "Substances that are monitored, sport-specific, or otherwise not fully prohibited.",
+      "Sport-specific or monitored substances, plus all non-banned ingredients.",
   };
 
-  // --- ban-type helpers (mirror ModalContent logic) ---
+  // --- ban-type helpers (same normalization as the rest of the app) ---
 
   const getBanTypeRaw = (rec) => {
     if (!rec) return null;
@@ -61,9 +62,15 @@ export default function ModalHeader({
     return val;
   };
 
-  // Animate & sync counts whenever the records change
+  // --- sync counts whenever banned / ingredients change ---
+
   useEffect(() => {
-    if (!matchedRecords || matchedRecords.length === 0) {
+    const banned = Array.isArray(matchedRecords) ? matchedRecords : [];
+    const ings = Array.isArray(matchedIngredients) ? matchedIngredients : [];
+
+    const totalMatches = banned.length + ings.length;
+
+    if (!totalMatches) {
       setDisplayCounts({
         All: "–",
         Prohibited: "–",
@@ -73,38 +80,40 @@ export default function ModalHeader({
       return;
     }
 
-    const normalized = matchedRecords.map((rec) => {
+    const normalized = banned.map((rec) => {
       const raw = getBanTypeRaw(rec);
       const norm = normalizeBanLabel(raw);
       return { ...rec, _banTypeNorm: norm };
     });
 
-    const total = normalized.length;
-    const prohibited = normalized.filter(
+    const bannedProhibited = normalized.filter(
       (r) => r._banTypeNorm === "Prohibited"
-    ).length;
-
-    const limited = normalized.filter(
+    );
+    const bannedLimited = normalized.filter(
       (r) => r._banTypeNorm === "Limited to Out of Competition"
-    ).length;
-
-    const other = normalized.filter(
+    );
+    const bannedOther = normalized.filter(
       (r) =>
         r._banTypeNorm !== "Prohibited" &&
         r._banTypeNorm !== "Limited to Out of Competition"
-    ).length;
+    );
 
+    // Mirror ModalContent's counts model:
+    //   All    = banned + ingredients
+    //   Prohib = prohibited only
+    //   Limited= limited only
+    //   Other  = other banned + all ingredients
     setDisplayCounts({
-      All: total,
-      Prohibited: prohibited,
-      Limited: limited,
-      Other: other,
+      All: totalMatches,
+      Prohibited: bannedProhibited.length,
+      Limited: bannedLimited.length,
+      Other: bannedOther.length + ings.length,
     });
-  }, [matchedRecords]);
+  }, [matchedRecords, matchedIngredients]);
 
   return (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      {/* LEFT SIDE: TITLE + PRODUCT META + BANNED SUMMARY */}
+      {/* LEFT: title + meta + chips */}
       <div>
         <h2 className="text-2xl font-bold mb-1 text-white">
           {stack.name}
@@ -132,7 +141,7 @@ export default function ModalHeader({
             <ValueRating stack={stack} />
           </div>
 
-          {/* Banned substance summary */}
+          {/* Banned / ingredient summary chips */}
           <div className="flex flex-wrap gap-2 mt-1 relative">
             {["All", "Prohibited", "Limited", "Other"].map((type) => (
               <div
@@ -172,7 +181,7 @@ export default function ModalHeader({
         </div>
       </div>
 
-      {/* RIGHT SIDE: CLOSE BUTTON */}
+      {/* RIGHT: close button */}
       <div className="flex items-center gap-2 self-start md:self-auto">
         <button
           onClick={onClose}

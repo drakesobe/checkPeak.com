@@ -364,13 +364,14 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <ModalHeader
-          stack={stack}
-          servingsNumber={servingsNumber}
-          priceNumber={priceNumber}
-          matchedRecords={matchedRecords}
-          allStacks={allStacks}
-          onClose={onClose}
-        />
+            stack={stack}
+            servingsNumber={servingsNumber}
+            priceNumber={priceNumber}
+            matchedRecords={matchedRecords}          // banned
+            matchedIngredients={matchedIngredients}  // 👈 add this line
+            allStacks={allStacks}
+            onClose={onClose}
+          />
 
         <div className="mt-4 flex-1 overflow-auto pr-1 sm:pr-2 space-y-3">
           {/* Image + controls row */}

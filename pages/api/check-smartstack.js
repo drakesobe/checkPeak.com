@@ -1,102 +1,232 @@
 /**
  * /pages/api/check-smartstack
  *
- * Enhanced to include "Nutrient Antagonism" for both Banned Substances and Ingredients.
- * Includes enriched cross-linking and full debug output.
+ * Improved version:
+ * - Phrase-level matching (no more "one"/"acid" false positives).
+ * - Lightweight in-memory caching of Airtable records.
+ * - Still returns matchedBanned + matchedIngredients with Nutrient Antagonism, Benefits, Weaknesses, etc.
+ * - Safe debug info for easier troubleshooting.
  */
 
 import Airtable from "airtable";
-
-const DEFAULT_FETCH_TIMEOUT = 10000;
-
-async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const resp = await fetch(url, { ...opts, signal: controller.signal });
-    return resp;
-  } finally {
-    clearTimeout(id);
-  }
-}
 
 /* --------------------
    Airtable clients
    -------------------- */
 const bannedBase =
   process.env.BANNED_API_KEY && process.env.BANNED_BASE_ID
-    ? new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(process.env.BANNED_BASE_ID)
+    ? new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
+        process.env.BANNED_BASE_ID
+      )
     : null;
 
 const ingredientsBase =
   process.env.INGREDIENT_API_KEY && process.env.INGREDIENT_BASE_ID
-    ? new Airtable({ apiKey: process.env.INGREDIENT_API_KEY }).base(process.env.INGREDIENT_BASE_ID)
+    ? new Airtable({ apiKey: process.env.INGREDIENT_API_KEY }).base(
+        process.env.INGREDIENT_BASE_ID
+      )
     : null;
+
+/* --------------------
+   Simple in-memory caches
+   (per warm lambda / Node process)
+   -------------------- */
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+let bannedRecordsCache = null;
+let ingredientRecordsCache = null;
+let lastBannedFetch = 0;
+let lastIngredientFetch = 0;
 
 async function fetchAllAirtableRecordsUsingClient(baseInstance, tableName) {
   if (!baseInstance) throw new Error("Airtable base instance not configured");
   if (!tableName) throw new Error("Table name required");
+
   const pageSize = 100;
-  const all = await baseInstance(tableName).select({ view: "Grid view", pageSize }).all();
+  const all = await baseInstance(tableName)
+    .select({ view: "Grid view", pageSize })
+    .all();
+
   return all.map((r) => ({ id: r.id, fields: r.fields }));
+}
+
+async function getCachedBannedRecords() {
+  const configured = bannedBase && process.env.BANNED_TABLE_NAME;
+  if (!configured) return [];
+
+  const now = Date.now();
+  if (
+    bannedRecordsCache &&
+    now - lastBannedFetch < CACHE_TTL_MS &&
+    bannedRecordsCache.length
+  ) {
+    return bannedRecordsCache;
+  }
+
+  const fresh = await fetchAllAirtableRecordsUsingClient(
+    bannedBase,
+    process.env.BANNED_TABLE_NAME
+  );
+  bannedRecordsCache = fresh;
+  lastBannedFetch = now;
+  return fresh;
+}
+
+async function getCachedIngredientRecords() {
+  const configured = ingredientsBase && process.env.INGREDIENT_TABLE_NAME;
+  if (!configured) return [];
+
+  const now = Date.now();
+  if (
+    ingredientRecordsCache &&
+    now - lastIngredientFetch < CACHE_TTL_MS &&
+    ingredientRecordsCache.length
+  ) {
+    return ingredientRecordsCache;
+  }
+
+  const fresh = await fetchAllAirtableRecordsUsingClient(
+    ingredientsBase,
+    process.env.INGREDIENT_TABLE_NAME
+  );
+  ingredientRecordsCache = fresh;
+  lastIngredientFetch = now;
+  return fresh;
 }
 
 /* --------------------
    Helpers
    -------------------- */
-const escapeRegex = (s = "") => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function splitNormalizedTextToTerms(text) {
-  if (!text) return [];
-  const lower = text.toLowerCase();
-  const cleaned = lower.replace(/\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi, " ");
-  const rawTerms = cleaned.split(/[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•]/);
-  return rawTerms.map((t) => t.trim()).filter((t) => t.length > 1);
-}
+const escapeRegex = (s = "") =>
+  String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
-  const terms = new Set();
-  for (const key of primaryFields) {
+/**
+ * Build candidate phrases from a record:
+ * - primary fields: e.g. "Substance Name", "Name", "Ingredient Name"
+ * - synonym fields: e.g. "Synonyms", "Synonyms (Extended)"
+ * We keep full phrases instead of exploding into tiny tokens.
+ */
+function buildCandidatePhrases(fields = {}, primaryKeys = [], synonymKeys = []) {
+  const phrases = [];
+
+  // Primary names
+  for (const key of primaryKeys) {
     const v = fields?.[key];
     if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    const str = String(v).trim();
+    if (str) phrases.push(str);
   }
-  const synonymCols = ["Synonyms", "Synonyms (Extended)", "Depositor-Supplied Synonyms"];
-  for (const col of synonymCols) {
-    const v = fields?.[col];
+
+  // Synonyms (comma/semicolon/pipe/newline separated)
+  for (const key of synonymKeys) {
+    const v = fields?.[key];
     if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    String(v)
+      .split(/[;,\/\|\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((s) => phrases.push(s));
   }
-  return Array.from(terms);
+
+  // De-duplicate (case-insensitive)
+  const out = [];
+  const seen = new Set();
+  for (const p of phrases) {
+    const k = p.toLowerCase();
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
-function termInText(term = "", normalizedText = "") {
-  if (!term || term.length < 2 || /^[0-9]+$/.test(term)) return false;
-  try {
-    const rx = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
-    return rx.test(normalizedText);
-  } catch {
-    return normalizedText.includes(term.toLowerCase());
+const STOP_WORDS = new Set([
+  // very generic words that cause false positives:
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "acid",
+  "salt",
+  "hydrate",
+  "anhydrous",
+  "powder",
+  "extract",
+  "root",
+  "leaf",
+  "seed",
+  "mg",
+  "mcg",
+  "g",
+]);
+
+function isSignalPhrase(phrase = "") {
+  const clean = phrase.toLowerCase().trim();
+
+  if (!clean) return false;
+  if (clean.length < 4) return false; // avoid tiny tokens
+  if (/^[0-9.\-]+$/.test(clean)) return false; // purely numeric
+  if (STOP_WORDS.has(clean)) return false;
+
+  return true;
+}
+
+/**
+ * Given candidate phrases and the full OCR text (lowercased),
+ * return which phrases actually appear in the text.
+ */
+function findMatchedPhrases(phrases = [], textLower = "") {
+  if (!textLower) return [];
+  const matched = [];
+
+  for (const phrase of phrases) {
+    if (!isSignalPhrase(phrase)) continue;
+    const needle = phrase.toLowerCase();
+
+    // basic substring match first for speed
+    if (!textLower.includes(needle)) continue;
+
+    // optional regex (kept simple; no word-boundary trickiness around punctuation-heavy names)
+    try {
+      const rx = new RegExp(escapeRegex(phrase), "i");
+      if (rx.test(textLower)) {
+        matched.push(phrase);
+      }
+    } catch {
+      // if regex fails, rely on the substring match
+      matched.push(phrase);
+    }
   }
+
+  return matched;
 }
 
 /* --------------------
    Airtable matching
    -------------------- */
+
 async function matchAgainstBannedRecords(ingredientsText) {
-  if (!bannedBase || !process.env.BANNED_TABLE_NAME) return [];
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
-  const rawRecords = await fetchAllAirtableRecordsUsingClient(bannedBase, process.env.BANNED_TABLE_NAME);
+  const configured = bannedBase && process.env.BANNED_TABLE_NAME;
+  if (!configured) return [];
+
+  const textLower = String(ingredientsText || "").toLowerCase();
+  if (!textLower) return [];
+
+  const rawRecords = await getCachedBannedRecords();
   const matches = [];
 
   for (const rec of rawRecords) {
     const fields = rec.fields || {};
-    const candidates = recordTerms(fields, ["Substance Name"]);
-    const matchedTerms = [];
-
-    for (const t of candidates) {
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
+    const phrases = buildCandidatePhrases(
+      fields,
+      ["Substance Name"],
+      ["Synonyms"]
+    );
+    const matchedTerms = findMatchedPhrases(phrases, textLower);
 
     if (matchedTerms.length > 0) {
       matches.push({
@@ -123,27 +253,33 @@ async function matchAgainstBannedRecords(ingredientsText) {
 }
 
 async function matchAgainstIngredientRecords(ingredientsText) {
-  if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME)
+  if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME) {
     throw new Error("Ingredients Airtable not configured");
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
-  const raw = await fetchAllAirtableRecordsUsingClient(ingredientsBase, process.env.INGREDIENT_TABLE_NAME);
+  }
+
+  const textLower = String(ingredientsText || "").toLowerCase();
+  if (!textLower) return [];
+
+  const rawRecords = await getCachedIngredientRecords();
   const matches = [];
 
-  for (const rec of raw) {
+  for (const rec of rawRecords) {
     const fields = rec.fields || {};
-    const candidates = recordTerms(fields, ["Name", "Ingredient Name"]);
-    const matchedTerms = [];
-
-    for (const t of candidates) {
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
+    const phrases = buildCandidatePhrases(
+      fields,
+      ["Name", "Ingredient Name"],
+      ["Synonyms (Extended)", "Synonyms"]
+    );
+    const matchedTerms = findMatchedPhrases(phrases, textLower);
 
     if (matchedTerms.length > 0) {
       matches.push({
         id: rec.id,
         fields: {
           Name: fields["Name"] || "",
-          "Synonyms (Extended)": fields["Synonyms (Extended)"] || fields["Synonyms"] || "",
+          "Ingredient Name": fields["Ingredient Name"] || "",
+          "Synonyms (Extended)":
+            fields["Synonyms (Extended)"] || fields["Synonyms"] || "",
           Benefits: fields["Benefits"] || "",
           Weaknesses: fields["Weaknesses"] || "",
           "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
@@ -154,18 +290,25 @@ async function matchAgainstIngredientRecords(ingredientsText) {
     }
   }
 
-  console.log(`[check-smartstack] Ingredient Matches Found: ${matches.length}`);
+  console.log(
+    `[check-smartstack] Ingredient Matches Found: ${matches.length}`
+  );
   return matches;
 }
 
 /* --------------------
    Main Handler
    -------------------- */
+
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed. Use POST." });
 
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  // no caching of results at the HTTP layer
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
@@ -177,66 +320,97 @@ export default async function handler(req, res) {
 
     const debug = {
       airtable: {
-        bannedConfigured: Boolean(bannedBase && process.env.BANNED_TABLE_NAME),
-        ingredientsConfigured: Boolean(ingredientsBase && process.env.INGREDIENT_TABLE_NAME),
+        bannedConfigured: Boolean(
+          bannedBase && process.env.BANNED_TABLE_NAME
+        ),
+        ingredientsConfigured: Boolean(
+          ingredientsBase && process.env.INGREDIENT_TABLE_NAME
+        ),
       },
     };
 
     if (!rawText) {
       debug.note = "No OCR/text provided";
-      return res.status(400).json({ error: "No text provided for OCR check.", debug });
+      return res
+        .status(400)
+        .json({ error: "No text provided for OCR check.", debug });
     }
 
-    // Match against Airtable
     let matchedIngredients = [];
     let matchedBanned = [];
 
+    // Ingredients
     try {
       matchedIngredients = await matchAgainstIngredientRecords(rawText);
     } catch (err) {
       console.error("[check-smartstack] Error matching ingredients:", err);
       debug.airtableIngredientError = String(err?.message || err);
+      matchedIngredients = [];
     }
 
+    // Banned
     try {
       matchedBanned = await matchAgainstBannedRecords(rawText);
     } catch (err) {
       console.error("[check-smartstack] Error matching banned substances:", err);
       debug.airtableBannedError = String(err?.message || err);
+      matchedBanned = [];
     }
 
-    // Enrich banned substances with ingredient info (shared nutrient antagonism)
+    // Enrich banned substances with ingredient info where names/synonyms overlap
     if (matchedBanned.length && matchedIngredients.length) {
       const ingByName = new Map();
+
       for (const ing of matchedIngredients) {
-        const name = (ing.fields?.["Name"] || "").toString().trim().toLowerCase();
-        if (name) ingByName.set(name, ing);
-        const syns = (ing.fields?.["Synonyms (Extended)"] || ing.fields?.["Synonyms"] || "").toString();
+        const fields = ing.fields || {};
+        const baseName = (fields["Name"] || fields["Ingredient Name"] || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+
+        if (baseName) ingByName.set(baseName, ing);
+
+        const syns = (
+          fields["Synonyms (Extended)"] ||
+          fields["Synonyms"] ||
+          ""
+        ).toString();
         syns
           .split(/[;,\/\|\(\)\[\]\n]/)
           .map((s) => s.trim())
           .filter(Boolean)
-          .forEach((s) => ingByName.set(s.toLowerCase(), ing));
+          .forEach((s) => {
+            const key = s.toLowerCase();
+            if (!ingByName.has(key)) ingByName.set(key, ing);
+          });
       }
 
       matchedBanned = matchedBanned.map((b) => {
-        const bName = (b.fields?.["Substance Name"] || "").toString().trim().toLowerCase();
-        const maybe = ingByName.get(bName);
-        if (maybe) {
-          const enriched = { ...b };
-          enriched.fields["Benefits"] = enriched.fields["Benefits"] || maybe.fields?.Benefits || "";
-          enriched.fields["Weaknesses"] = enriched.fields["Weaknesses"] || maybe.fields?.Weaknesses || "";
-          enriched.fields["Nutrient Antagonism"] =
-            enriched.fields["Nutrient Antagonism"] ||
-            maybe.fields?.["Nutrient Antagonism"] ||
-            "";
-          return enriched;
-        }
-        return b;
+        const fields = b.fields || {};
+        const nameKey = (fields["Substance Name"] || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+
+        const linkedIng = ingByName.get(nameKey);
+        if (!linkedIng) return b;
+
+        const enriched = { ...b, fields: { ...fields } };
+        const ingFields = linkedIng.fields || {};
+
+        enriched.fields["Benefits"] =
+          enriched.fields["Benefits"] || ingFields["Benefits"] || "";
+        enriched.fields["Weaknesses"] =
+          enriched.fields["Weaknesses"] || ingFields["Weaknesses"] || "";
+        enriched.fields["Nutrient Antagonism"] =
+          enriched.fields["Nutrient Antagonism"] ||
+          ingFields["Nutrient Antagonism"] ||
+          "";
+
+        return enriched;
       });
     }
 
-    // Debug summary
     console.log("[check-smartstack] ✅ Matches Summary:", {
       banned: matchedBanned.length,
       ingredients: matchedIngredients.length,

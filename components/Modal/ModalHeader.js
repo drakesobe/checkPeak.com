@@ -1,68 +1,125 @@
+// components/ModalHeader.jsx
 "use client";
+
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ValueRating from "./ValueRating";
 
-export default function ModalHeader({ stack, servingsNumber, priceNumber, matchedRecords = [], onClose }) {
+export default function ModalHeader({
+  stack,
+  servingsNumber,
+  priceNumber,
+  matchedRecords = [],
+  onClose,
+}) {
   const [displayCounts, setDisplayCounts] = useState({
     All: "–",
     Prohibited: "–",
-    "Limited to Out of Competition": "–",
+    Limited: "–",
     Other: "–",
   });
 
   const [tooltipVisible, setTooltipVisible] = useState(null);
 
+  // Match ModalContent’s brand colors
   const filterColors = {
     All: "bg-gray-600 text-white",
     Prohibited: "bg-red-600 text-white",
-    "Limited to Out of Competition": "bg-orange-500 text-white",
+    Limited: "bg-orange-500 text-white",
     Other: "bg-blue-600 text-white",
   };
 
   const tooltips = {
-    All: "Total number of detected substances",
-    Prohibited: "Substances prohibited in competition",
-    "Limited to Out of Competition": "Substances limited to out-of-competition use",
-    Other: "Monitored or less critical substances",
+    All: "Total number of banned / monitored substances detected for this product.",
+    Prohibited: "Substances fully prohibited in competition.",
+    Limited:
+      "Substances that are limited to out-of-competition use or have special timing rules.",
+    Other:
+      "Substances that are monitored, sport-specific, or otherwise not fully prohibited.",
   };
 
-  // Animate counts when matchedRecords changes
+  // --- ban-type helpers (mirror ModalContent logic) ---
+
+  const getBanTypeRaw = (rec) => {
+    if (!rec) return null;
+    if (rec.banType) return rec.banType;
+    if (rec.fields && rec.fields["Ban Type"]) return rec.fields["Ban Type"];
+    if (rec._raw && rec._raw["Ban Type"]) return rec._raw["Ban Type"];
+    return null;
+  };
+
+  const normalizeBanLabel = (val) => {
+    if (!val) return null;
+    const s = String(val).trim().toLowerCase();
+    if (s === "prohibited") return "Prohibited";
+    if (
+      s === "limited to out of competition" ||
+      s === "limited out of competition"
+    )
+      return "Limited to Out of Competition";
+    if (s === "particular sports") return "Particular Sports";
+    return val;
+  };
+
+  // Animate & sync counts whenever the records change
   useEffect(() => {
-    const counts = {
-      All: matchedRecords.length || "–",
-      Prohibited: matchedRecords.length
-        ? matchedRecords.filter(
-            (r) => (r.banType || r.fields?.["Ban Type"]) === "Prohibited"
-          ).length
-        : "–",
-      "Limited to Out of Competition": matchedRecords.length
-        ? matchedRecords.filter(
-            (r) => (r.banType || r.fields?.["Ban Type"]) === "Limited to Out of Competition"
-          ).length
-        : "–",
-      Other: matchedRecords.length
-        ? matchedRecords.filter(
-            (r) =>
-              !["Prohibited", "Limited to Out of Competition"].includes(
-                r.banType || r.fields?.["Ban Type"]
-              )
-          ).length
-        : "–",
-    };
-    setDisplayCounts(counts);
+    if (!matchedRecords || matchedRecords.length === 0) {
+      setDisplayCounts({
+        All: "–",
+        Prohibited: "–",
+        Limited: "–",
+        Other: "–",
+      });
+      return;
+    }
+
+    const normalized = matchedRecords.map((rec) => {
+      const raw = getBanTypeRaw(rec);
+      const norm = normalizeBanLabel(raw);
+      return { ...rec, _banTypeNorm: norm };
+    });
+
+    const total = normalized.length;
+    const prohibited = normalized.filter(
+      (r) => r._banTypeNorm === "Prohibited"
+    ).length;
+
+    const limited = normalized.filter(
+      (r) => r._banTypeNorm === "Limited to Out of Competition"
+    ).length;
+
+    const other = normalized.filter(
+      (r) =>
+        r._banTypeNorm !== "Prohibited" &&
+        r._banTypeNorm !== "Limited to Out of Competition"
+    ).length;
+
+    setDisplayCounts({
+      All: total,
+      Prohibited: prohibited,
+      Limited: limited,
+      Other: other,
+    });
   }, [matchedRecords]);
 
   return (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      {/* LEFT SIDE: TITLE + PRODUCT META + BANNED SUMMARY */}
       <div>
-        <h2 className="text-2xl font-bold mb-1">{stack.name}</h2>
+        <h2 className="text-2xl font-bold mb-1 text-white">
+          {stack.name}
+        </h2>
 
         <div className="text-sm text-gray-300 flex flex-wrap gap-4 items-center">
-          {/* Price & Servings */}
+          {/* Servings */}
           <div className="text-xs text-gray-400">
-            Servings: <span className="font-semibold text-white">{servingsNumber || "N/A"}</span>
+            Servings:{" "}
+            <span className="font-semibold text-white">
+              {servingsNumber || "N/A"}
+            </span>
           </div>
+
+          {/* Price */}
           <div className="text-xs text-gray-400">
             Price:{" "}
             <span className="font-semibold text-white">
@@ -70,14 +127,14 @@ export default function ModalHeader({ stack, servingsNumber, priceNumber, matche
             </span>
           </div>
 
-          {/* ValueRating badge */}
+          {/* Value rating */}
           <div className="ml-0">
             <ValueRating stack={stack} />
           </div>
 
-          {/* Banned substance counts with interactive tooltips */}
+          {/* Banned substance summary */}
           <div className="flex flex-wrap gap-2 mt-1 relative">
-            {Object.keys(displayCounts).map((type) => (
+            {["All", "Prohibited", "Limited", "Other"].map((type) => (
               <div
                 key={type}
                 className="relative flex items-center"
@@ -115,12 +172,12 @@ export default function ModalHeader({ stack, servingsNumber, priceNumber, matche
         </div>
       </div>
 
-      {/* Close button */}
-      <div className="flex items-center gap-2">
+      {/* RIGHT SIDE: CLOSE BUTTON */}
+      <div className="flex items-center gap-2 self-start md:self-auto">
         <button
           onClick={onClose}
           aria-label="Close"
-          className="text-white text-lg font-bold bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded"
+          className="text-white text-lg font-bold bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded transition"
         >
           ✕
         </button>

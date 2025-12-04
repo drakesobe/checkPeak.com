@@ -15,16 +15,11 @@ import ModalFooter from "./ModalFooter";
  * - Ensures OCR is run **only after** the image element has loaded for the currently opened stack
  * - Exposes runOCR to child ModalContent and ModalFooter so user can re-scan
  *
- * Edits in this version:
- *  - Prefer "Nutrition Label URL" over any generic product image for OCR.
- *  - Force re-scan clears caches so OCR truly reruns.
- *  - Added debug logs to verify which URL is being scanned.
- *  - Minor guards around image loading.
- *
- * Reminder in parent (SmartStackPage):
- * {modalStack && (
- *   <NutritionModal key={modalStack.id} stack={modalStack} onClose={() => setModalStack(null)} />
- * )}
+ * UX improvements in this version:
+ *  - Mobile-first layout (image + controls stack on small screens)
+ *  - Backdrop click + ESC key to close
+ *  - Clearer loading status text near image/actions
+ *  - Slightly more compact spacing and scroll behavior for small screens
  */
 
 const ocrCache = {}; // imageUrl -> ocr text
@@ -58,9 +53,23 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       setAnimDots("");
       return;
     }
-    const id = setInterval(() => setAnimDots((p) => (p.length >= 3 ? "" : p + ".")), 450);
+    const id = setInterval(
+      () => setAnimDots((p) => (p.length >= 3 ? "" : p + ".")),
+      450
+    );
     return () => clearInterval(id);
   }, [loadingOCR, loadingRecords]);
+
+  // Close on ESC
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") {
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
 
   if (!stack) return null;
 
@@ -175,23 +184,31 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       const rawIngredients = data?.matchedIngredients || [];
 
       const normalize = (arr, type) =>
-      (Array.isArray(arr) ? arr : [])
-        .map((r) => {
-          const f = r?.fields || r || {};
-          return {
-            id: r?.id || null,
-            name: f["Substance Name"] || f["Ingredient Name"] || f["Name"] || "",
-            type,
-            notes: f["Notes"] || "",
-            benefits: f["Benefits"] || "",
-            weaknesses: f["Weaknesses"] || "",
-            antagonism: f["Nutrient Antagonism"] || "",
-            source: f["Source"] || f["Sources / References"] || f["Source / Citation"] || "",
-            synonyms: f["Synonyms"] || f["Synonyms (Extended)"] || "",
-            _raw: f,
-          };
-        })
-        .filter(Boolean);
+        (Array.isArray(arr) ? arr : [])
+          .map((r) => {
+            const f = r?.fields || r || {};
+            return {
+              id: r?.id || null,
+              name:
+                f["Substance Name"] ||
+                f["Ingredient Name"] ||
+                f["Name"] ||
+                "",
+              type,
+              notes: f["Notes"] || "",
+              benefits: f["Benefits"] || "",
+              weaknesses: f["Weaknesses"] || "",
+              antagonism: f["Nutrient Antagonism"] || "",
+              source:
+                f["Source"] ||
+                f["Sources / References"] ||
+                f["Source / Citation"] ||
+                "",
+              synonyms: f["Synonyms"] || f["Synonyms (Extended)"] || "",
+              _raw: f,
+            };
+          })
+          .filter(Boolean);
 
       const banned = normalize(rawBanned, "banned");
       const ingredients = normalize(rawIngredients, "ingredient");
@@ -323,12 +340,29 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     }, 400);
   };
 
+  const loadingLabel =
+    loadingOCR && loadingRecords
+      ? "Reading label and finding matches"
+      : loadingOCR
+      ? "Reading label"
+      : loadingRecords
+      ? "Finding ingredient matches"
+      : "";
+
   // -------------------------
   // Render
   // -------------------------
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-xl p-6 max-w-4xl w-full relative overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3 sm:p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 max-w-4xl w-full relative overflow-hidden flex flex-col max-h-[90vh] border border-gray-700 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ModalHeader
           stack={stack}
           servingsNumber={servingsNumber}
@@ -338,17 +372,20 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           onClose={onClose}
         />
 
-        <div className="mt-4 flex-1 overflow-auto pr-2">
+        <div className="mt-4 flex-1 overflow-auto pr-1 sm:pr-2 space-y-3">
+          {/* Image + controls row */}
           {imageUrl ? (
-            <div className="flex items-start gap-4 mb-4">
+            <div className="flex flex-col md:flex-row md:items-start gap-3 sm:gap-4 mb-2">
               <div
                 className={`transition-all duration-200 ${
-                  imageCollapsed ? "w-44" : "w-1/3 md:w-1/2"
+                  imageCollapsed
+                    ? "w-32 sm:w-40 md:w-44"
+                    : "w-full md:w-1/3 lg:w-1/2"
                 }`}
               >
                 <div
-                  className={`overflow-hidden rounded-lg border border-gray-700 ${
-                    imageCollapsed ? "h-28" : "h-auto"
+                  className={`overflow-hidden rounded-lg border border-gray-700 bg-black/20 ${
+                    imageCollapsed ? "h-28 sm:h-32" : "h-auto max-h-[260px]"
                   }`}
                 >
                   <img
@@ -362,44 +399,60 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                 </div>
               </div>
 
-              <div className="flex-1 flex items-center justify-end gap-3">
-                <button
-                  className="px-3 py-1 bg-gray-700 rounded text-sm text-white hover:bg-gray-600"
-                  onClick={() => setImageCollapsed((s) => !s)}
-                >
-                  {imageCollapsed ? "Expand Image" : "Collapse Image"}
-                </button>
+              <div className="flex-1 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-start md:justify-end gap-2">
+                  <button
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm rounded text-white transition"
+                    onClick={() => setImageCollapsed((s) => !s)}
+                  >
+                    {imageCollapsed ? "Expand image" : "Collapse image"}
+                  </button>
 
-                <a
-                  className={`text-sm px-3 py-1 rounded ${
-                    affiliateLink
-                      ? "bg-gray-500 text-white hover:bg-green-600"
-                      : "bg-gray-700 text-gray-300 cursor-not-allowed"
-                  }`}
-                  href={affiliateLink || "#"}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => {
-                    if (!affiliateLink) e.preventDefault();
-                  }}
-                >
-                  {affiliateLink ? "Open product link" : "No product link"}
-                </a>
+                  <a
+                    className={`text-xs sm:text-sm px-3 py-1.5 rounded transition ${
+                      affiliateLink
+                        ? "bg-gray-500 hover:bg-green-600 text-white"
+                        : "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    }`}
+                    href={affiliateLink || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      if (!affiliateLink) e.preventDefault();
+                    }}
+                  >
+                    {affiliateLink ? "Open product link" : "No product link"}
+                  </a>
 
-                <button
-                  className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-500"
-                  onClick={() => runOCR(true)}
-                  title="Force re-run OCR & fetch matched records"
-                >
-                  Re-scan
-                </button>
+                  <button
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs sm:text-sm text-white rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
+                    onClick={() => runOCR(true)}
+                    title="Force re-run OCR & fetch matched records"
+                    disabled={loadingOCR}
+                  >
+                    {loadingOCR ? "Re-scanning..." : "Re-scan"}
+                  </button>
+                </div>
+
+                {loadingLabel && (
+                  <p className="text-[11px] sm:text-xs text-gray-400 mt-1">
+                    {loadingLabel}
+                    {animDots}
+                  </p>
+                )}
+
+                {error && (
+                  <p className="text-[11px] sm:text-xs text-red-400 mt-1">
+                    {error}
+                  </p>
+                )}
               </div>
 
               <canvas ref={canvasRef} style={{ display: "none" }} />
             </div>
           ) : (
-            <div className="w-full h-40 bg-gray-700 flex items-center justify-center rounded-lg mb-4 text-gray-400 text-sm">
-              No Nutrition Image Available
+            <div className="w-full h-32 sm:h-40 bg-gray-700 flex items-center justify-center rounded-lg mb-2 text-gray-400 text-xs sm:text-sm">
+              No nutrition label image available for this stack.
             </div>
           )}
 
@@ -419,7 +472,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           />
         </div>
 
-        <div className="mt-4 sticky bottom-0 bg-gray-800 pt-4">
+        <div className="mt-3 pt-3 border-t border-gray-700 bg-gray-800 sticky bottom-0">
           <ModalFooter affiliateLink={affiliateLink} runOCR={runOCR} />
         </div>
       </div>

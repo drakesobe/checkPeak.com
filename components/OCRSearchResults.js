@@ -3,16 +3,36 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import AnimatedEllipsis from "./AnimatedEllipsis";
 
 /**
- * Desktop visuals preserved.
- * Mobile UX:
- *  - Vertical stacking of controls so nothing collides
- *  - No "Toggle All" (redundant with section toggles)
- *  - Native horizontal scrollbars only (no gradients/overlays)
- *  - Clear separation between sections with a neutral gray divider
- *  - "Searching..." appears above heading, fades in/out
+ * OCRSearchResults (card + accordion view)
+ *
+ * Data model (normalized per record):
+ *  - name
+ *  - synonyms
+ *  - bannedBy
+ *  - banType
+ *  - dosageLimit
+ *  - notes
+ *  - benefits
+ *  - weaknesses
+ *  - antagonisms  (Nutrient Antagonism / Nutrient Antagonisms)
+ *  - source       (Source / Citation, Sources / References)
+ *
+ * UI:
+ *  - Banned section:
+ *      - Card per banned substance
+ *      - Header: name, ban type, bannedBy, quick meta
+ *      - Accordion body: Benefits, Weaknesses, Nutrient Antagonism, Sources
+ *  - Ingredients section:
+ *      - Card per non-banned ingredient
+ *      - Header: name, short summary
+ *      - Accordion body: Benefits, Weaknesses, Nutrient Antagonism, Sources
+ *  - Sticky legend:
+ *      - Filter banned by ban type
+ *      - Shows counts by ban type, clear filters
  */
 
 // --------- small safety helpers ----------
@@ -32,13 +52,17 @@ export default function OCRSearchResults({
   searchTerm = "",
   matchedSubstances = [],
 }) {
-  // UI state
+  // Section + filter state
   const [activeBanType, setActiveBanType] = useState(null);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
 
-  // Refs kept in case you later want to add any scroll-linked behavior
+  // Row accordion state
+  const [expandedBannedRows, setExpandedBannedRows] = useState({});
+  const [expandedIngredientRows, setExpandedIngredientRows] = useState({});
+
+  // Refs
   const bannedScrollRef = useRef(null);
   const ingScrollRef = useRef(null);
 
@@ -59,26 +83,39 @@ export default function OCRSearchResults({
 
     (matchedSubstances || []).forEach((rRaw) => {
       const r = rRaw?.fields ? rRaw.fields : rRaw || {};
+
       const record = {
         id: rRaw?.id || rRaw?.recordId || Math.random().toString(36).slice(2),
-        name: r["Substance Name"] ?? r.name ?? r["Name"] ?? "",
-        synonyms: r["Synonyms"] ?? r["Synonyms (Extended)"] ?? r.synonyms ?? "",
+        name:
+          r["Substance Name"] ??
+          r.name ??
+          r["Name"] ??
+          r["Ingredient Name"] ??
+          "",
+        synonyms:
+          r["Synonyms"] ??
+          r["Synonyms (Extended)"] ??
+          r.synonyms ??
+          r["Aliases"] ??
+          "",
         bannedBy: r["Banned By"] ?? r.bannedBy ?? "",
         banType: r["Ban Type"] ?? r.banType ?? null,
         dosageLimit: r["Dosage Limit"] ?? r.dosageLimit ?? "",
         notes: r["Notes"] ?? r["Pharmacology Notes"] ?? r.notes ?? "",
-        source:
-          r["Source / Citation"] ??
-          r["Sources / References"] ??
-          r["Source"] ??
-          r.source ??
-          "",
         benefits: r["Benefits"] ?? r.benefits ?? "",
         weaknesses: r["Weaknesses"] ?? r.weaknesses ?? "",
         antagonisms:
           r["Nutrient Antagonisms"] ??
           r["Nutrient Antagonism"] ??
+          r["Nutrient Interactions"] ??
           r.antagonisms ??
+          "",
+        source:
+          r["Source / Citation"] ??
+          r["Sources / References"] ??
+          r["Source / Notes"] ??
+          r["Source"] ??
+          r.source ??
           "",
       };
 
@@ -101,8 +138,12 @@ export default function OCRSearchResults({
   }, [bannedRecords, activeBanType]);
 
   const filteredIngredients = useMemo(() => {
-    const bannedNames = new Set(bannedRecords.map((b) => (b.name || "").toLowerCase()));
-    return ingredientRecords.filter((ing) => !bannedNames.has((ing.name || "").toLowerCase()));
+    const bannedNames = new Set(
+      bannedRecords.map((b) => (b.name || "").toLowerCase())
+    );
+    return ingredientRecords.filter(
+      (ing) => !bannedNames.has((ing.name || "").toLowerCase())
+    );
   }, [ingredientRecords, bannedRecords]);
 
   // Highlight searchTerm in text (color optionally passed for banned)
@@ -123,24 +164,32 @@ export default function OCRSearchResults({
     }
   };
 
-  // Legend
+  // Legend / filters
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
+
   const clearFilters = () => {
     setActiveBanType(null);
     setLegendCollapsed(false);
   };
-  const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
+
+  const collapseLabel = (open, name) =>
+    open ? `Collapse ${name}` : `Expand ${name}`;
 
   // Search status
+  const trimmedSearch = String(searchTerm || "").trim();
   const showSearchingIndicator =
-    String(searchTerm || "").trim().length >= 2 && (matchedSubstances?.length ?? 0) === 0;
+    trimmedSearch.length >= 2 && (matchedSubstances?.length ?? 0) === 0;
 
-  // Ensure native scrollbars appear when needed (mobile momentum)
+  // Initial “hint” if nothing searched yet
+  const showInitialEmptyState =
+    !trimmedSearch && (matchedSubstances?.length ?? 0) === 0;
+
+  // Momentum scroll on mobile
   useEffect(() => {
     const b = bannedScrollRef.current;
     const i = ingScrollRef.current;
@@ -148,10 +197,407 @@ export default function OCRSearchResults({
     if (i) i.style.WebkitOverflowScrolling = "touch";
   }, []);
 
+  const toggleBannedRow = (id) => {
+    setExpandedBannedRows((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleIngredientRow = (id) => {
+    setExpandedIngredientRows((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // ---------- CARD COMPONENTS (SmartStack-style accordions) ----------
+
+  const BannedCards = ({ records }) => {
+    if (!records || !records.length) {
+      return trimmedSearch ? (
+        <p className="italic text-gray-500 text-sm px-1 py-2">
+          No banned substances matched this search.
+        </p>
+      ) : (
+        <p className="italic text-gray-500 text-sm px-1 py-2">
+          No banned substances to display yet.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-3 mt-3" ref={bannedScrollRef}>
+        {records.map((rec, idx) => {
+          const banType = (rec.banType || "").trim();
+          const colorEntry =
+            banTypeColors.find((b) => b.label === banType) || null;
+          const c = colorEntry?.color || "#111827";
+          const isExpanded = !!expandedBannedRows[rec.id];
+
+          return (
+            <motion.div
+              key={rec.id}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, delay: idx * 0.01 }}
+              className="group rounded-2xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+              style={{
+                borderLeftWidth: 4,
+                borderLeftColor: c,
+              }}
+            >
+              {/* HEADER */}
+              <button
+                type="button"
+                onClick={() => toggleBannedRow(rec.id)}
+                className="w-full text-left px-4 sm:px-5 py-3 sm:py-4 flex items-start justify-between gap-3"
+              >
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                      Banned substance
+                    </span>
+                    {banType && (
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        style={{
+                          backgroundColor: `${c}10`,
+                          color: c,
+                        }}
+                      >
+                        {banType}
+                      </span>
+                    )}
+                    {rec.bannedBy && (
+                      <span className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 max-w-full">
+                        <span className="mr-1 text-[10px] font-semibold text-gray-500">
+                          By:
+                        </span>
+                        <span
+                          className="truncate"
+                          dangerouslySetInnerHTML={{
+                            __html: highlightHTML(rec.bannedBy, c),
+                          }}
+                        />
+                      </span>
+                    )}
+                  </div>
+
+                  <h3
+                    className="text-sm sm:text-base font-semibold text-gray-900 truncate"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightHTML(rec.name, c),
+                    }}
+                  />
+
+                  <div className="mt-1 text-[11px] sm:text-xs text-gray-600 space-y-0.5">
+                    {rec.synonyms && (
+                      <p
+                        className="line-clamp-1"
+                        dangerouslySetInnerHTML={{
+                          __html: `Synonyms: ${highlightHTML(
+                            rec.synonyms,
+                            c
+                          )}`,
+                        }}
+                      />
+                    )}
+                    {rec.dosageLimit && (
+                      <p
+                        dangerouslySetInnerHTML={{
+                          __html: `Dosage limit: ${highlightHTML(
+                            rec.dosageLimit,
+                            c
+                          )}`,
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center pl-2 pt-1">
+                  {isExpanded ? (
+                    <FaChevronUp className="text-gray-400" />
+                  ) : (
+                    <FaChevronDown className="text-gray-400" />
+                  )}
+                </div>
+              </button>
+
+              {/* BODY: structured panels */}
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    key={`${rec.id}-body`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1 border-t border-gray-100 bg-gray-50/80 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {rec.notes && (
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Notes / Pharmacology
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-slate-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-slate-800"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.notes, c),
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {rec.benefits && (
+                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 shadow-[0_1px_2px_rgba(16,185,129,0.12)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                              Benefits
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-emerald-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-emerald-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.benefits, c),
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {rec.weaknesses && (
+                        <div className="rounded-xl border border-rose-100 bg-rose-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(244,63,94,0.12)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                              Weaknesses / Risks
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-rose-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-rose-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.weaknesses, c),
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {rec.antagonisms && (
+                        <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(245,158,11,0.14)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                              Nutrient Antagonism
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-amber-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-amber-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.antagonisms, c),
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {rec.source && (
+                      <div className="mt-2 pt-3 border-t border-dashed border-gray-200">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                          Sources / References
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] sm:text-xs text-gray-700 leading-relaxed break-words">
+                          <p
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.source, c),
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const IngredientCards = ({ records }) => {
+    if (!records || !records.length) {
+      return trimmedSearch ? (
+        <div className="flex items-center justify-center py-8">
+          <p className="italic text-gray-500 text-sm text-center max-w-sm">
+            No ingredient entries matched this search that weren’t already tagged as
+            banned.
+          </p>
+        </div>
+      ) : (
+        <p className="italic text-gray-500 text-sm px-1 py-2">
+          No ingredient details to display yet.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-3 mt-3" ref={ingScrollRef}>
+        {records.map((rec, idx) => {
+          const isExpanded = !!expandedIngredientRows[rec.id];
+
+          return (
+            <motion.div
+              key={rec.id}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, delay: idx * 0.01 }}
+              className="rounded-2xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+            >
+              {/* HEADER */}
+              <button
+                type="button"
+                onClick={() => toggleIngredientRow(rec.id)}
+                className="w-full text-left px-4 sm:px-5 py-3 sm:py-4 flex items-start justify-between gap-3"
+              >
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                      Ingredient
+                    </span>
+                  </div>
+
+                  <h3
+                    className="text-sm sm:text-base font-semibold text-gray-900 truncate"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightHTML(rec.name),
+                    }}
+                  />
+
+                  <div className="mt-1 text-[11px] sm:text-xs text-gray-600 space-y-0.5">
+                    {rec.synonyms && (
+                      <p
+                        className="line-clamp-1"
+                        dangerouslySetInnerHTML={{
+                          __html: `Synonyms: ${highlightHTML(rec.synonyms)}`,
+                        }}
+                      />
+                    )}
+                    {rec.benefits && (
+                      <p
+                        className="line-clamp-1"
+                        dangerouslySetInnerHTML={{
+                          __html: `Benefits: ${highlightHTML(rec.benefits)}`,
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center pl-2 pt-1">
+                  {isExpanded ? (
+                    <FaChevronUp className="text-gray-400" />
+                  ) : (
+                    <FaChevronDown className="text-gray-400" />
+                  )}
+                </div>
+              </button>
+
+              {/* BODY: Benefits + Weaknesses + Antagonism + Sources */}
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    key={`${rec.id}-body`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1 border-t border-gray-100 bg-gray-50/80 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {rec.benefits && (
+                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 shadow-[0_1px_2px_rgba(16,185,129,0.12)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                              Benefits
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-emerald-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-emerald-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.benefits),
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {rec.weaknesses && (
+                        <div className="rounded-xl border border-rose-100 bg-rose-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(244,63,94,0.12)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                              Weaknesses / Risks
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-rose-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-rose-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.weaknesses),
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {rec.antagonisms && (
+                        <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(245,158,11,0.14)]">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                              Nutrient Antagonism
+                            </div>
+                            <div className="h-1 w-10 rounded-full bg-amber-200" />
+                          </div>
+                          <p
+                            className="leading-relaxed whitespace-pre-line text-amber-900"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.antagonisms),
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {rec.source && (
+                      <div className="mt-2 pt-3 border-t border-dashed border-gray-200">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                          Sources / References
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] sm:text-xs text-gray-700 leading-relaxed break-words">
+                          <p
+                            dangerouslySetInnerHTML={{
+                              __html: highlightHTML(rec.source),
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ---------- RENDER ----------
+
   return (
-    <div className="w-full max-w-[2500px] mx-auto px-4 sm:px-4 py-6 font-sans space-y-8 relative">
+    <div className="w-full max-w-5xl mx-auto px-2 sm:px-0 py-4 sm:py-6 font-sans space-y-8 relative">
       <section>
-        {/* Searching indicator (above heading) */}
+        {/* Searching indicator */}
         <AnimatePresence>
           {showSearchingIndicator && (
             <motion.div
@@ -167,16 +613,40 @@ export default function OCRSearchResults({
           )}
         </AnimatePresence>
 
-        {/* Heading + summary */}
-        <h2 className="text-2xl font-bold text-center sm:text-left">Search Results</h2>
-        <p className="text-sm text-gray-600 text-center sm:text-left mt-1">
-          {matchedSubstances?.length ?? 0} total results — {bannedRecords.length} banned ·{" "}
-          {ingredientRecords.length} ingredients
-        </p>
+        {/* Initial hint */}
+        {showInitialEmptyState && (
+          <div className="mb-4 rounded-xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-3 text-xs sm:text-sm text-blue-900">
+            Start by entering a substance or ingredient above. When results come
+            back, banned items and ingredients will appear in expandable cards
+            with clear sections for benefits, weaknesses, nutrient antagonism,
+            and sources.
+          </div>
+        )}
 
-        {/* ===================== BANNED ===================== */}
-        <div className="mt-6">
-          {/* Controls: stack vertically on mobile so nothing collides */}
+        {/* Heading + summary */}
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between mb-2">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+              Search Results
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 mt-1">
+              {matchedSubstances?.length ?? 0} total — {bannedRecords.length} banned ·{" "}
+              {ingredientRecords.length} ingredients
+            </p>
+          </div>
+
+          {trimmedSearch && (
+            <div className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full bg-gray-100 px-3 py-1 text-[11px] sm:text-xs text-gray-700">
+              <span className="font-semibold text-gray-800">Search:</span>
+              <span className="font-mono text-gray-900 truncate max-w-[180px] sm:max-w-[260px]">
+                {trimmedSearch}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* ===================== BANNED (cards + accordion) ===================== */}
+        <div className="mt-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
               <button
@@ -190,8 +660,10 @@ export default function OCRSearchResults({
                 <span className="caret">{bannedOpen ? "▾" : "▸"}</span>
               </button>
 
-              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-                Filter by ban type using legend below.
+              <p className="text-[11px] sm:text-xs text-gray-600 leading-snug">
+                Filter by ban type with the legend at the bottom. Expand a card
+                to see a structured breakdown of risks, benefits, nutrient
+                antagonists, and references.
               </p>
             </div>
           </div>
@@ -199,124 +671,33 @@ export default function OCRSearchResults({
           <AnimatePresence initial={false}>
             {bannedOpen && (
               <motion.div
-                key="banned-table"
+                key="banned-cards"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
-                ref={bannedScrollRef}
-                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
+                className="mt-1"
               >
-                {filteredBanned?.length > 0 ? (
-                  <table className="min-w-full w-full text-xs sm:text-sm">
-                    <thead className="bg-[#46769B] text-white sticky top-0 z-10">
-                      <tr>
-                        {[
-                          "Substance Name",
-                          "Synonyms",
-                          "Banned By",
-                          "Ban Type",
-                          "Dosage Limit",
-                          "Notes",
-                          "Source / Citation",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredBanned.map((rec) => {
-                        const banType = (rec.banType || "").trim();
-                        const colorEntry =
-                          banTypeColors.find((b) => b.label === banType) || null;
-                        const c = colorEntry?.color || "#111827";
-
-                        return (
-                          <motion.tr
-                            key={rec.id}
-                            className="hover:bg-gray-50 transition"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                          >
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.name, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.synonyms, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.bannedBy, c) }}
-                            />
-                            <td className="px-3 py-2 align-top">
-                              <span
-                                className="px-2 py-1 rounded-full text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${c}20`,
-                                  color: c,
-                                }}
-                              >
-                                {banType || "—"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 align-top">{rec.dosageLimit || ""}</td>
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.notes, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.source, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.benefits, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.weaknesses, c) }}
-                            />
-                            <td
-                              className="px-3 py-2 align-top"
-                              dangerouslySetInnerHTML={{ __html: highlightHTML(rec.antagonisms, c) }}
-                            />
-                          </motion.tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="italic text-gray-500 p-4">No banned substances found.</p>
-                )}
+                <BannedCards records={filteredBanned} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* neutral divider keeps sections distinct on mobile */}
-        <div className="border-t border-gray-300 my-8" />
+        {/* Divider between sections */}
+        <div className="border-t border-gray-200 my-8" />
 
-        {/* ===================== INGREDIENTS ===================== */}
+        {/* ===================== INGREDIENTS (cards + accordion) ===================== */}
         <div className="mb-16">
-          {/* Controls: stack vertically on mobile so nothing collides */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
               <button
                 onClick={() => setIngredientsOpen((s) => !s)}
                 aria-expanded={ingredientsOpen}
-                aria-label={collapseLabel(ingredientsOpen, "Ingredients (non-banned)")}
+                aria-label={collapseLabel(
+                  ingredientsOpen,
+                  "Ingredients (non-banned)"
+                )}
                 className={`search-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
               >
                 <span className="section-label">Ingredients (non-banned)</span>
@@ -324,8 +705,10 @@ export default function OCRSearchResults({
                 <span className="caret">{ingredientsOpen ? "▾" : "▸"}</span>
               </button>
 
-              <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-                Ingredient database results and nutrient info.
+              <p className="text-[11px] sm:text-xs text-gray-600 leading-snug">
+                These appear in the ingredient database without a ban flag.
+                Expand a card to see the same breakdown of benefits, weaknesses,
+                nutrient antagonism, and sources.
               </p>
             </div>
           </div>
@@ -333,80 +716,14 @@ export default function OCRSearchResults({
           <AnimatePresence initial={false}>
             {ingredientsOpen && (
               <motion.div
-                key="ingredients-table"
+                key="ingredient-cards"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
-                ref={ingScrollRef}
-                className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"
+                className="mt-1"
               >
-                {filteredIngredients?.length > 0 ? (
-                  <table className="min-w-full w-full text-xs sm:text-sm">
-                    <thead className="bg-[#334E63] text-white sticky top-0 z-10">
-                      <tr>
-                        {[
-                          "Ingredient Name",
-                          "Synonyms",
-                          "Benefits",
-                          "Weaknesses",
-                          "Nutrient Antagonisms",
-                          "Source / Notes",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="px-3 sm:px-4 py-2 text-left font-medium whitespace-nowrap"
-                            scope="col"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredIngredients.map((rec) => (
-                        <motion.tr
-                          key={rec.id}
-                          className="hover:bg-gray-50 transition"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                        >
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.name) }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.synonyms) }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.benefits) }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.weaknesses) }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.antagonisms) }}
-                          />
-                          <td
-                            className="px-3 py-2 align-top"
-                            dangerouslySetInnerHTML={{ __html: highlightHTML(rec.source) }}
-                          />
-                        </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : showSearchingIndicator ? (
-                  <div className="flex items-center justify-center py-12">
-                    <AnimatedEllipsis text="Searching for ingredients" />
-                  </div>
-                ) : (
-                  <p className="italic text-gray-500 p-4">No ingredients found.</p>
-                )}
+                <IngredientCards records={filteredIngredients} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -415,7 +732,7 @@ export default function OCRSearchResults({
 
       {/* ===================== STICKY LEGEND ===================== */}
       <div className="sticky bottom-0 left-0 right-0 z-40">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="max-w-5xl mx-auto px-2 sm:px-0">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
             <div
               className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto"
@@ -439,28 +756,31 @@ export default function OCRSearchResults({
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition text-sm whitespace-nowrap ${
-                        active ? "shadow-md bg-gray-800 text-white" : "bg-white"
+                        active ? "shadow-md bg-gray-900 text-white" : "bg-white"
                       }`}
-                      style={{ borderColor: active ? "#444" : "transparent" }}
+                      style={{ borderColor: active ? "#111827" : "transparent" }}
                     >
                       <span
                         className="w-4 h-4 rounded-full flex-shrink-0"
                         style={{ backgroundColor: t.color, display: "inline-block" }}
                       />
                       <span className="font-medium">{t.label}</span>
-                      <span className="text-gray-500">({countsByBanType[t.label] || 0})</span>
+                      <span className="text-gray-500">
+                        ({countsByBanType[t.label] || 0})
+                      </span>
                     </button>
                   );
                 })}
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              <div className="text-sm text-gray-600 hidden sm:block">
-                Showing: {filteredBanned.length} banned · {filteredIngredients.length} ingredients
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              <div className="text-xs sm:text-sm text-gray-600 sm:mr-2 text-center sm:text-right">
+                Showing: {filteredBanned.length} banned ·{" "}
+                {filteredIngredients.length} ingredients
               </div>
               <button
                 onClick={clearFilters}
-                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-sm font-semibold shadow-sm hover:brightness-105 w-full sm:w-auto"
+                className="px-3 py-2 rounded-md bg-[#46769B] text-white text-xs sm:text-sm font-semibold shadow-sm hover:brightness-105 w-full sm:w-auto"
                 aria-label="Clear filters"
               >
                 Clear Filters
@@ -470,7 +790,7 @@ export default function OCRSearchResults({
         </div>
       </div>
 
-      {/* Local styles for the flat toggle buttons */}
+      {/* Local styles for toggle buttons */}
       <style jsx>{`
         .search-toggle-btn {
           display: inline-flex;
@@ -479,14 +799,14 @@ export default function OCRSearchResults({
           padding: 10px 16px;
           border-radius: 10px;
           border: 2px solid transparent;
-          font-size: 1rem;
+          font-size: 0.98rem;
           font-weight: 700;
           cursor: pointer;
           transition: box-shadow 0.18s ease-in-out, transform 0.18s ease-in-out,
             background-color 0.18s ease-in-out, border-color 0.18s ease-in-out;
-          background: rgba(255, 255, 255, 0.88);
+          background: rgba(255, 255, 255, 0.94);
           color: #0f172a;
-          box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
+          box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
         }
         .search-toggle-btn:hover {
           transform: translateY(-1px);
@@ -496,9 +816,9 @@ export default function OCRSearchResults({
           letter-spacing: -0.2px;
         }
         .search-toggle-btn .badge {
-          background-color: #46769b; /* brand */
+          background-color: #46769b;
           color: #fff;
-          font-size: 0.825rem;
+          font-size: 0.8rem;
           padding: 4px 8px;
           border-radius: 999px;
           line-height: 1;
@@ -512,23 +832,17 @@ export default function OCRSearchResults({
         }
         .search-toggle-btn.active {
           border-color: #46769b;
-          background-color: rgba(70, 118, 155, 0.08); /* subtle brand tint */
+          background-color: rgba(70, 118, 155, 0.08);
         }
 
-        /* Keep table header on top when scrolling horizontally */
-        thead.sticky {
-          z-index: 20;
-        }
-
-        /* Mobile tweaks: keep buttons prominent without crowding */
         @media (max-width: 640px) {
           .search-toggle-btn {
             padding: 10px 12px;
             gap: 8px;
-            font-size: 0.98rem;
+            font-size: 0.95rem;
           }
           .search-toggle-btn .badge {
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             padding: 3px 6px;
           }
         }

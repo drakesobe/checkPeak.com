@@ -3,15 +3,16 @@
 
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 
 /**
  * OCRScanResults
  *
  * Mobile-first, card-based results:
- *  - Simple scan summary card (brand-colored, no gradients)
- *  - Collapsible OCR text section
- *  - Banned substances as expandable cards with 3-box layout
- *  - Ingredients as expandable cards with 3-box layout
+ *  - Scan summary card
+ *  - Collapsible OCR text section (with inline highlights)
+ *  - Banned substances as SmartStack-style accordion cards
+ *  - Ingredients as SmartStack-style accordion cards
  *  - Ban-type legend filter with brand colors
  */
 
@@ -85,6 +86,16 @@ export default function OCRScanResults({
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [activeBanType, setActiveBanType] = useState(null);
+
+  // NEW: accordion open state for cards
+  const [expandedBannedIds, setExpandedBannedIds] = useState({});
+  const [expandedIngredientIds, setExpandedIngredientIds] = useState({});
+
+  const toggleBannedCard = (id) =>
+    setExpandedBannedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const toggleIngredientCard = (id) =>
+    setExpandedIngredientIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
   // Brand-consistent colors
   const banTypeColors = [
@@ -291,46 +302,7 @@ export default function OCRScanResults({
     setActiveBanType((cur) => (cur === label ? null : label));
   };
 
-  // ---------- helpers for inline highlighting ----------
-
-  const highlightTermsInline = (text, color, ocr) => {
-    const raw = text || "";
-    if (!raw || !ocr) return raw;
-
-    const normalized = String(ocr || "").toLowerCase();
-    const terms = raw
-      .split(/,\s*/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    if (!terms.length) return raw;
-
-    return terms.map((term, idx) => {
-      const rx = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
-      const match = rx.test(normalized);
-      const suffix = idx < terms.length - 1 ? ", " : "";
-
-      if (!match) {
-        return (
-          <span key={`${term}-${idx}`}>
-            {term}
-            {suffix}
-          </span>
-        );
-      }
-
-      return (
-        <span
-          key={`${term}-${idx}`}
-          className="font-semibold underline"
-          style={{ color }}
-        >
-          {term}
-          {suffix}
-        </span>
-      );
-    });
-  };
+  // ---------- helpers for blob highlighting ----------
 
   const highlightBlobWithOCR = (text, terms, color = INGREDIENT_HIGHLIGHT_COLOR) => {
     if (!text) return "";
@@ -362,7 +334,7 @@ export default function OCRScanResults({
     return html;
   };
 
-  // ---------- CARD COMPONENTS ----------
+  // ---------- CARD COMPONENTS (accordion style) ----------
 
   const BannedCards = ({ records }) => {
     if (!records || !records.length) {
@@ -374,8 +346,8 @@ export default function OCRScanResults({
     }
 
     return (
-      <div className="space-y-4 mt-3">
-        {records.map((rec) => {
+      <div className="space-y-3 mt-3">
+        {records.map((rec, index) => {
           const fields = rec.fields || {};
           const banType = fields["Ban Type"] || "Unknown ban classification";
           const name = fields["Substance Name"] || "Unnamed substance";
@@ -417,14 +389,29 @@ export default function OCRScanResults({
             color
           );
 
+          const expanded = !!expandedBannedIds[rec.id];
+
           return (
-            <details
+            <motion.div
               key={rec.id}
-              className="group rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, delay: index * 0.01 }}
+              className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+              style={{
+                borderLeftWidth: 4,
+                borderLeftColor: color,
+              }}
             >
-              <summary className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-3 sm:px-4 sm:py-3 cursor-pointer select-none">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-2">
+              {/* HEADER */}
+              <button
+                type="button"
+                onClick={() => toggleBannedCard(rec.id)}
+                className="w-full text-left px-3 py-3 sm:px-4 sm:py-3 flex items-start justify-between gap-3"
+              >
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span
                       className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{
@@ -439,101 +426,115 @@ export default function OCRScanResults({
                         Banned by: {bannedBy}
                       </span>
                     )}
+                    {dosageLimit && (
+                      <span className="text-[11px] sm:text-xs text-gray-600">
+                        Dosage: {dosageLimit}
+                      </span>
+                    )}
                   </div>
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-900">
+
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
                     {name}
                   </h3>
+
                   {synonyms && (
-                    <p className="text-xs text-gray-600">
-                      Also labeled as:{" "}
-                      {highlightTermsInline(synonyms, color, ocrText)}
+                    <p className="text-xs text-gray-600 line-clamp-2">
+                      Also labeled as: {synonyms}
                     </p>
                   )}
                 </div>
-                <div className="flex items-center justify-between sm:flex-col sm:items-end gap-1 text-[11px] sm:text-xs text-gray-500">
-                  {dosageLimit && (
-                    <span className="text-[11px] sm:text-xs">
-                      Dosage: {dosageLimit}
-                    </span>
+
+                <div className="flex items-center pl-2 pt-1">
+                  {expanded ? (
+                    <FaChevronUp className="text-gray-400" />
+                  ) : (
+                    <FaChevronDown className="text-gray-400" />
                   )}
-                  <span className="group-open:hidden">View details</span>
-                  <span className="hidden group-open:inline">Hide details</span>
                 </div>
-              </summary>
+              </button>
 
-              <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4">
-                {/* Three-card layout like Ingredients: What it does / Things to watch / Interactions */}
-                {(whatItDoesText || weaknesses || antagonisms) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {whatItDoesText && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          What it does
-                        </p>
-                        <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: whatItDoesHTML,
-                          }}
-                        />
+              {/* BODY */}
+              <AnimatePresence initial={false}>
+                {expanded && (
+                  <motion.div
+                    key={`${rec.id}-body`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
+                  >
+                    {(whatItDoesText || weaknesses || antagonisms) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {whatItDoesText && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              What it does
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: whatItDoesHTML,
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {weaknesses && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Things to watch for
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: weaknessesHTML,
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {antagonisms && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Interactions with other nutrients
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: antagonismsHTML,
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {weaknesses && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                    {source && (
+                      <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
                         <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          Things to watch for
+                          Where this information comes from
                         </p>
-                        <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: weaknessesHTML,
-                          }}
-                        />
+                        <p className="leading-relaxed break-words text-gray-700 text-[11px] sm:text-xs">
+                          {source}
+                        </p>
                       </div>
                     )}
 
-                    {antagonisms && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          Interactions with other nutrients
+                    {ocrText && (
+                      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                        <p className="text-[10px] sm:text-[11px] font-medium text-gray-600 mb-1">
+                          How it showed up on your label
                         </p>
-                        <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: antagonismsHTML,
-                          }}
-                        />
+                        <p className="text-[10px] sm:text-[11px] leading-snug text-gray-700 line-clamp-3">
+                          {ocrText}
+                        </p>
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 )}
-
-                {/* Where this information comes from */}
-                {source && (
-                  <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
-                    <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                      Where this information comes from
-                    </p>
-                    <p className="leading-relaxed break-words text-gray-700 text-[11px] sm:text-xs">
-                      {source}
-                    </p>
-                  </div>
-                )}
-
-                {/* OCR snippet for context */}
-                {ocrText && (
-                  <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
-                    <p className="text-[10px] sm:text-[11px] font-medium text-gray-600 mb-1">
-                      How it showed up on your label
-                    </p>
-                    <p className="text-[10px] sm:text-[11px] leading-snug text-gray-700 line-clamp-3">
-                      {ocrText}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </details>
+              </AnimatePresence>
+            </motion.div>
           );
         })}
       </div>
@@ -550,8 +551,8 @@ export default function OCRScanResults({
     }
 
     return (
-      <div className="space-y-4 mt-3">
-        {records.map((rec) => {
+      <div className="space-y-3 mt-3">
+        {records.map((rec, index) => {
           const fields = rec.fields || {};
           const id = rec.id;
           const name =
@@ -599,95 +600,122 @@ export default function OCRScanResults({
             INGREDIENT_HIGHLIGHT_COLOR
           );
 
+          const expanded = !!expandedIngredientIds[id];
+
           return (
-            <details
+            <motion.div
               key={id}
-              className="group rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.16, delay: index * 0.01 }}
+              className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
             >
-              <summary className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-3 sm:px-4 sm:py-3 cursor-pointer select-none">
-                <div className="space-y-1">
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-900">
+              {/* HEADER */}
+              <button
+                type="button"
+                onClick={() => toggleIngredientCard(id)}
+                className="w-full text-left px-3 py-3 sm:px-4 sm:py-3 flex items-start justify-between gap-3"
+              >
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="inline-flex items-center gap-2 mb-0.5">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                      Ingredient
+                    </span>
+                  </div>
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
                     {name}
                   </h3>
                   {synonyms && (
-                    <p className="text-xs text-gray-600">
-                      Also listed as:{" "}
-                      {highlightTermsInline(
-                        synonyms,
-                        INGREDIENT_HIGHLIGHT_COLOR,
-                        ocrText
-                      )}
+                    <p className="text-xs text-gray-600 line-clamp-2">
+                      Also listed as: {synonyms}
                     </p>
                   )}
                 </div>
-                <div className="flex items-center justify-between sm:flex-col sm:items-end gap-1 text-[11px] sm:text-xs text-gray-500">
-                  <span className="group-open:hidden">View details</span>
-                  <span className="hidden group-open:inline">Hide details</span>
+
+                <div className="flex items-center pl-2 pt-1">
+                  {expanded ? (
+                    <FaChevronUp className="text-gray-400" />
+                  ) : (
+                    <FaChevronDown className="text-gray-400" />
+                  )}
                 </div>
-              </summary>
+              </button>
 
-              <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4">
-                {(benefits || weaknesses || antagonisms) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {benefits && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+              {/* BODY */}
+              <AnimatePresence initial={false}>
+                {expanded && (
+                  <motion.div
+                    key={`${id}-body`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 border-t border-gray-100 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
+                  >
+                    {(benefits || weaknesses || antagonisms) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {benefits && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              What it does
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: benefitsHTML,
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {weaknesses && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Things to watch for
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: weaknessesHTML,
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {antagonisms && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Interactions with other nutrients
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: antagonismsHTML,
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {sources && (
+                      <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
                         <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          What it does
+                          Where this information comes from
                         </p>
                         <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                          className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
                           dangerouslySetInnerHTML={{
-                            __html: benefitsHTML,
+                            __html: sourcesHTML,
                           }}
                         />
                       </div>
                     )}
-
-                    {weaknesses && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          Things to watch for
-                        </p>
-                        <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: weaknessesHTML,
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {antagonisms && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                          Interactions with other nutrients
-                        </p>
-                        <p
-                          className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: antagonismsHTML,
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  </motion.div>
                 )}
-
-                {sources && (
-                  <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
-                    <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                      Where this information comes from
-                    </p>
-                    <p
-                      className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
-                      dangerouslySetInnerHTML={{
-                        __html: sourcesHTML,
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            </details>
+              </AnimatePresence>
+            </motion.div>
           );
         })}
       </div>

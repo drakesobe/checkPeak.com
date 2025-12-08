@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import NavBar from "@/components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 import { trackEvent } from "@/lib/analytics";
 
@@ -135,7 +134,6 @@ export default function ScansPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="max-w-4xl mx-auto px-4 py-12">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">My Scans</h1>

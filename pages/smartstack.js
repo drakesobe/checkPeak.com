@@ -1,15 +1,26 @@
+// pages/smartstack.js
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuthContext } from "../hooks/useAuth";
-import NavBar from "../components/NavBar";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaDumbbell, FaBolt, FaLeaf, FaCoffee, FaAppleAlt, FaCapsules } from "react-icons/fa";
+import {
+  FaDumbbell,
+  FaBolt,
+  FaLeaf,
+  FaCoffee,
+  FaAppleAlt,
+  FaCapsules,
+  FaStar,
+  FaRegStar,
+} from "react-icons/fa";
 import StackCard from "../components/smartstack-cards/StackCard";
 import NutritionModal from "../components/Modal/NutritionModal";
 import CompareModal from "../components/Modal/CompareModal";
 
-// Debounce hook
+/* -------------------------------------------------------------------------- */
+/* Debounce Hook                                                              */
+/* -------------------------------------------------------------------------- */
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -19,7 +30,9 @@ function useDebounce(value, delay) {
   return debouncedValue;
 }
 
-// Value label helper
+/* -------------------------------------------------------------------------- */
+/* Value Score → Label Helper                                                 */
+/* -------------------------------------------------------------------------- */
 function getValueLabel(stack) {
   if (stack.valueScore == null || isNaN(stack.valueScore)) return "Decent Value";
 
@@ -39,98 +52,147 @@ function getValueLabel(stack) {
   return "Decent Value";
 }
 
+/* -------------------------------------------------------------------------- */
+/* SmartStack Page                                                            */
+/* -------------------------------------------------------------------------- */
 export default function SmartStackPage() {
   const { user } = useAuthContext();
-  const userEmail = user?.email?.toLowerCase() || null;
+  // Match saved-stacks: support user.Email and user.email
+  const userEmail = user?.Email || user?.email || null;
 
-  const [stacks, setStacks] = useState([]);
+  // Data
+  const [allStacks, setAllStacks] = useState([]);      // all SmartStack records
   const [filteredStacks, setFilteredStacks] = useState([]);
-  const [modalStack, setModalStack] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [savedStacks, setSavedStacks] = useState([]);  // raw saved records from SavedStacks table
+  const [savedStackIDs, setSavedStackIDs] = useState([]); // derived list of SmartStack IDs
 
+  // UI state
+  const [modalStack, setModalStack] = useState(null);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
+  const [selectedCompareStacks, setSelectedCompareStacks] = useState([]);
+
+  const [loading, setLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeValueFilters, setActiveValueFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  const [selectedCompareStacks, setSelectedCompareStacks] = useState([]);
-  const [compareModalOpen, setCompareModalOpen] = useState(false);
-
-  const [savedStacks, setSavedStacks] = useState([]);
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // --- Load all stacks
+  /* ------------------------------------------------------------------------ */
+  /* Load all SmartStack records                                              */
+  /* ------------------------------------------------------------------------ */
   useEffect(() => {
     async function loadStacks() {
       setLoading(true);
       try {
         const res = await fetch("/api/smartstack");
         const data = await res.json();
-        setStacks(data.records || []);
-        setFilteredStacks(data.records || []);
+        const records = data.records || [];
+        setAllStacks(records);
+        setFilteredStacks(records);
       } catch (err) {
-        console.error("Failed to load SmartStack data", err);
+        console.error("[SmartStack] Failed to load SmartStack data:", err);
       } finally {
         setLoading(false);
       }
     }
+
     loadStacks();
   }, []);
 
-  // --- Load saved stacks from Airtable
+  /* ------------------------------------------------------------------------ */
+  /* Load saved stacks for the current user (same pattern as saved-stacks)    */
+  /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    if (!userEmail) return;
+    if (!userEmail) {
+      setSavedStacks([]);
+      return;
+    }
 
-    async function loadSavedStacks() {
+    async function loadSaved() {
       try {
-        const res = await fetch(`/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}`);
-        if (res.ok) {
-          const data = await res.json();
+        const resSaved = await fetch(
+          `/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}`
+        );
+        const savedData = resSaved.ok
+          ? await resSaved.json()
+          : { savedStacks: [] };
 
-          const normalizedSaved = (data.savedStacks || []).flatMap((s) => {
-            if (Array.isArray(s.StackID)) return s.StackID.map((id) => id.toString());
-            return s.StackID ? [s.StackID.toString()] : [];
-          });
-
-          setSavedStacks(normalizedSaved);
-        } else {
-          setSavedStacks([]);
-        }
+        // Raw saved records (for StackCard, notes, etc.)
+        setSavedStacks(savedData.savedStacks || []);
       } catch (err) {
-        console.error("Error fetching saved stacks:", err);
+        console.error("[SmartStack] Error loading saved stacks:", err);
         setSavedStacks([]);
       }
     }
 
-    loadSavedStacks();
+    loadSaved();
   }, [userEmail]);
 
-  // --- Filtering logic
+  /* ------------------------------------------------------------------------ */
+  /* Derive savedStackIDs from savedStacks                                    */
+  /*  - StackID is what saved-stacks uses to match stack.id                   */
+  /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    let result = stacks;
+    const ids = (savedStacks || []).flatMap((s) => {
+      const raw = s.StackID;
+      if (!raw) return [];
+      if (Array.isArray(raw)) {
+        return raw.filter(Boolean).map((id) => id.toString());
+      }
+      return [raw.toString()];
+    });
 
+    setSavedStackIDs(ids);
+  }, [savedStacks]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Filtering logic                                                           */
+  /* ------------------------------------------------------------------------ */
+  useEffect(() => {
+    let result = allStacks;
+
+    // Category filter
     if (activeCategory !== "All") {
       result = result.filter((stack) => stack.category === activeCategory);
     }
 
+    // Value filters
     if (activeValueFilters.length > 0) {
-      result = result.filter((stack) => activeValueFilters.includes(getValueLabel(stack)));
-    }
-
-    if (showSavedOnly) {
-      result = result.filter((stack) => savedStacks.includes(stack.id.toString()));
-    }
-
-    if (debouncedSearchQuery) {
       result = result.filter((stack) =>
-        stack.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+        activeValueFilters.includes(getValueLabel(stack))
+      );
+    }
+
+    // Saved-only filter: match stack.id against SavedStacks.StackID
+    if (showSavedOnly && savedStackIDs.length > 0) {
+      result = result.filter((stack) =>
+        savedStackIDs.includes(stack.id)
+      );
+    }
+
+    // Search filter
+    if (debouncedSearchQuery) {
+      const q = debouncedSearchQuery.toLowerCase();
+      result = result.filter((stack) =>
+        stack.name?.toLowerCase().includes(q)
       );
     }
 
     setFilteredStacks(result);
-  }, [stacks, activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, savedStacks]);
+  }, [
+    allStacks,
+    activeCategory,
+    activeValueFilters,
+    debouncedSearchQuery,
+    showSavedOnly,
+    savedStackIDs,
+  ]);
 
-  // --- Categories & Value filters
+  /* ------------------------------------------------------------------------ */
+  /* Filter UI config                                                          */
+  /* ------------------------------------------------------------------------ */
   const categories = [
     { name: "All", icon: null },
     { name: "Pre-Workout", icon: <FaBolt /> },
@@ -144,134 +206,266 @@ export default function SmartStackPage() {
 
   const valueFilters = ["Best Value", "Good Value", "Decent Value"];
 
-  const toggleValueFilter = (key) => {
+  const toggleValueFilter = (label) => {
     setActiveValueFilters((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+      prev.includes(label)
+        ? prev.filter((l) => l !== label)
+        : [...prev, label]
     );
   };
 
+  const totalCount = allStacks.length;
+  const visibleCount = filteredStacks.length;
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
-      <NavBar />
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {/* Hero */}
-        <section className="text-center mb-6">
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">SmartStack</h1>
-          <p className="text-gray-300 text-lg">
-            Discover and filter supplements with verified safety and value insights.
-          </p>
+      <main className="mx-auto max-w-7xl px-4 pt-10 pb-20 space-y-10">
+        {/* Header */}
+        <section className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-300 font-medium">
+              SmartStack
+            </span>
+
+            <h1 className="mt-3 text-3xl font-semibold text-white tracking-tight">
+              Discover better supplement stacks — built on value & transparency.
+            </h1>
+
+            <p className="mt-2 max-w-xl text-sm text-gray-400 leading-relaxed">
+              Browse formulations, compare products side-by-side, and filter by
+              category, value, or your own saved picks. SmartStack helps you
+              understand what you&apos;re actually paying for — and what
+              you&apos;re actually getting.
+            </p>
+          </div>
+
+          <div className="text-[11px] text-gray-500 text-right">
+            {totalCount > 0 && (
+              <>
+                <p>
+                  Showing{" "}
+                  <span className="font-semibold text-emerald-300">
+                    {visibleCount}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold">{totalCount}</span> stacks
+                </p>
+                {userEmail && (
+                  <p className="mt-1">
+                    Viewing as{" "}
+                    <span className="font-semibold text-gray-300">
+                      {userEmail}
+                    </span>
+                  </p>
+                )}
+                {userEmail && (
+                  <p className="mt-1 text-gray-600">
+                    Saved stacks linked:{" "}
+                    <span className="font-semibold">
+                      {savedStackIDs.length}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </section>
 
-        {/* Search */}
-        <div className="flex justify-center mb-6">
-          <div className="relative w-full max-w-md">
-            <input
-              type="text"
-              placeholder="Search stacks by name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full p-3 pl-10 rounded-xl border border-gray-700 bg-gray-800 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-            />
-            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
-          </div>
-        </div>
-
-        {/* Category & Value Filters */}
-        <div className="flex flex-wrap gap-3 mb-4 justify-center">
-          {categories.map((cat) => {
-            const active = activeCategory === cat.name;
-            return (
-              <motion.button
-                key={cat.name}
-                onClick={() => setActiveCategory(cat.name)}
-                className={`px-4 py-2 rounded-full font-semibold flex items-center gap-2 transition-all ${
-                  active ? "bg-indigo-600 text-white shadow-lg" : "bg-gray-700 text-gray-300"
-                }`}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+        {/* Filters Panel */}
+        <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 space-y-6">
+          {/* Search + Saved Toggle */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {/* Search */}
+            <div className="w-full sm:max-w-md">
+              <label
+                htmlFor="smartstack-search"
+                className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 mb-1"
               >
-                {cat.icon}
-                {cat.name}
-              </motion.button>
-            );
-          })}
-        </div>
+                Search stacks
+              </label>
+              <div className="relative">
+                <input
+                  id="smartstack-search"
+                  type="text"
+                  placeholder="Search by product name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-gray-800 bg-gray-950/70 px-9 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                  🔍
+                </span>
+              </div>
+            </div>
 
-        <div className="flex gap-3 flex-wrap justify-center mb-6">
-          {valueFilters.map((filter) => {
-            const active = activeValueFilters.includes(filter);
-            const styles =
-              filter === "Best Value"
-                ? "bg-gradient-to-r from-green-500 to-green-400 text-white shadow-lg"
-                : filter === "Good Value"
-                ? "bg-gradient-to-r from-blue-500 to-blue-400 text-white shadow-lg"
-                : "bg-gradient-to-r from-yellow-500 to-yellow-400 text-white shadow-lg";
+            {/* Saved stacks toggle */}
+            <div className="flex items-center gap-3 sm:justify-end">
+              <div className="text-[11px] text-gray-500 text-left sm:text-right">
+                <p className="font-medium text-gray-300">Saved stacks</p>
+                <p>Filter to products you&apos;ve personally saved.</p>
+              </div>
 
-            return (
-              <motion.button
-                key={filter}
-                onClick={() => toggleValueFilter(filter)}
-                className={`px-4 py-2 rounded-full font-semibold transition-all ${
-                  active ? styles : "bg-gray-700 text-gray-300"
-                }`}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {filter}
-              </motion.button>
-            );
-          })}
-        </div>
-
-        {/* Grid */}
-        {loading ? (
-          <div className="text-center py-12 text-gray-300">Loading SmartStack…</div>
-        ) : (
-          <AnimatePresence>
-            {filteredStacks.length > 0 ? (
-              <motion.div
-                key={
-                  activeCategory +
-                  activeValueFilters.join(",") +
-                  debouncedSearchQuery.toLowerCase() +
+              <button
+                type="button"
+                onClick={() => setShowSavedOnly((prev) => !prev)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                   showSavedOnly
-                }
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+                    ? "border-emerald-400 bg-emerald-500/15 text-emerald-200 hover:border-emerald-300"
+                    : "border-gray-700 bg-gray-900 text-gray-300 hover:border-emerald-400/70 hover:text-emerald-200"
+                }`}
               >
-                {filteredStacks.map((stack) => (
-                  <StackCard
-                    key={stack.id}
-                    stack={stack}
-                    setModalStack={setModalStack}
-                    selectedCompareStacks={selectedCompareStacks}
-                    setSelectedCompareStacks={setSelectedCompareStacks}
-                    savedStacks={savedStacks}
-                    setSavedStacks={setSavedStacks}
-                    userEmail={userEmail}
-                  />
-                ))}
-              </motion.div>
-            ) : (
-              <p className="italic text-gray-400 text-center">No stacks match your filters.</p>
-            )}
-          </AnimatePresence>
-        )}
+                {showSavedOnly ? (
+                  <FaStar className="text-emerald-300" size={12} />
+                ) : (
+                  <FaRegStar className="text-gray-400" size={12} />
+                )}
+                {showSavedOnly ? "Showing saved" : "Show saved only"}
+              </button>
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Categories
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((cat) => {
+                const active = activeCategory === cat.name;
+                return (
+                  <motion.button
+                    key={cat.name}
+                    type="button"
+                    onClick={() => setActiveCategory(cat.name)}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      active
+                        ? "border-emerald-400 bg-emerald-500/15 text-emerald-200 shadow-sm"
+                        : "border-gray-700 bg-gray-950 text-gray-300 hover:border-emerald-400/60 hover:text-emerald-200"
+                    }`}
+                  >
+                    {cat.icon && <span className="text-[13px]">{cat.icon}</span>}
+                    <span>{cat.name}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Value Filters */}
+          <div>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Value signal
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {valueFilters.map((filter) => {
+                const active = activeValueFilters.includes(filter);
+
+                const activeStyles =
+                  filter === "Best Value"
+                    ? "bg-gradient-to-r from-emerald-500 to-emerald-400 text-white shadow-md"
+                    : filter === "Good Value"
+                    ? "bg-gradient-to-r from-sky-500 to-sky-400 text-white shadow-md"
+                    : "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-md";
+
+                return (
+                  <motion.button
+                    key={filter}
+                    type="button"
+                    onClick={() => toggleValueFilter(filter)}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? activeStyles
+                        : "border border-gray-700 bg-gray-950 text-gray-300 hover:border-emerald-400/60 hover:text-emerald-200"
+                    }`}
+                  >
+                    {filter}
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* Results Grid */}
+        <section>
+          {loading ? (
+            <div className="py-16 text-center text-sm text-gray-300">
+              Loading SmartStack…
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {filteredStacks.length > 0 ? (
+                <motion.div
+                  key={
+                    activeCategory +
+                    activeValueFilters.join(",") +
+                    debouncedSearchQuery.toLowerCase() +
+                    showSavedOnly
+                  }
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.18 }}
+                  className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                >
+                  {filteredStacks.map((stack) => (
+                    <StackCard
+                      key={stack.id}
+                      stack={stack}
+                      setModalStack={setModalStack}
+                      selectedCompareStacks={selectedCompareStacks}
+                      setSelectedCompareStacks={setSelectedCompareStacks}
+                      savedStacks={savedStacks}
+                      setSavedStacks={setSavedStacks}
+                      userEmail={userEmail}
+                    />
+                  ))}
+                </motion.div>
+              ) : (
+                <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/70 px-5 py-8 text-center text-sm text-gray-400">
+                  <p className="font-medium text-gray-200 mb-1">
+                    No stacks match your filters.
+                  </p>
+                  <p>
+                    Try clearing filters, searching by a broader term, or
+                    turning off the saved-only toggle. If you still see nothing,
+                    double-check that your SavedStacks table&apos;s{" "}
+                    <code className="px-1 rounded bg-gray-800 text-[10px]">
+                      StackID
+                    </code>{" "}
+                    values match the{" "}
+                    <code className="px-1 rounded bg-gray-800 text-[10px]">
+                      id
+                    </code>{" "}
+                    field from SmartStack.
+                  </p>
+                </div>
+              )}
+            </AnimatePresence>
+          )}
+        </section>
       </main>
 
-      {/* Persistent Compare Bar */}
+      {/* Compare Bar */}
       {selectedCompareStacks.length > 0 && (
         <>
-          {/* Mobile: full-width sticky button */}
-          <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-gray-900/95 border-t border-gray-700 shadow-lg z-50 md:hidden safe-area-inset-bottom">
+          {/* Mobile full-width button */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-950/97 px-4 py-3 md:hidden shadow-[0_-4px_16px_rgba(0,0,0,0.6)]">
             <button
               disabled={selectedCompareStacks.length < 2}
               onClick={() => setCompareModalOpen(true)}
-              className={`w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl shadow-md text-lg ${
-                selectedCompareStacks.length < 2 ? "opacity-50 cursor-not-allowed" : ""
+              className={`w-full rounded-xl py-3 text-sm font-semibold text-white ${
+                selectedCompareStacks.length < 2
+                  ? "cursor-not-allowed bg-gray-700 opacity-60"
+                  : "bg-emerald-600 hover:bg-emerald-500 shadow-lg"
               }`}
             >
               Compare {selectedCompareStacks.length} Stack
@@ -279,25 +473,29 @@ export default function SmartStackPage() {
             </button>
           </div>
 
-          {/* Desktop: chip-style bar */}
+          {/* Desktop chip bar */}
           <motion.div
-            className="hidden md:flex fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-xl px-4 py-2 items-center gap-4 shadow-lg z-50"
-            initial={{ opacity: 0, y: 50 }}
+            className="fixed bottom-4 left-1/2 z-50 hidden -translate-x-1/2 transform items-center gap-3 rounded-2xl border border-gray-800 bg-gray-950/95 px-4 py-2 shadow-lg backdrop-blur-sm sm:flex"
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
+            exit={{ opacity: 0, y: 40 }}
           >
-            <span className="text-sm text-gray-300 font-medium">Selected for Compare:</span>
+            <span className="text-xs font-medium text-gray-300">
+              Selected for compare:
+            </span>
             {selectedCompareStacks.map((stack) => (
               <div
                 key={stack.id}
-                className="flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full text-sm relative"
+                className="flex items-center gap-2 rounded-full bg-gray-900 px-3 py-1 text-xs"
               >
-                <span className="font-medium">{stack.name}</span>
+                <span className="max-w-[140px] truncate font-medium">
+                  {stack.name}
+                </span>
                 <button
                   className="text-gray-400 hover:text-red-400"
                   onClick={() =>
-                    setSelectedCompareStacks(
-                      selectedCompareStacks.filter((s) => s.id !== stack.id)
+                    setSelectedCompareStacks((prev) =>
+                      prev.filter((s) => s.id !== stack.id)
                     )
                   }
                   title="Remove from compare"
@@ -306,43 +504,45 @@ export default function SmartStackPage() {
                 </button>
               </div>
             ))}
-            <div className="relative">
-              <button
-                disabled={selectedCompareStacks.length < 2}
-                onClick={() => setCompareModalOpen(true)}
-                className={`px-4 py-2 rounded-2xl font-medium text-white ${
-                  selectedCompareStacks.length >= 2 && selectedCompareStacks.length <= 3
-                    ? "bg-green-600 hover:bg-green-500 shadow-lg"
-                    : "bg-gray-700 cursor-not-allowed"
-                }`}
-              >
-                Compare {selectedCompareStacks.length} Stack
-                {selectedCompareStacks.length > 1 ? "s" : ""}
-              </button>
-            </div>
+            <button
+              disabled={
+                selectedCompareStacks.length < 2 ||
+                selectedCompareStacks.length > 3
+              }
+              onClick={() => setCompareModalOpen(true)}
+              className={`rounded-xl px-4 py-1.5 text-xs font-semibold text-white ${
+                selectedCompareStacks.length >= 2 &&
+                selectedCompareStacks.length <= 3
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : "bg-gray-700 cursor-not-allowed"
+              }`}
+            >
+              Compare now
+            </button>
           </motion.div>
         </>
       )}
 
       {/* Modals */}
-{modalStack && (
-  <NutritionModal
-    key={modalStack.id}               // 👈 ensures React remounts modal fresh each time
-    stack={modalStack}
-    onClose={() => setModalStack(null)}
-  />
-)}
-{compareModalOpen &&
-  selectedCompareStacks.length >= 2 &&
-  selectedCompareStacks.length <= 3 && (
-    <CompareModal
-      stacks={selectedCompareStacks}
-      onClose={() => {
-        setCompareModalOpen(false);
-        setSelectedCompareStacks([]);
-      }}
-    />
-  )}
-</div>
-);
+      {modalStack && (
+        <NutritionModal
+          key={modalStack.id}
+          stack={modalStack}
+          onClose={() => setModalStack(null)}
+        />
+      )}
+
+      {compareModalOpen &&
+        selectedCompareStacks.length >= 2 &&
+        selectedCompareStacks.length <= 3 && (
+          <CompareModal
+            stacks={selectedCompareStacks}
+            onClose={() => {
+              setCompareModalOpen(false);
+              setSelectedCompareStacks([]);
+            }}
+          />
+        )}
+    </div>
+  );
 }

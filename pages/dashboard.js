@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import NavBar from "@/components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 import { LogOut, Search, Folder, Settings } from "lucide-react";
 import { Bookmark } from "lucide-react"; // Add icon for Saved Stacks
@@ -64,7 +63,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>

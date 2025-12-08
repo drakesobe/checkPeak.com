@@ -4,7 +4,6 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import Head from "next/head";
-import NavBar from "../../components/NavBar";
 import OCRUpload from "../../components/OCRUpload";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaFileUpload } from "react-icons/fa";
@@ -71,7 +70,6 @@ export default function AthleteProfile() {
       </Head>
 
       <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-        <NavBar activeTab="Organization" setActiveTab={() => {}} />
 
         {/* Header */}
         <section className="py-12 bg-blue-600 text-white text-center">

@@ -1,5 +1,4 @@
 import Card from "../components/Card";
-import NavBar from "../components/NavBar";
 
 export default function BlogsPage() {
   const blogs = [
@@ -28,7 +27,6 @@ export default function BlogsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <NavBar />
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
         <h1 className="text-3xl font-bold text-gray-900">CheckSupp Blog</h1>

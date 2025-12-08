@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import NavBar from '../components/NavBar';
 import { 
   FaUserPlus, FaUpload, FaCheckCircle, FaHourglassHalf, 
   FaSearch, FaChevronLeft, FaChevronRight, FaSort, FaSortUp, FaSortDown 
@@ -120,7 +119,6 @@ export default function OrganizationPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <NavBar activeTab="SmartStack" />
       <div className="max-w-6xl mx-auto py-16 px-4">
         <h1 className="text-4xl font-bold mb-6 text-center">Organization Dashboard</h1>
 

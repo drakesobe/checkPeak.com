@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import NavBar from "../components/NavBar";
 import OCRUpload from "../components/OCRUpload";
 import BarcodeUpload from "../components/BarcodeUpload";
 import OCRScanResults from "../components/OCRScanResults";
@@ -240,7 +239,6 @@ export default function OCRPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
       {scanning && <ProgressBar progress={progress} scanning={scanning} />}
 
       <main className="max-w-6xl mx-auto px-2 sm:px-4 py-4 sm:py-8 space-y-6 sm:space-y-8">

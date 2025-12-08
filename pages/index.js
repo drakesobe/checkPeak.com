@@ -4,7 +4,6 @@
 import Head from "next/head";
 import { useState } from "react";
 import Link from "next/link";
-import NavBar from "../components/NavBar";
 import { motion } from "framer-motion";
 import { FaBolt, FaCheckCircle, FaHistory } from "react-icons/fa";
 
@@ -40,7 +39,7 @@ export default function HomePage() {
     { cx: 650, cy: 650, r: 2, dur: 15, delay: 0.3 },
   ];
 
-  // Early access submit → wired for Airtable via /api/early-access
+  // Early access submit → wired for Airtable via /api/waitlist
   const handleEarlyAccessSubmit = async (e) => {
     e.preventDefault();
     setEarlyError("");
@@ -97,10 +96,7 @@ export default function HomePage() {
         />
 
         {/* Open Graph */}
-        <meta
-          property="og:title"
-          content="PEAK — Supplement Label Scanner"
-        />
+        <meta property="og:title" content="PEAK — Supplement Label Scanner" />
         <meta
           property="og:description"
           content="Scan supplement labels in seconds. Detect banned substances, aliases, and risky ingredients before they cost you eligibility."
@@ -117,10 +113,7 @@ export default function HomePage() {
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:site" content="@checkPeak_" />
-        <meta
-          name="twitter:title"
-          content="PEAK — Supplement Label Scanner"
-        />
+        <meta name="twitter:title" content="PEAK — Supplement Label Scanner" />
         <meta
           name="twitter:description"
           content="Scan supplement labels fast and accurately. Detect banned substances and stay compliant."
@@ -133,8 +126,8 @@ export default function HomePage() {
         />
       </Head>
 
+      {/* PAGE CONTENT — NavBar is now global in _app.js */}
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans flex flex-col">
-        <NavBar />
 
         {/* HERO */}
         <section
@@ -142,118 +135,27 @@ export default function HomePage() {
           aria-labelledby="hero-heading"
         >
           {/* Background */}
-          <svg
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            aria-hidden="true"
-          >
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
             <defs>
               <radialGradient id="g1" cx="30%" cy="30%" r="80%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
-                <stop
-                  offset="60%"
-                  stopColor="rgba(70,118,155,1)"
-                  stopOpacity="0.18"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="rgba(29,36,51,1)"
-                  stopOpacity="0.06"
-                />
+                <stop offset="60%" stopColor="rgba(70,118,155,1)" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.06" />
               </radialGradient>
               <radialGradient id="g2" cx="60%" cy="40%" r="80%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.85)" />
-                <stop
-                  offset="60%"
-                  stopColor="rgba(100,130,180,1)"
-                  stopOpacity="0.16"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="rgba(29,36,51,1)"
-                  stopOpacity="0.05"
-                />
+                <stop offset="60%" stopColor="rgba(100,130,180,1)" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
               </radialGradient>
               <radialGradient id="g3" cx="40%" cy="70%" r="80%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
-                <stop
-                  offset="60%"
-                  stopColor="rgba(120,140,200,1)"
-                  stopOpacity="0.14"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="rgba(29,36,51,1)"
-                  stopOpacity="0.05"
-                />
+                <stop offset="60%" stopColor="rgba(120,140,200,1)" stopOpacity="0.14" />
+                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
               </radialGradient>
-              <filter id="blurA">
-                <feGaussianBlur stdDeviation="28" />
-              </filter>
-              <filter id="blurB">
-                <feGaussianBlur stdDeviation="32" />
-              </filter>
-              <filter id="blurC">
-                <feGaussianBlur stdDeviation="36" />
-              </filter>
+              <filter id="blurA"><feGaussianBlur stdDeviation="28" /></filter>
+              <filter id="blurB"><feGaussianBlur stdDeviation="32" /></filter>
+              <filter id="blurC"><feGaussianBlur stdDeviation="36" /></filter>
             </defs>
-
-            <motion.ellipse
-              cx="220"
-              cy="160"
-              rx="140"
-              ry="110"
-              fill="url(#g1)"
-              filter="url(#blurA)"
-              animate={{
-                cx: [220, 320, 260, 220],
-                cy: [160, 200, 140, 160],
-                opacity: [0, 0.7, 0.7],
-              }}
-              transition={{
-                duration: 14,
-                repeat: Infinity,
-                repeatType: "loop",
-                ease: "easeInOut",
-              }}
-            />
-            <motion.ellipse
-              cx="820"
-              cy="360"
-              rx="180"
-              ry="150"
-              fill="url(#g2)"
-              filter="url(#blurB)"
-              animate={{
-                cx: [820, 880, 780, 820],
-                cy: [360, 410, 330, 360],
-                opacity: [0, 0.65, 0.65],
-              }}
-              transition={{
-                duration: 18,
-                repeat: Infinity,
-                repeatType: "loop",
-                ease: "easeInOut",
-              }}
-            />
-            <motion.ellipse
-              cx="520"
-              cy="620"
-              rx="260"
-              ry="200"
-              fill="url(#g3)"
-              filter="url(#blurC)"
-              animate={{
-                cx: [520, 580, 480, 520],
-                cy: [620, 660, 590, 620],
-                opacity: [0, 0.6, 0.6],
-              }}
-              transition={{
-                duration: 22,
-                repeat: Infinity,
-                repeatType: "loop",
-                ease: "easeInOut",
-              }}
-            />
 
             {particles.map((p, i) => (
               <motion.circle
@@ -277,7 +179,6 @@ export default function HomePage() {
             ))}
           </svg>
 
-          {/* Hero Content */}
           <motion.h1
             id="hero-heading"
             className="text-4xl md:text-5xl font-bold z-10 tracking-tight"
@@ -361,7 +262,9 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Mini social proof strip (early) */}
+        {/* The rest of the page stays unchanged */}
+
+        {/* Mini social proof strip */}
         <section className="bg-white py-4 border-b border-gray-100">
           <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-500">
             <div className="flex items-center gap-2">
@@ -423,7 +326,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Why Choose PEAK */}
+        {/* Why choose PEAK */}
         <section className="py-16 bg-white">
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">
@@ -433,30 +336,21 @@ export default function HomePage() {
               {[
                 {
                   icon: (
-                    <FaBolt
-                      size={30}
-                      className="mx-auto mb-2 text-[#46769B]"
-                    />
+                    <FaBolt size={30} className="mx-auto mb-2 text-[#46769B]" />
                   ),
                   title: "Fast Scanning",
                   desc: "Instantly scan and analyze supplement labels for potential banned substances.",
                 },
                 {
                   icon: (
-                    <FaCheckCircle
-                      size={30}
-                      className="mx-auto mb-2 text-emerald-500"
-                    />
+                    <FaCheckCircle size={30} className="mx-auto mb-2 text-emerald-500" />
                   ),
                   title: "Reliable Detection",
                   desc: "Cross-check ingredients against robust lists including synonyms, aliases, and red-flag compounds.",
                 },
                 {
                   icon: (
-                    <FaHistory
-                      size={30}
-                      className="mx-auto mb-2 text-purple-500"
-                    />
+                    <FaHistory size={30} className="mx-auto mb-2 text-purple-500" />
                   ),
                   title: "Track Your Checks",
                   desc: "Maintain a scan history so athletes and staff can demonstrate responsible verification.",
@@ -475,7 +369,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Stats & Comparison */}
+        {/* Stats & comparison */}
         <section className="py-16 bg-gray-50">
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">
@@ -552,7 +446,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Trusted By (full) */}
+        {/* Logos */}
         <section className="py-12 bg-white">
           <div className="max-w-6xl mx-auto px-4 text-center">
             <h3 className="text-2xl font-semibold mb-8">
@@ -583,7 +477,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Early Access — separate, focused block */}
+        {/* Early access */}
         <section className="py-14 bg-white">
           <div className="max-w-3xl mx-auto px-4 text-center">
             <h3 className="text-2xl font-semibold mb-3">
@@ -667,6 +561,7 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
       </div>
     </>
   );

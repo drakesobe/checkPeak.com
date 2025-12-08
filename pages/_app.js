@@ -5,6 +5,8 @@ import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
+import NavBar from "@/components/NavBar";     // ⬅️ ADD THIS
+import Footer from "@/components/Footer";
 
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
@@ -58,9 +60,19 @@ export default function MyApp({ Component, pageProps }) {
         }}
       />
 
-      {/* 4️⃣ App */}
+      {/* 4️⃣ App layout: NavBar + page + Footer */}
       <AuthProvider>
-        <Component {...pageProps} />
+        <div className="flex flex-col min-h-screen">
+          {/* Global PEAK header + tabs */}
+          <NavBar />
+
+          <main className="flex-grow">
+            <Component {...pageProps} />
+          </main>
+
+          <Footer />
+        </div>
+
         <Toaster position="top-right" />
       </AuthProvider>
     </>

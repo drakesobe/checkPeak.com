@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from "react";
 import { useAuthContext } from "../hooks/useAuth";
-import NavBar from "../components/NavBar";
 import { motion, AnimatePresence } from "framer-motion";
 import StackCard from "../components/smartstack-cards/StackCard";
 import NutritionModal from "../components/Modal/NutritionModal";
@@ -99,7 +98,6 @@ export default function SavedStacksPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
-      <NavBar />
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         <section className="text-center mb-6">

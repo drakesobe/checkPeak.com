@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
-import NavBar from "@/components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -476,7 +475,6 @@ export default function ScanDetailPage() {
     <div
       className={`min-h-screen bg-gradient-to-b ${risk.gradient} font-sans`}
     >
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-5 lg:px-6 py-6 sm:py-8 lg:py-10 space-y-6">
         {/* Back link row */}

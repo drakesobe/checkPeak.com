@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import NavBar from "../components/NavBar";
 import { useAuthContext } from "@/hooks/useAuth";
 
 export default function LoginPage() {
@@ -53,7 +52,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
-      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="max-w-md mx-auto px-4 py-12">
         <div className="bg-white p-8 rounded-2xl shadow-md border border-blue-100 space-y-6">

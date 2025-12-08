@@ -3,7 +3,6 @@
 
 import { useRouter } from "next/router";
 import { useEffect, useState, useCallback } from "react";
-import NavBar from "@/components/NavBar";
 import OCRScanResults from "@/components/OCRScanResults";
 
 export default function SharedScanPage() {
@@ -134,7 +133,6 @@ export default function SharedScanPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
       {/* For shared views we don't really have an active tab */}
-      <NavBar activeTab={null} setActiveTab={() => {}} />
 
       <main className="max-w-5xl mx-auto px-4 py-8 sm:py-10 space-y-6 sm:space-y-8">
         <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">

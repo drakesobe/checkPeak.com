@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import NavBar from "../components/NavBar";
 import SearchBar from "../components/SearchBar";
 import OCRSearchResults from "../components/OCRSearchResults";
 
@@ -34,7 +33,6 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <NavBar activeTab="Search" setActiveTab={() => {}} />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
         {/* Page title */}

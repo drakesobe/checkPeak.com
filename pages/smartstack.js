@@ -61,9 +61,9 @@ export default function SmartStackPage() {
   const userEmail = user?.Email || user?.email || null;
 
   // Data
-  const [allStacks, setAllStacks] = useState([]);      // all SmartStack records
+  const [allStacks, setAllStacks] = useState([]); // all SmartStack records
   const [filteredStacks, setFilteredStacks] = useState([]);
-  const [savedStacks, setSavedStacks] = useState([]);  // raw saved records from SavedStacks table
+  const [savedStacks, setSavedStacks] = useState([]); // raw saved records from SavedStacks table
   const [savedStackIDs, setSavedStackIDs] = useState([]); // derived list of SmartStack IDs
 
   // UI state
@@ -76,6 +76,10 @@ export default function SmartStackPage() {
   const [activeValueFilters, setActiveValueFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -148,7 +152,7 @@ export default function SmartStackPage() {
   }, [savedStacks]);
 
   /* ------------------------------------------------------------------------ */
-  /* Filtering logic                                                           */
+  /* Filtering + reset page when filters change                               */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
     let result = allStacks;
@@ -167,20 +171,18 @@ export default function SmartStackPage() {
 
     // Saved-only filter: match stack.id against SavedStacks.StackID
     if (showSavedOnly && savedStackIDs.length > 0) {
-      result = result.filter((stack) =>
-        savedStackIDs.includes(stack.id)
-      );
+      result = result.filter((stack) => savedStackIDs.includes(stack.id));
     }
 
     // Search filter
     if (debouncedSearchQuery) {
       const q = debouncedSearchQuery.toLowerCase();
-      result = result.filter((stack) =>
-        stack.name?.toLowerCase().includes(q)
-      );
+      result = result.filter((stack) => stack.name?.toLowerCase().includes(q));
     }
 
     setFilteredStacks(result);
+    // whenever filters/search change, reset to first page
+    setCurrentPage(1);
   }, [
     allStacks,
     activeCategory,
@@ -208,9 +210,7 @@ export default function SmartStackPage() {
 
   const toggleValueFilter = (label) => {
     setActiveValueFilters((prev) =>
-      prev.includes(label)
-        ? prev.filter((l) => l !== label)
-        : [...prev, label]
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
     );
   };
 
@@ -218,11 +218,41 @@ export default function SmartStackPage() {
   const visibleCount = filteredStacks.length;
 
   /* ------------------------------------------------------------------------ */
+  /* Pagination derivation                                                     */
+  /* ------------------------------------------------------------------------ */
+  const totalPages = Math.max(1, Math.ceil(visibleCount / itemsPerPage));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const startIndex = (currentPageSafe - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const pageStacks = filteredStacks.slice(startIndex, endIndex);
+
+  const goToPage = (page) => {
+    setCurrentPage((prev) => {
+      const next = Math.max(1, Math.min(page, totalPages || 1));
+      return next;
+    });
+  };
+
+  const handlePrevPage = () => {
+    if (currentPageSafe > 1) {
+      goToPage(currentPageSafe - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPageSafe < totalPages) {
+      goToPage(currentPageSafe + 1);
+    }
+  };
+
+  const humanStart = visibleCount === 0 ? 0 : startIndex + 1;
+  const humanEnd = Math.min(endIndex, visibleCount);
+
+  /* ------------------------------------------------------------------------ */
   /* Render                                                                    */
   /* ------------------------------------------------------------------------ */
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
-
       <main className="mx-auto max-w-7xl px-4 pt-10 pb-20 space-y-10">
         {/* Header */}
         <section className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -349,7 +379,9 @@ export default function SmartStackPage() {
                         : "border-gray-700 bg-gray-950 text-gray-300 hover:border-emerald-400/60 hover:text-emerald-200"
                     }`}
                   >
-                    {cat.icon && <span className="text-[13px]">{cat.icon}</span>}
+                    {cat.icon && (
+                      <span className="text-[13px]">{cat.icon}</span>
+                    )}
                     <span>{cat.name}</span>
                   </motion.button>
                 );
@@ -394,62 +426,125 @@ export default function SmartStackPage() {
           </div>
         </section>
 
-        {/* Results Grid */}
+        {/* Results Grid + Pagination */}
         <section>
           {loading ? (
             <div className="py-16 text-center text-sm text-gray-300">
               Loading SmartStack…
             </div>
           ) : (
-            <AnimatePresence mode="wait">
-              {filteredStacks.length > 0 ? (
-                <motion.div
-                  key={
-                    activeCategory +
-                    activeValueFilters.join(",") +
-                    debouncedSearchQuery.toLowerCase() +
-                    showSavedOnly
-                  }
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.18 }}
-                  className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                >
-                  {filteredStacks.map((stack) => (
-                    <StackCard
-                      key={stack.id}
-                      stack={stack}
-                      setModalStack={setModalStack}
-                      selectedCompareStacks={selectedCompareStacks}
-                      setSelectedCompareStacks={setSelectedCompareStacks}
-                      savedStacks={savedStacks}
-                      setSavedStacks={setSavedStacks}
-                      userEmail={userEmail}
-                    />
-                  ))}
-                </motion.div>
-              ) : (
-                <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/70 px-5 py-8 text-center text-sm text-gray-400">
-                  <p className="font-medium text-gray-200 mb-1">
-                    No stacks match your filters.
-                  </p>
-                  <p>
-                    Try clearing filters, searching by a broader term, or
-                    turning off the saved-only toggle. If you still see nothing,
-                    double-check that your SavedStacks table&apos;s{" "}
-                    <code className="px-1 rounded bg-gray-800 text-[10px]">
-                      StackID
-                    </code>{" "}
-                    values match the{" "}
-                    <code className="px-1 rounded bg-gray-800 text-[10px]">
-                      id
-                    </code>{" "}
-                    field from SmartStack.
-                  </p>
+            <>
+              <AnimatePresence mode="wait">
+                {pageStacks.length > 0 ? (
+                  <motion.div
+                    key={
+                      activeCategory +
+                      activeValueFilters.join(",") +
+                      debouncedSearchQuery.toLowerCase() +
+                      showSavedOnly +
+                      `-page-${currentPageSafe}`
+                    }
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.18 }}
+                    className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                  >
+                    {pageStacks.map((stack) => (
+                      <StackCard
+                        key={stack.id}
+                        stack={stack}
+                        setModalStack={setModalStack}
+                        selectedCompareStacks={selectedCompareStacks}
+                        setSelectedCompareStacks={setSelectedCompareStacks}
+                        savedStacks={savedStacks}
+                        setSavedStacks={setSavedStacks}
+                        userEmail={userEmail}
+                      />
+                    ))}
+                  </motion.div>
+                ) : (
+                  <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/70 px-5 py-8 text-center text-sm text-gray-400">
+                    <p className="font-medium text-gray-200 mb-1">
+                      No stacks match your filters.
+                    </p>
+                    <p>
+                      Try clearing filters, searching by a broader term, or
+                      turning off the saved-only toggle. If you still see
+                      nothing, double-check that your SavedStacks table&apos;s{" "}
+                      <code className="px-1 rounded bg-gray-800 text-[10px]">
+                        StackID
+                      </code>{" "}
+                      values match the{" "}
+                      <code className="px-1 rounded bg-gray-800 text-[10px]">
+                        id
+                      </code>{" "}
+                      field from SmartStack.
+                    </p>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* Pagination controls */}
+              {visibleCount > 0 && (
+                <div className="mt-8 flex flex-col gap-3 items-center justify-between sm:flex-row sm:gap-4">
+                  <div className="text-xs text-gray-400">
+                    Showing{" "}
+                    <span className="font-semibold text-gray-200">
+                      {humanStart}
+                    </span>{" "}
+                    –{" "}
+                    <span className="font-semibold text-gray-200">
+                      {humanEnd}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-gray-200">
+                      {visibleCount}
+                    </span>{" "}
+                    results
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handlePrevPage}
+                      disabled={currentPageSafe <= 1}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium border transition ${
+                        currentPageSafe <= 1
+                          ? "cursor-not-allowed border-gray-800 bg-gray-900 text-gray-600"
+                          : "border-gray-700 bg-gray-900 text-gray-200 hover:border-emerald-400 hover:text-emerald-200"
+                      }`}
+                    >
+                      Previous
+                    </button>
+
+                    <span className="text-xs text-gray-400">
+                      Page{" "}
+                      <span className="font-semibold text-gray-200">
+                        {currentPageSafe}
+                      </span>{" "}
+                      of{" "}
+                      <span className="font-semibold text-gray-200">
+                        {totalPages}
+                      </span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleNextPage}
+                      disabled={currentPageSafe >= totalPages}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium border transition ${
+                        currentPageSafe >= totalPages
+                          ? "cursor-not-allowed border-gray-800 bg-gray-900 text-gray-600"
+                          : "border-gray-700 bg-gray-900 text-gray-200 hover:border-emerald-400 hover:text-emerald-200"
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               )}
-            </AnimatePresence>
+            </>
           )}
         </section>
       </main>

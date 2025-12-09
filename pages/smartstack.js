@@ -77,9 +77,9 @@ export default function SmartStackPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 25;
+  // "Load more" pagination
+  const [visibleLimit, setVisibleLimit] = useState(25);
+  const itemsPerChunk = 25;
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -152,7 +152,7 @@ export default function SmartStackPage() {
   }, [savedStacks]);
 
   /* ------------------------------------------------------------------------ */
-  /* Filtering + reset page when filters change                               */
+  /* Filtering                                                                */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
     let result = allStacks;
@@ -177,12 +177,12 @@ export default function SmartStackPage() {
     // Search filter
     if (debouncedSearchQuery) {
       const q = debouncedSearchQuery.toLowerCase();
-      result = result.filter((stack) => stack.name?.toLowerCase().includes(q));
+      result = result.filter((stack) =>
+        stack.name?.toLowerCase().includes(q)
+      );
     }
 
     setFilteredStacks(result);
-    // whenever filters/search change, reset to first page
-    setCurrentPage(1);
   }, [
     allStacks,
     activeCategory,
@@ -191,6 +191,13 @@ export default function SmartStackPage() {
     showSavedOnly,
     savedStackIDs,
   ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Reset visibleLimit ONLY when filters/search toggle/change                */
+  /* ------------------------------------------------------------------------ */
+  useEffect(() => {
+    setVisibleLimit(itemsPerChunk);
+  }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly]);
 
   /* ------------------------------------------------------------------------ */
   /* Filter UI config                                                          */
@@ -210,7 +217,9 @@ export default function SmartStackPage() {
 
   const toggleValueFilter = (label) => {
     setActiveValueFilters((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
+      prev.includes(label)
+        ? prev.filter((l) => l !== label)
+        : [...prev, label]
     );
   };
 
@@ -218,35 +227,19 @@ export default function SmartStackPage() {
   const visibleCount = filteredStacks.length;
 
   /* ------------------------------------------------------------------------ */
-  /* Pagination derivation                                                     */
+  /* "Load more" pagination derivation                                         */
   /* ------------------------------------------------------------------------ */
-  const totalPages = Math.max(1, Math.ceil(visibleCount / itemsPerPage));
-  const currentPageSafe = Math.min(currentPage, totalPages);
-  const startIndex = (currentPageSafe - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const pageStacks = filteredStacks.slice(startIndex, endIndex);
+  const effectiveLimit =
+    visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
+  const pageStacks = filteredStacks.slice(0, effectiveLimit);
+  const canLoadMore = effectiveLimit < visibleCount;
 
-  const goToPage = (page) => {
-    setCurrentPage((prev) => {
-      const next = Math.max(1, Math.min(page, totalPages || 1));
-      return next;
-    });
+  const humanStart = visibleCount === 0 ? 0 : 1;
+  const humanEnd = effectiveLimit;
+
+  const handleLoadMore = () => {
+    setVisibleLimit((prev) => prev + itemsPerChunk);
   };
-
-  const handlePrevPage = () => {
-    if (currentPageSafe > 1) {
-      goToPage(currentPageSafe - 1);
-    }
-  };
-
-  const handleNextPage = () => {
-    if (currentPageSafe < totalPages) {
-      goToPage(currentPageSafe + 1);
-    }
-  };
-
-  const humanStart = visibleCount === 0 ? 0 : startIndex + 1;
-  const humanEnd = Math.min(endIndex, visibleCount);
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                    */
@@ -277,13 +270,20 @@ export default function SmartStackPage() {
             {totalCount > 0 && (
               <>
                 <p>
-                  Showing{" "}
+                  Loaded from catalog:{" "}
                   <span className="font-semibold text-emerald-300">
-                    {visibleCount}
+                    {totalCount}
                   </span>{" "}
-                  of{" "}
-                  <span className="font-semibold">{totalCount}</span> stacks
+                  stacks
                 </p>
+                {visibleCount > 0 && (
+                  <p className="mt-1">
+                    Matching current filters:{" "}
+                    <span className="font-semibold text-gray-300">
+                      {visibleCount}
+                    </span>
+                  </p>
+                )}
                 {userEmail && (
                   <p className="mt-1">
                     Viewing as{" "}
@@ -426,7 +426,7 @@ export default function SmartStackPage() {
           </div>
         </section>
 
-        {/* Results Grid + Pagination */}
+        {/* Results Grid + Range Summary + Load More */}
         <section>
           {loading ? (
             <div className="py-16 text-center text-sm text-gray-300">
@@ -434,6 +434,25 @@ export default function SmartStackPage() {
             </div>
           ) : (
             <>
+              {/* Summary above grid */}
+              {visibleCount > 0 && (
+                <div className="mb-3 text-xs text-gray-500">
+                  Showing{" "}
+                    <span className="font-semibold text-gray-200">
+                      {humanStart}
+                    </span>{" "}
+                  –{" "}
+                  <span className="font-semibold text-gray-200">
+                    {humanEnd}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-gray-200">
+                    {visibleCount}
+                  </span>{" "}
+                  matching stacks
+                </div>
+              )}
+
               <AnimatePresence mode="wait">
                 {pageStacks.length > 0 ? (
                   <motion.div
@@ -442,7 +461,7 @@ export default function SmartStackPage() {
                       activeValueFilters.join(",") +
                       debouncedSearchQuery.toLowerCase() +
                       showSavedOnly +
-                      `-page-${currentPageSafe}`
+                      `-limit-${effectiveLimit}`
                     }
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -468,80 +487,41 @@ export default function SmartStackPage() {
                     <p className="font-medium text-gray-200 mb-1">
                       No stacks match your filters.
                     </p>
-                    <p>
+                    <p className="mb-3">
                       Try clearing filters, searching by a broader term, or
-                      turning off the saved-only toggle. If you still see
-                      nothing, double-check that your SavedStacks table&apos;s{" "}
-                      <code className="px-1 rounded bg-gray-800 text-[10px]">
-                        StackID
-                      </code>{" "}
-                      values match the{" "}
-                      <code className="px-1 rounded bg-gray-800 text-[10px]">
-                        id
-                      </code>{" "}
-                      field from SmartStack.
+                      turning off the saved-only toggle.
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory("All");
+                        setActiveValueFilters([]);
+                        setShowSavedOnly(false);
+                        setSearchQuery("");
+                      }}
+                      className="inline-flex items-center rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
+                    >
+                      Clear all filters
+                    </button>
                   </div>
                 )}
               </AnimatePresence>
 
-              {/* Pagination controls */}
-              {visibleCount > 0 && (
-                <div className="mt-8 flex flex-col gap-3 items-center justify-between sm:flex-row sm:gap-4">
-                  <div className="text-xs text-gray-400">
-                    Showing{" "}
-                    <span className="font-semibold text-gray-200">
-                      {humanStart}
-                    </span>{" "}
-                    –{" "}
-                    <span className="font-semibold text-gray-200">
-                      {humanEnd}
-                    </span>{" "}
-                    of{" "}
-                    <span className="font-semibold text-gray-200">
-                      {visibleCount}
-                    </span>{" "}
-                    results
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handlePrevPage}
-                      disabled={currentPageSafe <= 1}
-                      className={`rounded-full px-3 py-1.5 text-xs font-medium border transition ${
-                        currentPageSafe <= 1
-                          ? "cursor-not-allowed border-gray-800 bg-gray-900 text-gray-600"
-                          : "border-gray-700 bg-gray-900 text-gray-200 hover:border-emerald-400 hover:text-emerald-200"
-                      }`}
-                    >
-                      Previous
-                    </button>
-
-                    <span className="text-xs text-gray-400">
-                      Page{" "}
-                      <span className="font-semibold text-gray-200">
-                        {currentPageSafe}
-                      </span>{" "}
-                      of{" "}
-                      <span className="font-semibold text-gray-200">
-                        {totalPages}
-                      </span>
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={handleNextPage}
-                      disabled={currentPageSafe >= totalPages}
-                      className={`rounded-full px-3 py-1.5 text-xs font-medium border transition ${
-                        currentPageSafe >= totalPages
-                          ? "cursor-not-allowed border-gray-800 bg-gray-900 text-gray-600"
-                          : "border-gray-700 bg-gray-900 text-gray-200 hover:border-emerald-400 hover:text-emerald-200"
-                      }`}
-                    >
-                      Next
-                    </button>
-                  </div>
+              {/* Load more */}
+              {canLoadMore && (
+                <div className="mt-8 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleLoadMore}
+                    className="rounded-full border border-gray-700 bg-gray-900 px-4 py-2 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
+                  >
+                    Load{" "}
+                    {Math.min(
+                      itemsPerChunk,
+                      visibleCount - effectiveLimit
+                    )}{" "}
+                    more stacks
+                  </button>
                 </div>
               )}
             </>

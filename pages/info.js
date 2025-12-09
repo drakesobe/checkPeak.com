@@ -1,7 +1,7 @@
 // pages/info.js
 import Head from "next/head";
 import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   FaBullseye,
   FaSearch,
@@ -12,105 +12,75 @@ import {
   FaHandsHelping,
   FaCamera,
 } from "react-icons/fa";
-import { motion } from "framer-motion";
 
 export default function InfoPage() {
-  const [activeStep, setActiveStep] = useState(0);
-  const stepRefs = useRef([]);
-
-  // Cards content (reflects all copy updates so far)
+  // Cards content
   const cards = [
     {
       title: "Our Mission",
       text:
-        "PEAK helps athletes and supplement users quickly identify banned substances in nutrition labels using OCR and searchable databases. Our goal is to keep you informed and safe while performing at your best.",
-      icon: <FaBullseye className="text-[#46769B] w-10 h-10" />,
+        "PEAK helps athletes and supplement users quickly identify banned substances in nutrition labels using OCR and searchable ingredient databases. Our goal is to keep you informed and safer while performing at your best.",
+      icon: <FaBullseye className="text-[#46769B] w-8 h-8" />,
     },
     {
       title: "How It Works",
       text:
-        "Upload a nutrition label to scan ingredients, or use the search functionality to look up substances. Our system highlights banned ingredients based on up-to-date data from trusted sources.",
-      icon: <FaSearch className="text-[#46769B] w-10 h-10" />,
+        "Upload or snap a photo of a nutrition label, or search substances directly by name. PEAK parses the label, cross-checks ingredients against our banned-substance data, and surfaces anything that may be risky.",
+      icon: <FaSearch className="text-[#46769B] w-8 h-8" />,
     },
     {
       title: "Updates & Accuracy",
       text:
-        "Banned substances and regulations can change periodically throughout the year. PEAK automatically reflects the latest updates from our database.",
-      icon: <FaSyncAlt className="text-[#46769B] w-10 h-10" />,
+        "Banned substance lists and rules can evolve throughout the year. PEAK is built to reflect updates from our underlying database so your checks are aligned with the most current information available in our system.",
+      icon: <FaSyncAlt className="text-[#46769B] w-8 h-8" />,
     },
     {
       title: "Disclaimer",
       text:
-        "PEAK is for informational purposes only. Always consult a qualified professional before consuming supplements, especially if you are competing or subject to regulated substance policies.",
-      icon: <FaExclamationTriangle className="text-[#46769B] w-10 h-10" />,
+        "PEAK is for informational use only and does not replace medical advice, team policy, or official anti-doping guidance. Always consult a qualified professional or team representative before consuming supplements, especially if you are tested or subject to specific regulations.",
+      icon: <FaExclamationTriangle className="text-[#D62828] w-8 h-8" />,
     },
     {
       title: "Important Notes & Guidance",
       text:
-        "Any substance that is chemically or pharmacologically related to banned drug classes, even if not explicitly listed, should be treated as prohibited. Many nutritional or dietary supplements are contaminated with banned substances not listed on the label. It is the user’s responsibility to check with the appropriate athletics or professional staff before consuming any substance.",
-      icon: <FaLightbulb className="text-[#46769B] w-10 h-10" />,
+        "Any substance that is chemically or pharmacologically related to banned drug classes — even if it is not explicitly listed — should be treated as prohibited. Many supplements are contaminated with unlabeled banned substances. It is your responsibility to confirm with your athletics or professional staff before use.",
+      icon: <FaLightbulb className="text-[#46769B] w-8 h-8" />,
     },
     {
       title: "Best Practices",
       text:
-        "Always check ingredient labels, cross-reference with reliable databases, and consult a professional before consuming any supplement. Keep a personal log of scanned supplements for reference.",
-      icon: <FaHandsHelping className="text-[#46769B] w-10 h-10" />,
+        "Make checking labels a habit before you buy or consume. Cross-reference ingredients with PEAK and official organizations, keep screenshots or logs of products you use, and talk through your stack with your medical or performance staff regularly.",
+      icon: <FaHandsHelping className="text-[#46769B] w-8 h-8" />,
     },
     {
       title: "Resources & Links",
       text:
-        "We provide links to trusted databases and organizations that track banned substances. Use them as a reference to make informed decisions.",
-      icon: <FaBookOpen className="text-[#46769B] w-10 h-10" />,
+        "Use PEAK alongside trusted organizations and governing bodies that maintain official banned lists. Treat these sources as your reference backbone, and use PEAK as a fast way to spot potential issues on real-world labels.",
+      icon: <FaBookOpen className="text-[#46769B] w-8 h-8" />,
     },
   ];
 
-  // Steps: combined Scan & Search as Step 1
   const steps = [
     {
       label: "Scan or Search",
-      color: "#46769B",
       description:
-        "Take a photo or upload a nutrition label — or search a substance directly.",
+        "Take a photo or upload a nutrition label, or search a specific substance by name. PEAK will detect ingredients and match them against our database.",
     },
     {
-      label: "Check Highlights",
-      color: "#F77F00",
-      description: "Review highlighted ingredients that may be unsafe.",
+      label: "Review Highlights",
+      description:
+        "PEAK flags banned and at-risk ingredients, then breaks them down into simple sections so you can understand what they do and why they might be a problem.",
     },
     {
       label: "Confirm Safety",
-      color: "#D62828",
       description:
-        "Double-check with a professional before consuming any supplement.",
+        "Bring your findings to your athletic trainer, team doctor, or other qualified professional to get a final decision before using any supplement.",
     },
   ];
 
-  // Scroll handler to update active step
-  useEffect(() => {
-    const handleScroll = () => {
-      const cardOffsets = stepRefs.current.map((ref) => ref?.offsetTop || 0);
-      const scrollPos = window.scrollY + window.innerHeight / 3;
-
-      const current = cardOffsets.findIndex((offset, idx) => {
-        const nextOffset = cardOffsets[idx + 1] || Infinity;
-        return scrollPos >= offset && scrollPos < nextOffset;
-      });
-
-      if (current !== -1 && current !== activeStep) setActiveStep(current);
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [activeStep]);
-
-  const cardVariants = {
-    hidden: { opacity: 0, y: 24 },
+  const fadeUp = {
+    hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
-  };
-  const stepVariants = {
-    hidden: { opacity: 0, y: -10, scale: 0.95 },
-    visible: { opacity: 1, y: 0, scale: 1 },
   };
 
   return (
@@ -123,134 +93,140 @@ export default function InfoPage() {
         />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-
+      <div className="min-h-screen bg-slate-50 text-gray-900 font-sans">
         {/* Hero */}
-        <section className="relative bg-[#46769B] text-white py-16 px-6 md:px-12 text-center rounded-b-3xl shadow-md">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">
-            Navigate Supplements with Confidence
-          </h1>
-          <p className="max-w-2xl mx-auto text-lg md:text-xl mb-8">
-            PEAK helps athletes and organizations identify banned substances
-            quickly and reliably. Always double-check with your professional
-            staff for final approval before use.
-          </p>
+        <section className="relative bg-[#46769B] text-white px-4 sm:px-6 md:px-10 pt-14 pb-12 sm:pt-16 sm:pb-14 rounded-b-3xl shadow-sm">
+          <div className="max-w-5xl mx-auto text-center">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight">
+              Navigate Supplements with Confidence
+            </h1>
+            <p className="max-w-2xl mx-auto text-base sm:text-lg md:text-xl mb-8 text-slate-100">
+              Scan labels or search ingredients to spot banned substances
+              faster. Use PEAK as a first pass, then confirm everything with
+              your professional or team staff.
+            </p>
 
-          <div className="flex flex-col md:flex-row justify-center gap-4">
-            {/* Scan Button */}
-            <Link href="/ocr" legacyBehavior>
-              <a className="px-6 py-3 bg-white text-[#46769B] font-semibold rounded-2xl shadow hover:shadow-lg transition transform hover:scale-105 flex items-center gap-3">
-                <FaCamera className="w-5 h-5" /> Scan a Label
-              </a>
-            </Link>
+            <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">
+              {/* Scan Button */}
+              <Link href="/ocr" legacyBehavior>
+                <a className="px-5 py-3 sm:px-6 sm:py-3.5 bg-white text-[#46769B] font-semibold rounded-2xl shadow-sm hover:shadow-md transition transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm sm:text-base">
+                  <FaCamera className="w-5 h-5" />
+                  Scan a Label
+                </a>
+              </Link>
 
-            {/* ✅ Updated Search Button to go to /search */}
-            <Link href="/search" legacyBehavior>
-              <a className="px-6 py-3 bg-[#f1f5f9] text-[#46769B] font-semibold rounded-2xl shadow hover:shadow-lg transition transform hover:scale-105 flex items-center gap-3">
-                <FaSearch className="w-5 h-5" /> Search Substances
-              </a>
-            </Link>
+              {/* Search Button */}
+              <Link href="/search" legacyBehavior>
+                <a className="px-5 py-3 sm:px-6 sm:py-3.5 bg-slate-100/90 text-[#1E293B] font-semibold rounded-2xl shadow-sm hover:shadow-md transition transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm sm:text-base">
+                  <FaSearch className="w-5 h-5" />
+                  Search Substances
+                </a>
+              </Link>
+            </div>
+
+            <p className="mt-4 text-xs sm:text-sm text-slate-200/90">
+              PEAK does not replace official rules or medical advice. Always
+              follow your organization&apos;s policies.
+            </p>
           </div>
         </section>
 
-        {/* How it Works */}
-        <section className="max-w-6xl mx-auto px-4 py-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">
-            How It Works
-          </h2>
+        {/* How It Works (3 separate cards, scan-style) */}
+        <section className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+          <div className="text-center mb-6 sm:mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
+              How PEAK Fits Into Your Routine
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-slate-600 max-w-2xl mx-auto">
+              Think of PEAK as your quick pre-check. These three steps keep your
+              supplement process simple and repeatable.
+            </p>
+          </div>
 
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6 md:gap-0 relative">
+          <div className="grid gap-4 sm:gap-5 md:grid-cols-3">
             {steps.map((step, index) => (
-              <div
+              <motion.article
                 key={step.label}
-                className="flex-1 flex flex-col items-center relative z-10 group"
+                className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-transform hover:-translate-y-0.5 flex flex-col"
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, amount: 0.2 }}
+                variants={fadeUp}
+                transition={{ duration: 0.45, delay: index * 0.06 }}
               >
-                <motion.div
-                  className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
-                  style={{
-                    background: `linear-gradient(135deg, ${step.color} 0%, ${step.color}55 100%)`,
-                    boxShadow:
-                      activeStep >= index
-                        ? `0 0 20px ${step.color}77`
-                        : "0 0 6px #00000022",
-                    transform: activeStep >= index ? "scale(1.18)" : "scale(1)",
-                    transition: "all 0.28s ease",
-                  }}
-                  initial="hidden"
-                  whileInView="visible"
-                  viewport={{ once: true }}
-                  variants={stepVariants}
-                  transition={{ duration: 0.45, delay: index * 0.06 }}
-                >
-                  {index + 1}
-                </motion.div>
-
-                <p className="mt-2 text-center font-medium">{step.label}</p>
-
-                <span className="absolute -top-16 w-48 bg-white text-gray-800 p-2 rounded shadow-lg text-sm opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-[#46769B]/10 flex items-center justify-center text-xs sm:text-sm font-semibold text-[#46769B]">
+                    {index + 1}
+                  </div>
+                  <h3 className="text-sm sm:text-base font-semibold text-slate-900">
+                    {step.label}
+                  </h3>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
                   {step.description}
-                </span>
-
-                {index < steps.length - 1 && (
-                  <motion.div
-                    className="hidden md:block absolute top-6 right-[-50%] h-2 w-[100%] rounded-full"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, #46769B, #1D2433, #F77F00, #D62828)",
-                    }}
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: activeStep > index ? 1 : 0 }}
-                    transition={{ duration: 0.6, ease: "easeInOut" }}
-                  />
-                )}
-              </div>
+                </p>
+              </motion.article>
             ))}
           </div>
         </section>
 
-        {/* Cards */}
-        <main className="max-w-7xl mx-auto px-4 py-12 grid gap-8 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2">
+        {/* Info Cards */}
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-12 grid gap-6 sm:gap-7 md:grid-cols-2">
           {cards.map((card, idx) => (
             <motion.article
               key={card.title}
-              ref={(el) => (stepRefs.current[idx] = el)}
-              className="flex flex-col md:flex-row bg-white border border-blue-100 rounded-xl shadow-md p-6 hover:shadow-lg transition transform hover:-translate-y-1"
+              className="flex flex-col sm:flex-row bg-white border border-slate-200 rounded-2xl shadow-sm p-5 sm:p-6 hover:shadow-md transition-transform hover:-translate-y-0.5"
               initial="hidden"
               whileInView="visible"
-              viewport={{ once: true, amount: 0.18 }}
-              variants={cardVariants}
-              transition={{ duration: 0.6, delay: idx * 0.06 }}
+              viewport={{ once: true, amount: 0.22 }}
+              variants={fadeUp}
+              transition={{ duration: 0.5, delay: idx * 0.05 }}
             >
-              <div className="flex-shrink-0 mb-4 md:mb-0 md:mr-4 flex items-center justify-center">
-                {card.icon}
+              <div className="flex-shrink-0 mb-3 sm:mb-0 sm:mr-4 flex items-start sm:items-center justify-start">
+                <div className="inline-flex items-center justify-center rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                  {card.icon}
+                </div>
               </div>
 
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg sm:text-xl font-semibold text-slate-900 mb-1.5">
                   {card.title}
                 </h3>
-                <p className="text-gray-700 leading-relaxed">{card.text}</p>
+                <p className="text-sm sm:text-[15px] text-slate-700 leading-relaxed">
+                  {card.text}
+                </p>
               </div>
             </motion.article>
           ))}
         </main>
 
         {/* Footer / safety notice */}
-        <section className="bg-gray-100 py-12 px-6 md:px-12 text-center rounded-t-3xl">
-          <h2 className="text-2xl font-bold mb-4">Stay Safe and Informed</h2>
-          <p className="max-w-3xl mx-auto text-gray-800 text-lg leading-relaxed mb-6">
-            PEAK is designed to help you make informed decisions about
-            supplements, but it cannot guarantee complete safety. Always consult
-            qualified professionals before consuming any substance.
-          </p>
+        <section className="bg-slate-100/90 border-t border-slate-200 py-10 px-4 sm:px-6 md:px-10 rounded-t-3xl">
+          <div className="max-w-5xl mx-auto text-center">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-3">
+              Stay Safe and Informed
+            </h2>
+            <p className="max-w-3xl mx-auto text-sm sm:text-base text-slate-800 leading-relaxed mb-4">
+              PEAK is designed to make it easier to spot potential issues in
+              your supplements. It cannot guarantee complete safety or
+              compliance with all leagues, teams, or governing bodies. Use it as
+              a tool in your process, not the final decision-maker.
+            </p>
 
-          <p className="max-w-3xl mx-auto text-gray-700 text-sm leading-relaxed">
-            Note: any substance that is chemically or pharmacologically related
-            to banned drug classes — even if not explicitly listed — should be
-            treated as prohibited. Also, many nutritional supplements may be
-            contaminated with banned substances not shown on a label. Verify
-            with your team staff or medical professional before use.
-          </p>
+            <div className="max-w-3xl mx-auto text-left sm:text-center bg-white/80 border border-rose-100 rounded-2xl px-4 sm:px-5 py-4 shadow-sm">
+              <p className="text-xs sm:text-sm text-rose-700 font-semibold mb-1">
+                Important Safety Reminder
+              </p>
+              <p className="text-xs sm:text-sm text-slate-800 leading-relaxed">
+                Any substance that is chemically or pharmacologically related to
+                banned drug classes — even if not explicitly listed — should be
+                treated as prohibited. Many nutritional supplements may be
+                contaminated with banned substances not shown on the label.
+                Always verify with your team staff, medical professional, or
+                appropriate governing body before use.
+              </p>
+            </div>
+          </div>
         </section>
       </div>
     </>

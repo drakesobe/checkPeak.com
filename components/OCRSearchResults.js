@@ -23,13 +23,15 @@ import AnimatedEllipsis from "./AnimatedEllipsis";
  *
  * UI:
  *  - Banned section:
- *      - Card per banned substance
- *      - Header: name, ban type, bannedBy, quick meta
- *      - Accordion body: Benefits, Weaknesses, Nutrient Antagonism, Sources
+ *      - SmartStack-style cards with left color bar and accordion body
+ *      - Inside body: 3 neutral-gray panels
+ *          • What it does          (benefits || notes)
+ *          • Things to watch for   (weaknesses)
+ *          • Interactions with other nutrients (antagonisms)
+ *      - Sources block at bottom
  *  - Ingredients section:
- *      - Card per non-banned ingredient
- *      - Header: name, short summary
- *      - Accordion body: Benefits, Weaknesses, Nutrient Antagonism, Sources
+ *      - SmartStack-style cards
+ *      - Inside body: same 3 neutral-gray panels + sources
  *  - Sticky legend:
  *      - Filter banned by ban type
  *      - Shows counts by ban type, clear filters
@@ -62,11 +64,11 @@ export default function OCRSearchResults({
   const [expandedBannedRows, setExpandedBannedRows] = useState({});
   const [expandedIngredientRows, setExpandedIngredientRows] = useState({});
 
-  // Refs
+  // Refs for scroll behavior (mobile momentum)
   const bannedScrollRef = useRef(null);
   const ingScrollRef = useRef(null);
 
-  // Palette
+  // Palette: banType accent colors + ingredient highlight color
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
@@ -74,7 +76,7 @@ export default function OCRSearchResults({
   ];
   const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
 
-  // Normalize + split into banned vs ingredients
+  // Normalize + split into banned vs ingredients, and build counts
   const { bannedRecords, ingredientRecords, countsByBanType } = useMemo(() => {
     const banned = [];
     const ingredients = [];
@@ -128,15 +130,22 @@ export default function OCRSearchResults({
       }
     });
 
-    return { bannedRecords: banned, ingredientRecords: ingredients, countsByBanType: counts };
-  }, [matchedSubstances]);
+    return {
+      bannedRecords: banned,
+      ingredientRecords: ingredients,
+      countsByBanType: counts,
+    };
+  }, [matchedSubstances, banTypeColors]);
 
-  // Filters
+  // Filters – respect active ban type for banned list
   const filteredBanned = useMemo(() => {
     if (!activeBanType) return bannedRecords;
-    return bannedRecords.filter((r) => (r.banType || "").trim() === activeBanType);
+    return bannedRecords.filter(
+      (r) => (r.banType || "").trim() === activeBanType
+    );
   }, [bannedRecords, activeBanType]);
 
+  // Filter ingredients so they don’t duplicate banned names
   const filteredIngredients = useMemo(() => {
     const bannedNames = new Set(
       bannedRecords.map((b) => (b.name || "").toLowerCase())
@@ -189,7 +198,7 @@ export default function OCRSearchResults({
   const showInitialEmptyState =
     !trimmedSearch && (matchedSubstances?.length ?? 0) === 0;
 
-  // Momentum scroll on mobile
+  // Momentum scroll on mobile for the inner card lists
   useEffect(() => {
     const b = bannedScrollRef.current;
     const i = ingScrollRef.current;
@@ -197,15 +206,19 @@ export default function OCRSearchResults({
     if (i) i.style.WebkitOverflowScrolling = "touch";
   }, []);
 
+  // Accordion toggles
   const toggleBannedRow = (id) => {
     setExpandedBannedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleIngredientRow = (id) => {
-    setExpandedIngredientRows((prev) => ({ ...prev, [id]: !prev[id] }));
+    setExpandedIngredientRows((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
-  // ---------- CARD COMPONENTS (SmartStack-style accordions) ----------
+  // ---------- CARD COMPONENTS (SmartStack-style accordions with neutral panels) ----------
 
   const BannedCards = ({ records }) => {
     if (!records || !records.length) {
@@ -229,6 +242,13 @@ export default function OCRSearchResults({
           const c = colorEntry?.color || "#111827";
           const isExpanded = !!expandedBannedRows[rec.id];
 
+          // unify into 3 panels like OCRScanResults
+          const whatItDoesText = rec.benefits || rec.notes || "";
+          const whatItDoesHTML = highlightHTML(whatItDoesText, c);
+          const weaknessesHTML = highlightHTML(rec.weaknesses || "", c);
+          const antagonismsHTML = highlightHTML(rec.antagonisms || "", c);
+          const sourceHTML = highlightHTML(rec.source || "", c);
+
           return (
             <motion.div
               key={rec.id}
@@ -250,15 +270,16 @@ export default function OCRSearchResults({
               >
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
                       Banned substance
                     </span>
                     {banType && (
                       <span
-                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border"
                         style={{
-                          backgroundColor: `${c}10`,
+                          backgroundColor: `${c}15`,
                           color: c,
+                          borderColor: `${c}30`,
                         }}
                       >
                         {banType}
@@ -320,7 +341,7 @@ export default function OCRSearchResults({
                 </div>
               </button>
 
-              {/* BODY: structured panels */}
+              {/* BODY: 3 neutral-gray panels + sources, matching OCRScanResults layout */}
               <AnimatePresence initial={false}>
                 {isExpanded && (
                   <motion.div
@@ -328,91 +349,64 @@ export default function OCRSearchResults({
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
+                    transition={{ duration: 0.2 }}
                     className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1 border-t border-gray-100 bg-gray-50/80 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {rec.notes && (
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Notes / Pharmacology
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-slate-200" />
+                    {(whatItDoesText || rec.weaknesses || rec.antagonisms) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {whatItDoesText && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              What it does
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: whatItDoesHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-slate-800"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.notes, c),
-                            }}
-                          />
-                        </div>
-                      )}
+                        )}
 
-                      {rec.benefits && (
-                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 shadow-[0_1px_2px_rgba(16,185,129,0.12)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                              Benefits
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-emerald-200" />
+                        {rec.weaknesses && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Things to watch for
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: weaknessesHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-emerald-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.benefits, c),
-                            }}
-                          />
-                        </div>
-                      )}
+                        )}
 
-                      {rec.weaknesses && (
-                        <div className="rounded-xl border border-rose-100 bg-rose-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(244,63,94,0.12)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                              Weaknesses / Risks
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-rose-200" />
+                        {rec.antagonisms && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Interactions with other nutrients
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: antagonismsHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-rose-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.weaknesses, c),
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {rec.antagonisms && (
-                        <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(245,158,11,0.14)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                              Nutrient Antagonism
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-amber-200" />
-                          </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-amber-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.antagonisms, c),
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
 
                     {rec.source && (
-                      <div className="mt-2 pt-3 border-t border-dashed border-gray-200">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-                          Sources / References
-                        </div>
-                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] sm:text-xs text-gray-700 leading-relaxed break-words">
-                          <p
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.source, c),
-                            }}
-                          />
-                        </div>
+                      <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Where this information comes from
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
+                          dangerouslySetInnerHTML={{ __html: sourceHTML }}
+                        />
                       </div>
                     )}
                   </motion.div>
@@ -430,8 +424,8 @@ export default function OCRSearchResults({
       return trimmedSearch ? (
         <div className="flex items-center justify-center py-8">
           <p className="italic text-gray-500 text-sm text-center max-w-sm">
-            No ingredient entries matched this search that weren’t already tagged as
-            banned.
+            No ingredient entries matched this search that weren’t already tagged
+            as banned.
           </p>
         </div>
       ) : (
@@ -445,6 +439,11 @@ export default function OCRSearchResults({
       <div className="space-y-3 mt-3" ref={ingScrollRef}>
         {records.map((rec, idx) => {
           const isExpanded = !!expandedIngredientRows[rec.id];
+
+          const whatItDoesHTML = highlightHTML(rec.benefits || "");
+          const weaknessesHTML = highlightHTML(rec.weaknesses || "");
+          const antagonismsHTML = highlightHTML(rec.antagonisms || "");
+          const sourceHTML = highlightHTML(rec.source || "");
 
           return (
             <motion.div
@@ -463,7 +462,7 @@ export default function OCRSearchResults({
               >
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700">
                       Ingredient
                     </span>
                   </div>
@@ -504,7 +503,7 @@ export default function OCRSearchResults({
                 </div>
               </button>
 
-              {/* BODY: Benefits + Weaknesses + Antagonism + Sources */}
+              {/* BODY: 3 neutral-gray panels + sources, matching OCRScanResults layout */}
               <AnimatePresence initial={false}>
                 {isExpanded && (
                   <motion.div
@@ -512,74 +511,64 @@ export default function OCRSearchResults({
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
+                    transition={{ duration: 0.2 }}
                     className="px-4 sm:px-5 pb-4 sm:pb-5 pt-1 border-t border-gray-100 bg-gray-50/80 text-[11px] sm:text-sm text-gray-800 space-y-4 overflow-hidden"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {rec.benefits && (
-                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 shadow-[0_1px_2px_rgba(16,185,129,0.12)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                              Benefits
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-emerald-200" />
+                    {(rec.benefits || rec.weaknesses || rec.antagonisms) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {rec.benefits && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              What it does
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: whatItDoesHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-emerald-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.benefits),
-                            }}
-                          />
-                        </div>
-                      )}
+                        )}
 
-                      {rec.weaknesses && (
-                        <div className="rounded-xl border border-rose-100 bg-rose-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(244,63,94,0.12)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">
-                              Weaknesses / Risks
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-rose-200" />
+                        {rec.weaknesses && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Things to watch for
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: weaknessesHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-rose-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.weaknesses),
-                            }}
-                          />
-                        </div>
-                      )}
+                        )}
 
-                      {rec.antagonisms && (
-                        <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 shadow-[0_1px_2px_rgba(245,158,11,0.14)]">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                              Nutrient Antagonism
-                            </div>
-                            <div className="h-1 w-10 rounded-full bg-amber-200" />
+                        {rec.antagonisms && (
+                          <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                              Interactions with other nutrients
+                            </p>
+                            <p
+                              className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: antagonismsHTML,
+                              }}
+                            />
                           </div>
-                          <p
-                            className="leading-relaxed whitespace-pre-line text-amber-900"
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.antagonisms),
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
 
                     {rec.source && (
-                      <div className="mt-2 pt-3 border-t border-dashed border-gray-200">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-                          Sources / References
-                        </div>
-                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] sm:text-xs text-gray-700 leading-relaxed break-words">
-                          <p
-                            dangerouslySetInnerHTML={{
-                              __html: highlightHTML(rec.source),
-                            }}
-                          />
-                        </div>
+                      <div className="bg-white rounded-lg border border-gray-100 px-3 py-2">
+                        <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
+                          Where this information comes from
+                        </p>
+                        <p
+                          className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
+                          dangerouslySetInnerHTML={{ __html: sourceHTML }}
+                        />
                       </div>
                     )}
                   </motion.div>
@@ -595,7 +584,7 @@ export default function OCRSearchResults({
   // ---------- RENDER ----------
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-2 sm:px-0 py-4 sm:py-6 font-sans space-y-8 relative">
+    <div className="w-full max-w-5xl mx-auto px-2 sm:px-0 py-4 sm:py-6 font-sans space-y-8 relative text-gray-900">
       <section>
         {/* Searching indicator */}
         <AnimatePresence>
@@ -615,11 +604,11 @@ export default function OCRSearchResults({
 
         {/* Initial hint */}
         {showInitialEmptyState && (
-          <div className="mb-4 rounded-xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-3 text-xs sm:text-sm text-blue-900">
+          <div className="mb-4 rounded-xl border border-dashed border-[#c5d6e7] bg-[#e7f1fb] px-4 py-3 text-xs sm:text-sm text-[#1f3042]">
             Start by entering a substance or ingredient above. When results come
             back, banned items and ingredients will appear in expandable cards
-            with clear sections for benefits, weaknesses, nutrient antagonism,
-            and sources.
+            with clear sections for what it does, things to watch for,
+            interactions, and sources.
           </div>
         )}
 
@@ -630,8 +619,8 @@ export default function OCRSearchResults({
               Search Results
             </h2>
             <p className="text-xs sm:text-sm text-gray-600 mt-1">
-              {matchedSubstances?.length ?? 0} total — {bannedRecords.length} banned ·{" "}
-              {ingredientRecords.length} ingredients
+              {matchedSubstances?.length ?? 0} total — {bannedRecords.length}{" "}
+              banned · {ingredientRecords.length} ingredients
             </p>
           </div>
 
@@ -653,7 +642,9 @@ export default function OCRSearchResults({
                 onClick={() => setBannedOpen((s) => !s)}
                 aria-expanded={bannedOpen}
                 aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-                className={`search-toggle-btn ${bannedOpen ? "active" : ""} w-full sm:w-auto`}
+                className={`search-toggle-btn ${
+                  bannedOpen ? "active" : ""
+                } w-full sm:w-auto`}
               >
                 <span className="section-label">Banned Substances</span>
                 <span className="badge">{bannedRecords.length}</span>
@@ -661,9 +652,10 @@ export default function OCRSearchResults({
               </button>
 
               <p className="text-[11px] sm:text-xs text-gray-600 leading-snug">
-                Filter by ban type with the legend at the bottom. Expand a card
-                to see a structured breakdown of risks, benefits, nutrient
-                antagonists, and references.
+                These are substances with an active ban classification. Use the
+                legend filters to focus on a specific ban type, then expand a
+                card to see a breakdown of what it does, things to watch for,
+                interactions, and sources.
               </p>
             </div>
           </div>
@@ -685,7 +677,7 @@ export default function OCRSearchResults({
         </div>
 
         {/* Divider between sections */}
-        <div className="border-t border-gray-200 my-8" />
+        <div className="border-t border-gray-300 my-8" />
 
         {/* ===================== INGREDIENTS (cards + accordion) ===================== */}
         <div className="mb-16">
@@ -698,7 +690,9 @@ export default function OCRSearchResults({
                   ingredientsOpen,
                   "Ingredients (non-banned)"
                 )}
-                className={`search-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
+                className={`search-toggle-btn ${
+                  ingredientsOpen ? "active" : ""
+                } w-full sm:w-auto`}
               >
                 <span className="section-label">Ingredients (non-banned)</span>
                 <span className="badge">{ingredientRecords.length}</span>
@@ -707,8 +701,8 @@ export default function OCRSearchResults({
 
               <p className="text-[11px] sm:text-xs text-gray-600 leading-snug">
                 These appear in the ingredient database without a ban flag.
-                Expand a card to see the same breakdown of benefits, weaknesses,
-                nutrient antagonism, and sources.
+                Expand a card to see what the ingredient does, potential
+                drawbacks, interactions, and where the information comes from.
               </p>
             </div>
           </div>
@@ -733,13 +727,13 @@ export default function OCRSearchResults({
       {/* ===================== STICKY LEGEND ===================== */}
       <div className="sticky bottom-0 left-0 right-0 z-40">
         <div className="max-w-5xl mx-auto px-2 sm:px-0">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-lg">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-t-xl border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_-2px_8px_rgba(15,23,42,0.08)]">
             <div
               className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 w-full sm:w-auto"
               style={{ WebkitOverflowScrolling: "touch" }}
             >
               <button
-                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap"
+                className="mr-2 px-3 py-1 rounded-md bg-gray-100 text-sm whitespace-nowrap text-gray-700 border border-gray-200"
                 onClick={() => setLegendCollapsed((c) => !c)}
                 aria-expanded={!legendCollapsed}
                 aria-label={legendCollapsed ? "Expand legend" : "Collapse legend"}
@@ -755,14 +749,18 @@ export default function OCRSearchResults({
                       key={t.label}
                       onClick={() => handleLegendClick(t.label)}
                       aria-pressed={active}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border transition text-sm whitespace-nowrap ${
-                        active ? "shadow-md bg-gray-900 text-white" : "bg-white"
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border text-sm whitespace-nowrap transition-all ${
+                        active
+                          ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+                          : "bg-gray-50 text-gray-900 border-gray-200 hover:bg-gray-100"
                       }`}
-                      style={{ borderColor: active ? "#111827" : "transparent" }}
                     >
                       <span
                         className="w-4 h-4 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: t.color, display: "inline-block" }}
+                        style={{
+                          backgroundColor: t.color,
+                          display: "inline-block",
+                        }}
                       />
                       <span className="font-medium">{t.label}</span>
                       <span className="text-gray-500">
@@ -790,7 +788,7 @@ export default function OCRSearchResults({
         </div>
       </div>
 
-      {/* Local styles for toggle buttons */}
+      {/* Local styles for section buttons */}
       <style jsx>{`
         .search-toggle-btn {
           display: inline-flex;
@@ -804,13 +802,14 @@ export default function OCRSearchResults({
           cursor: pointer;
           transition: box-shadow 0.18s ease-in-out, transform 0.18s ease-in-out,
             background-color 0.18s ease-in-out, border-color 0.18s ease-in-out;
-          background: rgba(255, 255, 255, 0.94);
-          color: #0f172a;
-          box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+          background: rgba(249, 250, 251, 0.96);
+          color: #111827;
+          box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
         }
         .search-toggle-btn:hover {
           transform: translateY(-1px);
-          box-shadow: 0 6px 16px rgba(16, 24, 40, 0.06);
+          box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+          background-color: rgba(248, 250, 252, 1);
         }
         .search-toggle-btn .section-label {
           letter-spacing: -0.2px;

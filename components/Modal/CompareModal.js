@@ -13,38 +13,55 @@ const recordsCache = {};
 export default function CompareModal({ stacks = [], onClose }) {
   const [loadingOCR, setLoadingOCR] = useState(stacks.map(() => false));
   const [ocrTexts, setOcrTexts] = useState(stacks.map(() => ""));
-  const [matchedRecordsArr, setMatchedRecordsArr] = useState(stacks.map(() => []));
+  const [matchedRecordsArr, setMatchedRecordsArr] = useState(
+    stacks.map(() => [])
+  );
   const animDots = useRef(stacks.map(() => 0));
   const imageRefs = useRef(stacks.map(() => null));
 
-  // Swipe/gradient state
+  // Scroll / swipe hint state
   const scrollRef = useRef(null);
   const [showLeftShadow, setShowLeftShadow] = useState(false);
   const [showRightShadow, setShowRightShadow] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const [fadeHint, setFadeHint] = useState(false);
 
+  const getStackField = (stack, field, fallback = "") =>
+    stack?.[field] ?? stack?.rawFields?.[field] ?? fallback;
+
   // Animate OCR dots while scanning
   useEffect(() => {
     if (!loadingOCR.some(Boolean)) return;
     const interval = setInterval(() => {
       animDots.current = animDots.current.map((v) => (v + 1) % 4);
+      // trigger re-render
       setOcrTexts((prev) => [...prev]);
     }, 500);
     return () => clearInterval(interval);
   }, [loadingOCR]);
 
-  const getStackField = (stack, field, fallback = "") =>
-    stack?.[field] ?? stack?.rawFields?.[field] ?? fallback;
-
   const runOCR = async (idx) => {
     const stack = stacks[idx];
     if (!stack) return;
+
     const img = imageRefs.current[idx];
     if (!img) return;
 
-    const imageUrl = getStackField(stack, "nutritionLabel") || getStackField(stack, "image");
+    const imageUrl =
+      getStackField(stack, "nutritionLabel") || getStackField(stack, "image");
     if (!imageUrl) return;
+
+    // If we already have OCR cached for this image, reuse it + fetch records
+    if (ocrCache[imageUrl]) {
+      const cachedText = ocrCache[imageUrl];
+      setOcrTexts((prev) => {
+        const updated = [...prev];
+        updated[idx] = cachedText;
+        return updated;
+      });
+      await fetchRecords(idx, cachedText);
+      return;
+    }
 
     setLoadingOCR((prev) => {
       const updated = [...prev];
@@ -88,9 +105,12 @@ export default function CompareModal({ stacks = [], onClose }) {
 
   const fetchRecords = async (idx, text) => {
     const stack = stacks[idx];
-    const imageUrl = getStackField(stack, "nutritionLabel") || getStackField(stack, "image");
+    const imageUrl =
+      getStackField(stack, "nutritionLabel") || getStackField(stack, "image");
+
     if (!text) return;
 
+    // Use cache if available
     if (recordsCache[imageUrl]) {
       setMatchedRecordsArr((prev) => {
         const updated = [...prev];
@@ -126,12 +146,15 @@ export default function CompareModal({ stacks = [], onClose }) {
     }
   };
 
-  // Initial OCR on mount
+  // Run OCR for all stacks on mount (image onload-aware)
   useEffect(() => {
     stacks.forEach((_, idx) => {
       const img = imageRefs.current[idx];
-      if (img?.complete) runOCR(idx);
-      else if (img) img.onload = () => runOCR(idx);
+      if (!img) return;
+      if (img.complete) runOCR(idx);
+      else {
+        img.onload = () => runOCR(idx);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stacks]);
@@ -148,9 +171,15 @@ export default function CompareModal({ stacks = [], onClose }) {
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+
     setShowLeftShadow(el.scrollLeft > 0);
-    setShowRightShadow(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
-    if (showSwipeHint && el.scrollLeft > 5) setShowSwipeHint(false);
+    setShowRightShadow(
+      el.scrollLeft < el.scrollWidth - el.clientWidth - 1
+    );
+
+    if (showSwipeHint && el.scrollLeft > 5) {
+      setShowSwipeHint(false);
+    }
   };
 
   const checkScrollable = () => {
@@ -168,7 +197,6 @@ export default function CompareModal({ stacks = [], onClose }) {
 
   useEffect(() => {
     checkScrollable();
-    // re-check when window resizes (helps with orientation changes)
     const onResize = () => checkScrollable();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -178,44 +206,71 @@ export default function CompareModal({ stacks = [], onClose }) {
   useEffect(() => {
     if (!showSwipeHint) return;
     const timer = setTimeout(() => setFadeHint(false), 2500);
-    const timerHide = setTimeout(() => setShowSwipeHint(false), 3000);
+    const timerHide = setTimeout(() => setShowSwipeHint(false), 3200);
     return () => {
       clearTimeout(timer);
       clearTimeout(timerHide);
     };
   }, [showSwipeHint]);
 
+  const stackCountLabel =
+    stacks.length === 2
+      ? "Comparing 2 stacks side by side"
+      : stacks.length === 3
+      ? "Comparing 3 stacks side by side"
+      : "";
+
   return (
     <AnimatePresence>
       {stacks.length >= 2 && stacks.length <= 3 && (
         <motion.div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-start pt-20 z-50"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-20 z-50"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* Modal container: reduced padding on very small screens, bounded height, hidden horizontal overflow */}
+          {/* Modal container */}
           <motion.div
-            className="bg-gray-900 rounded-2xl shadow-xl w-full max-w-6xl mx-4 p-3 sm:p-6 overflow-hidden max-h-[90vh] flex flex-col break-words"
+            className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl mx-3 sm:mx-4 p-3 sm:p-5 flex flex-col max-h-[90vh] overflow-hidden text-slate-50"
             style={{ touchAction: "pan-y" }}
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 12, opacity: 0 }}
+            transition={{ duration: 0.2 }}
           >
-            {/* Top Actions */}
-            <div className="flex justify-end gap-4 mb-3 sm:mb-4 z-20 relative flex-shrink-0">
-              <button
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-2xl text-white font-medium pointer-events-auto text-sm"
-                onClick={onClose}
-              >
-                Close
-              </button>
-              <button
-                className="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-2xl text-white font-medium pointer-events-auto text-sm"
-                onClick={() => stacks.forEach((_, idx) => runOCR(idx))}
-              >
-                {loadingOCR.some(Boolean) ? "Scanning..." : "Rescan Labels"}
-              </button>
+            {/* Header / actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3 sm:mb-4 flex-shrink-0">
+              <div className="space-y-1">
+                <h2 className="text-lg sm:text-xl font-semibold">
+                  Compare stacks
+                </h2>
+                {stackCountLabel && (
+                  <p className="text-xs sm:text-sm text-slate-300">
+                    {stackCountLabel}. Scroll horizontally on mobile to view all
+                    cards.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
+                <button
+                  className="px-3 sm:px-4 py-2 rounded-xl border border-slate-600 bg-slate-800 text-slate-100 text-xs sm:text-sm font-medium hover:bg-slate-700 transition"
+                  onClick={onClose}
+                >
+                  Close
+                </button>
+                <button
+                  className="px-3 sm:px-4 py-2 rounded-xl bg-[#46769B] text-white text-xs sm:text-sm font-semibold shadow-sm hover:brightness-110 transition"
+                  onClick={() => stacks.forEach((_, idx) => runOCR(idx))}
+                >
+                  {loadingOCR.some(Boolean)
+                    ? "Scanning labels..."
+                    : "Rescan labels"}
+                </button>
+              </div>
             </div>
 
-            {/* Content area: this is scrollable (both axis if needed) */}
+            {/* Scrollable content area */}
             <div
               className="relative flex-1 overflow-auto"
               ref={scrollRef}
@@ -226,7 +281,8 @@ export default function CompareModal({ stacks = [], onClose }) {
                 <div
                   className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
                   style={{
-                    background: `linear-gradient(to right, rgba(17,24,39,0.95), transparent)`,
+                    background:
+                      "linear-gradient(to right, rgba(15,23,42,0.95), transparent)",
                   }}
                 />
               )}
@@ -235,40 +291,42 @@ export default function CompareModal({ stacks = [], onClose }) {
                 <div
                   className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
                   style={{
-                    background: `linear-gradient(to left, rgba(17,24,39,0.95), transparent)`,
+                    background:
+                      "linear-gradient(to left, rgba(15,23,42,0.95), transparent)",
                   }}
                 />
               )}
+
               {/* Swipe hint */}
               {showSwipeHint && (
                 <div
-                  className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-white/50 text-xs select-none z-20 transition-opacity duration-500 ${
+                  className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-slate-200/70 text-[11px] sm:text-xs select-none z-20 rounded-full px-3 py-1 bg-slate-900/80 border border-slate-700/70 backdrop-blur-sm transition-opacity duration-500 ${
                     fadeHint ? "opacity-100" : "opacity-0"
                   }`}
                 >
-                  ← Swipe to scroll →
+                  Swipe to view all stacks
                 </div>
               )}
 
-              {/* Stacks Grid
-                  - keep the grid responsive
-                  - add min-w-0 on items so text can truncate/wrap instead of overflowing
-                  - ensure card contents wrap long words (break-words & break-all where appropriate)
-              */}
-              <div className={`grid ${gridColsClass} gap-6 pr-6`}>
+              {/* Cards grid */}
+              <div className={`grid ${gridColsClass} gap-4 sm:gap-5 pr-4 sm:pr-6`}>
                 {stacks.map((stack, idx) => {
                   const productImage =
-                    getStackField(stack, "nutritionLabel") || getStackField(stack, "image") || "/fallback-image.svg";
+                    getStackField(stack, "nutritionLabel") ||
+                    getStackField(stack, "image") ||
+                    "/fallback-image.svg";
+
+                  const isScanning = loadingOCR[idx];
 
                   return (
                     <motion.div
                       key={stack.id || idx}
-                      className="flex flex-col bg-gray-800 rounded-xl p-4 shadow-md relative z-10 min-w-0"
-                      whileHover={{ boxShadow: "0 0 20px 4px #00ffcc", scale: 1.02 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                      className="flex flex-col bg-slate-800 rounded-xl p-4 sm:p-5 shadow-md border border-slate-700/80 relative min-w-0"
+                      whileHover={{ scale: 1.01 }}
+                      transition={{ type: "spring", stiffness: 200, damping: 22 }}
                     >
-                      {/* Header: ensure the text inside header can wrap */}
-                      <div className="min-w-0">
+                      {/* Header */}
+                      <div className="min-w-0 mb-2">
                         <ModalHeader
                           stack={stack}
                           servingsNumber={getStackField(stack, "Servings")}
@@ -278,29 +336,58 @@ export default function CompareModal({ stacks = [], onClose }) {
                         />
                       </div>
 
-                      {/* Image: constrained height, object-contain to avoid overflow */}
-                      <img
-                        ref={(el) => (imageRefs.current[idx] = el)}
-                        src={productImage}
-                        alt={stack.name}
-                        className="w-full h-48 object-contain rounded-lg my-3 max-h-[42vh]"
-                        onError={(e) => (e.currentTarget.src = "/fallback-image.svg")}
-                      />
+                      {/* Image */}
+                      <div className="mt-1 mb-3">
+                        <div className="w-full rounded-lg bg-slate-900/60 border border-slate-700/70 flex items-center justify-center overflow-hidden">
+                          <img
+                            ref={(el) => (imageRefs.current[idx] = el)}
+                            src={productImage}
+                            alt={stack.name}
+                            className="w-full h-44 sm:h-52 object-contain"
+                            onError={(e) => {
+                              e.currentTarget.src = "/fallback-image.svg";
+                            }}
+                          />
+                        </div>
+                      </div>
 
-                      {/* Content: OCR results or detected substances */}
-                      <div className="mt-2 pointer-events-auto min-w-0">
-                        {loadingOCR[idx] ? (
-                          <p className="text-gray-400 text-sm animate-pulse">
-                            Scanning{".".repeat(animDots.current[idx])}
+                      {/* Status line */}
+                      <div className="flex items-center justify-between text-[11px] sm:text-xs mb-2 text-slate-300">
+                        <span>
+                          {matchedRecordsArr[idx]?.length
+                            ? `${matchedRecordsArr[idx].length} banned matches`
+                            : "No banned matches yet"}
+                        </span>
+                        <span className="text-slate-400">
+                          {isScanning
+                            ? `Scanning${".".repeat(
+                                animDots.current[idx] || 0
+                              )}`
+                            : ocrTexts[idx]
+                            ? "Scan complete"
+                            : "Waiting for scan"}
+                        </span>
+                      </div>
+
+                      {/* Detected substances */}
+                      <div className="mt-1 pointer-events-auto min-w-0">
+                        {isScanning ? (
+                          <p className="text-slate-300 text-xs sm:text-sm italic">
+                            Reading label… this can take a few seconds.
                           </p>
                         ) : (
-                          <DetectedSubstancesTab matchedRecords={matchedRecordsArr[idx]} hideCounts />
+                          <DetectedSubstancesTab
+                            matchedRecords={matchedRecordsArr[idx]}
+                            hideCounts
+                          />
                         )}
                       </div>
 
-                      {/* Footer: affiliate link etc — ensure long URLs/words wrap */}
+                      {/* Footer */}
                       <div className="mt-3">
-                        <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
+                        <ModalFooter
+                          affiliateLink={getStackField(stack, "affiliateLink")}
+                        />
                       </div>
                     </motion.div>
                   );

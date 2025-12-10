@@ -128,146 +128,183 @@ export default function HomePage() {
 
       {/* PAGE CONTENT — NavBar is now global in _app.js */}
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans flex flex-col">
-
         {/* HERO */}
         <section
-          className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white min-h-[68vh] flex flex-col justify-center items-center text-center px-4 overflow-hidden"
+          className="relative bg-gradient-to-r from-[#46769B] to-[#1D2433] text-white"
           aria-labelledby="hero-heading"
         >
-          {/* Background */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-            <defs>
-              <radialGradient id="g1" cx="30%" cy="30%" r="80%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
-                <stop offset="60%" stopColor="rgba(70,118,155,1)" stopOpacity="0.18" />
-                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.06" />
-              </radialGradient>
-              <radialGradient id="g2" cx="60%" cy="40%" r="80%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.85)" />
-                <stop offset="60%" stopColor="rgba(100,130,180,1)" stopOpacity="0.16" />
-                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
-              </radialGradient>
-              <radialGradient id="g3" cx="40%" cy="70%" r="80%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
-                <stop offset="60%" stopColor="rgba(120,140,200,1)" stopOpacity="0.14" />
-                <stop offset="100%" stopColor="rgba(29,36,51,1)" stopOpacity="0.05" />
-              </radialGradient>
-              <filter id="blurA"><feGaussianBlur stdDeviation="28" /></filter>
-              <filter id="blurB"><feGaussianBlur stdDeviation="32" /></filter>
-              <filter id="blurC"><feGaussianBlur stdDeviation="36" /></filter>
-            </defs>
+          {/* Background layer */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <svg
+              className="w-full h-full"
+              aria-hidden="true"
+            >
+              <defs>
+                <radialGradient id="g1" cx="30%" cy="30%" r="80%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
+                  <stop
+                    offset="60%"
+                    stopColor="rgba(70,118,155,1)"
+                    stopOpacity="0.18"
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="rgba(29,36,51,1)"
+                    stopOpacity="0.06"
+                  />
+                </radialGradient>
+                <radialGradient id="g2" cx="60%" cy="40%" r="80%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.85)" />
+                  <stop
+                    offset="60%"
+                    stopColor="rgba(100,130,180,1)"
+                    stopOpacity="0.16"
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="rgba(29,36,51,1)"
+                    stopOpacity="0.05"
+                  />
+                </radialGradient>
+                <radialGradient id="g3" cx="40%" cy="70%" r="80%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
+                  <stop
+                    offset="60%"
+                    stopColor="rgba(120,140,200,1)"
+                    stopOpacity="0.14"
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="rgba(29,36,51,1)"
+                    stopOpacity="0.05"
+                  />
+                </radialGradient>
+                <filter id="blurA">
+                  <feGaussianBlur stdDeviation="28" />
+                </filter>
+                <filter id="blurB">
+                  <feGaussianBlur stdDeviation="32" />
+                </filter>
+                <filter id="blurC">
+                  <feGaussianBlur stdDeviation="36" />
+                </filter>
+              </defs>
 
-            {particles.map((p, i) => (
-              <motion.circle
-                key={i}
-                cx={p.cx}
-                cy={p.cy}
-                r={p.r}
-                fill="rgba(255,255,255,0.34)"
-                animate={{
-                  cx: [p.cx, p.cx + 26, p.cx - 18, p.cx],
-                  cy: [p.cy, p.cy + 18, p.cy - 14, p.cy],
-                  opacity: [0, 0.35, 0.35],
-                }}
-                transition={{
-                  duration: p.dur,
-                  repeat: Infinity,
-                  ease: "linear",
-                  delay: p.delay,
-                }}
-              />
-            ))}
-          </svg>
+              {particles.map((p, i) => (
+                <motion.circle
+                  key={i}
+                  cx={p.cx}
+                  cy={p.cy}
+                  r={p.r}
+                  fill="rgba(255,255,255,0.34)"
+                  animate={{
+                    cx: [p.cx, p.cx + 26, p.cx - 18, p.cx],
+                    cy: [p.cy, p.cy + 18, p.cy - 14, p.cy],
+                    opacity: [0, 0.35, 0.35],
+                  }}
+                  transition={{
+                    duration: p.dur,
+                    repeat: Infinity,
+                    ease: "linear",
+                    delay: p.delay,
+                  }}
+                />
+              ))}
+            </svg>
+          </div>
 
-          <motion.h1
-            id="hero-heading"
-            className="text-4xl md:text-5xl font-bold z-10 tracking-tight"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
-          >
-            NAVIGATE YOUR SUPPLEMENTS.
-            <br className="hidden sm:block" />
-            <span className="font-semibold"> Perform at your PEAK.</span>
-          </motion.h1>
+          {/* Foreground content */}
+          <div className="relative max-w-4xl mx-auto px-4 pt-24 pb-16 sm:pt-28 sm:pb-20 md:pt-32 md:pb-24 flex flex-col items-center text-center gap-5">
+            <motion.h1
+              id="hero-heading"
+              className="text-[2.2rem] leading-tight sm:text-4xl md:text-5xl font-bold tracking-tight"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7 }}
+            >
+              NAVIGATE YOUR SUPPLEMENTS.
+              <br className="hidden sm:block" />
+              <span className="font-semibold block mt-1 md:mt-2">
+                Perform at your PEAK.
+              </span>
+            </motion.h1>
 
-          <motion.p
-            className="text-base md:text-lg max-w-2xl mt-4 z-10 text-gray-100/95"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.25, duration: 0.6 }}
-          >
-            Scan any supplement label in seconds. Catch banned substances,
-            hidden aliases, and risky ingredients before they cost you
-            eligibility or trust.
-          </motion.p>
+            <motion.p
+              className="text-sm sm:text-base md:text-lg max-w-2xl mx-auto text-gray-100/95"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.25, duration: 0.6 }}
+            >
+              Scan any supplement label in seconds. Catch banned substances,
+              hidden aliases, and risky ingredients before they cost you
+              eligibility or trust.
+            </motion.p>
 
-          {/* Micro reassurance pills */}
-          <motion.div
-            className="mt-4 flex flex-col sm:flex-row gap-1.5 sm:gap-4 text-[10px] sm:text-xs text-gray-100/85 z-10"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.5 }}
-          >
-            <div className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Built for athletes, coaches & performance staff</span>
-            </div>
-            <div className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Informed by trusted banned-substance lists</span>
-            </div>
-            <div className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Absolutely free to use</span>
-            </div>
-          </motion.div>
+            {/* Micro reassurance pills */}
+            <motion.div
+              className="mt-1 flex flex-col sm:flex-row gap-2 sm:gap-4 text-[11px] sm:text-xs text-gray-100/85 items-start sm:items-center justify-center"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.5 }}
+            >
+              <div className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Built for athletes, coaches & performance staff</span>
+              </div>
+              <div className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Informed by trusted banned-substance lists</span>
+              </div>
+              <div className="inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Absolutely free to use</span>
+              </div>
+            </motion.div>
 
-          {/* CTAs */}
-          <motion.div
-            className="flex flex-col md:flex-row gap-3 mt-8 z-10 w-full md:w-auto items-center justify-center"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.6 }}
-          >
-            <Link href="/ocr">
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => track("scan_start", { source: "hero" })}
-                className="w-full md:w-auto flex items-center justify-center gap-3 px-7 py-3 bg-[#46769B] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
-                aria-label="Scan a label with PEAK"
-              >
-                Scan a Label
-              </motion.button>
-            </Link>
+            {/* CTAs */}
+            <motion.div
+              className="flex flex-col md:flex-row gap-3 mt-4 w-full md:w-auto items-stretch md:items-center justify-center"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.45, duration: 0.6 }}
+            >
+              <Link href="/ocr" className="w-full md:w-auto">
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => track("scan_start", { source: "hero" })}
+                  className="w-full flex items-center justify-center gap-3 px-7 py-3 bg-[#46769B] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
+                  aria-label="Scan a label with PEAK"
+                >
+                  Scan a Label
+                </motion.button>
+              </Link>
 
-            <Link href="/search">
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => track("demo_search_start", { source: "hero" })}
-                className="w-full md:w-auto px-7 py-3 bg-white/8 border border-white/22 text-white font-semibold rounded-2xl shadow-md/40 hover:bg-white/12 transition-all"
-                aria-label="Try a demo search"
-              >
-                Try a Demo Search
-              </motion.button>
-            </Link>
-          </motion.div>
+              <Link href="/search" className="w-full md:w-auto">
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => track("demo_search_start", { source: "hero" })}
+                  className="w-full px-7 py-3 bg-white/8 border border-white/30 text-white font-semibold rounded-2xl shadow-md hover:bg-white/12 transition-all"
+                  aria-label="Try a demo search"
+                >
+                  Try a Demo Search
+                </motion.button>
+              </Link>
+            </motion.div>
+          </div>
 
-          {/* Scroll cue */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 hidden md:flex flex-col items-center text-[10px] text-white/60">
+          {/* Scroll cue — desktop only so it doesn’t crowd mobile */}
+          <div className="hidden md:flex absolute bottom-4 left-1/2 -translate-x-1/2 flex-col items-center text-[10px] text-white/70">
             <span>See how PEAK works</span>
             <span className="animate-bounce text-xs">↓</span>
           </div>
         </section>
 
-        {/* The rest of the page stays unchanged */}
-
         {/* Mini social proof strip */}
         <section className="bg-white py-4 border-b border-gray-100">
           <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-500">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold text-gray-700">
                 Built using lists trusted by:
               </span>
@@ -336,21 +373,30 @@ export default function HomePage() {
               {[
                 {
                   icon: (
-                    <FaBolt size={30} className="mx-auto mb-2 text-[#46769B]" />
+                    <FaBolt
+                      size={30}
+                      className="mx-auto mb-2 text-[#46769B]"
+                    />
                   ),
                   title: "Fast Scanning",
                   desc: "Instantly scan and analyze supplement labels for potential banned substances.",
                 },
                 {
                   icon: (
-                    <FaCheckCircle size={30} className="mx-auto mb-2 text-emerald-500" />
+                    <FaCheckCircle
+                      size={30}
+                      className="mx-auto mb-2 text-emerald-500"
+                    />
                   ),
                   title: "Reliable Detection",
                   desc: "Cross-check ingredients against robust lists including synonyms, aliases, and red-flag compounds.",
                 },
                 {
                   icon: (
-                    <FaHistory size={30} className="mx-auto mb-2 text-purple-500" />
+                    <FaHistory
+                      size={30}
+                      className="mx-auto mb-2 text-purple-500"
+                    />
                   ),
                   title: "Track Your Checks",
                   desc: "Maintain a scan history so athletes and staff can demonstrate responsible verification.",
@@ -439,8 +485,7 @@ export default function HomePage() {
             </div>
 
             <div className="mt-8 text-center text-xs text-gray-600">
-              Click on our <span className="font-semibold">SmartStack</span> tab —
-              deeper insights into ingredient quality, interactions, and stack
+              Click on our <span className="font-semibold">SmartStack</span> tab — deeper insights into ingredient quality, interactions, and stack
               design.
             </div>
           </div>
@@ -470,9 +515,9 @@ export default function HomePage() {
 
             <p className="mt-6 text-gray-600 text-xs md:text-sm max-w-3xl mx-auto">
               PEAK references banned-substance information published by global
-              and professional organizations to inform its database.
-              It is not officially affiliated with, endorsed by, or acting on
-              behalf of these organizations.
+              and professional organizations to inform its database. It is not
+              officially affiliated with, endorsed by, or acting on behalf of
+              these organizations.
             </p>
           </div>
         </section>
@@ -561,7 +606,6 @@ export default function HomePage() {
             </div>
           </div>
         </section>
-
       </div>
     </>
   );

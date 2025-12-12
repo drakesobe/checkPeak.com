@@ -2,33 +2,74 @@
 import Airtable from "airtable";
 import bcrypt from "bcryptjs";
 
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
+const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
+  process.env.ATHLETE_BASE_ID
+);
+
+function escapeAirtableString(str = "") {
+  return String(str).replace(/'/g, "\\'");
+}
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  const { token, name, email, password } = req.body;
-  if (!token || !name || !email || !password) {
-    return res.status(400).json({ error: "All fields are required." });
+  const { token, name, email, password } = req.body || {};
+
+  // ✅ Token is NOT required
+  if (!name || !email || !password) {
+    return res
+      .status(400)
+      .json({ error: "Name, email, and password are required." });
   }
 
   try {
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const tableName = process.env.ATHLETE_TABLE_NAME;
+    if (!tableName) {
+      return res.status(500).json({ error: "ATHLETE_TABLE_NAME is not set." });
+    }
 
-    // Create athlete record
-    const newAthlete = await base(process.env.ATHLETE_TABLE_NAME).create({
-      Name: name,
-      Email: email,
+    const emailLower = String(email).trim().toLowerCase();
+    const safeEmail = escapeAirtableString(emailLower);
+
+    // ✅ Prevent duplicate emails
+    const existing = await base(tableName)
+      .select({
+        filterByFormula: `LOWER({Email})='${safeEmail}'`,
+        maxRecords: 1,
+      })
+      .firstPage();
+
+    if (existing.length) {
+      return res
+        .status(409)
+        .json({ error: "An account with this email already exists." });
+    }
+
+    // ✅ Hash password ON SERVER (send plain password from client)
+    const hashedPassword = await bcrypt.hash(String(password), 10);
+
+    const fields = {
+      Name: String(name).trim(),
+      Email: emailLower,
       Password: hashedPassword,
-      Token: token,
       Title: "Athlete",
-    });
+      Created: new Date().toISOString(),
+    };
+
+    // ✅ Only store token if provided
+    if (token && String(token).trim()) {
+      fields.Token = String(token).trim();
+    }
+
+    const newAthlete = await base(tableName).create(fields);
 
     return res.status(200).json({
       success: true,
       athleteId: newAthlete.id,
-      organization: token,
+      // token/org not required; return it only if present
+      organization: fields.Token || null,
     });
   } catch (err) {
     console.error("Athlete signup error:", err);

@@ -1,21 +1,23 @@
 // components/LogoutButton.js
 "use client";
 
-import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/router";
+import { useAuthContext } from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
 export default function LogoutButton() {
-  const { logout } = useAuth();
+  const { logout } = useAuthContext();
   const router = useRouter();
 
   const handleLogout = () => {
     logout();
-    router.push("/login"); // redirect to login page after logout
+    router.push("/login");
+    router.refresh(); // helps clear any cached server components
   };
 
   return (
     <motion.button
+      type="button"
       onClick={handleLogout}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}

@@ -1,9 +1,7 @@
 import { useState, createContext, useContext, useEffect } from "react";
 
-// --- Context creation
 const AuthContext = createContext(null);
 
-// --- Helper to parse user from cookie
 function getUserFromCookie() {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(/user=([^;]+)/);
@@ -16,47 +14,54 @@ function getUserFromCookie() {
   }
 }
 
-// --- AuthProvider to wrap _app.js
 export function AuthProvider({ children }) {
   const auth = useProvideAuth();
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
-// --- Custom hook to consume context
 export const useAuthContext = () => useContext(AuthContext);
 
-// --- Main hook providing auth logic
 export function useProvideAuth() {
   const [user, setUser] = useState(null);
 
-  // --- Restore persisted user from localStorage or cookies on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedUser = localStorage.getItem("user");
-      const cookieUser = getUserFromCookie();
+    if (typeof window === "undefined") return;
 
+    const storedUser = localStorage.getItem("user");
+    const cookieUser = getUserFromCookie();
+
+    try {
       if (storedUser) setUser(JSON.parse(storedUser));
       else if (cookieUser) setUser(cookieUser);
+    } catch (e) {
+      console.error("Failed restoring user", e);
     }
   }, []);
 
-  // --- Login user
   const login = async (email, password) => {
     try {
-      const res = await fetch(
-        `/api/lookupUser?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&t=${Date.now()}`,
-        { cache: "no-store" }
-      );
+      const emailNorm = String(email || "").trim().toLowerCase();
 
-      const data = await res.json();
+      const res = await fetch("/api/lookupUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          email: emailNorm,
+          password: String(password || ""),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Login failed");
 
       setUser(data.user);
 
-      // Persist login in localStorage and cookie
       if (typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(data.user));
-        document.cookie = `user=${encodeURIComponent(JSON.stringify(data.user))}; path=/;`;
+        document.cookie = `user=${encodeURIComponent(
+          JSON.stringify(data.user)
+        )}; path=/;`;
       }
 
       return data.user;
@@ -66,25 +71,30 @@ export function useProvideAuth() {
     }
   };
 
-  // --- Logout user
   const logout = () => {
     setUser(null);
     if (typeof window !== "undefined") {
       localStorage.removeItem("user");
-      document.cookie = "user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie =
+        "user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     }
   };
 
-  // --- Signup athlete
   const signupAthlete = async ({ token, name, email, password }) => {
     try {
       const res = await fetch("/api/athlete-signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, name, email, password }),
+        credentials: "same-origin",
+        body: JSON.stringify({
+          token: String(token || "").trim(),
+          name: String(name || "").trim(),
+          email: String(email || "").trim().toLowerCase(),
+          password: String(password || ""), // plain, server hashes
+        }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Athlete signup failed");
 
       const loggedInUser = await login(email, password);
@@ -93,7 +103,9 @@ export function useProvideAuth() {
         ...data,
         user: loggedInUser,
         role: "Athlete",
-        message: `Athlete account created and logged in as ${loggedInUser.Name}`,
+        message: `Athlete account created and logged in as ${
+          loggedInUser?.Name || loggedInUser?.name || "Athlete"
+        }`,
       };
     } catch (err) {
       console.error("Athlete signup error:", err);
@@ -101,16 +113,16 @@ export function useProvideAuth() {
     }
   };
 
-  // --- Signup organization
   const signupOrg = async ({ orgName, contactName, email, password }) => {
     try {
       const res = await fetch("/api/org-signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ orgName, contactName, email, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Organization signup failed");
 
       const loggedInUser = await login(email, password);
@@ -119,7 +131,9 @@ export function useProvideAuth() {
         ...data,
         user: loggedInUser,
         role: "Organization",
-        message: `Organization account created and logged in as ${loggedInUser.Name}`,
+        message: `Organization account created and logged in as ${
+          loggedInUser?.Name || loggedInUser?.name || "Organization"
+        }`,
       };
     } catch (err) {
       console.error("Organization signup error:", err);
@@ -127,13 +141,7 @@ export function useProvideAuth() {
     }
   };
 
-  return {
-    user,
-    login,
-    logout,
-    signupAthlete,
-    signupOrg,
-  };
+  return { user, login, logout, signupAthlete, signupOrg };
 }
 
 export default useProvideAuth;

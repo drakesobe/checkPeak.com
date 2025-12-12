@@ -1,7 +1,7 @@
 // pages/dashboard.js
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
@@ -120,6 +120,13 @@ export default function DashboardPage() {
   });
 
   const userEmail = user?.Email || user?.email || null;
+  const displayName = user?.Name || user?.name || "there";
+
+  const handleLogout = useCallback(() => {
+    logout();
+    // Redirect immediately (and your effect below also covers it)
+    router.push("/login");
+  }, [logout, router]);
 
   /* ------------------------------------------------------------------------ */
   /* Auth redirect + welcome banner                                           */
@@ -162,14 +169,17 @@ export default function DashboardPage() {
         if (cancelled) return;
 
         const rawScans =
-          scansData.scans || scansData.records || scansData.items || scansData.data || [];
+          scansData.scans ||
+          scansData.records ||
+          scansData.items ||
+          scansData.data ||
+          [];
 
         // Normalize scans with parsed dates + flagged detection
         const normalizedScans = rawScans.map((s, index) => {
           const fields = s.fields || {};
 
-          const id =
-            s.id || s.recordId || fields.id || fields.RecordID || index;
+          const id = s.id || s.recordId || fields.id || fields.RecordID || index;
 
           const productName =
             s.productName ||
@@ -184,10 +194,7 @@ export default function DashboardPage() {
             s.ScanName || s.scanName || fields.ScanName || fields["ScanName"];
 
           const scanDateRaw =
-            s.ScanDate ||
-            s.scanDate ||
-            fields.ScanDate ||
-            fields["ScanDate"];
+            s.ScanDate || s.scanDate || fields.ScanDate || fields["ScanDate"];
 
           const parsedDate = extractScanDate({
             ...s,
@@ -199,9 +206,7 @@ export default function DashboardPage() {
             s.bannedCount ||
             s.BannedCount ||
             fields.BannedCount ||
-            (Array.isArray(s.bannedSubstances)
-              ? s.bannedSubstances.length
-              : 0);
+            (Array.isArray(s.bannedSubstances) ? s.bannedSubstances.length : 0);
 
           const hasBanned =
             s.flagged ||
@@ -272,19 +277,8 @@ export default function DashboardPage() {
     };
   }, [userEmail, user?.Name, user?.name, user?.Organization]);
 
-  if (!user) return null;
-
-  const accountCompletion = Math.min(
-    100,
-    Math.max(0, stats.accountCompletion || 0),
-  );
-
-  const hasAnyScans = stats.totalScans > 0;
-  const hasAnySavedStacks = stats.stacksSaved > 0;
-  const hasAnyFlagged = stats.flaggedScans > 0;
-
   /* ------------------------------------------------------------------------ */
-  /* Derived activity metrics                                                 */
+  /* Derived activity metrics (HOOK SAFE)                                     */
   /* ------------------------------------------------------------------------ */
   const lastScan = useMemo(() => {
     if (!recentActivity.length) return null;
@@ -337,15 +331,9 @@ export default function DashboardPage() {
         d = extractScanDate({
           ...s,
           ScanName:
-            s.ScanName ||
-            s.scanName ||
-            fields.ScanName ||
-            fields["ScanName"],
+            s.ScanName || s.scanName || fields.ScanName || fields["ScanName"],
           ScanDate:
-            s.ScanDate ||
-            s.scanDate ||
-            fields.ScanDate ||
-            fields["ScanDate"],
+            s.ScanDate || s.scanDate || fields.ScanDate || fields["ScanDate"],
         });
       }
 
@@ -409,6 +397,15 @@ export default function DashboardPage() {
       ? Math.max(...sparklineData.map((d) => d.count), 1)
       : 1;
 
+  const accountCompletion = Math.min(
+    100,
+    Math.max(0, stats.accountCompletion || 0),
+  );
+
+  const hasAnyScans = stats.totalScans > 0;
+  const hasAnySavedStacks = stats.stacksSaved > 0;
+  const hasAnyFlagged = stats.flaggedScans > 0;
+
   /* ------------------------------------------------------------------------ */
   /* Suggested next actions                                                   */
   /* ------------------------------------------------------------------------ */
@@ -445,6 +442,16 @@ export default function DashboardPage() {
           minute: "2-digit",
         })
       : "";
+
+  /* ------------------------------------------------------------------------ */
+  /* ✅ IMPORTANT: no early return before hooks above                         */
+  /* ------------------------------------------------------------------------ */
+  if (!user) {
+    // Your redirect effect will run; this prevents hook mismatch crashes
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50" />
+    );
+  }
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                   */
@@ -519,19 +526,20 @@ export default function DashboardPage() {
             <div className="mt-4 pt-3 border-t border-gray-100">
               <div className="flex items-center gap-2 mb-2">
                 <div className="h-7 w-7 rounded-full bg-blue-50 flex items-center justify-center text-[11px] font-semibold text-blue-700">
-                  {user?.Name ? user.Name[0]?.toUpperCase() : "U"}
+                  {(displayName?.[0] || "U").toUpperCase()}
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0">
                   <span className="text-xs font-semibold text-gray-800 truncate">
-                    {user?.Name || "Athlete"}
+                    {displayName}
                   </span>
                   <span className="text-[11px] text-gray-500 truncate">
-                    {user?.Email || user?.email}
+                    {user?.Email || user?.email || ""}
                   </span>
                 </div>
               </div>
+
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-red-50 text-red-700 text-xs font-medium px-3 py-2 hover:bg-red-100 transition"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -550,13 +558,13 @@ export default function DashboardPage() {
                     Dashboard
                   </p>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                    Hey {user.Name || "there"},
+                    Hey {displayName},
                     <span className="text-blue-700 font-semibold">
                       {" "}
                       you’re in control.
                     </span>
                   </h1>
-                  {user.Organization && (
+                  {user?.Organization && (
                     <p className="mt-1 text-xs sm:text-sm text-gray-600">
                       Viewing activity for{" "}
                       <span className="font-medium text-gray-900">
@@ -588,7 +596,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-sm">
                     <h2 className="font-semibold text-emerald-800">
-                      Welcome, {user.Name || "athlete"}.
+                      Welcome, {displayName}.
                     </h2>
                     <p className="text-gray-700 mt-0.5">
                       Use PEAK to sanity-check supplements, track stacks, and
@@ -689,6 +697,7 @@ export default function DashboardPage() {
                         );
                       })}
                     </div>
+
                     <p className="text-[11px] text-gray-500">
                       Bars represent how many scans you ran each day in the last
                       week. Formats like{" "}
@@ -701,6 +710,7 @@ export default function DashboardPage() {
                       </code>{" "}
                       are parsed and bucketed automatically.
                     </p>
+
                     {lastScan?.parsedDate && (
                       <p className="text-[11px] text-gray-400">
                         Last scan: {formatDateShort(lastScan.parsedDate)}
@@ -788,6 +798,7 @@ export default function DashboardPage() {
                       </button>
                     </div>
                   )}
+
                   <p className="mt-3 text-[10px] text-gray-400">
                     PEAK does not replace official rulings or medical advice.
                     Always confirm with your governing body.
@@ -841,6 +852,7 @@ export default function DashboardPage() {
                       {recentActivity.slice(0, 5).map((item, index) => {
                         const key = item.id || item.recordId || index;
                         const fields = item.fields || {};
+
                         const name =
                           item.displayName ||
                           item.name ||
@@ -849,9 +861,7 @@ export default function DashboardPage() {
                           fields["Product Name"] ||
                           "Supplement scan";
 
-                        // Reuse parsedDate with fallback so timeline date = what bars use
-                        const parsed =
-                          item.parsedDate || extractScanDate(item);
+                        const parsed = item.parsedDate || extractScanDate(item);
 
                         const rawDateLabel =
                           item.ScanDate ||
@@ -887,16 +897,19 @@ export default function DashboardPage() {
                                 <span className="flex-1 w-px bg-gray-200 mt-1" />
                               )}
                             </div>
+
                             <div className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
                               <div className="flex flex-col">
                                 <span className="font-medium text-gray-900">
                                   {name}
                                 </span>
+
                                 {dateLabel && (
                                   <span className="text-[11px] text-gray-500">
                                     {dateLabel}
                                   </span>
                                 )}
+
                                 {isFlagged && (
                                   <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-700">
                                     <AlertTriangle className="w-3 h-3" />
@@ -904,6 +917,7 @@ export default function DashboardPage() {
                                   </span>
                                 )}
                               </div>
+
                               <button
                                 onClick={() =>
                                   router.push(`/scans/${item.id || ""}`)
@@ -962,11 +976,8 @@ export default function DashboardPage() {
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-3">
                     {savedStacks.slice(0, 5).map((stack, index) => {
                       const fields = stack.fields || {};
-                      const key =
-                        stack.id ||
-                        stack.recordId ||
-                        stack.StackID ||
-                        index;
+                      const key = stack.id || stack.recordId || stack.StackID || index;
+
                       const title =
                         stack.StackName ||
                         stack.Name ||
@@ -974,11 +985,13 @@ export default function DashboardPage() {
                         fields.StackName ||
                         fields.Name ||
                         "Saved stack";
+
                       const note =
                         stack.Notes ||
                         fields.Notes ||
                         stack.note ||
                         "Saved from SmartStack.";
+
                       const category =
                         stack.Category ||
                         stack.category ||
@@ -994,7 +1007,7 @@ export default function DashboardPage() {
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center text-[11px] font-semibold text-blue-700">
-                              {title[0]?.toUpperCase?.() || "S"}
+                              {title?.[0]?.toUpperCase?.() || "S"}
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="text-xs sm:text-sm font-medium text-gray-900 truncate">
@@ -1011,6 +1024,7 @@ export default function DashboardPage() {
                               )}
                             </div>
                           </div>
+
                           <button
                             onClick={() => router.push("/saved-stacks")}
                             className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
@@ -1020,6 +1034,7 @@ export default function DashboardPage() {
                         </div>
                       );
                     })}
+
                     {savedStacks.length > 5 && (
                       <p className="text-[11px] text-gray-500">
                         + {savedStacks.length - 5} more stacks saved.
@@ -1060,7 +1075,7 @@ function SidebarLink({ label, icon, active = false, onClick }) {
           : "text-gray-700 hover:bg-gray-100"
       }`}
     >
-      <span className="inline-flex items-center gap-2">
+      <span className="inline-flex items-center gap-2 min-w-0">
         <span
           className={`h-5 w-5 rounded-md flex items-center justify-center text-[11px] ${
             active ? "bg-white/15" : "bg-gray-100 text-gray-700"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,22 +8,23 @@ import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
 
-export default function NavBar({ activeTab, setActiveTab }) {
+export default function NavBar() {
   const pathname = usePathname();
-  const { user, login, logout } = useAuthContext();
+  const { user, logout } = useAuthContext();
 
   const [isMounted, setIsMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [hoveredTab, setHoveredTab] = useState(null);
-  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [stackIconBroken, setStackIconBroken] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [defaultAuthTab, setDefaultAuthTab] = useState("login");
+  const [stackIconBroken, setStackIconBroken] = useState(false);
+
+  const navRef = useRef(null);
 
   useEffect(() => setIsMounted(true), []);
 
-  const role = useMemo(() => (user?.Role || user?.role || "").trim(), [user]);
   const loggedIn = !!user;
+  const role = useMemo(() => (user?.Role || user?.role || "").trim(), [user]);
 
   const leftTabs = useMemo(
     () => [
@@ -34,22 +35,119 @@ export default function NavBar({ activeTab, setActiveTab }) {
     []
   );
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
+  const mainTabs = useMemo(
+    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
+    [leftTabs]
+  );
 
-  const handleAuthClick = useCallback(() => {
-    if (loggedIn) {
-      setProfileDropdownOpen((prev) => !prev);
-      return;
-    }
-    setDefaultAuthTab("login");
-    setLoginModalOpen(true);
-  }, [loggedIn]);
+  // Close dropdowns/menus when route changes
+  useEffect(() => {
+    setMenuOpen(false);
+    setProfileOpen(false);
+  }, [pathname]);
+
+  // ESC to close mobile menu + profile dropdown
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        setProfileOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Click outside closes dropdowns (desktop)
+  useEffect(() => {
+    if (!profileOpen) return;
+
+    const onDown = (e) => {
+      if (!navRef.current) return;
+      if (!navRef.current.contains(e.target)) setProfileOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [profileOpen]);
+
+  const openAuthModal = useCallback(
+    (tab = "login") => {
+      setDefaultAuthTab(tab);
+      setLoginModalOpen(true);
+    },
+    []
+  );
+
+  const handleProfileClick = useCallback(() => {
+    if (!loggedIn) return openAuthModal("login");
+    setProfileOpen((p) => !p);
+  }, [loggedIn, openAuthModal]);
+
+  const logoutAndClose = useCallback(() => {
+    logout();
+    setProfileOpen(false);
+    setMenuOpen(false);
+  }, [logout]);
+
+  const isActive = useCallback(
+    (href) => {
+      if (href === "/") return pathname === "/";
+      // treat nested routes as active too (ex: /scans/123)
+      return pathname === href || pathname?.startsWith(`${href}/`);
+    },
+    [pathname]
+  );
+
+  const NavItem = ({ tab, onClick }) => {
+    const active = isActive(tab.href);
+    const isSmartStack = tab.name === "SmartStack";
+
+    return (
+      <Link
+        href={tab.href}
+        onClick={onClick}
+        aria-current={active ? "page" : undefined}
+        className={[
+          "relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition",
+          active ? "text-[#46769B]" : "text-gray-700 hover:text-[#46769B]",
+          active ? "bg-blue-50" : "hover:bg-gray-50",
+        ].join(" ")}
+      >
+        {isSmartStack ? (
+          !stackIconBroken ? (
+            <img
+              src="/mountain.svg"
+              alt=""
+              className="h-4 w-4"
+              onError={() => setStackIconBroken(true)}
+              draggable={false}
+            />
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+              <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
+            </svg>
+          )
+        ) : null}
+
+        <span>{tab.name}</span>
+
+        {active && (
+          <motion.span
+            layoutId="navActivePill"
+            className="absolute inset-0 -z-10 rounded-2xl bg-blue-50"
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+          />
+        )}
+      </Link>
+    );
+  };
 
   const RoleLinks = () => {
     const L = ({ href, children }) => (
       <Link
         href={href}
-        className="block px-4 py-3 hover:bg-gray-50 text-gray-700"
+        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
       >
         {children}
       </Link>
@@ -89,45 +187,25 @@ export default function NavBar({ activeTab, setActiveTab }) {
 
   return (
     <>
-      <nav className="bg-white/90 backdrop-blur-md shadow-md sticky top-0 z-50" aria-label="Main navigation">
+      <nav
+        ref={navRef}
+        className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
+        aria-label="Main navigation"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          {/* ✅ Responsive Layout Fix — flex on mobile, grid on desktop */}
-          <div className="flex items-center justify-between h-16 md:grid md:grid-cols-3 md:h-24 gap-2">
-            
-            {/* LEFT NAV LINKS (Desktop) / Spacer (Mobile) */}
-            <div className="hidden md:flex items-center space-x-6 justify-start md:visible">
-              {leftTabs.map((tab) => {
-                const isActive = pathname === tab.href;
-                const showUnderline = isActive || hoveredTab === tab.name;
-                return (
-                  <Link
-                    key={tab.name}
-                    href={tab.href}
-                    aria-current={isActive ? "page" : undefined}
-                    className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-[1.02]"
-                    onMouseEnter={() => setHoveredTab(tab.name)}
-                    onMouseLeave={() => setHoveredTab(null)}
-                  >
-                    {tab.name}
-                    {showUnderline && (
-                      <motion.span
-                        layoutId="underline"
-                        className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
-                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                      />
-                    )}
-                  </Link>
-                );
-              })}
+          {/* Top bar */}
+          <div className="h-16 md:h-20 flex items-center justify-between gap-3">
+            {/* Left (desktop tabs) */}
+            <div className="hidden md:flex items-center gap-2">
+              {leftTabs.map((tab) => (
+                <NavItem key={tab.href} tab={tab} />
+              ))}
             </div>
 
-            {/* 👻 Ghost spacer to balance mobile layout */}
-            <div className="w-10 md:hidden" />
-
-            {/* CENTER LOGO */}
-            <div className="flex justify-center items-center flex-1 py-2 relative">
-              <Link href="/" aria-label="PEAK Home">
-                <div className="block md:hidden -mt-0.5">
+            {/* Center Logo */}
+            <div className="flex-1 flex justify-center">
+              <Link href="/" aria-label="PEAK Home" className="inline-flex">
+                <div className="block md:hidden">
                   <Logo size="medium" />
                 </div>
                 <div className="hidden md:block">
@@ -136,197 +214,181 @@ export default function NavBar({ activeTab, setActiveTab }) {
               </Link>
             </div>
 
-            {/* RIGHT SIDE */}
-            <div className="flex items-center justify-end">
-              {/* Desktop right nav */}
-              <div className="hidden md:flex items-center justify-end space-x-6">
-                <Link
-                  href="/smartstack"
-                  className="relative px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] transition transform hover:scale-[1.02] text-center"
-                  onMouseEnter={() => setHoveredTab("SmartStack")}
-                  onMouseLeave={() => setHoveredTab(null)}
-                  aria-current={pathname === "/smartstack" ? "page" : undefined}
-                >
-                  <span className="flex flex-col items-center leading-none">
-                    {!stackIconBroken ? (
-                      <img
-                        src="/mountain.svg"
-                        alt="SmartStack"
-                        className="h-5 w-auto mb-1"
-                        onError={() => setStackIconBroken(true)}
-                        draggable={false}
-                      />
-                    ) : (
-                      <svg viewBox="0 0 24 24" className="h-5 w-5 mb-1" aria-hidden="true">
-                        <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
-                      </svg>
-                    )}
-                    SmartStack
-                  </span>
-                  {(pathname === "/smartstack" || hoveredTab === "SmartStack") && (
-                    <motion.span
-                      layoutId="underline"
-                      className="absolute left-0 bottom-0 w-full h-1 bg-[#46769B] rounded-full shadow-[0_0_4px_#46769B33]"
-                      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                    />
-                  )}
-                </Link>
+            {/* Right (desktop) */}
+            <div className="hidden md:flex items-center gap-2">
+              <NavItem tab={{ name: "SmartStack", href: "/smartstack" }} />
 
-                {/* Profile/Login */}
-                {isMounted && (
-                  <div className="relative">
-                    <button
-                      onClick={handleAuthClick}
-                      className="px-4 py-2 rounded-2xl font-medium text-gray-700 hover:text-[#46769B] border border-gray-200 hover:border-[#46769B] transition"
-                      aria-haspopup="true"
-                      aria-expanded={profileDropdownOpen}
-                    >
-                      {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
-                    </button>
+              {isMounted && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={handleProfileClick}
+                    className="inline-flex items-center justify-center rounded-2xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
+                    aria-haspopup="menu"
+                    aria-expanded={profileOpen}
+                  >
+                    {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
+                  </button>
 
-                    <AnimatePresence>
-                      {loggedIn && profileDropdownOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="absolute right-0 mt-2 w-56 bg-white shadow-md rounded-xl border border-gray-200 z-50 overflow-hidden"
+                  <AnimatePresence>
+                    {loggedIn && profileOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+                        role="menu"
+                      >
+                        <div className="px-4 py-3 border-b border-gray-100">
+                          <p className="text-xs font-semibold text-gray-900 truncate">
+                            {user?.Name || user?.name || "Profile"}
+                          </p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {user?.Email || user?.email}
+                          </p>
+                        </div>
+
+                        <RoleLinks />
+
+                        <button
+                          onClick={logoutAndClose}
+                          className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
                         >
-                          <RoleLinks />
-                          <button
-                            onClick={() => {
-                              logout();
-                              setProfileDropdownOpen(false);
-                            }}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 text-gray-700"
-                          >
-                            Logout
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </div>
+                          Logout
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-              {/* Mobile hamburger */}
-              <div className="md:hidden flex items-center justify-end pr-1">
-                <button
-                  onClick={toggleMenu}
-                  aria-label="Toggle Menu"
-                  aria-expanded={menuOpen}
-                  className="flex flex-col justify-center items-center w-10 h-10"
-                >
+                  {/* Logged out -> open modal */}
+                  {!loggedIn && loginModalOpen === false && null}
+                </div>
+              )}
+            </div>
+
+            {/* Mobile controls */}
+            <div className="md:hidden flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (loggedIn) {
+                    setProfileOpen(false);
+                    setMenuOpen((v) => !v);
+                  } else {
+                    // If logged out, tapping menu opens menu
+                    setMenuOpen((v) => !v);
+                  }
+                }}
+                aria-label="Toggle menu"
+                aria-expanded={menuOpen}
+                className="h-10 w-10 rounded-xl border border-gray-200 grid place-items-center bg-white hover:bg-gray-50 transition"
+              >
+                <div className="flex flex-col justify-center items-center">
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transform transition duration-300 ${menuOpen ? "rotate-45 translate-y-1.5" : ""}`}
+                    className={`block w-5 h-0.5 bg-gray-700 mb-1 rounded transition ${
+                      menuOpen ? "rotate-45 translate-y-1.5" : ""
+                    }`}
                   />
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 mb-1 rounded transition-opacity duration-300 ${menuOpen ? "opacity-0" : "opacity-100"}`}
+                    className={`block w-5 h-0.5 bg-gray-700 mb-1 rounded transition ${
+                      menuOpen ? "opacity-0" : "opacity-100"
+                    }`}
                   />
                   <span
-                    className={`block w-6 h-0.5 bg-gray-700 rounded transform transition duration-300 ${menuOpen ? "-rotate-45 -translate-y-1.5" : ""}`}
+                    className={`block w-5 h-0.5 bg-gray-700 rounded transition ${
+                      menuOpen ? "-rotate-45 -translate-y-1.5" : ""
+                    }`}
                   />
-                </button>
-              </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
 
-        {/* MOBILE MENU */}
+        {/* Mobile menu panel */}
         <AnimatePresence>
           {menuOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="md:hidden overflow-hidden bg-white border-t border-gray-200 shadow-md"
+              className="md:hidden overflow-hidden bg-white border-t border-gray-200"
             >
-              <div className="px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
-                <Link href="/" aria-label="PEAK Home" onClick={() => setMenuOpen(false)} />
-                <button onClick={toggleMenu} className="p-2 rounded-lg border border-gray-200" aria-label="Close Menu">
-                  ✕
-                </button>
-              </div>
-
-              {[...leftTabs, { name: "SmartStack", href: "/smartstack" }].map((tab) => {
-                const isActive = pathname === tab.href;
-                return (
-                  <Link
-                    key={tab.name}
-                    href={tab.href}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`relative block px-6 py-4 font-medium text-gray-700 hover:text-[#46769B] ${isActive ? "bg-blue-50 text-[#46769B]" : ""}`}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {tab.name}
-                  </Link>
-                );
-              })}
-
-              {isMounted && !loggedIn && (
-                <>
-                  <button
-                    onClick={() => {
-                      setDefaultAuthTab("login");
-                      setLoginModalOpen(true);
-                      setMenuOpen(false);
-                    }}
-                    className="w-full text-left px-6 py-4 font-medium text-gray-700 hover:text-[#46769B]"
-                  >
-                    Login
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDefaultAuthTab("signup");
-                      setLoginModalOpen(true);
-                      setMenuOpen(false);
-                    }}
-                    className="w-full text-left px-6 py-4 font-medium text-gray-700 hover:text-[#46769B]"
-                  >
-                    Sign Up
-                  </button>
-                </>
-              )}
-
-              {isMounted && loggedIn && (
-                <div className="border-t border-gray-100">
-                  <div className="px-6 py-3 text-xs uppercase tracking-wide text-gray-400">
-                    {role || "Profile"}
-                  </div>
-                  <div className="pb-2">
+              <div className="px-4 sm:px-6 py-4 space-y-2">
+                {/* Nav links */}
+                <div className="grid gap-1">
+                  {mainTabs.map((tab) => (
                     <Link
-                      href="/dashboard"
-                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                      key={tab.href}
+                      href={tab.href}
+                      aria-current={isActive(tab.href) ? "page" : undefined}
                       onClick={() => setMenuOpen(false)}
+                      className={[
+                        "rounded-xl px-4 py-3 text-sm font-medium transition",
+                        isActive(tab.href)
+                          ? "bg-blue-50 text-[#46769B]"
+                          : "text-gray-700 hover:bg-gray-50 hover:text-[#46769B]",
+                      ].join(" ")}
                     >
-                      Athlete Profile
+                      {tab.name}
                     </Link>
-                    <Link
-                      href="/scans"
-                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      My Scans
-                    </Link>
-                    <Link
-                      href="/account"
-                      className="block px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Account
-                    </Link>
+                  ))}
+                </div>
+
+                <div className="border-t border-gray-100 pt-3" />
+
+                {/* Auth area */}
+                {isMounted && !loggedIn && (
+                  <div className="grid gap-2">
                     <button
+                      type="button"
                       onClick={() => {
-                        logout();
                         setMenuOpen(false);
+                        openAuthModal("login");
                       }}
-                      className="w-full text-left px-6 py-3 font-medium text-gray-700 hover:text-[#46769B]"
+                      className="w-full rounded-xl bg-[#46769B] text-white py-3 text-sm font-semibold hover:opacity-95 transition"
                     >
-                      Logout
+                      Log in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        openAuthModal("signup");
+                      }}
+                      className="w-full rounded-xl border border-gray-200 bg-white text-gray-800 py-3 text-sm font-semibold hover:bg-gray-50 transition"
+                    >
+                      Sign up
                     </button>
                   </div>
-                </div>
-              )}
+                )}
+
+                {isMounted && loggedIn && (
+                  <div className="space-y-2">
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {user?.Name || user?.name || "Profile"}
+                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">
+                        {user?.Email || user?.email}
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1 truncate">
+                        {role || "Member"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      <RoleLinks />
+                      <button
+                        onClick={logoutAndClose}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

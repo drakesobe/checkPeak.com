@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
 import { useAuthContext } from "@/hooks/useAuth";
-import bcrypt from "bcryptjs";
 
-export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login" }) {
+export default function NavBarLoginModal({
+  isOpen,
+  onClose,
+  defaultTab = "login",
+}) {
   const { login, signupAthlete } = useAuthContext();
   const router = useRouter();
 
@@ -22,14 +25,15 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // SIGNUP state (Airtable columns)
+  // SIGNUP state
   const [signupForm, setSignupForm] = useState({
     name: "",
     email: "",
     password: "",
     token: "",
+    // leaving these here in case you expand your API later
     organization: "",
-    title: "Athlete", // dropdown: Athlete, Trainer, Organization
+    title: "Athlete",
     phone: "",
   });
   const [signupLoading, setSignupLoading] = useState(false);
@@ -40,17 +44,38 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
   const passwordRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
 
-  // when modal opens, reset tab to defaultTab
+  // Reset tab on open
   useEffect(() => {
-    if (isOpen) setTab(defaultTab);
+    if (isOpen) {
+      setTab(defaultTab);
+      setLoginError("");
+      setSignupError("");
+      setSignupSuccess(null);
+    }
   }, [isOpen, defaultTab]);
 
-  // focus email on open when login selected
+  // Focus email on open when login selected
   useEffect(() => {
     if (isOpen && tab === "login" && emailRef.current) {
       emailRef.current.focus();
     }
   }, [isOpen, tab]);
+
+  const closeAndReset = () => {
+    // Clear login fields
+    setEmail("");
+    setPassword("");
+    setRememberMe(false);
+    setShowPassword(false);
+    setLoginError("");
+    setLoginLoading(false);
+
+    // Clear signup fields (optional)
+    setSignupError("");
+    setSignupSuccess(null);
+
+    onClose?.();
+  };
 
   // ---------- LOGIN ----------
   const handleLogin = async (e) => {
@@ -70,20 +95,13 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
     }
 
     try {
-      // current login() sends what you pass directly to your lookup endpoint.
-      // To work with the current API behavior (which accepted hashed password),
-      // pass password as-is (either plain or hashed depending on server expectation).
       const userData = await login(email.trim(), password);
 
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
       }
 
-      // clear fields & close
-      setEmail("");
-      setPassword("");
-      setRememberMe(false);
-      onClose();
+      closeAndReset();
     } catch (err) {
       console.error("Login error:", err);
       setLoginError(err?.message || "Login failed. Check email/password.");
@@ -94,14 +112,14 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
 
   // ---------- SIGNUP ----------
   const handleSignupChange = (e) =>
-    setSignupForm({ ...signupForm, [e.target.name]: e.target.value });
+    setSignupForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSignup = async (e) => {
     e.preventDefault();
     setSignupError("");
     setSignupLoading(true);
 
-    // basic validation
+    // Basic validation
     if (!signupForm.email || !signupForm.password || !signupForm.name) {
       setSignupError("Please provide name, email, and password.");
       setSignupLoading(false);
@@ -119,47 +137,25 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
     }
 
     try {
-      const devToken = "TEST123";
-      const token =
-        signupForm.token ||
-        (process.env.NODE_ENV === "development" ? devToken : null);
-
-      // Hash password client-side (this mirrors what you were doing).
-      // Keep the hashedPassword in a variable so we can use it to login if needed.
-      const hashedPassword = await bcrypt.hash(signupForm.password, 10);
-      const createdAt = new Date().toISOString();
-
+      /**
+       * CRITICAL FIX:
+       * Do NOT hash client-side.
+       * Your /api/athlete-signup already hashes password before saving.
+       */
       const payload = {
+        token: signupForm.token,
         name: signupForm.name,
         email: signupForm.email,
-        password: hashedPassword, // store hashed password in Airtable
-        token,
-        organization: signupForm.organization || null,
-        title: signupForm.title,
-        phone: signupForm.phone || null,
-        created: createdAt,
+        password: signupForm.password, // ✅ PLAIN password (server hashes)
       };
 
-      // send to signupAthlete (server should persist these Airtable columns)
       const data = await signupAthlete(payload);
       setSignupSuccess(data);
 
-      // ------ AUTO-LOGIN & REDIRECT FIX -------
-      // Many of your logs showed the login endpoint accepted the hashed password
-      // (it returned 200 when hashed was sent). The prior auto-login used the
-      // plain password and thus got 401. To make auto-login succeed immediately
-      // with your current backend behavior, pass the hashed password to login().
-      //
-      // If you prefer the secure approach, update the login API to bcrypt.compare
-      // the plain password with the stored hash — see note after code.
-      await login(signupForm.email.trim(), hashedPassword);
+      // Auto-login with plain password (lookupUser bcrypt.compare expects plain)
+      await login(signupForm.email.trim(), signupForm.password);
 
-      // Optionally persist user to localStorage if your login returns user data
-      // (depends on login() implementation)
-      // localStorage.setItem("user", JSON.stringify(userData));
-
-      // Redirect immediately to dashboard and close modal
-      onClose();
+      closeAndReset();
       router.push("/dashboard");
     } catch (err) {
       console.error("Signup error:", err);
@@ -169,6 +165,10 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
     }
   };
 
+  // Shared input classes to prevent white typing / theme inheritance issues
+  const inputBase =
+    "w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300";
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -177,6 +177,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          onClick={closeAndReset}
         >
           <motion.div
             className={`bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg relative max-h-[90vh] overflow-y-auto ${
@@ -198,11 +199,13 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                 : { scale: 0.9, opacity: 0, y: -50 }
             }
             transition={{ type: "spring", stiffness: 400, damping: 35 }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Close */}
             <button
               className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
-              onClick={onClose}
+              onClick={closeAndReset}
+              aria-label="Close"
             >
               ✕
             </button>
@@ -216,6 +219,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                     ? "border-blue-600 text-blue-600"
                     : "border-transparent text-gray-500"
                 }`}
+                type="button"
               >
                 Log In
               </button>
@@ -226,6 +230,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                     ? "border-blue-600 text-blue-600"
                     : "border-transparent text-gray-500"
                 }`}
+                type="button"
               >
                 Sign Up
               </button>
@@ -235,20 +240,25 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
             {tab === "login" && (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block mb-1 font-medium text-gray-800">Email</label>
+                  <label className="block mb-1 font-medium text-gray-800">
+                    Email
+                  </label>
                   <input
                     ref={emailRef}
                     type="email"
                     placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-xl"
+                    className={inputBase}
                     required
+                    autoComplete="email"
                   />
                 </div>
 
                 <div>
-                  <label className="block mb-1 font-medium text-gray-800">Password</label>
+                  <label className="block mb-1 font-medium text-gray-800">
+                    Password
+                  </label>
                   <div className="relative">
                     <input
                       ref={passwordRef}
@@ -256,12 +266,13 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                       placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-xl pr-10"
+                      className={`${inputBase} pr-10`}
                       required
+                      autoComplete="current-password"
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
+                      onClick={() => setShowPassword((v) => !v)}
                       className="absolute inset-y-0 right-3 text-sm text-gray-500 hover:text-gray-700"
                     >
                       {showPassword ? "Hide" : "Show"}
@@ -269,7 +280,9 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   </div>
                 </div>
 
-                {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
+                {loginError && (
+                  <p className="text-red-500 text-sm">{loginError}</p>
+                )}
 
                 <div className="flex items-center">
                   <label className="flex items-center space-x-2 text-gray-700">
@@ -287,7 +300,9 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   type="submit"
                   disabled={loginLoading}
                   style={{ backgroundColor: "#46769B" }}
-                  className="w-full py-3 rounded-2xl text-white font-medium"
+                  className={`w-full py-3 rounded-2xl text-white font-medium ${
+                    loginLoading ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
                 >
                   {loginLoading ? "Logging in..." : "Log In"}
                 </button>
@@ -303,8 +318,9 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   placeholder="Full Name"
                   value={signupForm.name}
                   onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
+                  className={inputBase}
                   required
+                  autoComplete="name"
                 />
                 <input
                   type="email"
@@ -312,8 +328,9 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   placeholder="Email"
                   value={signupForm.email}
                   onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
+                  className={inputBase}
                   required
+                  autoComplete="email"
                 />
                 <input
                   type="password"
@@ -321,58 +338,38 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   placeholder="Password"
                   value={signupForm.password}
                   onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
+                  className={inputBase}
                   required
+                  autoComplete="new-password"
                 />
-                <input
-                  type="text"
-                  name="phone"
-                  placeholder="Phone Number"
-                  value={signupForm.phone}
-                  onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
-                />
-                <input
-                  type="text"
-                  name="organization"
-                  placeholder="Organization"
-                  value={signupForm.organization}
-                  onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
-                />
-                <select
-                  name="title"
-                  value={signupForm.title}
-                  onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
-                >
-                  <option value="Athlete">Athlete</option>
-                  <option value="Trainer">Trainer</option>
-                  <option value="Organization">Organization</option>
-                </select>
+
                 <input
                   type="text"
                   name="token"
-                  placeholder="Signup Token (optional)"
+                  placeholder="Signup Token"
                   value={signupForm.token}
                   onChange={handleSignupChange}
-                  className="w-full p-3 border border-gray-300 rounded-xl"
+                  className={inputBase}
                 />
 
-                {signupError && <p className="text-red-500 text-sm">{signupError}</p>}
+                {signupError && (
+                  <p className="text-red-500 text-sm">{signupError}</p>
+                )}
 
                 <button
                   type="submit"
                   disabled={signupLoading}
                   style={{ backgroundColor: "#46769B" }}
-                  className="w-full py-3 rounded-2xl text-white font-medium"
+                  className={`w-full py-3 rounded-2xl text-white font-medium ${
+                    signupLoading ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
                 >
                   {signupLoading ? "Signing up..." : "Sign Up"}
                 </button>
               </form>
             )}
 
-            {/* optional success (if your backend returns and you want it shown briefly) */}
+            {/* optional success */}
             {tab === "signup" && signupSuccess && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -381,18 +378,23 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
               >
                 <h2 className="text-lg font-bold text-green-600">Success!</h2>
                 <p className="text-gray-700 mt-1">
-                  You’ve joined the organization:{" "}
-                  <strong>{signupSuccess.organization || "N/A"}</strong>
+                  Account created successfully.
                 </p>
               </motion.div>
             )}
 
-            {/* Social Logins */}
+            {/* Social Logins (placeholders) */}
             <div className="border-t border-gray-200 pt-4 space-y-2 text-center mt-4">
-              <button className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-600 font-medium border hover:bg-gray-100">
+              <button
+                type="button"
+                className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-600 font-medium border hover:bg-gray-100"
+              >
                 Continue with Google
               </button>
-              <button className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-600 font-medium border hover:bg-gray-100">
+              <button
+                type="button"
+                className="w-full px-6 py-3 rounded-2xl bg-gray-50 text-gray-600 font-medium border hover:bg-gray-100"
+              >
                 Continue with Apple
               </button>
             </div>

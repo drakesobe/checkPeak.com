@@ -1,7 +1,7 @@
 // pages/dashboard.js
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
@@ -71,7 +71,7 @@ function extractScanDate(scan) {
     scan.scannedAt ||
     scan.ScanTimestamp ||
     scan.DateScanned ||
-    scan.created_time || // Airtable-style
+    scan.created_time ||
     null;
 
   if (!raw) return null;
@@ -81,9 +81,7 @@ function extractScanDate(scan) {
   // Strip "Scan - " prefix from ScanName
   if (str.toLowerCase().startsWith("scan -")) {
     const idx = str.indexOf("-");
-    if (idx !== -1) {
-      str = str.slice(idx + 1).trim();
-    }
+    if (idx !== -1) str = str.slice(idx + 1).trim();
   }
 
   // Prefer explicit US date/time parsing
@@ -95,10 +93,6 @@ function extractScanDate(scan) {
   if (Number.isNaN(d.getTime())) return null;
   return d;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Dashboard Page                                                             */
-/* -------------------------------------------------------------------------- */
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -119,14 +113,9 @@ export default function DashboardPage() {
     flaggedScans: 0,
   });
 
-  const userEmail = user?.Email || user?.email || null;
-  const displayName = user?.Name || user?.name || "there";
+  const [showAllActionsMobile, setShowAllActionsMobile] = useState(false);
 
-  const handleLogout = useCallback(() => {
-    logout();
-    // Redirect immediately (and your effect below also covers it)
-    router.push("/login");
-  }, [logout, router]);
+  const userEmail = user?.Email || user?.email || null;
 
   /* ------------------------------------------------------------------------ */
   /* Auth redirect + welcome banner                                           */
@@ -138,7 +127,7 @@ export default function DashboardPage() {
     }
 
     setShowWelcome(true);
-    const timer = setTimeout(() => setShowWelcome(false), 3000);
+    const timer = setTimeout(() => setShowWelcome(false), 2500);
     return () => clearTimeout(timer);
   }, [user, router]);
 
@@ -162,9 +151,7 @@ export default function DashboardPage() {
         ]);
 
         const scansData = scansRes.ok ? await scansRes.json() : { scans: [] };
-        const savedData = savedRes.ok
-          ? await savedRes.json()
-          : { savedStacks: [] };
+        const savedData = savedRes.ok ? await savedRes.json() : { savedStacks: [] };
 
         if (cancelled) return;
 
@@ -277,8 +264,16 @@ export default function DashboardPage() {
     };
   }, [userEmail, user?.Name, user?.name, user?.Organization]);
 
+  if (!user) return null;
+
+  const accountCompletion = Math.min(100, Math.max(0, stats.accountCompletion || 0));
+
+  const hasAnyScans = stats.totalScans > 0;
+  const hasAnySavedStacks = stats.stacksSaved > 0;
+  const hasAnyFlagged = stats.flaggedScans > 0;
+
   /* ------------------------------------------------------------------------ */
-  /* Derived activity metrics (HOOK SAFE)                                     */
+  /* Derived activity metrics                                                 */
   /* ------------------------------------------------------------------------ */
   const lastScan = useMemo(() => {
     if (!recentActivity.length) return null;
@@ -286,9 +281,7 @@ export default function DashboardPage() {
       (s) => s.parsedDate && !Number.isNaN(s.parsedDate.getTime()),
     );
     if (!withDates.length) return null;
-    return withDates.sort(
-      (a, b) => b.parsedDate.getTime() - a.parsedDate.getTime(),
-    )[0];
+    return withDates.sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime())[0];
   }, [recentActivity]);
 
   /* ------------------------------------------------------------------------ */
@@ -308,58 +301,25 @@ export default function DashboardPage() {
       const key = d.toISOString().slice(0, 10);
       days.push({
         key,
-        label: d.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
+        label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         count: 0,
       });
     }
 
-    // Map scans per day using parsedDate, with defensive fallbacks
     const countsByDate = scans.reduce((acc, s) => {
       const fields = s.fields || {};
 
-      // 1) Already-parsed date from normalization
       let d =
         s.parsedDate instanceof Date && !Number.isNaN(s.parsedDate.getTime())
           ? s.parsedDate
           : null;
 
-      // 2) Fallback: run extractScanDate against Airtable-style fields
       if (!d) {
         d = extractScanDate({
           ...s,
-          ScanName:
-            s.ScanName || s.scanName || fields.ScanName || fields["ScanName"],
-          ScanDate:
-            s.ScanDate || s.scanDate || fields.ScanDate || fields["ScanDate"],
+          ScanName: s.ScanName || s.scanName || fields.ScanName || fields["ScanName"],
+          ScanDate: s.ScanDate || s.scanDate || fields.ScanDate || fields["ScanDate"],
         });
-      }
-
-      // 3) Final fallback: try any existing raw date-ish field
-      if (!d) {
-        const raw =
-          s.date ||
-          s.Date ||
-          fields.Date ||
-          s.createdAt ||
-          s.created_at ||
-          s.timestamp ||
-          s.time ||
-          s.scannedAt ||
-          s.ScanTimestamp ||
-          s.DateScanned ||
-          s.created_time ||
-          null;
-
-        if (raw) {
-          const tmp =
-            typeof raw === "string"
-              ? parseUsDateTime(raw) || new Date(raw)
-              : new Date(raw);
-          if (!Number.isNaN(tmp.getTime())) d = tmp;
-        }
       }
 
       if (!d || Number.isNaN(d.getTime())) return acc;
@@ -372,11 +332,7 @@ export default function DashboardPage() {
     const hasAnyDated = Object.values(countsByDate).some((c) => c > 0);
 
     if (hasAnyDated) {
-      // Normal path: fill days with real counts
-      return days.map((day) => ({
-        ...day,
-        count: countsByDate[day.key] || 0,
-      }));
+      return days.map((day) => ({ ...day, count: countsByDate[day.key] || 0 }));
     }
 
     // Fallback: no usable dates → distribute latest scans visually
@@ -384,30 +340,17 @@ export default function DashboardPage() {
     const latest = scans.slice(-7);
     latest.forEach((_, idx) => {
       const targetIndex = buckets.length - 1 - idx;
-      if (targetIndex >= 0) {
-        buckets[targetIndex].count += 1;
-      }
+      if (targetIndex >= 0) buckets[targetIndex].count += 1;
     });
 
     return buckets;
   }, [recentActivity]);
 
   const maxSparkCount =
-    sparklineData.length > 0
-      ? Math.max(...sparklineData.map((d) => d.count), 1)
-      : 1;
-
-  const accountCompletion = Math.min(
-    100,
-    Math.max(0, stats.accountCompletion || 0),
-  );
-
-  const hasAnyScans = stats.totalScans > 0;
-  const hasAnySavedStacks = stats.stacksSaved > 0;
-  const hasAnyFlagged = stats.flaggedScans > 0;
+    sparklineData.length > 0 ? Math.max(...sparklineData.map((d) => d.count), 1) : 1;
 
   /* ------------------------------------------------------------------------ */
-  /* Suggested next actions                                                   */
+  /* Suggested next actions (reduced noise on mobile)                          */
   /* ------------------------------------------------------------------------ */
   const suggestedActions = [
     !hasAnyScans && {
@@ -426,11 +369,14 @@ export default function DashboardPage() {
       onClick: () => router.push("/scans"),
     },
     accountCompletion < 100 && {
-      label: "Finish setting up your account & team details",
+      label: "Finish setting up your account",
       cta: "Complete profile",
       onClick: () => router.push("/account"),
     },
   ].filter(Boolean);
+
+  const primaryAction = suggestedActions[0] || null;
+  const extraActions = suggestedActions.slice(1);
 
   const formatDateShort = (d) =>
     d
@@ -443,15 +389,10 @@ export default function DashboardPage() {
         })
       : "";
 
-  /* ------------------------------------------------------------------------ */
-  /* ✅ IMPORTANT: no early return before hooks above                         */
-  /* ------------------------------------------------------------------------ */
-  if (!user) {
-    // Your redirect effect will run; this prevents hook mismatch crashes
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50" />
-    );
-  }
+  const handleLogout = () => {
+    logout();
+    router.push("/login");
+  };
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                   */
@@ -460,10 +401,10 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
       <div className="max-w-7xl mx-auto px-4 py-6 lg:py-8">
-        {/* Layout: Sidebar + Main */}
+        {/* Layout: Sidebar (desktop only) + Main */}
         <div className="grid gap-6 lg:grid-cols-[240px,1fr]">
-          {/* Sidebar */}
-          <aside className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-col gap-4 h-fit">
+          {/* Sidebar (desktop only to reduce mobile noise) */}
+          <aside className="hidden lg:flex bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-sm p-4 flex-col gap-4 h-fit">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-slate-900 flex items-center justify-center text-white text-sm font-bold">
@@ -473,9 +414,7 @@ export default function DashboardPage() {
                   <span className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
                     PEAK
                   </span>
-                  <span className="text-xs text-gray-700">
-                    Supplement Safety
-                  </span>
+                  <span className="text-xs text-gray-700">Supplement Safety</span>
                 </div>
               </div>
             </div>
@@ -514,6 +453,7 @@ export default function DashboardPage() {
                 icon={<Sparkles className="w-4 h-4" />}
                 onClick={() => router.push("/smartstack")}
               />
+
               <div className="mt-3 border-t border-gray-100 pt-2">
                 <SidebarLink
                   label="Account settings"
@@ -526,18 +466,17 @@ export default function DashboardPage() {
             <div className="mt-4 pt-3 border-t border-gray-100">
               <div className="flex items-center gap-2 mb-2">
                 <div className="h-7 w-7 rounded-full bg-blue-50 flex items-center justify-center text-[11px] font-semibold text-blue-700">
-                  {(displayName?.[0] || "U").toUpperCase()}
+                  {user?.Name ? user.Name[0]?.toUpperCase() : "U"}
                 </div>
-                <div className="flex flex-col min-w-0">
+                <div className="flex flex-col">
                   <span className="text-xs font-semibold text-gray-800 truncate">
-                    {displayName}
+                    {user?.Name || "Athlete"}
                   </span>
                   <span className="text-[11px] text-gray-500 truncate">
-                    {user?.Email || user?.email || ""}
+                    {user?.Email || user?.email}
                   </span>
                 </div>
               </div>
-
               <button
                 onClick={handleLogout}
                 className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-red-50 text-red-700 text-xs font-medium px-3 py-2 hover:bg-red-100 transition"
@@ -550,7 +489,7 @@ export default function DashboardPage() {
 
           {/* Main content */}
           <main className="space-y-6 lg:space-y-7">
-            {/* Header + welcome */}
+            {/* Header */}
             <header className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
@@ -558,19 +497,13 @@ export default function DashboardPage() {
                     Dashboard
                   </p>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                    Hey {displayName},
-                    <span className="text-blue-700 font-semibold">
-                      {" "}
-                      you’re in control.
-                    </span>
+                    Hey {user?.Name || "there"},
+                    <span className="text-blue-700 font-semibold"> you’re in control.</span>
                   </h1>
                   {user?.Organization && (
                     <p className="mt-1 text-xs sm:text-sm text-gray-600">
                       Viewing activity for{" "}
-                      <span className="font-medium text-gray-900">
-                        {user.Organization}
-                      </span>
-                      .
+                      <span className="font-medium text-gray-900">{user.Organization}</span>.
                     </p>
                   )}
                 </div>
@@ -583,12 +516,11 @@ export default function DashboardPage() {
                       style={{ width: `${accountCompletion}%` }}
                     />
                   </div>
-                  <span className="text-[11px] text-gray-500">
-                    {accountCompletion}% complete
-                  </span>
+                  <span className="text-[11px] text-gray-500">{accountCompletion}% complete</span>
                 </div>
               </div>
 
+              {/* Welcome (short, not noisy) */}
               {showWelcome && (
                 <div className="p-4 sm:p-5 bg-emerald-50 border border-emerald-200 rounded-2xl shadow-sm flex items-start gap-3">
                   <div className="mt-0.5 h-7 w-7 flex items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm">
@@ -596,89 +528,82 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-sm">
                     <h2 className="font-semibold text-emerald-800">
-                      Welcome, {displayName}.
+                      Welcome, {user?.Name || "athlete"}.
                     </h2>
                     <p className="text-gray-700 mt-0.5">
-                      Use PEAK to sanity-check supplements, track stacks, and
-                      keep your performance clean.
+                      Scan labels, save stacks, and keep your performance clean.
                     </p>
                   </div>
                 </div>
               )}
             </header>
 
-            {/* Top summary strip */}
+            {/* 4 Stat cards (keep) */}
             <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <StatCard
                 label="Total scans"
                 value={stats.totalScans}
                 icon={<ScanBarcode className="w-4 h-4 text-blue-600" />}
                 tone="primary"
-                subLabel="All-time checks you’ve run"
+                subLabel="All-time checks"
               />
               <StatCard
                 label="Recent activity"
                 value={stats.recentSearches}
                 icon={<Activity className="w-4 h-4 text-indigo-600" />}
                 tone="neutral"
-                subLabel="Scans in the last 14 days"
+                subLabel="Last 14 days"
               />
               <StatCard
                 label="Saved stacks"
                 value={stats.stacksSaved}
                 icon={<Bookmark className="w-4 h-4 text-emerald-600" />}
                 tone="success"
-                subLabel="Stacks you’re tracking"
+                subLabel="Tracking"
               />
               <StatCard
                 label="Flagged scans"
                 value={stats.flaggedScans}
                 icon={<AlertTriangle className="w-4 h-4 text-amber-500" />}
                 tone={stats.flaggedScans > 0 ? "warning" : "neutral"}
-                subLabel="Scans with potential issues"
+                subLabel="Needs review"
               />
             </section>
 
-            {/* Mid layout: sparkline + next actions + alerts */}
+            {/* Reduced-noise mid layout */}
             <section className="grid gap-6 lg:grid-cols-[1.8fr,1.2fr]">
-              {/* Scan activity sparkline */}
+              {/* Scan activity (bars) */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
                       Scan activity
                     </p>
-                    <p className="text-sm text-gray-700">
-                      How often you’ve been verifying supplements.
-                    </p>
+                    <p className="text-sm text-gray-700">Last 7 days</p>
                   </div>
                   <button
                     onClick={() => router.push("/scans")}
                     className="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-700 hover:underline"
                   >
-                    View scan history
+                    View
                     <ChevronRight className="w-3 h-3" />
                   </button>
                 </div>
 
                 {sparklineData.length === 0 ? (
-                  <div className="mt-2 text-xs text-gray-500">
-                    {loadingScans
-                      ? "Syncing your scan history…"
-                      : "When you start scanning, you’ll see your last 7 days of activity here."}
+                  <div className="mt-1 text-xs text-gray-500">
+                    {loadingScans ? "Syncing your scan history…" : "No scans yet."}
                   </div>
                 ) : (
-                  <div className="mt-1 space-y-3">
-                    <div className="flex h-32 items-end gap-2">
-                      {sparklineData.map((day) => {
+                  <div className="mt-1">
+                    <div className="flex h-20 sm:h-24 md:h-32 items-end gap-2">
+                      {sparklineData.map((day, idx) => {
                         const ratio = day.count / maxSparkCount;
-                        const heightPx = Math.max(10, ratio * 72); // 10–72px
+                        const heightPx = Math.max(8, ratio * 72);
+                        const showMobileLabel = idx === 0 || idx === sparklineData.length - 1;
 
                         return (
-                          <div
-                            key={day.key}
-                            className="flex flex-1 flex-col items-center gap-1"
-                          >
+                          <div key={day.key} className="flex flex-1 flex-col items-center gap-1">
                             <div
                               className={`w-4 sm:w-6 rounded-t-md ${
                                 day.count > 0
@@ -687,32 +612,25 @@ export default function DashboardPage() {
                               } transition-all`}
                               style={{ height: `${heightPx}px` }}
                             />
-                            <span className="text-[10px] text-gray-500">
+                            {/* Desktop labels */}
+                            <span className="hidden md:block text-[10px] text-gray-500">
                               {day.label}
                             </span>
-                            <span className="text-[10px] font-semibold text-gray-700">
-                              {day.count || "–"}
+                            {/* Mobile labels: only first & last */}
+                            <span
+                              className={`md:hidden text-[10px] text-gray-500 ${
+                                showMobileLabel ? "block" : "invisible"
+                              }`}
+                            >
+                              {day.label}
                             </span>
                           </div>
                         );
                       })}
                     </div>
 
-                    <p className="text-[11px] text-gray-500">
-                      Bars represent how many scans you ran each day in the last
-                      week. Formats like{" "}
-                      <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 text-[10px]">
-                        Scan - 11/15/2025, 19:39:30
-                      </code>{" "}
-                      and{" "}
-                      <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 text-[10px]">
-                        11/15/2025 19:39
-                      </code>{" "}
-                      are parsed and bucketed automatically.
-                    </p>
-
                     {lastScan?.parsedDate && (
-                      <p className="text-[11px] text-gray-400">
+                      <p className="mt-2 text-[11px] text-gray-400">
                         Last scan: {formatDateShort(lastScan.parsedDate)}
                       </p>
                     )}
@@ -720,32 +638,55 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Next steps + alerts */}
+              {/* Next step (compact) + Alerts (conditional on mobile) */}
               <div className="space-y-4">
-                {/* Next best actions */}
+                {/* Next step */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                      Next best actions
-                    </p>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-blue-600" />
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                        Next step
+                      </p>
+                    </div>
+
+                    {extraActions.length > 0 && (
+                      <button
+                        onClick={() => setShowAllActionsMobile((v) => !v)}
+                        className="md:hidden text-[11px] font-semibold text-blue-700 hover:underline"
+                      >
+                        {showAllActionsMobile ? "Less" : "More"}
+                      </button>
+                    )}
                   </div>
 
-                  {suggestedActions.length === 0 ? (
-                    <p className="text-xs text-gray-600">
-                      You’re all caught up. Keep scanning new products to stay
-                      ahead of ingredient changes.
-                    </p>
+                  {!primaryAction ? (
+                    <p className="text-xs text-gray-600">You’re all caught up.</p>
                   ) : (
-                    <ul className="space-y-2">
-                      {suggestedActions.map((item, idx) => (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
+                      <span className="text-xs text-gray-700">{primaryAction.label}</span>
+                      <button
+                        onClick={primaryAction.onClick}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline shrink-0"
+                      >
+                        {primaryAction.cta}
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {(showAllActionsMobile || extraActions.length > 0) && (
+                    <ul
+                      className={`mt-2 space-y-2 ${
+                        showAllActionsMobile ? "block" : "hidden md:block"
+                      }`}
+                    >
+                      {extraActions.map((item, idx) => (
                         <li
                           key={idx}
                           className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
                         >
-                          <span className="text-xs text-gray-700">
-                            {item.label}
-                          </span>
+                          <span className="text-xs text-gray-700">{item.label}</span>
                           <button
                             onClick={item.onClick}
                             className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
@@ -759,68 +700,90 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Risk & alerts */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                      Risk & alerts
-                    </p>
-                  </div>
+                {/* Risk & alerts: only show on mobile if flagged. Always show on md+ */}
+                {(stats.flaggedScans > 0 || true) && (
+                  <>
+                    {/* Mobile: only if flagged */}
+                    {stats.flaggedScans > 0 && (
+                      <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-500" />
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                            Alerts
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-700">
+                          You have{" "}
+                          <span className="font-semibold text-amber-700">
+                            {stats.flaggedScans} flagged scan{stats.flaggedScans > 1 ? "s" : ""}
+                          </span>
+                          . Review them before using those products.
+                        </p>
+                        <button
+                          onClick={() => router.push("/scans")}
+                          className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
+                        >
+                          Review flagged scans
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
 
-                  {stats.flaggedScans === 0 ? (
-                    <p className="text-xs text-gray-600">
-                      No scans currently marked with potential banned substances
-                      based on your history. Always verify with your governing
-                      body for official rulings.
-                    </p>
-                  ) : (
-                    <div className="space-y-2 text-xs text-gray-700">
-                      <p>
-                        You have{" "}
-                        <span className="font-semibold text-amber-700">
-                          {stats.flaggedScans} scan
-                          {stats.flaggedScans > 1 ? "s" : ""} with potential
-                          issues
-                        </span>{" "}
-                        based on the ingredient matches.
+                    {/* Desktop/tablet: show the fuller card */}
+                    <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Risk & alerts
+                        </p>
+                      </div>
+
+                      {stats.flaggedScans === 0 ? (
+                        <p className="text-xs text-gray-600">
+                          No scans currently marked with potential banned substances based on your
+                          history. Always verify with your governing body for official rulings.
+                        </p>
+                      ) : (
+                        <div className="space-y-2 text-xs text-gray-700">
+                          <p>
+                            You have{" "}
+                            <span className="font-semibold text-amber-700">
+                              {stats.flaggedScans} scan{stats.flaggedScans > 1 ? "s" : ""} with
+                              potential issues
+                            </span>{" "}
+                            based on ingredient matches.
+                          </p>
+                          <p>Prioritize reviewing these with your trainer/medical/compliance staff.</p>
+                          <button
+                            onClick={() => router.push("/scans")}
+                            className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
+                          >
+                            Go to flagged scans
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      <p className="mt-3 text-[10px] text-gray-400">
+                        PEAK does not replace official rulings or medical advice.
                       </p>
-                      <p>
-                        Prioritize reviewing these products with your athletic
-                        trainer, medical professional, or compliance staff.
-                      </p>
-                      <button
-                        onClick={() => router.push("/scans")}
-                        className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
-                      >
-                        Go to flagged scans
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
                     </div>
-                  )}
-
-                  <p className="mt-3 text-[10px] text-gray-400">
-                    PEAK does not replace official rulings or medical advice.
-                    Always confirm with your governing body.
-                  </p>
-                </div>
+                  </>
+                )}
               </div>
             </section>
 
-            {/* Bottom layout: recent scans + saved stacks preview */}
+            {/* Lower noise: Simple lists on mobile, richer on md+ */}
             <section className="grid gap-6 lg:grid-cols-2">
-              {/* Recent scans timeline */}
+              {/* Recent scans */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm sm:text-base font-semibold text-gray-900">
-                    Recent scans
-                  </h2>
+                  <h2 className="text-sm sm:text-base font-semibold text-gray-900">Recent scans</h2>
                   {recentActivity.length > 0 && (
                     <button
                       onClick={() => router.push("/scans")}
                       className="text-[11px] font-medium text-blue-700 hover:underline"
                     >
-                      View all scans
+                      View all
                     </button>
                   )}
                 </div>
@@ -831,13 +794,8 @@ export default function DashboardPage() {
                   </div>
                 ) : recentActivity.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-300 bg-white/70 p-4 text-xs sm:text-sm text-gray-500">
-                    <p className="font-medium text-gray-700 mb-1">
-                      No scans yet.
-                    </p>
-                    <p className="mb-3">
-                      When you scan a supplement label, you&apos;ll see your
-                      history here as a simple timeline.
-                    </p>
+                    <p className="font-medium text-gray-700 mb-1">No scans yet.</p>
+                    <p className="mb-3">Scan a label to start building your history.</p>
                     <button
                       onClick={() => router.push("/ocr")}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600 text-white text-[11px] sm:text-xs font-medium hover:bg-blue-500 transition"
@@ -847,12 +805,11 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-                    <div className="space-y-3">
-                      {recentActivity.slice(0, 5).map((item, index) => {
-                        const key = item.id || item.recordId || index;
+                  <>
+                    {/* Mobile: simple list (no timeline) */}
+                    <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-2">
+                      {recentActivity.slice(0, 3).map((item, idx) => {
                         const fields = item.fields || {};
-
                         const name =
                           item.displayName ||
                           item.name ||
@@ -862,91 +819,109 @@ export default function DashboardPage() {
                           "Supplement scan";
 
                         const parsed = item.parsedDate || extractScanDate(item);
-
-                        const rawDateLabel =
-                          item.ScanDate ||
-                          item.ScanName ||
-                          item.date ||
-                          item.Date ||
-                          fields.Date ||
-                          item.createdAt ||
-                          item.created_at ||
-                          item.timestamp ||
-                          item.time ||
-                          item.scannedAt ||
-                          item.ScanTimestamp ||
-                          item.DateScanned ||
-                          item.created_time ||
-                          "";
-
                         const dateLabel =
                           parsed && !Number.isNaN(parsed.getTime())
                             ? formatDateShort(parsed)
-                            : rawDateLabel;
-
-                        const isFlagged = item.hasBanned;
+                            : "";
 
                         return (
-                          <div
-                            key={key}
-                            className="flex items-start gap-3 text-xs sm:text-sm"
+                          <button
+                            key={item.id || idx}
+                            type="button"
+                            onClick={() => router.push(`/scans/${item.id || ""}`)}
+                            className="w-full text-left rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
                           >
-                            <div className="flex flex-col items-center pt-1">
-                              <span className="h-2 w-2 rounded-full bg-blue-600" />
-                              {index < 4 && (
-                                <span className="flex-1 w-px bg-gray-200 mt-1" />
-                              )}
-                            </div>
-
-                            <div className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-gray-900">
-                                  {name}
-                                </span>
-
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-gray-900 truncate">{name}</p>
                                 {dateLabel && (
-                                  <span className="text-[11px] text-gray-500">
-                                    {dateLabel}
-                                  </span>
-                                )}
-
-                                {isFlagged && (
-                                  <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-700">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    Potential issue detected
-                                  </span>
+                                  <p className="text-[11px] text-gray-500 mt-0.5">{dateLabel}</p>
                                 )}
                               </div>
-
-                              <button
-                                onClick={() =>
-                                  router.push(`/scans/${item.id || ""}`)
-                                }
-                                className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
-                              >
-                                View
-                              </button>
+                              {item.hasBanned ? (
+                                <span className="text-[11px] font-semibold text-amber-700">
+                                  Flagged
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-blue-700 font-semibold">View</span>
+                              )}
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
-                  </div>
+
+                    {/* Desktop/tablet: keep richer card */}
+                    <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
+                      <div className="space-y-3">
+                        {recentActivity.slice(0, 5).map((item, index) => {
+                          const key = item.id || item.recordId || index;
+                          const fields = item.fields || {};
+                          const name =
+                            item.displayName ||
+                            item.name ||
+                            item.productName ||
+                            fields.ProductName ||
+                            fields["Product Name"] ||
+                            "Supplement scan";
+
+                          const parsed = item.parsedDate || extractScanDate(item);
+                          const dateLabel =
+                            parsed && !Number.isNaN(parsed.getTime())
+                              ? formatDateShort(parsed)
+                              : "";
+
+                          const isFlagged = item.hasBanned;
+
+                          return (
+                            <div
+                              key={key}
+                              className="flex items-start gap-3 text-xs sm:text-sm"
+                            >
+                              <div className="flex flex-col items-center pt-1">
+                                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                                {index < 4 && <span className="flex-1 w-px bg-gray-200 mt-1" />}
+                              </div>
+
+                              <div className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-gray-900">{name}</span>
+                                  {dateLabel && (
+                                    <span className="text-[11px] text-gray-500">{dateLabel}</span>
+                                  )}
+                                  {isFlagged && (
+                                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-700">
+                                      <AlertTriangle className="w-3 h-3" />
+                                      Potential issue detected
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => router.push(`/scans/${item.id || ""}`)}
+                                  className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
+                                >
+                                  View
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
 
-              {/* Saved stacks preview */}
+              {/* Saved stacks */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm sm:text-base font-semibold text-gray-900">
-                    Saved stacks
-                  </h2>
+                  <h2 className="text-sm sm:text-base font-semibold text-gray-900">Saved stacks</h2>
                   {savedStacks.length > 0 && (
                     <button
                       onClick={() => router.push("/saved-stacks")}
                       className="text-[11px] font-medium text-blue-700 hover:underline"
                     >
-                      Manage stacks
+                      Manage
                     </button>
                   )}
                 </div>
@@ -957,13 +932,8 @@ export default function DashboardPage() {
                   </div>
                 ) : savedStacks.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-300 bg-white/70 p-4 text-xs sm:text-sm text-gray-500">
-                    <p className="font-medium text-gray-700 mb-1">
-                      No stacks saved yet.
-                    </p>
-                    <p>
-                      Use SmartStack to explore formulations and save stacks
-                      you want to monitor or compare later.
-                    </p>
+                    <p className="font-medium text-gray-700 mb-1">No stacks saved yet.</p>
+                    <p>Use SmartStack to explore and save stacks to track.</p>
                     <button
                       onClick={() => router.push("/smartstack")}
                       className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 text-white text-[11px] sm:text-xs font-medium hover:bg-gray-800 transition"
@@ -973,87 +943,132 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-3">
-                    {savedStacks.slice(0, 5).map((stack, index) => {
-                      const fields = stack.fields || {};
-                      const key = stack.id || stack.recordId || stack.StackID || index;
+                  <>
+                    {/* Mobile: show just 1 item */}
+                    <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-2">
+                      {savedStacks.slice(0, 1).map((stack, idx) => {
+                        const fields = stack.fields || {};
+                        const key = stack.id || stack.recordId || idx;
+                        const title =
+                          stack.StackName ||
+                          stack.Name ||
+                          stack.name ||
+                          fields.StackName ||
+                          fields.Name ||
+                          "Saved stack";
 
-                      const title =
-                        stack.StackName ||
-                        stack.Name ||
-                        stack.name ||
-                        fields.StackName ||
-                        fields.Name ||
-                        "Saved stack";
+                        const note =
+                          stack.Notes || fields.Notes || stack.note || "Saved from SmartStack.";
 
-                      const note =
-                        stack.Notes ||
-                        fields.Notes ||
-                        stack.note ||
-                        "Saved from SmartStack.";
-
-                      const category =
-                        stack.Category ||
-                        stack.category ||
-                        fields.Category ||
-                        fields["Category"] ||
-                        stack.Type ||
-                        null;
-
-                      return (
-                        <div
-                          key={key}
-                          className="border border-gray-100 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 bg-gray-50"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center text-[11px] font-semibold text-blue-700">
-                              {title?.[0]?.toUpperCase?.() || "S"}
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-xs sm:text-sm font-medium text-gray-900 truncate">
-                                {title}
-                              </span>
-                              <span className="text-[11px] text-gray-500 line-clamp-1">
-                                {note}
-                              </span>
-                              {category && (
-                                <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-gray-500">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                  {category}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
+                        return (
                           <button
+                            key={key}
+                            type="button"
                             onClick={() => router.push("/saved-stacks")}
-                            className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
+                            className="w-full text-left rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
                           >
-                            Open
+                            <p className="text-xs font-semibold text-gray-900 truncate">{title}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">{note}</p>
                           </button>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
 
-                    {savedStacks.length > 5 && (
-                      <p className="text-[11px] text-gray-500">
-                        + {savedStacks.length - 5} more stacks saved.
-                      </p>
-                    )}
-                  </div>
+                      {savedStacks.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => router.push("/saved-stacks")}
+                          className="text-[11px] font-semibold text-blue-700 hover:underline"
+                        >
+                          + {savedStacks.length - 1} more saved stacks
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Desktop/tablet: show up to 5 */}
+                    <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-3">
+                      {savedStacks.slice(0, 5).map((stack, index) => {
+                        const fields = stack.fields || {};
+                        const key = stack.id || stack.recordId || stack.StackID || index;
+                        const title =
+                          stack.StackName ||
+                          stack.Name ||
+                          stack.name ||
+                          fields.StackName ||
+                          fields.Name ||
+                          "Saved stack";
+
+                        const note =
+                          stack.Notes || fields.Notes || stack.note || "Saved from SmartStack.";
+
+                        const category =
+                          stack.Category ||
+                          stack.category ||
+                          fields.Category ||
+                          fields["Category"] ||
+                          stack.Type ||
+                          null;
+
+                        return (
+                          <div
+                            key={key}
+                            className="border border-gray-100 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 bg-gray-50"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center text-[11px] font-semibold text-blue-700">
+                                {title[0]?.toUpperCase?.() || "S"}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-900 truncate">
+                                  {title}
+                                </span>
+                                <span className="text-[11px] text-gray-500 line-clamp-1">
+                                  {note}
+                                </span>
+                                {category && (
+                                  <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-gray-500">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                    {category}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => router.push("/saved-stacks")}
+                              className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
+                            >
+                              Open
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {savedStacks.length > 5 && (
+                        <p className="text-[11px] text-gray-500">
+                          + {savedStacks.length - 5} more stacks saved.
+                        </p>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </section>
 
-            {/* Small disclaimer */}
-            <section className="pt-2">
+            {/* Minimal disclaimer */}
+            <section className="pt-1">
               <p className="text-[10px] text-gray-500 max-w-xl">
-                PEAK is a tool to help you screen supplement labels and
-                understand potential risks. It is not a substitute for official
-                rulings, lab testing, or medical advice. Always confirm with
-                your governing body, team medical staff, or trusted professional
-                before consuming any product.
+                PEAK helps screen supplement labels and understand potential risks. It is not a
+                substitute for official rulings, lab testing, or medical advice.
               </p>
+            </section>
+
+            {/* Mobile-only quick logout (since sidebar is hidden on mobile) */}
+            <section className="lg:hidden">
+              <button
+                onClick={handleLogout}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-red-50 text-red-700 text-sm font-semibold px-4 py-3 hover:bg-red-100 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
             </section>
           </main>
         </div>
@@ -1063,19 +1078,16 @@ export default function DashboardPage() {
 }
 
 /* ----------------- Sidebar link component ----------------- */
-
 function SidebarLink({ label, icon, active = false, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={`w-full inline-flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs font-medium transition ${
-        active
-          ? "bg-blue-600 text-white shadow-sm"
-          : "text-gray-700 hover:bg-gray-100"
+        active ? "bg-blue-600 text-white shadow-sm" : "text-gray-700 hover:bg-gray-100"
       }`}
     >
-      <span className="inline-flex items-center gap-2 min-w-0">
+      <span className="inline-flex items-center gap-2">
         <span
           className={`h-5 w-5 rounded-md flex items-center justify-center text-[11px] ${
             active ? "bg-white/15" : "bg-gray-100 text-gray-700"
@@ -1091,7 +1103,6 @@ function SidebarLink({ label, icon, active = false, onClick }) {
 }
 
 /* ----------------- Stat card component ----------------- */
-
 function StatCard({ label, value, icon, tone = "neutral", subLabel }) {
   const toneClasses =
     tone === "primary"
@@ -1103,21 +1114,15 @@ function StatCard({ label, value, icon, tone = "neutral", subLabel }) {
       : "bg-white border-gray-100";
 
   return (
-    <div
-      className={`rounded-2xl shadow-sm p-4 border ${toneClasses} flex flex-col justify-between`}
-    >
+    <div className={`rounded-2xl shadow-sm p-4 border ${toneClasses} flex flex-col justify-between`}>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
-          {label}
-        </p>
+        <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">{label}</p>
         <div className="h-8 w-8 rounded-full bg-white/70 flex items-center justify-center">
           {icon}
         </div>
       </div>
       <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
-      {subLabel && (
-        <p className="mt-1 text-[11px] text-gray-500">{subLabel}</p>
-      )}
+      {subLabel && <p className="mt-1 text-[11px] text-gray-500">{subLabel}</p>}
     </div>
   );
 }

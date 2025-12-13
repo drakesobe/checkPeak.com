@@ -1,7 +1,7 @@
 // components/BarcodeUpload.jsx
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   BrowserMultiFormatReader,
   BarcodeFormat,
@@ -21,6 +21,64 @@ const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
 // Tiny beep placeholder (you can swap this for a real sound if you want)
 const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
+/* -------------------------------------------------------------------------- */
+/* Utilities                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const isBlobUrl = (s) => typeof s === "string" && s.startsWith("blob:");
+const normalizeBarcodeDigits = (s) => String(s || "").replace(/\D/g, "");
+
+// Compute check digit for EAN/UPC/GTIN (mod 10)
+// Works for EAN-8, UPC-A (12), EAN-13, GTIN-14 if you pass the body (without check digit)
+function computeGtinCheckDigit(bodyDigits) {
+  const digits = String(bodyDigits || "").replace(/\D/g, "");
+  if (!digits.length) return null;
+
+  // From rightmost going left: weights alternate 3 and 1, starting with 3
+  let sum = 0;
+  let weight = 3;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    const n = digits.charCodeAt(i) - 48;
+    if (n < 0 || n > 9) return null;
+    sum += n * weight;
+    weight = weight === 3 ? 1 : 3;
+  }
+
+  const mod = sum % 10;
+  return mod === 0 ? 0 : 10 - mod;
+}
+
+function isValidGtin(digits) {
+  const d = normalizeBarcodeDigits(digits);
+  if (![8, 12, 13, 14].includes(d.length)) return false;
+
+  const body = d.slice(0, -1);
+  const check = Number(d.slice(-1));
+  const expected = computeGtinCheckDigit(body);
+  return expected !== null && check === expected;
+}
+
+// Some scanners return UPC-A as 13 digits with leading 0, or UPC-E expansions vary.
+// We keep it simple: normalize, allow known lengths, and checksum validate when possible.
+function normalizeAndValidateBarcode(raw) {
+  const digits = normalizeBarcodeDigits(raw);
+
+  // Common fallback: if length 13 and starts with 0, it might really be UPC-A (12)
+  if (digits.length === 13 && digits.startsWith("0")) {
+    const maybeUpc = digits.slice(1);
+    if (isValidGtin(maybeUpc)) return { ok: true, digits: maybeUpc, type: "UPC-A" };
+  }
+
+  // Standard GTIN validation
+  if ([8, 12, 13, 14].includes(digits.length)) {
+    // Checksum validation is very useful; if it fails, we treat as invalid
+    if (isValidGtin(digits)) return { ok: true, digits, type: "GTIN" };
+    return { ok: false, digits, reason: "checksum" };
+  }
+
+  return { ok: false, digits, reason: "length" };
+}
 
 /**
  * Crop a File based on pixel cropRect and return a new File + dataUrl.
@@ -42,38 +100,34 @@ async function cropFileToRegion(file, cropRect) {
 
     img.onload = () => {
       try {
-        const canvas = document.createElement("canvas");
-        canvas.width = cropRect.width;
-        canvas.height = cropRect.height;
-        const ctx = canvas.getContext("2d");
+        const sx = Math.max(0, Math.floor(cropRect.x));
+        const sy = Math.max(0, Math.floor(cropRect.y));
+        const sw = Math.max(1, Math.floor(cropRect.width));
+        const sh = Math.max(1, Math.floor(cropRect.height));
 
-        ctx.drawImage(
-          img,
-          cropRect.x,
-          cropRect.y,
-          cropRect.width,
-          cropRect.height,
-          0,
-          0,
-          cropRect.width,
-          cropRect.height
-        );
+        const canvas = document.createElement("canvas");
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
         canvas.toBlob(
           (blob) => {
-            if (!blob) {
-              return reject(new Error("Crop failed: empty blob"));
-            }
+            if (!blob) return reject(new Error("Crop failed: empty blob"));
+
             const croppedFile = new File(
               [blob],
               file.name.replace(/(\.\w+)?$/, "_barcode_crop.jpg"),
               { type: "image/jpeg" }
             );
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+            // dataURL for preview (fast)
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
             resolve({ file: croppedFile, dataUrl });
           },
           "image/jpeg",
-          0.95
+          0.92
         );
       } catch (err) {
         reject(err);
@@ -91,9 +145,12 @@ export default function BarcodeUpload({
   multiple = false,
   onResult,
   showScanButton = true,
-  preferredFormats,
+  preferredFormats, // optional: ["UPC_A","EAN_13",...]
 }) {
-  // Core state
+  /* ------------------------------------------------------------------------ */
+  /* State                                                                    */
+  /* ------------------------------------------------------------------------ */
+
   const [files, setFiles] = useState([]);
   const [previewURLs, setPreviewURLs] = useState([]);
   const [athleteNames, setAthleteNames] = useState([]);
@@ -124,7 +181,8 @@ export default function BarcodeUpload({
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
 
-  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  // Slightly higher to tolerate iPhone photos; decode step downscales anyway
+  const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB
 
   // ZXing reader reuse
   const codeReaderRef = useRef(null);
@@ -133,11 +191,74 @@ export default function BarcodeUpload({
   const ocrWorkerRef = useRef(null);
   const ocrInitializingRef = useRef(false);
 
-  // ---- EFFECTS ----
+  /* ------------------------------------------------------------------------ */
+  /* Format mapping + reader hints                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const NAME_TO_FORMAT = useMemo(
+    () => ({
+      AZTEC: BarcodeFormat.AZTEC,
+      CODABAR: BarcodeFormat.CODABAR,
+      CODE_39: BarcodeFormat.CODE_39,
+      CODE_93: BarcodeFormat.CODE_93,
+      CODE_128: BarcodeFormat.CODE_128,
+      DATA_MATRIX: BarcodeFormat.DATA_MATRIX,
+      EAN_8: BarcodeFormat.EAN_8,
+      EAN_13: BarcodeFormat.EAN_13,
+      ITF: BarcodeFormat.ITF,
+      MAXICODE: BarcodeFormat.MAXICODE,
+      PDF_417: BarcodeFormat.PDF_417,
+      QR_CODE: BarcodeFormat.QR_CODE,
+      RSS_14: BarcodeFormat.RSS_14,
+      RSS_EXPANDED: BarcodeFormat.RSS_EXPANDED,
+      UPC_A: BarcodeFormat.UPC_A,
+      UPC_E: BarcodeFormat.UPC_E,
+      UPC_EAN_EXTENSION: BarcodeFormat.UPC_EAN_EXTENSION,
+    }),
+    []
+  );
+
+  const mapFormats = useCallback(
+    (arr = []) => {
+      const out = [];
+      for (const name of arr) {
+        const n = ("" + name).toUpperCase();
+        if (NAME_TO_FORMAT[n]) out.push(NAME_TO_FORMAT[n]);
+      }
+      return out;
+    },
+    [NAME_TO_FORMAT]
+  );
+
+  // For CheckPeak, retail barcodes are overwhelmingly UPC/EAN.
+  const effectiveFormats = useMemo(() => {
+    if (Array.isArray(preferredFormats) && preferredFormats.length) {
+      return mapFormats(preferredFormats);
+    }
+    return [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8];
+  }, [preferredFormats, mapFormats]);
+
+  const makeReader = useCallback(() => {
+    try {
+      const hints = new Map();
+      if (effectiveFormats?.length) {
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, effectiveFormats);
+      }
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      // second param is timeBetweenScans for continuous decode in some builds (safe here)
+      return new BrowserMultiFormatReader(hints, 300);
+    } catch (err) {
+      console.warn("Failed to create ZXing reader:", err);
+      return null;
+    }
+  }, [effectiveFormats]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Effects                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    audioRef.current =
-      typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
+    audioRef.current = typeof Audio !== "undefined" ? new Audio(BEEP_SRC) : null;
   }, []);
 
   // animate dots while loading
@@ -152,64 +273,47 @@ export default function BarcodeUpload({
 
   // cleanup object URLs
   useEffect(() => {
-    return () => previewURLs.forEach((url) => URL.revokeObjectURL(url));
+    return () => {
+      previewURLs.forEach((url) => {
+        if (isBlobUrl(url)) URL.revokeObjectURL(url);
+      });
+    };
   }, [previewURLs]);
 
-  // instantiate ZXing once
+  // instantiate / refresh ZXing reader when formats change
   useEffect(() => {
-    try {
-      codeReaderRef.current = new BrowserMultiFormatReader();
-    } catch (err) {
-      console.warn("Failed to create ZXing reader:", err);
-      codeReaderRef.current = null;
-    }
+    codeReaderRef.current?.reset?.();
+    codeReaderRef.current = makeReader();
     return () => {
       try {
         codeReaderRef.current?.reset?.();
-      } catch (e) {}
+      } catch {}
       codeReaderRef.current = null;
+    };
+  }, [makeReader]);
+
+  // terminate OCR worker on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        ocrWorkerRef.current?.terminate?.();
+      } catch {}
+      ocrWorkerRef.current = null;
+      ocrInitializingRef.current = false;
     };
   }, []);
 
-  // ---- HELPERS ----
-
-  // mapping for readable preferredFormats -> BarcodeFormat
-  const NAME_TO_FORMAT = {
-    AZTEC: BarcodeFormat.AZTEC,
-    CODABAR: BarcodeFormat.CODABAR,
-    CODE_39: BarcodeFormat.CODE_39,
-    CODE_93: BarcodeFormat.CODE_93,
-    CODE_128: BarcodeFormat.CODE_128,
-    DATA_MATRIX: BarcodeFormat.DATA_MATRIX,
-    EAN_8: BarcodeFormat.EAN_8,
-    EAN_13: BarcodeFormat.EAN_13,
-    ITF: BarcodeFormat.ITF,
-    MAXICODE: BarcodeFormat.MAXICODE,
-    PDF_417: BarcodeFormat.PDF_417,
-    QR_CODE: BarcodeFormat.QR_CODE,
-    RSS_14: BarcodeFormat.RSS_14,
-    RSS_EXPANDED: BarcodeFormat.RSS_EXPANDED,
-    UPC_A: BarcodeFormat.UPC_A,
-    UPC_E: BarcodeFormat.UPC_E,
-    UPC_EAN_EXTENSION: BarcodeFormat.UPC_EAN_EXTENSION,
-  };
-
-  const mapFormats = (arr = []) => {
-    const out = [];
-    for (const name of arr) {
-      const n = ("" + name).toUpperCase();
-      if (NAME_TO_FORMAT[n]) out.push(NAME_TO_FORMAT[n]);
-    }
-    return out;
-  };
+  /* ------------------------------------------------------------------------ */
+  /* Helpers                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   const validateFile = (file) => {
-    if (!file.type.startsWith("image/")) {
+    if (!file?.type?.startsWith("image/")) {
       setError("Only image files are allowed.");
       return false;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setError("File too large. Max 5 MB.");
+      setError("File too large. Max 8 MB.");
       return false;
     }
     setError("");
@@ -227,8 +331,10 @@ export default function BarcodeUpload({
     const valid = Array.from(fileList || []).filter(validateFile);
     if (!valid.length) return;
 
-    // Revoke existing preview URLs
-    previewURLs.forEach((url) => URL.revokeObjectURL(url));
+    // Revoke existing blob preview URLs only
+    previewURLs.forEach((url) => {
+      if (isBlobUrl(url)) URL.revokeObjectURL(url);
+    });
 
     const urls = valid.map((f) => URL.createObjectURL(f));
 
@@ -271,33 +377,38 @@ export default function BarcodeUpload({
     try {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
-    } catch (e) {
+    } catch {
       // ignore
     }
   };
 
-  // ---- OCR worker for numeric fallback ----
+  /* ------------------------------------------------------------------------ */
+  /* OCR worker (numeric fallback)                                              */
+  /* ------------------------------------------------------------------------ */
 
   const initOCRWorker = useCallback(async () => {
     if (ocrWorkerRef.current) return ocrWorkerRef.current;
+
     if (ocrInitializingRef.current) {
-      // wait for existing init
       while (ocrInitializingRef.current && !ocrWorkerRef.current) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, 100));
       }
       return ocrWorkerRef.current;
     }
+
     try {
       ocrInitializingRef.current = true;
       const tesseract = await import("tesseract.js");
       const worker = await tesseract.createWorker();
+
       await worker.load();
       await worker.loadLanguage("eng");
       await worker.initialize("eng");
       await worker.setParameters({
         tessedit_char_whitelist: "0123456789",
       });
+
       ocrWorkerRef.current = worker;
       ocrInitializingRef.current = false;
       return worker;
@@ -312,94 +423,101 @@ export default function BarcodeUpload({
     try {
       const worker = await initOCRWorker();
       if (!worker) return null;
+
       const { data } = await worker.recognize(canvas);
-      if (!data || !data.text) return null;
-      const digits = (data.text || "").replace(/\s+/g, "");
-      const match = digits.match(/\d{8,14}/);
-      return match ? match[0] : null;
+      if (!data?.text) return null;
+
+      const digits = normalizeBarcodeDigits(data.text);
+      // Try to pull a plausible GTIN out of OCR
+      // Prefer known lengths
+      const candidates = [
+        ...digits.matchAll(/\d{14}/g),
+        ...digits.matchAll(/\d{13}/g),
+        ...digits.matchAll(/\d{12}/g),
+        ...digits.matchAll(/\d{8}/g),
+      ].map((m) => m[0]);
+
+      for (const c of candidates) {
+        const v = normalizeAndValidateBarcode(c);
+        if (v.ok) return v.digits;
+      }
+      return null;
     } catch (err) {
       console.warn("Tesseract OCR failed:", err);
       return null;
     }
   }
 
-  // ---- Barcode decoding from File with resize / rotations / OCR ----
+  /* ------------------------------------------------------------------------ */
+  /* Decode barcode from File                                                   */
+  /* ------------------------------------------------------------------------ */
 
   async function decodeBarcodeFromFile(file) {
+    // Use createImageBitmap where available
+    let bitmap;
     try {
-      // Use createImageBitmap where available
-      let bitmap;
+      bitmap = await createImageBitmap(file);
+    } catch {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+
+      bitmap = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const ctx = c.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          createImageBitmap(c).then(res).catch(rej);
+        };
+        img.onerror = rej;
+        img.src = dataUrl;
+      });
+    }
+
+    const reader = codeReaderRef.current || makeReader();
+    if (!reader) throw new Error("Barcode scanner not available.");
+
+    const MAX_SIDE = 1600;
+    const rotations = [0, 90, 180, 270];
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+
+    const preprocessCanvas = () => {
+      // light grayscale + contrast bump helps some barcodes
       try {
-        bitmap = await createImageBitmap(file);
-      } catch (err) {
-        const dataUrl = await new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result);
-          r.onerror = rej;
-          r.readAsDataURL(file);
-        });
-        bitmap = await new Promise((res, rej) => {
-          const img = new Image();
-          img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = img.width;
-            c.height = img.height;
-            const ctx = c.getContext("2d");
-            ctx.drawImage(img, 0, 0);
-            createImageBitmap(c).then(res).catch(rej);
-          };
-          img.onerror = rej;
-          img.src = dataUrl;
-        });
-      }
-
-      const reader = codeReaderRef.current || new BrowserMultiFormatReader();
-
-      // Preferred formats mapping (future: pass hints where supported)
-      if (preferredFormats && Array.isArray(preferredFormats)) {
-        try {
-          const formats = mapFormats(preferredFormats);
-          if (formats.length) {
-            const hints = new Map();
-            hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            // Some ZXing builds use hints, kept here for forward compatibility.
-          }
-        } catch (e) {
-          // ignore
+        const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = id.data;
+        const contrast = 1.25;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i],
+            g = d[i + 1],
+            b = d[i + 2];
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          let v = (gray - 128) * contrast + 128;
+          v = Math.max(0, Math.min(255, v));
+          d[i] = d[i + 1] = d[i + 2] = v;
         }
+        ctx.putImageData(id, 0, 0);
+      } catch {
+        // ignore
       }
+    };
 
-      const MAX_SIDE = 1600;
-      const rotations = [0, 90, 180, 270];
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
+    let lastErr = null;
 
-      const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-
-      const preprocessCanvas = () => {
-        try {
-          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const d = id.data;
-          const contrast = 1.25;
-          for (let i = 0; i < d.length; i += 4) {
-            const r = d[i],
-              g = d[i + 1],
-              b = d[i + 2];
-            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-            let v = (gray - 128) * contrast + 128;
-            v = Math.max(0, Math.min(255, v));
-            d[i] = d[i + 1] = d[i + 2] = v;
-          }
-          ctx.putImageData(id, 0, 0);
-        } catch (err) {
-          // ignore
-        }
-      };
-
-      let lastErr = null;
-
+    try {
       for (const rot of rotations) {
         try {
+          // rotate into canvas
           if (rot % 180 === 0) {
             canvas.width = Math.round(bitmap.width * scale);
             canvas.height = Math.round(bitmap.height * scale);
@@ -412,6 +530,7 @@ export default function BarcodeUpload({
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.translate(canvas.width / 2, canvas.height / 2);
           ctx.rotate((rot * Math.PI) / 180);
+
           ctx.drawImage(
             bitmap,
             -(bitmap.width * scale) / 2,
@@ -423,8 +542,10 @@ export default function BarcodeUpload({
 
           preprocessCanvas();
 
-          const dataUrl = canvas.toDataURL("image/png");
+          // ZXing decodeFromImageElement is reliable across builds; use a JPEG dataURL to reduce memory
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
           const tmpImg = new Image();
+
           // eslint-disable-next-line no-await-in-loop
           await new Promise((res, rej) => {
             tmpImg.onload = res;
@@ -435,42 +556,39 @@ export default function BarcodeUpload({
           // eslint-disable-next-line no-await-in-loop
           const result = await reader.decodeFromImageElement(tmpImg);
           const barcodeText = result?.getText?.() || result?.text || "";
-          try {
-            reader.reset?.();
-          } catch (e) {}
 
-          if (barcodeText) {
-            return barcodeText;
-          }
+          if (barcodeText) return barcodeText;
         } catch (err) {
           lastErr = err;
           // continue to next rotation
         }
       }
 
-      // ZXing failed → try numeric OCR fallback
-      try {
-        const ocrResult = await performOCROnCanvas(canvas);
-        if (ocrResult) return ocrResult;
-      } catch (e) {
-        // ignore
-      }
+      // ZXing failed → try numeric OCR fallback (last resort)
+      const ocrResult = await performOCROnCanvas(canvas);
+      if (ocrResult) return ocrResult;
 
       throw lastErr || new Error("No barcode decoded from image.");
-    } catch (err) {
-      throw err;
+    } finally {
+      // reset once per decode attempt
+      try {
+        reader.reset?.();
+      } catch {}
     }
   }
 
-  // ---- Server call: /api/check (barcode only, no image) ----
+  /* ------------------------------------------------------------------------ */
+  /* Server call: /api/check (barcode only, no image)                           */
+  /* ------------------------------------------------------------------------ */
 
-  async function fetchMatches(barcode) {
+  async function fetchMatches(barcodeDigits) {
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // Only send the numeric barcode here to avoid body size issues
-      body: JSON.stringify({ barcode, isBarcodeFlow: true }),
+      body: JSON.stringify({ barcode: barcodeDigits, isBarcodeFlow: true }),
     });
+
     if (!resp.ok) {
       const txt = await resp.text().catch(() => null);
       throw new Error(txt || `Barcode check failed with status ${resp.status}`);
@@ -480,17 +598,29 @@ export default function BarcodeUpload({
 
   async function handleDecodedBarcodePipeline(barcodeText, idx = null) {
     setError("");
-    if (!barcodeText || !/\d/.test(String(barcodeText))) {
-      setError("Decoded value doesn't look like a barcode (no digits).");
+
+    const parsed = normalizeAndValidateBarcode(barcodeText);
+
+    if (!parsed.ok) {
+      if (parsed.reason === "length") {
+        setError("That scan doesn't look like a standard UPC/EAN barcode.");
+      } else if (parsed.reason === "checksum") {
+        setError("Barcode digits were read, but the checksum is invalid. Try cropping tighter or reducing glare.");
+      } else {
+        setError("Could not validate barcode. Try again.");
+      }
       return;
     }
 
+    const digits = parsed.digits;
+
     setLoading(true);
     setProgress(5);
+
     try {
       setProgress(25);
 
-      const data = await fetchMatches(barcodeText);
+      const data = await fetchMatches(digits);
 
       console.log("[BarcodeUpload] API check response:", data);
       console.log("[BarcodeUpload] API debug:", data?.debug || null);
@@ -498,7 +628,7 @@ export default function BarcodeUpload({
       setProgress(90);
 
       const result = {
-        barcode: barcodeText,
+        barcode: digits,
         productName: data?.productName || "Unknown product",
         rawIngredients: data?.ocrText || "",
         matchedBanned: data?.matchedBanned || [],
@@ -538,9 +668,9 @@ export default function BarcodeUpload({
     for (let i = 0; i < files.length; i++) {
       try {
         setCurrentScanIndex(i);
-        const code = await decodeBarcodeFromFile(files[i]);
-        if (!code) throw new Error("No barcode decoded");
-        await handleDecodedBarcodePipeline(code, i);
+        const raw = await decodeBarcodeFromFile(files[i]);
+        if (!raw) throw new Error("No barcode decoded");
+        await handleDecodedBarcodePipeline(raw, i);
       } catch (err) {
         console.warn("Scan failed for index", i, err);
       }
@@ -551,7 +681,9 @@ export default function BarcodeUpload({
     setCurrentScanIndex(null);
   };
 
-  // ---- Crop handlers (react-easy-crop) ----
+  /* ------------------------------------------------------------------------ */
+  /* Crop handlers (react-easy-crop)                                           */
+  /* ------------------------------------------------------------------------ */
 
   const onCropComplete = (_, croppedPixels) => {
     setCroppedAreaPixels(croppedPixels);
@@ -562,6 +694,7 @@ export default function BarcodeUpload({
       setShowCropModal(false);
       return;
     }
+
     try {
       const originalFile = files[cropIndex];
       if (!originalFile) {
@@ -569,10 +702,7 @@ export default function BarcodeUpload({
         return;
       }
 
-      const { file, dataUrl } = await cropFileToRegion(
-        originalFile,
-        croppedAreaPixels
-      );
+      const { file, dataUrl } = await cropFileToRegion(originalFile, croppedAreaPixels);
 
       setFiles((prev) => {
         const updated = [...prev];
@@ -582,11 +712,11 @@ export default function BarcodeUpload({
 
       setPreviewURLs((prev) => {
         const updated = [...prev];
-        // revoke old URL
-        if (updated[cropIndex]) {
+        // revoke only if old is blob url
+        if (isBlobUrl(updated[cropIndex])) {
           URL.revokeObjectURL(updated[cropIndex]);
         }
-        updated[cropIndex] = dataUrl;
+        updated[cropIndex] = dataUrl; // dataURL preview
         return updated;
       });
 
@@ -619,7 +749,9 @@ export default function BarcodeUpload({
     aspectValue = undefined; // free-form
   }
 
-  // ---- RENDER ----
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   return (
     <div className="mt-6 font-sans space-y-5">
@@ -653,9 +785,7 @@ export default function BarcodeUpload({
       >
         <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
           {files.length
-            ? `${files.length} barcode photo${
-                files.length > 1 ? "s" : ""
-              } selected`
+            ? `${files.length} barcode photo${files.length > 1 ? "s" : ""} selected`
             : "Tap to scan a barcode (live camera or photo)"}
         </span>
         <span className="text-[11px] sm:text-xs text-gray-500 mt-1 text-center max-w-md">
@@ -690,9 +820,7 @@ export default function BarcodeUpload({
               exit={{ scale: 0.95, opacity: 0 }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  Scan Barcode
-                </h2>
+                <h2 className="text-lg font-semibold text-gray-800">Scan Barcode</h2>
                 <button
                   onClick={() => setShowChoiceModal(false)}
                   className="text-gray-400 hover:text-gray-700 transition"
@@ -701,10 +829,12 @@ export default function BarcodeUpload({
                   <X className="w-5 h-5" />
                 </button>
               </div>
+
               <p className="text-gray-600 text-sm">
                 Choose how you want to scan. Live scanning is fastest. Photo + crop
                 gives the cleanest read if lighting is tricky.
               </p>
+
               <div className="flex flex-col gap-3 mt-2">
                 <button
                   className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition flex items-center justify-center gap-2 text-sm"
@@ -719,6 +849,7 @@ export default function BarcodeUpload({
                     Beta
                   </span>
                 </button>
+
                 <button
                   className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition text-sm"
                   onClick={() => {
@@ -729,6 +860,7 @@ export default function BarcodeUpload({
                   Take Photo / Upload
                 </button>
               </div>
+
               <p className="text-[11px] text-gray-500 mt-1 leading-snug">
                 Tip: If the live scanner struggles (glare, tiny barcode), take a photo,
                 crop tightly around the barcode, and scan from that.
@@ -755,6 +887,7 @@ export default function BarcodeUpload({
               >
                 <X className="w-6 h-6" />
               </button>
+
               <div className="mb-3">
                 <p className="text-xs font-medium text-orange-500 uppercase tracking-wide">
                   Live Scanner · Beta
@@ -764,6 +897,7 @@ export default function BarcodeUpload({
                   and read. We will notify you as soon as we get a clean scan.
                 </p>
               </div>
+
               <LiveBarcodeScanner
                 onDetected={(code) => {
                   setShowLiveScanner(false);
@@ -786,9 +920,7 @@ export default function BarcodeUpload({
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
               <div className="flex flex-col">
-                <h2 className="text-sm font-semibold text-white">
-                  Crop Barcode Area
-                </h2>
+                <h2 className="text-sm font-semibold text-white">Crop Barcode Area</h2>
                 <p className="text-[11px] text-neutral-400">
                   Drag the box along the barcode stripe and its numbers. Use the zoom
                   slider if needed.
@@ -847,9 +979,7 @@ export default function BarcodeUpload({
 
               {/* Zoom slider */}
               <div className="flex items-center gap-3">
-                <span className="text-[11px] text-neutral-300 w-12">
-                  Zoom
-                </span>
+                <span className="text-[11px] text-neutral-300 w-12">Zoom</span>
                 <input
                   type="range"
                   min={1}

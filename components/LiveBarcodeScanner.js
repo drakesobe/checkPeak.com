@@ -80,9 +80,9 @@ function normalizeAndValidate(rawValue) {
 // --------- consensus logic ----------
 function makeConsensusConfig() {
   return {
-    minCount: 3, // must appear at least this many times
-    minSpanMs: 650, // and over at least this long
-    windowMs: 2500, // keep detections within this sliding window
+    minCount: 3,     // must appear at least this many times
+    minSpanMs: 650,  // and over at least this long
+    windowMs: 2500,  // keep detections within this sliding window
   };
 }
 
@@ -106,6 +106,7 @@ export default function LiveBarcodeScanner({
   const recentDetectionsRef = useRef([]); // { code, ts }
 
   const barcodeDetectorRef = useRef(null);
+  const quaggaRef = useRef(null);
 
   const [usingNative, setUsingNative] = useState(false);
   const [scannerStarted, setScannerStarted] = useState(false);
@@ -256,13 +257,26 @@ export default function LiveBarcodeScanner({
     }
   }, [torchOn]);
 
-  // --- readers -> BarcodeDetector formats (FIXED) ---
+  // --- Dynamic import Quagga2 (mobile-safe) ---
+  const getQuagga = useCallback(async () => {
+    if (quaggaRef.current) return quaggaRef.current;
+
+    try {
+      const mod = await import("@ericblade/quagga2");
+      quaggaRef.current = mod?.default || mod;
+      return quaggaRef.current;
+    } catch (e) {
+      console.warn("Quagga2 import failed:", e);
+      return null;
+    }
+  }, []);
+
+  // --- readers -> BarcodeDetector formats ---
   const readersToBarcodeDetectorFormats = useCallback((readerList = []) => {
     const out = new Set();
     const list = Array.isArray(readerList) ? readerList : [];
     const joined = list.map((r) => String(r || "").toLowerCase()).join(" ");
 
-    // Prefer retail formats for CheckPeak
     if (joined.includes("upc")) {
       out.add("upc_a");
       out.add("upc_e");
@@ -270,7 +284,6 @@ export default function LiveBarcodeScanner({
     if (joined.includes("ean_8") || joined.includes("ean8")) out.add("ean_8");
     if (joined.includes("ean")) out.add("ean_13");
 
-    // Optionals
     if (joined.includes("code_128")) out.add("code_128");
     if (joined.includes("code_39")) out.add("code_39");
     if (joined.includes("qr")) out.add("qr_code");
@@ -290,8 +303,6 @@ export default function LiveBarcodeScanner({
   const considerCode = useCallback(
     (rawValue) => {
       const now = Date.now();
-
-      // Normalize + validate first (prevents false positives early)
       const parsed = normalizeAndValidate(rawValue);
       if (!parsed.ok) return null;
 
@@ -315,7 +326,7 @@ export default function LiveBarcodeScanner({
     [consensusCfg]
   );
 
-  // --- Stop everything (stable ref) ---
+  // --- Stop everything ---
   const stop = useCallback(async () => {
     setStatusMsg("Stopping scanner...");
 
@@ -327,14 +338,17 @@ export default function LiveBarcodeScanner({
       }
     } catch {}
 
-    // Stop Quagga if present
+    // Stop Quagga
     try {
-      if (window.Quagga) {
+      const Quagga = quaggaRef.current;
+      if (Quagga) {
         try {
-          window.Quagga.offDetected?.();
-          window.Quagga.offProcessed?.();
+          Quagga.offDetected?.();
+          Quagga.offProcessed?.();
         } catch {}
-        window.Quagga.stop();
+        try {
+          Quagga.stop();
+        } catch {}
       }
     } catch {}
 
@@ -351,7 +365,7 @@ export default function LiveBarcodeScanner({
       streamRef.current = null;
     } catch {}
 
-    // Remove video element if we created it
+    // Remove video element
     try {
       const v = videoRef.current;
       if (v) {
@@ -417,14 +431,12 @@ export default function LiveBarcodeScanner({
       container.appendChild(videoEl);
     }
 
-    // camera constraints tuned for barcode scanning
     try {
       const constraints = {
         video: {
           facingMode,
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          // hint focus behavior when supported
           focusMode: "continuous",
         },
         audio: false,
@@ -434,7 +446,6 @@ export default function LiveBarcodeScanner({
       streamRef.current = stream;
 
       const track = stream.getVideoTracks?.()[0];
-      // apply advanced constraints when supported (safe to ignore failures)
       try {
         await track?.applyConstraints?.({
           advanced: [
@@ -481,7 +492,6 @@ export default function LiveBarcodeScanner({
               const now = Date.now();
               const last = lastDetectedRef.current;
 
-              // debounce duplicates
               if (last.code === stable && now - last.time < duplicateDelayMs) continue;
               lastDetectedRef.current = { code: stable, time: now };
 
@@ -534,7 +544,7 @@ export default function LiveBarcodeScanner({
     trackFps,
   ]);
 
-  // --- Quagga fallback (clean listener attach/detach) ---
+  // --- Quagga fallback (dynamic import) ---
   const startQuagga = useCallback(async () => {
     const container = containerRef.current;
     if (!container) {
@@ -542,19 +552,19 @@ export default function LiveBarcodeScanner({
       return false;
     }
 
-    if (!window.Quagga) {
-      setStatusMsg("Quagga not loaded");
+    const Quagga = await getQuagga();
+    if (!Quagga) {
+      setStatusMsg("Scanner unavailable (Quagga failed to load)");
       return false;
     }
 
-    // Ensure no stacked listeners
     try {
-      window.Quagga.offDetected?.();
-      window.Quagga.offProcessed?.();
+      Quagga.offDetected?.();
+      Quagga.offProcessed?.();
     } catch {}
 
     try {
-      window.Quagga.stop();
+      Quagga.stop();
     } catch {}
 
     const config = {
@@ -566,6 +576,9 @@ export default function LiveBarcodeScanner({
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
+        // Helps speed/accuracy by scanning the central region
+        // (Works in quagga2; safe if ignored)
+        area: { top: "35%", right: "10%", left: "10%", bottom: "35%" },
       },
       locator: {
         patchSize: "medium",
@@ -577,23 +590,20 @@ export default function LiveBarcodeScanner({
 
     try {
       await new Promise((resolve, reject) => {
-        window.Quagga.init(config, (err) => {
-          if (err) return reject(err);
-          window.Quagga.start();
-          resolve();
-        });
+        Quagga.init(config, (err) => (err ? reject(err) : resolve()));
       });
+      Quagga.start();
       setStatusMsg("Scanning (software)...");
       setUsingNative(false);
     } catch (err) {
       console.error("Quagga init/start failed:", err);
-      setStatusMsg("Quagga camera init failed");
+      setStatusMsg(`Quagga init failed: ${err?.message || "unknown"}`);
       return false;
     }
 
     setTimeout(() => detectTorch().catch(() => {}), 600);
 
-    window.Quagga.onProcessed((result) => {
+    Quagga.onProcessed((result) => {
       try {
         const canvas = overlayRef.current;
         const ctx = canvas?.getContext("2d");
@@ -606,23 +616,6 @@ export default function LiveBarcodeScanner({
           canvas.height = rect.height;
         }
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        if (result?.boxes?.length) {
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = "rgba(255,255,255,0.6)";
-          result.boxes
-            .filter((b) => b !== result.box)
-            .forEach((box) => {
-              ctx.beginPath();
-              box.forEach((p, i) => {
-                const x = (p.x / result.imgWidth) * canvas.width;
-                const y = (p.y / result.imgHeight) * canvas.height;
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-              });
-              ctx.closePath();
-              ctx.stroke();
-            });
-        }
 
         if (result?.box?.length) {
           ctx.lineWidth = 3;
@@ -639,7 +632,7 @@ export default function LiveBarcodeScanner({
       } catch {}
     });
 
-    window.Quagga.onDetected((data) => {
+    Quagga.onDetected((data) => {
       try {
         const raw = data?.codeResult?.code;
         if (!raw) return;
@@ -680,6 +673,7 @@ export default function LiveBarcodeScanner({
     stop,
     successFeedback,
     detectTorch,
+    getQuagga,
   ]);
 
   const start = useCallback(async () => {
@@ -719,10 +713,9 @@ export default function LiveBarcodeScanner({
 
   const switchCamera = useCallback(async () => {
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
-    // facingMode effect will restart
   }, []);
 
-  // restart on camera switch
+  // Restart on camera switch
   useEffect(() => {
     if (!scannerStarted) return;
     (async () => {
@@ -737,8 +730,8 @@ export default function LiveBarcodeScanner({
     return () => {
       stop();
       try {
-        window.Quagga?.offDetected?.();
-        window.Quagga?.offProcessed?.();
+        quaggaRef.current?.offDetected?.();
+        quaggaRef.current?.offProcessed?.();
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -10,7 +10,7 @@
     "postbuild": "next-sitemap"
   },
   "dependencies": {
-    "@ericblade/quagga2": "^1.8.4",
+    "@ericblade/quagga2": "^1.11.0",
     "@theo-dev/airtable-connect": "^0.2.34",
     "@vercel/speed-insights": "^1.2.0",
     "@zxing/browser": "^0.1.5",

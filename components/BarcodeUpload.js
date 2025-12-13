@@ -8,15 +8,9 @@ import {
   DecodeHintType,
 } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
-import dynamic from "next/dynamic";
-import { X, Check, ScanLine } from "lucide-react";
+import { X, Check } from "lucide-react";
 import Cropper from "react-easy-crop";
 import ProgressBar from "./ProgressBar";
-
-// Lazy load live scanner (Beta)
-const LiveBarcodeScanner = dynamic(() => import("./LiveBarcodeScanner"), {
-  ssr: false,
-});
 
 // Tiny beep placeholder (you can swap this for a real sound if you want)
 const BEEP_SRC =
@@ -63,6 +57,8 @@ function isValidGtin(digits) {
 // We keep it simple: normalize, allow known lengths, and checksum validate when possible.
 function normalizeAndValidateBarcode(raw) {
   const digits = normalizeBarcodeDigits(raw);
+
+  if (!digits) return { ok: false, digits: "", reason: "empty" };
 
   // Common fallback: if length 13 and starts with 0, it might really be UPC-A (12)
   if (digits.length === 13 && digits.startsWith("0")) {
@@ -162,7 +158,6 @@ export default function BarcodeUpload({
 
   // UI overlays
   const [showChoiceModal, setShowChoiceModal] = useState(false);
-  const [showLiveScanner, setShowLiveScanner] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
 
@@ -187,7 +182,7 @@ export default function BarcodeUpload({
   // ZXing reader reuse
   const codeReaderRef = useRef(null);
 
-  // OCR worker reuse
+  // OCR worker reuse (numeric fallback)
   const ocrWorkerRef = useRef(null);
   const ocrInitializingRef = useRef(false);
 
@@ -235,7 +230,12 @@ export default function BarcodeUpload({
     if (Array.isArray(preferredFormats) && preferredFormats.length) {
       return mapFormats(preferredFormats);
     }
-    return [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8];
+    return [
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+    ];
   }, [preferredFormats, mapFormats]);
 
   const makeReader = useCallback(() => {
@@ -254,7 +254,7 @@ export default function BarcodeUpload({
   }, [effectiveFormats]);
 
   /* ------------------------------------------------------------------------ */
-  /* Effects                                                                    */
+  /* Effects                                                                   */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -282,7 +282,9 @@ export default function BarcodeUpload({
 
   // instantiate / refresh ZXing reader when formats change
   useEffect(() => {
-    codeReaderRef.current?.reset?.();
+    try {
+      codeReaderRef.current?.reset?.();
+    } catch {}
     codeReaderRef.current = makeReader();
     return () => {
       try {
@@ -304,7 +306,7 @@ export default function BarcodeUpload({
   }, []);
 
   /* ------------------------------------------------------------------------ */
-  /* Helpers                                                                    */
+  /* Helpers                                                                   */
   /* ------------------------------------------------------------------------ */
 
   const validateFile = (file) => {
@@ -383,7 +385,7 @@ export default function BarcodeUpload({
   };
 
   /* ------------------------------------------------------------------------ */
-  /* OCR worker (numeric fallback)                                              */
+  /* OCR worker (numeric fallback)                                             */
   /* ------------------------------------------------------------------------ */
 
   const initOCRWorker = useCallback(async () => {
@@ -428,8 +430,8 @@ export default function BarcodeUpload({
       if (!data?.text) return null;
 
       const digits = normalizeBarcodeDigits(data.text);
-      // Try to pull a plausible GTIN out of OCR
-      // Prefer known lengths
+
+      // Prefer known GTIN lengths
       const candidates = [
         ...digits.matchAll(/\d{14}/g),
         ...digits.matchAll(/\d{13}/g),
@@ -449,7 +451,7 @@ export default function BarcodeUpload({
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Decode barcode from File                                                   */
+  /* Decode barcode from File                                                  */
   /* ------------------------------------------------------------------------ */
 
   async function decodeBarcodeFromFile(file) {
@@ -542,7 +544,7 @@ export default function BarcodeUpload({
 
           preprocessCanvas();
 
-          // ZXing decodeFromImageElement is reliable across builds; use a JPEG dataURL to reduce memory
+          // Use a JPEG dataURL to reduce memory
           const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
           const tmpImg = new Image();
 
@@ -602,10 +604,14 @@ export default function BarcodeUpload({
     const parsed = normalizeAndValidateBarcode(barcodeText);
 
     if (!parsed.ok) {
-      if (parsed.reason === "length") {
+      if (parsed.reason === "empty") {
+        setError("No barcode detected. Try cropping tighter around the barcode.");
+      } else if (parsed.reason === "length") {
         setError("That scan doesn't look like a standard UPC/EAN barcode.");
       } else if (parsed.reason === "checksum") {
-        setError("Barcode digits were read, but the checksum is invalid. Try cropping tighter or reducing glare.");
+        setError(
+          "Barcode digits were read, but the checksum is invalid. Try cropping tighter or reducing glare."
+        );
       } else {
         setError("Could not validate barcode. Try again.");
       }
@@ -766,8 +772,7 @@ export default function BarcodeUpload({
           Scan a product barcode
         </h2>
         <p className="text-xs sm:text-sm text-gray-500">
-          Use the live scanner for quick reads, or upload a photo and crop tightly
-          around the barcode for maximum accuracy.
+          Upload a photo and crop tightly around the barcode for maximum accuracy.
         </p>
       </div>
 
@@ -786,7 +791,7 @@ export default function BarcodeUpload({
         <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
           {files.length
             ? `${files.length} barcode photo${files.length > 1 ? "s" : ""} selected`
-            : "Tap to scan a barcode (live camera or photo)"}
+            : "Tap to upload a barcode photo"}
         </span>
         <span className="text-[11px] sm:text-xs text-gray-500 mt-1 text-center max-w-md">
           For best results, fill most of the frame with the barcode and its numbers. You
@@ -804,7 +809,7 @@ export default function BarcodeUpload({
         onChange={handleFileInputChange}
       />
 
-      {/* Choice Modal */}
+      {/* Choice Modal (now ONLY upload) */}
       <AnimatePresence>
         {showChoiceModal && (
           <motion.div
@@ -820,7 +825,7 @@ export default function BarcodeUpload({
               exit={{ scale: 0.95, opacity: 0 }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-gray-800">Scan Barcode</h2>
+                <h2 className="text-lg font-semibold text-gray-800">Upload Barcode Photo</h2>
                 <button
                   onClick={() => setShowChoiceModal(false)}
                   className="text-gray-400 hover:text-gray-700 transition"
@@ -831,27 +836,13 @@ export default function BarcodeUpload({
               </div>
 
               <p className="text-gray-600 text-sm">
-                Choose how you want to scan. Live scanning is fastest. Photo + crop
-                gives the cleanest read if lighting is tricky.
+                Select a barcode photo (or take one). After upload, crop tightly around the
+                barcode stripe and its numbers for best accuracy.
               </p>
 
               <div className="flex flex-col gap-3 mt-2">
                 <button
-                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition flex items-center justify-center gap-2 text-sm"
-                  onClick={() => {
-                    setShowChoiceModal(false);
-                    setShowLiveScanner(true);
-                  }}
-                >
-                  <ScanLine className="w-4 h-4" />
-                  <span>Live Barcode Scanner</span>
-                  <span className="ml-1 text-[10px] uppercase tracking-wide bg-white/10 px-1.5 py-0.5 rounded-full border border-white/30">
-                    Beta
-                  </span>
-                </button>
-
-                <button
-                  className="w-full border border-gray-300 rounded-xl py-3 font-medium text-gray-700 hover:bg-gray-50 transition text-sm"
+                  className="w-full bg-[#46769B] hover:bg-[#365b7a] text-white rounded-xl py-3 font-medium transition text-sm"
                   onClick={() => {
                     setShowChoiceModal(false);
                     fileInputRef.current?.click();
@@ -862,53 +853,11 @@ export default function BarcodeUpload({
               </div>
 
               <p className="text-[11px] text-gray-500 mt-1 leading-snug">
-                Tip: If the live scanner struggles (glare, tiny barcode), take a photo,
-                crop tightly around the barcode, and scan from that.
+                Tip: Avoid glare, keep the barcode flat, and include the full barcode + the
+                numbers underneath. If ZXing struggles, the system will try a numeric OCR
+                fallback on the cropped image.
               </p>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Live Scanner (Beta) */}
-      <AnimatePresence>
-        {showLiveScanner && (
-          <motion.div
-            className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50 px-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 relative">
-              <button
-                className="absolute top-3 right-3 text-gray-600 hover:text-black"
-                onClick={() => setShowLiveScanner(false)}
-                aria-label="Close live barcode scanner"
-              >
-                <X className="w-6 h-6" />
-              </button>
-
-              <div className="mb-3">
-                <p className="text-xs font-medium text-orange-500 uppercase tracking-wide">
-                  Live Scanner · Beta
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Hold the barcode in the frame. The scanner will continuously refocus
-                  and read. We will notify you as soon as we get a clean scan.
-                </p>
-              </div>
-
-              <LiveBarcodeScanner
-                onDetected={(code) => {
-                  setShowLiveScanner(false);
-                  handleDecodedBarcodePipeline(code);
-                }}
-                preferredFormats={preferredFormats}
-                enableBeep
-                enableFlash
-                enableOCRFallback
-              />
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1065,8 +1014,8 @@ export default function BarcodeUpload({
       {/* Info / legal text */}
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <div className="text-[11px] sm:text-xs text-gray-500">
-          Photos stay on your device for decoding. Only the barcode digits are sent to
-          our servers to look up products and ingredients.
+          Photos stay on your device for decoding. Only the barcode digits are sent to our
+          servers to look up products and ingredients.
         </div>
       </div>
 

@@ -1,4 +1,3 @@
-// components/LiveBarcodeScanner.jsx
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
@@ -123,7 +122,94 @@ export default function LiveBarcodeScanner({
 
   const consensusCfg = useMemo(() => makeConsensusConfig(), []);
 
-  // --- Feedback helpers (beep + vibrate + flash overlay) ---
+  /* -------------------------------------------------------------------------- */
+  /*                    NEW: Zoom / Autofocus enhancements                       */
+  /* -------------------------------------------------------------------------- */
+
+  // Track zoom range / current
+  const zoomCapsRef = useRef({ supported: false, min: 1, max: 1, current: 1 });
+  const autoZoomRef = useRef({ enabled: true, lastBumpAt: 0 });
+
+  const detectZoomCaps = useCallback(() => {
+    try {
+      const track = streamRef.current?.getVideoTracks?.()[0];
+      const caps = track?.getCapabilities?.();
+      if (caps && typeof caps.zoom === "object") {
+        zoomCapsRef.current = {
+          supported: true,
+          min: caps.zoom.min ?? 1,
+          max: caps.zoom.max ?? 1,
+          current: zoomCapsRef.current.current || (caps.zoom.min ?? 1),
+        };
+        return zoomCapsRef.current;
+      }
+    } catch {}
+    zoomCapsRef.current = { supported: false, min: 1, max: 1, current: 1 };
+    return zoomCapsRef.current;
+  }, []);
+
+  const applyZoom = useCallback(async (value) => {
+    try {
+      const track = streamRef.current?.getVideoTracks?.()[0];
+      if (!track) return false;
+      const caps = detectZoomCaps();
+      if (!caps.supported) return false;
+
+      const next = Math.max(caps.min, Math.min(caps.max, value));
+      await track.applyConstraints({ advanced: [{ zoom: next }] });
+      zoomCapsRef.current.current = next;
+      return true;
+    } catch {
+      return false;
+    }
+  }, [detectZoomCaps]);
+
+  const applyCameraEnhancements = useCallback(async () => {
+    try {
+      const track = streamRef.current?.getVideoTracks?.()[0];
+      if (!track) return;
+
+      // Autofocus/exposure hints (best-effort, ignored safely if unsupported)
+      try {
+        await track.applyConstraints?.({
+          advanced: [
+            { focusMode: "continuous" },
+            { exposureMode: "continuous" },
+            { whiteBalanceMode: "continuous" },
+            // some Android builds support it, iOS ignores safely
+            { focusDistance: 0 },
+          ],
+        });
+      } catch {}
+
+      // Initial digital zoom: keeps barcode large without forcing user far away
+      detectZoomCaps();
+      const z = zoomCapsRef.current;
+      if (z.supported) {
+        const initial = Math.min(z.max, Math.max(z.min, 1.6));
+        await applyZoom(initial);
+      }
+    } catch {}
+  }, [applyZoom, detectZoomCaps]);
+
+  // Optional: if scanning stalls, gently bump zoom up (helps tiny barcodes)
+  const maybeAutoZoomBump = useCallback(() => {
+    const z = zoomCapsRef.current;
+    if (!autoZoomRef.current.enabled || !z.supported) return;
+    const now = Date.now();
+    if (now - autoZoomRef.current.lastBumpAt < 900) return; // don't spam
+
+    const next = Math.min(z.max, (z.current || 1) + 0.25);
+    if (next > (z.current || 1) + 0.01) {
+      autoZoomRef.current.lastBumpAt = now;
+      applyZoom(next).catch(() => {});
+    }
+  }, [applyZoom]);
+
+  /* -------------------------------------------------------------------------- */
+  /*                             Feedback helpers                                */
+  /* -------------------------------------------------------------------------- */
+
   const playBeep = useCallback(
     (freq = 900, duration = 120) => {
       if (!enableBeep) return;
@@ -166,7 +252,10 @@ export default function LiveBarcodeScanner({
     }
   }, [playBeep, enableFlash]);
 
-  // --- Overlay helpers ---
+  /* -------------------------------------------------------------------------- */
+  /*                             Overlay helpers                                 */
+  /* -------------------------------------------------------------------------- */
+
   const clearOverlay = useCallback(() => {
     try {
       const canvas = overlayRef.current;
@@ -234,7 +323,10 @@ export default function LiveBarcodeScanner({
     } catch {}
   }, []);
 
-  // --- Torch helpers ---
+  /* -------------------------------------------------------------------------- */
+  /*                               Torch helpers                                 */
+  /* -------------------------------------------------------------------------- */
+
   const detectTorch = useCallback(async () => {
     try {
       const stream = streamRef.current;
@@ -257,7 +349,10 @@ export default function LiveBarcodeScanner({
     }
   }, [torchOn]);
 
-  // --- Dynamic import Quagga2 (mobile-safe) ---
+  /* -------------------------------------------------------------------------- */
+  /*                     Dynamic import Quagga2 (mobile-safe)                    */
+  /* -------------------------------------------------------------------------- */
+
   const getQuagga = useCallback(async () => {
     if (quaggaRef.current) return quaggaRef.current;
 
@@ -271,7 +366,10 @@ export default function LiveBarcodeScanner({
     }
   }, []);
 
-  // --- readers -> BarcodeDetector formats ---
+  /* -------------------------------------------------------------------------- */
+  /*                      readers -> BarcodeDetector formats                      */
+  /* -------------------------------------------------------------------------- */
+
   const readersToBarcodeDetectorFormats = useCallback((readerList = []) => {
     const out = new Set();
     const list = Array.isArray(readerList) ? readerList : [];
@@ -299,7 +397,10 @@ export default function LiveBarcodeScanner({
     return Array.from(out);
   }, []);
 
-  // --- Multi-frame consensus ---
+  /* -------------------------------------------------------------------------- */
+  /*                           Multi-frame consensus                              */
+  /* -------------------------------------------------------------------------- */
+
   const considerCode = useCallback(
     (rawValue) => {
       const now = Date.now();
@@ -326,7 +427,10 @@ export default function LiveBarcodeScanner({
     [consensusCfg]
   );
 
-  // --- Stop everything ---
+  /* -------------------------------------------------------------------------- */
+  /*                              Stop everything                                 */
+  /* -------------------------------------------------------------------------- */
+
   const stop = useCallback(async () => {
     setStatusMsg("Stopping scanner...");
 
@@ -392,8 +496,22 @@ export default function LiveBarcodeScanner({
     setStatusMsg("Scanner stopped");
   }, [clearOverlay]);
 
-  // --- Native BarcodeDetector loop ---
+  /* -------------------------------------------------------------------------- */
+  /*                        Native BarcodeDetector loop                            */
+  /* -------------------------------------------------------------------------- */
+
   const startNativeLoop = useCallback(async () => {
+    // Hard requirement: secure context on mobile
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      setStatusMsg("Scanner unavailable: must use HTTPS on mobile");
+      return false;
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setStatusMsg("Scanner unavailable: getUserMedia not supported");
+      return false;
+    }
+
     if (!("BarcodeDetector" in window)) {
       setStatusMsg("Native BarcodeDetector not available");
       return false;
@@ -432,11 +550,14 @@ export default function LiveBarcodeScanner({
     }
 
     try {
+      // camera constraints tuned for barcode scanning
       const constraints = {
         video: {
           facingMode,
           width: { ideal: 1280 },
           height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+          // hint focus behavior when supported (best-effort)
           focusMode: "continuous",
         },
         audio: false,
@@ -445,18 +566,11 @@ export default function LiveBarcodeScanner({
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      const track = stream.getVideoTracks?.()[0];
-      try {
-        await track?.applyConstraints?.({
-          advanced: [
-            { focusMode: "continuous" },
-            { exposureMode: "continuous" },
-            { whiteBalanceMode: "continuous" },
-          ],
-        });
-      } catch {}
-
       videoEl.srcObject = stream;
+
+      // NEW: apply autofocus/zoom enhancements
+      await applyCameraEnhancements();
+
       await videoEl.play().catch(() => {});
       setStatusMsg("Scanning (native)...");
       setUsingNative(true);
@@ -487,11 +601,16 @@ export default function LiveBarcodeScanner({
               if (!rawValue) continue;
 
               const stable = considerCode(rawValue);
-              if (!stable) continue;
+              if (!stable) {
+                // NEW: if we’re not getting stable detections, gently bump zoom
+                maybeAutoZoomBump();
+                continue;
+              }
 
               const now = Date.now();
               const last = lastDetectedRef.current;
 
+              // debounce duplicates
               if (last.code === stable && now - last.time < duplicateDelayMs) continue;
               lastDetectedRef.current = { code: stable, time: now };
 
@@ -515,6 +634,9 @@ export default function LiveBarcodeScanner({
                 return;
               }
             }
+          } else {
+            // NEW: no results from detector → optional zoom bump
+            maybeAutoZoomBump();
           }
         } catch (detErr) {
           console.warn("BarcodeDetector.detect() error:", detErr);
@@ -542,10 +664,21 @@ export default function LiveBarcodeScanner({
     successFeedback,
     detectTorch,
     trackFps,
+    applyCameraEnhancements,
+    maybeAutoZoomBump,
   ]);
 
-  // --- Quagga fallback (dynamic import) ---
+  /* -------------------------------------------------------------------------- */
+  /*                       Quagga fallback (dynamic import)                       */
+  /* -------------------------------------------------------------------------- */
+
   const startQuagga = useCallback(async () => {
+    // Hard requirement: secure context on mobile
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      setStatusMsg("Scanner unavailable: must use HTTPS on mobile");
+      return false;
+    }
+
     const container = containerRef.current;
     if (!container) {
       setStatusMsg("No container for Quagga");
@@ -577,8 +710,8 @@ export default function LiveBarcodeScanner({
           height: { ideal: 720 },
         },
         // Helps speed/accuracy by scanning the central region
-        // (Works in quagga2; safe if ignored)
-        area: { top: "35%", right: "10%", left: "10%", bottom: "35%" },
+        // Make this tighter if you want more focus on barcode only
+        area: { top: "38%", right: "14%", left: "14%", bottom: "38%" },
       },
       locator: {
         patchSize: "medium",
@@ -601,6 +734,9 @@ export default function LiveBarcodeScanner({
       return false;
     }
 
+    // NEW: try to apply autofocus/zoom constraints if stream is accessible
+    // Quagga owns the stream internally, so we can’t always reach the track.
+    // We still attempt torch detection; zoom may not be possible here.
     setTimeout(() => detectTorch().catch(() => {}), 600);
 
     Quagga.onProcessed((result) => {
@@ -675,6 +811,10 @@ export default function LiveBarcodeScanner({
     detectTorch,
     getQuagga,
   ]);
+
+  /* -------------------------------------------------------------------------- */
+  /*                                  Start                                     */
+  /* -------------------------------------------------------------------------- */
 
   const start = useCallback(async () => {
     if (scannerStarted) return;
@@ -821,7 +961,7 @@ export default function LiveBarcodeScanner({
 
         {!lastStableCode && scannerStarted && (
           <div className="text-[11px] text-gray-500">
-            Tip: Fill the viewfinder with the barcode. Avoid glare; toggle torch if needed.
+            Tip: Hold ~6–10 inches away. Keep the barcode inside the box. Avoid glare; toggle torch if needed.
           </div>
         )}
       </div>

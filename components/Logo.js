@@ -7,21 +7,39 @@ export default function Logo({ size = "medium", className = "" }) {
   const [hoverLogo, setHoverLogo] = useState(false);
 
   useEffect(() => {
-    // Animate only once per session for a more “premium” feel
+    /**
+     * Desired behavior:
+     * - Animate on first load
+     * - Animate again on hard refresh
+     * - Do NOT animate on client-side route changes
+     */
+
+    try {
+      // Detect hard reloads and allow animation again
+      const nav = performance.getEntriesByType("navigation")?.[0];
+      if (nav?.type === "reload") {
+        sessionStorage.removeItem("peak_logo_animated_once");
+      }
+    } catch {
+      // ignore
+    }
+
     try {
       const key = "peak_logo_animated_once";
       const already = sessionStorage.getItem(key);
+
       if (already) {
         setAnimateLogo(false);
         return;
       }
+
       const timer = setTimeout(() => {
         setAnimateLogo(true);
         sessionStorage.setItem(key, "1");
       }, 180);
+
       return () => clearTimeout(timer);
     } catch {
-      // If sessionStorage is unavailable, just animate as normal
       const timer = setTimeout(() => setAnimateLogo(true), 180);
       return () => clearTimeout(timer);
     }
@@ -41,7 +59,7 @@ export default function Logo({ size = "medium", className = "" }) {
       onMouseEnter={() => setHoverLogo(true)}
       onMouseLeave={() => setHoverLogo(false)}
     >
-      {/* Hover glow (keep it subtle for luxury) */}
+      {/* Hover glow */}
       <motion.div
         className="absolute inset-0 pointer-events-none flex items-center justify-center"
         animate={{ opacity: hoverLogo ? 0.35 : 0, scale: hoverLogo ? 1.06 : 1 }}
@@ -58,20 +76,20 @@ export default function Logo({ size = "medium", className = "" }) {
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 399.39642 101.43724"
         className={`block w-auto overflow-visible ${sizeClasses[size]} ${
-          animateLogo ? "animate" : ""
+          animateLogo ? "animate" : "static"
         }`}
         aria-label="PEAK"
         role="img"
       >
-        <g id="g1" transform="translate(-50.020566,-198.63523)">
-          <g id="g4">
+        <g transform="translate(-50.020566,-198.63523)">
+          <g>
             {/* P */}
-            <g id="logo-p" style={{ transformOrigin: "center" }}>
+            <g id="logo-p">
               <path d="m 92.393149,253.81155 c 2.031802,-0.96728 3.574669,-2.64479 10.454821,-2.62057 10.27964,0.0362 11.65906,0.0484 15.16292,-3.80921 3.06543,-3.37492 4.34395,-9.58668 2.04521,-13.52404 -2.77758,-4.75754 -6.7642,-5.78501 -15.44524,-5.88109 -5.489426,-0.0608 -9.597305,0.32786 -13.219586,1.64762 -4.597509,1.67508 -5.813858,5.12906 -6.763556,9.99166 -1.481619,7.58611 -4.929354,23.44351 -3.805149,22.93393 3.534301,-1.60203 8.398409,-7.22811 11.57058,-8.7383 z M 52.42432,296.74084 c -4.182535,-5.10148 -1.983938,-11.76351 -0.292654,-19.78844 2.46684,-11.70485 6.054984,-37.12319 10.363546,-55.28736 1.636958,-6.90114 7.044818,-15.0305 14.043122,-18.05923 6.001131,-2.59717 12.133044,-3.78963 18.393648,-3.68905 10.397418,0.16704 21.479238,-1.64166 30.915258,2.58934 6.44346,2.88917 12.14099,8.30281 15.36322,14.58634 3.96312,7.7283 4.6922,17.20515 3.54165,25.81382 -0.86026,6.43661 -3.58112,12.8458 -7.62368,17.92789 -4.221,5.30641 -10.20142,9.33193 -16.44903,11.96673 -9.71658,4.09776 -22.262256,-0.72998 -31.18391,5.32873 -9.29759,6.31401 -15.732823,18.31448 -26.750576,20.83374 -3.430526,0.78441 -8.089444,0.49884 -10.320594,-2.22251 z" />
             </g>
 
             {/* EAK */}
-            <g id="logo-eak" style={{ opacity: 1 }}>
+            <g id="logo-eak">
               <g id="letter-e">
                 <path d="m 285.04487,198.8605 31.00331,0.0485 c 5.45135,32.64082 17.20288,100.71039 17.20288,100.71039 l -28.49822,0.31536 -1.8453,-15.9714 h -37.0176 c -2.68155,5.33333 -5.36309,10.66667 -8.04464,16 h -28.02904 c 17.82869,-33.02983 37.01609,-68.28203 55.22861,-101.10285 z m 15.88346,63.95569 c 0,0 -3.59011,-23.44721 -5.68749,-34.01552 -4.48756,9.01301 -19.23232,33.77746 -19.23232,33.77746 z" />
               </g>
@@ -86,13 +104,21 @@ export default function Logo({ size = "medium", className = "" }) {
         </g>
       </svg>
 
-      {/* Luxury animations */}
       <style jsx>{`
-        /* Whole mark cinematic fade (subtle) */
-        svg {
+        /* Default: ALWAYS visible */
+        #logo-p,
+        #letter-e,
+        #letter-a,
+        #letter-k {
           opacity: 1;
+          transform: none;
+          filter: none;
+          transform-box: fill-box;
+          transform-origin: center;
         }
-        .animate svg {
+
+        /* Whole mark fade */
+        svg.animate {
           animation: markFade 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
         }
 
@@ -107,39 +133,33 @@ export default function Logo({ size = "medium", className = "" }) {
           }
         }
 
-        /* Elegant tones: P slightly deeper for “anchor” */
         #logo-p path {
-          fill: #0b1220; /* richer, luxury black */
+          fill: #0b1220;
         }
         #logo-eak path {
-          fill: #111827; /* refined slate */
+          fill: #111827;
         }
 
-        /* Start state for each letter */
-        #logo-p,
-        #letter-e,
-        #letter-a,
-        #letter-k {
+        /* Start state ONLY when animating */
+        svg.animate #logo-p,
+        svg.animate #letter-e,
+        svg.animate #letter-a,
+        svg.animate #letter-k {
           opacity: 0;
-          transform-box: fill-box;
-          transform-origin: center;
           filter: blur(8px);
-          will-change: transform, opacity, filter;
         }
 
-        /* P arrives first, slightly more “settle” */
-        .animate #logo-p {
+        svg.animate #logo-p {
           animation: anchorIn 1050ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
-        /* Then E → A → K with clear cadence */
-        .animate #letter-e {
+        svg.animate #letter-e {
           animation: focusIn 980ms cubic-bezier(0.16, 1, 0.3, 1) forwards 260ms;
         }
-        .animate #letter-a {
+        svg.animate #letter-a {
           animation: focusIn 980ms cubic-bezier(0.16, 1, 0.3, 1) forwards 520ms;
         }
-        .animate #letter-k {
+        svg.animate #letter-k {
           animation: focusIn 980ms cubic-bezier(0.16, 1, 0.3, 1) forwards 780ms;
         }
 
@@ -148,11 +168,6 @@ export default function Logo({ size = "medium", className = "" }) {
             opacity: 0;
             transform: translateY(-8px) scale(0.985);
             filter: blur(10px);
-          }
-          55% {
-            opacity: 1;
-            transform: translateY(0) scale(1.01);
-            filter: blur(3px);
           }
           100% {
             opacity: 1;
@@ -167,10 +182,6 @@ export default function Logo({ size = "medium", className = "" }) {
             transform: translateY(-6px);
             filter: blur(10px);
           }
-          55% {
-            opacity: 1;
-            filter: blur(3px);
-          }
           100% {
             opacity: 1;
             transform: translateY(0);
@@ -178,17 +189,16 @@ export default function Logo({ size = "medium", className = "" }) {
           }
         }
 
-        /* Accessibility */
         @media (prefers-reduced-motion: reduce) {
           svg,
           #logo-p,
           #letter-e,
           #letter-a,
           #letter-k {
+            animation: none !important;
             opacity: 1 !important;
             transform: none !important;
             filter: none !important;
-            animation: none !important;
           }
         }
       `}</style>

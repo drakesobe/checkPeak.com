@@ -1,7 +1,7 @@
 // pages/ocr.js
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import OCRUpload from "../components/OCRUpload";
 import BarcodeUpload from "../components/BarcodeUpload";
 import OCRScanResults from "../components/OCRScanResults";
@@ -19,8 +19,6 @@ export default function OCRPage() {
   const [rawOCR, setRawOCR] = useState("");
   const [detectedBanned, setDetectedBanned] = useState([]);
   const [detectedIngredients, setDetectedIngredients] = useState([]);
-  const [highlightedBannedOCR, setHighlightedBannedOCR] = useState("");
-  const [highlightedIngredientsOCR, setHighlightedIngredientsOCR] = useState("");
   const [combinedHighlightedOCR, setCombinedHighlightedOCR] = useState("");
   const [progress, setProgress] = useState(0);
   const [scanning, setScanning] = useState(false);
@@ -29,6 +27,148 @@ export default function OCRPage() {
   const underlineRef = useRef(null);
   const [showRawOCR, setShowRawOCR] = useState(false);
 
+  // -----------------------------
+  // 🔒 Conversion Gate (Email unlock)
+  // -----------------------------
+  const [unlockEmail, setUnlockEmail] = useState("");
+  const [unlockRole, setUnlockRole] = useState("Athlete");
+  const [unlockOrg, setUnlockOrg] = useState("");
+  const [unlockLoading, setUnlockLoading] = useState(false);
+  const [unlockError, setUnlockError] = useState("");
+  const [unlockSuccess, setUnlockSuccess] = useState(false);
+
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockSeen, setUnlockSeen] = useState(false);
+
+  const [lastScanMeta, setLastScanMeta] = useState({
+    productName: null,
+    scanMode: null,
+    bannedCount: 0,
+    ingredientCount: 0,
+  });
+
+  const hasResults =
+    (rawOCR && rawOCR.trim().length > 0) ||
+    detectedBanned.length > 0 ||
+    detectedIngredients.length > 0;
+
+  // Consider unlocked if logged-in OR previously unlocked via email
+  useEffect(() => {
+    const loggedIn = !!(user && (user.Email || user.email));
+    if (loggedIn) {
+      setIsUnlocked(true);
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("cp_unlocked");
+      if (saved === "1") setIsUnlocked(true);
+    }
+  }, [user]);
+
+  // Fire analytics when gate is shown (once per page load)
+  useEffect(() => {
+    if (!hasResults) return;
+    if (isUnlocked) return;
+    if (unlockSeen) return;
+
+    setUnlockSeen(true);
+
+    try {
+      trackEvent("unlock_gate_shown", {
+        eventType: "conversion_gate",
+        userEmail: user?.Email || user?.email || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "ocr_results_gate",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        payload: {
+          scanMode: lastScanMeta?.scanMode || scanMode,
+          bannedCount: lastScanMeta?.bannedCount ?? detectedBanned.length,
+          ingredientCount: lastScanMeta?.ingredientCount ?? detectedIngredients.length,
+          productName: lastScanMeta?.productName || null,
+        },
+      });
+    } catch (e) {
+      console.error("unlock_gate_shown tracking failed:", e);
+    }
+  }, [
+    hasResults,
+    isUnlocked,
+    unlockSeen,
+    user,
+    scanMode,
+    lastScanMeta,
+    detectedBanned.length,
+    detectedIngredients.length,
+  ]);
+
+  const handleUnlockSubmit = async (e) => {
+    e.preventDefault();
+    setUnlockError("");
+    setUnlockSuccess(false);
+
+    const email = unlockEmail.trim();
+    if (!email || !email.includes("@")) {
+      setUnlockError("Please enter a valid email.");
+      return;
+    }
+
+    setUnlockLoading(true);
+    try {
+      // Save to your existing waitlist endpoint (Airtable)
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          role: unlockRole,
+          organization: unlockOrg || null,
+          source: "ocr_unlock_gate",
+        }),
+      });
+
+      if (!res.ok) throw new Error("Unable to save. Please try again.");
+
+      setUnlockSuccess(true);
+      setIsUnlocked(true);
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("cp_unlocked", "1");
+        window.localStorage.setItem("cp_unlocked_email", email);
+      }
+
+      // Analytics: unlock completed
+      try {
+        await trackEvent("unlock_gate_completed", {
+          eventType: "conversion_gate",
+          userEmail: email,
+          path: typeof window !== "undefined" ? window.location.pathname : "",
+          source: "ocr_results_gate",
+          device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+          payload: {
+            scanMode: lastScanMeta?.scanMode || scanMode,
+            bannedCount: lastScanMeta?.bannedCount ?? detectedBanned.length,
+            ingredientCount:
+              lastScanMeta?.ingredientCount ?? detectedIngredients.length,
+            productName: lastScanMeta?.productName || null,
+          },
+        });
+      } catch (e2) {
+        console.error("unlock_gate_completed tracking failed:", e2);
+      }
+
+      toast.success("Unlocked! Scans + alerts will be available as we roll out.");
+    } catch (err) {
+      console.error(err);
+      setUnlockError(err?.message || "Something went wrong. Please try again.");
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
+
+  // -----------------------------
+  // Existing stuff
+  // -----------------------------
   const banTypeColors = [
     { label: "Prohibited", color: "#d62828" },
     { label: "Limited to Out of Competition", color: "#f77f00" },
@@ -64,14 +204,14 @@ export default function OCRPage() {
     }
   }, [activeTab, user]);
 
-  const escapeRegex = (s = "") =>
-    String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
   // Not wired yet, but left in case you want smart OCR highlighting later
-  const generateCombinedHighlightedOCR = (rawText = "", bannedRecs = [], ingredientRecs = []) => {
+  const generateCombinedHighlightedOCR = (
+    rawText = "",
+    bannedRecs = [],
+    ingredientRecs = []
+  ) => {
     if (!rawText) return "";
     let out = rawText;
-    // You can plug in your OCR highlight logic here later
     return out;
   };
 
@@ -139,10 +279,18 @@ export default function OCRPage() {
       : [];
     setDetectedIngredients(ingredientMatches);
 
-    // Optional: keep a hook here if you want OCR highlighting later
+    // Optional: hook if you want OCR highlighting later
     // setCombinedHighlightedOCR(
     //   generateCombinedHighlightedOCR(raw, bannedMatches, ingredientMatches)
     // );
+
+    // Save "headline" meta for the gate + analytics
+    setLastScanMeta({
+      productName: result.productName || null,
+      scanMode,
+      bannedCount: bannedMatches.length,
+      ingredientCount: ingredientMatches.length,
+    });
 
     // 🔥 Analytics: log completed scan
     try {
@@ -173,6 +321,10 @@ export default function OCRPage() {
     setProgress(0);
     setError("");
 
+    // reset gate messaging when a new scan starts (but don’t re-lock if already unlocked)
+    setUnlockError("");
+    setUnlockSuccess(false);
+
     // 🔥 Analytics: scan start (nutrition label)
     try {
       trackEvent("scan_started", {
@@ -192,7 +344,6 @@ export default function OCRPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          // Optional: if you want /api/check to also save to Scans Airtable internally
           userEmail: user?.Email || user?.email || "",
         }),
       });
@@ -212,6 +363,9 @@ export default function OCRPage() {
     setScanning(true);
     setProgress(0);
     setError("");
+
+    setUnlockError("");
+    setUnlockSuccess(false);
 
     // 🔥 Analytics: scan start (barcode)
     try {
@@ -236,6 +390,20 @@ export default function OCRPage() {
       setProgress(100);
     }
   };
+
+  const bannedCount = lastScanMeta?.bannedCount ?? detectedBanned.length;
+  const ingredientCount =
+    lastScanMeta?.ingredientCount ?? detectedIngredients.length;
+
+  const gateTitle =
+    bannedCount > 0
+      ? "Potential risk detected"
+      : "Scan complete — no obvious red flags found";
+
+  const gateSubtitle =
+    bannedCount > 0
+      ? "Unlock details + save scan history so you can reference this later."
+      : "Save this scan to build history and get alerts as our database expands.";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -273,22 +441,144 @@ export default function OCRPage() {
               {scanMode === "Nutrition Label" ? (
                 <OCRUpload multiple={true} onScan={handleOCRScan} />
               ) : (
-                <BarcodeUpload onResult={handleBarcodeScan} showScanButton={true} />
+                <BarcodeUpload
+                  onResult={handleBarcodeScan}
+                  showScanButton={true}
+                />
               )}
             </div>
 
             {error && (
-              <p className="text-red-500 mt-2 text-center text-sm sm:text-base">{error}</p>
+              <p className="text-red-500 mt-2 text-center text-sm sm:text-base">
+                {error}
+              </p>
             )}
 
-            {/* Scan results */}
-            <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4">
-              <OCRScanResults
-                ocrText={rawOCR}
-                detectedSubstances={detectedBanned}
-                detectedIngredients={detectedIngredients}
-                showOCR={true}
-              />
+            {/* Results block (gated) */}
+            <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4 relative overflow-hidden">
+              {/* Headline counts always visible (the "wow moment") */}
+              {hasResults && (
+                <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                  <div className="text-sm sm:text-base">
+                    <p className="font-semibold text-gray-900">
+                      Results summary
+                    </p>
+                    <p className="text-gray-600 text-xs sm:text-sm">
+                      {lastScanMeta?.productName
+                        ? `Product: ${lastScanMeta.productName} • `
+                        : ""}
+                      Mode: {lastScanMeta?.scanMode || scanMode}
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2 flex-wrap">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                        bannedCount > 0
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}
+                    >
+                      {bannedCount} flagged
+                    </span>
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                      {ingredientCount} ingredients matched
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Blur results if not unlocked */}
+              <div className={`${!isUnlocked && hasResults ? "filter blur-sm pointer-events-none select-none" : ""}`}>
+                <OCRScanResults
+                  ocrText={rawOCR}
+                  detectedSubstances={detectedBanned}
+                  detectedIngredients={detectedIngredients}
+                  showOCR={true}
+                />
+              </div>
+
+              {/* Gate overlay */}
+              {!isUnlocked && hasResults && (
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                  <div className="w-full max-w-xl bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-xl p-5 sm:p-6">
+                    <div className="flex flex-col gap-2 text-center">
+                      <p
+                        className={`text-sm font-semibold ${
+                          bannedCount > 0 ? "text-red-700" : "text-emerald-700"
+                        }`}
+                      >
+                        {gateTitle}
+                      </p>
+                      <h3 className="text-xl sm:text-2xl font-bold text-gray-900">
+                        Unlock full details + save this scan
+                      </h3>
+                      <p className="text-gray-600 text-sm">
+                        {gateSubtitle}
+                      </p>
+
+                      <form
+                        onSubmit={handleUnlockSubmit}
+                        className="mt-3 flex flex-col gap-2"
+                      >
+                        <input
+                          type="email"
+                          value={unlockEmail}
+                          onChange={(e) => setUnlockEmail(e.target.value)}
+                          placeholder="Email to unlock + save scans"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                          required
+                        />
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <select
+                            value={unlockRole}
+                            onChange={(e) => setUnlockRole(e.target.value)}
+                            className="w-full sm:w-48 px-3 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                          >
+                            <option>Athlete</option>
+                            <option>Coach / Staff</option>
+                            <option>Compliance</option>
+                            <option>Performance Gym</option>
+                            <option>Organization</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={unlockOrg}
+                            onChange={(e) => setUnlockOrg(e.target.value)}
+                            placeholder="Team / org (optional)"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={unlockLoading}
+                          className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white font-semibold text-sm shadow-sm hover:brightness-110 transition ${
+                            unlockLoading ? "opacity-70 cursor-not-allowed" : ""
+                          }`}
+                        >
+                          {unlockLoading ? "Unlocking..." : "Unlock Details"}
+                        </button>
+
+                        {unlockError && (
+                          <p className="text-xs text-red-500">{unlockError}</p>
+                        )}
+                        {unlockSuccess && (
+                          <p className="text-xs text-emerald-600">
+                            Unlocked. Saving enabled.
+                          </p>
+                        )}
+
+                        <p className="text-[10px] text-gray-500 mt-1">
+                          No spam. Used only for scan history + updates.
+                        </p>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
           </>
         )}

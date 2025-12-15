@@ -249,13 +249,9 @@ export default function HomePage() {
           <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-600">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold text-gray-800">
-                Momentum right now:
               </span>
               <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-                750k+ short-form views (21 days)
-              </span>
-              <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-                Built using reference lists (WADA / NCAA / pro orgs)
+                Built using reference lists: WADA / NCAA / NFL / MLB / NBA / Pro Orgs
               </span>
             </div>
             <div className="text-[10px] text-gray-400">

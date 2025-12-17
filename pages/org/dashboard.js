@@ -1,6 +1,4 @@
 // pages/org/dashboard.js
-"use client";
-
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
@@ -15,13 +13,20 @@ import {
   Search,
   Link as LinkIcon,
   Mail,
-  Sparkles,
   ShieldCheck,
+  Sparkles,
+  AlertTriangle,
+  Filter,
+  CheckCircle2,
+  Download,
+  LayoutDashboard,
+  ChevronRight,
+  ChevronDown,
+  X,
+  Pencil,
+  Tag,
+  ClipboardList,
 } from "lucide-react";
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -30,33 +35,13 @@ function normalizeEmail(email) {
 function safeDate(value) {
   if (!value) return null;
   const d = new Date(value);
-  if (!Number.isNaN(d.getTime())) return d;
-
-  // If Airtable stores CreatedAt as "MM/DD/YYYY HH:mm" sometimes Date() can fail in some locales.
-  // Try a basic fallback parse:
-  const s = String(value).trim();
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?/);
-  if (m) {
-    const mm = Number(m[1]);
-    const dd = Number(m[2]);
-    const yyyy = Number(m[3]);
-    const hh = Number(m[4] || 0);
-    const min = Number(m[5] || 0);
-    const d2 = new Date(yyyy, mm - 1, dd, hh, min, 0);
-    if (!Number.isNaN(d2.getTime())) return d2;
-  }
-  return null;
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function fmtDate(value) {
   const d = safeDate(value);
   if (!d) return value ? String(value) : "";
   return d.toLocaleString();
-}
-
-function daysBetween(a, b) {
-  const ms = Math.abs(a.getTime() - b.getTime());
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 async function safeJson(res) {
@@ -71,9 +56,29 @@ function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-/* -------------------------------------------------------------------------- */
-/* UI bits                                                                    */
-/* -------------------------------------------------------------------------- */
+function downloadTextFile(filename, text, mime = "text/plain") {
+  try {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch {}
+}
+
+function toCSV(rows) {
+  const escape = (v) => {
+    const s = String(v ?? "");
+    const needs = /[",\n]/.test(s);
+    const escaped = s.replace(/"/g, '""');
+    return needs ? `"${escaped}"` : escaped;
+  };
+  return rows.map((r) => r.map(escape).join(",")).join("\n");
+}
 
 function StatCard({ icon: Icon, label, value, sub }) {
   return (
@@ -92,15 +97,45 @@ function StatCard({ icon: Icon, label, value, sub }) {
   );
 }
 
-function Pill({ children }) {
+function Pill({ children, tone = "neutral" }) {
+  const toneCls =
+    tone === "warn"
+      ? "bg-amber-50 text-amber-800 border-amber-200"
+      : tone === "bad"
+      ? "bg-red-50 text-red-800 border-red-200"
+      : tone === "good"
+      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+      : "bg-gray-100 text-gray-700 border-gray-200";
+
   return (
-    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+    <span
+      className={classNames(
+        "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
+        toneCls
+      )}
+    >
       {children}
     </span>
   );
 }
 
-function Button({ children, onClick, variant = "primary", disabled = false, className = "" }) {
+function TagChip({ text }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold border border-gray-200 bg-white text-gray-700">
+      <Tag className="w-3.5 h-3.5 text-gray-400" />
+      {text}
+    </span>
+  );
+}
+
+function Button({
+  children,
+  onClick,
+  variant = "primary",
+  disabled = false,
+  className = "",
+  title = "",
+}) {
   const base =
     "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition";
   const styles =
@@ -114,7 +149,13 @@ function Button({ children, onClick, variant = "primary", disabled = false, clas
     <button
       onClick={onClick}
       disabled={disabled}
-      className={classNames(base, styles, disabled ? "opacity-70 cursor-not-allowed" : "", className)}
+      title={title}
+      className={classNames(
+        base,
+        styles,
+        disabled ? "opacity-70 cursor-not-allowed" : "",
+        className
+      )}
       type="button"
     >
       {children}
@@ -122,7 +163,7 @@ function Button({ children, onClick, variant = "primary", disabled = false, clas
   );
 }
 
-function CopyButton({ text, label = "Copy" }) {
+function CopyButton({ text, label = "Copy", compact = false }) {
   const [copied, setCopied] = useState(false);
 
   const onCopy = async () => {
@@ -136,16 +177,53 @@ function CopyButton({ text, label = "Copy" }) {
   };
 
   return (
-    <Button variant="secondary" onClick={onCopy} disabled={!text}>
-      <Copy className="w-4 h-4" />
+    <Button
+      variant="secondary"
+      onClick={onCopy}
+      disabled={!text}
+      className={compact ? "px-3 py-2 text-xs" : ""}
+    >
+      <Copy className={compact ? "w-3.5 h-3.5" : "w-4 h-4"} />
       {copied ? "Copied" : label}
     </Button>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Dashboard                                                                  */
-/* -------------------------------------------------------------------------- */
+function Modal({ open, title, children, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999]">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        role="button"
+        tabIndex={0}
+      />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
+          <div className="p-5 border-b flex items-start justify-between gap-4">
+            <div>
+              <p className="text-lg font-extrabold text-gray-900">{title}</p>
+              <p className="text-[12px] text-gray-500 mt-1">
+                Update status/tags to power filtering and workflow.
+              </p>
+            </div>
+            <button
+              className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50"
+              onClick={onClose}
+              type="button"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-5">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function OrgDashboard() {
   const router = useRouter();
@@ -162,19 +240,15 @@ export default function OrgDashboard() {
     () => String(user?.Name || user?.name || user?.Organization || "Organization"),
     [user]
   );
-
   const orgEmail = useMemo(() => String(user?.Email || user?.email || ""), [user]);
-
   const orgToken = useMemo(() => {
     return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
   }, [user]);
 
   const orgAuthHeaders = useMemo(() => {
-    // Works even if cookie auth is flaky; requireOrg supports this header fallback
     return orgToken ? { "x-org-token": orgToken } : {};
   }, [orgToken]);
 
-  // URL helpers for invite links
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "";
     return window.location.origin;
@@ -182,26 +256,62 @@ export default function OrgDashboard() {
 
   const inviteLink = useMemo(() => {
     if (!origin || !orgToken) return "";
-    // You can change this path to whatever your athlete signup route is.
-    // Common patterns:
-    // - /signup?role=athlete&token=...
-    // - /athlete/signup?token=...
     return `${origin}/signup?role=athlete&token=${encodeURIComponent(orgToken)}`;
   }, [origin, orgToken]);
 
-  // Data
+  // Overview payload
   const [loading, setLoading] = useState(true);
-  const [loadingDeep, setLoadingDeep] = useState(false);
   const [error, setError] = useState("");
 
+  const [stats, setStats] = useState({
+    totalAthletes: 0,
+    totalPlans: 0,
+    athletesWithPlans: 0,
+    coveragePct: 0,
+    activeLast30: 0,
+    staleCount: 0,
+  });
+
   const [athletes, setAthletes] = useState([]);
-  const [plansByEmail, setPlansByEmail] = useState({}); // { email: [prescriptions] }
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [templates, setTemplates] = useState([]);
 
   // UI controls
   const [search, setSearch] = useState("");
-  const [selectedEmail, setSelectedEmail] = useState("");
+  const [filterMode, setFilterMode] = useState("all"); // all | needsPlan | stale | current
+  const [sortMode, setSortMode] = useState("priority"); // priority | lastPlan | name
+  const [expanded, setExpanded] = useState({});
+  const toggleExpanded = (email) => {
+    const e = normalizeEmail(email);
+    if (!e) return;
+    setExpanded((prev) => ({ ...prev, [e]: !prev[e] }));
+  };
 
-  // Auth guards
+  // Edit modal state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr, setEditErr] = useState("");
+  const [editAthlete, setEditAthlete] = useState(null);
+
+  const openEdit = (athlete) => {
+    setEditErr("");
+    setEditAthlete({
+      email: normalizeEmail(athlete?.email),
+      name: athlete?.name || "",
+      status: athlete?.status || "Active",
+      tags: Array.isArray(athlete?.tags) ? athlete.tags : [],
+      notes: athlete?.notes || "",
+    });
+    setEditOpen(true);
+  };
+
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditErr("");
+    setEditAthlete(null);
+  };
+
+  // Guards
   useEffect(() => {
     if (!user) {
       router.push("/");
@@ -213,237 +323,122 @@ export default function OrgDashboard() {
     }
   }, [user, role, router]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Fetchers                                                                 */
-  /* ------------------------------------------------------------------------ */
-
-  const fetchAthletes = useCallback(async () => {
-    const res = await fetch("/api/org/getAthletes", {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        ...orgAuthHeaders,
-      },
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) throw new Error(data?.error || "Failed to load athletes");
-
-    const list = Array.isArray(data?.athletes) ? data.athletes : [];
-    return list;
-  }, [orgAuthHeaders]);
-
-  const fetchPlansForAthlete = useCallback(
-    async (email) => {
-      const e = normalizeEmail(email);
-      if (!e) return [];
-
-      const res = await fetch(
-        `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(e)}`,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            ...orgAuthHeaders,
-          },
-        }
-      );
-
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to load plan history");
-
-      return Array.isArray(data?.prescriptions) ? data.prescriptions : [];
-    },
-    [orgAuthHeaders]
-  );
-
-  /**
-   * Loads:
-   * 1) athletes list
-   * 2) plan history for each athlete (for stats + activity feed)
-   *
-   * Note: For very large orgs, you’ll want an aggregated API endpoint
-   * to avoid N+1 requests. For now, this is perfect for early usage.
-   */
-  const refreshAll = useCallback(async () => {
-    setError("");
+  const refreshOverview = useCallback(async () => {
     setLoading(true);
+    setError("");
 
     try {
-      const list = await fetchAthletes();
-      setAthletes(list);
+      const res = await fetch(`/api/org/getOrgOverview`, {
+        method: "GET",
+        credentials: "include",
+        headers: { ...orgAuthHeaders },
+      });
 
-      // Auto-select first athlete
-      if (!selectedEmail) {
-        const first = list.find((a) => a?.email);
-        if (first?.email) setSelectedEmail(normalizeEmail(first.email));
-      }
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || "Failed to load org overview");
 
-      // Deep load plans for activity + stats
-      setLoadingDeep(true);
-
-      // Concurrency-limited fetch (prevents a request storm)
-      const emails = list.map((a) => normalizeEmail(a?.email)).filter(Boolean);
-      const nextMap = {};
-
-      const limit = 5;
-      for (let i = 0; i < emails.length; i += limit) {
-        const batch = emails.slice(i, i + limit);
-        const results = await Promise.all(
-          batch.map(async (e) => {
-            try {
-              const plans = await fetchPlansForAthlete(e);
-              return [e, plans];
-            } catch {
-              return [e, []];
-            }
-          })
-        );
-        results.forEach(([e, plans]) => {
-          nextMap[e] = plans;
-        });
-      }
-
-      setPlansByEmail(nextMap);
+      setStats(data?.stats || {});
+      setAthletes(Array.isArray(data?.athletes) ? data.athletes : []);
+      setRecentActivity(Array.isArray(data?.recentActivity) ? data.recentActivity : []);
     } catch (err) {
-      console.error("[org/dashboard] refreshAll error:", err);
+      console.error("[org/dashboard] refreshOverview error:", err);
       setError(err?.message || "Failed to load organization overview.");
     } finally {
-      setLoadingDeep(false);
       setLoading(false);
     }
-  }, [fetchAthletes, fetchPlansForAthlete, selectedEmail]);
+  }, [orgAuthHeaders]);
+
+  const refreshTemplates = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/org/getPlanTemplates`, {
+        method: "GET",
+        credentials: "include",
+        headers: { ...orgAuthHeaders },
+      });
+      const data = await safeJson(res);
+      if (!res.ok) return;
+      setTemplates(Array.isArray(data?.templates) ? data.templates : []);
+    } catch {}
+  }, [orgAuthHeaders]);
 
   useEffect(() => {
     if (!user) return;
     if (role !== "organization") return;
-    refreshAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, orgToken]);
+    refreshOverview();
+    refreshTemplates();
+  }, [user, role, orgToken, refreshOverview, refreshTemplates]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Derived data                                                             */
-  /* ------------------------------------------------------------------------ */
+  // Derived: counts + triage
+  const counts = useMemo(() => {
+    const list = Array.isArray(athletes) ? athletes : [];
+    const needsPlan = list.filter((a) => !!a?.needsPlan).length;
+    const stale = list.filter((a) => !!a?.stale && !a?.needsPlan).length;
+    const current = list.filter((a) => !a?.stale && !a?.needsPlan).length;
+    return { needsPlan, stale, current, total: list.length };
+  }, [athletes]);
 
-  const normalizedAthletes = useMemo(() => {
-    return (athletes || []).map((a) => {
-      const email = normalizeEmail(a?.email);
-      const plans = plansByEmail[email] || [];
+  const triageHeadline = useMemo(() => {
+    if (!counts.total) return "No athletes yet — invite athletes to begin.";
+    if (counts.needsPlan > 0) return `Start here: ${counts.needsPlan} athlete(s) need their first plan`;
+    if (counts.stale > 0) return `Next: ${counts.stale} athlete(s) need an update`;
+    return "All athletes are current — keep it up.";
+  }, [counts]);
 
-      const lastPlan = plans[0] || null; // API returns desc sort by CreatedAt
-      const lastPlanAt = lastPlan?.createdAt ? safeDate(lastPlan.createdAt) : null;
-
-      return {
-        ...a,
-        email,
-        plansCount: plans.length,
-        lastPlanAt,
-        lastPlanTitle: lastPlan?.title || "",
-      };
-    });
-  }, [athletes, plansByEmail]);
-
+  // Filtered athletes
   const filteredAthletes = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
-    const list = normalizedAthletes;
+    let list = Array.isArray(athletes) ? [...athletes] : [];
 
-    const out = q
-      ? list.filter((a) => {
-          const name = String(a?.name || "").toLowerCase();
-          const email = String(a?.email || "").toLowerCase();
-          return name.includes(q) || email.includes(q);
-        })
-      : list;
-
-    // Sort by last plan date desc, then createdAt desc
-    return out.sort((a, b) => {
-      const ad = a.lastPlanAt ? a.lastPlanAt.getTime() : 0;
-      const bd = b.lastPlanAt ? b.lastPlanAt.getTime() : 0;
-      if (bd !== ad) return bd - ad;
-
-      const ac = safeDate(a.createdAt)?.getTime?.() || 0;
-      const bc = safeDate(b.createdAt)?.getTime?.() || 0;
-      return bc - ac;
-    });
-  }, [normalizedAthletes, search]);
-
-  const totalAthletes = normalizedAthletes.length;
-
-  const totalPlans = useMemo(() => {
-    return Object.values(plansByEmail || {}).reduce((sum, arr) => sum + (arr?.length || 0), 0);
-  }, [plansByEmail]);
-
-  const athletesWithPlans = useMemo(() => {
-    return normalizedAthletes.filter((a) => (a.plansCount || 0) > 0).length;
-  }, [normalizedAthletes]);
-
-  const lastActivity = useMemo(() => {
-    // Merge latest plans across athletes into one feed
-    const items = [];
-    for (const a of normalizedAthletes) {
-      const email = normalizeEmail(a.email);
-      const plans = plansByEmail[email] || [];
-      plans.forEach((p) => {
-        items.push({
-          type: "plan",
-          athleteName: a?.name || "Athlete",
-          athleteEmail: email,
-          title: p?.title || "Plan",
-          createdAt: p?.createdAt || "",
-          createdBy: p?.createdBy || "",
-          createdAtDate: safeDate(p?.createdAt),
-        });
+    if (q) {
+      list = list.filter((a) => {
+        const name = String(a?.name || "").toLowerCase();
+        const email = String(a?.email || "").toLowerCase();
+        return name.includes(q) || email.includes(q);
       });
     }
 
-    items.sort((x, y) => {
-      const xd = x.createdAtDate ? x.createdAtDate.getTime() : 0;
-      const yd = y.createdAtDate ? y.createdAtDate.getTime() : 0;
-      return yd - xd;
-    });
+    if (filterMode === "needsPlan") list = list.filter((a) => !!a?.needsPlan);
+    if (filterMode === "stale") list = list.filter((a) => !!a?.stale && !a?.needsPlan);
+    if (filterMode === "current") list = list.filter((a) => !a?.stale && !a?.needsPlan);
 
-    return items.slice(0, 10);
-  }, [normalizedAthletes, plansByEmail]);
-
-  const newestAthlete = useMemo(() => {
-    const list = [...normalizedAthletes].sort((a, b) => {
-      const ad = safeDate(a.createdAt)?.getTime?.() || 0;
-      const bd = safeDate(b.createdAt)?.getTime?.() || 0;
+    const byLastPlanDesc = (a, b) => {
+      const ad = safeDate(a?.lastPlanAt)?.getTime?.() || 0;
+      const bd = safeDate(b?.lastPlanAt)?.getTime?.() || 0;
       return bd - ad;
-    });
-    return list[0] || null;
-  }, [normalizedAthletes]);
+    };
 
-  const mostRecentPlan = useMemo(() => {
-    return lastActivity.find((x) => x.type === "plan") || null;
-  }, [lastActivity]);
+    const byNameAsc = (a, b) => {
+      const an = String(a?.name || "").toLowerCase();
+      const bn = String(b?.name || "").toLowerCase();
+      return an.localeCompare(bn);
+    };
 
-  const activeLast30 = useMemo(() => {
-    const now = new Date();
-    return normalizedAthletes.filter((a) => {
-      const d = a.lastPlanAt;
-      if (!d) return false;
-      return daysBetween(d, now) <= 30;
-    }).length;
-  }, [normalizedAthletes]);
+    const byPriority = (a, b) => {
+      const ap = a?.needsPlan ? 1 : 0;
+      const bp = b?.needsPlan ? 1 : 0;
+      if (bp !== ap) return bp - ap;
 
-  const selectedAthlete = useMemo(() => {
-    const e = normalizeEmail(selectedEmail);
-    if (!e) return null;
-    return normalizedAthletes.find((a) => normalizeEmail(a.email) === e) || null;
-  }, [normalizedAthletes, selectedEmail]);
+      const as = a?.stale ? 1 : 0;
+      const bs = b?.stale ? 1 : 0;
+      if (bs !== as) return bs - as;
 
-  /* ------------------------------------------------------------------------ */
-  /* UI Actions                                                               */
-  /* ------------------------------------------------------------------------ */
+      return byLastPlanDesc(a, b);
+    };
 
-  const goBuildPlan = (athleteEmail) => {
+    if (sortMode === "name") list.sort(byNameAsc);
+    else if (sortMode === "lastPlan") list.sort(byLastPlanDesc);
+    else list.sort(byPriority);
+
+    return list;
+  }, [athletes, search, filterMode, sortMode]);
+
+  // Actions
+  const goBuildPlan = (athleteEmail, templateId = "") => {
     const e = normalizeEmail(athleteEmail);
-    if (!e) {
-      router.push("/org/prescriptions");
-      return;
-    }
-    router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(e)}`);
+    const qs = new URLSearchParams();
+    if (e) qs.set("athleteEmail", e);
+    if (templateId) qs.set("template", templateId);
+    router.push(`/org/prescriptions${qs.toString() ? `?${qs.toString()}` : ""}`);
   };
 
   const goHistory = (athleteEmail) => {
@@ -460,48 +455,142 @@ export default function OrgDashboard() {
     }
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* Styles                                                                   */
-  /* ------------------------------------------------------------------------ */
+  const exportCSV = () => {
+    const rows = [
+      [
+        "Athlete Name",
+        "Athlete Email",
+        "Status",
+        "Tags",
+        "Plans Count",
+        "Last Plan At",
+        "Last Plan Title",
+        "Needs Plan",
+        "Needs Update (Stale)",
+      ],
+    ];
+
+    (Array.isArray(athletes) ? athletes : []).forEach((a) => {
+      rows.push([
+        a?.name || "",
+        a?.email || "",
+        a?.status || "",
+        Array.isArray(a?.tags) ? a.tags.join(" | ") : "",
+        a?.plansCount || 0,
+        a?.lastPlanAt || "",
+        a?.lastPlanTitle || "",
+        a?.needsPlan ? "YES" : "NO",
+        a?.stale ? "YES" : "NO",
+      ]);
+    });
+
+    const csv = toCSV(rows);
+    downloadTextFile(
+      `org_roster_${orgName.replace(/\s+/g, "_").toLowerCase()}.csv`,
+      csv,
+      "text/csv"
+    );
+  };
+
+  // Save edit modal
+  const saveEdit = async () => {
+    setEditErr("");
+    if (!editAthlete?.email) {
+      setEditErr("Missing athlete email.");
+      return;
+    }
+    setEditSaving(true);
+
+    try {
+      const res = await fetch("/api/org/updateAthleteMeta", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+        body: JSON.stringify({
+          athleteEmail: editAthlete.email,
+          status: editAthlete.status,
+          tags: editAthlete.tags,
+          notes: editAthlete.notes,
+        }),
+      });
+
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || "Failed to update athlete");
+
+      // Update roster in-place (so you see changes instantly)
+      setAthletes((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        const idx = list.findIndex(
+          (x) => normalizeEmail(x?.email) === normalizeEmail(editAthlete.email)
+        );
+        if (idx >= 0) {
+          list[idx] = {
+            ...list[idx],
+            status: data?.athlete?.status || editAthlete.status,
+            tags: data?.athlete?.tags || editAthlete.tags,
+            notes: data?.athlete?.notes || editAthlete.notes,
+          };
+        }
+        return list;
+      });
+
+      closeEdit();
+    } catch (err) {
+      setEditErr(err?.message || "Failed to save.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const inputBase =
     "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
 
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
-  /* ------------------------------------------------------------------------ */
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-extrabold">{orgName} Dashboard</h1>
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <LayoutDashboard className="w-6 h-6 text-[#46769B]" />
+                <h1 className="text-2xl font-extrabold truncate">{orgName}</h1>
+              </div>
               <p className="text-sm text-gray-600 mt-1">
                 Logged in as <span className="font-semibold">{orgEmail}</span>
               </p>
+
               <div className="mt-3 flex flex-wrap gap-2">
-                <Pill>
+                <Pill tone="good">
                   <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
                   Org Session Active
                 </Pill>
                 {orgToken ? (
-                  <Pill>
+                  <Pill tone="good">
                     <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                     Token Loaded
                   </Pill>
                 ) : (
-                  <Pill>Missing token</Pill>
+                  <Pill tone="bad">
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                    Missing Token
+                  </Pill>
                 )}
+                <Pill>
+                  <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                  {triageHeadline}
+                </Pill>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={refreshAll} disabled={loading}>
+              <Button variant="secondary" onClick={refreshOverview} disabled={loading}>
                 <RefreshCcw className="w-4 h-4" />
                 Refresh
+              </Button>
+              <Button variant="secondary" onClick={exportCSV} disabled={!athletes?.length}>
+                <Download className="w-4 h-4" />
+                Export CSV
               </Button>
               <Button variant="dark" onClick={onLogout}>
                 <LogOut className="w-4 h-4" />
@@ -509,168 +598,203 @@ export default function OrgDashboard() {
               </Button>
             </div>
           </div>
+
+          {loading ? (
+            <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-sm text-gray-800 font-semibold">Loading organization overview…</p>
+              <p className="text-[11px] text-gray-600 mt-1">
+                Pulling roster + plan status in one request.
+              </p>
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm text-red-700 font-semibold">{error}</p>
+            </div>
+          ) : null}
         </div>
-
-        {/* Status */}
-        {(loading || loadingDeep) && (
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-4">
-            <p className="text-sm text-gray-700">
-              Loading organization overview{loadingDeep ? " (plans & activity)..." : "..."}
-            </p>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-white rounded-2xl shadow-md border border-red-200 p-4">
-            <p className="text-sm text-red-600 font-semibold">{error}</p>
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid md:grid-cols-4 gap-4">
+          <StatCard icon={Users} label="Athletes" value={stats.totalAthletes || 0} sub="Roster size" />
+          <StatCard icon={FileText} label="Total Plans" value={stats.totalPlans || 0} sub="All-time plans created" />
           <StatCard
-            icon={Users}
-            label="Athletes"
-            value={totalAthletes}
-            sub={newestAthlete?.email ? `Newest: ${newestAthlete.email}` : "—"}
+            icon={CheckCircle2}
+            label="Coverage"
+            value={`${stats.coveragePct || 0}%`}
+            sub={`${stats.athletesWithPlans || 0} of ${stats.totalAthletes || 0} have at least 1 plan`}
           />
-          <StatCard
-            icon={FileText}
-            label="Total Plans"
-            value={totalPlans}
-            sub={mostRecentPlan?.createdAt ? `Latest: ${fmtDate(mostRecentPlan.createdAt)}` : "—"}
-          />
-          <StatCard
-            icon={Activity}
-            label="Athletes w/ Plans"
-            value={athletesWithPlans}
-            sub={totalAthletes ? `${Math.round((athletesWithPlans / totalAthletes) * 100)}% coverage` : "—"}
-          />
-          <StatCard
-            icon={Sparkles}
-            label="Active (30d)"
-            value={activeLast30}
-            sub="Athletes with a plan created in the last 30 days"
-          />
+          <StatCard icon={Activity} label="Needs Attention" value={stats.staleCount || 0} sub="Missing plan or stale plan" />
         </div>
 
-        {/* Invite / Token */}
-        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-extrabold">Invite Athletes</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Athletes use your token during signup to join your organization.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <CopyButton text={orgToken} label="Copy token" />
-              <CopyButton text={inviteLink} label="Copy signup link" />
-            </div>
-          </div>
-
-          <div className="mt-4 grid md:grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-              <p className="text-xs text-gray-500">Organization Token</p>
-              <p className="font-mono text-sm font-semibold break-all mt-1">
-                {orgToken || "— missing Token on session user —"}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-2">
-                This token links an athlete account to your org automatically.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-gray-500">Signup Link</p>
-                <LinkIcon className="w-4 h-4 text-gray-400" />
+        {/* Templates + Invite */}
+        <div className="grid lg:grid-cols-12 gap-6">
+          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold">Templates</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  One click to preload a plan (then tweak).
+                </p>
               </div>
-              <p className="font-mono text-[12px] font-semibold break-all mt-1">
-                {inviteLink || "—"}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-2">
-                Share this with recruits. It pre-fills the token so they don’t mistype it.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-            <h3 className="font-extrabold">Build a Plan</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Jump straight into the plan builder for any athlete.
-            </p>
-
-            <div className="mt-4 flex gap-2">
-              <Button onClick={() => router.push("/org/prescriptions")}>
-                <FileText className="w-4 h-4" />
-                Open Builder
-                <ArrowRight className="w-4 h-4" />
+              <Button variant="secondary" className="px-3 py-2 text-xs" onClick={refreshTemplates}>
+                <RefreshCcw className="w-4 h-4" />
+                Refresh
               </Button>
             </div>
 
-            {selectedAthlete?.email && (
-              <div className="mt-4 text-[11px] text-gray-500">
-                Tip: Choose an athlete below and click <span className="font-semibold">Build</span> to preselect them.
+            <div className="mt-4 space-y-3">
+              {templates.length === 0 ? (
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm font-extrabold text-gray-900">No templates loaded</p>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Make sure /api/org/getPlanTemplates is added.
+                  </p>
+                </div>
+              ) : (
+                templates.slice(0, 4).map((t) => (
+                  <div key={t.id} className="rounded-2xl border border-gray-200 p-4">
+                    <p className="text-sm font-extrabold text-gray-900">{t.name}</p>
+                    <p className="text-[11px] text-gray-500 mt-1">{t.description}</p>
+                    <div className="mt-3">
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-2 text-xs"
+                        onClick={() => goBuildPlan("", t.id)}
+                      >
+                        Use template
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+              <p className="text-[11px] text-gray-500">
+                Pro move: from roster → “Build” can pass template too.
+              </p>
+            </div>
+          </section>
+
+          <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-extrabold">Invite Athletes</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Token + link are always visible for coaching ops.
+                </p>
               </div>
-            )}
-          </div>
+              <div className="flex gap-2">
+                <CopyButton text={orgToken} label="Copy token" compact />
+                <CopyButton text={inviteLink} label="Copy link" compact />
+              </div>
+            </div>
 
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-            <h3 className="font-extrabold">Manage Athletes</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              View your roster, who’s active, and who needs a plan.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="secondary" onClick={() => router.push("/org/prescriptions")}>
-                <Users className="w-4 h-4" />
-                Roster + Plans
-              </Button>
-            </div>
-            <div className="mt-4 text-[11px] text-gray-500">
-              Next upgrade: dedicated athletes page with tags, positions, injuries, and notes.
-            </div>
-          </div>
+            <div className="mt-4 grid md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs text-gray-500">Organization Token</p>
+                <p className="font-mono text-sm font-semibold break-all mt-1">
+                  {orgToken || "— missing Token on session user —"}
+                </p>
+              </div>
 
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-            <h3 className="font-extrabold">Recent Activity</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Track new plans and keep your org consistent.
-            </p>
-            <div className="mt-4">
-              <Button variant="secondary" onClick={() => document.getElementById("activity-feed")?.scrollIntoView({ behavior: "smooth" })}>
-                <Activity className="w-4 h-4" />
-                View Feed
-              </Button>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-gray-500">Signup Link</p>
+                  <LinkIcon className="w-4 h-4 text-gray-400" />
+                </div>
+                <p className="font-mono text-[12px] font-semibold break-all mt-1">
+                  {inviteLink || "—"}
+                </p>
+              </div>
             </div>
-            <div className="mt-4 text-[11px] text-gray-500">
-              Next upgrade: notifications + “needs update” reminders.
-            </div>
-          </div>
+          </section>
         </div>
 
         {/* Roster + Activity */}
         <div className="grid lg:grid-cols-12 gap-6">
           {/* Roster */}
           <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
-                <h2 className="text-lg font-extrabold">Athlete Roster</h2>
+                <h2 className="text-lg font-extrabold">Roster</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Search, see plan coverage, and take action fast.
+                  Status + tags make filtering & coaching workflow real.
                 </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Pill tone="bad">Needs plan: {counts.needsPlan}</Pill>
+                  <Pill tone="warn">Needs update: {counts.stale}</Pill>
+                  <Pill tone="good">Current: {counts.current}</Pill>
+                </div>
               </div>
 
-              <div className="w-full sm:w-[320px] relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  className={classNames(inputBase, "pl-10")}
-                  placeholder="Search athletes…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+              <div className="w-full sm:w-[460px] space-y-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className={classNames(inputBase, "pl-10")}
+                    placeholder="Search by name or email…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={filterMode === "all" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setFilterMode("all")}
+                  >
+                    <Filter className="w-4 h-4" />
+                    All
+                  </Button>
+                  <Button
+                    variant={filterMode === "needsPlan" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setFilterMode("needsPlan")}
+                  >
+                    Needs Plan
+                  </Button>
+                  <Button
+                    variant={filterMode === "stale" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setFilterMode("stale")}
+                  >
+                    Needs Update
+                  </Button>
+                  <Button
+                    variant={filterMode === "current" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setFilterMode("current")}
+                  >
+                    Current
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={sortMode === "priority" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setSortMode("priority")}
+                  >
+                    Priority
+                  </Button>
+                  <Button
+                    variant={sortMode === "lastPlan" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setSortMode("lastPlan")}
+                  >
+                    Last Plan
+                  </Button>
+                  <Button
+                    variant={sortMode === "name" ? "primary" : "secondary"}
+                    className="px-3 py-2 text-xs"
+                    onClick={() => setSortMode("name")}
+                  >
+                    Name
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -680,177 +804,355 @@ export default function OrgDashboard() {
                   <tr className="text-left text-xs text-gray-500 border-b">
                     <th className="py-3 pr-4">Athlete</th>
                     <th className="py-3 pr-4">Email</th>
+                    <th className="py-3 pr-4">Status</th>
+                    <th className="py-3 pr-4">Tags</th>
                     <th className="py-3 pr-4">Plans</th>
                     <th className="py-3 pr-4">Last Plan</th>
                     <th className="py-3 pr-2 text-right">Actions</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {filteredAthletes.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-gray-500">
+                      <td colSpan={7} className="py-6 text-center text-gray-500">
                         No athletes found.
                       </td>
                     </tr>
                   )}
 
                   {filteredAthletes.map((a) => {
-                    const isSelected = normalizeEmail(selectedEmail) === normalizeEmail(a.email);
-                    const last = a.lastPlanAt ? a.lastPlanAt.toLocaleString() : "—";
+                    const email = normalizeEmail(a?.email);
+                    const isExpanded = !!expanded[email];
+
+                    const planChip = a?.needsPlan ? (
+                      <Pill tone="bad">
+                        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                        Needs plan
+                      </Pill>
+                    ) : a?.stale ? (
+                      <Pill tone="warn">
+                        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                        Needs update
+                      </Pill>
+                    ) : (
+                      <Pill tone="good">
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                        Current
+                      </Pill>
+                    );
+
+                    const status = String(a?.status || "Active");
+                    const tags = Array.isArray(a?.tags) ? a.tags : [];
 
                     return (
-                      <tr
-                        key={a.id}
-                        className={classNames(
-                          "border-b last:border-b-0",
-                          isSelected ? "bg-blue-50/60" : ""
-                        )}
-                      >
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-gray-900">
-                              {a?.name || "Athlete"}
-                            </span>
-                            {a?.createdAt ? (
-                              <span className="text-[11px] text-gray-500">
-                                Joined: {fmtDate(a.createdAt)}
-                              </span>
+                      <>
+                        <tr key={a.id} className="border-b">
+                          <td className="py-3 pr-4">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(email)}
+                              className="text-left w-full"
+                              title="Expand"
+                            >
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-gray-900 truncate">
+                                    {a?.name || "Athlete"}
+                                  </div>
+                                  <div className="mt-1">{planChip}</div>
+                                </div>
+                              </div>
+                            </button>
+                          </td>
+
+                          <td className="py-3 pr-4">
+                            <div className="text-gray-700 font-medium">{email}</div>
+                            {email ? (
+                              <a
+                                href={`mailto:${email}`}
+                                className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
+                              >
+                                <Mail className="w-3.5 h-3.5" />
+                                Email
+                              </a>
                             ) : null}
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="py-3 pr-4">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEmail(a.email)}
-                            className="text-left"
-                          >
-                            <span className="text-gray-700 font-medium">{a.email}</span>
-                          </button>
-                          <div className="mt-1">
-                            <a
-                              href={`mailto:${a.email}`}
-                              className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline"
-                            >
-                              <Mail className="w-3.5 h-3.5" />
-                              Email
-                            </a>
-                          </div>
-                        </td>
+                          <td className="py-3 pr-4">
+                            <Pill>{status}</Pill>
+                          </td>
 
-                        <td className="py-3 pr-4">
-                          <Pill>{a.plansCount || 0}</Pill>
-                        </td>
-
-                        <td className="py-3 pr-4">
-                          <div className="text-gray-700 font-medium">{last}</div>
-                          {a.lastPlanTitle ? (
-                            <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[220px]">
-                              {a.lastPlanTitle}
+                          <td className="py-3 pr-4">
+                            <div className="flex flex-wrap gap-2">
+                              {tags.length ? (
+                                tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)
+                              ) : (
+                                <span className="text-[11px] text-gray-400">—</span>
+                              )}
                             </div>
-                          ) : (
-                            <div className="text-[11px] text-gray-400 mt-0.5">No plans yet</div>
-                          )}
-                        </td>
+                          </td>
 
-                        <td className="py-3 pr-2">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="secondary"
-                              onClick={() => goHistory(a.email)}
-                              disabled={!a.email}
-                              className="px-3 py-2 text-xs"
-                            >
-                              History
-                            </Button>
-                            <Button
-                              onClick={() => goBuildPlan(a.email)}
-                              disabled={!a.email}
-                              className="px-3 py-2 text-xs"
-                            >
-                              Build
-                              <ArrowRight className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                          <td className="py-3 pr-4">
+                            <Pill>{a?.plansCount || 0}</Pill>
+                          </td>
+
+                          <td className="py-3 pr-4">
+                            <div className="text-gray-700 font-medium">
+                              {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
+                            </div>
+                            {a?.lastPlanTitle ? (
+                              <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[240px]">
+                                {a.lastPlanTitle}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-gray-400 mt-0.5">
+                                No plans yet
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3 pr-2">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="secondary"
+                                className="px-3 py-2 text-xs"
+                                onClick={() => openEdit(a)}
+                                disabled={!email}
+                              >
+                                <Pencil className="w-4 h-4" />
+                                Edit
+                              </Button>
+
+                              <Button
+                                variant="secondary"
+                                className="px-3 py-2 text-xs"
+                                onClick={() => goHistory(email)}
+                                disabled={!email}
+                              >
+                                History
+                              </Button>
+
+                              <Button
+                                className="px-3 py-2 text-xs"
+                                onClick={() => goBuildPlan(email)}
+                                disabled={!email}
+                              >
+                                Build
+                                <ArrowRight className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isExpanded ? (
+                          <tr className="border-b bg-gray-50">
+                            <td colSpan={7} className="py-4 px-4">
+                              <div className="grid md:grid-cols-3 gap-4">
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                                  <p className="text-xs text-gray-500">Plan status</p>
+                                  <p className="text-sm font-extrabold text-gray-900 mt-1">
+                                    {a?.needsPlan ? "Needs first plan" : a?.stale ? "Needs update" : "Current"}
+                                  </p>
+                                  <p className="text-[11px] text-gray-500 mt-2">
+                                    Coach workflow: handle needs-plan first, then stale.
+                                  </p>
+                                </div>
+
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                                  <p className="text-xs text-gray-500">Quick templates</p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {templates.slice(0, 3).map((t) => (
+                                      <Button
+                                        key={t.id}
+                                        variant="secondary"
+                                        className="px-3 py-2 text-xs"
+                                        onClick={() => goBuildPlan(email, t.id)}
+                                      >
+                                        {t.name}
+                                        <ArrowRight className="w-4 h-4" />
+                                      </Button>
+                                    ))}
+                                  </div>
+                                  <p className="text-[11px] text-gray-500 mt-3">
+                                    These open the builder pre-filled (fast).
+                                  </p>
+                                </div>
+
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                                  <p className="text-xs text-gray-500">Shortcuts</p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <Button
+                                      className="px-3 py-2 text-xs"
+                                      onClick={() => goBuildPlan(email)}
+                                      disabled={!email}
+                                    >
+                                      <FileText className="w-4 h-4" />
+                                      Build / Edit
+                                    </Button>
+                                    <Button
+                                      variant="secondary"
+                                      className="px-3 py-2 text-xs"
+                                      onClick={() => openEdit(a)}
+                                      disabled={!email}
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                      Update status/tags
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-
-            <div className="mt-4 text-[11px] text-gray-500">
-              Performance note: this dashboard currently loads plan history per athlete.
-              For a large org, we’ll create an aggregated endpoint to return “latest plan per athlete”
-              + “recent activity” in one request.
-            </div>
           </section>
 
-          {/* Activity Feed */}
-          <section
-            id="activity-feed"
-            className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-6"
-          >
+          {/* Activity */}
+          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-extrabold">Activity Feed</h2>
-                <p className="text-sm text-gray-600 mt-1">Latest plans across your org.</p>
+                <h2 className="text-lg font-extrabold">Recent Activity</h2>
+                <p className="text-sm text-gray-600 mt-1">Latest plan events.</p>
               </div>
-              <Button variant="secondary" onClick={refreshAll} disabled={loading}>
+              <Button
+                variant="secondary"
+                className="px-3 py-2 text-xs"
+                onClick={refreshOverview}
+                disabled={loading}
+              >
                 <RefreshCcw className="w-4 h-4" />
+                Refresh
               </Button>
             </div>
 
             <div className="mt-4 space-y-3">
-              {lastActivity.length === 0 && (
+              {recentActivity.length === 0 ? (
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-sm font-semibold text-gray-800">No activity yet</p>
+                  <p className="text-sm font-extrabold text-gray-900">No activity yet</p>
                   <p className="text-[11px] text-gray-500 mt-1">
-                    Create your first plan to start building history and insights.
+                    Create a plan to start tracking actions here.
                   </p>
-                  <div className="mt-3">
-                    <Button onClick={() => router.push("/org/prescriptions")}>
-                      <FileText className="w-4 h-4" />
-                      Create Plan
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </div>
                 </div>
-              )}
-
-              {lastActivity.map((it, idx) => (
-                <div key={`${it.athleteEmail}-${idx}`} className="rounded-2xl border border-gray-200 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-extrabold text-gray-900">{it.title}</p>
-                      <p className="text-[12px] text-gray-700 mt-1">
-                        <span className="font-semibold">{it.athleteName}</span>{" "}
-                        <span className="text-gray-500">({it.athleteEmail})</span>
-                      </p>
-                      <p className="text-[11px] text-gray-500 mt-2">
-                        {it.createdAt ? `Created: ${fmtDate(it.createdAt)}` : "—"}
-                        {it.createdBy ? ` • By: ${it.createdBy}` : ""}
-                      </p>
+              ) : (
+                recentActivity.map((it, idx) => (
+                  <div key={`${it.athleteEmail}-${idx}`} className="rounded-2xl border border-gray-200 p-4">
+                    <p className="text-sm font-extrabold text-gray-900">{it.title || "Plan"}</p>
+                    <p className="text-[12px] text-gray-700 mt-1">
+                      <span className="font-semibold">{it.athleteEmail}</span>
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                      {it.createdAt ? `Created: ${fmtDate(it.createdAt)}` : "—"}
+                      {it.createdBy ? ` • By: ${it.createdBy}` : ""}
+                    </p>
+                    <div className="mt-3">
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-2 text-xs"
+                        onClick={() => goHistory(it.athleteEmail)}
+                      >
+                        View History
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => goHistory(it.athleteEmail)}
-                      className="text-[#46769B] text-xs font-extrabold hover:underline"
-                    >
-                      View
-                    </button>
                   </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 text-[11px] text-gray-500">
-              Next upgrade: “Needs update” flags, reminders, and athlete compliance check-ins.
+                ))
+              )}
             </div>
           </section>
         </div>
+
+        {/* Edit Modal */}
+        <Modal
+          open={editOpen}
+          title={editAthlete ? `Edit: ${editAthlete.name || editAthlete.email}` : "Edit Athlete"}
+          onClose={closeEdit}
+        >
+          {editErr ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-3 mb-4">
+              <p className="text-sm text-red-700 font-semibold">{editErr}</p>
+            </div>
+          ) : null}
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs text-gray-500">Athlete</p>
+              <p className="text-sm font-extrabold text-gray-900 mt-1">{editAthlete?.name || "Athlete"}</p>
+              <p className="text-[12px] text-gray-600 mt-1">{editAthlete?.email || ""}</p>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-600 font-semibold">Status</label>
+              <select
+                className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm"
+                value={editAthlete?.status || "Active"}
+                onChange={(e) =>
+                  setEditAthlete((prev) => ({ ...prev, status: e.target.value }))
+                }
+              >
+                <option value="Active">Active</option>
+                <option value="Injured">Injured</option>
+                <option value="Offseason">Offseason</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+              <p className="text-[11px] text-gray-500 mt-2">
+                This becomes a filter later (and can trigger reminders).
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-600 font-semibold">Tags</label>
+              <input
+                className={classNames(inputBase, "mt-2")}
+                placeholder="Comma separated tags (e.g. Cut, High Sweat, Two-a-days)"
+                value={(editAthlete?.tags || []).join(", ")}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const parts = raw
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean);
+                  setEditAthlete((prev) => ({ ...prev, tags: parts }));
+                }}
+              />
+              <p className="text-[11px] text-gray-500 mt-2">
+                Stored as Airtable multi-select (Tags).
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-600 font-semibold">Notes (optional)</label>
+              <textarea
+                className="mt-2 w-full min-h-[90px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm"
+                placeholder="Anything the coach should remember..."
+                value={editAthlete?.notes || ""}
+                onChange={(e) =>
+                  setEditAthlete((prev) => ({ ...prev, notes: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={closeEdit}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit} disabled={editSaving}>
+                {editSaving ? "Saving..." : "Save"}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </Modal>
       </main>
     </div>
   );

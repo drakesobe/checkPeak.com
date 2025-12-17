@@ -1,6 +1,7 @@
 // pages/api/org/createPrescription.js
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
+import { logAuditEvent } from "@/lib/audit";
 
 /**
  * Create a Prescription / Plan record for an athlete UNDER the logged-in org.
@@ -57,8 +58,6 @@ function cleanString(v) {
 }
 
 function coerceMaybeDateISO(v) {
-  // Airtable "Date" fields generally accept ISO strings (e.g. 2025-12-16T00:00:00.000Z)
-  // If you send an empty string, remove field.
   const s = cleanString(v);
   if (!s) return "";
   const d = new Date(s);
@@ -78,18 +77,38 @@ function stripEmpty(fields) {
 
 /**
  * IMPORTANT: Your new macro/supplement fields are SINGLE SELECT.
- * That means Airtable expects the value to be EXACTLY one of the allowed choices.
- *
- * This helper doesn't validate against the list (since we don't have it here),
- * but it ensures we don't send junk values like objects/arrays.
+ * Airtable expects the value to be EXACTLY one of the allowed choices.
  */
 function singleSelectValue(v) {
   const s = cleanString(v);
   return s || "";
 }
 
+function hasAnyStructuredValue(s = {}) {
+  if (!s || typeof s !== "object") return false;
+  const keys = [
+    "calories",
+    "proteinGrams",
+    "carbsGrams",
+    "fatsGrams",
+    "hydrationOz",
+    "notesMacros",
+    "proteinRecommendation",
+    "creatineRecommendation",
+    "bcaaRecommendation",
+    "electrolytesRecommendation",
+    "notesSupplements",
+    "metaStatus",
+    "metaEffectiveDate",
+  ];
+  return keys.some((k) => cleanString(s[k]));
+}
+
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 
@@ -111,14 +130,22 @@ export default async function handler(req, res) {
     title,
     organizationName,
     createdBy,
-    structured, // new structured fields object
+    structured, // optional structured fields object
   } = req.body || {};
 
   const email = normalizeEmail(athleteEmail);
   if (!email) return res.status(400).json({ error: "Missing athleteEmail" });
 
-  // Allow empty prescription text now since you may rely purely on structured fields
   const text = cleanString(prescription);
+  const s = structured && typeof structured === "object" ? structured : {};
+
+  // Prevent saving an entirely empty plan
+  if (!text && !hasAnyStructuredValue(s)) {
+    return res.status(400).json({
+      error:
+        "Plan is empty. Provide prescription text or at least one structured selection.",
+    });
+  }
 
   const API_KEY = process.env.PRESCRIPTIONS_API_KEY;
   const BASE_ID = process.env.PRESCRIPTIONS_BASE_ID;
@@ -141,22 +168,22 @@ export default async function handler(req, res) {
   try {
     const nowISO = new Date().toISOString();
 
-    // Pull structured fields safely
-    const s = structured && typeof structured === "object" ? structured : {};
-
     // Map structured fields -> your exact Airtable column names
     const fields = stripEmpty({
       // Existing columns
       Title: cleanString(title) || "Prescription",
-      Prescription: text, // can be omitted if empty
+      Prescription: text, // stripped if empty
       "Organization Token": org.token, // ✅ always from cookie
       "Athlete Email": email,
-      Organization: cleanString(organizationName) || cleanString(org.name) || "Organization",
+      Organization:
+        cleanString(organizationName) ||
+        cleanString(org.name) ||
+        "Organization",
       CreatedAt: nowISO,
       CreatedBy: cleanString(createdBy) || cleanString(org.email),
 
       // -----------------------
-      // NEW: Macros (Single select fields)
+      // Macros (Single select fields)
       // -----------------------
       Calories: singleSelectValue(s.calories),
       "Protein (g)": singleSelectValue(s.proteinGrams),
@@ -166,31 +193,46 @@ export default async function handler(req, res) {
       "Notes (Macros)": singleSelectValue(s.notesMacros),
 
       // -----------------------
-      // NEW: Supplements (Single select fields)
+      // Supplements (Single select fields)
       // -----------------------
       "Protein Recommendation": singleSelectValue(s.proteinRecommendation),
       "Creatine Recommendation": singleSelectValue(s.creatineRecommendation),
       "BCAA/EAA Recommendation": singleSelectValue(s.bcaaRecommendation),
-      "Electrolytes Recommendation": singleSelectValue(s.electrolytesRecommendation),
+      "Electrolytes Recommendation": singleSelectValue(
+        s.electrolytesRecommendation
+      ),
       "Notes (Supplements)": singleSelectValue(s.notesSupplements),
 
       // -----------------------
-      // NEW: Meta
+      // Meta
       // -----------------------
       "Meta Status": singleSelectValue(s.metaStatus || "Active"),
       "Meta Effective Date": coerceMaybeDateISO(s.metaEffectiveDate) || nowISO,
       "Meta Last Updated": nowISO,
     });
 
-    /**
-     * NOTE:
-     * - If any of these are Single Select fields and you send a value not in the select options,
-     *   Airtable will return 422 INVALID_VALUE_FOR_COLUMN.
-     * - If your "Meta Effective Date" is a Date field and you prefer date-only,
-     *   you can store `new Date().toISOString().slice(0, 10)` instead.
-     */
-
     const created = await base(TABLE_ID).create(fields);
+
+    // Best-effort audit log (should NEVER break creation)
+    try {
+      await logAuditEvent({
+        action: "CREATE_PLAN",
+        actorEmail: cleanString(org.email),
+        actorId: cleanString(org.id),
+        orgToken: cleanString(org.token),
+        orgName: cleanString(org.name),
+        athleteEmail: email,
+        entityType: "Prescription",
+        entityId: created?.id || "",
+        meta: {
+          title: fields.Title || "",
+          hasText: !!text,
+          hasStructured: hasAnyStructuredValue(s),
+        },
+      });
+    } catch (e) {
+      console.warn("[createPrescription] audit log failed:", e?.message || e);
+    }
 
     return res.status(200).json({
       success: true,

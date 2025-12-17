@@ -12,13 +12,16 @@ import { useAuthContext } from "@/hooks/useAuth";
  * 1) Loads athletes linked to the org (by org Token) via:
  *      GET /api/org/getAthletes
  * 2) Loads plan history for the selected athlete via:
- *      GET /api/org/getPrescriptionsForAthletes?athleteEmail=...
+ *      GET /api/org/getPrescriptionsForAthlete?athleteEmail=...
  * 3) Creates a new plan record via:
  *      POST /api/org/createPrescription
+ * 4) Loads templates via:
+ *      GET /api/org/getPlanTemplates
  *
  * Important:
  * - All API calls use credentials: "include" so the org auth cookie is sent.
  * - We ALSO send "x-org-token" (fallback auth) in case HttpOnly cookie is missing.
+ * - Templates can be applied via URL: ?template=<templateId>
  */
 
 /* -------------------------------------------------------------------------- */
@@ -93,8 +96,10 @@ function formatDateTime(value) {
 }
 
 function safeJsonParse(maybeJson) {
-  if (!maybeJson || typeof maybeJson !== "string") return null;
+  if (!maybeJson) return null;
+  if (typeof maybeJson !== "string") return null;
   const s = maybeJson.trim();
+  if (!s) return null;
   if (!s.startsWith("{") && !s.startsWith("[")) return null;
   try {
     return JSON.parse(s);
@@ -105,6 +110,7 @@ function safeJsonParse(maybeJson) {
 
 /**
  * Builds a readable fallback "Prescription" text.
+ * This is what we store in the long-text Prescription field.
  */
 function buildPlanSummaryText(plan) {
   const lines = [];
@@ -136,8 +142,7 @@ function buildPlanSummaryText(plan) {
 
 /**
  * Date input helper:
- * Converts YYYY-MM-DD to ISO string start of day.
- * If empty, returns "" so backend can default.
+ * Converts YYYY-MM-DD to ISO string.
  */
 function dateToISO(dateStr) {
   const s = String(dateStr || "").trim();
@@ -146,6 +151,10 @@ function dateToISO(dateStr) {
   if (Number.isNaN(d.getTime())) return "";
   return d.toISOString();
 }
+
+/* -------------------------------------------------------------------------- */
+/* Page                                                                        */
+/* -------------------------------------------------------------------------- */
 
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
@@ -165,9 +174,7 @@ export default function OrgPrescriptionsPage() {
 
   // ✅ Fallback auth header (works even if HttpOnly cookie isn’t present)
   const orgToken = useMemo(() => {
-    return String(
-      user?.Token || user?.token || user?.["Organization Token"] || ""
-    ).trim();
+    return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
   }, [user]);
 
   const orgAuthHeaders = useMemo(() => {
@@ -183,12 +190,17 @@ export default function OrgPrescriptionsPage() {
   const [athleteSearch, setAthleteSearch] = useState("");
   const [selectedAthleteEmail, setSelectedAthleteEmail] = useState("");
 
+  // Templates
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
+
   // Plans/history
   const [prescriptions, setPrescriptions] = useState([]);
 
   // Page status
   const [loading, setLoading] = useState(true);
   const [loadingAthletes, setLoadingAthletes] = useState(false);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
   const [error, setError] = useState("");
 
@@ -199,7 +211,7 @@ export default function OrgPrescriptionsPage() {
   const [title, setTitle] = useState("Nutrition + Supplements Plan");
   const [createLoading, setCreateLoading] = useState(false);
 
-  // Structured plan fields (match your createPrescription.js)
+  // Structured plan fields (match your createPrescription.js mapping)
   const [structured, setStructured] = useState({
     // Macros (single select columns)
     calories: "",
@@ -220,7 +232,7 @@ export default function OrgPrescriptionsPage() {
     metaStatus: "Active",
     metaEffectiveDate: "", // date input (YYYY-MM-DD)
 
-    // Extra freeform notes (NOT single select — stored inside Prescription text)
+    // Extra freeform notes (saved inside Prescription long text)
     freeformNotes: "",
   });
 
@@ -243,6 +255,14 @@ export default function OrgPrescriptionsPage() {
     }
   }, [router?.query?.athleteEmail]);
 
+  // Allow direct linking: /org/prescriptions?template=...
+  useEffect(() => {
+    const t = router?.query?.template;
+    if (typeof t === "string" && t.trim()) {
+      setTemplateId(t.trim());
+    }
+  }, [router?.query?.template]);
+
   /* ------------------------------------------------------------------------ */
   /* API Calls                                                                */
   /* ------------------------------------------------------------------------ */
@@ -254,9 +274,7 @@ export default function OrgPrescriptionsPage() {
     const res = await fetch("/api/org/getAthletes", {
       method: "GET",
       credentials: "include",
-      headers: {
-        ...orgAuthHeaders, // ✅ fallback auth header
-      },
+      headers: { ...orgAuthHeaders },
     });
 
     const data = await res.json().catch(() => ({}));
@@ -278,6 +296,28 @@ export default function OrgPrescriptionsPage() {
     setLoadingAthletes(false);
   };
 
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true);
+    setError("");
+
+    const res = await fetch("/api/org/getPlanTemplates", {
+      method: "GET",
+      credentials: "include",
+      headers: { ...orgAuthHeaders },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // templates are optional; don’t hard-fail the whole page
+      setTemplates([]);
+      setLoadingTemplates(false);
+      return;
+    }
+
+    setTemplates(Array.isArray(data?.templates) ? data.templates : []);
+    setLoadingTemplates(false);
+  };
+
   const fetchPrescriptionsForAthlete = async (athleteEmail) => {
     const email = normalizeEmail(athleteEmail);
     if (!email) {
@@ -295,15 +335,14 @@ export default function OrgPrescriptionsPage() {
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          ...orgAuthHeaders, // ✅ fallback auth header
+          ...orgAuthHeaders,
         },
       }
     );
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg =
-        data?.error || data?.airtable?.message || "Failed to load prescriptions.";
+      const msg = data?.error || data?.airtable?.message || "Failed to load prescriptions.";
       setLoadingPrescriptions(false);
       throw new Error(msg);
     }
@@ -317,7 +356,7 @@ export default function OrgPrescriptionsPage() {
     setError("");
 
     try {
-      await fetchAthletes();
+      await Promise.all([fetchAthletes(), fetchTemplates()]);
 
       const email =
         (typeof router?.query?.athleteEmail === "string" && router.query.athleteEmail) ||
@@ -361,6 +400,43 @@ export default function OrgPrescriptionsPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthleteEmail]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Templates → apply to builder                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const applyTemplateToBuilder = (tplId) => {
+    const t = String(tplId || "").trim();
+    if (!t) return;
+
+    const tpl = templates.find((x) => x?.id === t);
+    if (!tpl?.structured) return;
+
+    // Fill structured fields
+    setStructured((prev) => ({
+      ...prev,
+      ...(tpl.structured || {}),
+      // keep metaEffectiveDate blank unless template provides it
+      metaEffectiveDate: tpl.structured?.metaEffectiveDate || prev.metaEffectiveDate || "",
+      metaStatus: tpl.structured?.metaStatus || prev.metaStatus || "Active",
+    }));
+
+    // Optional: set title to template name if user hasn’t customized it
+    if (!title || title === "Nutrition + Supplements Plan") {
+      setTitle(tpl.name || "Nutrition + Supplements Plan");
+    }
+
+    // Switch to builder
+    setView("builder");
+  };
+
+  // Auto-apply if URL has ?template=... (once templates are loaded)
+  useEffect(() => {
+    if (!templateId) return;
+    if (!templates.length) return;
+    applyTemplateToBuilder(templateId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, templates]);
 
   /* ------------------------------------------------------------------------ */
   /* Builder Handlers                                                         */
@@ -429,7 +505,6 @@ export default function OrgPrescriptionsPage() {
 
     setCreateLoading(true);
     try {
-      // Fallback long-text plan summary
       const summaryText = buildPlanSummaryText(structured);
 
       const res = await fetch("/api/org/createPrescription", {
@@ -437,7 +512,7 @@ export default function OrgPrescriptionsPage() {
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          ...orgAuthHeaders, // ✅ fallback auth header
+          ...orgAuthHeaders,
         },
         body: JSON.stringify({
           athleteEmail,
@@ -446,9 +521,7 @@ export default function OrgPrescriptionsPage() {
           prescription: summaryText,
           createdBy: user?.Email || user?.email || "",
 
-          // ✅ Structured keys match your UPDATED createPrescription.js mapping
           structured: {
-            // Macros (single select fields)
             calories: structured.calories || null,
             proteinGrams: structured.proteinGrams || null,
             carbsGrams: structured.carbsGrams || null,
@@ -456,14 +529,12 @@ export default function OrgPrescriptionsPage() {
             hydrationOz: structured.hydrationOz || null,
             notesMacros: structured.notesMacros || null,
 
-            // Supplements (single select fields)
             proteinRecommendation: structured.proteinRecommendation || null,
             creatineRecommendation: structured.creatineRecommendation || null,
             bcaaRecommendation: structured.bcaaRecommendation || null,
             electrolytesRecommendation: structured.electrolytesRecommendation || null,
             notesSupplements: structured.notesSupplements || null,
 
-            // Meta
             metaStatus: structured.metaStatus || "Active",
             metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
           },
@@ -569,7 +640,7 @@ export default function OrgPrescriptionsPage() {
         </div>
 
         {/* Status */}
-        {(loading || loadingAthletes || loadingPrescriptions) && (
+        {(loading || loadingAthletes || loadingTemplates || loadingPrescriptions) && (
           <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-4">
             <p className="text-sm text-gray-600">Loading…</p>
           </div>
@@ -582,10 +653,7 @@ export default function OrgPrescriptionsPage() {
               If you see <span className="font-semibold">Not authenticated</span>, confirm you:
               (1) logged in as <span className="font-semibold">Organization</span>, and
               (2) requests include <span className="font-semibold">credentials: "include"</span>.
-              This page does include it on all API calls.
-            </p>
-            <p className="text-[11px] text-gray-500 mt-1">
-              We also send <span className="font-semibold">x-org-token</span> as a fallback.
+              This page includes it on all API calls, plus <span className="font-semibold">x-org-token</span> fallback.
             </p>
           </div>
         )}
@@ -666,7 +734,9 @@ export default function OrgPrescriptionsPage() {
                   {selectedAthlete ? (
                     <p className="text-sm text-gray-700 mt-1">
                       <span className="font-semibold">{selectedAthlete.name || "Athlete"}</span>{" "}
-                      <span className="text-gray-500">({normalizeEmail(selectedAthlete.email)})</span>
+                      <span className="text-gray-500">
+                        ({normalizeEmail(selectedAthlete.email)})
+                      </span>
                     </p>
                   ) : (
                     <p className="text-sm text-gray-500 mt-1">Choose an athlete to begin.</p>
@@ -702,7 +772,7 @@ export default function OrgPrescriptionsPage() {
               <div className="mt-4 text-[11px] text-gray-500">
                 Tip: Because your Airtable macro/supp fields are{" "}
                 <span className="font-semibold">Single Select</span>, the values you choose must match
-                the Airtable dropdown options exactly (including spelling/case).
+                Airtable dropdown options exactly (including spelling/case).
               </div>
             </div>
 
@@ -713,6 +783,53 @@ export default function OrgPrescriptionsPage() {
                   <h3 className="text-lg font-bold">Create Plan</h3>
                   <p className="text-sm text-gray-600 mt-1">
                     Recommend supplements + macro targets for this athlete.
+                  </p>
+                </div>
+
+                {/* Template controls */}
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-xs text-gray-500 mb-2">Templates (optional)</p>
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <select
+                      className={selectBase}
+                      value={templateId}
+                      onChange={(e) => setTemplateId(e.target.value)}
+                    >
+                      <option value="">Select a template…</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => applyTemplateToBuilder(templateId)}
+                      className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
+                      disabled={!templateId}
+                    >
+                      Apply Template
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTemplateId("");
+                        // keep current selections; this just clears the selection UI
+                      }}
+                      className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
+                      disabled={!templateId}
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-gray-500 mt-3">
+                    You can deep-link a template:{" "}
+                    <span className="font-semibold">
+                      /org/prescriptions?athleteEmail=...&template=...
+                    </span>
                   </p>
                 </div>
 
@@ -957,8 +1074,8 @@ export default function OrgPrescriptionsPage() {
                       placeholder="Examples: lactose sensitive, practice days increase carbs, hydration reminders, approved brands only, etc."
                     />
                     <p className="text-[11px] text-gray-500 mt-2">
-                      This text is saved inside the long-text{" "}
-                      <span className="font-semibold">Prescription</span> field as a readable summary.
+                      This text is saved inside the long-text <span className="font-semibold">Prescription</span>{" "}
+                      field as a readable summary.
                     </p>
                   </div>
 
@@ -1047,16 +1164,17 @@ export default function OrgPrescriptionsPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            setTitle(p.title || "Nutrition + Supplements Plan");
+                            // Copy long-text plan into notes + keep structured values as-is
                             setStructured((prev) => ({
                               ...prev,
                               freeformNotes: p.prescription || "",
                             }));
+                            setTitle(p.title || "Nutrition + Supplements Plan");
                             setView("builder");
                           }}
                           className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
                         >
-                          Copy Notes
+                          Copy to Builder
                         </button>
                       </div>
 
@@ -1067,9 +1185,9 @@ export default function OrgPrescriptionsPage() {
                       </div>
 
                       <div className="mt-3 text-[11px] text-gray-500">
-                        Once you decide to render Airtable single-select fields back to the UI,
-                        we’ll update <span className="font-semibold">getPrescriptionsForAthlete</span>{" "}
-                        to return those fields too.
+                        If you want history to rehydrate structured selects (calories, creatine, etc.),
+                        we’ll update <span className="font-semibold">getPrescriptionsForAthlete</span> to
+                        return those fields too.
                       </div>
                     </div>
                   ))}

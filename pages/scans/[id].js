@@ -16,6 +16,7 @@ import {
   X,
   Pencil,
   Check,
+  Info,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------------------------------
@@ -42,6 +43,7 @@ function getCounts(scan) {
     ? scan.matchedIngredients.length
     : 0;
 
+  // If the detail endpoint returns empty arrays, fall back to saved counts
   if (!bannedMatches.length && !ingredientMatchCount) {
     return {
       prohibitedCount: fallbackProhibited,
@@ -87,6 +89,7 @@ function getCounts(scan) {
   // "Other Flags" includes other banned + ALL ingredient matches
   const totalOther = other + ingredientMatchCount;
 
+  // If matches produced zeros (unlikely), still fall back to saved counts
   if (!prohibited && !limited && !totalOther) {
     return {
       prohibitedCount: fallbackProhibited,
@@ -102,8 +105,15 @@ function getCounts(scan) {
   };
 }
 
-function computeRisk(scan) {
-  const { prohibitedCount, limitedCount } = getCounts(scan);
+/**
+ * ✅ FIXED:
+ * - Includes otherCount in risk tiering.
+ * - Keeps your existing label structure and styling fields.
+ */
+function computeRiskFromCounts(counts) {
+  const prohibitedCount = Number(counts?.prohibitedCount || 0);
+  const limitedCount = Number(counts?.limitedCount || 0);
+  const otherCount = Number(counts?.otherCount || 0);
 
   if (prohibitedCount > 0) {
     return {
@@ -115,6 +125,7 @@ function computeRisk(scan) {
       ringClass: "ring-red-200",
       iconColor: "text-red-600",
       gradient: "from-red-50 via-rose-50 to-amber-50",
+      icon: AlertTriangle,
     };
   }
 
@@ -128,16 +139,31 @@ function computeRisk(scan) {
       ringClass: "ring-amber-200",
       iconColor: "text-amber-500",
       gradient: "from-amber-50 via-yellow-50 to-emerald-50",
+      icon: AlertTriangle,
+    };
+  }
+
+  // ✅ NEW: If other flags exist, don’t show “Low Risk / Safe”
+  if (otherCount > 0) {
+    return {
+      label: "Needs Review",
+      detail: `${otherCount} other flag${otherCount > 1 ? "s" : ""} detected`,
+      badgeClass: "bg-purple-100 text-purple-800 border-purple-200",
+      ringClass: "ring-purple-200",
+      iconColor: "text-purple-600",
+      gradient: "from-purple-50 via-slate-50 to-blue-50",
+      icon: Info,
     };
   }
 
   return {
     label: "Low Risk",
-    detail: "No prohibited or limited substances detected",
+    detail: "No prohibited, limited, or other flags detected",
     badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200",
     ringClass: "ring-emerald-200",
     iconColor: "text-emerald-500",
     gradient: "from-emerald-50 via-blue-50 to-slate-50",
+    icon: Shield,
   };
 }
 
@@ -247,7 +273,9 @@ export default function ScanDetailPage() {
   if (!user) return null;
 
   const counts = useMemo(() => getCounts(scan), [scan]);
-  const risk = useMemo(() => computeRisk(scan), [scan, counts]);
+
+  // ✅ FIX: computeRisk from counts so it includes otherCount, and doesn’t recompute getCounts()
+  const risk = useMemo(() => computeRiskFromCounts(counts), [counts]);
 
   const formattedDate = useMemo(() => {
     if (!scan?.date) return "";
@@ -440,12 +468,9 @@ export default function ScanDetailPage() {
       }
 
       const updated = data.scan || data;
-      const updatedName =
-        updated.name || updated.ScanName || trimmed;
+      const updatedName = updated.name || updated.ScanName || trimmed;
 
-      setScan((prev) =>
-        prev ? { ...prev, name: updatedName } : prev
-      );
+      setScan((prev) => (prev ? { ...prev, name: updatedName } : prev));
       setPendingName(updatedName);
       setIsRenaming(false);
 
@@ -472,10 +497,7 @@ export default function ScanDetailPage() {
   -------------------------------------------------------------------------------------------------- */
 
   return (
-    <div
-      className={`min-h-screen bg-gradient-to-b ${risk.gradient} font-sans`}
-    >
-
+    <div className={`min-h-screen bg-gradient-to-b ${risk.gradient} font-sans`}>
       <main className="max-w-6xl mx-auto px-4 sm:px-5 lg:px-6 py-6 sm:py-8 lg:py-10 space-y-6">
         {/* Back link row */}
         <div className="flex items-center justify-between gap-3 mb-1">
@@ -530,7 +552,11 @@ export default function ScanDetailPage() {
                   {/* Risk tag */}
                   <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-slate-50 px-3 py-1 text-xs font-semibold">
                     <Shield className={`w-4 h-4 ${risk.iconColor}`} />
-                    <span className={risk.badgeClass.replace("border-", "")}>
+
+                    {/* ✅ FIX: do NOT .replace("border-", ""), it breaks Tailwind */}
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full border ${risk.badgeClass}`}
+                    >
                       {risk.label}
                     </span>
                   </div>
@@ -650,9 +676,7 @@ export default function ScanDetailPage() {
                         <button
                           onClick={() => {
                             if (!shareUrl) return;
-                            navigator.clipboard
-                              .writeText(shareUrl)
-                              .catch(() => {});
+                            navigator.clipboard.writeText(shareUrl).catch(() => {});
                           }}
                           className="px-3 py-2 rounded-xl text-xs font-semibold bg-gray-900 text-white hover:bg-black"
                         >
@@ -674,9 +698,7 @@ export default function ScanDetailPage() {
                       }`}
                     >
                       <RefreshCw
-                        className={`w-4 h-4 ${
-                          reanalyzing ? "animate-spin" : ""
-                        }`}
+                        className={`w-4 h-4 ${reanalyzing ? "animate-spin" : ""}`}
                       />
                       {reanalyzing ? "Re-analyzing…" : "Re-analyze Scan"}
                     </button>
@@ -698,7 +720,7 @@ export default function ScanDetailPage() {
                 <div
                   className={`rounded-2xl border ${risk.ringClass} bg-white px-4 py-3 flex items-center gap-3`}
                 >
-                  <div className={`p-2 rounded-xl ${risk.badgeClass} border`}>
+                  <div className={`p-2 rounded-xl border ${risk.badgeClass}`}>
                     <Shield className={`w-5 h-5 ${risk.iconColor}`} />
                   </div>
                   <div className="flex flex-col">
@@ -708,9 +730,7 @@ export default function ScanDetailPage() {
                     <span className="text-sm font-bold text-gray-900">
                       {risk.label}
                     </span>
-                    <span className="text-xs text-gray-600">
-                      {risk.detail}
-                    </span>
+                    <span className="text-xs text-gray-600">{risk.detail}</span>
                   </div>
                 </div>
 
@@ -725,9 +745,7 @@ export default function ScanDetailPage() {
                     </span>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-                    <span className="text-xs font-semibold text-red-700">
-                      🚫
-                    </span>
+                    <span className="text-xs font-semibold text-red-700">🚫</span>
                   </div>
                 </div>
 
@@ -745,9 +763,7 @@ export default function ScanDetailPage() {
                     </span>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-                    <span className="text-xs font-semibold text-purple-700">
-                      ⚠️
-                    </span>
+                    <span className="text-xs font-semibold text-purple-700">⚠️</span>
                   </div>
                 </div>
               </div>
@@ -821,9 +837,7 @@ export default function ScanDetailPage() {
                                 {b.fields?.Synonyms && (
                                   <div className="text-xs text-gray-500 mt-0.5">
                                     {String(b.fields.Synonyms).slice(0, 120)}
-                                    {String(b.fields.Synonyms).length > 120
-                                      ? "…"
-                                      : ""}
+                                    {String(b.fields.Synonyms).length > 120 ? "…" : ""}
                                   </div>
                                 )}
                               </td>
@@ -838,14 +852,11 @@ export default function ScanDetailPage() {
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
                                 {b.fields?.Notes
                                   ? String(b.fields.Notes).slice(0, 160) +
-                                    (String(b.fields.Notes).length > 160
-                                      ? "…"
-                                      : "")
+                                    (String(b.fields.Notes).length > 160 ? "…" : "")
                                   : "—"}
                               </td>
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
-                                {Array.isArray(b.matchedTerms) &&
-                                b.matchedTerms.length
+                                {Array.isArray(b.matchedTerms) && b.matchedTerms.length
                                   ? b.matchedTerms.join(", ")
                                   : "—"}
                               </td>
@@ -865,8 +876,7 @@ export default function ScanDetailPage() {
                         Matched Ingredients
                       </h2>
                       <p className="text-xs text-gray-600">
-                        Pulled from your primary ingredient / SmartStack
-                        database.
+                        Pulled from your primary ingredient / SmartStack database.
                       </p>
                     </div>
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-purple-50 text-purple-700 border border-purple-100">
@@ -877,8 +887,7 @@ export default function ScanDetailPage() {
 
                   {ingredientRecords.length === 0 ? (
                     <p className="text-sm text-gray-500 italic mt-1">
-                      No ingredients from your database matched for this scan
-                      yet.
+                      No ingredients from your database matched for this scan yet.
                     </p>
                   ) : (
                     <div className="mt-3 overflow-x-auto rounded-2xl border border-gray-200">
@@ -915,48 +924,31 @@ export default function ScanDetailPage() {
                                 </div>
                                 {ing.fields?.["Synonyms (Extended)"] && (
                                   <div className="text-xs text-gray-500 mt-0.5">
-                                    {String(
-                                      ing.fields["Synonyms (Extended)"]
-                                    ).slice(0, 120)}
-                                    {String(
-                                      ing.fields["Synonyms (Extended)"]
-                                    ).length > 120
-                                      ? "…"
-                                      : ""}
+                                    {String(ing.fields["Synonyms (Extended)"]).slice(0, 120)}
+                                    {String(ing.fields["Synonyms (Extended)"]).length > 120 ? "…" : ""}
                                   </div>
                                 )}
                               </td>
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
                                 {ing.fields?.Benefits
                                   ? String(ing.fields.Benefits).slice(0, 160) +
-                                    (String(ing.fields.Benefits).length > 160
-                                      ? "…"
-                                      : "")
+                                    (String(ing.fields.Benefits).length > 160 ? "…" : "")
                                   : "—"}
                               </td>
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
                                 {ing.fields?.Weaknesses
                                   ? String(ing.fields.Weaknesses).slice(0, 160) +
-                                    (String(ing.fields.Weaknesses).length > 160
-                                      ? "…"
-                                      : "")
+                                    (String(ing.fields.Weaknesses).length > 160 ? "…" : "")
                                   : "—"}
                               </td>
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
                                 {ing.fields?.["Nutrient Antagonism"]
-                                  ? String(
-                                      ing.fields["Nutrient Antagonism"]
-                                    ).slice(0, 160) +
-                                    (String(
-                                      ing.fields["Nutrient Antagonism"]
-                                    ).length > 160
-                                      ? "…"
-                                      : "")
+                                  ? String(ing.fields["Nutrient Antagonism"]).slice(0, 160) +
+                                    (String(ing.fields["Nutrient Antagonism"]).length > 160 ? "…" : "")
                                   : "—"}
                               </td>
                               <td className="px-3 sm:px-4 py-2 align-top text-xs text-gray-700">
-                                {Array.isArray(ing.matchedTerms) &&
-                                ing.matchedTerms.length
+                                {Array.isArray(ing.matchedTerms) && ing.matchedTerms.length
                                   ? ing.matchedTerms.join(", ")
                                   : "—"}
                               </td>
@@ -977,8 +969,7 @@ export default function ScanDetailPage() {
                     Raw Ingredients Text
                   </h2>
                   <p className="text-xs text-gray-600">
-                    This is the label or ingredient text used to match against
-                    your banned and ingredient databases.
+                    This is the label or ingredient text used to match against your banned and ingredient databases.
                   </p>
 
                   <div className="mt-2">
@@ -1028,8 +1019,7 @@ export default function ScanDetailPage() {
                     Delete this scan?
                   </h2>
                   <p className="text-xs text-gray-600">
-                    This will permanently remove this scan from your account,
-                    including all matches and history.
+                    This will permanently remove this scan from your account, including all matches and history.
                   </p>
                 </div>
               </div>

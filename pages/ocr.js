@@ -6,6 +6,7 @@ import OCRUpload from "../components/OCRUpload";
 import BarcodeUpload from "../components/BarcodeUpload";
 import OCRScanResults from "../components/OCRScanResults";
 import ProgressBar from "../components/ProgressBar";
+import FinishSetupModal from "../components/FinishSetupModal";
 import { useAuthContext } from "../hooks/useAuth";
 import { toast } from "react-hot-toast";
 import { trackEvent } from "@/lib/analytics";
@@ -40,6 +41,21 @@ export default function OCRPage() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockSeen, setUnlockSeen] = useState(false);
 
+  // -----------------------------
+  // ✅ Step 2: Finish setup modal
+  // -----------------------------
+  const [showFinishSetup, setShowFinishSetup] = useState(false);
+
+  const getLs = (k) => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(k);
+  };
+
+  const setLs = (k, v) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(k, v);
+  };
+
   const [lastScanMeta, setLastScanMeta] = useState({
     productName: null,
     scanMode: null,
@@ -60,10 +76,25 @@ export default function OCRPage() {
       return;
     }
 
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem("cp_unlocked");
-      if (saved === "1") setIsUnlocked(true);
-    }
+    const saved = getLs("cp_unlocked");
+    if (saved === "1") setIsUnlocked(true);
+  }, [user]);
+
+  // Prompt finish-setup on next visit if they unlocked but never finished
+  useEffect(() => {
+    const loggedIn = !!(user && (user.Email || user.email));
+    if (loggedIn) return;
+
+    const unlocked = getLs("cp_unlocked") === "1";
+    if (!unlocked) return;
+
+    const dismissed = getLs("cp_finish_setup_dismissed") === "1";
+    const completed = getLs("cp_finish_setup_completed") === "1";
+    if (dismissed || completed) return;
+
+    // don’t pop instantly on load; wait a beat
+    const t = setTimeout(() => setShowFinishSetup(true), 900);
+    return () => clearTimeout(t);
   }, [user]);
 
   // Fire analytics when gate is shown (once per page load)
@@ -84,7 +115,8 @@ export default function OCRPage() {
         payload: {
           scanMode: lastScanMeta?.scanMode || scanMode,
           bannedCount: lastScanMeta?.bannedCount ?? detectedBanned.length,
-          ingredientCount: lastScanMeta?.ingredientCount ?? detectedIngredients.length,
+          ingredientCount:
+            lastScanMeta?.ingredientCount ?? detectedIngredients.length,
           productName: lastScanMeta?.productName || null,
         },
       });
@@ -132,10 +164,11 @@ export default function OCRPage() {
       setUnlockSuccess(true);
       setIsUnlocked(true);
 
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("cp_unlocked", "1");
-        window.localStorage.setItem("cp_unlocked_email", email);
-      }
+      // persist soft-unlock identity for step 2
+      setLs("cp_unlocked", "1");
+      setLs("cp_unlocked_email", email);
+      setLs("cp_unlocked_role", unlockRole || "Athlete");
+      setLs("cp_unlocked_org", unlockOrg || "");
 
       // Analytics: unlock completed
       try {
@@ -157,7 +190,14 @@ export default function OCRPage() {
         console.error("unlock_gate_completed tracking failed:", e2);
       }
 
-      toast.success("Unlocked! Scans + alerts will be available as we roll out.");
+      toast.success("Unlocked! Now save this by finishing setup.");
+
+      // ✅ Step 2 prompt (after value delivered)
+      const dismissed = getLs("cp_finish_setup_dismissed") === "1";
+      const completed = getLs("cp_finish_setup_completed") === "1";
+      if (!dismissed && !completed) {
+        setTimeout(() => setShowFinishSetup(true), 900);
+      }
     } catch (err) {
       console.error(err);
       setUnlockError(err?.message || "Something went wrong. Please try again.");
@@ -169,13 +209,6 @@ export default function OCRPage() {
   // -----------------------------
   // Existing stuff
   // -----------------------------
-  const banTypeColors = [
-    { label: "Prohibited", color: "#d62828" },
-    { label: "Limited to Out of Competition", color: "#f77f00" },
-    { label: "Particular Sports", color: "#2a9d8f" },
-  ];
-  const INGREDIENT_HIGHLIGHT_COLOR = "#8556da";
-
   // Tab underline animation
   useEffect(() => {
     const currentTab = tabRefs.current[scanMode];
@@ -203,42 +236,6 @@ export default function OCRPage() {
       console.error("page_view_scan tracking failed:", err);
     }
   }, [activeTab, user]);
-
-  // Not wired yet, but left in case you want smart OCR highlighting later
-  const generateCombinedHighlightedOCR = (
-    rawText = "",
-    bannedRecs = [],
-    ingredientRecs = []
-  ) => {
-    if (!rawText) return "";
-    let out = rawText;
-    return out;
-  };
-
-  // For legacy / future separate scan saving (still available)
-  const saveScanToAirtable = async (scanName, resultSummary, stackDetails) => {
-    if (!user || !user.Email) return;
-    try {
-      const scanDate = new Date().toISOString();
-      const res = await fetch("/api/saveScan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userEmail: user.Email,
-          scanName,
-          scanDate,
-          stackDetails,
-          resultSummary,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) toast.success("Scan saved to your account!");
-      else toast.error(`Failed to save scan: ${data.error}`);
-    } catch (err) {
-      console.error("Error saving scan:", err);
-      toast.error("Failed to save scan. Try again later.");
-    }
-  };
 
   const normalizeRecord = (r) => {
     if (!r) return null;
@@ -279,12 +276,6 @@ export default function OCRPage() {
       : [];
     setDetectedIngredients(ingredientMatches);
 
-    // Optional: hook if you want OCR highlighting later
-    // setCombinedHighlightedOCR(
-    //   generateCombinedHighlightedOCR(raw, bannedMatches, ingredientMatches)
-    // );
-
-    // Save "headline" meta for the gate + analytics
     setLastScanMeta({
       productName: result.productName || null,
       scanMode,
@@ -292,7 +283,6 @@ export default function OCRPage() {
       ingredientCount: ingredientMatches.length,
     });
 
-    // 🔥 Analytics: log completed scan
     try {
       const bannedDetails = result.bannedDetails || {};
       await trackEvent("scan_completed", {
@@ -321,11 +311,9 @@ export default function OCRPage() {
     setProgress(0);
     setError("");
 
-    // reset gate messaging when a new scan starts (but don’t re-lock if already unlocked)
     setUnlockError("");
     setUnlockSuccess(false);
 
-    // 🔥 Analytics: scan start (nutrition label)
     try {
       trackEvent("scan_started", {
         eventType: "scan_start",
@@ -334,9 +322,7 @@ export default function OCRPage() {
         source: "nutrition_label",
         device: typeof navigator !== "undefined" ? navigator.userAgent : "",
       });
-    } catch (err) {
-      console.error("scan_started tracking failed:", err);
-    }
+    } catch {}
 
     try {
       const res = await fetch("/api/check", {
@@ -367,7 +353,6 @@ export default function OCRPage() {
     setUnlockError("");
     setUnlockSuccess(false);
 
-    // 🔥 Analytics: scan start (barcode)
     try {
       trackEvent("scan_started", {
         eventType: "scan_start",
@@ -376,9 +361,7 @@ export default function OCRPage() {
         source: "barcode",
         device: typeof navigator !== "undefined" ? navigator.userAgent : "",
       });
-    } catch (err) {
-      console.error("scan_started tracking failed:", err);
-    }
+    } catch {}
 
     try {
       await handleScanResult(result);
@@ -405,9 +388,39 @@ export default function OCRPage() {
       ? "Unlock details + save scan history so you can reference this later."
       : "Save this scan to build history and get alerts as our database expands.";
 
+  const finishEmail = useMemo(() => getLs("cp_unlocked_email") || "", [showFinishSetup]);
+  const finishRole = useMemo(() => getLs("cp_unlocked_role") || "Athlete", [showFinishSetup]);
+  const finishOrg = useMemo(() => getLs("cp_unlocked_org") || "", [showFinishSetup]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
       {scanning && <ProgressBar progress={progress} scanning={scanning} />}
+
+      <FinishSetupModal
+        isOpen={showFinishSetup && !(user && (user.Email || user.email))}
+        defaultEmail={finishEmail}
+        defaultRole={finishRole}
+        defaultOrg={finishOrg}
+        onClose={(meta) => {
+          setShowFinishSetup(false);
+
+          // Track dismissal/completion
+          try {
+            trackEvent("finish_setup_closed", {
+              eventType: "finish_setup",
+              userEmail: finishEmail || "",
+              source: "ocr_finish_setup_modal",
+              payload: { completed: !!meta?.completed },
+            });
+          } catch {}
+
+          if (!meta?.completed) {
+            // persist dismissal already handled in modal button,
+            // but keep safe here in case they close via backdrop/X
+            setLs("cp_finish_setup_dismissed", "1");
+          }
+        }}
+      />
 
       <main className="max-w-6xl mx-auto px-2 sm:px-4 py-4 sm:py-8 space-y-6 sm:space-y-8">
         {activeTab === "Scan" && (
@@ -441,10 +454,7 @@ export default function OCRPage() {
               {scanMode === "Nutrition Label" ? (
                 <OCRUpload multiple={true} onScan={handleOCRScan} />
               ) : (
-                <BarcodeUpload
-                  onResult={handleBarcodeScan}
-                  showScanButton={true}
-                />
+                <BarcodeUpload onResult={handleBarcodeScan} showScanButton={true} />
               )}
             </div>
 
@@ -456,13 +466,11 @@ export default function OCRPage() {
 
             {/* Results block (gated) */}
             <section className="w-full bg-white p-4 sm:p-6 rounded-2xl shadow-md mx-auto border border-blue-100 mt-4 relative overflow-hidden">
-              {/* Headline counts always visible (the "wow moment") */}
+              {/* Headline counts always visible */}
               {hasResults && (
                 <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
                   <div className="text-sm sm:text-base">
-                    <p className="font-semibold text-gray-900">
-                      Results summary
-                    </p>
+                    <p className="font-semibold text-gray-900">Results summary</p>
                     <p className="text-gray-600 text-xs sm:text-sm">
                       {lastScanMeta?.productName
                         ? `Product: ${lastScanMeta.productName} • `
@@ -489,7 +497,13 @@ export default function OCRPage() {
               )}
 
               {/* Blur results if not unlocked */}
-              <div className={`${!isUnlocked && hasResults ? "filter blur-sm pointer-events-none select-none" : ""}`}>
+              <div
+                className={`${
+                  !isUnlocked && hasResults
+                    ? "filter blur-sm pointer-events-none select-none"
+                    : ""
+                }`}
+              >
                 <OCRScanResults
                   ocrText={rawOCR}
                   detectedSubstances={detectedBanned}
@@ -513,9 +527,7 @@ export default function OCRPage() {
                       <h3 className="text-xl sm:text-2xl font-bold text-gray-900">
                         Unlock full details + save this scan
                       </h3>
-                      <p className="text-gray-600 text-sm">
-                        {gateSubtitle}
-                      </p>
+                      <p className="text-gray-600 text-sm">{gateSubtitle}</p>
 
                       <form
                         onSubmit={handleUnlockSubmit}
@@ -567,7 +579,7 @@ export default function OCRPage() {
                         )}
                         {unlockSuccess && (
                           <p className="text-xs text-emerald-600">
-                            Unlocked. Saving enabled.
+                            Unlocked. Finish setup to save scans.
                           </p>
                         )}
 

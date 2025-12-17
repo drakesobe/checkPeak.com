@@ -24,8 +24,22 @@ export default function NavBar() {
   useEffect(() => setIsMounted(true), []);
 
   const loggedIn = !!user;
-  const role = useMemo(() => (user?.Role || user?.role || "").trim(), [user]);
 
+  // Normalize role across all possible shapes
+  const role = useMemo(() => {
+    const raw = (user?.Role || user?.role || "").toString().trim();
+    const normalized = raw.toLowerCase();
+    if (normalized.includes("org")) return "organization";
+    if (normalized.includes("ath")) return "athlete";
+    if (normalized.includes("admin")) return "admin";
+    if (normalized.includes("trainer")) return "trainer";
+    return normalized || "";
+  }, [user]);
+
+  const isOrg = role === "organization";
+  const isAthlete = role === "athlete";
+
+  // Tabs shown on left side (desktop)
   const leftTabs = useMemo(
     () => [
       { name: "Scan", href: "/ocr" },
@@ -35,10 +49,38 @@ export default function NavBar() {
     []
   );
 
+  // Mobile main tabs include SmartStack
   const mainTabs = useMemo(
     () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
     [leftTabs]
   );
+
+  // ✅ Global event listener to open auth modal from anywhere (FinishSetupModal, etc.)
+  useEffect(() => {
+    const handler = (e) => {
+      const detail = e?.detail || {};
+      const tab = detail.defaultTab || "login";
+      const email = detail.email ? String(detail.email).trim() : "";
+
+      try {
+        if (typeof window !== "undefined" && email) {
+          window.localStorage.setItem("cp_prefill_login_email", email);
+        }
+      } catch {}
+
+      setDefaultAuthTab(tab);
+      setLoginModalOpen(true);
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("cp:open-auth-modal", handler);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("cp:open-auth-modal", handler);
+      }
+    };
+  }, []);
 
   // Close dropdowns/menus when route changes
   useEffect(() => {
@@ -71,13 +113,10 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [profileOpen]);
 
-  const openAuthModal = useCallback(
-    (tab = "login") => {
-      setDefaultAuthTab(tab);
-      setLoginModalOpen(true);
-    },
-    []
-  );
+  const openAuthModal = useCallback((tab = "login") => {
+    setDefaultAuthTab(tab);
+    setLoginModalOpen(true);
+  }, []);
 
   const handleProfileClick = useCallback(() => {
     if (!loggedIn) return openAuthModal("login");
@@ -143,6 +182,11 @@ export default function NavBar() {
     );
   };
 
+  /**
+   * ✅ RoleLinks now maps to your actual role system:
+   * - Organization -> /org/*
+   * - Athlete -> /dashboard, /scans
+   */
   const RoleLinks = () => {
     const L = ({ href, children }) => (
       <Link
@@ -153,18 +197,38 @@ export default function NavBar() {
       </Link>
     );
 
-    const normalized = (role || "").toLowerCase();
-
-    if (normalized.includes("admin")) {
+    if (isOrg) {
       return (
         <>
-          <L href="/organization">Organization Dashboard</L>
-          <L href="/invites">Manage Invites</L>
+          <L href="/org/dashboard">Organization Dashboard</L>
+          <L href="/org/athletes">Athletes</L>
+          <L href="/org/prescriptions">Prescriptions</L>
           <L href="/account">Account</L>
         </>
       );
     }
-    if (normalized.includes("head") && normalized.includes("trainer")) {
+
+    if (isAthlete) {
+      return (
+        <>
+          <L href="/dashboard">Athlete Dashboard</L>
+          <L href="/scans">My Scans</L>
+          <L href="/account">Account</L>
+        </>
+      );
+    }
+
+    // fallback for any legacy roles you still have in Airtable
+    if (role.includes("admin")) {
+      return (
+        <>
+          <L href="/org/dashboard">Organization Dashboard</L>
+          <L href="/account">Account</L>
+        </>
+      );
+    }
+
+    if (role.includes("trainer")) {
       return (
         <>
           <L href="/team">Team Dashboard</L>
@@ -173,15 +237,7 @@ export default function NavBar() {
         </>
       );
     }
-    if (normalized.includes("athlete")) {
-      return (
-        <>
-          <L href="/dashboard">Athlete Profile</L>
-          <L href="/scans">My Scans</L>
-          <L href="/account">Account</L>
-        </>
-      );
-    }
+
     return <L href="/account">Account</L>;
   };
 
@@ -246,6 +302,9 @@ export default function NavBar() {
                           <p className="text-[11px] text-gray-500 truncate">
                             {user?.Email || user?.email}
                           </p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">
+                            {isOrg ? "Organization" : isAthlete ? "Athlete" : role || "Member"}
+                          </p>
                         </div>
 
                         <RoleLinks />
@@ -259,9 +318,6 @@ export default function NavBar() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-
-                  {/* Logged out -> open modal */}
-                  {!loggedIn && loginModalOpen === false && null}
                 </div>
               )}
             </div>
@@ -275,7 +331,6 @@ export default function NavBar() {
                     setProfileOpen(false);
                     setMenuOpen((v) => !v);
                   } else {
-                    // If logged out, tapping menu opens menu
                     setMenuOpen((v) => !v);
                   }
                 }}
@@ -373,7 +428,7 @@ export default function NavBar() {
                         {user?.Email || user?.email}
                       </p>
                       <p className="text-[11px] text-gray-400 mt-1 truncate">
-                        {role || "Member"}
+                        {isOrg ? "Organization" : isAthlete ? "Athlete" : role || "Member"}
                       </p>
                     </div>
 

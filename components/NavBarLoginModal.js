@@ -1,3 +1,4 @@
+// components/NavBarLoginModal.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -11,11 +12,14 @@ export default function NavBarLoginModal({
   onClose,
   defaultTab = "login",
 }) {
-  const { login, signupAthlete } = useAuthContext();
+  const { login, signupAthlete, signupOrganization } = useAuthContext();
   const router = useRouter();
 
   // Tabs
   const [tab, setTab] = useState(defaultTab);
+
+  // Role selector: "athlete" | "organization"
+  const [authRole, setAuthRole] = useState("athlete");
 
   // LOGIN state
   const [email, setEmail] = useState("");
@@ -26,35 +30,43 @@ export default function NavBarLoginModal({
   const [loginLoading, setLoginLoading] = useState(false);
 
   // SIGNUP state
-  const [signupForm, setSignupForm] = useState({
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [signupSuccess, setSignupSuccess] = useState(null);
+
+  // Athlete signup fields
+  const [athleteSignup, setAthleteSignup] = useState({
     name: "",
     email: "",
     password: "",
     token: "",
-    // leaving these here in case you expand your API later
-    organization: "",
-    title: "Athlete",
-    phone: "",
   });
-  const [signupLoading, setSignupLoading] = useState(false);
-  const [signupError, setSignupError] = useState("");
-  const [signupSuccess, setSignupSuccess] = useState(null);
+
+  // Org signup fields
+  const [orgSignup, setOrgSignup] = useState({
+    name: "",
+    email: "",
+    password: "",
+    contactName: "",
+    phoneNumber: "",
+    website: "",
+  });
 
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
 
-  // Reset tab on open
   useEffect(() => {
     if (isOpen) {
       setTab(defaultTab);
       setLoginError("");
       setSignupError("");
       setSignupSuccess(null);
+      // default role reset per tab open is fine; keep last selection if you prefer
+      setAuthRole("athlete");
     }
   }, [isOpen, defaultTab]);
 
-  // Focus email on open when login selected
   useEffect(() => {
     if (isOpen && tab === "login" && emailRef.current) {
       emailRef.current.focus();
@@ -70,12 +82,24 @@ export default function NavBarLoginModal({
     setLoginError("");
     setLoginLoading(false);
 
-    // Clear signup fields (optional)
+    // Clear signup fields
     setSignupError("");
     setSignupSuccess(null);
+    setSignupLoading(false);
+
+    // Keep role selection reset (optional)
+    setAuthRole("athlete");
 
     onClose?.();
   };
+
+  const inputBase =
+    "w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300";
+
+  const rolePill =
+    "px-3 py-2 rounded-xl border text-sm font-semibold transition";
+
+  const isOrg = authRole === "organization";
 
   // ---------- LOGIN ----------
   const handleLogin = async (e) => {
@@ -95,13 +119,18 @@ export default function NavBarLoginModal({
     }
 
     try {
-      const userData = await login(email.trim(), password);
+      const userData = await login(email.trim(), password, authRole);
 
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
       }
 
       closeAndReset();
+
+      // Route by role
+      const roleLabel = String(userData?.role || "").toLowerCase();
+      if (roleLabel.includes("org")) router.push("/org/dashboard");
+      else router.push("/dashboard");
     } catch (err) {
       console.error("Login error:", err);
       setLoginError(err?.message || "Login failed. Check email/password.");
@@ -111,52 +140,62 @@ export default function NavBarLoginModal({
   };
 
   // ---------- SIGNUP ----------
-  const handleSignupChange = (e) =>
-    setSignupForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleAthleteSignupChange = (e) =>
+    setAthleteSignup((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+
+  const handleOrgSignupChange = (e) =>
+    setOrgSignup((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSignup = async (e) => {
     e.preventDefault();
     setSignupError("");
     setSignupLoading(true);
 
-    // Basic validation
-    if (!signupForm.email || !signupForm.password || !signupForm.name) {
-      setSignupError("Please provide name, email, and password.");
-      setSignupLoading(false);
-      return;
-    }
-    if (!signupForm.email.includes("@")) {
-      setSignupError("Please enter a valid email.");
-      setSignupLoading(false);
-      return;
-    }
-    if (signupForm.password.length < 6) {
-      setSignupError("Password must be at least 6 characters.");
-      setSignupLoading(false);
-      return;
-    }
-
     try {
-      /**
-       * CRITICAL FIX:
-       * Do NOT hash client-side.
-       * Your /api/athlete-signup already hashes password before saving.
-       */
+      if (authRole === "athlete") {
+        // Validate athlete
+        if (!athleteSignup.name || !athleteSignup.email || !athleteSignup.password) {
+          throw new Error("Please provide name, email, and password.");
+        }
+        if (!athleteSignup.email.includes("@")) throw new Error("Please enter a valid email.");
+        if (athleteSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
+
+        const payload = {
+          token: athleteSignup.token,
+          name: athleteSignup.name,
+          email: athleteSignup.email,
+          password: athleteSignup.password,
+        };
+
+        const data = await signupAthlete(payload);
+        setSignupSuccess(data);
+
+        closeAndReset();
+        router.push("/dashboard");
+        return;
+      }
+
+      // Org signup
+      if (!orgSignup.name || !orgSignup.email || !orgSignup.password) {
+        throw new Error("Please provide organization name, email, and password.");
+      }
+      if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
+      if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
+
       const payload = {
-        token: signupForm.token,
-        name: signupForm.name,
-        email: signupForm.email,
-        password: signupForm.password, // ✅ PLAIN password (server hashes)
+        name: orgSignup.name,
+        email: orgSignup.email,
+        password: orgSignup.password,
+        contactName: orgSignup.contactName,
+        phoneNumber: orgSignup.phoneNumber,
+        website: orgSignup.website,
       };
 
-      const data = await signupAthlete(payload);
+      const data = await signupOrganization(payload);
       setSignupSuccess(data);
 
-      // Auto-login with plain password (lookupUser bcrypt.compare expects plain)
-      await login(signupForm.email.trim(), signupForm.password);
-
       closeAndReset();
-      router.push("/dashboard");
+      router.push("/org/dashboard");
     } catch (err) {
       console.error("Signup error:", err);
       setSignupError(err?.message || "Signup failed.");
@@ -164,10 +203,6 @@ export default function NavBarLoginModal({
       setSignupLoading(false);
     }
   };
-
-  // Shared input classes to prevent white typing / theme inheritance issues
-  const inputBase =
-    "w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300";
 
   return (
     <AnimatePresence>
@@ -211,7 +246,7 @@ export default function NavBarLoginModal({
             </button>
 
             {/* Tabs */}
-            <div className="flex justify-center space-x-6 mb-4">
+            <div className="flex justify-center space-x-6 mb-3">
               <button
                 onClick={() => setTab("login")}
                 className={`pb-2 border-b-2 ${
@@ -236,6 +271,32 @@ export default function NavBarLoginModal({
               </button>
             </div>
 
+            {/* Role selector */}
+            <div className="flex justify-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setAuthRole("athlete")}
+                className={`${rolePill} ${
+                  authRole === "athlete"
+                    ? "bg-[#46769B] text-white border-[#46769B]"
+                    : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                Athlete
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthRole("organization")}
+                className={`${rolePill} ${
+                  authRole === "organization"
+                    ? "bg-[#46769B] text-white border-[#46769B]"
+                    : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                Organization
+              </button>
+            </div>
+
             {/* LOGIN */}
             {tab === "login" && (
               <form onSubmit={handleLogin} className="space-y-4">
@@ -246,7 +307,7 @@ export default function NavBarLoginModal({
                   <input
                     ref={emailRef}
                     type="email"
-                    placeholder="you@example.com"
+                    placeholder={isOrg ? "org@example.com" : "you@example.com"}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className={inputBase}
@@ -312,45 +373,111 @@ export default function NavBarLoginModal({
             {/* SIGNUP */}
             {tab === "signup" && !signupSuccess && (
               <form onSubmit={handleSignup} className="space-y-4">
-                <input
-                  type="text"
-                  name="name"
-                  placeholder="Full Name"
-                  value={signupForm.name}
-                  onChange={handleSignupChange}
-                  className={inputBase}
-                  required
-                  autoComplete="name"
-                />
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Email"
-                  value={signupForm.email}
-                  onChange={handleSignupChange}
-                  className={inputBase}
-                  required
-                  autoComplete="email"
-                />
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="Password"
-                  value={signupForm.password}
-                  onChange={handleSignupChange}
-                  className={inputBase}
-                  required
-                  autoComplete="new-password"
-                />
+                {authRole === "athlete" ? (
+                  <>
+                    <input
+                      type="text"
+                      name="name"
+                      placeholder="Full Name"
+                      value={athleteSignup.name}
+                      onChange={handleAthleteSignupChange}
+                      className={inputBase}
+                      required
+                      autoComplete="name"
+                    />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      value={athleteSignup.email}
+                      onChange={handleAthleteSignupChange}
+                      className={inputBase}
+                      required
+                      autoComplete="email"
+                    />
+                    <input
+                      type="password"
+                      name="password"
+                      placeholder="Password"
+                      value={athleteSignup.password}
+                      onChange={handleAthleteSignupChange}
+                      className={inputBase}
+                      required
+                      autoComplete="new-password"
+                    />
+                    <input
+                      type="text"
+                      name="token"
+                      placeholder="Organization Token (optional)"
+                      value={athleteSignup.token}
+                      onChange={handleAthleteSignupChange}
+                      className={inputBase}
+                    />
+                    <p className="text-[11px] text-gray-500">
+                      If your organization provided a token, paste it here.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      name="name"
+                      placeholder="Organization Name"
+                      value={orgSignup.name}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                      required
+                    />
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Organization Email"
+                      value={orgSignup.email}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                      required
+                      autoComplete="email"
+                    />
+                    <input
+                      type="password"
+                      name="password"
+                      placeholder="Password"
+                      value={orgSignup.password}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                      required
+                      autoComplete="new-password"
+                    />
 
-                <input
-                  type="text"
-                  name="token"
-                  placeholder="Signup Token"
-                  value={signupForm.token}
-                  onChange={handleSignupChange}
-                  className={inputBase}
-                />
+                    <input
+                      type="text"
+                      name="contactName"
+                      placeholder="Contact Name (optional)"
+                      value={orgSignup.contactName}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                    />
+                    <input
+                      type="text"
+                      name="phoneNumber"
+                      placeholder="Phone Number (optional)"
+                      value={orgSignup.phoneNumber}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                    />
+                    <input
+                      type="text"
+                      name="website"
+                      placeholder="Website (optional)"
+                      value={orgSignup.website}
+                      onChange={handleOrgSignupChange}
+                      className={inputBase}
+                    />
+                    <p className="text-[11px] text-gray-500">
+                      We’ll generate a secure token for your organization automatically.
+                    </p>
+                  </>
+                )}
 
                 {signupError && (
                   <p className="text-red-500 text-sm">{signupError}</p>
@@ -364,7 +491,7 @@ export default function NavBarLoginModal({
                     signupLoading ? "opacity-70 cursor-not-allowed" : ""
                   }`}
                 >
-                  {signupLoading ? "Signing up..." : "Sign Up"}
+                  {signupLoading ? "Creating..." : "Create Account"}
                 </button>
               </form>
             )}

@@ -1,18 +1,14 @@
+// hooks/useAuth.js
 import { useState, createContext, useContext, useEffect } from "react";
 
 const AuthContext = createContext(null);
 
-function getUserFromCookie() {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/user=([^;]+)/);
-  if (!match) return null;
-  try {
-    return JSON.parse(decodeURIComponent(match[1]));
-  } catch (e) {
-    console.error("Failed to parse user cookie", e);
-    return null;
-  }
-}
+/**
+ * Auth model:
+ * - UI user state is hydrated from localStorage (because the server cookie is HttpOnly)
+ * - Server auth for /api/org/* relies on the HttpOnly `user` cookie
+ * - Therefore ALL auth-related fetch calls MUST use credentials: "include"
+ */
 
 export function AuthProvider({ children }) {
   const auth = useProvideAuth();
@@ -21,127 +17,190 @@ export function AuthProvider({ children }) {
 
 export const useAuthContext = () => useContext(AuthContext);
 
+function safeJsonParse(str) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
 export function useProvideAuth() {
   const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
+  // Hydrate UI user from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storedUser = localStorage.getItem("user");
-    const cookieUser = getUserFromCookie();
-
     try {
-      if (storedUser) setUser(JSON.parse(storedUser));
-      else if (cookieUser) setUser(cookieUser);
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const parsed = safeJsonParse(stored);
+        if (parsed) setUser(parsed);
+      }
     } catch (e) {
-      console.error("Failed restoring user", e);
+      console.error("Failed restoring user from localStorage", e);
+      localStorage.removeItem("user");
+    } finally {
+      setAuthReady(true);
     }
   }, []);
 
-  const login = async (email, password) => {
-    try {
-      const emailNorm = String(email || "").trim().toLowerCase();
-
-      const res = await fetch("/api/lookupUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          email: emailNorm,
-          password: String(password || ""),
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Login failed");
-
-      setUser(data.user);
-
-      if (typeof window !== "undefined") {
-        localStorage.setItem("user", JSON.stringify(data.user));
-        document.cookie = `user=${encodeURIComponent(
-          JSON.stringify(data.user)
-        )}; path=/;`;
-      }
-
-      return data.user;
-    } catch (err) {
-      console.error("Login error:", err);
-      throw err;
-    }
+  // Tiny helper so we don’t forget credentials/include
+  const apiFetch = async (url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      credentials: "include", // ✅ critical for HttpOnly cookie auth
+    });
   };
 
-  const logout = () => {
+  /**
+   * LOGIN
+   * - role: "athlete" | "organization"
+   * - Server sets HttpOnly cookie in /api/lookupUser
+   * - We store user in localStorage for UI hydration only
+   */
+  const login = async (email, password, role = "athlete") => {
+    const emailNorm = String(email || "").trim().toLowerCase();
+    const roleNorm =
+      String(role || "").trim().toLowerCase() === "organization"
+        ? "organization"
+        : "athlete";
+
+    const res = await apiFetch("/api/lookupUser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: emailNorm,
+        password: String(password || ""),
+        role: roleNorm,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Login failed");
+
+    setUser(data.user || null);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(data.user || null));
+    }
+
+    return data.user;
+  };
+
+  /**
+   * LOGOUT
+   * - Clears local UI state/localStorage
+   * - Clears HttpOnly cookie server-side via /api/logout (if you have it)
+   */
+  const logout = async () => {
     setUser(null);
+
     if (typeof window !== "undefined") {
       localStorage.removeItem("user");
-      document.cookie =
-        "user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    }
+
+    try {
+      await apiFetch("/api/logout", { method: "POST" });
+    } catch (err) {
+      console.warn("[logout] failed to clear cookie (non-fatal):", err);
     }
   };
 
+  /**
+   * ATHLETE SIGNUP
+   * - Creates athlete record
+   * - Then logs in (server sets HttpOnly cookie)
+   */
   const signupAthlete = async ({ token, name, email, password }) => {
-    try {
-      const res = await fetch("/api/athlete-signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          token: String(token || "").trim(),
-          name: String(name || "").trim(),
-          email: String(email || "").trim().toLowerCase(),
-          password: String(password || ""), // plain, server hashes
-        }),
-      });
+    const emailNorm = String(email || "").trim().toLowerCase();
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Athlete signup failed");
+    const res = await apiFetch("/api/athlete-signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: String(token || "").trim(),
+        name: String(name || "").trim(),
+        email: emailNorm,
+        password: String(password || ""), // plain; server hashes
+      }),
+    });
 
-      const loggedInUser = await login(email, password);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Athlete signup failed");
 
-      return {
-        ...data,
-        user: loggedInUser,
-        role: "Athlete",
-        message: `Athlete account created and logged in as ${
-          loggedInUser?.Name || loggedInUser?.name || "Athlete"
-        }`,
-      };
-    } catch (err) {
-      console.error("Athlete signup error:", err);
-      throw err;
-    }
+    const loggedInUser = await login(emailNorm, password, "athlete");
+
+    return {
+      ...data,
+      user: loggedInUser,
+      role: "Athlete",
+      message: `Athlete account created and logged in as ${
+        loggedInUser?.Name || loggedInUser?.name || "Athlete"
+      }`,
+    };
   };
 
-  const signupOrg = async ({ orgName, contactName, email, password }) => {
-    try {
-      const res = await fetch("/api/org-signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ orgName, contactName, email, password }),
-      });
+  /**
+   * ORG SIGNUP
+   * - Creates org record (server hashes password, generates Token)
+   * - Then logs in as organization (server sets HttpOnly cookie)
+   */
+  const signupOrganization = async ({
+    name,
+    email,
+    password,
+    contactName = "",
+    phoneNumber = "",
+    website = "",
+    address = "",
+    notes = "",
+    type = "Organization",
+  }) => {
+    const emailNorm = String(email || "").trim().toLowerCase();
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Organization signup failed");
+    const res = await apiFetch("/api/org-signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: String(name || "").trim(),
+        email: emailNorm,
+        password: String(password || ""),
+        contactName: String(contactName || "").trim(),
+        phoneNumber: String(phoneNumber || "").trim(),
+        website: String(website || "").trim(),
+        address: String(address || "").trim(),
+        notes: String(notes || "").trim(),
+        type: String(type || "Organization").trim(),
+      }),
+    });
 
-      const loggedInUser = await login(email, password);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Organization signup failed");
 
-      return {
-        ...data,
-        user: loggedInUser,
-        role: "Organization",
-        message: `Organization account created and logged in as ${
-          loggedInUser?.Name || loggedInUser?.name || "Organization"
-        }`,
-      };
-    } catch (err) {
-      console.error("Organization signup error:", err);
-      throw err;
-    }
+    const loggedInUser = await login(emailNorm, password, "organization");
+
+    return {
+      ...data,
+      user: loggedInUser,
+      role: "Organization",
+      message: `Organization created and logged in as ${
+        loggedInUser?.Name || loggedInUser?.name || "Organization"
+      }`,
+    };
   };
 
-  return { user, login, logout, signupAthlete, signupOrg };
+  return {
+    user,
+    authReady,
+    login,
+    logout,
+    signupAthlete,
+    signupOrganization,
+    setUser, // optional escape hatch
+  };
 }
 
 export default useProvideAuth;

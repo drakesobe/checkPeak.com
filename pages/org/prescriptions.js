@@ -18,26 +18,13 @@ import { useAuthContext } from "@/hooks/useAuth";
  *
  * Important:
  * - All API calls use credentials: "include" so the org auth cookie is sent.
- * - This file POSTS `structured` keys that match your UPDATED createPrescription.js:
- *      Macros:
- *        calories, proteinGrams, carbsGrams, fatsGrams, hydrationOz, notesMacros
- *      Supplements:
- *        proteinRecommendation, creatineRecommendation, bcaaRecommendation, electrolytesRecommendation, notesSupplements
- *      Meta:
- *        metaStatus, metaEffectiveDate
- *
- * Airtable Field Types:
- * - You said these are SINGLE SELECT fields.
- *   Airtable will reject values that are not in the dropdown options.
- *   So update the option arrays below to match EXACTLY what you created.
+ * - We ALSO send "x-org-token" (fallback auth) in case HttpOnly cookie is missing.
  */
 
 /* -------------------------------------------------------------------------- */
 /* 1) Update these options to match Airtable single-select choices EXACTLY     */
 /* -------------------------------------------------------------------------- */
 
-// If your options are different in Airtable, change them here.
-// Example: If Airtable has "Creatine (5g daily)" then this list must include that exact string.
 const OPTIONS = {
   // Macros (single select fields)
   calories: ["", "2500", "2800", "3000", "3200", "3500", "3800", "4000+"],
@@ -118,10 +105,6 @@ function safeJsonParse(maybeJson) {
 
 /**
  * Builds a readable fallback "Prescription" text.
- * This is useful because:
- * - your Airtable has a long text "Prescription" column
- * - even if single selects reject a value, you can still store a readable plan
- *   (but in your createPrescription.js, you allow empty prescription too)
  */
 function buildPlanSummaryText(plan) {
   const lines = [];
@@ -179,6 +162,17 @@ export default function OrgPrescriptionsPage() {
     () => String(user?.Name || user?.name || user?.Organization || "Organization"),
     [user]
   );
+
+  // ✅ Fallback auth header (works even if HttpOnly cookie isn’t present)
+  const orgToken = useMemo(() => {
+    return String(
+      user?.Token || user?.token || user?.["Organization Token"] || ""
+    ).trim();
+  }, [user]);
+
+  const orgAuthHeaders = useMemo(() => {
+    return orgToken ? { "x-org-token": orgToken } : {};
+  }, [orgToken]);
 
   /* ------------------------------------------------------------------------ */
   /* State                                                                    */
@@ -260,11 +254,15 @@ export default function OrgPrescriptionsPage() {
     const res = await fetch("/api/org/getAthletes", {
       method: "GET",
       credentials: "include",
+      headers: {
+        ...orgAuthHeaders, // ✅ fallback auth header
+      },
     });
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = data?.error || data?.airtable?.message || "Failed to load athletes.";
+      setLoadingAthletes(false);
       throw new Error(msg);
     }
 
@@ -291,11 +289,14 @@ export default function OrgPrescriptionsPage() {
     setError("");
 
     const res = await fetch(
-      `/api/org/getPrescriptionsForAthletes?athleteEmail=${encodeURIComponent(email)}`,
+      `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(email)}`,
       {
         method: "GET",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...orgAuthHeaders, // ✅ fallback auth header
+        },
       }
     );
 
@@ -303,6 +304,7 @@ export default function OrgPrescriptionsPage() {
     if (!res.ok) {
       const msg =
         data?.error || data?.airtable?.message || "Failed to load prescriptions.";
+      setLoadingPrescriptions(false);
       throw new Error(msg);
     }
 
@@ -340,7 +342,7 @@ export default function OrgPrescriptionsPage() {
     if (role !== "organization") return;
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role]);
+  }, [user, role, orgToken]);
 
   useEffect(() => {
     if (!user) return;
@@ -433,7 +435,10 @@ export default function OrgPrescriptionsPage() {
       const res = await fetch("/api/org/createPrescription", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...orgAuthHeaders, // ✅ fallback auth header
+        },
         body: JSON.stringify({
           athleteEmail,
           organizationName: orgName,
@@ -461,9 +466,6 @@ export default function OrgPrescriptionsPage() {
             // Meta
             metaStatus: structured.metaStatus || "Active",
             metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
-
-            // NOTE: freeformNotes is stored in Prescription summary text,
-            // not written to Airtable single-select fields.
           },
         }),
       });
@@ -582,6 +584,9 @@ export default function OrgPrescriptionsPage() {
               (2) requests include <span className="font-semibold">credentials: "include"</span>.
               This page does include it on all API calls.
             </p>
+            <p className="text-[11px] text-gray-500 mt-1">
+              We also send <span className="font-semibold">x-org-token</span> as a fallback.
+            </p>
           </div>
         )}
 
@@ -695,8 +700,9 @@ export default function OrgPrescriptionsPage() {
               </div>
 
               <div className="mt-4 text-[11px] text-gray-500">
-                Tip: Because your Airtable macro/supp fields are <span className="font-semibold">Single Select</span>,
-                the values you choose must match the Airtable dropdown options exactly (including spelling/case).
+                Tip: Because your Airtable macro/supp fields are{" "}
+                <span className="font-semibold">Single Select</span>, the values you choose must match
+                the Airtable dropdown options exactly (including spelling/case).
               </div>
             </div>
 
@@ -763,9 +769,7 @@ export default function OrgPrescriptionsPage() {
 
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
-                        <p className="text-xs text-gray-500 mb-2">
-                          Protein Recommendation
-                        </p>
+                        <p className="text-xs text-gray-500 mb-2">Protein Recommendation</p>
                         <select
                           className={selectBase}
                           value={structured.proteinRecommendation}
@@ -780,9 +784,7 @@ export default function OrgPrescriptionsPage() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-gray-500 mb-2">
-                          Creatine Recommendation
-                        </p>
+                        <p className="text-xs text-gray-500 mb-2">Creatine Recommendation</p>
                         <select
                           className={selectBase}
                           value={structured.creatineRecommendation}
@@ -797,9 +799,7 @@ export default function OrgPrescriptionsPage() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-gray-500 mb-2">
-                          BCAA/EAA Recommendation
-                        </p>
+                        <p className="text-xs text-gray-500 mb-2">BCAA/EAA Recommendation</p>
                         <select
                           className={selectBase}
                           value={structured.bcaaRecommendation}
@@ -814,15 +814,11 @@ export default function OrgPrescriptionsPage() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-gray-500 mb-2">
-                          Electrolytes Recommendation
-                        </p>
+                        <p className="text-xs text-gray-500 mb-2">Electrolytes Recommendation</p>
                         <select
                           className={selectBase}
                           value={structured.electrolytesRecommendation}
-                          onChange={(e) =>
-                            onChange("electrolytesRecommendation", e.target.value)
-                          }
+                          onChange={(e) => onChange("electrolytesRecommendation", e.target.value)}
                         >
                           {OPTIONS.electrolytesRecommendation.map((opt) => (
                             <option key={opt} value={opt}>
@@ -924,18 +920,6 @@ export default function OrgPrescriptionsPage() {
                         <select
                           className={selectBase}
                           value={structured.hydrationOz}
-                          onChange={(e) => onChange("hydratiozOz", e.target.value)}
-                        >
-                          {/* NOTE: fixing the key below (should be hydrationOz) */}
-                          {/* We'll render correct select below, and remove the typo by using onChange directly */}
-                        </select>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Hydration (oz)</p>
-                        <select
-                          className={selectBase}
-                          value={structured.hydrationOz}
                           onChange={(e) => onChange("hydrationOz", e.target.value)}
                         >
                           {OPTIONS.hydrationOz.map((opt) => (
@@ -963,7 +947,7 @@ export default function OrgPrescriptionsPage() {
                     </div>
                   </div>
 
-                  {/* Freeform coach notes (stored in Prescription text summary) */}
+                  {/* Freeform coach notes */}
                   <div>
                     <p className="text-xs text-gray-500 mb-2">Coach Notes (optional)</p>
                     <textarea
@@ -973,7 +957,8 @@ export default function OrgPrescriptionsPage() {
                       placeholder="Examples: lactose sensitive, practice days increase carbs, hydration reminders, approved brands only, etc."
                     />
                     <p className="text-[11px] text-gray-500 mt-2">
-                      This text is saved inside the long-text <span className="font-semibold">Prescription</span> field as a readable summary.
+                      This text is saved inside the long-text{" "}
+                      <span className="font-semibold">Prescription</span> field as a readable summary.
                     </p>
                   </div>
 
@@ -991,9 +976,7 @@ export default function OrgPrescriptionsPage() {
                       type="submit"
                       disabled={createLoading || !selectedAthleteEmail}
                       className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition ${
-                        createLoading || !selectedAthleteEmail
-                          ? "opacity-70 cursor-not-allowed"
-                          : ""
+                        createLoading || !selectedAthleteEmail ? "opacity-70 cursor-not-allowed" : ""
                       }`}
                     >
                       {createLoading ? "Saving…" : "Save Plan"}
@@ -1064,8 +1047,6 @@ export default function OrgPrescriptionsPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            // “Copy” into builder as a quick workflow:
-                            // We can only reliably copy the long text right now.
                             setTitle(p.title || "Nutrition + Supplements Plan");
                             setStructured((prev) => ({
                               ...prev,
@@ -1087,7 +1068,8 @@ export default function OrgPrescriptionsPage() {
 
                       <div className="mt-3 text-[11px] text-gray-500">
                         Once you decide to render Airtable single-select fields back to the UI,
-                        we’ll update <span className="font-semibold">getPrescriptionsForAthletes</span> to return those fields too.
+                        we’ll update <span className="font-semibold">getPrescriptionsForAthlete</span>{" "}
+                        to return those fields too.
                       </div>
                     </div>
                   ))}

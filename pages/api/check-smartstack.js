@@ -1,19 +1,31 @@
 /**
  * /pages/api/check-smartstack.js
  *
- * SmartStack scan matcher
- * - Matches OCR'd label text against:
- *    • Banned Substances base
- *    • Ingredients base
- * - Enriches with Benefits / Weaknesses / Nutrient Antagonism when present in fields
- * - Uses in-memory caching for Airtable to reduce latency and API usage
- * - Adds "strong match" rules to reduce false positives (e.g. 7a-Methyl-19-nortestosterone)
+ * Matches OCR'd label text against:
+ *  - Banned Substances base
+ *  - Ingredients base
+ *
+ * Response:
+ *  {
+ *    bannedSubstances: Array<{ id, fields, matchedTerms }>,
+ *    ingredients: Array<{ id, fields, matchedTerms }>,
+ *    debug?: { sampleText, totalBannedMatches, totalIngredientMatches }
+ *  }
+ *
+ * Key behaviors:
+ *  - Noise-token filtering + phrase-first matching to reduce false positives
+ *  - Strong-match guard:
+ *      ✅ phrase match OR
+ *      ✅ 2+ meaningful tokens OR
+ *      ✅ 1 distinctive token (len >= 10)
+ *  - In-memory caching to reduce Airtable calls
+ *  - Cache-Control: no-store
  */
 
 import Airtable from "airtable";
 
 /* -------------------------------------------------------------------------- */
-/*  Airtable base clients                                                     */
+/* Airtable env                                                               */
 /* -------------------------------------------------------------------------- */
 
 const BANNED_API_KEY = process.env.BANNED_API_KEY;
@@ -24,6 +36,7 @@ const INGREDIENT_API_KEY = process.env.INGREDIENT_API_KEY;
 const INGREDIENT_BASE_ID = process.env.INGREDIENT_BASE_ID;
 const INGREDIENT_TABLE_NAME = process.env.INGREDIENT_TABLE_NAME;
 
+// Log warnings early if env vars are missing
 if (!BANNED_API_KEY || !BANNED_BASE_ID || !BANNED_TABLE_NAME) {
   console.warn(
     "[check-smartstack] Missing BANNED env vars. Check BANNED_API_KEY / BANNED_BASE_ID / BANNED_TABLE_NAME."
@@ -46,7 +59,7 @@ const ingredientsBase =
     : null;
 
 /* -------------------------------------------------------------------------- */
-/*  Simple in-memory caches                                                   */
+/* In-memory caching                                                          */
 /* -------------------------------------------------------------------------- */
 
 const CACHE_TTL_MS = 1000 * 60 * 10; // 10 minutes
@@ -81,7 +94,7 @@ async function getIngredientRecords() {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Text helpers                                                              */
+/* Text helpers                                                               */
 /* -------------------------------------------------------------------------- */
 
 function escapeRegex(string = "") {
@@ -97,13 +110,9 @@ function normalizeText(text) {
     .trim();
 }
 
-/**
- * Split OCR text into normalized "terms" (tokens).
- */
 function splitNormalizedTextToTerms(text) {
   if (!text) return [];
   const lowered = normalizeText(text);
-
   const cleaned = lowered.replace(/[\n\r\t]+/g, " ");
   const rawTerms = cleaned.split(
     /[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•\s]+/
@@ -115,10 +124,11 @@ function splitNormalizedTextToTerms(text) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Noise token controls + phrase matching (reduces false positives)           */
+/* Noise tokens + phrase matching                                             */
 /* -------------------------------------------------------------------------- */
 
 const NOISE_TOKENS = new Set([
+  // Chemistry fragments that create false positives
   "methyl",
   "ethyl",
   "propyl",
@@ -128,6 +138,7 @@ const NOISE_TOKENS = new Set([
   "alpha",
   "gamma",
   "delta",
+  // Generic label words / forms
   "acid",
   "acids",
   "salt",
@@ -145,6 +156,7 @@ const NOISE_TOKENS = new Set([
   "extract",
   "blend",
   "complex",
+  // Units
   "mg",
   "mcg",
   "g",
@@ -154,10 +166,19 @@ const NOISE_TOKENS = new Set([
 function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
   if (!s) return true;
+
+  // common noisy words
   if (NOISE_TOKENS.has(s)) return true;
+
+  // too short is usually meaningless
   if (s.length < 3) return true;
+
+  // pure numeric
   if (/^\d+$/.test(s)) return true;
-  if (/^\d+[a-z]?$/.test(s)) return true; // 7a, 19, etc.
+
+  // mostly numeric patterns like "7a", "19", etc.
+  if (/^\d+[a-z]?$/.test(s)) return true;
+
   return false;
 }
 
@@ -170,6 +191,11 @@ function normalizeForPhraseMatch(str = "") {
     .trim();
 }
 
+/**
+ * Phrase-first matching:
+ * We normalize both phrase + OCR text similarly and use includes().
+ * This is stronger than token-by-token for multiword names.
+ */
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhraseMatch(phrase);
   if (!p || p.length < 6) return false;
@@ -177,6 +203,10 @@ function phraseInText(phrase = "", normalizedText = "") {
   const n = normalizeForPhraseMatch(normalizedText);
   return n.includes(p);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Record term extraction                                                     */
+/* -------------------------------------------------------------------------- */
 
 function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
   const terms = new Set();
@@ -204,6 +234,10 @@ function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
   return Array.from(terms);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Matching logic                                                             */
+/* -------------------------------------------------------------------------- */
+
 function termInText(term, normalized) {
   if (!term || !normalized) return false;
 
@@ -211,13 +245,20 @@ function termInText(term, normalized) {
   if (!t || t.length < 2) return false;
 
   try {
+    // word boundary match prevents partial hits
     const rx = new RegExp(`\\b${escapeRegex(t)}\\b`, "i");
     return rx.test(normalized);
   } catch {
+    // fallback
     return normalized.includes(t);
   }
 }
 
+/**
+ * Strong match guard:
+ * - phraseHit: immediate pass
+ * - else: require >=2 meaningful tokens OR 1 distinctive token len>=10
+ */
 function hasStrongMatch(matchedTerms = [], phraseHit = false) {
   if (phraseHit) return true;
   if (!matchedTerms || matchedTerms.length === 0) return false;
@@ -231,13 +272,7 @@ function hasStrongMatch(matchedTerms = [], phraseHit = false) {
   return meaningful.length >= 2;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Airtable matching                                                         */
-/* -------------------------------------------------------------------------- */
-
 async function matchAgainstBannedRecords(ingredientsText) {
-  if (!bannedBase || !BANNED_TABLE_NAME) return [];
-
   const tokens = splitNormalizedTextToTerms(ingredientsText);
   const normalized = tokens.join(" ");
 
@@ -275,7 +310,6 @@ async function matchAgainstBannedRecords(ingredientsText) {
         "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
       },
       matchedTerms,
-      phraseHit,
     });
   }
 
@@ -284,8 +318,6 @@ async function matchAgainstBannedRecords(ingredientsText) {
 }
 
 async function matchAgainstIngredientRecords(ingredientsText) {
-  if (!ingredientsBase || !INGREDIENT_TABLE_NAME) return [];
-
   const tokens = splitNormalizedTextToTerms(ingredientsText);
   const normalized = tokens.join(" ");
 
@@ -322,69 +354,51 @@ async function matchAgainstIngredientRecords(ingredientsText) {
         Link: fields["Link"] || "",
       },
       matchedTerms,
-      phraseHit,
     });
   }
 
-  console.log(
-    `[check-smartstack] Ingredient Matches Found: ${matches.length}`
-  );
+  console.log(`[check-smartstack] Ingredient Matches Found: ${matches.length}`);
   return matches;
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Main Handler                                                              */
+/* Main handler                                                               */
 /* -------------------------------------------------------------------------- */
 
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+
   if (req.method !== "POST") {
-    return res
-      .status(405)
-      .json({ error: "Method not allowed. Use POST for this endpoint." });
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {
-    const body = req.body || {};
+    const { ingredientsText = "", debug: wantDebug = false } = req.body || {};
 
-    // ✅ Backward-compatible input keys
-    const ingredientsText =
-      body.ingredientsText ??
-      body.ocrText ??
-      body.text ??
-      body.ingredients ??
-      body.rawText ??
-      "";
+    const text = String(ingredientsText || "").trim();
+    if (!text || text.length < 2) {
+      return res.status(400).json({ error: "Missing ingredientsText" });
+    }
 
-    const wantDebug = Boolean(body.debug);
-
-    if (!ingredientsText || String(ingredientsText).trim().length < 2) {
-      return res.status(400).json({
-        error: "Missing ingredientsText",
-        // Helpful for debugging what the frontend is actually sending
-        receivedKeys: Object.keys(body || {}),
+    // Optional: fail loudly if Airtable is not configured
+    if (!bannedBase || !ingredientsBase) {
+      return res.status(500).json({
+        error:
+          "Airtable is not configured on the server. Check env vars for BANNED_* and INGREDIENT_*.",
       });
     }
 
-    const matchedBanned = await matchAgainstBannedRecords(ingredientsText);
-    const matchedIngredients = await matchAgainstIngredientRecords(
-      ingredientsText
-    );
+    const bannedSubstances = await matchAgainstBannedRecords(text);
+    const ingredients = await matchAgainstIngredientRecords(text);
 
-    // ✅ Backward-compatible response keys (what your NutritionModal expects)
-    // plus newer names for other parts of the app if needed.
     return res.status(200).json({
-      matchedBanned,
-      matchedIngredients,
-
-      bannedSubstances: matchedBanned,
-      ingredients: matchedIngredients,
-
+      bannedSubstances,
+      ingredients,
       debug: wantDebug
         ? {
-            receivedKeys: Object.keys(body || {}),
-            sampleText: String(ingredientsText).slice(0, 300),
-            totalBannedMatches: matchedBanned.length,
-            totalIngredientMatches: matchedIngredients.length,
+            sampleText: text.slice(0, 300),
+            totalBannedMatches: bannedSubstances.length,
+            totalIngredientMatches: ingredients.length,
           }
         : undefined,
     });

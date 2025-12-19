@@ -1,88 +1,26 @@
 // pages/org/prescriptions.js
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
+import WheelSelect from "@/components/WheelSelect";
+import { rangeOptions } from "@/lib/rangeOptions";
+
 /**
- * ORG → PRESCRIPTIONS (Athlete Plans)
+ * ORG → PRESCRIPTIONS
  *
- * What this page does:
- * 1) Loads athletes linked to the org (by org Token) via:
- *      GET /api/org/getAthletes
- * 2) Loads plan history for the selected athlete via:
- *      GET /api/org/getPrescriptionsForAthlete?athleteEmail=...
- * 3) Creates a new plan record via:
- *      POST /api/org/createPrescription
- * 4) Loads templates via:
- *      GET /api/org/getPlanTemplates
+ * Adds Plan Templates:
+ * - Save current builder as a template (POST /api/org/createPlanTemplate)
+ * - Load templates for org token (GET /api/org/getPlanTemplates)
+ * - Apply a template to builder (fills structured fields)
  *
- * Important:
- * - All API calls use credentials: "include" so the org auth cookie is sent.
- * - We ALSO send "x-org-token" (fallback auth) in case HttpOnly cookie is missing.
- * - Templates can be applied via URL: ?template=<templateId>
+ * Speed mode for coaches:
+ * - Save & Next (auto-advance through filtered roster)
+ * - Keyboard: Enter = Save & Next, Ctrl/Cmd+Enter = Save
+ * - Keeps builder values by default (so you can fly through 100 athletes)
  */
-
-/* -------------------------------------------------------------------------- */
-/* 1) Update these options to match Airtable single-select choices EXACTLY     */
-/* -------------------------------------------------------------------------- */
-
-const OPTIONS = {
-  // Macros (single select fields)
-  calories: ["", "2500", "2800", "3000", "3200", "3500", "3800", "4000+"],
-  proteinGrams: ["", "160", "180", "200", "220", "240", "260+"],
-  carbsGrams: ["", "250", "300", "350", "400", "450", "500+"],
-  fatsGrams: ["", "60", "70", "80", "90", "100", "110+"],
-  hydrationOz: ["", "80", "100", "120", "140", "160+"],
-  notesMacros: [
-    "",
-    "Training days: +50g carbs",
-    "Rest days: -50g carbs",
-    "Weigh-in week: reduce sodium",
-    "Custom (see notes)",
-  ],
-
-  // Supplements (single select fields)
-  proteinRecommendation: [
-    "",
-    "Whey Isolate",
-    "Whey Concentrate",
-    "Casein (night)",
-    "Plant-based",
-    "Mass gainer",
-    "None",
-  ],
-  creatineRecommendation: [
-    "",
-    "Creatine Monohydrate (5g daily)",
-    "Creatine Monohydrate (3g daily)",
-    "Creapure (5g daily)",
-    "None",
-  ],
-  bcaaRecommendation: ["", "BCAA 2:1:1", "EAA", "None"],
-  electrolytesRecommendation: [
-    "",
-    "Low sugar electrolytes",
-    "Standard electrolytes",
-    "High sodium (two-a-days)",
-    "None",
-  ],
-  notesSupplements: [
-    "",
-    "Only NSF Certified for Sport",
-    "Avoid proprietary blends",
-    "Avoid stimulants",
-    "Custom (see notes)",
-  ],
-
-  // Meta (single select field)
-  metaStatus: ["Active", "Draft", "Archived"],
-};
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                     */
-/* -------------------------------------------------------------------------- */
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -95,23 +33,14 @@ function formatDateTime(value) {
   return d.toLocaleString();
 }
 
-function safeJsonParse(maybeJson) {
-  if (!maybeJson) return null;
-  if (typeof maybeJson !== "string") return null;
-  const s = maybeJson.trim();
-  if (!s) return null;
-  if (!s.startsWith("{") && !s.startsWith("[")) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
+function dateToISO(dateStr) {
+  const s = String(dateStr || "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString();
 }
 
-/**
- * Builds a readable fallback "Prescription" text.
- * This is what we store in the long-text Prescription field.
- */
 function buildPlanSummaryText(plan) {
   const lines = [];
 
@@ -140,21 +69,25 @@ function buildPlanSummaryText(plan) {
   return lines.join("\n");
 }
 
-/**
- * Date input helper:
- * Converts YYYY-MM-DD to ISO string.
- */
-function dateToISO(dateStr) {
-  const s = String(dateStr || "").trim();
-  if (!s) return "";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString();
-}
+const DEFAULT_STRUCTURED = {
+  calories: "",
+  proteinGrams: "",
+  carbsGrams: "",
+  fatsGrams: "",
+  hydrationOz: "",
+  notesMacros: "",
 
-/* -------------------------------------------------------------------------- */
-/* Page                                                                        */
-/* -------------------------------------------------------------------------- */
+  proteinRecommendation: "",
+  creatineRecommendation: "",
+  bcaaRecommendation: "",
+  electrolytesRecommendation: "",
+  notesSupplements: "",
+
+  metaStatus: "Active",
+  metaEffectiveDate: "",
+
+  freeformNotes: "",
+};
 
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
@@ -172,69 +105,125 @@ export default function OrgPrescriptionsPage() {
     [user]
   );
 
-  // ✅ Fallback auth header (works even if HttpOnly cookie isn’t present)
+  // Prefer org token from user context; used for template scoping
   const orgToken = useMemo(() => {
     return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
   }, [user]);
 
   const orgAuthHeaders = useMemo(() => {
+    // Your org APIs typically read x-org-token; keep it consistent.
     return orgToken ? { "x-org-token": orgToken } : {};
   }, [orgToken]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Wheel “Unlimited-ish” Options                                            */
+  /* ------------------------------------------------------------------------ */
+
+  const WHEEL = useMemo(() => {
+    const calories = rangeOptions(0, 5000, 5);
+    const grams = rangeOptions(0, 400, 1);
+    const hydration = rangeOptions(0, 300, 1);
+
+    const proteinRec = [
+      "",
+      "Whey Isolate",
+      "Whey Concentrate",
+      "Casein (night)",
+      "Plant-based",
+      "Mass gainer",
+      "Hydrolyzed whey",
+      "None",
+    ];
+
+    const creatineRec = [
+      "",
+      "Creatine Monohydrate (3g daily)",
+      "Creatine Monohydrate (5g daily)",
+      "Creapure (5g daily)",
+      "Loading phase (20g/day x 5–7d) then 5g/day",
+      "None",
+    ];
+
+    const bcaaRec = ["", "BCAA 2:1:1", "EAA", "EAA (intra-workout)", "None"];
+
+    const electrolytesRec = [
+      "",
+      "Low sugar electrolytes",
+      "Standard electrolytes",
+      "High sodium (two-a-days)",
+      "Sweat test guided",
+      "None",
+    ];
+
+    const notesMacros = [
+      "",
+      "Training days: +50g carbs",
+      "Rest days: -50g carbs",
+      "Weigh-in week: reduce sodium",
+      "Increase calories gradually (+150/week)",
+      "Increase hydration on travel days",
+      "Custom (type your own)",
+    ];
+
+    const notesSupps = [
+      "",
+      "Only NSF Certified for Sport",
+      "Avoid proprietary blends",
+      "Avoid stimulants",
+      "Third-party tested only",
+      "Custom (type your own)",
+    ];
+
+    const metaStatus = ["Active", "Draft", "Archived", "Paused", "Custom"];
+
+    return {
+      calories,
+      grams,
+      hydration,
+
+      proteinRecommendation: proteinRec,
+      creatineRecommendation: creatineRec,
+      bcaaRecommendation: bcaaRec,
+      electrolytesRecommendation: electrolytesRec,
+
+      notesMacros,
+      notesSupplements: notesSupps,
+
+      metaStatus,
+    };
+  }, []);
 
   /* ------------------------------------------------------------------------ */
   /* State                                                                    */
   /* ------------------------------------------------------------------------ */
 
-  // Athlete list
   const [athletes, setAthletes] = useState([]);
   const [athleteSearch, setAthleteSearch] = useState("");
   const [selectedAthleteEmail, setSelectedAthleteEmail] = useState("");
 
-  // Templates
-  const [templates, setTemplates] = useState([]);
-  const [templateId, setTemplateId] = useState("");
-
-  // Plans/history
   const [prescriptions, setPrescriptions] = useState([]);
 
-  // Page status
   const [loading, setLoading] = useState(true);
   const [loadingAthletes, setLoadingAthletes] = useState(false);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
+
   const [error, setError] = useState("");
-
-  // UI view mode
   const [view, setView] = useState("builder"); // builder | history
-
-  // Builder form state
   const [title, setTitle] = useState("Nutrition + Supplements Plan");
   const [createLoading, setCreateLoading] = useState(false);
 
-  // Structured plan fields (match your createPrescription.js mapping)
-  const [structured, setStructured] = useState({
-    // Macros (single select columns)
-    calories: "",
-    proteinGrams: "",
-    carbsGrams: "",
-    fatsGrams: "",
-    hydrationOz: "",
-    notesMacros: "",
+  // Templates
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState("");
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [templateNotes, setTemplateNotes] = useState("");
 
-    // Supplements (single select columns)
-    proteinRecommendation: "",
-    creatineRecommendation: "",
-    bcaaRecommendation: "",
-    electrolytesRecommendation: "",
-    notesSupplements: "",
+  // Session-only “done” indicator for roster speed runs
+  const [completedEmails, setCompletedEmails] = useState(() => new Set());
 
-    // Meta
-    metaStatus: "Active",
-    metaEffectiveDate: "", // date input (YYYY-MM-DD)
-
-    // Extra freeform notes (saved inside Prescription long text)
-    freeformNotes: "",
-  });
+  const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
 
   /* ------------------------------------------------------------------------ */
   /* Guards                                                                   */
@@ -247,21 +236,13 @@ export default function OrgPrescriptionsPage() {
     }
   }, [user, role, router]);
 
-  // Allow direct linking: /org/prescriptions?athleteEmail=...
+  // Optional: allow direct linking /org/prescriptions?athleteEmail=...
   useEffect(() => {
     const q = router?.query?.athleteEmail;
     if (typeof q === "string" && q.includes("@")) {
       setSelectedAthleteEmail(normalizeEmail(q));
     }
   }, [router?.query?.athleteEmail]);
-
-  // Allow direct linking: /org/prescriptions?template=...
-  useEffect(() => {
-    const t = router?.query?.template;
-    if (typeof t === "string" && t.trim()) {
-      setTemplateId(t.trim());
-    }
-  }, [router?.query?.template]);
 
   /* ------------------------------------------------------------------------ */
   /* API Calls                                                                */
@@ -287,35 +268,12 @@ export default function OrgPrescriptionsPage() {
     const list = Array.isArray(data?.athletes) ? data.athletes : [];
     setAthletes(list);
 
-    // Auto-select first athlete if none selected
     if (!selectedAthleteEmail) {
       const first = list.find((a) => a?.email);
       if (first?.email) setSelectedAthleteEmail(normalizeEmail(first.email));
     }
 
     setLoadingAthletes(false);
-  };
-
-  const fetchTemplates = async () => {
-    setLoadingTemplates(true);
-    setError("");
-
-    const res = await fetch("/api/org/getPlanTemplates", {
-      method: "GET",
-      credentials: "include",
-      headers: { ...orgAuthHeaders },
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      // templates are optional; don’t hard-fail the whole page
-      setTemplates([]);
-      setLoadingTemplates(false);
-      return;
-    }
-
-    setTemplates(Array.isArray(data?.templates) ? data.templates : []);
-    setLoadingTemplates(false);
   };
 
   const fetchPrescriptionsForAthlete = async (athleteEmail) => {
@@ -351,30 +309,118 @@ export default function OrgPrescriptionsPage() {
     setLoadingPrescriptions(false);
   };
 
+  const fetchTemplates = async () => {
+    setTemplatesLoading(true);
+    setTemplatesError("");
+
+    if (!orgToken) {
+      setTemplates([]);
+      setTemplatesLoading(false);
+      return;
+    }
+
+    const res = await fetch("/api/org/getPlanTemplates", {
+      method: "GET",
+      credentials: "include",
+      headers: { ...orgAuthHeaders },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setTemplates([]);
+      setTemplatesLoading(false);
+      setTemplatesError(data?.error || "Failed to load templates");
+      return;
+    }
+
+    const list = Array.isArray(data?.templates) ? data.templates : [];
+    // Filter Active by default, but don’t hard-break if Status doesn’t exist
+    const activeFirst = list
+      .slice()
+      .sort((a, b) => String(a?.status || "").localeCompare(String(b?.status || "")));
+    setTemplates(activeFirst);
+
+    setTemplatesLoading(false);
+  };
+
+  const saveAsTemplate = async () => {
+    setError("");
+    setTemplatesError("");
+
+    const name = String(templateName || "").trim();
+    if (!name) {
+      setTemplatesError("Enter a template name first.");
+      return;
+    }
+    if (!orgToken) {
+      setTemplatesError("Missing org token. Re-login as org.");
+      return;
+    }
+
+    setTemplatesLoading(true);
+
+    try {
+      const res = await fetch("/api/org/createPlanTemplate", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...orgAuthHeaders,
+        },
+        body: JSON.stringify({
+          token: orgToken,
+          templateName: name,
+          organizationName: orgName,
+          createdBy: user?.Email || user?.email || "",
+          structured,
+          notes: templateNotes || "",
+          status: "Active",
+          tags: [],
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.error || data?.airtable?.message || "Failed to save template.";
+        throw new Error(msg);
+      }
+
+      // Refresh templates and auto-select new one
+      await fetchTemplates();
+
+      // If API returns id, select it
+      if (data?.template?.id) setTemplateId(String(data.template.id));
+
+      setTemplateName("");
+      setTemplateNotes("");
+    } catch (err) {
+      console.error("[org/prescriptions] saveAsTemplate error:", err);
+      setTemplatesError(err?.message || "Failed to save template.");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
   const refreshAll = async () => {
     setLoading(true);
     setError("");
-
     try {
-      await Promise.all([fetchAthletes(), fetchTemplates()]);
+      await fetchAthletes();
+      await fetchTemplates();
 
+      const qEmail = router?.query?.athleteEmail;
       const email =
-        (typeof router?.query?.athleteEmail === "string" && router.query.athleteEmail) ||
-        selectedAthleteEmail;
+        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) || selectedAthleteEmail;
 
       if (email) await fetchPrescriptionsForAthlete(email);
       else setPrescriptions([]);
     } catch (err) {
       console.error("[org/prescriptions] refreshAll error:", err);
-      setError(err?.message || "Failed to load prescriptions.");
+      setError(err?.message || "Failed to load data.");
     } finally {
       setLoading(false);
     }
   };
-
-  /* ------------------------------------------------------------------------ */
-  /* Lifecycle                                                                */
-  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     if (!user) return;
@@ -386,60 +432,128 @@ export default function OrgPrescriptionsPage() {
   useEffect(() => {
     if (!user) return;
     if (role !== "organization") return;
-
-    (async () => {
-      try {
-        if (!selectedAthleteEmail) {
-          setPrescriptions([]);
-          return;
-        }
-        await fetchPrescriptionsForAthlete(selectedAthleteEmail);
-      } catch (err) {
-        setError(err?.message || "Failed to load prescriptions.");
-      }
-    })();
+    if (!selectedAthleteEmail) {
+      setPrescriptions([]);
+      return;
+    }
+    fetchPrescriptionsForAthlete(selectedAthleteEmail).catch((err) =>
+      setError(err?.message || "Failed to load prescriptions.")
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthleteEmail]);
 
   /* ------------------------------------------------------------------------ */
-  /* Templates → apply to builder                                             */
+  /* Derived UI                                                               */
   /* ------------------------------------------------------------------------ */
 
-  const applyTemplateToBuilder = (tplId) => {
-    const t = String(tplId || "").trim();
-    if (!t) return;
+  const selectedAthlete = useMemo(() => {
+    const email = normalizeEmail(selectedAthleteEmail);
+    return athletes.find((a) => normalizeEmail(a?.email) === email) || null;
+  }, [athletes, selectedAthleteEmail]);
 
-    const tpl = templates.find((x) => x?.id === t);
-    if (!tpl?.structured) return;
+  const filteredAthletes = useMemo(() => {
+    const q = String(athleteSearch || "").trim().toLowerCase();
+    if (!q) return athletes;
+    return athletes.filter((a) => {
+      const name = String(a?.name || "").toLowerCase();
+      const email = String(a?.email || "").toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [athletes, athleteSearch]);
 
-    // Fill structured fields
-    setStructured((prev) => ({
-      ...prev,
-      ...(tpl.structured || {}),
-      // keep metaEffectiveDate blank unless template provides it
-      metaEffectiveDate: tpl.structured?.metaEffectiveDate || prev.metaEffectiveDate || "",
-      metaStatus: tpl.structured?.metaStatus || prev.metaStatus || "Active",
-    }));
+  const activeTemplates = useMemo(() => {
+    // Hide archived by default
+    return (templates || []).filter((t) => {
+      const st = String(t?.status || "Active").toLowerCase();
+      return !st.includes("arch");
+    });
+  }, [templates]);
 
-    // Optional: set title to template name if user hasn’t customized it
-    if (!title || title === "Nutrition + Supplements Plan") {
-      setTitle(tpl.name || "Nutrition + Supplements Plan");
+  const templateById = useMemo(() => {
+    const id = String(templateId || "").trim();
+    if (!id) return null;
+    return templates.find((t) => String(t?.id) === id) || null;
+  }, [templates, templateId]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Template Apply                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const applyTemplateToBuilder = useCallback(
+    (tplId) => {
+      const id = String(tplId || "").trim();
+      if (!id) return;
+
+      const tpl = templates.find((t) => String(t?.id) === id);
+      if (!tpl) {
+        setTemplatesError("Template not found.");
+        return;
+      }
+
+      if (!tpl.structured || typeof tpl.structured !== "object") {
+        setTemplatesError(
+          "This template is missing structured JSON. Open Airtable and confirm the “Structured” field is valid JSON."
+        );
+        return;
+      }
+
+      setStructured((prev) => ({
+        ...prev,
+        ...tpl.structured,
+      }));
+
+      // Helpful default: set title if user hasn't customized
+      if (!title || title === "Nutrition + Supplements Plan") {
+        setTitle(tpl.name || "Nutrition + Supplements Plan");
+      }
+
+      setView("builder");
+    },
+    [templates, title]
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Next Athlete Navigation (Speed Mode)                                     */
+  /* ------------------------------------------------------------------------ */
+
+  const getEmail = (a) => normalizeEmail(a?.email || a?.fields?.Email || a?.Email);
+  const advancingRef = useRef(false);
+
+  const goToNextAthlete = useCallback(() => {
+    const list = Array.isArray(filteredAthletes) ? filteredAthletes : [];
+    if (!list.length) return;
+
+    const current = normalizeEmail(selectedAthleteEmail);
+    const currentIdx = list.findIndex((a) => getEmail(a) === current);
+
+    if (currentIdx < 0) {
+      const first = list.find((a) => getEmail(a));
+      if (first) setSelectedAthleteEmail(getEmail(first));
+      return;
     }
 
-    // Switch to builder
-    setView("builder");
-  };
+    let nextIdx = currentIdx + 1;
+    if (nextIdx >= list.length) nextIdx = 0;
 
-  // Auto-apply if URL has ?template=... (once templates are loaded)
-  useEffect(() => {
-    if (!templateId) return;
-    if (!templates.length) return;
-    applyTemplateToBuilder(templateId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, templates]);
+    let safety = 0;
+    while (safety < list.length && !getEmail(list[nextIdx])) {
+      nextIdx = (nextIdx + 1) % list.length;
+      safety++;
+    }
+
+    const nextEmail = getEmail(list[nextIdx]);
+    if (!nextEmail) return;
+
+    setSelectedAthleteEmail(nextEmail);
+
+    // Keep URL in sync (optional, but helpful for refresh/share)
+    router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(nextEmail)}`, undefined, {
+      shallow: true,
+    });
+  }, [filteredAthletes, selectedAthleteEmail, router]);
 
   /* ------------------------------------------------------------------------ */
-  /* Builder Handlers                                                         */
+  /* Builder                                                                  */
   /* ------------------------------------------------------------------------ */
 
   const onChange = (key, value) => {
@@ -448,25 +562,7 @@ export default function OrgPrescriptionsPage() {
 
   const resetBuilder = () => {
     setTitle("Nutrition + Supplements Plan");
-    setStructured({
-      calories: "",
-      proteinGrams: "",
-      carbsGrams: "",
-      fatsGrams: "",
-      hydrationOz: "",
-      notesMacros: "",
-
-      proteinRecommendation: "",
-      creatineRecommendation: "",
-      bcaaRecommendation: "",
-      electrolytesRecommendation: "",
-      notesSupplements: "",
-
-      metaStatus: "Active",
-      metaEffectiveDate: "",
-
-      freeformNotes: "",
-    });
+    setStructured({ ...DEFAULT_STRUCTURED });
   };
 
   const validateBuilder = () => {
@@ -491,9 +587,11 @@ export default function OrgPrescriptionsPage() {
     return "";
   };
 
-  const createPlan = async (e) => {
-    e.preventDefault();
+  const createPlan = async (e, { advance = false } = {}) => {
+    e?.preventDefault?.();
     setError("");
+
+    if (createLoading) return;
 
     const msg = validateBuilder();
     if (msg) {
@@ -502,8 +600,13 @@ export default function OrgPrescriptionsPage() {
     }
 
     const athleteEmail = normalizeEmail(selectedAthleteEmail);
+    if (!athleteEmail) {
+      setError("Select an athlete first.");
+      return;
+    }
 
     setCreateLoading(true);
+
     try {
       const summaryText = buildPlanSummaryText(structured);
 
@@ -520,20 +623,19 @@ export default function OrgPrescriptionsPage() {
           title: title.trim() || "Nutrition + Supplements Plan",
           prescription: summaryText,
           createdBy: user?.Email || user?.email || "",
-
           structured: {
-            calories: structured.calories || null,
-            proteinGrams: structured.proteinGrams || null,
-            carbsGrams: structured.carbsGrams || null,
-            fatsGrams: structured.fatsGrams || null,
-            hydrationOz: structured.hydrationOz || null,
-            notesMacros: structured.notesMacros || null,
+            calories: structured.calories || "",
+            proteinGrams: structured.proteinGrams || "",
+            carbsGrams: structured.carbsGrams || "",
+            fatsGrams: structured.fatsGrams || "",
+            hydrationOz: structured.hydrationOz || "",
+            notesMacros: structured.notesMacros || "",
 
-            proteinRecommendation: structured.proteinRecommendation || null,
-            creatineRecommendation: structured.creatineRecommendation || null,
-            bcaaRecommendation: structured.bcaaRecommendation || null,
-            electrolytesRecommendation: structured.electrolytesRecommendation || null,
-            notesSupplements: structured.notesSupplements || null,
+            proteinRecommendation: structured.proteinRecommendation || "",
+            creatineRecommendation: structured.creatineRecommendation || "",
+            bcaaRecommendation: structured.bcaaRecommendation || "",
+            electrolytesRecommendation: structured.electrolytesRecommendation || "",
+            notesSupplements: structured.notesSupplements || "",
 
             metaStatus: structured.metaStatus || "Active",
             metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
@@ -547,9 +649,31 @@ export default function OrgPrescriptionsPage() {
         throw new Error(errMsg);
       }
 
-      resetBuilder();
-      await fetchPrescriptionsForAthlete(athleteEmail);
-      setView("history");
+      // Mark “done” for roster UX (session only)
+      setCompletedEmails((prev) => {
+        const next = new Set(prev);
+        next.add(athleteEmail);
+        return next;
+      });
+
+      // Refresh history for this athlete (non-blocking)
+      fetchPrescriptionsForAthlete(athleteEmail).catch(() => {});
+
+      // Stay in builder for speed
+      setView("builder");
+
+      if (advance) {
+        if (!advancingRef.current) {
+          advancingRef.current = true;
+          setTimeout(() => {
+            goToNextAthlete();
+            advancingRef.current = false;
+          }, 150);
+        }
+      } else {
+        // If you want “Save” to reset but Save&Next to keep values:
+        // resetBuilder();
+      }
     } catch (err) {
       console.error("[org/prescriptions] createPlan error:", err);
       setError(err?.message || "Failed to create plan.");
@@ -559,41 +683,13 @@ export default function OrgPrescriptionsPage() {
   };
 
   /* ------------------------------------------------------------------------ */
-  /* Derived UI                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const selectedAthlete = useMemo(() => {
-    const email = normalizeEmail(selectedAthleteEmail);
-    return athletes.find((a) => normalizeEmail(a?.email) === email) || null;
-  }, [athletes, selectedAthleteEmail]);
-
-  const filteredAthletes = useMemo(() => {
-    const q = String(athleteSearch || "").trim().toLowerCase();
-    if (!q) return athletes;
-
-    return athletes.filter((a) => {
-      const name = String(a?.name || "").toLowerCase();
-      const email = String(a?.email || "").toLowerCase();
-      return name.includes(q) || email.includes(q);
-    });
-  }, [athletes, athleteSearch]);
-
-  const historyCards = useMemo(() => {
-    return (prescriptions || []).map((p) => ({
-      ...p,
-      parsed: safeJsonParse(p?.prescription),
-    }));
-  }, [prescriptions]);
-
-  /* ------------------------------------------------------------------------ */
   /* Styles                                                                   */
   /* ------------------------------------------------------------------------ */
 
   const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
+    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30";
 
-  const selectBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
+  const subtleHint = "text-[11px] text-gray-500 mt-2 leading-relaxed";
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                   */
@@ -607,7 +703,7 @@ export default function OrgPrescriptionsPage() {
           <div>
             <h1 className="text-2xl font-bold">Organization Prescriptions</h1>
             <p className="text-sm text-gray-600 mt-1">
-              Build supplements + macros plans for each athlete under your token.
+              Build supplement + macro plans fast. Save templates. Save & Next through the roster.
             </p>
             <p className="text-[11px] text-gray-500 mt-2">
               Logged in as <span className="font-semibold">{orgName}</span>
@@ -640,7 +736,7 @@ export default function OrgPrescriptionsPage() {
         </div>
 
         {/* Status */}
-        {(loading || loadingAthletes || loadingTemplates || loadingPrescriptions) && (
+        {(loading || loadingAthletes || loadingPrescriptions || templatesLoading) && (
           <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-4">
             <p className="text-sm text-gray-600">Loading…</p>
           </div>
@@ -649,16 +745,9 @@ export default function OrgPrescriptionsPage() {
         {error && (
           <div className="bg-white rounded-2xl shadow-md border border-red-200 p-4">
             <p className="text-sm text-red-600 font-medium">{error}</p>
-            <p className="text-[11px] text-gray-500 mt-2">
-              If you see <span className="font-semibold">Not authenticated</span>, confirm you:
-              (1) logged in as <span className="font-semibold">Organization</span>, and
-              (2) requests include <span className="font-semibold">credentials: "include"</span>.
-              This page includes it on all API calls, plus <span className="font-semibold">x-org-token</span> fallback.
-            </p>
           </div>
         )}
 
-        {/* Layout: Left roster + Right content */}
         <div className="grid lg:grid-cols-12 gap-6">
           {/* Left: Athlete roster */}
           <aside className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-5 space-y-4">
@@ -666,7 +755,7 @@ export default function OrgPrescriptionsPage() {
               <div>
                 <h2 className="text-lg font-bold">Athletes</h2>
                 <p className="text-xs text-gray-500 mt-1">
-                  These athletes used your org token.
+                  Filter the list, then Save & Next to batch through that subset.
                 </p>
               </div>
               <span className="text-xs text-gray-500">
@@ -685,19 +774,18 @@ export default function OrgPrescriptionsPage() {
               {filteredAthletes.length === 0 && (
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
                   <p className="text-sm text-gray-700 font-semibold">No athletes found</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Try clearing the search or confirm athletes signed up with your token.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Clear search or confirm signups.</p>
                 </div>
               )}
 
               {filteredAthletes.map((a) => {
                 const email = normalizeEmail(a?.email);
                 const isActive = email && email === normalizeEmail(selectedAthleteEmail);
+                const done = email && completedEmails.has(email);
 
                 return (
                   <button
-                    key={a.id}
+                    key={a.id || email || Math.random().toString(36).slice(2)}
                     type="button"
                     onClick={() => email && setSelectedAthleteEmail(email)}
                     className={`w-full text-left rounded-xl border p-3 transition ${
@@ -707,12 +795,23 @@ export default function OrgPrescriptionsPage() {
                     }`}
                     disabled={!email}
                   >
-                    <p className="text-sm font-semibold text-gray-900">
-                      {a?.name || "Athlete"}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {email || "Missing email"}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{a?.name || "Athlete"}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{email || "Missing email"}</p>
+                      </div>
+
+                      {done ? (
+                        <span className="text-xs px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          ✓ Done
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+
                     {a?.createdAt && (
                       <p className="text-[11px] text-gray-400 mt-1">
                         Joined: {formatDateTime(a.createdAt)}
@@ -722,11 +821,16 @@ export default function OrgPrescriptionsPage() {
                 );
               })}
             </div>
+
+            <div className="text-[11px] text-gray-500">
+              Speed shortcuts: <span className="font-semibold">Enter</span> = Save & Next,{" "}
+              <span className="font-semibold">Ctrl/Cmd+Enter</span> = Save
+            </div>
           </aside>
 
           {/* Right: Builder/History */}
           <section className="lg:col-span-8 space-y-6">
-            {/* Selected athlete header + view toggle */}
+            {/* Selected athlete + view toggle */}
             <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -734,9 +838,7 @@ export default function OrgPrescriptionsPage() {
                   {selectedAthlete ? (
                     <p className="text-sm text-gray-700 mt-1">
                       <span className="font-semibold">{selectedAthlete.name || "Athlete"}</span>{" "}
-                      <span className="text-gray-500">
-                        ({normalizeEmail(selectedAthlete.email)})
-                      </span>
+                      <span className="text-gray-500">({normalizeEmail(selectedAthlete.email)})</span>
                     </p>
                   ) : (
                     <p className="text-sm text-gray-500 mt-1">Choose an athlete to begin.</p>
@@ -768,12 +870,6 @@ export default function OrgPrescriptionsPage() {
                   </button>
                 </div>
               </div>
-
-              <div className="mt-4 text-[11px] text-gray-500">
-                Tip: Because your Airtable macro/supp fields are{" "}
-                <span className="font-semibold">Single Select</span>, the values you choose must match
-                Airtable dropdown options exactly (including spelling/case).
-              </div>
             </div>
 
             {/* Builder */}
@@ -782,23 +878,53 @@ export default function OrgPrescriptionsPage() {
                 <div>
                   <h3 className="text-lg font-bold">Create Plan</h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    Recommend supplements + macro targets for this athlete.
+                    Use templates to go fast: build once → Save Template → Apply + Save & Next.
                   </p>
                 </div>
 
-                {/* Template controls */}
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-xs text-gray-500 mb-2">Templates (optional)</p>
+                {/* Templates block */}
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Plan Templates</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Templates are saved presets of the builder fields scoped to your org token.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={fetchTemplates}
+                      className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
+                      disabled={templatesLoading}
+                    >
+                      {templatesLoading ? "Refreshing…" : "Refresh Templates"}
+                    </button>
+                  </div>
+
+                  {templatesError ? (
+                    <div className="rounded-xl bg-white border border-red-200 p-3">
+                      <p className="text-sm text-red-600 font-medium">{templatesError}</p>
+                      <p className="text-[11px] text-gray-500 mt-2">
+                        If you see UNKNOWN_FIELD_NAME, confirm Airtable fields:{" "}
+                        <span className="font-semibold">
+                          Name, Organization Token, Structured, Created By, Status
+                        </span>
+                        .
+                      </p>
+                    </div>
+                  ) : null}
+
                   <div className="grid sm:grid-cols-3 gap-3">
                     <select
-                      className={selectBase}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
                       value={templateId}
                       onChange={(e) => setTemplateId(e.target.value)}
                     >
                       <option value="">Select a template…</option>
-                      {templates.map((t) => (
+                      {activeTemplates.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name}
+                          {t.name || "Template"}
                         </option>
                       ))}
                     </select>
@@ -816,7 +942,7 @@ export default function OrgPrescriptionsPage() {
                       type="button"
                       onClick={() => {
                         setTemplateId("");
-                        // keep current selections; this just clears the selection UI
+                        setTemplatesError("");
                       }}
                       className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
                       disabled={!templateId}
@@ -825,15 +951,56 @@ export default function OrgPrescriptionsPage() {
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-gray-500 mt-3">
-                    You can deep-link a template:{" "}
-                    <span className="font-semibold">
-                      /org/prescriptions?athleteEmail=...&template=...
-                    </span>
+                  {templateById ? (
+                    <div className="rounded-xl bg-white border border-gray-200 p-3">
+                      <p className="text-xs text-gray-500">
+                        Selected:{" "}
+                        <span className="font-semibold text-gray-800">{templateById.name}</span>
+                        {templateById.createdBy ? (
+                          <>
+                            {" "}
+                            • <span className="text-gray-600">{templateById.createdBy}</span>
+                          </>
+                        ) : null}
+                      </p>
+                      {templateById.notes ? (
+                        <p className="text-xs text-gray-600 mt-1">{templateById.notes}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <input
+                      className={inputBase}
+                      placeholder="Template name (e.g., Offseason Bulk)"
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                    />
+
+                    <input
+                      className={inputBase}
+                      placeholder="Template notes (optional)"
+                      value={templateNotes}
+                      onChange={(e) => setTemplateNotes(e.target.value)}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={saveAsTemplate}
+                      className="px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
+                      disabled={templatesLoading || !templateName.trim()}
+                    >
+                      {templatesLoading ? "Saving…" : "Save as Template"}
+                    </button>
+                  </div>
+
+                  <p className={subtleHint}>
+                    Pro move: apply a template once, then don’t reset the builder — just Save & Next
+                    through the roster.
                   </p>
                 </div>
 
-                <form onSubmit={createPlan} className="space-y-6">
+                <form onSubmit={(e) => createPlan(e, { advance: false })} className="space-y-6">
                   {/* Title + Meta */}
                   <div className="grid md:grid-cols-3 gap-4">
                     <div className="md:col-span-2">
@@ -847,18 +1014,14 @@ export default function OrgPrescriptionsPage() {
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500 mb-2">Meta Status</p>
-                      <select
-                        className={selectBase}
+                      <WheelSelect
+                        label="Meta Status"
+                        options={WHEEL.metaStatus}
                         value={structured.metaStatus}
-                        onChange={(e) => onChange("metaStatus", e.target.value)}
-                      >
-                        {OPTIONS.metaStatus.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => onChange("metaStatus", v)}
+                        allowCustom
+                        placeholder="Type or scroll…"
+                      />
                     </div>
 
                     <div className="md:col-span-3">
@@ -869,9 +1032,7 @@ export default function OrgPrescriptionsPage() {
                         value={structured.metaEffectiveDate}
                         onChange={(e) => onChange("metaEffectiveDate", e.target.value)}
                       />
-                      <p className="text-[11px] text-gray-500 mt-2">
-                        If left blank, the API will default to “now”.
-                      </p>
+                      <p className={subtleHint}>If blank, the API can default to “now”.</p>
                     </div>
                   </div>
 
@@ -880,84 +1041,52 @@ export default function OrgPrescriptionsPage() {
                     <div>
                       <h4 className="font-semibold">Supplements</h4>
                       <p className="text-xs text-gray-500 mt-1">
-                        Choose values that match Airtable single-select options.
+                        Scroll to select, or type to auto-jump. Custom values are allowed.
                       </p>
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Protein Recommendation</p>
-                        <select
-                          className={selectBase}
-                          value={structured.proteinRecommendation}
-                          onChange={(e) => onChange("proteinRecommendation", e.target.value)}
-                        >
-                          {OPTIONS.proteinRecommendation.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Protein Recommendation"
+                        options={WHEEL.proteinRecommendation}
+                        value={structured.proteinRecommendation}
+                        onChange={(v) => onChange("proteinRecommendation", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Creatine Recommendation</p>
-                        <select
-                          className={selectBase}
-                          value={structured.creatineRecommendation}
-                          onChange={(e) => onChange("creatineRecommendation", e.target.value)}
-                        >
-                          {OPTIONS.creatineRecommendation.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Creatine Recommendation"
+                        options={WHEEL.creatineRecommendation}
+                        value={structured.creatineRecommendation}
+                        onChange={(v) => onChange("creatineRecommendation", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">BCAA/EAA Recommendation</p>
-                        <select
-                          className={selectBase}
-                          value={structured.bcaaRecommendation}
-                          onChange={(e) => onChange("bcaaRecommendation", e.target.value)}
-                        >
-                          {OPTIONS.bcaaRecommendation.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="BCAA/EAA Recommendation"
+                        options={WHEEL.bcaaRecommendation}
+                        value={structured.bcaaRecommendation}
+                        onChange={(v) => onChange("bcaaRecommendation", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Electrolytes Recommendation</p>
-                        <select
-                          className={selectBase}
-                          value={structured.electrolytesRecommendation}
-                          onChange={(e) => onChange("electrolytesRecommendation", e.target.value)}
-                        >
-                          {OPTIONS.electrolytesRecommendation.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Electrolytes Recommendation"
+                        options={WHEEL.electrolytesRecommendation}
+                        value={structured.electrolytesRecommendation}
+                        onChange={(v) => onChange("electrolytesRecommendation", v)}
+                        allowCustom
+                      />
 
                       <div className="md:col-span-2">
-                        <p className="text-xs text-gray-500 mb-2">Notes (Supplements)</p>
-                        <select
-                          className={selectBase}
+                        <WheelSelect
+                          label="Notes (Supplements)"
+                          options={WHEEL.notesSupplements}
                           value={structured.notesSupplements}
-                          onChange={(e) => onChange("notesSupplements", e.target.value)}
-                        >
-                          {OPTIONS.notesSupplements.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(v) => onChange("notesSupplements", v)}
+                          allowCustom
+                          placeholder="Pick a suggestion or type your own…"
+                        />
                       </div>
                     </div>
                   </div>
@@ -967,120 +1096,101 @@ export default function OrgPrescriptionsPage() {
                     <div>
                       <h4 className="font-semibold">Macros</h4>
                       <p className="text-xs text-gray-500 mt-1">
-                        Calories / grams / hydration stored as single-select values (per your setup).
+                        Big ranges for speed. Still type any value if needed.
                       </p>
                     </div>
 
                     <div className="grid md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Calories</p>
-                        <select
-                          className={selectBase}
-                          value={structured.calories}
-                          onChange={(e) => onChange("calories", e.target.value)}
-                        >
-                          {OPTIONS.calories.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Calories"
+                        options={WHEEL.calories}
+                        value={structured.calories}
+                        onChange={(v) => onChange("calories", v)}
+                        allowCustom
+                        placeholder="Type or scroll…"
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Protein (g)</p>
-                        <select
-                          className={selectBase}
-                          value={structured.proteinGrams}
-                          onChange={(e) => onChange("proteinGrams", e.target.value)}
-                        >
-                          {OPTIONS.proteinGrams.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Protein (g)"
+                        options={WHEEL.grams}
+                        value={structured.proteinGrams}
+                        onChange={(v) => onChange("proteinGrams", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Carbs (g)</p>
-                        <select
-                          className={selectBase}
-                          value={structured.carbsGrams}
-                          onChange={(e) => onChange("carbsGrams", e.target.value)}
-                        >
-                          {OPTIONS.carbsGrams.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Carbs (g)"
+                        options={WHEEL.grams}
+                        value={structured.carbsGrams}
+                        onChange={(v) => onChange("carbsGrams", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Fat (g)</p>
-                        <select
-                          className={selectBase}
-                          value={structured.fatsGrams}
-                          onChange={(e) => onChange("fatsGrams", e.target.value)}
-                        >
-                          {OPTIONS.fatsGrams.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Fat (g)"
+                        options={WHEEL.grams}
+                        value={structured.fatsGrams}
+                        onChange={(v) => onChange("fatsGrams", v)}
+                        allowCustom
+                      />
 
-                      <div>
-                        <p className="text-xs text-gray-500 mb-2">Hydration (oz)</p>
-                        <select
-                          className={selectBase}
-                          value={structured.hydrationOz}
-                          onChange={(e) => onChange("hydrationOz", e.target.value)}
-                        >
-                          {OPTIONS.hydrationOz.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <WheelSelect
+                        label="Hydration (oz)"
+                        options={WHEEL.hydration}
+                        value={structured.hydrationOz}
+                        onChange={(v) => onChange("hydrationOz", v)}
+                        allowCustom
+                      />
 
                       <div className="md:col-span-3">
-                        <p className="text-xs text-gray-500 mb-2">Notes (Macros)</p>
-                        <select
-                          className={selectBase}
+                        <WheelSelect
+                          label="Notes (Macros)"
+                          options={WHEEL.notesMacros}
                           value={structured.notesMacros}
-                          onChange={(e) => onChange("notesMacros", e.target.value)}
-                        >
-                          {OPTIONS.notesMacros.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt || "Select…"}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(v) => onChange("notesMacros", v)}
+                          allowCustom
+                          placeholder="Pick a suggestion or type your own…"
+                        />
                       </div>
                     </div>
                   </div>
 
-                  {/* Freeform coach notes */}
+                  {/* Freeform notes */}
                   <div>
                     <p className="text-xs text-gray-500 mb-2">Coach Notes (optional)</p>
                     <textarea
-                      className="w-full min-h-[140px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                      className="w-full min-h-[140px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
                       value={structured.freeformNotes}
                       onChange={(e) => onChange("freeformNotes", e.target.value)}
-                      placeholder="Examples: lactose sensitive, practice days increase carbs, hydration reminders, approved brands only, etc."
+                      onKeyDown={(e) => {
+                        // Ctrl/Cmd+Enter = Save (no advance)
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          createPlan(e, { advance: false });
+                          return;
+                        }
+
+                        // Enter = Save & Next (unless Shift+Enter for newline)
+                        if (
+                          e.key === "Enter" &&
+                          !e.shiftKey &&
+                          !e.ctrlKey &&
+                          !e.metaKey &&
+                          !e.altKey
+                        ) {
+                          e.preventDefault();
+                          createPlan(e, { advance: true });
+                        }
+                      }}
+                      placeholder="Examples: lactose sensitive, practice days increase carbs… (Enter = Save & Next)"
                     />
-                    <p className="text-[11px] text-gray-500 mt-2">
-                      This text is saved inside the long-text <span className="font-semibold">Prescription</span>{" "}
-                      field as a readable summary.
+                    <p className={subtleHint}>
+                      Tip: use <span className="font-semibold">Shift+Enter</span> for new lines.
                     </p>
                   </div>
 
                   {/* Actions */}
-                  <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="grid sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={resetBuilder}
@@ -1090,19 +1200,31 @@ export default function OrgPrescriptionsPage() {
                     </button>
 
                     <button
-                      type="submit"
+                      type="button"
+                      onClick={(e) => createPlan(e, { advance: false })}
+                      disabled={createLoading || !selectedAthleteEmail}
+                      className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50 ${
+                        createLoading || !selectedAthleteEmail ? "opacity-70 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      {createLoading ? "Saving…" : "Save"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => createPlan(e, { advance: true })}
                       disabled={createLoading || !selectedAthleteEmail}
                       className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition ${
                         createLoading || !selectedAthleteEmail ? "opacity-70 cursor-not-allowed" : ""
                       }`}
                     >
-                      {createLoading ? "Saving…" : "Save Plan"}
+                      {createLoading ? "Saving…" : "Save & Next"}
                     </button>
                   </div>
 
-                  <div className="text-[11px] text-gray-500">
-                    Saving creates a new Airtable record per plan (great for history/versioning).
-                    Next upgrade: “Active plan” controls + edit/overwrite flow.
+                  <div className={subtleHint}>
+                    Built for speed: apply a template once, then Save & Next through the roster. All
+                    wheel inputs still allow custom values.
                   </div>
                 </form>
               </div>
@@ -1114,9 +1236,7 @@ export default function OrgPrescriptionsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-bold">Plan History</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Plans created for this athlete (newest first).
-                    </p>
+                    <p className="text-sm text-gray-600 mt-1">Newest first.</p>
                   </div>
 
                   <button
@@ -1130,12 +1250,10 @@ export default function OrgPrescriptionsPage() {
                 </div>
 
                 {!selectedAthleteEmail && (
-                  <p className="text-sm text-gray-600">
-                    Select an athlete to view plan history.
-                  </p>
+                  <p className="text-sm text-gray-600">Select an athlete to view plan history.</p>
                 )}
 
-                {selectedAthleteEmail && historyCards.length === 0 && (
+                {selectedAthleteEmail && prescriptions.length === 0 && (
                   <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                     <p className="text-sm text-gray-700 font-medium">No plans yet.</p>
                     <p className="text-[11px] text-gray-500 mt-1">
@@ -1145,16 +1263,14 @@ export default function OrgPrescriptionsPage() {
                 )}
 
                 <div className="space-y-3">
-                  {historyCards.map((p) => (
+                  {(prescriptions || []).map((p) => (
                     <div
-                      key={p.id}
+                      key={p.id || `${p.createdAt}-${p.title}`}
                       className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-bold text-gray-900">
-                            {p.title || "Plan"}
-                          </p>
+                          <p className="text-sm font-bold text-gray-900">{p.title || "Plan"}</p>
                           <p className="text-[11px] text-gray-500 mt-1">
                             Created: {formatDateTime(p.createdAt)}{" "}
                             {p.createdBy ? ` • By: ${p.createdBy}` : ""}
@@ -1164,17 +1280,17 @@ export default function OrgPrescriptionsPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            // Copy long-text plan into notes + keep structured values as-is
+                            setTitle(p.title || "Nutrition + Supplements Plan");
+                            // Pasting text summary into notes can be useful for quick edits
                             setStructured((prev) => ({
                               ...prev,
                               freeformNotes: p.prescription || "",
                             }));
-                            setTitle(p.title || "Nutrition + Supplements Plan");
                             setView("builder");
                           }}
                           className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
                         >
-                          Copy to Builder
+                          Copy Notes to Builder
                         </button>
                       </div>
 
@@ -1184,10 +1300,10 @@ export default function OrgPrescriptionsPage() {
                         </pre>
                       </div>
 
-                      <div className="mt-3 text-[11px] text-gray-500">
-                        If you want history to rehydrate structured selects (calories, creatine, etc.),
-                        we’ll update <span className="font-semibold">getPrescriptionsForAthlete</span> to
-                        return those fields too.
+                      <div className={subtleHint}>
+                        If you want history to rehydrate structured fields (calories, creatine, etc.),
+                        update <span className="font-semibold">getPrescriptionsForAthlete</span> to
+                        return those Airtable columns too.
                       </div>
                     </div>
                   ))}

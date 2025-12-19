@@ -6,39 +6,21 @@ import { logAuditEvent } from "@/lib/audit";
 /**
  * Create a Prescription / Plan record for an athlete UNDER the logged-in org.
  *
- * Security:
+ * Security model:
  * - Uses requireOrg(req) cookie auth (org must be logged in)
- * - Does NOT trust client-supplied token
- * - Enforces org token match on the new record ("Organization Token")
+ * - Does NOT trust any client-supplied token
+ * - Writes "Organization Token" from org cookie only
  *
- * Inputs (req.body):
+ * req.body inputs:
  * - athleteEmail (required)
- * - organizationName (optional; will fallback to org from cookie)
  * - title (optional)
- * - prescription (optional but recommended) -> long text fallback summary
- * - createdBy (optional; will fallback to org email)
- * - structured (optional) -> fields for new Airtable single-select columns
+ * - prescription (optional; long text summary)
+ * - createdBy (optional; fallback to org.email)
+ * - organizationName (optional; fallback to org.name)
+ * - structured (optional object; your new macro/supplement/meta fields)
  *
- * Airtable columns you added (single select):
- * Macros:
- *  - Calories
- *  - Protein (g)
- *  - Carbs (g)
- *  - Fat (g)
- *  - Hydration (oz)
- *  - Notes (Macros)
- * Supplements:
- *  - Protein Recommendation
- *  - Creatine Recommendation
- *  - BCAA/EAA Recommendation
- *  - Electrolytes Recommendation
- *  - Notes (Supplements)
- * Meta:
- *  - Meta Status
- *  - Meta Effective Date
- *  - Meta Last Updated
- *
- * Existing columns:
+ * Airtable columns assumed (from your docstring):
+ * Existing:
  * - Title
  * - Prescription
  * - Organization Token
@@ -46,6 +28,29 @@ import { logAuditEvent } from "@/lib/audit";
  * - Organization
  * - CreatedAt
  * - CreatedBy
+ *
+ * New:
+ * Macros:
+ * - Calories
+ * - Protein (g)
+ * - Carbs (g)
+ * - Fat (g)
+ * - Hydration (oz)
+ * - Notes (Macros)
+ * Supplements:
+ * - Protein Recommendation
+ * - Creatine Recommendation
+ * - BCAA/EAA Recommendation
+ * - Electrolytes Recommendation
+ * - Notes (Supplements)
+ * Meta:
+ * - Meta Status
+ * - Meta Effective Date
+ * - Meta Last Updated
+ *
+ * NOTE:
+ * - If any of the “new” fields are Single Select, Airtable requires the value
+ *   to match an existing option exactly (case/spelling).
  */
 
 function normalizeEmail(email) {
@@ -67,25 +72,26 @@ function coerceMaybeDateISO(v) {
 
 function stripEmpty(fields) {
   const out = { ...fields };
-  Object.keys(out).forEach((k) => {
+  for (const k of Object.keys(out)) {
     if (out[k] === "" || out[k] === null || typeof out[k] === "undefined") {
       delete out[k];
     }
-  });
+  }
   return out;
 }
 
 /**
- * IMPORTANT: Your new macro/supplement fields are SINGLE SELECT.
- * Airtable expects the value to be EXACTLY one of the allowed choices.
+ * Your UI may pass values as numbers, labels, or blanks.
+ * For Airtable Single Select: pass a string label (or omit the field).
+ * For text fields: passing a string is fine.
  */
-function singleSelectValue(v) {
+function asChoiceOrText(v) {
   const s = cleanString(v);
   return s || "";
 }
 
-function hasAnyStructuredValue(s = {}) {
-  if (!s || typeof s !== "object") return false;
+function hasAnyStructuredValue(structured = {}) {
+  if (!structured || typeof structured !== "object") return false;
   const keys = [
     "calories",
     "proteinGrams",
@@ -101,7 +107,62 @@ function hasAnyStructuredValue(s = {}) {
     "metaStatus",
     "metaEffectiveDate",
   ];
-  return keys.some((k) => cleanString(s[k]));
+  return keys.some((k) => cleanString(structured[k]));
+}
+
+function getEnvOrExplain() {
+  const API_KEY = process.env.PRESCRIPTIONS_API_KEY;
+  const BASE_ID = process.env.PRESCRIPTIONS_BASE_ID;
+  const TABLE_NAME = process.env.PRESCRIPTIONS_TABLE_NAME;
+
+  const ok = !!(API_KEY && BASE_ID && TABLE_NAME);
+  return {
+    ok,
+    API_KEY,
+    BASE_ID,
+    TABLE_NAME,
+    missing: {
+      PRESCRIPTIONS_API_KEY: !API_KEY,
+      PRESCRIPTIONS_BASE_ID: !BASE_ID,
+      PRESCRIPTIONS_TABLE_NAME: !TABLE_NAME,
+    },
+  };
+}
+
+function formatAirtableError(err) {
+  const statusCode = err?.statusCode;
+  const error = err?.error;
+  const message = err?.message;
+
+  // Common Airtable issues with actionable hints
+  if (error === "UNKNOWN_FIELD_NAME") {
+    return {
+      statusCode: statusCode || 422,
+      error,
+      message,
+      hint:
+        'Airtable field name mismatch. Confirm the column exists EXACTLY (spelling/case) in the PRESCRIPTIONS table. Example: "Protein (g)" vs "Protein(g)".',
+    };
+  }
+
+  if (
+    error === "INVALID_MULTIPLE_CHOICE_OPTIONS" ||
+    (typeof message === "string" && message.toLowerCase().includes("multiple choice"))
+  ) {
+    return {
+      statusCode: statusCode || 422,
+      error: error || "INVALID_MULTIPLE_CHOICE_OPTIONS",
+      message,
+      hint:
+        "One of the single-select fields received a value that is not an allowed option. Ensure UI sends the exact option label configured in Airtable.",
+    };
+  }
+
+  return {
+    statusCode: statusCode || 500,
+    error: error || "AIRTABLE_ERROR",
+    message: message || "Unknown Airtable error",
+  };
 }
 
 export default async function handler(req, res) {
@@ -118,19 +179,19 @@ export default async function handler(req, res) {
 
   // ✅ Cookie auth: org must be logged in
   const auth = requireOrg(req);
-  if (!auth.ok) {
-    return res.status(401).json({ error: auth.error });
+  if (!auth?.ok) {
+    return res.status(401).json({ error: auth?.error || "Unauthorized" });
   }
 
   const { org } = auth;
 
   const {
     athleteEmail,
-    prescription, // fallback long text summary
+    prescription, // long-text summary (optional)
     title,
     organizationName,
     createdBy,
-    structured, // optional structured fields object
+    structured, // optional object with your new fields
   } = req.body || {};
 
   const email = normalizeEmail(athleteEmail);
@@ -147,80 +208,88 @@ export default async function handler(req, res) {
     });
   }
 
-  const API_KEY = process.env.PRESCRIPTIONS_API_KEY;
-  const BASE_ID = process.env.PRESCRIPTIONS_BASE_ID;
-  const TABLE_ID = process.env.PRESCRIPTIONS_TABLE_NAME;
-
-  if (!API_KEY || !BASE_ID || !TABLE_ID) {
+  // Airtable config
+  const env = getEnvOrExplain();
+  if (!env.ok) {
     return res.status(500).json({
       error:
         "Prescriptions Airtable not configured. Check PRESCRIPTIONS_API_KEY, PRESCRIPTIONS_BASE_ID, PRESCRIPTIONS_TABLE_NAME.",
-      missing: {
-        PRESCRIPTIONS_API_KEY: !API_KEY,
-        PRESCRIPTIONS_BASE_ID: !BASE_ID,
-        PRESCRIPTIONS_TABLE_NAME: !TABLE_ID,
-      },
+      missing: env.missing,
     });
   }
 
-  const base = new Airtable({ apiKey: API_KEY }).base(BASE_ID);
+  const base = new Airtable({ apiKey: env.API_KEY }).base(env.BASE_ID);
 
   try {
     const nowISO = new Date().toISOString();
 
-    // Map structured fields -> your exact Airtable column names
+    /**
+     * Build Airtable fields:
+     * - Only include non-empty values (stripEmpty)
+     * - Use org.token from cookie (source of truth)
+     */
     const fields = stripEmpty({
+      // -----------------------
       // Existing columns
+      // -----------------------
       Title: cleanString(title) || "Prescription",
-      Prescription: text, // stripped if empty
-      "Organization Token": org.token, // ✅ always from cookie
+      Prescription: text, // omitted if empty
+      "Organization Token": cleanString(org?.token),
       "Athlete Email": email,
       Organization:
         cleanString(organizationName) ||
-        cleanString(org.name) ||
+        cleanString(org?.name) ||
         "Organization",
       CreatedAt: nowISO,
-      CreatedBy: cleanString(createdBy) || cleanString(org.email),
+      CreatedBy: cleanString(createdBy) || cleanString(org?.email),
 
       // -----------------------
-      // Macros (Single select fields)
+      // Macros
       // -----------------------
-      Calories: singleSelectValue(s.calories),
-      "Protein (g)": singleSelectValue(s.proteinGrams),
-      "Carbs (g)": singleSelectValue(s.carbsGrams),
-      "Fat (g)": singleSelectValue(s.fatsGrams),
-      "Hydration (oz)": singleSelectValue(s.hydrationOz),
-      "Notes (Macros)": singleSelectValue(s.notesMacros),
+      Calories: asChoiceOrText(s.calories),
+      "Protein (g)": asChoiceOrText(s.proteinGrams),
+      "Carbs (g)": asChoiceOrText(s.carbsGrams),
+      "Fat (g)": asChoiceOrText(s.fatsGrams),
+      "Hydration (oz)": asChoiceOrText(s.hydrationOz),
+      "Notes (Macros)": asChoiceOrText(s.notesMacros),
 
       // -----------------------
-      // Supplements (Single select fields)
+      // Supplements
       // -----------------------
-      "Protein Recommendation": singleSelectValue(s.proteinRecommendation),
-      "Creatine Recommendation": singleSelectValue(s.creatineRecommendation),
-      "BCAA/EAA Recommendation": singleSelectValue(s.bcaaRecommendation),
-      "Electrolytes Recommendation": singleSelectValue(
+      "Protein Recommendation": asChoiceOrText(s.proteinRecommendation),
+      "Creatine Recommendation": asChoiceOrText(s.creatineRecommendation),
+      "BCAA/EAA Recommendation": asChoiceOrText(s.bcaaRecommendation),
+      "Electrolytes Recommendation": asChoiceOrText(
         s.electrolytesRecommendation
       ),
-      "Notes (Supplements)": singleSelectValue(s.notesSupplements),
+      "Notes (Supplements)": asChoiceOrText(s.notesSupplements),
 
       // -----------------------
       // Meta
       // -----------------------
-      "Meta Status": singleSelectValue(s.metaStatus || "Active"),
+      "Meta Status": asChoiceOrText(s.metaStatus || "Active"),
       "Meta Effective Date": coerceMaybeDateISO(s.metaEffectiveDate) || nowISO,
       "Meta Last Updated": nowISO,
     });
 
-    const created = await base(TABLE_ID).create(fields);
+    // Extra safety: ensure org token is present
+    if (!fields["Organization Token"]) {
+      return res.status(500).json({
+        error:
+          "Org token missing from cookie auth. Re-login to the org and try again.",
+      });
+    }
+
+    const created = await base(env.TABLE_NAME).create(fields);
 
     // Best-effort audit log (should NEVER break creation)
     try {
       await logAuditEvent({
         action: "CREATE_PLAN",
-        actorEmail: cleanString(org.email),
-        actorId: cleanString(org.id),
-        orgToken: cleanString(org.token),
-        orgName: cleanString(org.name),
+        actorEmail: cleanString(org?.email),
+        actorId: cleanString(org?.id),
+        orgToken: cleanString(org?.token),
+        orgName: cleanString(org?.name),
         athleteEmail: email,
         entityType: "Prescription",
         entityId: created?.id || "",
@@ -236,19 +305,21 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      id: created.id,
+      id: created?.id,
+      // Optional: returning minimal fields can help UI update instantly
+      record: {
+        id: created?.id,
+        fields: created?.fields || {},
+      },
     });
   } catch (err) {
     console.error("[createPrescription] Airtable error:", err);
 
-    // Airtable gives helpful info in err.error / err.message
+    const formatted = formatAirtableError(err);
+
     return res.status(500).json({
       error: "Failed to create prescription",
-      airtable: {
-        statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
-      },
+      airtable: formatted,
     });
   }
 }

@@ -7,6 +7,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 
 import WheelSelect from "@/components/WheelSelect";
 import { rangeOptions } from "@/lib/rangeOptions";
+import { Trash2 } from "lucide-react";
 
 /**
  * ORG → PRESCRIPTIONS
@@ -15,6 +16,10 @@ import { rangeOptions } from "@/lib/rangeOptions";
  * - Save current builder as a template (POST /api/org/createPlanTemplate)
  * - Load templates for org token (GET /api/org/getPlanTemplates)
  * - Apply a template to builder (fills structured fields)
+ *
+ * Adds Template Delete:
+ * - Delete a selected template (DELETE /api/org/deletePlanTemplate)
+ * - Confirmation modal before delete
  *
  * Speed mode for coaches:
  * - Save & Next (auto-advance through filtered roster)
@@ -88,6 +93,79 @@ const DEFAULT_STRUCTURED = {
 
   freeformNotes: "",
 };
+
+function ConfirmDeleteModal({
+  open,
+  title = "Delete",
+  description = "",
+  confirmText = "Delete",
+  cancelText = "Cancel",
+  loading = false,
+  error = "",
+  onConfirm,
+  onClose,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={() => (loading ? null : onClose?.())}
+      />
+      <div className="relative w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">{title}</h3>
+            {description ? (
+              <p className="text-sm text-gray-600 mt-2 leading-relaxed">{description}</p>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => (loading ? null : onClose?.())}
+            className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
+            disabled={loading}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {error ? (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <p className="text-sm text-red-700 font-medium">{error}</p>
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => onClose?.()}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
+            disabled={loading}
+          >
+            {cancelText}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onConfirm?.()}
+            className="w-full px-4 py-3 rounded-xl bg-red-600 text-white text-sm font-semibold hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
+            disabled={loading}
+          >
+            {loading ? "Deleting…" : confirmText}
+          </button>
+        </div>
+
+        <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
+          This action permanently removes the template for your organization.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
@@ -220,6 +298,11 @@ export default function OrgPrescriptionsPage() {
   const [templateName, setTemplateName] = useState("");
   const [templateNotes, setTemplateNotes] = useState("");
 
+  // Delete template modal state
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   // Session-only “done” indicator for roster speed runs
   const [completedEmails, setCompletedEmails] = useState(() => new Set());
 
@@ -334,12 +417,18 @@ export default function OrgPrescriptionsPage() {
     }
 
     const list = Array.isArray(data?.templates) ? data.templates : [];
-    // Filter Active by default, but don’t hard-break if Status doesn’t exist
-    const activeFirst = list
-      .slice()
-      .sort((a, b) => String(a?.status || "").localeCompare(String(b?.status || "")));
-    setTemplates(activeFirst);
 
+    // Friendly sort: Active first; then name
+    const sorted = list.slice().sort((a, b) => {
+      const aSt = String(a?.status || "Active").toLowerCase();
+      const bSt = String(b?.status || "Active").toLowerCase();
+      const aIsArch = aSt.includes("arch");
+      const bIsArch = bSt.includes("arch");
+      if (aIsArch !== bIsArch) return aIsArch ? 1 : -1;
+      return String(a?.name || "").localeCompare(String(b?.name || ""));
+    });
+
+    setTemplates(sorted);
     setTemplatesLoading(false);
   };
 
@@ -370,12 +459,14 @@ export default function OrgPrescriptionsPage() {
         body: JSON.stringify({
           token: orgToken,
           templateName: name,
-          organizationName: orgName,
           createdBy: user?.Email || user?.email || "",
           structured,
           notes: templateNotes || "",
           status: "Active",
-          tags: [],
+          // IMPORTANT:
+          // If your Airtable "Tags" is a single line text field, keep this a string.
+          // If your API ignores it, it won't matter — but this avoids sending an array.
+          tags: "",
         }),
       });
 
@@ -385,10 +476,8 @@ export default function OrgPrescriptionsPage() {
         throw new Error(msg);
       }
 
-      // Refresh templates and auto-select new one
       await fetchTemplates();
 
-      // If API returns id, select it
       if (data?.template?.id) setTemplateId(String(data.template.id));
 
       setTemplateName("");
@@ -398,6 +487,51 @@ export default function OrgPrescriptionsPage() {
       setTemplatesError(err?.message || "Failed to save template.");
     } finally {
       setTemplatesLoading(false);
+    }
+  };
+
+  const openDeleteTemplateConfirm = () => {
+    setDeleteError("");
+    if (!templateId) return;
+    setConfirmDeleteOpen(true);
+  };
+
+  const deleteTemplate = async () => {
+    setDeleteError("");
+
+    const id = String(templateId || "").trim();
+    if (!id) return;
+
+    setDeleteBusy(true);
+    try {
+      const res = await fetch("/api/org/deletePlanTemplate", {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...orgAuthHeaders,
+        },
+        body: JSON.stringify({ templateId: id }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.error || data?.airtable?.message || "Failed to delete template.";
+        throw new Error(msg);
+      }
+
+      // If they deleted the currently selected template, clear selection
+      setTemplateId("");
+
+      // Refresh list so it disappears immediately
+      await fetchTemplates();
+
+      setConfirmDeleteOpen(false);
+    } catch (err) {
+      console.error("[org/prescriptions] deleteTemplate error:", err);
+      setDeleteError(err?.message || "Failed to delete template.");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -462,7 +596,6 @@ export default function OrgPrescriptionsPage() {
   }, [athletes, athleteSearch]);
 
   const activeTemplates = useMemo(() => {
-    // Hide archived by default
     return (templates || []).filter((t) => {
       const st = String(t?.status || "Active").toLowerCase();
       return !st.includes("arch");
@@ -502,7 +635,6 @@ export default function OrgPrescriptionsPage() {
         ...tpl.structured,
       }));
 
-      // Helpful default: set title if user hasn't customized
       if (!title || title === "Nutrition + Supplements Plan") {
         setTitle(tpl.name || "Nutrition + Supplements Plan");
       }
@@ -546,7 +678,6 @@ export default function OrgPrescriptionsPage() {
 
     setSelectedAthleteEmail(nextEmail);
 
-    // Keep URL in sync (optional, but helpful for refresh/share)
     router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(nextEmail)}`, undefined, {
       shallow: true,
     });
@@ -649,17 +780,13 @@ export default function OrgPrescriptionsPage() {
         throw new Error(errMsg);
       }
 
-      // Mark “done” for roster UX (session only)
       setCompletedEmails((prev) => {
         const next = new Set(prev);
         next.add(athleteEmail);
         return next;
       });
 
-      // Refresh history for this athlete (non-blocking)
       fetchPrescriptionsForAthlete(athleteEmail).catch(() => {});
-
-      // Stay in builder for speed
       setView("builder");
 
       if (advance) {
@@ -670,9 +797,6 @@ export default function OrgPrescriptionsPage() {
             advancingRef.current = false;
           }, 150);
         }
-      } else {
-        // If you want “Save” to reset but Save&Next to keep values:
-        // resetBuilder();
       }
     } catch (err) {
       console.error("[org/prescriptions] createPlan error:", err);
@@ -915,9 +1039,9 @@ export default function OrgPrescriptionsPage() {
                     </div>
                   ) : null}
 
-                  <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="grid sm:grid-cols-4 gap-3">
                     <select
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30 sm:col-span-2"
                       value={templateId}
                       onChange={(e) => setTemplateId(e.target.value)}
                     >
@@ -935,9 +1059,26 @@ export default function OrgPrescriptionsPage() {
                       className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
                       disabled={!templateId}
                     >
-                      Apply Template
+                      Apply
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={openDeleteTemplateConfirm}
+                      className={`px-4 py-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 ${
+                        templateId
+                          ? "bg-white border-red-200 text-red-700 hover:bg-red-50"
+                          : "bg-white border-gray-200 text-gray-400 cursor-not-allowed"
+                      }`}
+                      disabled={!templateId}
+                      title={!templateId ? "Select a template first" : "Delete selected template"}
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -947,27 +1088,25 @@ export default function OrgPrescriptionsPage() {
                       className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
                       disabled={!templateId}
                     >
-                      Clear
+                      Clear Selection
                     </button>
-                  </div>
 
-                  {templateById ? (
-                    <div className="rounded-xl bg-white border border-gray-200 p-3">
-                      <p className="text-xs text-gray-500">
-                        Selected:{" "}
-                        <span className="font-semibold text-gray-800">{templateById.name}</span>
-                        {templateById.createdBy ? (
-                          <>
-                            {" "}
-                            • <span className="text-gray-600">{templateById.createdBy}</span>
-                          </>
-                        ) : null}
+                    <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] text-gray-500">
+                        {activeTemplates.length === 0
+                          ? "No templates yet — build a plan and save one below."
+                          : `Templates available: ${activeTemplates.length}`}
                       </p>
-                      {templateById.notes ? (
-                        <p className="text-xs text-gray-600 mt-1">{templateById.notes}</p>
+                      {templateById ? (
+                        <p className="text-xs text-gray-700 mt-1">
+                          Selected: <span className="font-semibold">{templateById.name}</span>
+                          {templateById.createdBy ? (
+                            <span className="text-gray-500"> • {templateById.createdBy}</span>
+                          ) : null}
+                        </p>
                       ) : null}
                     </div>
-                  ) : null}
+                  </div>
 
                   <div className="grid sm:grid-cols-3 gap-3">
                     <input
@@ -1281,7 +1420,6 @@ export default function OrgPrescriptionsPage() {
                           type="button"
                           onClick={() => {
                             setTitle(p.title || "Nutrition + Supplements Plan");
-                            // Pasting text summary into notes can be useful for quick edits
                             setStructured((prev) => ({
                               ...prev,
                               freeformNotes: p.prescription || "",
@@ -1313,6 +1451,26 @@ export default function OrgPrescriptionsPage() {
           </section>
         </div>
       </main>
+
+      <ConfirmDeleteModal
+        open={confirmDeleteOpen}
+        title="Delete Template"
+        description={
+          templateById
+            ? `Are you sure you want to delete “${templateById.name}”? This cannot be undone.`
+            : "Are you sure you want to delete this template? This cannot be undone."
+        }
+        confirmText="Delete Template"
+        cancelText="Cancel"
+        loading={deleteBusy}
+        error={deleteError}
+        onClose={() => {
+          if (deleteBusy) return;
+          setConfirmDeleteOpen(false);
+          setDeleteError("");
+        }}
+        onConfirm={deleteTemplate}
+      />
     </div>
   );
 }

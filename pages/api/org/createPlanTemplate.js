@@ -1,6 +1,32 @@
 // pages/api/org/createPlanTemplate.js
 import Airtable from "airtable";
 
+/**
+ * Normalize tags for SINGLE LINE TEXT Airtable field
+ * Output: string (comma-separated) or ""
+ */
+function normalizeTagsToString(input) {
+  if (!input) return "";
+
+  if (Array.isArray(input)) {
+    return input
+      .map((t) => {
+        if (t == null) return "";
+        if (typeof t === "string") return t.trim();
+        if (typeof t === "object") {
+          return String(t.label || t.value || t.name || "").trim();
+        }
+        return String(t).trim();
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof input === "string") return input.trim();
+
+  return String(input).trim();
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -8,20 +34,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const {
-    token,
-    templateName,
-    createdBy = "",
-    organizationName = "",
-    structured,
-    notes = "",
-    tags = [],
-    status = "Active",
-  } = req.body || {};
+  const body = req.body || {};
+  const headerToken = req.headers["x-org-token"];
 
-  const orgToken = String(token || "").trim();
-  const name = String(templateName || "").trim();
-  const creator = String(createdBy || "").trim();
+  const orgToken = String(body.token || headerToken || "").trim();
+  const name = String(body.templateName || "").trim();
+  const creator = String(body.createdBy || "").trim();
+  const notes = String(body.notes || "").trim();
+  const status = String(body.status || "Active").trim() || "Active";
+  const structured = body.structured;
+
+  // Tags is SINGLE LINE TEXT in Airtable
+  const tagsText = normalizeTagsToString(body.tags);
 
   if (!orgToken) return res.status(400).json({ error: "Missing token" });
   if (!name) return res.status(400).json({ error: "Missing templateName" });
@@ -43,19 +67,20 @@ export default async function handler(req, res) {
   try {
     const base = new Airtable({ apiKey: API_KEY }).base(BASE_ID);
 
-    // IMPORTANT:
-    // These field names MUST match your Airtable fields exactly.
-    // If you used different names, rename fields in Airtable or update these keys.
+    // IMPORTANT: Field names MUST match Airtable EXACTLY
     const fields = {
       Name: name,
       "Organization Token": orgToken,
-      "Organization Name": String(organizationName || "").trim(),
       Structured: JSON.stringify(structured),
       "Created By": creator,
-      Status: String(status || "Active"),
-      Notes: String(notes || "").trim(),
-      Tags: Array.isArray(tags) ? tags : [],
+      Status: status,
+      Notes: notes,
     };
+
+    // Only include Tags if non-empty string
+    if (tagsText) {
+      fields.Tags = tagsText;
+    }
 
     const record = await base(TABLE).create(fields);
 
@@ -63,7 +88,10 @@ export default async function handler(req, res) {
       ok: true,
       template: {
         id: record.id,
-        name,
+        name: record?.fields?.Name || name,
+        status: record?.fields?.Status || status,
+        tags: record?.fields?.Tags || "",
+        orgToken: record?.fields?.["Organization Token"] || orgToken,
       },
     });
   } catch (err) {

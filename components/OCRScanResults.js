@@ -14,9 +14,12 @@ import { FaChevronDown, FaChevronUp } from "react-icons/fa";
  *  - Banned substances as SmartStack-style accordion cards
  *  - Ingredients as SmartStack-style accordion cards
  *  - Ban-type legend filter with brand colors
+ *
+ * Key behavior:
+ * ✅ Highlight ONLY terms that were actually matched/detected (matchedTerms),
+ *    and only where those terms exist in the OCR text.
  */
 
-// ---------- utilities ----------
 const escapeRegex = (string = "") =>
   String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -49,21 +52,24 @@ const buildTextIndex = (text) => {
   return { raw, compact };
 };
 
-// Decide if a banned record *really* appears in OCR text
+// Split synonyms/terms robustly across common delimiters
+const splitTerms = (val) =>
+  String(val || "")
+    .split(/[;,\/\|\(\)\[\]\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+// Decide if a record *really* appears in OCR text (fallback only)
 const recordAppearsInText = (index, fields = {}) => {
   const candidates = [
     fields["Substance Name"],
     fields["Name"],
     fields["Ingredient Name"],
     fields["Synonyms"],
+    fields["Synonyms (Extended)"],
   ]
     .filter(Boolean)
-    .flatMap((val) =>
-      String(val)
-        .split(/,\s*/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    );
+    .flatMap((val) => splitTerms(val));
 
   if (!candidates.length) return false;
 
@@ -74,6 +80,109 @@ const recordAppearsInText = (index, fields = {}) => {
     if (compact && index.compact.includes(compact)) return true;
     return false;
   });
+};
+
+// Stable fallback ID (prevents accordion state from breaking)
+const stableIdFromFields = (fields = {}, prefix = "rec") => {
+  const name =
+    fields["Substance Name"] ||
+    fields["Name"] ||
+    fields["Ingredient Name"] ||
+    fields["title"] ||
+    "";
+  const banType = fields["Ban Type"] || fields["banType"] || "";
+  const raw = `${prefix}:${String(name).trim()}|${String(banType).trim()}`;
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return slug || `${prefix}-unknown`;
+};
+
+/**
+ * Prefer "matchedTerms" from API.
+ * Fallback: name + synonyms if matchedTerms missing.
+ */
+const getMatchedTermsForRecord = (rec) => {
+  const fields = rec?.fields || {};
+  const mt = Array.isArray(rec?.matchedTerms) ? rec.matchedTerms : [];
+
+  if (mt.length) {
+    return mt
+      .map((t) => String(t || "").trim())
+      .filter(Boolean);
+  }
+
+  const name =
+    fields["Substance Name"] ||
+    fields["Name"] ||
+    fields["Ingredient Name"] ||
+    "";
+
+  const syn =
+    fields["Synonyms (Extended)"] ||
+    fields["Synonyms"] ||
+    "";
+
+  return [name, ...splitTerms(syn)]
+    .map((t) => String(t || "").trim())
+    .filter(Boolean);
+};
+
+// Produce compact OCR snippet(s) around matched terms
+const getOcrSnippets = (ocrText = "", terms = [], opts = {}) => {
+  const {
+    radius = 90,
+    maxSnippets = 2,
+    maxChars = 260,
+    minTermLength = 3,
+  } = opts;
+
+  const base = String(ocrText || "");
+  if (!base.trim()) return [];
+
+  const lower = base.toLowerCase();
+
+  const cleanedTerms = (terms || [])
+    .map((t) => String(t || "").trim())
+    .filter(Boolean)
+    .filter((t) => t.length >= minTermLength);
+
+  if (!cleanedTerms.length) return [];
+
+  const hits = [];
+  for (const term of cleanedTerms) {
+    const needle = term.toLowerCase();
+    const idx = lower.indexOf(needle);
+    if (idx >= 0) hits.push({ term, idx });
+  }
+
+  hits.sort((a, b) => a.idx - b.idx);
+
+  // Deduplicate close hits
+  const deduped = [];
+  for (const h of hits) {
+    const last = deduped[deduped.length - 1];
+    if (!last || Math.abs(h.idx - last.idx) > radius) deduped.push(h);
+  }
+
+  const snippets = deduped.slice(0, maxSnippets).map(({ idx }) => {
+    const start = Math.max(0, idx - radius);
+    const end = Math.min(base.length, idx + radius);
+    let slice = base.slice(start, end).trim();
+
+    if (start > 0) slice = `…${slice}`;
+    if (end < base.length) slice = `${slice}…`;
+
+    // Enforce char cap
+    if (slice.length > maxChars) {
+      slice = slice.slice(0, maxChars - 1).trim() + "…";
+    }
+    return slice;
+  });
+
+  return snippets;
 };
 
 export default function OCRScanResults({
@@ -87,7 +196,7 @@ export default function OCRScanResults({
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [activeBanType, setActiveBanType] = useState(null);
 
-  // NEW: accordion open state for cards
+  // accordion open state for cards
   const [expandedBannedIds, setExpandedBannedIds] = useState({});
   const [expandedIngredientIds, setExpandedIngredientIds] = useState({});
 
@@ -117,14 +226,25 @@ export default function OCRScanResults({
   // Normalize incoming records (works with Airtable-style or plain objects)
   const normalizeRecords = (arr = [], isBannedSet = false) =>
     (arr || []).map((r) => {
-      const id = r.id || r.recordId || Math.random().toString(36).slice(2);
       const fields = r.fields || r || {};
       const banTypeRaw = fields["Ban Type"] || fields["banType"] || null;
       const banType = normalizeBanType(banTypeRaw);
       const isBanned = isBannedSet || !!banType;
 
+      const id =
+        r.id ||
+        r.recordId ||
+        stableIdFromFields(
+          { ...fields, "Ban Type": banType },
+          isBanned ? "banned" : "ing"
+        );
+
+      // IMPORTANT: keep matchedTerms at the top level
+      const matchedTerms = Array.isArray(r.matchedTerms) ? r.matchedTerms : [];
+
       return {
         id,
+        matchedTerms,
         fields: {
           ...fields,
           "Ban Type": banType,
@@ -139,13 +259,26 @@ export default function OCRScanResults({
     [detectedSubstances]
   );
 
-  // 2) Only keep banned records that actually appear in the OCR text
+  // 2) Keep banned records that actually appear in the OCR text
+  //    Prefer matchedTerms check; fallback to recordAppearsInText() if matchedTerms missing.
   const bannedRecordsAll = useMemo(() => {
     if (!ocrText) return normalizedBanned; // e.g. barcode path – keep all
     const idx = buildTextIndex(ocrText);
-    return normalizedBanned.filter((rec) =>
-      recordAppearsInText(idx, rec.fields || {})
-    );
+
+    return normalizedBanned.filter((rec) => {
+      const terms = getMatchedTermsForRecord(rec);
+      if (terms.length) {
+        return terms.some((t) => {
+          const lower = String(t || "").toLowerCase();
+          const compact = lower.replace(/[^a-z0-9]/g, "");
+          return (
+            (lower && idx.raw.includes(lower)) ||
+            (compact && idx.compact.includes(compact))
+          );
+        });
+      }
+      return recordAppearsInText(idx, rec.fields || {});
+    });
   }, [normalizedBanned, ocrText]);
 
   const ingredientRecordsAll = useMemo(
@@ -184,7 +317,10 @@ export default function OCRScanResults({
             rec.fields["Name"] ||
             rec.fields["Ingredient Name"] ||
             ""
-          ).toLowerCase()
+          )
+            .toString()
+            .trim()
+            .toLowerCase()
       )
     );
     return ingredientRecordsAll.filter((rec) => {
@@ -193,7 +329,7 @@ export default function OCRScanResults({
         rec.fields["Ingredient Name"] ||
         rec.fields["Substance Name"] ||
         "";
-      return !bannedNames.has(name.toLowerCase());
+      return !bannedNames.has(String(name).toLowerCase());
     });
   }, [ingredientRecordsAll, bannedRecordsAll]);
 
@@ -208,7 +344,6 @@ export default function OCRScanResults({
       ? "Multiple banned substances detected"
       : "Some banned substances detected";
 
-  // Softer red instead of yellow for the “middle” state
   const riskTone =
     bannedCount === 0
       ? "text-emerald-700 bg-emerald-50 border-emerald-100"
@@ -216,24 +351,38 @@ export default function OCRScanResults({
       ? "text-red-700 bg-red-50 border-red-100"
       : "text-red-600 bg-red-50 border-red-100";
 
-  // ---------- OCR text highlighting (reflect banned + ingredients) ----------
+  // ---------- Highlight only DETECTED / MATCHED terms ----------
   const { ocrHTML, ocrMatchCount } = useMemo(() => {
     const base = String(ocrText || "");
     if (!base) return { ocrHTML: "", ocrMatchCount: 0 };
 
     const termMap = new Map();
 
-    const upsert = (termRaw, color, priority) => {
+    const upsert = (termRaw, color, priority, idx) => {
       const t = String(termRaw || "").trim();
       if (!t) return;
-      const key = t.toLowerCase();
+      if (t.length < 3) return;
+
+      const lower = t.toLowerCase();
+      const compact = lower.replace(/[^a-z0-9]/g, "");
+
+      // Only keep terms that exist in OCR (prevents highlighting noise)
+      const appearsInOCR =
+        (lower && idx.raw.includes(lower)) ||
+        (compact && idx.compact.includes(compact));
+
+      if (!appearsInOCR) return;
+
+      const key = lower;
       const existing = termMap.get(key);
       if (!existing || priority > existing.priority) {
         termMap.set(key, { term: t, color, priority });
       }
     };
 
-    // Banned terms
+    const idx = buildTextIndex(base);
+
+    // Banned terms — use matchedTerms
     bannedRecordsAll.forEach((rec) => {
       const fields = rec.fields || {};
       const banType = fields["Ban Type"];
@@ -241,27 +390,20 @@ export default function OCRScanResults({
       const priority =
         banTypeColors.find((b) => b.label === banType)?.priority ?? 1;
 
-      upsert(fields["Substance Name"], color, priority);
-      (fields["Synonyms"] || "")
-        .split(/,\s*/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .forEach((s) => upsert(s, color, priority));
+      const terms = getMatchedTermsForRecord(rec);
+      terms.forEach((t) => upsert(t, color, priority, idx));
     });
 
-    // Ingredient terms
+    // Ingredient terms — use matchedTerms
     ingredientRecordsAll.forEach((rec) => {
-      const fields = rec.fields || {};
       const color = INGREDIENT_HIGHLIGHT_COLOR;
       const priority = 0;
-      upsert(fields["Name"] || fields["Ingredient Name"], color, priority);
-      (fields["Synonyms (Extended)"] || fields["Synonyms"] || "")
-        .split(/,\s*/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .forEach((s) => upsert(s, color, priority));
+
+      const terms = getMatchedTermsForRecord(rec);
+      terms.forEach((t) => upsert(t, color, priority, idx));
     });
 
+    // Priority first, then longer terms first
     const entries = Array.from(termMap.values()).sort((a, b) => {
       if (b.priority !== a.priority) return b.priority - a.priority;
       return b.term.length - a.term.length;
@@ -269,13 +411,19 @@ export default function OCRScanResults({
 
     let working = base;
     const replacements = [];
-    let idx = 0;
+    let ridx = 0;
 
     entries.forEach(({ term, color }) => {
       try {
-        const rx = new RegExp(escapeRegex(term), "gi");
+        const safe = escapeRegex(term);
+        const shouldUseBoundaries = /^[a-z0-9 ]+$/i.test(term) && term.length >= 4;
+
+        const rx = shouldUseBoundaries
+          ? new RegExp(`\\b${safe}\\b`, "gi")
+          : new RegExp(safe, "gi");
+
         working = working.replace(rx, (m) => {
-          const placeholder = `@@OCR_${idx++}@@`;
+          const placeholder = `@@OCR_${ridx++}@@`;
           replacements.push({ placeholder, match: m, color });
           return placeholder;
         });
@@ -302,23 +450,41 @@ export default function OCRScanResults({
     setActiveBanType((cur) => (cur === label ? null : label));
   };
 
-  // ---------- helpers for blob highlighting ----------
-
-  const highlightBlobWithOCR = (text, terms, color = INGREDIENT_HIGHLIGHT_COLOR) => {
+  // Highlight helper used inside cards/snippets.
+  // It only highlights terms that exist in OCR AND exist in the blob text.
+  const highlightBlobWithOCR = (text, terms, color) => {
     if (!text) return "";
-    const normalizedOCR = String(ocrText || "").toLowerCase();
-    let html = escapeHtml(text);
+    const blob = String(text || "");
+    const blobLower = blob.toLowerCase();
+    let html = escapeHtml(blob);
 
+    const idx = buildTextIndex(ocrText || "");
     if (!ocrText || !terms || !terms.length) return html;
 
     terms.forEach((termRaw) => {
-      const term = (termRaw || "").trim();
+      const term = String(termRaw || "").trim();
       if (!term) return;
-      const key = term.toLowerCase();
-      if (!normalizedOCR.includes(key)) return;
+      if (term.length < 3) return;
+
+      const lower = term.toLowerCase();
+      const compact = lower.replace(/[^a-z0-9]/g, "");
+
+      const appearsInOCR =
+        (lower && idx.raw.includes(lower)) ||
+        (compact && idx.compact.includes(compact));
+      if (!appearsInOCR) return;
+
+      const appearsInBlob = blobLower.includes(lower);
+      if (!appearsInBlob) return;
 
       try {
-        const rx = new RegExp(escapeRegex(term), "gi");
+        const safe = escapeRegex(term);
+        const shouldUseBoundaries = /^[a-z0-9 ]+$/i.test(term) && term.length >= 4;
+
+        const rx = shouldUseBoundaries
+          ? new RegExp(`\\b${safe}\\b`, "gi")
+          : new RegExp(safe, "gi");
+
         html = html.replace(
           rx,
           (m) =>
@@ -334,8 +500,7 @@ export default function OCRScanResults({
     return html;
   };
 
-  // ---------- CARD COMPONENTS (accordion style) ----------
-
+  // ---------- CARD COMPONENTS ----------
   const BannedCards = ({ records }) => {
     if (!records || !records.length) {
       return (
@@ -364,32 +529,25 @@ export default function OCRScanResults({
           const source = fields["Source / Citation"] || "";
           const color = banColorMap[banType] || "#111827";
 
-          const allTerms = [
-            name,
-            ...((synonyms || "")
-              .split(/,\s*/)
-              .map((s) => s.trim())
-              .filter(Boolean)),
-          ];
+          // ✅ Use detected terms (matchedTerms preferred)
+          const terms = getMatchedTermsForRecord(rec);
 
           const whatItDoesText = benefits || notes || "";
-          const whatItDoesHTML = highlightBlobWithOCR(
-            whatItDoesText,
-            allTerms,
-            color
-          );
-          const weaknessesHTML = highlightBlobWithOCR(
-            weaknesses,
-            allTerms,
-            color
-          );
-          const antagonismsHTML = highlightBlobWithOCR(
-            antagonisms,
-            allTerms,
-            color
-          );
+          const whatItDoesHTML = highlightBlobWithOCR(whatItDoesText, terms, color);
+          const weaknessesHTML = highlightBlobWithOCR(weaknesses, terms, color);
+          const antagonismsHTML = highlightBlobWithOCR(antagonisms, terms, color);
 
           const expanded = !!expandedBannedIds[rec.id];
+
+          const ocrSnippets = getOcrSnippets(ocrText, terms, {
+            radius: 90,
+            maxSnippets: 2,
+            maxChars: 260,
+            minTermLength: 3,
+          });
+
+          const snippetHTML = (snippet) =>
+            highlightBlobWithOCR(snippet, terms, color);
 
           return (
             <motion.div
@@ -473,9 +631,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: whatItDoesHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: whatItDoesHTML }}
                             />
                           </div>
                         )}
@@ -487,9 +643,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: weaknessesHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: weaknessesHTML }}
                             />
                           </div>
                         )}
@@ -501,9 +655,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: antagonismsHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
                             />
                           </div>
                         )}
@@ -521,14 +673,20 @@ export default function OCRScanResults({
                       </div>
                     )}
 
-                    {ocrText && (
+                    {ocrSnippets.length > 0 && (
                       <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
                         <p className="text-[10px] sm:text-[11px] font-medium text-gray-600 mb-1">
                           How it showed up on your label
                         </p>
-                        <p className="text-[10px] sm:text-[11px] leading-snug text-gray-700 line-clamp-3">
-                          {ocrText}
-                        </p>
+                        <div className="space-y-2">
+                          {ocrSnippets.map((s, i) => (
+                            <p
+                              key={`${rec.id}-snip-${i}`}
+                              className="text-[10px] sm:text-[11px] leading-snug text-gray-700"
+                              dangerouslySetInnerHTML={{ __html: snippetHTML(s) }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
                   </motion.div>
@@ -555,13 +713,16 @@ export default function OCRScanResults({
         {records.map((rec, index) => {
           const fields = rec.fields || {};
           const id = rec.id;
+
           const name =
             fields["Name"] ||
             fields["Ingredient Name"] ||
             fields["Substance Name"] ||
             "Unnamed ingredient";
+
           const synonyms =
             fields["Synonyms (Extended)"] || fields["Synonyms"] || "";
+
           const benefits = (fields["Benefits"] || "").toString();
           const weaknesses = (fields["Weaknesses"] || "").toString();
           const antagonisms =
@@ -571,13 +732,8 @@ export default function OCRScanResults({
           const sources =
             (fields["Sources / References"] || fields["Source"] || "") + "";
 
-          const terms = [
-            name,
-            ...((synonyms || "")
-              .split(/,\s*/)
-              .map((s) => s.trim())
-              .filter(Boolean)),
-          ];
+          // ✅ Use detected terms (matchedTerms preferred)
+          const terms = getMatchedTermsForRecord(rec);
 
           const benefitsHTML = highlightBlobWithOCR(
             benefits,
@@ -662,9 +818,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: benefitsHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: benefitsHTML }}
                             />
                           </div>
                         )}
@@ -676,9 +830,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: weaknessesHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: weaknessesHTML }}
                             />
                           </div>
                         )}
@@ -690,9 +842,7 @@ export default function OCRScanResults({
                             </p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
-                              dangerouslySetInnerHTML={{
-                                __html: antagonismsHTML,
-                              }}
+                              dangerouslySetInnerHTML={{ __html: antagonismsHTML }}
                             />
                           </div>
                         )}
@@ -706,9 +856,7 @@ export default function OCRScanResults({
                         </p>
                         <p
                           className="text-[11px] sm:text-xs leading-relaxed break-words text-gray-800"
-                          dangerouslySetInnerHTML={{
-                            __html: sourcesHTML,
-                          }}
+                          dangerouslySetInnerHTML={{ __html: sourcesHTML }}
                         />
                       </div>
                     )}
@@ -721,8 +869,6 @@ export default function OCRScanResults({
       </div>
     );
   };
-
-  // ---------- RENDER ----------
 
   return (
     <div className="w-full max-w-[2500px] mx-auto px-3 sm:px-4 py-5 sm:py-6 font-sans space-y-7 text-gray-900">
@@ -752,9 +898,7 @@ export default function OCRScanResults({
                 {totalMatches}
               </p>
             </div>
-            <div
-              className={`px-3 py-2 rounded-xl border min-w-[90px] ${riskTone}`}
-            >
+            <div className={`px-3 py-2 rounded-xl border min-w-[90px] ${riskTone}`}>
               <p className="text-[11px] font-medium">Banned</p>
               <p className="text-base font-semibold">{bannedCount}</p>
             </div>
@@ -777,9 +921,7 @@ export default function OCRScanResults({
             onClick={() => setOcrOpen((s) => !s)}
             aria-expanded={ocrOpen}
             aria-label={collapseLabel(ocrOpen, "Scanned Text (OCR)")}
-            className={`section-toggle-btn ${
-              ocrOpen ? "active" : ""
-            } w-full sm:w-auto`}
+            className={`section-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
           >
             <span className="section-label">Scanned Text (OCR)</span>
             <span className="badge">{ocrMatchCount}</span>
@@ -817,9 +959,7 @@ export default function OCRScanResults({
               onClick={() => setBannedOpen((s) => !s)}
               aria-expanded={bannedOpen}
               aria-label={collapseLabel(bannedOpen, "Banned Substances")}
-              className={`section-toggle-btn ${
-                bannedOpen ? "active" : ""
-              } w-full sm:w-auto`}
+              className={`section-toggle-btn ${bannedOpen ? "active" : ""} w-full sm:w-auto`}
             >
               <span className="section-label">Banned Substances</span>
               <span className="badge">{bannedRecordsAll.length}</span>
@@ -889,9 +1029,7 @@ export default function OCRScanResults({
               onClick={() => setIngredientsOpen((s) => !s)}
               aria-expanded={ingredientsOpen}
               aria-label={collapseLabel(ingredientsOpen, "Ingredients")}
-              className={`section-toggle-btn ${
-                ingredientsOpen ? "active" : ""
-              } w-full sm:w-auto`}
+              className={`section-toggle-btn ${ingredientsOpen ? "active" : ""} w-full sm:w-auto`}
             >
               <span className="section-label">Ingredients (non-banned)</span>
               <span className="badge">{ingredientRecords.length}</span>

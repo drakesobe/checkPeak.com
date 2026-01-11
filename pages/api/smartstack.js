@@ -8,33 +8,60 @@ export default async function handler(req, res) {
   const VIEW_ID = "viwUcs1qpyxyLqkIM";
 
   if (!AIRTABLE_API_KEY) {
-    return res.status(500).json({ error: "Missing AIRTABLE_API_KEY env var" });
+    return res.status(500).json({ error: "Missing AFFILIATE_API_KEY env var" });
+  }
+  if (!BASE_ID) {
+    return res.status(500).json({ error: "Missing AFFILIATE_BASE_ID env var" });
+  }
+  if (!TABLE_ID) {
+    return res.status(500).json({ error: "Missing AFFILIATE_TABLE_NAME env var" });
   }
 
-  const URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}${
-    VIEW_ID ? `?view=${VIEW_ID}` : ""
-  }`;
+  // Airtable REST API returns max 100 records per page. Must paginate using `offset`.
+  const buildUrl = (offset) => {
+    const params = new URLSearchParams();
+    if (VIEW_ID) params.set("view", VIEW_ID);
+    // optional: enforce page size (max 100)
+    params.set("pageSize", "100");
+    if (offset) params.set("offset", offset);
+    return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(
+      TABLE_ID
+    )}?${params.toString()}`;
+  };
 
   try {
-    const response = await fetch(URL, {
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-    });
+    let allRecords = [];
+    let offset = null;
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("Airtable fetch error:", response.status, text);
-      return res
-        .status(500)
-        .json({ error: "Failed to fetch Airtable: " + response.status });
+    while (true) {
+      const url = buildUrl(offset);
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Airtable fetch error:", response.status, text);
+        return res
+          .status(500)
+          .json({ error: "Failed to fetch Airtable: " + response.status });
+      }
+
+      const data = await response.json();
+      const pageRecords = data.records || [];
+      allRecords = allRecords.concat(pageRecords);
+
+      offset = data.offset;
+      if (!offset) break; // no more pages
     }
 
-    const data = await response.json();
-
-    const stacks = (data.records || []).map((record) => {
+    const stacks = allRecords.map((record) => {
       const f = record.fields || {};
+
       let supplements = [];
       if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
       else if (typeof f["Supplements"] === "string")
@@ -65,7 +92,7 @@ export default async function handler(req, res) {
         name: f["Product Name"] || "No Name",
         category: f["Category"] || "Misc",
         supplements,
-        notes: `Servings: ${servings || "N/A"} • Price: $${priceNumber.toFixed(2)}`,
+        notes: `Servings: ${servings || "N/A"} • Price: $${Number.isFinite(priceNumber) ? priceNumber.toFixed(2) : "0.00"}`,
         affiliateLink,
         imageUrl,
         nutritionLabel,

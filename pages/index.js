@@ -8,7 +8,8 @@ import { motion } from "framer-motion";
 import { FaBolt, FaCheckCircle, FaHistory } from "react-icons/fa";
 
 export default function HomePage() {
-  const [searchQuery] = useState("");
+  const ogText = "CheckPeak — Scan Supplements Fast";
+
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("Athlete");
   const [org, setOrg] = useState("");
@@ -99,7 +100,7 @@ export default function HomePage() {
         <meta
           property="og:image"
           content={`https://checkpeak.com/api/og-image?q=${encodeURIComponent(
-            searchQuery || "CheckPeak — Scan Supplements Fast"
+            ogText
           )}`}
         />
 
@@ -114,7 +115,7 @@ export default function HomePage() {
         <meta
           name="twitter:image"
           content={`https://checkpeak.com/api/og-image?q=${encodeURIComponent(
-            searchQuery || "CheckPeak — Scan Supplements Fast"
+            ogText
           )}`}
         />
       </Head>
@@ -189,6 +190,7 @@ export default function HomePage() {
               </span>
             </motion.div>
 
+            {/* Stronger hook + clear promise */}
             <motion.h1
               id="hero-heading"
               className="text-[2.2rem] leading-tight sm:text-4xl md:text-5xl font-bold tracking-tight"
@@ -196,10 +198,10 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7 }}
             >
-              Scan any supplement.
+              Don’t risk eligibility over a label.
               <br className="hidden sm:block" />
               <span className="font-semibold block mt-1 md:mt-2">
-                Flag banned ingredients in seconds.
+                Scan supplements and catch red flags fast.
               </span>
             </motion.h1>
 
@@ -209,12 +211,16 @@ export default function HomePage() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2, duration: 0.6 }}
             >
-              CheckPeak scans labels to catch banned substances, hidden aliases,
-              and risky ingredients—so you can make higher-confidence decisions
+              CheckPeak flags banned ingredients, hidden aliases, and risky
+              compounds in seconds—so you can make higher-confidence decisions
               before something costs you eligibility or trust.
             </motion.p>
 
-            {/* Primary CTA ONLY */}
+            <p className="text-xs sm:text-sm text-white/80 -mt-1">
+              Built for tested athletes, coaches, compliance, and performance staff.
+            </p>
+
+            {/* Primary CTA ONLY (clear + high contrast) */}
             <motion.div
               className="flex flex-col gap-3 mt-3 w-full md:w-auto items-stretch md:items-center justify-center"
               initial={{ opacity: 0, y: 10 }}
@@ -226,12 +232,17 @@ export default function HomePage() {
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => track("scan_start", { source: "hero" })}
-                  className="w-full flex items-center justify-center gap-3 px-7 py-3 bg-[#46769B] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all"
-                  aria-label="Scan a supplement label"
+                  className="w-full flex items-center justify-center gap-3 px-8 py-3.5 bg-[#46769B] text-white font-extrabold rounded-2xl shadow-xl hover:shadow-2xl hover:brightness-110 transition-all border border-white/20"
+                  aria-label="Start a free supplement label scan"
                 >
-                  Scan a Label
+                  Start a Free Scan
+                  <span className="text-white font-extrabold">→</span>
                 </motion.button>
               </Link>
+
+              <div className="text-[11px] text-white/80">
+                No account needed • Takes ~10 seconds
+              </div>
 
               <a
                 href="#how"
@@ -248,8 +259,6 @@ export default function HomePage() {
         <section className="bg-white py-4 border-b border-gray-100">
           <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-600">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-gray-800">
-              </span>
               <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
                 Built using reference lists: WADA / NCAA / NFL / MLB / NBA / Pro Orgs
               </span>
@@ -311,7 +320,7 @@ export default function HomePage() {
                   onClick={() => track("scan_start", { source: "mid_how" })}
                   className="px-7 py-3 bg-[#46769B] text-white font-semibold rounded-2xl shadow-md hover:shadow-lg transition"
                 >
-                  Scan a Label Now
+                  Start a Free Scan
                 </motion.button>
               </Link>
             </div>
@@ -423,12 +432,14 @@ export default function HomePage() {
               </button>
             </form>
 
-            {err && <p className="mt-3 text-xs text-red-500">{err}</p>}
-            {ok && (
-              <p className="mt-3 text-xs text-emerald-600">
-                You’re in. We’ll keep you updated.
-              </p>
-            )}
+            <div className="mt-3" aria-live="polite">
+              {err && <p className="text-xs text-red-500">{err}</p>}
+              {ok && (
+                <p className="text-xs text-emerald-600">
+                  You’re in. We’ll keep you updated.
+                </p>
+              )}
+            </div>
 
             <p className="mt-3 text-[10px] text-gray-500">
               No spam. Used only for updates + access to saved scan features.
@@ -443,7 +454,7 @@ export default function HomePage() {
                   onClick={() => track("scan_start", { source: "bottom" })}
                   className="px-7 py-3 bg-gray-900 text-white font-semibold rounded-2xl shadow-md hover:shadow-lg transition"
                 >
-                  Run a Free Scan
+                  Start a Free Scan
                 </motion.button>
               </Link>
             </div>

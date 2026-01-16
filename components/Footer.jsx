@@ -48,26 +48,67 @@ export default function Footer() {
             <ul className="mt-3 space-y-2 text-xs">
               <li>
                 <a
-                  href="/"
+                  href="/nutrition-label-scanner"
                   className="transition-colors hover:text-white"
                 >
                   Start a Scan
                 </a>
               </li>
               <li>
-                <a
-                  href="/faq"
-                  className="transition-colors hover:text-white"
-                >
+                <a href="/faq" className="transition-colors hover:text-white">
                   FAQs
                 </a>
               </li>
               <li>
+                <a href="/info" className="transition-colors hover:text-white">
+                  Info &amp; About
+                </a>
+              </li>
+            </ul>
+
+            {/* NEW: SEO internal link cluster */}
+            <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Scanners
+            </h3>
+            <ul className="mt-3 space-y-2 text-xs">
+              <li>
                 <a
-                  href="/info"
+                  href="/nutrition-label-scanner"
                   className="transition-colors hover:text-white"
                 >
-                  Info &amp; About
+                  Nutrition Label Scanner
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/supplement-label-scanner"
+                  className="transition-colors hover:text-white"
+                >
+                  Supplement Label Scanner
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/banned-substance-checker"
+                  className="transition-colors hover:text-white"
+                >
+                  Banned Substance Checker
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/pre-workout-label-scanner"
+                  className="transition-colors hover:text-white"
+                >
+                  Pre-Workout Label Scanner
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/protein-powder-label-scanner"
+                  className="transition-colors hover:text-white"
+                >
+                  Protein Powder Label Scanner
                 </a>
               </li>
             </ul>
@@ -80,10 +121,7 @@ export default function Footer() {
             </h3>
             <ul className="mt-3 space-y-2 text-xs">
               <li>
-                <a
-                  href="/contact"
-                  className="transition-colors hover:text-white"
-                >
+                <a href="/contact" className="transition-colors hover:text-white">
                   Contact
                 </a>
               </li>
@@ -137,9 +175,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-gray-800/80 py-4">
           <div className="flex flex-col items-center justify-between gap-2 text-[11px] text-gray-500 sm:flex-row">
-            <p>
-              © {new Date().getFullYear()} CheckPeak. All rights reserved.
-            </p>
+            <p>© {new Date().getFullYear()} CheckPeak. All rights reserved.</p>
             <p className="text-[10px] text-gray-600">
               Designed for athletes — not supplement companies.
             </p>

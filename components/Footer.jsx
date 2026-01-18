@@ -1,4 +1,6 @@
 // components/Footer.jsx
+import CookieSettings from "@/components/CookieSettings";
+
 export default function Footer() {
   return (
     <footer className="w-full mt-16 border-t border-gray-800 bg-gradient-to-b from-gray-900 via-black to-gray-950 text-gray-300">
@@ -25,13 +27,11 @@ export default function Footer() {
         <div className="grid gap-10 py-10 md:grid-cols-4">
           {/* Brand */}
           <div className="md:col-span-2">
-            <p className="text-sm font-semibold tracking-wide text-white">
-              CheckPeak
-            </p>
+            <p className="text-sm font-semibold tracking-wide text-white">CheckPeak</p>
             <p className="mt-2 text-xs text-gray-400 leading-relaxed">
-              Scan smarter. Spot banned or risky ingredients before they land
-              in your stack. Built for athletes, coaches, and anyone who takes
-              what they put in their body seriously.
+              Scan smarter. Spot banned or risky ingredients before they land in your
+              stack. Built for athletes, coaches, and anyone who takes what they put
+              in their body seriously.
             </p>
 
             <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-gray-700/70 bg-gray-900/60 px-3 py-1 text-[11px] text-gray-400">
@@ -66,7 +66,7 @@ export default function Footer() {
               </li>
             </ul>
 
-            {/* NEW: SEO internal link cluster */}
+            {/* SEO internal link cluster */}
             <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-gray-400">
               Scanners
             </h3>
@@ -126,10 +126,7 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a
-                  href="/add-ingredient"
-                  className="transition-colors hover:text-white"
-                >
+                <a href="/add-ingredient" className="transition-colors hover:text-white">
                   Suggest an Ingredient
                 </a>
               </li>
@@ -176,6 +173,22 @@ export default function Footer() {
         <div className="border-t border-gray-800/80 py-4">
           <div className="flex flex-col items-center justify-between gap-2 text-[11px] text-gray-500 sm:flex-row">
             <p>© {new Date().getFullYear()} CheckPeak. All rights reserved.</p>
+
+            {/* Legal / prefs row */}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-gray-500">
+              <a href="/privacy" className="hover:text-white hover:underline">
+                Privacy
+              </a>
+              <a href="/terms" className="hover:text-white hover:underline">
+                Terms
+              </a>
+
+              {/* ✅ Cookie settings belongs here */}
+              <CookieSettings />
+            </div>
+          </div>
+
+          <div className="mt-2 text-center sm:text-left">
             <p className="text-[10px] text-gray-600">
               Designed for athletes — not supplement companies.
             </p>

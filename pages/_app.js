@@ -7,22 +7,24 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import CookieSettings from "@/components/CookieSettings";
 
 /**
- * ✅ Consent-gated analytics (legal + not-creepy)
- * - Essential cookies: always on (site functionality)
- * - Analytics: opt-in (Google Analytics + Microsoft Clarity + your first-party event tracking)
+ * Consent model:
+ * - Essential cookies: always on (auth, app functionality)
+ * - Analytics cookies: opt-in only (GA + Clarity + first-party analytics)
  *
  * This file:
- * ✅ Shows a cookie banner on first visit (Accept / Decline)
- * ✅ Implements Google Consent Mode (default denied; updates on choice)
- * ✅ Denies Clarity by default; grants only on opt-in
- * ✅ Keeps your existing layout + OpenCV.js
+ * ✅ Shows cookie banner only if undecided
+ * ✅ Uses Google Consent Mode (default denied)
+ * ✅ Gates Microsoft Clarity
+ * ✅ Keeps layout + auth untouched
  */
 
 const CONSENT_KEY = "cp_consent_v1";
 
+/* ---------------------------------------
+   Consent helpers
+--------------------------------------- */
 function getConsent() {
   if (typeof window === "undefined") return { analytics: false, decided: false };
   try {
@@ -50,6 +52,9 @@ function setConsent(next) {
   );
 }
 
+/* ---------------------------------------
+   Cookie Banner (shown once)
+--------------------------------------- */
 function CookieBanner({ onChange }) {
   const [open, setOpen] = useState(false);
 
@@ -80,7 +85,7 @@ function CookieBanner({ onChange }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-900">Cookies & analytics</p>
           <p className="text-xs text-gray-600 mt-1">
-            We use analytics to improve CheckPeak and show you helpful activity insights.
+            We use optional analytics to improve CheckPeak and provide better insights.
             You can change this anytime in cookie settings.
           </p>
         </div>
@@ -103,18 +108,19 @@ function CookieBanner({ onChange }) {
   );
 }
 
+/* ---------------------------------------
+   App
+--------------------------------------- */
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
-
-  // { analytics: boolean, decided: boolean }
   const [consent, setConsentState] = useState({ analytics: false, decided: false });
 
-  // Load saved consent (or undecided)
+  // Load consent on mount
   useEffect(() => {
     setConsentState(getConsent());
   }, []);
 
-  // GA route change pageviews (Consent Mode will control cookies/collection)
+  // GA pageview tracking (Consent Mode handles cookies)
   useEffect(() => {
     const handleRouteChange = (url) => {
       if (typeof window.gtag === "function") {
@@ -125,11 +131,11 @@ export default function MyApp({ Component, pageProps }) {
     return () => router.events.off("routeChangeComplete", handleRouteChange);
   }, [router.events]);
 
-  // When consent changes, update GA + Clarity consent states
+  // Update consent state for GA + Clarity
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Google Consent Mode update
+    // Google Consent Mode
     if (typeof window.gtag === "function") {
       window.gtag("consent", "update", {
         analytics_storage: consent.analytics ? "granted" : "denied",
@@ -139,15 +145,15 @@ export default function MyApp({ Component, pageProps }) {
       });
     }
 
-    // Microsoft Clarity: deny until opted in
+    // Microsoft Clarity
     if (typeof window.clarity === "function") {
-      window.clarity("consent", consent.analytics ? "grant" : "deny");
+      window.clarity(consent.analytics ? "consent" : "consent", consent.analytics ? "grant" : "deny");
     }
   }, [consent.analytics]);
 
   return (
     <>
-      {/* 1️⃣ Google Analytics */}
+      {/* Google Analytics */}
       <Script
         src="https://www.googletagmanager.com/gtag/js?id=G-0HXXN1SJ9K"
         strategy="afterInteractive"
@@ -158,7 +164,7 @@ export default function MyApp({ Component, pageProps }) {
           function gtag(){dataLayer.push(arguments);}
           window.gtag = gtag;
 
-          // Consent Mode default: deny until user opts in
+          // Default deny (Consent Mode)
           gtag('consent', 'default', {
             'analytics_storage': 'denied',
             'ad_storage': 'denied',
@@ -167,14 +173,11 @@ export default function MyApp({ Component, pageProps }) {
           });
 
           gtag('js', new Date());
-
-          // GA config. Consent Mode controls cookie behavior.
-          gtag('config', 'G-0HXXN1SJ9K', { 'anonymize_ip': true });
+          gtag('config', 'G-0HXXN1SJ9K', { anonymize_ip: true });
         `}
       </Script>
 
-      {/* 2️⃣ Microsoft Clarity (heatmaps + session recordings)
-          Load the script, but deny consent by default and grant only on opt-in. */}
+      {/* Microsoft Clarity (gated) */}
       <Script id="microsoft-clarity" strategy="afterInteractive">
         {`
           (function(c,l,a,r,i,t,y){
@@ -183,14 +186,13 @@ export default function MyApp({ Component, pageProps }) {
             y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
           })(window, document, "clarity", "script", "u244y5muc2");
 
-          // Default deny until user opts in
           if (typeof window.clarity === "function") {
             window.clarity('consent', 'deny');
           }
         `}
       </Script>
 
-      {/* 3️⃣ OpenCV.js */}
+      {/* OpenCV */}
       <Script
         src="https://docs.opencv.org/4.x/opencv.js"
         strategy="beforeInteractive"
@@ -198,13 +200,11 @@ export default function MyApp({ Component, pageProps }) {
         onError={(e) => console.error("❌ Failed to load OpenCV.js", e)}
       />
 
-      {/* 4️⃣ App layout */}
+      {/* App layout */}
       <AuthProvider>
         <div className="flex flex-col min-h-screen">
-          {/* Global header */}
           <NavBar />
 
-          {/* Cookie consent prompt (only appears if not decided yet) */}
           <CookieBanner
             onChange={(next) => {
               setConsentState(next);
@@ -215,18 +215,6 @@ export default function MyApp({ Component, pageProps }) {
           <main className="flex-grow">
             <Component {...pageProps} />
           </main>
-
-          {/* Cookie settings link above footer (so users can change later) */}
-          <div className="px-4 pb-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-center">
-              <CookieSettings
-                onChange={(next) => {
-                  setConsentState(next);
-                  setConsent({ analytics: next.analytics });
-                }}
-              />
-            </div>
-          </div>
 
           <Footer />
         </div>

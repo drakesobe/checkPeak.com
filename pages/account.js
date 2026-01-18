@@ -9,18 +9,21 @@ import { useAuthContext } from "@/hooks/useAuth";
 
 /**
  * AccountPage
- * - Removes org dropdown (security hole)
- * - Adds Org Code (token) verify/connect flow for athletes
- * - Shows Organization as a locked, non-editable "truth" field
- * - Keeps theming consistent with your CheckPeak style (#46769B)
- * - Keeps your existing profile edit + change password modal flow
+ * ✅ Removes org dropdown (security hole)
+ * ✅ Adds Org Code (token) verify/connect flow for athletes
+ * ✅ Shows Organization as a locked, non-editable "truth" field
+ * ✅ Keeps CheckPeak theming consistent (#46769B, rounded corners, soft cards)
+ * ✅ Keeps profile edit + change password modal flow
  *
- * NOTE:
- * This page assumes you created /api/athlete/connectOrg (provided earlier).
- * That endpoint should:
- *  - Validate org token in Organizations base
- *  - Update athlete record's Organization field (linked record) OR a text field
- *  - Return { organization: { id, name } }
+ * IMPORTANT:
+ * This page expects /api/athlete/connectOrg to update the Athletes table's
+ * linked-record field {Organization} with [orgRecordId] and return:
+ *   { ok: true, organization: { id, name } }
+ *
+ * SECURITY NOTE:
+ * The connectOrg API should NOT trust "email" sent from client.
+ * Ideally it reads the logged-in user from your HttpOnly cookie session.
+ * This UI does not send email by default; it assumes the API uses session.
  */
 
 export default function AccountPage() {
@@ -47,9 +50,8 @@ export default function AccountPage() {
     title: "",
     phone: "",
     created: "",
-    // "organization" here is for display only (locked field in UI)
+    // Locked display fields (truth from server)
     organization: "",
-    // optionally track id if your API returns it
     organizationId: "",
   });
 
@@ -117,11 +119,9 @@ export default function AccountPage() {
       return;
     }
 
-    // Prefer denormalized org name field if you have it; fallback to whatever is in user.Organization
-    // Common options you might have:
-    // - user["Organization Name"] (text)
-    // - user.Organization (linked record id or text)
-    // - user.OrganizationDisplay (custom)
+    // Try to populate org display from any denormalized fields you may already have.
+    // If the auth cookie payload doesn't have org name yet, the user may see "Not connected"
+    // until they connect or until you enrich the user payload from server later.
     const orgNameGuess =
       user?.["Organization Name"] ||
       user?.OrganizationName ||
@@ -130,17 +130,23 @@ export default function AccountPage() {
       user?.organizationDisplay ||
       "";
 
+    const orgIdGuess =
+      user?.OrganizationId ||
+      user?.organizationId ||
+      (Array.isArray(user?.Organization) ? user.Organization?.[0] : "") ||
+      "";
+
     const initialData = {
       name: user?.Name || user?.name || "",
       email: user?.Email || user?.email || "",
       title: user?.Title || user?.title || (isOrg ? "Organization" : "Athlete"),
       phone: user?.Phone || user?.phone || "",
       created: user?.Created || user?.created || "",
-      organization: orgNameGuess || (typeof user?.Organization === "string" ? user.Organization : "") || "",
-      organizationId:
-        user?.OrganizationId ||
-        user?.organizationId ||
-        (Array.isArray(user?.Organization) ? user.Organization?.[0] : ""),
+      organization:
+        orgNameGuess ||
+        (typeof user?.Organization === "string" ? user.Organization : "") ||
+        "",
+      organizationId: orgIdGuess,
     };
 
     setFormData(initialData);
@@ -158,8 +164,7 @@ export default function AccountPage() {
   const recomputeHasChanges = (nextData) => {
     const keys = Object.keys(originalData || {});
     for (const k of keys) {
-      // Only allow changing editable fields:
-      // name/email/phone (and optionally title if you ever allow it)
+      // Only allow changing editable fields
       if (["name", "email", "phone"].includes(k)) {
         if (String(nextData?.[k] ?? "") !== String(originalData?.[k] ?? "")) return true;
       }
@@ -171,7 +176,7 @@ export default function AccountPage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Organization is locked; ignore any attempts to change
+    // Organization is locked; ignore any attempts to change it
     if (name === "organization" || name === "organizationId") return;
 
     const next = { ...formData, [name]: value };
@@ -193,15 +198,13 @@ export default function AccountPage() {
 
     try {
       // Update endpoint by role
-      // - athletes: /api/update-athlete
-      // - orgs (if you have one): /api/update-organization (fallback to /api/update-athlete if not)
+      // If you don't have /api/update-organization, create it or route org updates through your org API.
       const endpoint = isOrg ? "/api/update-organization" : "/api/update-athlete";
 
       const res = await fetch(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Keep your existing payload shape
           athleteId: user.id,
           organizationId: user.id,
           updates: {
@@ -216,7 +219,12 @@ export default function AccountPage() {
       if (!res.ok) throw new Error(data?.error || "Failed to save changes");
 
       setMessage("Profile updated successfully!");
-      setOriginalData((prev) => ({ ...prev, name: formData.name, email: formData.email, phone: formData.phone }));
+      setOriginalData((prev) => ({
+        ...prev,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+      }));
       hasChanges.current = false;
     } catch (err) {
       console.error("Update error:", err);
@@ -227,47 +235,81 @@ export default function AccountPage() {
   };
 
   // ---------- Connect Organization (athletes only) ----------
-  const connectOrganization = async () => {
-    setOrgConnectError("");
-    setOrgConnectOk("");
-    setOrgConnectLoading(true);
+ const connectOrganization = async () => {
+  setOrgConnectError("");
+  setOrgConnectOk("");
+  setOrgConnectLoading(true);
 
-    try {
-      const res = await fetch("/api/athlete/connectOrg", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: orgCode }),
-      });
+  try {
+    const cleanToken = String(orgCode || "").trim();
+    const email =
+      String(user?.Email || user?.email || "").trim().toLowerCase();
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to connect organization");
-
-      setOrgConnectOk("Organization connected!");
-      setOrgCode("");
-
-      const newName = data?.organization?.name || "Organization";
-      const newId = data?.organization?.id || "";
-
-      // Update locked display fields
-      setFormData((prev) => ({
-        ...prev,
-        organization: newName,
-        organizationId: newId || prev.organizationId,
-      }));
-
-      // Keep originalData org display in sync (since it's locked, we don't treat it as editable)
-      setOriginalData((prev) => ({
-        ...prev,
-        organization: newName,
-        organizationId: newId || prev.organizationId,
-      }));
-    } catch (err) {
-      console.error("[connectOrganization] error:", err);
-      setOrgConnectError(err?.message || "Failed to connect organization.");
-    } finally {
-      setOrgConnectLoading(false);
+    if (!cleanToken) {
+      throw new Error("Please enter your organization code.");
     }
-  };
+    if (!email || !email.includes("@")) {
+      throw new Error(
+        "Valid email is required. Please log out and log back in, then try again."
+      );
+    }
+
+    const res = await fetch("/api/athlete/connectOrg", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: cleanToken,
+        email, // ✅ send email because your API requires it
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      // map common error messages so the UI feels clean
+      const raw = String(data?.error || data?.message || "Failed to connect organization.");
+      const lower = raw.toLowerCase();
+
+      if (lower.includes("invalid token") || lower.includes("token")) {
+        throw new Error("That organization code doesn’t look right. Double-check and try again.");
+      }
+      if (lower.includes("not found")) {
+        throw new Error("We couldn’t find an organization for that code.");
+      }
+      if (lower.includes("email")) {
+        throw new Error("Valid email is required. Please log out and log back in, then try again.");
+      }
+
+      throw new Error(raw);
+    }
+
+    // success shape expected: { organization: { id, name } }
+    const newName = data?.organization?.name || "Organization";
+    const newId = data?.organization?.id || "";
+
+    setOrgConnectOk("Organization connected!");
+    setOrgCode("");
+
+    // Update locked display fields
+    setFormData((prev) => ({
+      ...prev,
+      organization: newName,
+      organizationId: newId || prev.organizationId,
+    }));
+
+    // Keep originalData in sync (org is locked anyway)
+    setOriginalData((prev) => ({
+      ...prev,
+      organization: newName,
+      organizationId: newId || prev.organizationId,
+    }));
+  } catch (err) {
+    console.error("[connectOrganization] error:", err);
+    setOrgConnectError(err?.message || "Failed to connect organization.");
+  } finally {
+    setOrgConnectLoading(false);
+  }
+};
 
   // ---------- Password modal handlers ----------
   const handlePasswordChange = (e) => {
@@ -315,9 +357,6 @@ export default function AccountPage() {
 
       setPasswordMessage("Password updated successfully!");
       setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
-
-      // Optional: auto-close after a moment
-      // setTimeout(() => setShowPasswordModal(false), 900);
     } catch (err) {
       console.error(err);
       setPasswordError(err?.message || "Failed to update password");
@@ -334,11 +373,10 @@ export default function AccountPage() {
     "w-full border border-gray-200 rounded-2xl px-4 py-2 bg-gray-50 text-gray-700";
   const sectionCard = "bg-white p-8 rounded-3xl shadow-md border border-blue-100 space-y-6";
 
-  const canSave =
-    !saving &&
-    hasChanges.current &&
-    validation.email &&
-    validation.phone;
+  const canSave = !saving && hasChanges.current && validation.email && validation.phone;
+
+  // Helpful link destinations by role
+  const dashboardHref = isOrg ? "/org/dashboard" : "/dashboard";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
@@ -347,9 +385,7 @@ export default function AccountPage() {
           {/* Header */}
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">
-                CHECKPEAK
-              </p>
+              <p className="text-xs font-semibold tracking-wide text-[#46769B]">CHECKPEAK</p>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight mt-1">
                 Account Settings
               </h1>
@@ -369,12 +405,14 @@ export default function AccountPage() {
               </div>
             </div>
 
-            <Link
-              href="/"
-              className="shrink-0 text-sm font-semibold text-[#46769B] hover:underline"
-            >
-              Home
-            </Link>
+            <div className="shrink-0 flex flex-col items-end gap-2">
+              <Link href="/" className="text-sm font-semibold text-[#46769B] hover:underline">
+                Home
+              </Link>
+              <Link href={dashboardHref} className="text-sm font-semibold text-gray-600 hover:underline">
+                Dashboard
+              </Link>
+            </div>
           </div>
 
           {/* Feedback */}
@@ -456,12 +494,7 @@ export default function AccountPage() {
               {/* Created */}
               <div>
                 <label className={labelBase}>Created</label>
-                <input
-                  type="text"
-                  value={formData.created || "—"}
-                  readOnly
-                  className={readOnlyBase}
-                />
+                <input type="text" value={formData.created || "—"} readOnly className={readOnlyBase} />
               </div>
             </div>
           </div>
@@ -487,7 +520,7 @@ export default function AccountPage() {
                   className={readOnlyBase}
                 />
                 <p className="text-[11px] text-gray-500 mt-2">
-                  *This is your verified organization.
+                  This field is verified. Athletes can only connect via an organization code.
                 </p>
               </div>
 
@@ -499,6 +532,9 @@ export default function AccountPage() {
                   readOnly
                   className={readOnlyBase}
                 />
+                <p className="text-[11px] text-gray-500 mt-2">
+                  Role is set by your account type and can’t be edited here.
+                </p>
               </div>
             </div>
 
@@ -507,9 +543,7 @@ export default function AccountPage() {
               <div className="rounded-3xl border border-gray-200 bg-white p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      Connect an organization
-                    </p>
+                    <p className="text-sm font-semibold text-gray-900">Connect an organization</p>
                     <p className="text-[12px] text-gray-500 mt-1">
                       Enter the organization code provided by your coach/team. We’ll verify it and connect your account.
                     </p>
@@ -572,15 +606,15 @@ export default function AccountPage() {
                 <div className="mt-4 rounded-2xl bg-gray-50 border border-gray-200 p-4">
                   <p className="text-xs font-semibold text-gray-900">Why this matters</p>
                   <ul className="mt-2 text-[12px] text-gray-600 list-disc list-inside space-y-1">
-                    <li>Prevents athletes from self-assigning to any organization.</li>
+                    <li>Prevents athletes from selecting any organization.</li>
                     <li>Organization membership is verified by a shared code.</li>
-                    <li>Your account always displays your true organization.</li>
+                    <li>Your account always displays the verified organization.</li>
                   </ul>
                 </div>
               </div>
             )}
 
-            {/* Org-only help block (optional) */}
+            {/* Org-only help block */}
             {isOrg && (
               <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5">
                 <p className="text-sm font-semibold text-gray-900">Team invites</p>
@@ -588,7 +622,7 @@ export default function AccountPage() {
                   Share your organization code with athletes to connect them to your team.
                 </p>
                 <p className="text-[12px] text-gray-600 mt-2">
-                  Tip: If you want, we can add a “Copy org code” button here that pulls your token from the session user.
+                  If you want, we can add a “Copy org code” button here that reads your Token from the session.
                 </p>
               </div>
             )}
@@ -650,12 +684,8 @@ export default function AccountPage() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold tracking-wide text-[#46769B]">
-                    SECURITY
-                  </p>
-                  <h2 className="text-lg font-extrabold text-gray-900 mt-1">
-                    Change Password
-                  </h2>
+                  <p className="text-xs font-semibold tracking-wide text-[#46769B]">SECURITY</p>
+                  <h2 className="text-lg font-extrabold text-gray-900 mt-1">Change Password</h2>
                   <p className="text-[12px] text-gray-600 mt-1">
                     Use a strong password you don’t reuse elsewhere.
                   </p>
@@ -699,7 +729,7 @@ export default function AccountPage() {
 
                 {/* Current password */}
                 <div>
-                  <label className={labelBase}>Current password</label>
+                  <label className="block text-gray-800 font-medium mb-1">Current password</label>
                   <div className="relative">
                     <input
                       type={showPw1 ? "text" : "password"}
@@ -722,7 +752,7 @@ export default function AccountPage() {
 
                 {/* New password */}
                 <div>
-                  <label className={labelBase}>New password</label>
+                  <label className="block text-gray-800 font-medium mb-1">New password</label>
                   <div className="relative">
                     <input
                       type={showPw2 ? "text" : "password"}
@@ -762,7 +792,7 @@ export default function AccountPage() {
 
                 {/* Confirm password */}
                 <div>
-                  <label className={labelBase}>Confirm new password</label>
+                  <label className="block text-gray-800 font-medium mb-1">Confirm new password</label>
                   <div className="relative">
                     <input
                       type={showPw3 ? "text" : "password"}
@@ -784,17 +814,13 @@ export default function AccountPage() {
 
                   {passwordData.confirmPassword.length > 0 &&
                     passwordData.newPassword !== passwordData.confirmPassword && (
-                      <p className="mt-2 text-xs text-red-600">
-                        Passwords don’t match yet.
-                      </p>
+                      <p className="mt-2 text-xs text-red-600">Passwords don’t match yet.</p>
                     )}
 
                   {passwordData.confirmPassword.length > 0 &&
                     passwordData.newPassword === passwordData.confirmPassword &&
                     passwordData.newPassword.length >= 8 && (
-                      <p className="mt-2 text-xs text-emerald-700">
-                        Passwords match ✅
-                      </p>
+                      <p className="mt-2 text-xs text-emerald-700">Passwords match ✅</p>
                     )}
                 </div>
               </div>
@@ -828,11 +854,11 @@ export default function AccountPage() {
                 </Link>
 
                 <Link
-                  href="/"
+                  href="/forgot-password"
                   className="text-[#46769B] font-semibold hover:underline"
                   onClick={() => setShowPasswordModal(false)}
                 >
-                  Need help?
+                  Forgot password?
                 </Link>
               </div>
             </motion.div>

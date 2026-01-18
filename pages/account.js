@@ -543,7 +543,7 @@ export default function AccountPage() {
               <div className="rounded-3xl border border-gray-200 bg-white p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">Connect an organization</p>
+                    <p className="text-sm font-semibold text-gray-900">Connect to an organization</p>
                     <p className="text-[12px] text-gray-500 mt-1">
                       Enter the organization code provided by your coach/team. We’ll verify it and connect your account.
                     </p>

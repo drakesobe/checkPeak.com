@@ -1,9 +1,11 @@
 // pages/dashboard.js
 "use client";
 
+
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/router"; // ✅ Pages Router
 import { useAuthContext } from "@/hooks/useAuth";
+import { trackEvent } from "@/lib/analytics";
 import {
   LogOut,
   Search,
@@ -18,6 +20,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import Image from "next/image";
+
 
 /* -------------------------------------------------------------------------- */
 /* Helpers: robust date parsing for ScanName / ScanDate                       */
@@ -118,18 +122,71 @@ export default function DashboardPage() {
   const userEmail = user?.Email || user?.email || null;
 
   /* ------------------------------------------------------------------------ */
+  /* Routes (centralized)                                                     */
+  /* ------------------------------------------------------------------------ */
+  // ✅ Use your SEO URL for scanning
+  const ROUTES = useMemo(
+    () => ({
+      dashboard: "/dashboard",
+      scan: "/nutrition-label-scanner",
+      search: "/search",
+      scans: "/scans",
+      savedStacks: "/saved-stacks",
+      smartstack: "/smartstack",
+      account: "/account",
+      login: "/login",
+    }),
+    [],
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Analytics helpers (non-creepy, but rich)                                 */
+  /* ------------------------------------------------------------------------ */
+  const fire = (eventName, payload = {}) => {
+    try {
+      trackEvent(eventName, {
+        eventType: payload?.eventType || "ui",
+        userEmail: userEmail || "",
+        path: typeof window !== "undefined" ? window.location.pathname : "",
+        source: "dashboard",
+        device: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        payload,
+      });
+    } catch {}
+  };
+
+  const navTo = (to, label, extraPayload = {}) => {
+    fire("dashboard_nav_click", { label, to, ...extraPayload });
+    router.push(to);
+  };
+
+  /* ------------------------------------------------------------------------ */
   /* Auth redirect + welcome banner                                           */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
     if (!user) {
-      router.push("/login");
+      router.push(ROUTES.login);
       return;
     }
 
     setShowWelcome(true);
     const timer = setTimeout(() => setShowWelcome(false), 2500);
     return () => clearTimeout(timer);
-  }, [user, router]);
+  }, [user, router, ROUTES.login]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Track dashboard view (once per user session hydration)                    */
+  /* ------------------------------------------------------------------------ */
+  useEffect(() => {
+    if (!user) return;
+
+    fire("dashboard_view", {
+      eventType: "page_view",
+      role: user?.Role || user?.role || "athlete",
+      hasOrganization: !!user?.Organization,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   /* ------------------------------------------------------------------------ */
   /* Fetch scans + saved stacks                                               */
@@ -214,6 +271,13 @@ export default function DashboardPage() {
           };
         });
 
+        // ✅ Sort newest first for display
+        normalizedScans.sort((a, b) => {
+          const ta = a.parsedDate?.getTime?.() || 0;
+          const tb = b.parsedDate?.getTime?.() || 0;
+          return tb - ta;
+        });
+
         setRecentActivity(normalizedScans);
 
         const saved = savedData.savedStacks || [];
@@ -234,10 +298,13 @@ export default function DashboardPage() {
 
         const flaggedCount = normalizedScans.filter((s) => s.hasBanned).length;
 
+        // Organization can be a linked record array or a string; treat any truthy as completion.
+        const orgVal = user?.Organization || user?.organization || null;
+
         let completion = 40;
         if (user?.Name || user?.name) completion += 20;
         if (userEmail) completion += 20;
-        if (user?.Organization) completion += 20;
+        if (orgVal && (Array.isArray(orgVal) ? orgVal.length > 0 : true)) completion += 20;
         completion = Math.min(100, Math.max(0, completion));
 
         setStats({
@@ -247,8 +314,17 @@ export default function DashboardPage() {
           flaggedScans: flaggedCount,
           accountCompletion: completion,
         });
+
+        // Optional: data_sync event (helps debug funnel health)
+        fire("dashboard_data_loaded", {
+          eventType: "data",
+          totalScans: normalizedScans.length,
+          stacksSaved: saved.length,
+          flaggedScans: flaggedCount,
+        });
       } catch (err) {
         console.error("[Dashboard] Error loading data:", err);
+        fire("dashboard_data_error", { eventType: "error", message: String(err?.message || err) });
       } finally {
         if (!cancelled) {
           setLoadingScans(false);
@@ -281,7 +357,7 @@ export default function DashboardPage() {
       (s) => s.parsedDate && !Number.isNaN(s.parsedDate.getTime()),
     );
     if (!withDates.length) return null;
-    return withDates.sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime())[0];
+    return withDates[0]; // already sorted newest-first
   }, [recentActivity]);
 
   /* ------------------------------------------------------------------------ */
@@ -350,28 +426,28 @@ export default function DashboardPage() {
     sparklineData.length > 0 ? Math.max(...sparklineData.map((d) => d.count), 1) : 1;
 
   /* ------------------------------------------------------------------------ */
-  /* Suggested next actions (reduced noise on mobile)                          */
+  /* Suggested next actions                                                    */
   /* ------------------------------------------------------------------------ */
   const suggestedActions = [
     !hasAnyScans && {
       label: "Run your first supplement label scan",
       cta: "Scan a label",
-      onClick: () => router.push("/ocr"),
+      onClick: () => navTo(ROUTES.scan, "scan_first_label"),
     },
     hasAnyScans && !hasAnySavedStacks && {
       label: "Save a SmartStack to track ingredients you trust",
       cta: "Browse SmartStack",
-      onClick: () => router.push("/smartstack"),
+      onClick: () => navTo(ROUTES.smartstack, "browse_smartstack"),
     },
     hasAnyFlagged && {
       label: "Review supplements with flagged substances",
       cta: "Review flagged scans",
-      onClick: () => router.push("/scans"),
+      onClick: () => navTo(ROUTES.scans, "review_flagged_scans"),
     },
     accountCompletion < 100 && {
       label: "Finish setting up your account",
       cta: "Complete profile",
-      onClick: () => router.push("/account"),
+      onClick: () => navTo(ROUTES.account, "complete_profile"),
     },
   ].filter(Boolean);
 
@@ -389,9 +465,27 @@ export default function DashboardPage() {
         })
       : "";
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
+  const handleLogout = async () => {
+    fire("dashboard_logout_click", { eventType: "auth" });
+    try {
+      await logout();
+    } catch {}
+    router.push(ROUTES.login);
+  };
+
+  const openScanDetail = (scan) => {
+    const id = scan?.id || scan?.recordId || "";
+    // If you don’t have /scans/[id] pages, this still safely routes to /scans
+    const to = id ? `${ROUTES.scans}/${id}` : ROUTES.scans;
+
+    fire("dashboard_scan_click", {
+      eventType: "click",
+      scanId: id || null,
+      hasBanned: !!scan?.hasBanned,
+      bannedCount: Number(scan?.bannedCount || 0),
+    });
+
+    router.push(to);
   };
 
   /* ------------------------------------------------------------------------ */
@@ -407,9 +501,15 @@ export default function DashboardPage() {
           <aside className="hidden lg:flex bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-sm p-4 flex-col gap-4 h-fit">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-slate-900 flex items-center justify-center text-white text-sm font-bold">
-                  P
-                </div>
+                <div className="h-9 w-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center overflow-hidden">
+                <Image
+                  src="/apple-touch-icon.png"
+                  alt="CheckPeak"
+                  width={28}
+                  height={28}
+                  priority
+                />
+              </div>
                 <div className="flex flex-col">
                   <span className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
                     PEAK
@@ -426,39 +526,39 @@ export default function DashboardPage() {
                 label="Dashboard"
                 icon={<BarChart3 className="w-4 h-4" />}
                 active
-                onClick={() => router.push("/dashboard")}
+                onClick={() => navTo(ROUTES.dashboard, "dashboard")}
               />
               <SidebarLink
                 label="Search ingredients"
                 icon={<Search className="w-4 h-4" />}
-                onClick={() => router.push("/search")}
+                onClick={() => navTo(ROUTES.search, "search")}
               />
               <SidebarLink
                 label="Scan a label"
                 icon={<ScanBarcode className="w-4 h-4" />}
-                onClick={() => router.push("/ocr")}
+                onClick={() => navTo(ROUTES.scan, "scan")}
               />
               <SidebarLink
                 label="My scans"
                 icon={<Folder className="w-4 h-4" />}
-                onClick={() => router.push("/scans")}
+                onClick={() => navTo(ROUTES.scans, "my_scans")}
               />
               <SidebarLink
                 label="Saved stacks"
                 icon={<Bookmark className="w-4 h-4" />}
-                onClick={() => router.push("/saved-stacks")}
+                onClick={() => navTo(ROUTES.savedStacks, "saved_stacks")}
               />
               <SidebarLink
                 label="SmartStack"
                 icon={<Sparkles className="w-4 h-4" />}
-                onClick={() => router.push("/smartstack")}
+                onClick={() => navTo(ROUTES.smartstack, "smartstack")}
               />
 
               <div className="mt-3 border-t border-gray-100 pt-2">
                 <SidebarLink
                   label="Account settings"
                   icon={<Settings className="w-4 h-4" />}
-                  onClick={() => router.push("/account")}
+                  onClick={() => navTo(ROUTES.account, "account_settings")}
                 />
               </div>
             </nav>
@@ -538,7 +638,7 @@ export default function DashboardPage() {
               )}
             </header>
 
-            {/* 4 Stat cards (keep) */}
+            {/* 4 Stat cards */}
             <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <StatCard
                 label="Total scans"
@@ -570,9 +670,9 @@ export default function DashboardPage() {
               />
             </section>
 
-            {/* Reduced-noise mid layout */}
+            {/* Mid layout */}
             <section className="grid gap-6 lg:grid-cols-[1.8fr,1.2fr]">
-              {/* Scan activity (bars) */}
+              {/* Scan activity */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -582,7 +682,7 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-700">Last 7 days</p>
                   </div>
                   <button
-                    onClick={() => router.push("/scans")}
+                    onClick={() => navTo(ROUTES.scans, "view_scans_from_chart")}
                     className="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-700 hover:underline"
                   >
                     View
@@ -612,11 +712,9 @@ export default function DashboardPage() {
                               } transition-all`}
                               style={{ height: `${heightPx}px` }}
                             />
-                            {/* Desktop labels */}
                             <span className="hidden md:block text-[10px] text-gray-500">
                               {day.label}
                             </span>
-                            {/* Mobile labels: only first & last */}
                             <span
                               className={`md:hidden text-[10px] text-gray-500 ${
                                 showMobileLabel ? "block" : "invisible"
@@ -638,7 +736,7 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Next step (compact) + Alerts (conditional on mobile) */}
+              {/* Next step + alerts */}
               <div className="space-y-4">
                 {/* Next step */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
@@ -652,7 +750,13 @@ export default function DashboardPage() {
 
                     {extraActions.length > 0 && (
                       <button
-                        onClick={() => setShowAllActionsMobile((v) => !v)}
+                        onClick={() => {
+                          setShowAllActionsMobile((v) => !v);
+                          fire("dashboard_next_steps_toggle", {
+                            eventType: "click",
+                            open: !showAllActionsMobile,
+                          });
+                        }}
                         className="md:hidden text-[11px] font-semibold text-blue-700 hover:underline"
                       >
                         {showAllActionsMobile ? "Less" : "More"}
@@ -700,79 +804,74 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Risk & alerts: only show on mobile if flagged. Always show on md+ */}
-                {(stats.flaggedScans > 0 || true) && (
-                  <>
-                    {/* Mobile: only if flagged */}
-                    {stats.flaggedScans > 0 && (
-                      <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-500" />
-                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                            Alerts
-                          </p>
-                        </div>
-                        <p className="text-xs text-gray-700">
-                          You have{" "}
-                          <span className="font-semibold text-amber-700">
-                            {stats.flaggedScans} flagged scan{stats.flaggedScans > 1 ? "s" : ""}
-                          </span>
-                          . Review them before using those products.
-                        </p>
-                        <button
-                          onClick={() => router.push("/scans")}
-                          className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
-                        >
-                          Review flagged scans
-                          <ChevronRight className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Desktop/tablet: show the fuller card */}
-                    <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                          Risk & alerts
-                        </p>
-                      </div>
-
-                      {stats.flaggedScans === 0 ? (
-                        <p className="text-xs text-gray-600">
-                          No scans currently marked with potential banned substances based on your
-                          history. Always verify with your governing body for official rulings.
-                        </p>
-                      ) : (
-                        <div className="space-y-2 text-xs text-gray-700">
-                          <p>
-                            You have{" "}
-                            <span className="font-semibold text-amber-700">
-                              {stats.flaggedScans} scan{stats.flaggedScans > 1 ? "s" : ""} with
-                              potential issues
-                            </span>{" "}
-                            based on ingredient matches.
-                          </p>
-                          <p>Prioritize reviewing these with your trainer/medical/compliance staff.</p>
-                          <button
-                            onClick={() => router.push("/scans")}
-                            className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
-                          >
-                            Go to flagged scans
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                      <p className="mt-3 text-[10px] text-gray-400">
-                        PEAK does not replace official rulings or medical advice.
+                {/* Alerts: Mobile only if flagged */}
+                {stats.flaggedScans > 0 && (
+                  <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                        Alerts
                       </p>
                     </div>
-                  </>
+                    <p className="text-xs text-gray-700">
+                      You have{" "}
+                      <span className="font-semibold text-amber-700">
+                        {stats.flaggedScans} flagged scan{stats.flaggedScans > 1 ? "s" : ""}
+                      </span>
+                      . Review them before using those products.
+                    </p>
+                    <button
+                      onClick={() => navTo(ROUTES.scans, "review_flagged_mobile")}
+                      className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
+                    >
+                      Review flagged scans
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
+
+                {/* Desktop/tablet: always show risk card */}
+                <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                      Risk & alerts
+                    </p>
+                  </div>
+
+                  {stats.flaggedScans === 0 ? (
+                    <p className="text-xs text-gray-600">
+                      No scans currently marked with potential banned substances based on your
+                      history. Always verify with your governing body for official rulings.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 text-xs text-gray-700">
+                      <p>
+                        You have{" "}
+                        <span className="font-semibold text-amber-700">
+                          {stats.flaggedScans} scan{stats.flaggedScans > 1 ? "s" : ""} with
+                          potential issues
+                        </span>{" "}
+                        based on ingredient matches.
+                      </p>
+                      <p>Prioritize reviewing these with your trainer/medical/compliance staff.</p>
+                      <button
+                        onClick={() => navTo(ROUTES.scans, "go_to_flagged_desktop")}
+                        className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
+                      >
+                        Go to flagged scans
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-3 text-[10px] text-gray-400">
+                    PEAK does not replace official rulings or medical advice.
+                  </p>
+                </div>
               </div>
             </section>
 
-            {/* Lower noise: Simple lists on mobile, richer on md+ */}
+            {/* Lower layout */}
             <section className="grid gap-6 lg:grid-cols-2">
               {/* Recent scans */}
               <div>
@@ -780,7 +879,7 @@ export default function DashboardPage() {
                   <h2 className="text-sm sm:text-base font-semibold text-gray-900">Recent scans</h2>
                   {recentActivity.length > 0 && (
                     <button
-                      onClick={() => router.push("/scans")}
+                      onClick={() => navTo(ROUTES.scans, "recent_scans_view_all")}
                       className="text-[11px] font-medium text-blue-700 hover:underline"
                     >
                       View all
@@ -797,7 +896,7 @@ export default function DashboardPage() {
                     <p className="font-medium text-gray-700 mb-1">No scans yet.</p>
                     <p className="mb-3">Scan a label to start building your history.</p>
                     <button
-                      onClick={() => router.push("/ocr")}
+                      onClick={() => navTo(ROUTES.scan, "scan_first_label_from_empty_state")}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600 text-white text-[11px] sm:text-xs font-medium hover:bg-blue-500 transition"
                     >
                       <ScanBarcode className="w-3 h-3" />
@@ -806,7 +905,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Mobile: simple list (no timeline) */}
+                    {/* Mobile: simple list */}
                     <div className="md:hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-2">
                       {recentActivity.slice(0, 3).map((item, idx) => {
                         const fields = item.fields || {};
@@ -828,12 +927,14 @@ export default function DashboardPage() {
                           <button
                             key={item.id || idx}
                             type="button"
-                            onClick={() => router.push(`/scans/${item.id || ""}`)}
+                            onClick={() => openScanDetail(item)}
                             className="w-full text-left rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
-                                <p className="text-xs font-semibold text-gray-900 truncate">{name}</p>
+                                <p className="text-xs font-semibold text-gray-900 truncate">
+                                  {name}
+                                </p>
                                 {dateLabel && (
                                   <p className="text-[11px] text-gray-500 mt-0.5">{dateLabel}</p>
                                 )}
@@ -851,7 +952,7 @@ export default function DashboardPage() {
                       })}
                     </div>
 
-                    {/* Desktop/tablet: keep richer card */}
+                    {/* Desktop/tablet: richer list */}
                     <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
                       <div className="space-y-3">
                         {recentActivity.slice(0, 5).map((item, index) => {
@@ -874,18 +975,15 @@ export default function DashboardPage() {
                           const isFlagged = item.hasBanned;
 
                           return (
-                            <div
-                              key={key}
-                              className="flex items-start gap-3 text-xs sm:text-sm"
-                            >
+                            <div key={key} className="flex items-start gap-3 text-xs sm:text-sm">
                               <div className="flex flex-col items-center pt-1">
                                 <span className="h-2 w-2 rounded-full bg-blue-600" />
                                 {index < 4 && <span className="flex-1 w-px bg-gray-200 mt-1" />}
                               </div>
 
                               <div className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
-                                <div className="flex flex-col">
-                                  <span className="font-medium text-gray-900">{name}</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-medium text-gray-900 truncate">{name}</span>
                                   {dateLabel && (
                                     <span className="text-[11px] text-gray-500">{dateLabel}</span>
                                   )}
@@ -897,7 +995,7 @@ export default function DashboardPage() {
                                   )}
                                 </div>
                                 <button
-                                  onClick={() => router.push(`/scans/${item.id || ""}`)}
+                                  onClick={() => openScanDetail(item)}
                                   className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
                                 >
                                   View
@@ -918,7 +1016,7 @@ export default function DashboardPage() {
                   <h2 className="text-sm sm:text-base font-semibold text-gray-900">Saved stacks</h2>
                   {savedStacks.length > 0 && (
                     <button
-                      onClick={() => router.push("/saved-stacks")}
+                      onClick={() => navTo(ROUTES.savedStacks, "saved_stacks_manage")}
                       className="text-[11px] font-medium text-blue-700 hover:underline"
                     >
                       Manage
@@ -935,7 +1033,7 @@ export default function DashboardPage() {
                     <p className="font-medium text-gray-700 mb-1">No stacks saved yet.</p>
                     <p>Use SmartStack to explore and save stacks to track.</p>
                     <button
-                      onClick={() => router.push("/smartstack")}
+                      onClick={() => navTo(ROUTES.smartstack, "explore_smartstack_from_empty_saved")}
                       className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 text-white text-[11px] sm:text-xs font-medium hover:bg-gray-800 transition"
                     >
                       <Sparkles className="w-3 h-3" />
@@ -964,7 +1062,7 @@ export default function DashboardPage() {
                           <button
                             key={key}
                             type="button"
-                            onClick={() => router.push("/saved-stacks")}
+                            onClick={() => navTo(ROUTES.savedStacks, "open_saved_stacks_mobile")}
                             className="w-full text-left rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
                           >
                             <p className="text-xs font-semibold text-gray-900 truncate">{title}</p>
@@ -976,7 +1074,7 @@ export default function DashboardPage() {
                       {savedStacks.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => router.push("/saved-stacks")}
+                          onClick={() => navTo(ROUTES.savedStacks, "more_saved_stacks_mobile")}
                           className="text-[11px] font-semibold text-blue-700 hover:underline"
                         >
                           + {savedStacks.length - 1} more saved stacks
@@ -1033,7 +1131,7 @@ export default function DashboardPage() {
                               </div>
                             </div>
                             <button
-                              onClick={() => router.push("/saved-stacks")}
+                              onClick={() => navTo(ROUTES.savedStacks, "open_saved_stacks_desktop")}
                               className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
                             >
                               Open
@@ -1052,15 +1150,7 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            {/* Minimal disclaimer */}
-            <section className="pt-1">
-              <p className="text-[10px] text-gray-500 max-w-xl">
-                PEAK helps screen supplement labels and understand potential risks. It is not a
-                substitute for official rulings, lab testing, or medical advice.
-              </p>
-            </section>
-
-            {/* Mobile-only quick logout (since sidebar is hidden on mobile) */}
+            {/* Mobile-only quick logout */}
             <section className="lg:hidden">
               <button
                 onClick={handleLogout}

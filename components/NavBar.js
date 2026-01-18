@@ -42,7 +42,7 @@ export default function NavBar() {
   // Tabs shown on left side (desktop)
   const leftTabs = useMemo(
     () => [
-      { name: "Scan", href: "/ocr" },
+      { name: "Scan", href: "/nutrition-label-scanner" },
       { name: "Search", href: "/search" },
       { name: "Info", href: "/info" },
     ],

@@ -4,208 +4,359 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function getQueryParam(name) {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  return params.get(name) || "";
+}
+
+function scorePassword(pw) {
+  const p = String(pw || "");
+  let score = 0;
+  if (p.length >= 8) score += 1;
+  if (p.length >= 12) score += 1;
+  if (/[A-Z]/.test(p)) score += 1;
+  if (/[0-9]/.test(p)) score += 1;
+  if (/[^A-Za-z0-9]/.test(p)) score += 1;
+  return Math.min(score, 5);
+}
+
+function strengthLabel(score) {
+  if (score <= 1) return "Weak";
+  if (score === 2) return "Okay";
+  if (score === 3) return "Good";
+  if (score === 4) return "Strong";
+  return "Very strong";
+}
 
 export default function ResetPasswordPage() {
   const router = useRouter();
 
-  const { token, email, role } = useMemo(() => {
-    const q = router?.query || {};
-    return {
-      token: typeof q.token === "string" ? q.token : "",
-      email: typeof q.email === "string" ? q.email : "",
-      role: typeof q.role === "string" ? q.role : "", // athlete|organization (optional)
-    };
-  }, [router?.query]);
+  // Pull token/email from query string
+  const tokenRaw = useMemo(() => getQueryParam("token"), []);
+  const emailRaw = useMemo(() => getQueryParam("email"), []);
 
+  const token = useMemo(() => String(tokenRaw || "").trim(), [tokenRaw]);
+  const email = useMemo(() => normalizeEmail(emailRaw), [emailRaw]);
+
+  // Build helpful links
+  const loginUrl = useMemo(() => "/login", []);
+  const requestNewLinkUrl = useMemo(() => {
+    // Opens forgot-password UI on /login and prefills email
+    const q = new URLSearchParams();
+    q.set("forgot", "1");
+    if (email) q.set("email", email);
+    return `/login?${q.toString()}`;
+  }, [email]);
+
+  // UI state
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [ok, setOk] = useState(false);
 
+  const [show1, setShow1] = useState(false);
+  const [show2, setShow2] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  // Validate query
   useEffect(() => {
-    setErr("");
-  }, [pw1, pw2]);
+    if (!token || token.length < 10) {
+      setPageError("This reset link is invalid. Please request a new one.");
+      return;
+    }
+    if (!email || !email.includes("@")) {
+      setPageError("This reset link is missing information. Please request a new one.");
+      return;
+    }
+    setPageError("");
+  }, [token, email]);
+
+  const pwScore = scorePassword(pw1);
+  const pwLabel = strengthLabel(pwScore);
 
   const canSubmit =
-    !loading &&
-    token &&
-    email &&
-    email.includes("@") &&
-    pw1.length >= 6 &&
-    pw1 === pw2;
+    !pageError &&
+    pw1.length >= 8 &&
+    pw2.length >= 8 &&
+    pw1 === pw2 &&
+    !loading;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setErr("");
-
-    if (!email || !email.includes("@")) return setErr("Invalid reset link.");
-    if (!token) return setErr("Invalid reset link.");
-    if (pw1.length < 6) return setErr("Password must be at least 6 characters.");
-    if (pw1 !== pw2) return setErr("Passwords do not match.");
-
+  const callReset = async () => {
+    setFormError("");
     setLoading(true);
+
     try {
       const res = await fetch("/api/auth/resetPassword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          email,
           token,
-          role: role || undefined,
           newPassword: pw1,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error(data?.error || "Reset failed. Please request a new link.");
+        const msg = String(data?.error || "Reset failed. Please request a new link.");
+
+        const lower = msg.toLowerCase();
+        if (lower.includes("expired")) {
+          throw new Error("This reset link expired. Please request a new one.");
+        }
+        if (lower.includes("invalid")) {
+          throw new Error("This reset link is invalid. Please request a new one.");
+        }
+        throw new Error(msg);
       }
 
-      setOk(true);
+      setSuccess(true);
       setPw1("");
       setPw2("");
-    } catch (e2) {
-      console.error(e2);
-      setErr(e2?.message || "Reset failed. Please request a new link.");
+    } catch (err) {
+      setFormError(err?.message || "Reset failed. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError("");
+
+    if (pageError) return;
+
+    if (!pw1 || pw1.length < 8) {
+      setFormError("Password must be at least 8 characters.");
+      return;
+    }
+    if (pw1 !== pw2) {
+      setFormError("Passwords do not match.");
+      return;
+    }
+
+    await callReset();
   };
 
   return (
     <>
       <Head>
         <title>Reset Password — CheckPeak</title>
-        <meta name="description" content="Reset your CheckPeak password." />
+        <meta name="description" content="Reset your CheckPeak password securely." />
         <meta name="robots" content="noindex,nofollow" />
       </Head>
 
-      <main className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
+      <main className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900">
+        <div className="max-w-xl mx-auto px-4 py-14">
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.35 }}
-            className="bg-white rounded-2xl border border-blue-100 shadow-md p-6 sm:p-8"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="bg-white border border-blue-100 rounded-3xl shadow-lg p-6 sm:p-8"
           >
-            <div className="flex items-start justify-between gap-3">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-extrabold tracking-tight">
+                <p className="text-xs font-semibold tracking-wide text-[#46769B]">
+                  CHECKPEAK
+                </p>
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">
                   Reset your password
                 </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  Set a new password for{" "}
+                <p className="text-sm text-gray-600 mt-2">
+                  Choose a new password for{" "}
                   <span className="font-semibold text-gray-900">
                     {email || "your account"}
                   </span>
-                  .
                 </p>
               </div>
 
-              <div className="text-[11px] text-gray-500 text-right">
-                <div className="font-semibold text-gray-700">CheckPeak</div>
-                <div className="mt-1">Secure reset</div>
-              </div>
+              <Link
+                href="/"
+                className="text-sm font-semibold text-[#46769B] hover:underline"
+              >
+                Home
+              </Link>
             </div>
 
-            {/* If link is missing token/email, show guidance */}
-            {(!token || !email) && !ok && (
-              <div className="mt-4 p-3 rounded-xl bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
-                This reset link is missing required info. Please request a new reset link.
+            {/* Error state if query is broken */}
+            {pageError && (
+              <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm">
+                <p className="font-semibold">Link issue</p>
+                <p className="mt-1">{pageError}</p>
+
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <Link
+                    href={loginUrl}
+                    className="px-5 py-3 rounded-2xl bg-gray-900 text-white font-semibold text-sm text-center"
+                  >
+                    Go to login
+                  </Link>
+
+                  <Link
+                    href={requestNewLinkUrl}
+                    className="px-5 py-3 rounded-2xl bg-white border border-gray-200 text-gray-900 font-semibold text-sm text-center hover:bg-gray-50"
+                  >
+                    Request a new reset link
+                  </Link>
+                </div>
               </div>
             )}
 
-            {ok ? (
-              <div className="mt-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800">
-                <p className="font-semibold">Password updated.</p>
-                <p className="mt-1 text-sm">
-                  You can log in with your new password now.
-                </p>
+            {/* Success */}
+            {!pageError && success && (
+              <div className="mt-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-800">
+                <p className="font-semibold">Password updated ✅</p>
+                <p className="mt-1 text-sm">You can now log in with your new password.</p>
 
-                <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                  <Link href="/" className="w-full sm:w-auto">
-                    <button className="w-full px-5 py-3 rounded-2xl bg-[#46769B] text-white font-semibold shadow-sm hover:brightness-110 transition">
-                      Go to Home
-                    </button>
-                  </Link>
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push(loginUrl)}
+                    className="px-5 py-3 rounded-2xl bg-[#46769B] text-white font-semibold text-sm shadow-md hover:brightness-110 transition"
+                  >
+                    Go to login
+                  </button>
 
-                  <Link href="/" className="w-full sm:w-auto">
-                    <button className="w-full px-5 py-3 rounded-2xl bg-white border border-gray-200 text-gray-900 font-semibold shadow-sm hover:shadow-md transition">
-                      Open Login
-                    </button>
+                  <Link
+                    href="/"
+                    className="px-5 py-3 rounded-2xl bg-white border border-gray-200 text-gray-900 font-semibold text-sm text-center hover:bg-gray-50"
+                  >
+                    Back to home
                   </Link>
                 </div>
-
-                <p className="mt-3 text-[11px] text-gray-600">
-                  If you didn’t initiate this reset, change your password again and contact support.
-                </p>
               </div>
-            ) : (
+            )}
+
+            {/* Form */}
+            {!pageError && !success && (
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {/* New password */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-800 mb-1">
                     New password
                   </label>
-                  <input
-                    type="password"
-                    value={pw1}
-                    onChange={(e) => setPw1(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="At least 6 characters"
-                    required
-                    autoComplete="new-password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={show1 ? "text" : "password"}
+                      value={pw1}
+                      onChange={(e) => setPw1(e.target.value)}
+                      placeholder="At least 8 characters"
+                      className="w-full p-3 pr-14 border border-gray-300 rounded-2xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow1((v) => !v)}
+                      className="absolute inset-y-0 right-3 text-sm font-semibold text-gray-500 hover:text-gray-700"
+                    >
+                      {show1 ? "Hide" : "Show"}
+                    </button>
+                  </div>
+
+                  {/* Strength meter */}
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500">Strength</span>
+                      <span className="font-semibold text-gray-700">{pwLabel}</span>
+                    </div>
+                    <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[#46769B] transition-all"
+                        style={{ width: `${(pwScore / 5) * 100}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[11px] text-gray-500">
+                      Tip: Use 12+ characters and mix letters, numbers, and symbols.
+                    </p>
+                  </div>
                 </div>
 
+                {/* Confirm */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-800 mb-1">
-                    Confirm new password
+                    Confirm password
                   </label>
-                  <input
-                    type="password"
-                    value={pw2}
-                    onChange={(e) => setPw2(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="Re-enter new password"
-                    required
-                    autoComplete="new-password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={show2 ? "text" : "password"}
+                      value={pw2}
+                      onChange={(e) => setPw2(e.target.value)}
+                      placeholder="Re-enter your new password"
+                      className="w-full p-3 pr-14 border border-gray-300 rounded-2xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow2((v) => !v)}
+                      className="absolute inset-y-0 right-3 text-sm font-semibold text-gray-500 hover:text-gray-700"
+                    >
+                      {show2 ? "Hide" : "Show"}
+                    </button>
+                  </div>
+
+                  {/* Match hint */}
+                  {pw2.length > 0 && pw1 !== pw2 && (
+                    <p className="mt-2 text-xs text-red-600">Passwords don’t match yet.</p>
+                  )}
+                  {pw2.length > 0 && pw1 === pw2 && pw1.length >= 8 && (
+                    <p className="mt-2 text-xs text-emerald-700">Passwords match ✅</p>
+                  )}
                 </div>
 
-                {err && <p className="text-sm text-red-600">{err}</p>}
+                {/* Errors */}
+                {formError && (
+                  <div className="p-3 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm">
+                    {formError}
+                  </div>
+                )}
 
+                {/* Submit */}
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className={`w-full py-3 rounded-2xl text-white font-semibold transition ${
-                    canSubmit ? "bg-[#46769B] hover:brightness-110" : "bg-gray-300 cursor-not-allowed"
+                  className={`w-full py-3 rounded-2xl font-semibold shadow-md transition ${
+                    canSubmit
+                      ? "bg-[#46769B] text-white hover:brightness-110"
+                      : "bg-gray-200 text-gray-500 cursor-not-allowed"
                   }`}
                 >
-                  {loading ? "Resetting..." : "Reset password"}
+                  {loading ? "Updating..." : "Update password"}
                 </button>
 
-                <div className="flex items-center justify-between text-xs text-gray-600">
-                  <Link href="/" className="hover:underline underline-offset-4">
-                    Back to home
+                {/* Footer actions */}
+                <div className="flex items-center justify-between text-sm pt-2">
+                  <Link href={loginUrl} className="text-gray-600 hover:underline">
+                    Back to login
                   </Link>
-                  <Link href="/nutrition-label-scanner" className="hover:underline underline-offset-4">
-                    Run a scan
+
+                  <Link
+                    href={requestNewLinkUrl}
+                    className="text-[#46769B] font-semibold hover:underline"
+                  >
+                    Request a new reset link
                   </Link>
                 </div>
 
-                <p className="text-[11px] text-gray-500">
-                  If this link is expired, request a new reset from the login modal.
+                <p className="text-[11px] text-gray-500 pt-2">
+                  For security, password reset links expire. If yours doesn’t work, request a new link.
                 </p>
               </form>
             )}
           </motion.div>
-
-          <p className="mt-4 text-center text-[11px] text-gray-500">
-            © {new Date().getFullYear()} CheckPeak. Not affiliated or endorsed by any organization.
-          </p>
         </div>
       </main>
     </>

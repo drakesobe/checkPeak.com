@@ -71,8 +71,8 @@ export default function CookieSettings({ onChange }) {
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Analytics</p>
                       <p className="text-[12px] text-gray-600 mt-1">
-                        Helps us understand usage (Google Analytics) and improve UX
-                        (Clarity heatmaps/session insights). No selling data.
+                        Helps us understand usage and improve 
+                        user experience. We do not sell your data.
                       </p>
                     </div>
 

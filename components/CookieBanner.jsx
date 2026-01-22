@@ -37,13 +37,13 @@ export default function CookieBanner({ onChange }) {
             onClick={decline}
             className="px-4 py-2 rounded-2xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200"
           >
-            Decline
+            Ask websites not to track
           </button>
           <button
             onClick={accept}
             className="px-4 py-2 rounded-2xl bg-[#46769B] text-white font-semibold hover:brightness-110"
           >
-            Accept
+            Allow analytics
           </button>
         </div>
       </div>

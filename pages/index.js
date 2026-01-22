@@ -203,7 +203,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7 }}
             >
-              Don’t fail a test over a label.
+              Don't get caught with a banned substance.
               <br className="hidden sm:block" />
               <span className="block mt-1 md:mt-2"></span>
             </motion.h1>

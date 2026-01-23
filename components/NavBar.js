@@ -217,32 +217,32 @@ export default function NavBar() {
       </Link>
     );
 
-    if (isOrgSide) {
-      return (
-        <>
-          <L href="/org/dashboard">Dashboard</L>
-          <L href="/org/review">Review Queue</L>
+      if (isOrgSide) {
+    return (
+      <>
+        <L href="/org/dashboard">Dashboard</L>
+        <L href="/org/review-queue">Review Queue</L>
 
-          {/* Admin/Organization can see more */}
-          {(isAdmin || role === "organization") && (
-            <>
-              <L href="/org/athletes">Athletes</L>
-              <L href="/org/prescriptions">Prescriptions</L>
-              <L href="/org/trainers">Trainers</L>
-            </>
-          )}
+        {/* Trainers should usually see prescriptions + review queue */}
+        {isTrainer && (
+          <>
+            <L href="/org/prescriptions">Prescriptions</L>
+          </>
+        )}
 
-          {/* Trainer still needs a place to create workouts */}
-          {isTrainer && (
-            <>
-              <L href="/org/dashboard">Create Workouts</L>
-            </>
-          )}
+        {/* Admin/Organization can see everything */}
+        {(isAdmin || role === "organization") && (
+          <>
+            <L href="/org/athletes">Athletes</L>
+            <L href="/org/prescriptions">Prescriptions</L>
+            <L href="/org/trainers">Trainers</L>
+          </>
+        )}
 
-          <L href="/account">Account</L>
-        </>
-      );
-    }
+        <L href="/account">Account</L>
+      </>
+    );
+  }
 
     if (isAthlete) {
       return (

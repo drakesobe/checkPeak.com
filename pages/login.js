@@ -30,13 +30,23 @@ export default function LoginPage() {
 
   const isOrg = authRole === "organization";
 
-  // Normalize role from user (matches your NavBar logic)
+  // ✅ Updated: normalize role incl. admin/trainer (OrgMembers)
   const userRole = useMemo(() => {
-    const raw = (user?.Role || user?.role || "").toString().trim().toLowerCase();
+    const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw === "organization") return "organization";
+    if (raw === "admin") return "admin";
+    if (raw === "trainer") return "trainer";
+    if (raw === "athlete") return "athlete";
+
     if (raw.includes("org")) return "organization";
+    if (raw.includes("admin")) return "admin";
+    if (raw.includes("train")) return "trainer";
     if (raw.includes("ath")) return "athlete";
-    return raw || "";
+    return raw;
   }, [user]);
+
+  const isOrgSideRole = userRole === "organization" || userRole === "admin" || userRole === "trainer";
 
   // Prefill login email if you set it elsewhere (optional but helpful)
   useEffect(() => {
@@ -50,13 +60,13 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If already logged in, route to correct dashboard
+  // ✅ If already logged in, route to correct dashboard (org-side includes admin/trainer)
   useEffect(() => {
     if (!user) return;
 
-    if (userRole === "organization") router.push("/org/dashboard");
+    if (isOrgSideRole) router.push("/org/dashboard");
     else router.push("/dashboard");
-  }, [user, userRole, router]);
+  }, [user, isOrgSideRole, router]);
 
   // ---- Error mapping for better UX + consistent messaging ----
   const mapLoginError = (err) => {
@@ -109,10 +119,11 @@ export default function LoginPage() {
     }
 
     try {
-      // ✅ IMPORTANT: pass role into login (matches your modal)
+      // ✅ IMPORTANT: pass role into login
+      // NOTE: With your current lookupUser, role "organization" logs into Organizations table.
+      // If you later add OrgMembers login, you can expand the role options without changing this page.
       const userData = await login(cleanEmail, password, authRole);
 
-      // remember me
       if (rememberMe && typeof window !== "undefined") {
         window.localStorage.setItem("user", JSON.stringify(userData));
       }
@@ -124,9 +135,12 @@ export default function LoginPage() {
         }
       } catch {}
 
-      // Route based on returned role
+      // ✅ Route based on returned role (org-side includes admin/trainer)
       const roleLabel = String(userData?.role || userData?.Role || "").toLowerCase();
-      if (roleLabel.includes("org")) router.push("/org/dashboard");
+      const orgSide =
+        roleLabel.includes("org") || roleLabel.includes("admin") || roleLabel.includes("trainer");
+
+      if (orgSide) router.push("/org/dashboard");
       else router.push("/dashboard");
     } catch (err) {
       console.error(err);
@@ -143,20 +157,17 @@ export default function LoginPage() {
 
     const cleanEmail = String(forgotEmail || "").trim().toLowerCase();
 
-    // Even if invalid, we keep messaging generic for account enumeration safety.
     try {
+      // ✅ include role so your server can route reset logic by table
       const res = await fetch("/api/auth/forgotPassword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail }),
+        credentials: "include",
+        body: JSON.stringify({ email: cleanEmail, role: authRole }),
       });
 
-      // Your API may return 200 even on some failures; still show generic.
-      // If it returns 500, you still want user to see the generic message.
       const data = await res.json().catch(() => ({}));
-      setForgotMsg(
-        data?.message || "If your account exists, we’ve sent reset instructions."
-      );
+      setForgotMsg(data?.message || "If your account exists, we’ve sent reset instructions.");
     } catch (err) {
       console.error(err);
       setForgotMsg("If your account exists, we’ve sent reset instructions.");
@@ -168,8 +179,7 @@ export default function LoginPage() {
   const inputBase =
     "w-full px-4 py-3 rounded-2xl border border-blue-100 text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-200 focus:outline-none";
 
-  const rolePill =
-    "px-3 py-2 rounded-xl border text-sm font-semibold transition";
+  const rolePill = "px-3 py-2 rounded-xl border text-sm font-semibold transition";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
@@ -182,27 +192,29 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Role selector (matches modal behavior) */}
+          {/* Role selector */}
           <div className="flex justify-center gap-2">
             <button
               type="button"
               onClick={() => setAuthRole("athlete")}
+              disabled={loading || forgotLoading}
               className={`${rolePill} ${
                 authRole === "athlete"
                   ? "bg-[#46769B] text-white border-[#46769B]"
                   : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
+              } ${loading || forgotLoading ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               Athlete
             </button>
             <button
               type="button"
               onClick={() => setAuthRole("organization")}
+              disabled={loading || forgotLoading}
               className={`${rolePill} ${
                 authRole === "organization"
                   ? "bg-[#46769B] text-white border-[#46769B]"
                   : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
+              } ${loading || forgotLoading ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               Organization
             </button>
@@ -212,9 +224,7 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             {/* Email */}
             <div>
-              <label className="block font-medium mb-1 text-gray-800">
-                Email
-              </label>
+              <label className="block font-medium mb-1 text-gray-800">Email</label>
               <input
                 type="email"
                 value={email}
@@ -223,14 +233,13 @@ export default function LoginPage() {
                 placeholder={isOrg ? "org@example.com" : "you@example.com"}
                 required
                 autoComplete="email"
+                disabled={loading}
               />
             </div>
 
             {/* Password */}
             <div>
-              <label className="block font-medium mb-1 text-gray-800">
-                Password
-              </label>
+              <label className="block font-medium mb-1 text-gray-800">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -240,11 +249,16 @@ export default function LoginPage() {
                   placeholder="Enter your password"
                   required
                   autoComplete="current-password"
+                  disabled={loading}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleLogin(e);
+                  }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute inset-y-0 right-3 text-sm text-gray-500 hover:text-gray-700"
+                  disabled={loading}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
@@ -259,6 +273,7 @@ export default function LoginPage() {
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded"
+                  disabled={loading}
                 />
                 <span className="text-sm text-gray-800">Remember me</span>
               </label>
@@ -271,6 +286,7 @@ export default function LoginPage() {
                   setForgotEmail(email || "");
                 }}
                 className="text-sm text-[#46769B] hover:underline"
+                disabled={loading}
               >
                 Forgot password?
               </button>
@@ -308,6 +324,7 @@ export default function LoginPage() {
                   placeholder="you@example.com"
                   autoComplete="email"
                   required
+                  disabled={forgotLoading}
                 />
 
                 <button
@@ -333,10 +350,10 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Optional: simple link back home */}
+          {/* Back home */}
           <div className="text-center text-sm text-gray-500">
             <Link href="/" className="text-[#46769B] hover:underline">
-            Back to Home{" "}
+              Back to Home{" "}
             </Link>
           </div>
         </div>

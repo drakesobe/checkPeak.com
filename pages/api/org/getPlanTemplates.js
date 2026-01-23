@@ -1,7 +1,15 @@
+// pages/api/org/getPlanTemplates.js
 import Airtable from "airtable";
+import { requireOrg } from "@/lib/requireOrg";
+
+function escapeAirtableString(str = "") {
+  // Airtable formula strings are quoted; escape single quotes for safety.
+  return String(str).replace(/'/g, "\\'");
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -14,25 +22,42 @@ export default async function handler(req, res) {
   if (!API_KEY || !BASE_ID || !TABLE) {
     return res.status(500).json({
       error: "PlanTemplates Airtable env vars missing.",
+      missing: {
+        PLAN_TEMPLATES_API_KEY: !API_KEY,
+        PLAN_TEMPLATES_BASE_ID: !BASE_ID,
+        PLAN_TEMPLATES_TABLE_NAME: !TABLE,
+      },
+      debug: { cwd: process.cwd() },
+    });
+  }
+
+  // ✅ Preferred: cookie auth (Organization/Admin/Trainer)
+  const auth = requireOrg(req);
+
+  // Legacy fallback: token can come from header or query (?token=)
+  const headerToken = req.headers["x-org-token"];
+  const queryToken = req.query?.token;
+
+  const cookieToken = auth?.ok ? String(auth?.org?.token || "").trim() : "";
+  const fallbackToken = String(headerToken || queryToken || "").trim();
+
+  const orgToken = cookieToken || fallbackToken;
+
+  if (!orgToken) {
+    return res.status(401).json({
+      error:
+        "Missing organization token. Log in (cookie auth) or provide x-org-token / ?token= for legacy.",
       debug: {
-        has_API_KEY: Boolean(API_KEY),
-        has_BASE_ID: Boolean(BASE_ID),
-        has_TABLE: Boolean(TABLE),
-        cwd: process.cwd(),
+        hasCookieAuth: Boolean(auth?.ok),
+        hasHeaderToken: Boolean(headerToken),
+        hasQueryToken: Boolean(queryToken),
       },
     });
   }
 
-  // token can come from header OR query (?token=)
-  const headerToken = req.headers["x-org-token"];
-  const queryToken = req.query?.token;
-  const orgToken = String(headerToken || queryToken || "").trim();
-
-  if (!orgToken) return res.status(400).json({ error: "Missing token" });
-
   const base = new Airtable({ apiKey: API_KEY }).base(BASE_ID);
 
-  // We try these field names in order (because Airtable is case-sensitive)
+  // Token field name candidates (Airtable is case-sensitive)
   const ORG_TOKEN_FIELDS = [
     "Organization Token",
     "Org Token",
@@ -68,10 +93,19 @@ export default async function handler(req, res) {
 
       let structured = null;
       try {
-        structured = f[structuredKey] ? JSON.parse(f[structuredKey]) : null;
+        structured = structuredKey && f[structuredKey] ? JSON.parse(f[structuredKey]) : null;
       } catch {
         structured = null;
       }
+
+      // Tags could be single-line text OR multi-select OR array depending on your Airtable field type
+      const tagsRaw = tagsKey ? f[tagsKey] : [];
+      const tags =
+        Array.isArray(tagsRaw)
+          ? tagsRaw
+          : typeof tagsRaw === "string"
+          ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+          : [];
 
       return {
         id: r.id,
@@ -80,19 +114,22 @@ export default async function handler(req, res) {
         createdBy: createdByKey ? f[createdByKey] : "",
         status: statusKey ? f[statusKey] : "Active",
         notes: notesKey ? f[notesKey] : "",
-        tags: tagsKey ? f[tagsKey] : [],
-        createdAt: f["Created At"] || r.createdTime || "",
-        // helpful for debugging field names:
+        tags,
+        createdAt: f["Created At"] || f["CreatedAt"] || r.createdTime || "",
         _debug_fieldKeys: Object.keys(f),
       };
     });
 
+  const safeToken = escapeAirtableString(orgToken);
+
   // 1) Attempt filtered query using any matching org token field name
   for (const tokenField of ORG_TOKEN_FIELDS) {
     try {
+      const formula = `{${tokenField}}='${safeToken}'`;
+
       const records = await base(TABLE)
         .select({
-          filterByFormula: `{${tokenField}} = "${orgToken}"`,
+          filterByFormula: formula,
           pageSize: 50,
         })
         .all();
@@ -100,10 +137,10 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         tokenFieldUsed: tokenField,
+        authMode: cookieToken ? "cookie" : "token",
         templates: mapTemplates(records),
       });
     } catch (err) {
-      // If this field name is wrong, Airtable will throw. We try the next candidate.
       const msg = String(err?.message || "");
       const isFieldNameIssue =
         msg.toLowerCase().includes("unknown field name") ||
@@ -111,7 +148,6 @@ export default async function handler(req, res) {
         msg.toLowerCase().includes("formula");
 
       if (!isFieldNameIssue) {
-        // This is a real Airtable failure (permissions/table not found/etc.)
         return res.status(500).json({
           error: "Airtable request failed (non-formula error)",
           airtable: {
@@ -124,7 +160,7 @@ export default async function handler(req, res) {
           },
         });
       }
-      // else: try next tokenField
+      // try next token field name
     }
   }
 
@@ -140,6 +176,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       tokenFieldUsed: null,
+      authMode: cookieToken ? "cookie" : "token",
       warning:
         "Could not filter by org token (field name mismatch). Returned unfiltered templates to reveal actual Airtable field names.",
       templates: mapTemplates(records),

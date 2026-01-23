@@ -1,25 +1,20 @@
 // pages/org/athletes.js
+"use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 import toast, { Toaster } from "react-hot-toast";
 
 /**
- * Org Athletes Page — Coach Speed Edition (Enhanced)
+ * ✅ ORG ISSUE FIXES APPLIED HERE (same pattern as org/dashboard)
  *
- * Built for coaches processing 50–200 athletes quickly:
- * - Queue mode + Next Up
- * - Auto-advance after marking Done
- * - Saved views (localStorage)
- * - Bulk actions (copy emails, export CSV, open prescriptions, mark done/star)
- * - Quick View drawer with autosave notes + status toggles
- * - Sticky table header (desktop)
- * - Keyboard shortcuts:
- *    / search, j/k navigate, x select, o open prescriptions, d done, s star, n next-up
- *
- * NOTE:
- * - Done/Star/Notes + Saved Views are stored locally (per org) for speed.
- * - If you later want shared progress across coaches, we can persist these to Airtable.
+ * 1) Router updated for App Router: next/navigation
+ * 2) Role gating supports Organization + Admin + Trainer (org-side)
+ * 3) Removed x-org-token header + removed token-in-query fallback
+ *    - Org endpoints must rely on HttpOnly session cookie (credentials: "include")
+ * 4) LocalStorage key no longer depends on orgToken (which might not exist for trainer/admin)
+ *    - Uses orgId if present, else stable fallback
  */
 
 function cleanString(v) {
@@ -71,6 +66,14 @@ function clamp(n, min, max) {
   return Math.min(Math.max(n, min), max);
 }
 
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 export default function OrgAthletesPage() {
   const router = useRouter();
   const { user } = useAuthContext();
@@ -105,24 +108,36 @@ export default function OrgAthletesPage() {
   const [noteDirty, setNoteDirty] = useState(false);
   const noteSaveTimer = useRef(null);
 
-  // local coach state (per org)
+  // ✅ role gating: allow org-side roles
   const role = useMemo(() => {
-    const r = String(user?.role || user?.Role || "").toLowerCase();
+    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (!r) return "";
+    if (r === "organization") return "organization";
+    if (r === "admin") return "admin";
+    if (r === "trainer") return "trainer";
     if (r.includes("org")) return "organization";
+    if (r.includes("admin")) return "admin";
+    if (r.includes("train")) return "trainer";
     if (r.includes("ath")) return "athlete";
-    return "";
+    return r;
   }, [user]);
 
-  const orgToken = useMemo(() => {
-    return String(
-      user?.Token || user?.token || user?.["Organization Token"] || ""
-    ).trim();
-  }, [user]);
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  // ✅ stable org identifier for localStorage keys
+  const orgId = useMemo(() => String(user?.orgId || user?.OrgId || "").trim(), [user]);
+  const orgToken = useMemo(
+    () => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(),
+    [user]
+  );
 
   const orgKey = useMemo(() => {
-    const base = orgToken ? `org:${orgToken.slice(0, 12)}` : "org:unknown";
-    return base;
-  }, [orgToken]);
+    if (orgId) return `orgid:${orgId}`;
+    // fallback if legacy session: token-based key if available
+    if (orgToken) return `orgtoken:${orgToken.slice(0, 12)}`;
+    // final fallback
+    return `org:unknown`;
+  }, [orgId, orgToken]);
 
   const LS_COACH = useMemo(() => `${orgKey}:athleteCoachState:v2`, [orgKey]);
   const LS_VIEWS = useMemo(() => `${orgKey}:athleteSavedViews:v1`, [orgKey]);
@@ -156,11 +171,11 @@ export default function OrgAthletesPage() {
     window.localStorage.setItem(LS_VIEWS, JSON.stringify(savedViews));
   }, [savedViews, LS_VIEWS]);
 
-  // Guard: must be org
+  // ✅ Guard: must be org-side
   useEffect(() => {
     if (!user) return;
-    if (role !== "organization") router.push("/dashboard");
-  }, [user, role, router]);
+    if (!isOrgSide) router.push("/dashboard");
+  }, [user, isOrgSide, router]);
 
   const normalizeAthlete = (a) => {
     const email = normalizeEmail(a?.email || a?.Email);
@@ -208,34 +223,15 @@ export default function OrgAthletesPage() {
     setError("");
 
     try {
-      if (!orgToken) {
-        setAthletesRaw([]);
-        setError("Missing organization token on your account. Please contact support.");
-        return;
-      }
-
-      // Preferred: header-based
-      let res = await fetch(`/api/org/getAthletes`, {
+      // ✅ cookie/session based org auth
+      const res = await fetch(`/api/org/getAthletes`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...(orgToken ? { "x-org-token": orgToken } : {}),
-        },
-        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         signal: controller.signal,
       });
 
-      // Fallback: older route expects token query
-      if (!res.ok) {
-        res = await fetch(`/api/org/getAthletes?token=${encodeURIComponent(orgToken)}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-      }
-
-      const data = await res.json().catch(() => ({}));
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to load athletes.");
 
       const list = Array.isArray(data?.athletes) ? data.athletes : [];
@@ -258,10 +254,10 @@ export default function OrgAthletesPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (role !== "organization") return;
+    if (!isOrgSide) return;
     fetchAthletes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, orgToken]);
+  }, [user, isOrgSide]);
 
   const stats = useMemo(() => {
     const total = athletes.length;
@@ -503,6 +499,7 @@ export default function OrgAthletesPage() {
 
     toast.success(`Opening ${list.length} tabs…`);
     for (let i = 0; i < list.length; i++) {
+      // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 140));
       openPrescriptionsNewTab(list[i]);
     }
@@ -632,7 +629,7 @@ export default function OrgAthletesPage() {
     };
 
     const onKeyDown = (e) => {
-      if (role !== "organization") return;
+      if (!isOrgSide) return;
 
       // "/" focus search
       if (e.key === "/" && !isTypingTarget()) {
@@ -656,9 +653,7 @@ export default function OrgAthletesPage() {
       if (isTypingTarget()) return;
 
       // j/k navigation uses filtered list when drawer open, else uses current paged list via activeRowId
-      const currentId = drawerOpen
-        ? drawerAthlete?.id
-        : activeRowId || "";
+      const currentId = drawerOpen ? drawerAthlete?.id : activeRowId || "";
 
       const list = drawerOpen ? filtered : paged;
       const idx = currentId ? list.findIndex((a) => a.id === currentId) : -1;
@@ -684,7 +679,7 @@ export default function OrgAthletesPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, drawerOpen, drawerAthlete, filtered, paged, activeRowId, coachState, athletesMap]);
+  }, [isOrgSide, drawerOpen, drawerAthlete, filtered, paged, activeRowId, coachState, athletesMap]);
 
   // UI helpers
   const statusPill = (a) => {
@@ -873,7 +868,8 @@ export default function OrgAthletesPage() {
               Coach-first roster with queue mode, bulk actions, and quick notes.
             </p>
             <p className="text-[11px] text-gray-500 mt-2">
-              Tip: filter “Ready”, sort “Newest”, then use <span className="font-semibold">Next Up</span> to process quickly.
+              Tip: filter “Ready”, sort “Newest”, then use{" "}
+              <span className="font-semibold">Next Up</span> to process quickly.
             </p>
           </div>
 
@@ -1135,7 +1131,9 @@ export default function OrgAthletesPage() {
           {loading ? (
             <div className="text-sm text-gray-600">Loading athletes…</div>
           ) : filtered.length === 0 ? (
-            <div className="text-sm text-gray-600">No athletes found. Try clearing filters/search.</div>
+            <div className="text-sm text-gray-600">
+              No athletes found. Try clearing filters/search.
+            </div>
           ) : (
             <>
               {/* Mobile cards */}
@@ -1261,6 +1259,15 @@ export default function OrgAthletesPage() {
                       disabled={selectedIds.size === 0}
                     >
                       Clear selection
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={exportFilteredCsv}
+                      className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
+                      title="Export the current filtered list"
+                    >
+                      Export filtered CSV
                     </button>
                   </div>
 

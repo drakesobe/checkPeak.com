@@ -1,6 +1,8 @@
 // pages/org/dashboard.js
+"use client";
+
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
   RefreshCcw,
@@ -27,6 +29,22 @@ import {
   Tag,
   ClipboardList,
 } from "lucide-react";
+
+/**
+ * ✅ ORG ISSUE FIXES APPLIED HERE
+ *
+ * 1) Role gating supports Organization + Admin + Trainer (OrgMembers)
+ *    - Admin/Trainer are org-side and should access /org/*
+ *
+ * 2) Remove x-org-token header usage and STOP putting orgToken in URLs.
+ *    - Org APIs should rely on HttpOnly session cookie + requireOrg(req)
+ *    - All fetches use credentials: "include"
+ *
+ * 3) Invite link: keep token-based invite working, but read token from session cookie payload.
+ *    - If token is missing, we still render the UI but show "Missing Token".
+ *
+ * 4) Keep everything else UI/UX identical.
+ */
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -229,25 +247,50 @@ export default function OrgDashboard() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
+  // ✅ Role normalization: allow Organization + Admin + Trainer (org-side)
   const role = useMemo(() => {
-    const r = String(user?.role || user?.Role || "").toLowerCase();
+    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (!r) return "";
+    if (r === "organization") return "organization";
+    if (r === "admin") return "admin";
+    if (r === "trainer") return "trainer";
     if (r.includes("org")) return "organization";
+    if (r.includes("admin")) return "admin";
+    if (r.includes("train")) return "trainer";
     if (r.includes("ath")) return "athlete";
-    return "";
+    return r;
   }, [user]);
 
-  const orgName = useMemo(
-    () => String(user?.Name || user?.name || user?.Organization || "Organization"),
-    [user]
-  );
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  // ✅ If org login, Name is org name. If trainer/admin, Name is member name.
+  // Prefer Organization Name fields when present.
+  const orgName = useMemo(() => {
+    const guess =
+      user?.OrgName ||
+      user?.["Organization Name"] ||
+      user?.OrganizationName ||
+      user?.organizationName ||
+      user?.Organization ||
+      // fallback: org account name
+      (role === "organization" ? (user?.Name || user?.name) : "") ||
+      "Organization";
+    return String(guess || "Organization");
+  }, [user, role]);
+
   const orgEmail = useMemo(() => String(user?.Email || user?.email || ""), [user]);
+
+  // ✅ Legacy token still supported for invite links
   const orgToken = useMemo(() => {
-    return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
+    return String(
+      user?.Token || user?.token || user?.["Organization Token"] || ""
+    ).trim();
   }, [user]);
 
-  const orgAuthHeaders = useMemo(() => {
-    return orgToken ? { "x-org-token": orgToken } : {};
-  }, [orgToken]);
+  // ✅ Canonical org record id (for trainer/admin sessions, lookupUser sets orgId)
+  const orgId = useMemo(() => {
+    return String(user?.orgId || user?.OrgId || "").trim();
+  }, [user]);
 
   const origin = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -311,18 +354,22 @@ export default function OrgDashboard() {
     setEditAthlete(null);
   };
 
-  // Guards
+  // ✅ Guards
   useEffect(() => {
     if (!user) {
       router.push("/");
       return;
     }
-    if (role && role !== "organization") {
+    if (role && !isOrgSide) {
       router.push("/dashboard");
       return;
     }
-  }, [user, role, router]);
+  }, [user, role, isOrgSide, router]);
 
+  /**
+   * ✅ ORG ISSUE FIX: do NOT send x-org-token headers.
+   * Org endpoints should use HttpOnly cookie session + requireOrg(req).
+   */
   const refreshOverview = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -331,7 +378,6 @@ export default function OrgDashboard() {
       const res = await fetch(`/api/org/getOrgOverview`, {
         method: "GET",
         credentials: "include",
-        headers: { ...orgAuthHeaders },
       });
 
       const data = await safeJson(res);
@@ -346,27 +392,26 @@ export default function OrgDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [orgAuthHeaders]);
+  }, []);
 
   const refreshTemplates = useCallback(async () => {
     try {
       const res = await fetch(`/api/org/getPlanTemplates`, {
         method: "GET",
         credentials: "include",
-        headers: { ...orgAuthHeaders },
       });
       const data = await safeJson(res);
       if (!res.ok) return;
       setTemplates(Array.isArray(data?.templates) ? data.templates : []);
     } catch {}
-  }, [orgAuthHeaders]);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-    if (role !== "organization") return;
+    if (!isOrgSide) return;
     refreshOverview();
     refreshTemplates();
-  }, [user, role, orgToken, refreshOverview, refreshTemplates]);
+  }, [user, isOrgSide, refreshOverview, refreshTemplates]);
 
   // Derived: counts + triage
   const counts = useMemo(() => {
@@ -486,7 +531,7 @@ export default function OrgDashboard() {
 
     const csv = toCSV(rows);
     downloadTextFile(
-      `org_roster_${orgName.replace(/\s+/g, "_").toLowerCase()}.csv`,
+      `org_roster_${String(orgName || "org").replace(/\s+/g, "_").toLowerCase()}.csv`,
       csv,
       "text/csv"
     );
@@ -505,7 +550,7 @@ export default function OrgDashboard() {
       const res = await fetch("/api/org/updateAthleteMeta", {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           athleteEmail: editAthlete.email,
           status: editAthlete.status,
@@ -565,6 +610,8 @@ export default function OrgDashboard() {
                   <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
                   Org Session Active
                 </Pill>
+
+                {/* Token visibility: still useful for invites */}
                 {orgToken ? (
                   <Pill tone="good">
                     <Sparkles className="w-3.5 h-3.5 mr-1.5" />
@@ -576,6 +623,20 @@ export default function OrgDashboard() {
                     Missing Token
                   </Pill>
                 )}
+
+                {/* orgId visibility: useful for debugging trainer/admin sessions */}
+                {orgId ? (
+                  <Pill tone="good">
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                    orgId Loaded
+                  </Pill>
+                ) : (
+                  <Pill tone="warn">
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                    orgId missing (legacy session)
+                  </Pill>
+                )}
+
                 <Pill>
                   <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
                   {triageHeadline}
@@ -601,7 +662,9 @@ export default function OrgDashboard() {
 
           {loading ? (
             <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-              <p className="text-sm text-gray-800 font-semibold">Loading organization overview…</p>
+              <p className="text-sm text-gray-800 font-semibold">
+                Loading organization overview…
+              </p>
               <p className="text-[11px] text-gray-600 mt-1">
                 Pulling roster + plan status in one request.
               </p>
@@ -611,6 +674,9 @@ export default function OrgDashboard() {
           {error ? (
             <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
               <p className="text-sm text-red-700 font-semibold">{error}</p>
+              <p className="text-[11px] text-red-600 mt-1">
+                If this persists, log out and back in to refresh your session cookie.
+              </p>
             </div>
           ) : null}
         </div>
@@ -708,6 +774,18 @@ export default function OrgDashboard() {
                 </p>
               </div>
             </div>
+
+            {!orgToken ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-semibold text-amber-900">
+                  Token missing from session
+                </p>
+                <p className="text-[12px] text-amber-800 mt-1">
+                  Invite links require the org token. Log out and back in to refresh your session cookie.
+                  If you’re a trainer/admin, make sure lookupUser sets Token from the linked Organization record.
+                </p>
+              </div>
+            ) : null}
           </section>
         </div>
 
@@ -957,7 +1035,11 @@ export default function OrgDashboard() {
                                 <div className="rounded-2xl border border-gray-200 bg-white p-4">
                                   <p className="text-xs text-gray-500">Plan status</p>
                                   <p className="text-sm font-extrabold text-gray-900 mt-1">
-                                    {a?.needsPlan ? "Needs first plan" : a?.stale ? "Needs update" : "Current"}
+                                    {a?.needsPlan
+                                      ? "Needs first plan"
+                                      : a?.stale
+                                      ? "Needs update"
+                                      : "Current"}
                                   </p>
                                   <p className="text-[11px] text-gray-500 mt-2">
                                     Coach workflow: handle needs-plan first, then stale.
@@ -1046,7 +1128,10 @@ export default function OrgDashboard() {
                 </div>
               ) : (
                 recentActivity.map((it, idx) => (
-                  <div key={`${it.athleteEmail}-${idx}`} className="rounded-2xl border border-gray-200 p-4">
+                  <div
+                    key={`${it.athleteEmail}-${idx}`}
+                    className="rounded-2xl border border-gray-200 p-4"
+                  >
                     <p className="text-sm font-extrabold text-gray-900">{it.title || "Plan"}</p>
                     <p className="text-[12px] text-gray-700 mt-1">
                       <span className="font-semibold">{it.athleteEmail}</span>
@@ -1087,7 +1172,9 @@ export default function OrgDashboard() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
               <p className="text-xs text-gray-500">Athlete</p>
-              <p className="text-sm font-extrabold text-gray-900 mt-1">{editAthlete?.name || "Athlete"}</p>
+              <p className="text-sm font-extrabold text-gray-900 mt-1">
+                {editAthlete?.name || "Athlete"}
+              </p>
               <p className="text-[12px] text-gray-600 mt-1">{editAthlete?.email || ""}</p>
             </div>
 

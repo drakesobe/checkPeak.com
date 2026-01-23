@@ -7,6 +7,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
 import { useAuthContext } from "@/hooks/useAuth";
 
+/**
+ * ✅ Updated for new org-side roles:
+ * - Organization (primary org account)
+ * - Admin (OrgMembers)
+ * - Trainer (OrgMembers)
+ *
+ * Key changes:
+ * 1) Better role routing after login (org-side -> /org/dashboard)
+ * 2) Login placeholder text updated: org-side can be org/admin/trainer
+ * 3) Keeps your existing athlete/org toggle (trainers login via "Organization")
+ */
 export default function NavBarLoginModal({
   isOpen,
   onClose,
@@ -19,6 +30,7 @@ export default function NavBarLoginModal({
   const [tab, setTab] = useState(defaultTab);
 
   // Role selector: "athlete" | "organization"
+  // NOTE: Trainers/Admins also login under "organization"
   const [authRole, setAuthRole] = useState("athlete");
 
   // LOGIN state
@@ -79,6 +91,14 @@ export default function NavBarLoginModal({
 
       // default role reset per tab open is fine; keep last selection if you prefer
       setAuthRole("athlete");
+
+      // Optional: prefill email if dispatched by global event
+      try {
+        if (typeof window !== "undefined") {
+          const pre = window.localStorage.getItem("cp_prefill_login_email");
+          if (pre) setEmail(String(pre));
+        }
+      } catch {}
     }
   }, [isOpen, defaultTab]);
 
@@ -119,6 +139,13 @@ export default function NavBarLoginModal({
     // Keep role selection reset (optional)
     setAuthRole("athlete");
 
+    // Clear prefill
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("cp_prefill_login_email");
+      }
+    } catch {}
+
     onClose?.();
   };
 
@@ -128,14 +155,14 @@ export default function NavBarLoginModal({
   const rolePill =
     "px-3 py-2 rounded-xl border text-sm font-semibold transition";
 
-  const isOrg = authRole === "organization";
+  const isAthlete = authRole === "athlete";
+  const isOrgSideLogin = authRole === "organization"; // includes Org, Admin, Trainer accounts
 
   // ---- Error mapping for better UX + consistent messaging ----
   const mapLoginError = (err) => {
     const rawMsg = String(err?.message || err?.error || "");
     const msg = rawMsg.toLowerCase();
 
-    // Try to extract status code from common patterns
     const status =
       err?.status ||
       err?.statusCode ||
@@ -143,17 +170,13 @@ export default function NavBarLoginModal({
       err?.data?.statusCode ||
       err?.data?.status;
 
-    // If the lookupUser API fails (500 / "Failed to lookup user"), show the exact message you want
     const isLookupUserFailure =
       msg.includes("failed to lookup user") ||
       msg.includes("lookupuser") ||
       msg.includes("lookup user");
 
-    if (status >= 500 || isLookupUserFailure) {
-      return "Login failed";
-    }
+    if (status >= 500 || isLookupUserFailure) return "Login failed.";
 
-    // Credential / user errors get more specific (still safe)
     if (status === 401 || msg.includes("invalid credentials")) {
       return "Invalid email or password.";
     }
@@ -162,8 +185,28 @@ export default function NavBarLoginModal({
       return "User not found.";
     }
 
-    // Fallback
+    // OrgMembers can fail with missing PasswordHash
+    if (msg.includes("passwordhash")) {
+      return "This account isn’t ready yet. Ask your organization admin to finish setup.";
+    }
+
     return "Login failed. Check email/password.";
+  };
+
+  const getNormalizedRole = (userData) => {
+    const raw = String(userData?.role || userData?.Role || "")
+      .trim()
+      .toLowerCase();
+    if (!raw) return "";
+    if (raw === "organization") return "organization";
+    if (raw === "trainer") return "trainer";
+    if (raw === "admin") return "admin";
+    if (raw === "athlete") return "athlete";
+    if (raw.includes("org")) return "organization";
+    if (raw.includes("train")) return "trainer";
+    if (raw.includes("admin")) return "admin";
+    if (raw.includes("ath")) return "athlete";
+    return raw;
   };
 
   // ---------- LOGIN ----------
@@ -172,29 +215,35 @@ export default function NavBarLoginModal({
     setLoginError("");
     setLoginLoading(true);
 
-    if (!email.includes("@")) {
+    const cleanEmail = String(email || "").trim().toLowerCase();
+
+    if (!cleanEmail.includes("@")) {
       setLoginError("Please enter a valid email.");
       setLoginLoading(false);
       return;
     }
-    if (password.length < 6) {
+    if (String(password || "").length < 6) {
       setLoginError("Password must be at least 6 characters.");
       setLoginLoading(false);
       return;
     }
 
     try {
-      const userData = await login(email.trim(), password, authRole);
+      const userData = await login(cleanEmail, password, authRole);
 
+      // NOTE: Your AuthProvider already stores user in localStorage on login.
+      // Keep rememberMe behavior as an override (fine).
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
       }
 
       closeAndReset();
 
-      // Route by role
-      const roleLabel = String(userData?.role || "").toLowerCase();
-      if (roleLabel.includes("org")) router.push("/org/dashboard");
+      // ✅ Route by normalized role
+      const r = getNormalizedRole(userData);
+
+      const isOrgSide = ["organization", "trainer", "admin"].includes(r);
+      if (isOrgSide) router.push("/org/dashboard");
       else router.push("/dashboard");
     } catch (err) {
       console.error("Login error:", err);
@@ -225,7 +274,7 @@ export default function NavBarLoginModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: clean,
-          role: authRole,
+          role: authRole, // org-side requests can cover Organization/Admin/Trainer
           source: "navbar_login_modal",
         }),
       });
@@ -255,12 +304,7 @@ export default function NavBarLoginModal({
 
     try {
       if (authRole === "athlete") {
-        // Validate athlete
-        if (
-          !athleteSignup.name ||
-          !athleteSignup.email ||
-          !athleteSignup.password
-        ) {
+        if (!athleteSignup.name || !athleteSignup.email || !athleteSignup.password) {
           throw new Error("Please provide name, email, and password.");
         }
         if (!athleteSignup.email.includes("@"))
@@ -422,6 +466,13 @@ export default function NavBarLoginModal({
               </button>
             </div>
 
+            {/* Small hint for org-side */}
+            {tab === "login" && isOrgSideLogin && !showForgot && (
+              <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
+                Organization login includes <b>Admins</b> and <b>Trainers</b>.
+              </div>
+            )}
+
             {/* LOGIN */}
             {tab === "login" && !showForgot && (
               <form onSubmit={handleLogin} className="space-y-4">
@@ -432,7 +483,7 @@ export default function NavBarLoginModal({
                   <input
                     ref={emailRef}
                     type="email"
-                    placeholder={isOrg ? "org@example.com" : "you@example.com"}
+                    placeholder={isOrgSideLogin ? "work@example.com" : "you@example.com"}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className={inputBase}
@@ -457,9 +508,6 @@ export default function NavBarLoginModal({
                       required
                       autoComplete="current-password"
                       disabled={loginLoading}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleLogin(e);
-                      }}
                     />
                     <button
                       type="button"
@@ -540,7 +588,7 @@ export default function NavBarLoginModal({
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     className={inputBase}
-                    placeholder={isOrg ? "org@example.com" : "you@example.com"}
+                    placeholder={isOrgSideLogin ? "work@example.com" : "you@example.com"}
                     required
                     autoComplete="email"
                     disabled={forgotLoading}
@@ -589,7 +637,12 @@ export default function NavBarLoginModal({
                       name="name"
                       placeholder="Full Name"
                       value={athleteSignup.name}
-                      onChange={handleAthleteSignupChange}
+                      onChange={(e) =>
+                        setAthleteSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       autoComplete="name"
@@ -600,7 +653,12 @@ export default function NavBarLoginModal({
                       name="email"
                       placeholder="Email"
                       value={athleteSignup.email}
-                      onChange={handleAthleteSignupChange}
+                      onChange={(e) =>
+                        setAthleteSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       autoComplete="email"
@@ -611,7 +669,12 @@ export default function NavBarLoginModal({
                       name="password"
                       placeholder="Password"
                       value={athleteSignup.password}
-                      onChange={handleAthleteSignupChange}
+                      onChange={(e) =>
+                        setAthleteSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       autoComplete="new-password"
@@ -622,7 +685,12 @@ export default function NavBarLoginModal({
                       name="token"
                       placeholder="Organization Token (optional)"
                       value={athleteSignup.token}
-                      onChange={handleAthleteSignupChange}
+                      onChange={(e) =>
+                        setAthleteSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       disabled={signupLoading}
                     />
@@ -637,7 +705,12 @@ export default function NavBarLoginModal({
                       name="name"
                       placeholder="Organization Name"
                       value={orgSignup.name}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       disabled={signupLoading}
@@ -647,7 +720,12 @@ export default function NavBarLoginModal({
                       name="email"
                       placeholder="Organization Email"
                       value={orgSignup.email}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       autoComplete="email"
@@ -658,7 +736,12 @@ export default function NavBarLoginModal({
                       name="password"
                       placeholder="Password"
                       value={orgSignup.password}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       required
                       autoComplete="new-password"
@@ -670,7 +753,12 @@ export default function NavBarLoginModal({
                       name="contactName"
                       placeholder="Contact Name (optional)"
                       value={orgSignup.contactName}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       disabled={signupLoading}
                     />
@@ -679,7 +767,12 @@ export default function NavBarLoginModal({
                       name="phoneNumber"
                       placeholder="Phone Number (optional)"
                       value={orgSignup.phoneNumber}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       disabled={signupLoading}
                     />
@@ -688,13 +781,17 @@ export default function NavBarLoginModal({
                       name="website"
                       placeholder="Website (optional)"
                       value={orgSignup.website}
-                      onChange={handleOrgSignupChange}
+                      onChange={(e) =>
+                        setOrgSignup((prev) => ({
+                          ...prev,
+                          [e.target.name]: e.target.value,
+                        }))
+                      }
                       className={inputBase}
                       disabled={signupLoading}
                     />
                     <p className="text-[11px] text-gray-500">
-                      We’ll generate a secure token for your organization
-                      automatically.
+                      We’ll generate a secure token for your organization automatically.
                     </p>
                   </>
                 )}

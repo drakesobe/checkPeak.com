@@ -1,7 +1,7 @@
 // pages/org/athlete/[email].js
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthContext } from "@/hooks/useAuth";
@@ -10,6 +10,22 @@ export default function OrgAthleteDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { user } = useAuthContext();
+
+  // ✅ Normalize org-side roles: Organization | Admin | Trainer
+  const role = useMemo(() => {
+    const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw === "organization") return "organization";
+    if (raw === "admin") return "admin";
+    if (raw === "trainer") return "trainer";
+    if (raw.includes("org")) return "organization";
+    if (raw.includes("admin")) return "admin";
+    if (raw.includes("train")) return "trainer";
+    if (raw.includes("ath")) return "athlete";
+    return raw;
+  }, [user]);
+
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
 
   const athleteEmail = useMemo(() => {
     const raw = params?.email;
@@ -21,21 +37,28 @@ export default function OrgAthleteDetailPage() {
     }
   }, [params]);
 
-  const orgToken =
+  // ✅ Prefer orgId from session (new canonical), but keep token for backward-compatible APIs
+  const orgId = String(user?.orgId || user?.OrgId || "").trim();
+
+  const orgToken = String(
     user?.Token ||
-    user?.token ||
-    user?.["Organization Token"] ||
-    user?.orgToken ||
-    "";
+      user?.token ||
+      user?.["Organization Token"] ||
+      user?.orgToken ||
+      ""
+  ).trim();
 
-  const orgName =
+  const orgName = String(
     user?.OrgName ||
-    user?.Organization ||
-    user?.orgName ||
-    user?.Name ||
-    "Organization";
+      user?.["Organization Name"] ||
+      user?.Organization ||
+      user?.orgName ||
+      // if primary org login, Name is org name; if trainer/admin, Name is member name
+      (role === "organization" ? (user?.Name || user?.name || "") : "") ||
+      "Organization"
+  ).trim();
 
-  const orgEmail = user?.Email || user?.email || "";
+  const orgEmail = String(user?.Email || user?.email || "").trim();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -49,36 +72,46 @@ export default function OrgAthleteDetailPage() {
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
 
-  // Guard: must be org user
+  // ✅ Guard: must be org-side user
   useEffect(() => {
     if (!user) return;
-    const role = String(user?.role || user?.Role || "").toLowerCase();
-    if (role && !role.includes("org")) {
-      router.push("/dashboard");
-    }
-  }, [user, router]);
+    if (!isOrgSide) router.push("/dashboard");
+  }, [user, isOrgSide, router]);
 
-  const loadPrescriptions = async () => {
+  /**
+   * ✅ IMPORTANT CHANGE:
+   * Stop passing orgToken in query params.
+   * All /api/org/* routes should rely on HttpOnly cookie + requireOrg.
+   *
+   * That means:
+   * - fetch("/api/org/getPrescriptionsForAthlete?athleteEmail=...")
+   * - and on server: requireOrg(req) gives orgId/token
+   */
+  const loadPrescriptions = useCallback(async () => {
     setLoading(true);
     setError("");
 
-    if (!orgToken) {
-      setLoading(false);
-      setError("Missing organization token on your account.");
-      return;
-    }
     if (!athleteEmail) {
       setLoading(false);
       setError("Missing athlete email in route.");
       return;
     }
 
-    try {
-      const url = `/api/org/getPrescriptionsForAthlete?orgToken=${encodeURIComponent(
-        orgToken
-      )}&athleteEmail=${encodeURIComponent(athleteEmail)}`;
+    // Backward compatible warning (optional):
+    // If your org APIs still need token and you're not yet reading it from cookie,
+    // this will fail until you update the API route. (But this is the correct direction.)
+    if (!orgToken && !orgId) {
+      setLoading(false);
+      setError("Missing organization session. Please log out and log back in.");
+      return;
+    }
 
-      const res = await fetch(url, { method: "GET" });
+    try {
+      const url = `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(
+        athleteEmail
+      )}`;
+
+      const res = await fetch(url, { method: "GET", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to load prescriptions.");
 
@@ -88,48 +121,37 @@ export default function OrgAthleteDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [athleteEmail, orgToken, orgId]);
 
   useEffect(() => {
     loadPrescriptions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgToken, athleteEmail]);
+  }, [loadPrescriptions]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaveError("");
     setSaveSuccess("");
 
-    if (!title.trim()) {
-      setSaveError("Please add a title.");
-      return;
-    }
-    if (!prescriptionText.trim()) {
-      setSaveError("Please write the prescription.");
-      return;
-    }
-    if (!orgToken) {
-      setSaveError("Missing organization token on your account.");
-      return;
-    }
-    if (!athleteEmail) {
-      setSaveError("Missing athlete email.");
-      return;
-    }
+    if (!title.trim()) return setSaveError("Please add a title.");
+    if (!prescriptionText.trim()) return setSaveError("Please write the prescription.");
+    if (!athleteEmail) return setSaveError("Missing athlete email.");
+    if (!orgToken && !orgId) return setSaveError("Missing organization session. Please log out and log back in.");
 
     setSaving(true);
     try {
+      // ✅ IMPORTANT CHANGE:
+      // Do NOT send orgToken/orgName/createdBy from the client as "truth".
+      // Server should derive org scope + creator from HttpOnly cookie (requireOrg).
       const res = await fetch("/api/org/createPrescription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           title: title.trim(),
           prescription: prescriptionText.trim(),
-          orgToken: orgToken,
-          athleteEmail: athleteEmail,
-          athleteName: "", // optional (you can fill from athlete list later)
-          organizationName: orgName,
-          createdBy: orgEmail || orgName,
+          athleteEmail,
+          // Optional display-only values (non-trusted):
+          athleteName: "",
         }),
       });
 
@@ -148,6 +170,9 @@ export default function OrgAthleteDetailPage() {
     }
   };
 
+  const headerOrgLabel =
+    role === "trainer" ? "Trainer" : role === "admin" ? "Admin" : "Organization";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
       <main className="max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-10 space-y-6">
@@ -165,16 +190,19 @@ export default function OrgAthleteDetailPage() {
           <div className="text-right">
             <p className="text-xs text-gray-500">Athlete Email</p>
             <p className="text-sm font-semibold break-all">{athleteEmail || "—"}</p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Viewing as {headerOrgLabel}
+              {orgName ? ` • ${orgName}` : ""}
+              {orgEmail ? ` • ${orgEmail}` : ""}
+            </p>
           </div>
         </div>
 
         {/* Create prescription */}
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
-          <h1 className="text-xl sm:text-2xl font-bold">
-            Create Prescription
-          </h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Create Prescription</h1>
           <p className="text-xs sm:text-sm text-gray-600 mt-1">
-            This saves to your Airtable table <span className="font-semibold">Prescriptions</span> and is scoped to your org token.
+            Saved in Airtable <span className="font-semibold">Prescriptions</span> and scoped to your org session.
           </p>
 
           <form onSubmit={handleCreate} className="mt-4 space-y-3">
@@ -206,12 +234,8 @@ export default function OrgAthleteDetailPage() {
               </p>
             </div>
 
-            {saveError ? (
-              <p className="text-sm text-red-600">{saveError}</p>
-            ) : null}
-            {saveSuccess ? (
-              <p className="text-sm text-emerald-600">{saveSuccess}</p>
-            ) : null}
+            {saveError ? <p className="text-sm text-red-600">{saveError}</p> : null}
+            {saveSuccess ? <p className="text-sm text-emerald-600">{saveSuccess}</p> : null}
 
             <button
               type="submit"
@@ -223,13 +247,22 @@ export default function OrgAthleteDetailPage() {
               {saving ? "Saving…" : "Create Prescription"}
             </button>
           </form>
+
+          {/* Dev note (optional) */}
+          {!orgId && orgToken ? (
+            <div className="mt-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              Heads up: you’re authenticated via org token only (legacy). For best security, make sure your org
+              session cookie includes <span className="font-mono">orgId</span> and update org APIs to use{" "}
+              <span className="font-mono">requireOrg</span>.
+            </div>
+          ) : null}
         </div>
 
         {/* History */}
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
           <h2 className="text-lg sm:text-xl font-bold">Prescription History</h2>
           <p className="text-xs text-gray-600 mt-1">
-            Showing prescriptions for this athlete under your organization token.
+            Showing prescriptions for this athlete under your organization session.
           </p>
 
           {loading ? (
@@ -272,7 +305,7 @@ export default function OrgAthleteDetailPage() {
         </div>
 
         <div className="text-[11px] text-gray-500 text-center pb-8">
-          Columns used: Athlete, Organization, Title, Prescription, Organization Token, Athlete Email, CreatedAt, CreatedBy
+          Columns used: Athlete, Organization, Title, Prescription, Athlete Email, CreatedAt, CreatedBy
         </div>
       </main>
     </div>

@@ -9,39 +9,53 @@ import { useAuthContext } from "@/hooks/useAuth";
 
 /**
  * AccountPage
- * ✅ Removes org dropdown (security hole)
- * ✅ Adds Org Code (token) verify/connect flow for athletes
- * ✅ Shows Organization as a locked, non-editable "truth" field
- * ✅ Keeps CheckPeak theming consistent (#46769B, rounded corners, soft cards)
- * ✅ Keeps profile edit + change password modal flow
+ * ✅ Athlete: can connect org via code (token)
+ * ✅ Org-side: supports Organization / Admin / Trainer (OrgMembers)
+ * ✅ Uses orgId/memberId from session cookie payload (new auth model)
+ * ✅ Keeps organization display locked + non-editable
  *
- * IMPORTANT:
- * This page expects /api/athlete/connectOrg to update the Athletes table's
- * linked-record field {Organization} with [orgRecordId] and return:
- *   { ok: true, organization: { id, name } }
- *
- * SECURITY NOTE:
- * The connectOrg API should NOT trust "email" sent from client.
- * Ideally it reads the logged-in user from your HttpOnly cookie session.
- * This UI does not send email by default; it assumes the API uses session.
+ * CRITICAL UPDATE (fix "connected org disappears on return"):
+ * - After Verify & Connect succeeds, we update:
+ *    1) local component state (formData/originalData)
+ *    2) AuthContext user state (setUser)
+ *    3) localStorage "user"
+ * - Because UI hydrates from localStorage, not Airtable.
  */
 
 export default function AccountPage() {
   const router = useRouter();
-  const { user, logout } = useAuthContext();
 
-  // ---------- Role normalization ----------
+  // ✅ include setUser so we can persist changes client-side
+  const { user, logout, setUser } = useAuthContext();
+
+  // ---------- Role normalization (updated) ----------
   const role = useMemo(() => {
-    const raw = (user?.Role || user?.role || "").toString().trim().toLowerCase();
+    const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw === "organization") return "organization";
+    if (raw === "admin") return "admin";
+    if (raw === "trainer") return "trainer";
+    if (raw === "athlete") return "athlete";
+
     if (raw.includes("org")) return "organization";
-    if (raw.includes("ath")) return "athlete";
     if (raw.includes("admin")) return "admin";
-    if (raw.includes("trainer")) return "trainer";
-    return raw || "";
+    if (raw.includes("train")) return "trainer";
+    if (raw.includes("ath")) return "athlete";
+    return raw;
   }, [user]);
 
-  const isOrg = role === "organization";
   const isAthlete = role === "athlete";
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  const isOrgPrimary = role === "organization";
+  const isOrgMember = role === "admin" || role === "trainer";
+
+  const roleLabel = useMemo(() => {
+    if (role === "organization") return "Organization";
+    if (role === "admin") return "Admin";
+    if (role === "trainer") return "Trainer";
+    if (role === "athlete") return "Athlete";
+    return role ? role[0].toUpperCase() + role.slice(1) : "Member";
+  }, [role]);
 
   // ---------- Form state ----------
   const [formData, setFormData] = useState({
@@ -50,9 +64,8 @@ export default function AccountPage() {
     title: "",
     phone: "",
     created: "",
-    // Locked display fields (truth from server)
-    organization: "",
-    organizationId: "",
+    organization: "", // locked display value
+    organizationId: "", // locked id (Organizations record id)
   });
 
   const [originalData, setOriginalData] = useState({});
@@ -87,12 +100,10 @@ export default function AccountPage() {
   // ---------- Helpers ----------
   const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const validatePhone = (phone) => {
-    // allow empty, or E.164-ish + digits 7-15
     if (!phone) return true;
     return /^\+?\d{7,15}$/.test(phone);
   };
 
-  // Password strength (same feel as reset-password page)
   const scorePassword = (pw) => {
     const p = String(pw || "");
     let score = 0;
@@ -119,18 +130,20 @@ export default function AccountPage() {
       return;
     }
 
-    // Try to populate org display from any denormalized fields you may already have.
-    // If the auth cookie payload doesn't have org name yet, the user may see "Not connected"
-    // until they connect or until you enrich the user payload from server later.
+    // Organization display guesses
     const orgNameGuess =
+      user?.OrgName ||
       user?.["Organization Name"] ||
       user?.OrganizationName ||
       user?.organizationName ||
       user?.OrganizationDisplay ||
       user?.organizationDisplay ||
+      // Athlete record might have Organization as linked record id(s) -> not a display name, so don't use it
       "";
 
+    // Prefer new cookie orgId; fall back to older shapes
     const orgIdGuess =
+      user?.orgId ||
       user?.OrganizationId ||
       user?.organizationId ||
       (Array.isArray(user?.Organization) ? user.Organization?.[0] : "") ||
@@ -139,14 +152,14 @@ export default function AccountPage() {
     const initialData = {
       name: user?.Name || user?.name || "",
       email: user?.Email || user?.email || "",
-      title: user?.Title || user?.title || (isOrg ? "Organization" : "Athlete"),
+      title:
+        user?.Title ||
+        user?.title ||
+        (isOrgPrimary ? "Organization" : isOrgMember ? roleLabel : "Athlete"),
       phone: user?.Phone || user?.phone || "",
       created: user?.Created || user?.created || "",
-      organization:
-        orgNameGuess ||
-        (typeof user?.Organization === "string" ? user.Organization : "") ||
-        "",
-      organizationId: orgIdGuess,
+      organization: orgNameGuess || "",
+      organizationId: orgIdGuess || "",
     };
 
     setFormData(initialData);
@@ -156,7 +169,7 @@ export default function AccountPage() {
       email: validateEmail(initialData.email),
       phone: validatePhone(initialData.phone),
     });
-  }, [user, router, isOrg]);
+  }, [user, router, isOrgPrimary, isOrgMember, roleLabel]);
 
   if (!user) return null;
 
@@ -164,7 +177,6 @@ export default function AccountPage() {
   const recomputeHasChanges = (nextData) => {
     const keys = Object.keys(originalData || {});
     for (const k of keys) {
-      // Only allow changing editable fields
       if (["name", "email", "phone"].includes(k)) {
         if (String(nextData?.[k] ?? "") !== String(originalData?.[k] ?? "")) return true;
       }
@@ -176,8 +188,8 @@ export default function AccountPage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Organization is locked; ignore any attempts to change it
-    if (name === "organization" || name === "organizationId") return;
+    // Locked fields
+    if (name === "organization" || name === "organizationId" || name === "title") return;
 
     const next = { ...formData, [name]: value };
     setFormData(next);
@@ -197,22 +209,37 @@ export default function AccountPage() {
     setError("");
 
     try {
-      // Update endpoint by role
-      // If you don't have /api/update-organization, create it or route org updates through your org API.
-      const endpoint = isOrg ? "/api/update-organization" : "/api/update-athlete";
+      const updates = {
+        Name: formData.name,
+        Email: formData.email,
+        Phone: formData.phone,
+      };
+
+      let endpoint = "";
+      let body = {};
+
+      if (isAthlete) {
+        endpoint = "/api/update-athlete";
+        body = { athleteId: user.id, updates };
+      } else if (isOrgPrimary) {
+        endpoint = "/api/update-organization";
+        body = { organizationId: user.id, updates };
+      } else if (isOrgMember) {
+        endpoint = "/api/org/updateMember";
+        body = {
+          memberId: user.memberId || user.id,
+          orgId: user.orgId || formData.organizationId || "",
+          updates,
+        };
+      } else {
+        throw new Error("Unsupported role for profile updates.");
+      }
 
       const res = await fetch(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          athleteId: user.id,
-          organizationId: user.id,
-          updates: {
-            Name: formData.name,
-            Email: formData.email,
-            Phone: formData.phone,
-          },
-        }),
+        credentials: "include",
+        body: JSON.stringify(body),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -226,6 +253,20 @@ export default function AccountPage() {
         phone: formData.phone,
       }));
       hasChanges.current = false;
+
+      // Optional: keep UI user in sync for next refresh
+      try {
+        const nextUser = {
+          ...user,
+          Name: formData.name,
+          Email: formData.email,
+          Phone: formData.phone,
+        };
+        setUser?.(nextUser);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("user", JSON.stringify(nextUser));
+        }
+      } catch {}
     } catch (err) {
       console.error("Update error:", err);
       setError(err?.message || "Error updating profile");
@@ -235,81 +276,99 @@ export default function AccountPage() {
   };
 
   // ---------- Connect Organization (athletes only) ----------
- const connectOrganization = async () => {
-  setOrgConnectError("");
-  setOrgConnectOk("");
-  setOrgConnectLoading(true);
+  const connectOrganization = async () => {
+    setOrgConnectError("");
+    setOrgConnectOk("");
+    setOrgConnectLoading(true);
 
-  try {
-    const cleanToken = String(orgCode || "").trim();
-    const email =
-      String(user?.Email || user?.email || "").trim().toLowerCase();
+    try {
+      const cleanToken = String(orgCode || "").trim();
+      const email = String(user?.Email || user?.email || "").trim().toLowerCase();
 
-    if (!cleanToken) {
-      throw new Error("Please enter your organization code.");
-    }
-    if (!email || !email.includes("@")) {
-      throw new Error(
-        "Valid email is required. Please log out and log back in, then try again."
-      );
-    }
-
-    const res = await fetch("/api/athlete/connectOrg", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: cleanToken,
-        email, // ✅ send email because your API requires it
-      }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      // map common error messages so the UI feels clean
-      const raw = String(data?.error || data?.message || "Failed to connect organization.");
-      const lower = raw.toLowerCase();
-
-      if (lower.includes("invalid token") || lower.includes("token")) {
-        throw new Error("That organization code doesn’t look right. Double-check and try again.");
-      }
-      if (lower.includes("not found")) {
-        throw new Error("We couldn’t find an organization for that code.");
-      }
-      if (lower.includes("email")) {
+      if (!cleanToken) throw new Error("Please enter your organization code.");
+      if (!email || !email.includes("@")) {
         throw new Error("Valid email is required. Please log out and log back in, then try again.");
       }
 
-      throw new Error(raw);
+      const res = await fetch("/api/athlete/connectOrg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          token: cleanToken,
+          email, // your current API requires it
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const raw = String(data?.error || data?.message || "Failed to connect organization.");
+        const lower = raw.toLowerCase();
+
+        if (lower.includes("invalid") && (lower.includes("code") || lower.includes("token") || lower.includes("organization"))) {
+          throw new Error("That organization code doesn’t look right. Double-check and try again.");
+        }
+        if (lower.includes("not found")) throw new Error("We couldn’t find an organization for that code.");
+        if (lower.includes("email")) {
+          throw new Error("Valid email is required. Please log out and log back in, then try again.");
+        }
+
+        throw new Error(raw);
+      }
+
+      // ✅ Expecting API returns: { organization: { id, name, token? }, athlete? }
+      const newName = data?.organization?.name || "Organization";
+      const newId = data?.organization?.id || ""; // Organizations record id if your API returns it
+      const newOrgToken = String(data?.organization?.token || data?.organization?.Token || "").trim();
+
+      setOrgConnectOk("Organization connected!");
+      setOrgCode("");
+
+      // 1) Update local form state (immediate UI)
+      setFormData((prev) => ({
+        ...prev,
+        organization: newName,
+        organizationId: newId || prev.organizationId,
+      }));
+
+      setOriginalData((prev) => ({
+        ...prev,
+        organization: newName,
+        organizationId: newId || prev.organizationId,
+      }));
+
+      // 2) ✅ Persist into AuthContext + localStorage so it survives returning to /account
+      try {
+        const nextUser = {
+          ...user,
+          // keep both styles so other components can read either
+          OrgName: newName,
+          OrganizationName: newName,
+          organizationName: newName,
+          OrganizationDisplay: newName,
+          organizationDisplay: newName,
+          // store org record id if we got it
+          organizationId: newId || user?.organizationId || "",
+          OrganizationId: newId || user?.OrganizationId || "",
+          // if your API returns token, store it too (helps legacy pages)
+          ...(newOrgToken ? { Token: newOrgToken } : {}),
+        };
+
+        setUser?.(nextUser);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("user", JSON.stringify(nextUser));
+        }
+      } catch (e) {
+        console.warn("[account] failed to persist user org info:", e?.message || e);
+      }
+    } catch (err) {
+      console.error("[connectOrganization] error:", err);
+      setOrgConnectError(err?.message || "Failed to connect organization.");
+    } finally {
+      setOrgConnectLoading(false);
     }
-
-    // success shape expected: { organization: { id, name } }
-    const newName = data?.organization?.name || "Organization";
-    const newId = data?.organization?.id || "";
-
-    setOrgConnectOk("Organization connected!");
-    setOrgCode("");
-
-    // Update locked display fields
-    setFormData((prev) => ({
-      ...prev,
-      organization: newName,
-      organizationId: newId || prev.organizationId,
-    }));
-
-    // Keep originalData in sync (org is locked anyway)
-    setOriginalData((prev) => ({
-      ...prev,
-      organization: newName,
-      organizationId: newId || prev.organizationId,
-    }));
-  } catch (err) {
-    console.error("[connectOrganization] error:", err);
-    setOrgConnectError(err?.message || "Failed to connect organization.");
-  } finally {
-    setOrgConnectLoading(false);
-  }
-};
+  };
 
   // ---------- Password modal handlers ----------
   const handlePasswordChange = (e) => {
@@ -345,6 +404,7 @@ export default function AccountPage() {
       const res = await fetch("/api/update-password", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           athleteId: user.id,
           currentPassword,
@@ -375,8 +435,31 @@ export default function AccountPage() {
 
   const canSave = !saving && hasChanges.current && validation.email && validation.phone;
 
-  // Helpful link destinations by role
-  const dashboardHref = isOrg ? "/org/dashboard" : "/dashboard";
+  // Helpful link destinations by role (updated)
+  const dashboardHref = isOrgSide ? "/org/dashboard" : "/dashboard";
+
+  // Locked organization display (updated for org-side)
+  const organizationDisplay = useMemo(() => {
+    // Athlete: show connected org name if present else Not connected
+    if (isAthlete) {
+      return formData.organization?.trim() ? formData.organization : "Not connected";
+    }
+
+    // Primary org: just show their org name
+    if (isOrgPrimary) {
+      return user?.Name || user?.name || "Your organization";
+    }
+
+    // Admin/Trainer: show org name if known; otherwise show a safe fallback
+    if (isOrgMember) {
+      if (formData.organization?.trim()) return formData.organization;
+      if (user?.OrgName) return String(user.OrgName);
+      if (user?.orgId || formData.organizationId) return "Connected organization";
+      return "Organization";
+    }
+
+    return formData.organization?.trim() ? formData.organization : "Organization";
+  }, [isAthlete, isOrgPrimary, isOrgMember, formData.organization, formData.organizationId, user]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 font-sans">
@@ -395,7 +478,7 @@ export default function AccountPage() {
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-[#46769B]">
-                  {isOrg ? "Organization" : isAthlete ? "Athlete" : role || "Member"}
+                  {roleLabel}
                 </span>
                 {formData.email ? (
                   <span className="inline-flex items-center rounded-full bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 truncate max-w-[260px]">
@@ -503,38 +586,34 @@ export default function AccountPage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">Organization</h2>
 
-            {/* Locked organization display */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelBase}>Organization (locked)</label>
-                <input
-                  type="text"
-                  value={
-                    formData.organization?.trim()
-                      ? formData.organization
-                      : isOrg
-                      ? (user?.Name || user?.name || "Your organization")
-                      : "Not connected"
-                  }
-                  readOnly
-                  className={readOnlyBase}
-                />
+                <input type="text" value={organizationDisplay} readOnly className={readOnlyBase} />
                 <p className="text-[11px] text-gray-500 mt-2">
                   This field is verified. Athletes can only connect via an organization code.
                 </p>
+
+                {/* Helpful debug hint for org-side sessions */}
+                {isOrgSide && (user?.orgId || formData.organizationId) ? (
+                  <p className="text-[11px] text-gray-400 mt-1 truncate">
+                    Org ID: {String(user?.orgId || formData.organizationId)}
+                  </p>
+                ) : null}
               </div>
 
               <div>
                 <label className={labelBase}>Title / Role</label>
-                <input
-                  type="text"
-                  value={formData.title || (isOrg ? "Organization" : "Athlete")}
-                  readOnly
-                  className={readOnlyBase}
-                />
+                <input type="text" value={formData.title || roleLabel} readOnly className={readOnlyBase} />
                 <p className="text-[11px] text-gray-500 mt-2">
                   Role is set by your account type and can’t be edited here.
                 </p>
+
+                {isOrgMember && user?.memberId ? (
+                  <p className="text-[11px] text-gray-400 mt-1 truncate">
+                    Member ID: {String(user.memberId)}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -614,15 +693,15 @@ export default function AccountPage() {
               </div>
             )}
 
-            {/* Org-only help block */}
-            {isOrg && (
+            {/* Org-side help block */}
+            {isOrgSide && (
               <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5">
                 <p className="text-sm font-semibold text-gray-900">Team invites</p>
                 <p className="text-[12px] text-gray-600 mt-1">
                   Share your organization code with athletes to connect them to your team.
                 </p>
                 <p className="text-[12px] text-gray-600 mt-2">
-                  If you want, we can add a “Copy org code” button here that reads your Token from the session.
+                  If you want, we can add a “Copy org code” button here (reads Token from session).
                 </p>
               </div>
             )}

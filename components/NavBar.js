@@ -25,19 +25,39 @@ export default function NavBar() {
 
   const loggedIn = !!user;
 
-  // Normalize role across all possible shapes
+  /**
+   * ✅ Updated Role Normalization
+   * Your cookie/user.role can now be:
+   * - "Organization" (primary org account)
+   * - "Trainer" (OrgMembers)
+   * - "Admin" (OrgMembers)
+   * - "Athlete"
+   *
+   * Normalize to: organization | trainer | admin | athlete
+   */
   const role = useMemo(() => {
-    const raw = (user?.Role || user?.role || "").toString().trim();
-    const normalized = raw.toLowerCase();
-    if (normalized.includes("org")) return "organization";
-    if (normalized.includes("ath")) return "athlete";
-    if (normalized.includes("admin")) return "admin";
-    if (normalized.includes("trainer")) return "trainer";
-    return normalized || "";
+    const raw = (user?.role || user?.Role || "").toString().trim().toLowerCase();
+    if (!raw) return "";
+
+    // Prefer exact matches first
+    if (raw === "organization") return "organization";
+    if (raw === "athlete") return "athlete";
+    if (raw === "trainer") return "trainer";
+    if (raw === "admin") return "admin";
+
+    // Backward/legacy robustness
+    if (raw.includes("org")) return "organization";
+    if (raw.includes("ath")) return "athlete";
+    if (raw.includes("train")) return "trainer";
+    if (raw.includes("admin")) return "admin";
+
+    return raw;
   }, [user]);
 
-  const isOrg = role === "organization";
   const isAthlete = role === "athlete";
+  const isOrgSide = role === "organization" || role === "trainer" || role === "admin";
+  const isAdmin = role === "admin";
+  const isTrainer = role === "trainer";
 
   // Tabs shown on left side (desktop)
   const leftTabs = useMemo(
@@ -132,7 +152,6 @@ export default function NavBar() {
   const isActive = useCallback(
     (href) => {
       if (href === "/") return pathname === "/";
-      // treat nested routes as active too (ex: /scans/123)
       return pathname === href || pathname?.startsWith(`${href}/`);
     },
     [pathname]
@@ -183,9 +202,10 @@ export default function NavBar() {
   };
 
   /**
-   * ✅ RoleLinks now maps to your actual role system:
-   * - Organization -> /org/*
-   * - Athlete -> /dashboard, /scans
+   * ✅ RoleLinks updated:
+   * - Organization/Admin/Trainer all point to /org/*
+   * - Athlete points to /dashboard + /scans + /account
+   * - Trainer sees a slightly reduced menu vs Admin/Organization
    */
   const RoleLinks = () => {
     const L = ({ href, children }) => (
@@ -197,12 +217,28 @@ export default function NavBar() {
       </Link>
     );
 
-    if (isOrg) {
+    if (isOrgSide) {
       return (
         <>
-          <L href="/org/dashboard">Organization Dashboard</L>
-          <L href="/org/athletes">Athletes</L>
-          <L href="/org/prescriptions">Prescriptions</L>
+          <L href="/org/dashboard">Dashboard</L>
+          <L href="/org/review">Review Queue</L>
+
+          {/* Admin/Organization can see more */}
+          {(isAdmin || role === "organization") && (
+            <>
+              <L href="/org/athletes">Athletes</L>
+              <L href="/org/prescriptions">Prescriptions</L>
+              <L href="/org/trainers">Trainers</L>
+            </>
+          )}
+
+          {/* Trainer still needs a place to create workouts */}
+          {isTrainer && (
+            <>
+              <L href="/org/dashboard">Create Workouts</L>
+            </>
+          )}
+
           <L href="/account">Account</L>
         </>
       );
@@ -212,27 +248,8 @@ export default function NavBar() {
       return (
         <>
           <L href="/dashboard">Athlete Dashboard</L>
+          <L href="/athlete/today">Today</L>
           <L href="/scans">My Scans</L>
-          <L href="/account">Account</L>
-        </>
-      );
-    }
-
-    // fallback for any legacy roles you still have in Airtable
-    if (role.includes("admin")) {
-      return (
-        <>
-          <L href="/org/dashboard">Organization Dashboard</L>
-          <L href="/account">Account</L>
-        </>
-      );
-    }
-
-    if (role.includes("trainer")) {
-      return (
-        <>
-          <L href="/team">Team Dashboard</L>
-          <L href="/athletes">Athlete Management</L>
           <L href="/account">Account</L>
         </>
       );
@@ -240,6 +257,14 @@ export default function NavBar() {
 
     return <L href="/account">Account</L>;
   };
+
+  const roleLabel = useMemo(() => {
+    if (role === "organization") return "Organization";
+    if (role === "admin") return "Admin";
+    if (role === "trainer") return "Trainer";
+    if (role === "athlete") return "Athlete";
+    return role ? role[0].toUpperCase() + role.slice(1) : "Member";
+  }, [role]);
 
   return (
     <>
@@ -303,7 +328,7 @@ export default function NavBar() {
                             {user?.Email || user?.email}
                           </p>
                           <p className="text-[11px] text-gray-400 mt-1 truncate">
-                            {isOrg ? "Organization" : isAthlete ? "Athlete" : role || "Member"}
+                            {roleLabel}
                           </p>
                         </div>
 
@@ -428,7 +453,7 @@ export default function NavBar() {
                         {user?.Email || user?.email}
                       </p>
                       <p className="text-[11px] text-gray-400 mt-1 truncate">
-                        {isOrg ? "Organization" : isAthlete ? "Athlete" : role || "Member"}
+                        {roleLabel}
                       </p>
                     </div>
 

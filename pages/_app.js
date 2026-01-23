@@ -1,5 +1,6 @@
 // pages/_app.js
 import "@/styles/globals.css";
+import Head from "next/head";
 import { AuthProvider } from "@/hooks/useAuth";
 import { Toaster } from "react-hot-toast";
 import Script from "next/script";
@@ -38,7 +39,10 @@ function isDoNotTrackEnabled() {
 
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
-  const [consent, setConsentState] = useState({ analytics: false, decided: false });
+  const [consent, setConsentState] = useState({
+    analytics: false,
+    decided: false,
+  });
 
   // Load consent on mount (+ optional DNT auto-deny)
   useEffect(() => {
@@ -110,6 +114,14 @@ export default function MyApp({ Component, pageProps }) {
 
   return (
     <>
+      {/* PWA / Mobile web app capability meta tags */}
+      <Head>
+        {/* Standard (Chrome/Android) */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        {/* iOS/Safari (legacy but still used) */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+      </Head>
+
       {/* Google Analytics (Consent Mode default denied) */}
       <Script
         src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}

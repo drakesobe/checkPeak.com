@@ -1,7 +1,7 @@
 // pages/org/review-queue.js
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
@@ -20,24 +20,36 @@ import {
   ChevronDown,
   User,
   FileText,
-  Tag,
-  ThumbsUp,
-  ThumbsDown,
   HelpCircle,
+  ThumbsUp,
+  Image as ImageIcon,
 } from "lucide-react";
 
 /**
- * Review Queue — matches /org/dashboard design language
- * - Uses cookie session (credentials: include)
- * - Soft-fails with friendly UI
- * - Endpoint placeholders:
+ * Review Queue (DailyWorkouts-backed)
+ * ✅ Uses cookie session (credentials: include)
+ * ✅ Matches /org/dashboard styling
+ *
+ * ✅ Correct endpoints (the ones you actually have wired today):
  *   GET  /api/org/reviewQueue/list
  *   POST /api/org/reviewQueue/updateStatus
+ *
+ * Expected API shape (flexible; we normalize):
+ * {
+ *   items: [{
+ *     id,
+ *     title,
+ *     date,
+ *     status,             // DailyWorkouts Status: assigned/completed/draft
+ *     reviewStatus,       // ReviewStatus: pending/needs_info/approved
+ *     attachmentSummary,
+ *     attachments: [{ url, filename, thumbnails? }],
+ *     athleteName, athleteEmail,
+ *     createdAt,
+ *     coachNotes?
+ *   }]
+ * }
  */
-
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
-}
 
 async function safeJson(res) {
   try {
@@ -61,6 +73,10 @@ function fmtDate(value) {
   const d = safeDate(value);
   if (!d) return value ? String(value) : "";
   return d.toLocaleString();
+}
+
+function normalizeText(v) {
+  return String(v ?? "").trim();
 }
 
 function Pill({ children, tone = "neutral" }) {
@@ -133,12 +149,12 @@ function Modal({ open, title, children, onClose }) {
         tabIndex={0}
       />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-gray-200">
+        <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-gray-200">
           <div className="p-5 border-b flex items-start justify-between gap-4">
-            <div>
-              <p className="text-lg font-extrabold text-gray-900">{title}</p>
+            <div className="min-w-0">
+              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
               <p className="text-[12px] text-gray-500 mt-1">
-                Review details and update status.
+                Review uploads and confirm today’s workout.
               </p>
             </div>
             <button
@@ -157,13 +173,80 @@ function Modal({ open, title, children, onClose }) {
   );
 }
 
-function statusTone(status) {
-  const s = String(status || "").toLowerCase();
+function reviewTone(reviewStatus) {
+  const s = String(reviewStatus || "").toLowerCase();
   if (s === "pending") return "warn";
   if (s === "needs_info") return "warn";
   if (s === "approved") return "good";
-  if (s === "rejected") return "bad";
   return "neutral";
+}
+
+function dailyWorkoutTone(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "completed") return "good";
+  if (s === "assigned") return "warn";
+  if (s === "draft") return "neutral";
+  return "neutral";
+}
+
+function extractAttachmentUrl(att) {
+  if (!att) return "";
+  if (att?.thumbnails?.large?.url) return att.thumbnails.large.url;
+  if (att?.thumbnails?.full?.url) return att.thumbnails.full.url;
+  if (att?.url) return att.url;
+  return "";
+}
+
+/**
+ * Normalize any backend item into the UI shape we expect.
+ * This lets you evolve the API without breaking the page.
+ */
+function normalizeQueueItem(raw = {}) {
+  const id = normalizeText(raw?.id || raw?.recordId || raw?._id);
+
+  const title =
+    normalizeText(raw?.title || raw?.Title || raw?.name || raw?.Name) || "Daily Workout";
+
+  const date = normalizeText(raw?.date || raw?.Date);
+
+  const status = normalizeText(raw?.status || raw?.Status); // assigned/completed/draft
+
+  // reviewStatus might come as reviewStatus or ReviewStatus
+  const reviewStatus =
+    normalizeText(raw?.reviewStatus || raw?.ReviewStatus || raw?.review_state) || "pending";
+
+  const attachmentSummary = normalizeText(
+    raw?.attachmentSummary || raw?.["Attachment Summary"] || raw?.AttachmentSummary
+  );
+
+  const attachments = Array.isArray(raw?.attachments)
+    ? raw.attachments
+    : Array.isArray(raw?.Attachments)
+    ? raw.Attachments
+    : [];
+
+  const athleteName = normalizeText(raw?.athleteName || raw?.AthleteName || raw?.Athlete);
+  const athleteEmail = normalizeText(raw?.athleteEmail || raw?.AthleteEmail || raw?.Email);
+
+  const createdAt = raw?.createdAt || raw?.CreatedAt || raw?.createdTime || raw?.CreatedTime || "";
+
+  const coachNotes = normalizeText(raw?.coachNotes || raw?.CoachNotes || raw?.notes || raw?.Notes);
+
+  return {
+    id,
+    title,
+    date,
+    status,
+    reviewStatus,
+    attachmentSummary,
+    attachments,
+    athleteName,
+    athleteEmail,
+    createdAt,
+    coachNotes,
+    // keep original just in case you want it later
+    _raw: raw,
+  };
 }
 
 export default function ReviewQueuePage() {
@@ -222,37 +305,39 @@ export default function ReviewQueuePage() {
   // Data
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
   const [items, setItems] = useState([]);
 
   // UI
   const [search, setSearch] = useState("");
-  const [filterMode, setFilterMode] = useState("pending"); // pending | needs_info | approved | rejected | all
+  const [filterMode, setFilterMode] = useState("pending"); // pending | needs_info | approved | all
   const [sortMode, setSortMode] = useState("newest"); // newest | oldest
-
   const [expanded, setExpanded] = useState({});
-  const toggleExpanded = (id) => {
-    const key = String(id || "").trim();
-    if (!key) return;
-    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [active, setActive] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState("");
+  const [lightboxUrl, setLightboxUrl] = useState("");
+
+  const toggleExpanded = (id) => {
+    const key = String(id || "").trim();
+    if (!key) return;
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const openModal = (item) => {
     setSaveErr("");
     setActive(item);
     setModalOpen(true);
   };
+
   const closeModal = () => {
     setModalOpen(false);
     setActive(null);
     setSaveErr("");
     setSaving(false);
+    setLightboxUrl("");
   };
 
   const refreshQueue = useCallback(async () => {
@@ -260,7 +345,8 @@ export default function ReviewQueuePage() {
     setError("");
 
     try {
-      const res = await fetch("/api/org/reviewQueue/list", {
+      // ✅ Correct endpoint
+      const res = await fetch("/api/org/reviewQueue/getReviewQueue", {
         method: "GET",
         credentials: "include",
       });
@@ -268,7 +354,8 @@ export default function ReviewQueuePage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to load review queue");
 
-      setItems(Array.isArray(data?.items) ? data.items : []);
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      setItems(rawItems.map(normalizeQueueItem));
     } catch (err) {
       console.error("[org/review-queue] refreshQueue error:", err);
       setError(err?.message || "Failed to load review queue.");
@@ -286,11 +373,15 @@ export default function ReviewQueuePage() {
 
   const counts = useMemo(() => {
     const list = Array.isArray(items) ? items : [];
-    const pending = list.filter((x) => String(x?.status || "").toLowerCase() === "pending").length;
-    const needsInfo = list.filter((x) => String(x?.status || "").toLowerCase() === "needs_info").length;
-    const approved = list.filter((x) => String(x?.status || "").toLowerCase() === "approved").length;
-    const rejected = list.filter((x) => String(x?.status || "").toLowerCase() === "rejected").length;
-    return { pending, needsInfo, approved, rejected, total: list.length };
+    const pending = list.filter((x) => String(x?.reviewStatus || "").toLowerCase() === "pending")
+      .length;
+    const needsInfo = list.filter(
+      (x) => String(x?.reviewStatus || "").toLowerCase() === "needs_info"
+    ).length;
+    const approved = list.filter(
+      (x) => String(x?.reviewStatus || "").toLowerCase() === "approved"
+    ).length;
+    return { pending, needsInfo, approved, total: list.length };
   }, [items]);
 
   const headline = useMemo(() => {
@@ -307,16 +398,13 @@ export default function ReviewQueuePage() {
     if (q) {
       list = list.filter((it) => {
         const hay = [
-          it?.type,
+          it?.title,
+          it?.date,
           it?.status,
+          it?.reviewStatus,
+          it?.attachmentSummary,
           it?.athleteName,
           it?.athleteEmail,
-          it?.trainerName,
-          it?.title,
-          it?.productName,
-          it?.brand,
-          it?.reason,
-          ...(Array.isArray(it?.tags) ? it.tags : []),
         ]
           .filter(Boolean)
           .join(" ")
@@ -327,7 +415,7 @@ export default function ReviewQueuePage() {
 
     const st = String(filterMode || "pending").toLowerCase();
     if (st !== "all") {
-      list = list.filter((it) => String(it?.status || "").toLowerCase() === st);
+      list = list.filter((it) => String(it?.reviewStatus || "").toLowerCase() === st);
     }
 
     const byCreated = (a, b) => {
@@ -348,31 +436,38 @@ export default function ReviewQueuePage() {
     }
   };
 
-  const updateStatus = async (id, status) => {
+  const updateReviewStatus = async (id, reviewStatus, coachNotes = "") => {
+    const rid = String(id || "").trim();
+    if (!rid) return;
+
     setSaveErr("");
     setSaving(true);
 
     try {
-      const res = await fetch("/api/org/reviewQueue/updateStatus", {
+      // ✅ Correct endpoint
+      const res = await fetch("/api/org/reviewQueue/reviewQueueUpdate", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
+        // ✅ Body mapping: endpoint expects "status" (not "reviewStatus")
+        body: JSON.stringify({ id: rid, status: reviewStatus, coachNotes }),
       });
 
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to update status");
+      if (!res.ok) throw new Error(data?.error || "Failed to update review");
 
       // update in place
       setItems((prev) => {
         const list = Array.isArray(prev) ? [...prev] : [];
-        const idx = list.findIndex((x) => String(x?.id) === String(id));
-        if (idx >= 0) list[idx] = { ...list[idx], status };
+        const idx = list.findIndex((x) => String(x?.id) === rid);
+        if (idx >= 0) list[idx] = { ...list[idx], reviewStatus };
         return list;
       });
 
       // keep modal item in sync
-      setActive((prev) => (prev && String(prev?.id) === String(id) ? { ...prev, status } : prev));
+      setActive((prev) =>
+        prev && String(prev?.id) === rid ? { ...prev, reviewStatus } : prev
+      );
 
       closeModal();
     } catch (err) {
@@ -457,7 +552,7 @@ export default function ReviewQueuePage() {
             <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm text-gray-800 font-semibold">Loading review queue…</p>
               <p className="text-[11px] text-gray-600 mt-1">
-                Pulling pending items that need coaching decisions.
+                Pulling completed daily workouts that include uploads.
               </p>
             </div>
           ) : null}
@@ -473,7 +568,7 @@ export default function ReviewQueuePage() {
         </div>
 
         {/* Quick stats */}
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
             <p className="text-xs text-gray-500">Pending</p>
             <p className="text-2xl font-extrabold text-gray-900 mt-1">{counts.pending}</p>
@@ -486,10 +581,6 @@ export default function ReviewQueuePage() {
             <p className="text-xs text-gray-500">Approved</p>
             <p className="text-2xl font-extrabold text-gray-900 mt-1">{counts.approved}</p>
           </div>
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-            <p className="text-xs text-gray-500">Rejected</p>
-            <p className="text-2xl font-extrabold text-gray-900 mt-1">{counts.rejected}</p>
-          </div>
         </div>
 
         {/* Queue + Controls */}
@@ -500,7 +591,7 @@ export default function ReviewQueuePage() {
               <div>
                 <h2 className="text-lg font-extrabold">Queue</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Click an item to review and update status.
+                  Review uploads and confirm the athlete’s daily workout.
                 </p>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -516,10 +607,6 @@ export default function ReviewQueuePage() {
                     <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
                     Approved: {counts.approved}
                   </Pill>
-                  <Pill tone="bad">
-                    <ThumbsDown className="w-3.5 h-3.5 mr-1.5" />
-                    Rejected: {counts.rejected}
-                  </Pill>
                 </div>
               </div>
 
@@ -528,7 +615,7 @@ export default function ReviewQueuePage() {
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     className={classNames(inputBase, "pl-10")}
-                    placeholder="Search by athlete, product, reason, tag…"
+                    placeholder="Search by title, date, athlete, summary…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -556,13 +643,6 @@ export default function ReviewQueuePage() {
                     onClick={() => setFilterMode("approved")}
                   >
                     Approved
-                  </Button>
-                  <Button
-                    variant={filterMode === "rejected" ? "primary" : "secondary"}
-                    className="px-3 py-2 text-xs"
-                    onClick={() => setFilterMode("rejected")}
-                  >
-                    Rejected
                   </Button>
                   <Button
                     variant={filterMode === "all" ? "primary" : "secondary"}
@@ -597,8 +677,9 @@ export default function ReviewQueuePage() {
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b">
                     <th className="py-3 pr-4">Item</th>
-                    <th className="py-3 pr-4">Athlete</th>
-                    <th className="py-3 pr-4">Status</th>
+                    <th className="py-3 pr-4">Date</th>
+                    <th className="py-3 pr-4">Daily Status</th>
+                    <th className="py-3 pr-4">Review</th>
                     <th className="py-3 pr-4">Created</th>
                     <th className="py-3 pr-2 text-right">Actions</th>
                   </tr>
@@ -607,24 +688,27 @@ export default function ReviewQueuePage() {
                 <tbody>
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-gray-500">
+                      <td colSpan={6} className="py-6 text-center text-gray-500">
                         No items found.
                         <div className="text-[11px] text-gray-400 mt-1">
-                          If you haven’t built the API yet, implement{" "}
-                          <span className="font-mono">/api/org/reviewQueue/list</span>.
+                          This queue is powered by DailyWorkouts with uploads + completed status.
                         </div>
                       </td>
                     </tr>
                   )}
 
                   {filtered.map((it) => {
-                    const id = String(it?.id || it?.recordId || "");
+                    const id = String(it?.id || "");
                     const isExpanded = !!expanded[id];
-                    const athleteEmail = normalizeEmail(it?.athleteEmail);
+
+                    const title = normalizeText(it?.title) || "Daily Workout";
+                    const date = normalizeText(it?.date);
+                    const dwStatus = normalizeText(it?.status);
+                    const rev = normalizeText(it?.reviewStatus) || "pending";
 
                     return (
-                      <>
-                        <tr key={id || Math.random()} className="border-b">
+                      <Fragment key={id}>
+                        <tr className="border-b">
                           <td className="py-3 pr-4">
                             <button
                               type="button"
@@ -639,11 +723,9 @@ export default function ReviewQueuePage() {
                                   <ChevronRight className="w-4 h-4 text-gray-400" />
                                 )}
                                 <div className="min-w-0">
-                                  <div className="font-semibold text-gray-900 truncate">
-                                    {it?.title || it?.productName || it?.type || "Review Item"}
-                                  </div>
+                                  <div className="font-semibold text-gray-900 truncate">{title}</div>
                                   <div className="text-[11px] text-gray-500 mt-0.5 truncate">
-                                    {it?.reason || it?.summary || "—"}
+                                    {it?.attachmentSummary || "Uploads attached"}
                                   </div>
                                 </div>
                               </div>
@@ -651,18 +733,15 @@ export default function ReviewQueuePage() {
                           </td>
 
                           <td className="py-3 pr-4">
-                            <div className="text-gray-900 font-semibold">
-                              {it?.athleteName || "Athlete"}
-                            </div>
-                            <div className="text-[11px] text-gray-500">
-                              {athleteEmail || "—"}
-                            </div>
+                            <div className="text-gray-700 font-medium">{date || "—"}</div>
                           </td>
 
                           <td className="py-3 pr-4">
-                            <Pill tone={statusTone(it?.status)}>
-                              {String(it?.status || "unknown").replaceAll("_", " ")}
-                            </Pill>
+                            <Pill tone={dailyWorkoutTone(dwStatus)}>{dwStatus || "—"}</Pill>
+                          </td>
+
+                          <td className="py-3 pr-4">
+                            <Pill tone={reviewTone(rev)}>{rev.replaceAll("_", " ")}</Pill>
                           </td>
 
                           <td className="py-3 pr-4">
@@ -688,8 +767,32 @@ export default function ReviewQueuePage() {
 
                         {isExpanded ? (
                           <tr className="border-b bg-gray-50">
-                            <td colSpan={5} className="py-4 px-4">
+                            <td colSpan={6} className="py-4 px-4">
                               <div className="grid md:grid-cols-3 gap-4">
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                                  <p className="text-xs text-gray-500 flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-gray-400" />
+                                    Summary
+                                  </p>
+                                  <p className="text-sm font-extrabold text-gray-900 mt-1">{title}</p>
+                                  <p className="text-[11px] text-gray-500 mt-2">
+                                    {it?.attachmentSummary || "—"}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                                  <p className="text-xs text-gray-500 flex items-center gap-2">
+                                    <ClipboardList className="w-4 h-4 text-gray-400" />
+                                    Linked items
+                                  </p>
+                                  <p className="text-[12px] text-gray-700 mt-2">
+                                    Attachments:{" "}
+                                    <span className="font-semibold">
+                                      {Array.isArray(it?.attachments) ? it.attachments.length : 0}
+                                    </span>
+                                  </p>
+                                </div>
+
                                 <div className="rounded-2xl border border-gray-200 bg-white p-4">
                                   <p className="text-xs text-gray-500 flex items-center gap-2">
                                     <User className="w-4 h-4 text-gray-400" />
@@ -698,57 +801,15 @@ export default function ReviewQueuePage() {
                                   <p className="text-sm font-extrabold text-gray-900 mt-1">
                                     {it?.athleteName || "Athlete"}
                                   </p>
-                                  <p className="text-[12px] text-gray-600 mt-1">
-                                    {athleteEmail || "—"}
+                                  <p className="text-[12px] text-gray-600 mt-1 truncate">
+                                    {it?.athleteEmail || "—"}
                                   </p>
-                                </div>
-
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500 flex items-center gap-2">
-                                    <FileText className="w-4 h-4 text-gray-400" />
-                                    Item details
-                                  </p>
-                                  <p className="text-sm font-extrabold text-gray-900 mt-1 truncate">
-                                    {it?.productName || it?.title || it?.type || "—"}
-                                  </p>
-                                  <p className="text-[11px] text-gray-500 mt-2">
-                                    {it?.brand ? `Brand: ${it.brand}` : "—"}
-                                  </p>
-                                </div>
-
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500 flex items-center gap-2">
-                                    <Tag className="w-4 h-4 text-gray-400" />
-                                    Tags
-                                  </p>
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {Array.isArray(it?.tags) && it.tags.length ? (
-                                      it.tags.slice(0, 6).map((t) => (
-                                        <span
-                                          key={t}
-                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold border border-gray-200 bg-white text-gray-700"
-                                        >
-                                          <Tag className="w-3.5 h-3.5 text-gray-400" />
-                                          {t}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[11px] text-gray-400">—</span>
-                                    )}
-                                  </div>
                                 </div>
                               </div>
-
-                              {it?.notes ? (
-                                <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500">Notes</p>
-                                  <p className="text-sm text-gray-800 mt-2">{it.notes}</p>
-                                </div>
-                              ) : null}
                             </td>
                           </tr>
                         ) : null}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -761,9 +822,7 @@ export default function ReviewQueuePage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-extrabold">Workflow</h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  How to process items fast.
-                </p>
+                <p className="text-sm text-gray-600 mt-1">Process uploads fast.</p>
               </div>
               <Button
                 variant="secondary"
@@ -786,33 +845,28 @@ export default function ReviewQueuePage() {
                   </li>
                   <li className="flex gap-2">
                     <HelpCircle className="w-4 h-4 text-amber-600 mt-0.5" />
-                    Mark <span className="font-semibold">Needs Info</span> to prompt follow-up
+                    Mark <span className="font-semibold">Needs info</span> if upload is unclear
                   </li>
                   <li className="flex gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5" />
-                    Approve when it’s safe / fits policy
-                  </li>
-                  <li className="flex gap-2">
-                    <ThumbsDown className="w-4 h-4 text-red-600 mt-0.5" />
-                    Reject if it violates policy
+                    Approve when confirmed
                   </li>
                 </ul>
               </div>
 
               <div className="rounded-2xl border border-gray-200 p-4">
-                <p className="text-sm font-extrabold text-gray-900">Pro tip</p>
+                <p className="text-sm font-extrabold text-gray-900">Skimmer-style behavior</p>
                 <p className="text-[12px] text-gray-600 mt-1">
-                  Keep tags consistent (e.g. <span className="font-semibold">stimulant</span>,{" "}
-                  <span className="font-semibold">banned</span>,{" "}
-                  <span className="font-semibold">athlete-request</span>) so you can filter later.
+                  On mobile, athletes can “swipe → camera → confirm” to complete the daily workout
+                  with proof.
                 </p>
               </div>
 
               <div className="rounded-2xl border border-gray-200 p-4">
-                <p className="text-sm font-extrabold text-gray-900">Next step</p>
+                <p className="text-sm font-extrabold text-gray-900">Notes</p>
                 <p className="text-[12px] text-gray-600 mt-1">
-                  If you want, we can plug this into Airtable and auto-create items from:
-                  flagged OCR scans, athlete requests, or supplement stacks.
+                  Review is optional unless required by org policy. Use “Needs info” to guide better
+                  uploads next time.
                 </p>
               </div>
             </div>
@@ -822,7 +876,7 @@ export default function ReviewQueuePage() {
         {/* Review Modal */}
         <Modal
           open={modalOpen}
-          title={active ? `Review: ${active?.title || active?.productName || "Item"}` : "Review Item"}
+          title={active ? `Review: ${active?.title || "Daily Workout"}` : "Review"}
           onClose={closeModal}
         >
           {saveErr ? (
@@ -831,60 +885,154 @@ export default function ReviewQueuePage() {
             </div>
           ) : null}
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-              <p className="text-xs text-gray-500">Summary</p>
-              <p className="text-sm font-extrabold text-gray-900 mt-1">
-                {active?.productName || active?.title || active?.type || "—"}
-              </p>
-              <p className="text-[12px] text-gray-700 mt-1">
-                {active?.reason || active?.summary || "—"}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Pill tone={statusTone(active?.status)}>
-                  Status: {String(active?.status || "unknown").replaceAll("_", " ")}
-                </Pill>
-                {active?.createdAt ? <Pill>Created: {fmtDate(active.createdAt)}</Pill> : null}
-                {active?.athleteEmail ? <Pill>{normalizeEmail(active.athleteEmail)}</Pill> : null}
+          {active ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs text-gray-500">Daily Workout</p>
+                <p className="text-sm font-extrabold text-gray-900 mt-1">
+                  {active?.title || "Daily Workout"}
+                </p>
+                <p className="text-[12px] text-gray-700 mt-1">
+                  Date: <span className="font-semibold">{active?.date || "—"}</span>
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Pill tone={dailyWorkoutTone(active?.status)}>{active?.status || "—"}</Pill>
+                  <Pill tone={reviewTone(active?.reviewStatus)}>
+                    Review: {String(active?.reviewStatus || "pending").replaceAll("_", " ")}
+                  </Pill>
+                  {active?.createdAt ? <Pill>Created: {fmtDate(active.createdAt)}</Pill> : null}
+                </div>
+
+                {(active?.athleteName || active?.athleteEmail) && (
+                  <div className="mt-3 text-[12px] text-gray-700">
+                    Athlete:{" "}
+                    <span className="font-semibold">
+                      {active?.athleteName || "Athlete"}
+                    </span>{" "}
+                    <span className="text-gray-500">{active?.athleteEmail || ""}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Attachments */}
+              <div className="rounded-2xl border border-gray-200 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-gray-500" />
+                    Uploads
+                  </p>
+                  <Pill>{Array.isArray(active?.attachments) ? active.attachments.length : 0}</Pill>
+                </div>
+
+                {active?.attachmentSummary ? (
+                  <p className="text-[12px] text-gray-600 mt-2">{active.attachmentSummary}</p>
+                ) : null}
+
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {(Array.isArray(active?.attachments) ? active.attachments : []).map((att, i) => {
+                    const url = extractAttachmentUrl(att);
+                    const name = att?.filename || `Upload ${i + 1}`;
+                    if (!url) {
+                      return (
+                        <div
+                          key={`${i}-${name}`}
+                          className="rounded-2xl border border-gray-200 bg-gray-50 p-3 text-[11px] text-gray-500"
+                        >
+                          {name}
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        key={`${i}-${name}`}
+                        type="button"
+                        className="group rounded-2xl overflow-hidden border border-gray-200 bg-white"
+                        onClick={() => setLightboxUrl(url)}
+                        title="Open"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={name}
+                          className="w-full h-32 object-cover group-hover:opacity-95"
+                          loading="lazy"
+                        />
+                        <div className="p-2 text-[11px] text-gray-600 truncate">{name}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {!Array.isArray(active?.attachments) || active.attachments.length === 0 ? (
+                  <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">
+                    No attachments found on this record.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={() => updateReviewStatus(active?.id, "needs_info")}
+                  disabled={saving || !active?.id}
+                  className="px-3 py-2 text-xs"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  Needs Info
+                </Button>
+
+                <Button
+                  onClick={() => updateReviewStatus(active?.id, "approved")}
+                  disabled={saving || !active?.id}
+                  className="px-3 py-2 text-xs"
+                >
+                  <ThumbsUp className="w-4 h-4" />
+                  Approve
+                </Button>
+              </div>
+
+              <div className="text-[11px] text-gray-500">
+                Persists to Airtable fields:{" "}
+                <span className="font-mono">ReviewStatus</span>,{" "}
+                <span className="font-mono">ReviewedAt</span>,{" "}
+                <span className="font-mono">ReviewedBy</span>{" "}
+                (plus optional <span className="font-mono">CoachNotes</span> if you add it).
               </div>
             </div>
+          ) : null}
+        </Modal>
 
-            <div className="flex flex-wrap gap-2 justify-end">
-              <Button
-                variant="secondary"
-                onClick={() => updateStatus(active?.id, "needs_info")}
-                disabled={saving || !active?.id}
-                className="px-3 py-2 text-xs"
-              >
-                <HelpCircle className="w-4 h-4" />
-                Needs Info
-              </Button>
-
-              <Button
-                variant="secondary"
-                onClick={() => updateStatus(active?.id, "rejected")}
-                disabled={saving || !active?.id}
-                className="px-3 py-2 text-xs"
-              >
-                <ThumbsDown className="w-4 h-4" />
-                Reject
-              </Button>
-
-              <Button
-                onClick={() => updateStatus(active?.id, "approved")}
-                disabled={saving || !active?.id}
-                className="px-3 py-2 text-xs"
-              >
-                <ThumbsUp className="w-4 h-4" />
-                Approve
-              </Button>
-            </div>
-
-            <div className="text-[11px] text-gray-500">
-              Wire <span className="font-mono">/api/org/reviewQueue/updateStatus</span> to persist updates.
+        {/* Lightbox */}
+        {lightboxUrl ? (
+          <div className="fixed inset-0 z-[10000]">
+            <div
+              className="absolute inset-0 bg-black/70"
+              onClick={() => setLightboxUrl("")}
+              role="button"
+              tabIndex={0}
+            />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="max-w-4xl w-full">
+                <div className="flex justify-end mb-2">
+                  <button
+                    className="p-2 rounded-xl bg-white/90 border border-white/40 hover:bg-white"
+                    onClick={() => setLightboxUrl("")}
+                    type="button"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lightboxUrl}
+                  alt="Upload"
+                  className="w-full max-h-[80vh] object-contain rounded-2xl border border-white/20"
+                />
+              </div>
             </div>
           </div>
-        </Modal>
+        ) : null}
       </main>
     </div>
   );

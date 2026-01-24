@@ -38,8 +38,9 @@ function stripPassword(fields = {}) {
  * ✅ Session cookie payload for HttpOnly cookie
  * - role: "Athlete" | "Organization" | "Admin" | "Trainer"
  * - orgId: Organizations record id (org-side only)
- * - memberId: OrgMembers record id (trainer/admin AND org owner after we ensure)
- * - Token: Organization Token (used by org-scoped endpoints)
+ * - memberId: OrgMembers record id (trainer/admin AND org owner)
+ * - Token: Organization Token (legacy org endpoints)
+ * - athleteId: AthleteScans record id (athlete-side workflows)
  */
 function toSessionUser(user) {
   const rawRole = String(user?.role || user?.Role || "").trim();
@@ -60,6 +61,12 @@ function toSessionUser(user) {
     Email: user?.Email || user?.email || "",
     Name: user?.Name || user?.name || "",
   };
+
+  // ✅ Athlete convenience key (used by DailyWorkouts filtering)
+  if (role === "Athlete") {
+    session.athleteId =
+      user?.athleteId || user?.AthleteId || user?.id || "";
+  }
 
   // Org-side extras
   if (role !== "Athlete") {
@@ -98,16 +105,7 @@ function setUserCookie(res, sessionUser) {
 }
 
 /**
- * ✅ Ensures the ORG OWNER (primary org account) also has an OrgMembers record,
- * so org workflows can ALWAYS populate linked fields like DailyWorkouts.CreatedBy (OrgMembers).
- *
- * Requires:
- * OrgMembers fields:
- * - Email (text)
- * - Name (text)
- * - Role (single select: admin|trainer)
- * - Active (checkbox)
- * - Organization (linked to Organizations)
+ * ✅ Ensures the ORG OWNER (primary org account) also has an OrgMembers record
  */
 async function ensureOrgMemberForOrgOwner({
   orgBase,
@@ -119,7 +117,6 @@ async function ensureOrgMemberForOrgOwner({
   const emailLower = normalizeEmail(orgEmail);
   const safeEmail = escapeAirtableString(emailLower);
 
-  // Look for an existing OrgMember with this email + linked to this org
   const existing = await orgBase(orgMembersTableId)
     .select({
       filterByFormula: `AND(LOWER({Email})='${safeEmail}', FIND('${orgId}', ARRAYJOIN({Organization})))`,
@@ -129,7 +126,6 @@ async function ensureOrgMemberForOrgOwner({
 
   if (existing?.length) return existing[0];
 
-  // Create as Admin by default
   const created = await orgBase(orgMembersTableId).create({
     Email: emailLower,
     Name: String(orgName || "Org Admin").trim(),
@@ -146,10 +142,7 @@ async function ensureOrgMemberForOrgOwner({
 /* -------------------------------------------------------------------------- */
 
 export default async function handler(req, res) {
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -177,21 +170,15 @@ export default async function handler(req, res) {
   const ORGANIZATIONS_BASE_ID = process.env.ORGANIZATIONS_BASE_ID;
   const ORGANIZATIONS_TABLE_NAME = process.env.ORGANIZATIONS_TABLE_NAME;
 
-  // ---- OrgMembers table (same base as Organizations)
+  // ---- OrgMembers table
   const ORG_MEMBERS_TABLE_ID =
     process.env.ORG_MEMBERS_TABLE_ID || "tblRvpw7XeVZfdKIq";
 
-  // Minimal required configs based on role
   if (roleNorm === "athlete") {
     if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
       return res.status(500).json({
         error:
           "Athletes Airtable not configured. Check ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME.",
-        missing: {
-          ATHLETE_API_KEY: !ATHLETE_API_KEY,
-          ATHLETE_BASE_ID: !ATHLETE_BASE_ID,
-          ATHLETE_TABLE_NAME: !ATHLETE_TABLE_NAME,
-        },
       });
     }
   } else {
@@ -203,11 +190,6 @@ export default async function handler(req, res) {
       return res.status(500).json({
         error:
           "Organizations Airtable not configured. Check ORGANIZATIONS_API_KEY, ORGANIZATIONS_BASE_ID, ORGANIZATIONS_TABLE_NAME.",
-        missing: {
-          ORGANIZATIONS_API_KEY: !ORGANIZATIONS_API_KEY,
-          ORGANIZATIONS_BASE_ID: !ORGANIZATIONS_BASE_ID,
-          ORGANIZATIONS_TABLE_NAME: !ORGANIZATIONS_TABLE_NAME,
-        },
       });
     }
   }
@@ -217,7 +199,9 @@ export default async function handler(req, res) {
     /* ATHLETE LOGIN           */
     /* ----------------------- */
     if (roleNorm === "athlete") {
-      const base = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
+      const base = new Airtable({ apiKey: ATHLETE_API_KEY }).base(
+        ATHLETE_BASE_ID
+      );
 
       const records = await base(ATHLETE_TABLE_NAME)
         .select({
@@ -236,18 +220,22 @@ export default async function handler(req, res) {
 
       if (!storedHash) {
         return res.status(500).json({
-          error:
-            "User record missing Password hash. Confirm the Athletes table has a Password column and it is populated.",
+          error: "Athlete record missing Password hash.",
         });
       }
 
-      const match = await bcrypt.compare(String(password), String(storedHash));
-      if (!match) return res.status(401).json({ error: "Invalid credentials" });
+      const match = await bcrypt.compare(
+        String(password),
+        String(storedHash)
+      );
+      if (!match)
+        return res.status(401).json({ error: "Invalid credentials" });
 
       const safeFields = stripPassword(fields);
 
       const userOut = {
         id: record.id,
+        athleteId: record.id, // ✅ explicit + stable
         ...safeFields,
         role: "Athlete",
         Role: "Athlete",
@@ -261,19 +249,16 @@ export default async function handler(req, res) {
     }
 
     /* -------------------------------------------- */
-    /* ORG-SIDE LOGIN                               */
-    /* - organization (primary org acct)            */
-    /* - admin/trainer (OrgMembers)                 */
-    /* - if role=organization, try org acct THEN    */
-    /*   fall back to OrgMembers                    */
+    /* ORG-SIDE LOGIN (Organization/Admin/Trainer)  */
     /* -------------------------------------------- */
+
     const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(
       ORGANIZATIONS_BASE_ID
     );
 
     const wantsMemberOnly = roleNorm === "admin" || roleNorm === "trainer";
 
-    // 1) Try Organization primary account (only if not explicitly member-only)
+    // 1) Try Organization primary account
     if (!wantsMemberOnly) {
       const orgAccount = await orgBase(ORGANIZATIONS_TABLE_NAME)
         .select({
@@ -289,13 +274,16 @@ export default async function handler(req, res) {
 
         if (!storedHash) {
           return res.status(500).json({
-            error:
-              "Organization record missing Password hash. Confirm Organizations table has a Password column and it is populated.",
+            error: "Organization record missing Password hash.",
           });
         }
 
-        const match = await bcrypt.compare(String(password), String(storedHash));
-        if (!match) return res.status(401).json({ error: "Invalid credentials" });
+        const match = await bcrypt.compare(
+          String(password),
+          String(storedHash)
+        );
+        if (!match)
+          return res.status(401).json({ error: "Invalid credentials" });
 
         const safeFields = stripPassword(fields);
 
@@ -308,10 +296,8 @@ export default async function handler(req, res) {
         const orgName =
           safeFields.Name ||
           safeFields["Organization Name"] ||
-          safeFields.Name ||
           "Organization";
 
-        // ✅ Ensure org owner is ALSO an OrgMember so memberId exists for linked fields
         let ownerMemberId = null;
         try {
           const ownerMember = await ensureOrgMemberForOrgOwner({
@@ -322,12 +308,7 @@ export default async function handler(req, res) {
             orgMembersTableId: ORG_MEMBERS_TABLE_ID,
           });
           ownerMemberId = ownerMember?.id || null;
-        } catch (e) {
-          console.warn(
-            "[lookupUser] ensureOrgMemberForOrgOwner failed (non-fatal):",
-            e?.message || e
-          );
-        }
+        } catch {}
 
         const userOut = {
           id: record.id,
@@ -348,7 +329,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2) OrgMembers (trainer/admin)
+    // 2) OrgMembers (admin/trainer)
     const memberRecords = await orgBase(ORG_MEMBERS_TABLE_ID)
       .select({
         filterByFormula: `AND(LOWER({Email})='${safeEmail}', {Active}=TRUE())`,
@@ -366,38 +347,30 @@ export default async function handler(req, res) {
 
     if (!storedHash) {
       return res.status(500).json({
-        error:
-          "OrgMember record missing PasswordHash. Add a PasswordHash field to OrgMembers and populate it.",
+        error: "OrgMember record missing PasswordHash.",
       });
     }
 
-    const match = await bcrypt.compare(String(password), String(storedHash));
-    if (!match) return res.status(401).json({ error: "Invalid credentials" });
+    const match = await bcrypt.compare(
+      String(password),
+      String(storedHash)
+    );
+    if (!match)
+      return res.status(401).json({ error: "Invalid credentials" });
 
     const roleField = String(fields.Role || "").trim().toLowerCase();
-    const isTrainer = roleField === "trainer";
-    const isAdmin = roleField === "admin";
-
-    // If user explicitly selected trainer/admin, enforce it
     if (wantsMemberOnly && roleNorm !== roleField) {
-      return res.status(403).json({ error: "Not authorized" });
-    }
-
-    if (!isTrainer && !isAdmin) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
     const orgLinks = fields.Organization;
     const orgId = Array.isArray(orgLinks) && orgLinks.length ? orgLinks[0] : null;
-
     if (!orgId) {
       return res.status(500).json({
-        error:
-          "OrgMember missing Organization link. Ensure OrgMembers.Organization is linked to Organizations.",
+        error: "OrgMember missing Organization link.",
       });
     }
 
-    // Fetch org token/name for org-scoped endpoints
     const orgRecord = await orgBase(ORGANIZATIONS_TABLE_NAME).find(orgId);
     const orgToken = String(orgRecord?.fields?.Token || "").trim();
     const orgName = String(orgRecord?.fields?.Name || "Organization").trim();
@@ -407,10 +380,10 @@ export default async function handler(req, res) {
     const userOut = {
       id: member.id,
       ...safeFields,
-      role: isAdmin ? "Admin" : "Trainer",
-      Role: isAdmin ? "Admin" : "Trainer",
+      role: roleField === "admin" ? "Admin" : "Trainer",
+      Role: roleField === "admin" ? "Admin" : "Trainer",
       Email: safeFields.Email || emailLower,
-      Name: safeFields.Name || safeFields.name || (isAdmin ? "Admin" : "Trainer"),
+      Name: safeFields.Name || (roleField === "admin" ? "Admin" : "Trainer"),
       Token: orgToken,
       orgId,
       memberId: member.id,

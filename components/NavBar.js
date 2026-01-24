@@ -27,7 +27,7 @@ export default function NavBar() {
 
   /**
    * ✅ Updated Role Normalization
-   * Your cookie/user.role can now be:
+   * cookie/user.role can now be:
    * - "Organization" (primary org account)
    * - "Trainer" (OrgMembers)
    * - "Admin" (OrgMembers)
@@ -144,7 +144,7 @@ export default function NavBar() {
   }, [loggedIn, openAuthModal]);
 
   const logoutAndClose = useCallback(() => {
-    logout();
+    logout?.();
     setProfileOpen(false);
     setMenuOpen(false);
   }, [logout]);
@@ -202,47 +202,48 @@ export default function NavBar() {
   };
 
   /**
-   * ✅ RoleLinks updated:
-   * - Organization/Admin/Trainer all point to /org/*
-   * - Athlete points to /dashboard + /scans + /account
-   * - Trainer sees a slightly reduced menu vs Admin/Organization
+   * ✅ RoleLinks updated (matches today’s new routes)
+   * - /org/review-queue (NOT /org/review)
+   * - removes duplicate prescriptions link
+   * - adds active styling inside dropdown
    */
   const RoleLinks = () => {
-    const L = ({ href, children }) => (
-      <Link
-        href={href}
-        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-      >
-        {children}
-      </Link>
-    );
+    const L = ({ href, children }) => {
+      const active = isActive(href);
+      return (
+        <Link
+          href={href}
+          className={[
+            "block px-4 py-3 text-sm transition",
+            active ? "bg-blue-50 text-[#46769B] font-semibold" : "text-gray-700 hover:bg-gray-50",
+          ].join(" ")}
+        >
+          {children}
+        </Link>
+      );
+    };
 
-      if (isOrgSide) {
-    return (
-      <>
-        <L href="/org/dashboard">Dashboard</L>
-        <L href="/org/review-queue">Review Queue</L>
+    if (isOrgSide) {
+      return (
+        <>
+          <L href="/org/dashboard">Dashboard</L>
+          <L href="/org/review-queue">Review Queue</L>
 
-        {/* Trainers should usually see prescriptions + review queue */}
-        {isTrainer && (
-          <>
-            <L href="/org/prescriptions">Prescriptions</L>
-          </>
-        )}
+          {/* Trainers + Admin + Org (org-side) */}
+          <L href="/org/prescriptions">Prescriptions</L>
 
-        {/* Admin/Organization can see everything */}
-        {(isAdmin || role === "organization") && (
-          <>
-            <L href="/org/athletes">Athletes</L>
-            <L href="/org/prescriptions">Prescriptions</L>
-            <L href="/org/trainers">Trainers</L>
-          </>
-        )}
+          {/* Admin/Organization only */}
+          {(isAdmin || role === "organization") && (
+            <>
+              <L href="/org/athletes">Athletes</L>
+              <L href="/org/trainers">Trainers</L>
+            </>
+          )}
 
-        <L href="/account">Account</L>
-      </>
-    );
-  }
+          <L href="/account">Account</L>
+        </>
+      );
+    }
 
     if (isAthlete) {
       return (
@@ -327,9 +328,7 @@ export default function NavBar() {
                           <p className="text-[11px] text-gray-500 truncate">
                             {user?.Email || user?.email}
                           </p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">
-                            {roleLabel}
-                          </p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                         </div>
 
                         <RoleLinks />
@@ -452,9 +451,7 @@ export default function NavBar() {
                       <p className="text-[11px] text-gray-500 truncate">
                         {user?.Email || user?.email}
                       </p>
-                      <p className="text-[11px] text-gray-400 mt-1 truncate">
-                        {roleLabel}
-                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 overflow-hidden">

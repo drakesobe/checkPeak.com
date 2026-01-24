@@ -18,15 +18,32 @@ import {
   Trash2,
   Mail,
   ArrowRight,
+  Edit3,
+  Save,
+  Ban,
 } from "lucide-react";
 
 /**
  * Trainers — matches /org/dashboard design language
- * - Uses cookie session (credentials: include)
- * - Endpoint placeholders:
- *   GET  /api/org/trainers/list
- *   POST /api/org/trainers/invite
- *   POST /api/org/trainers/remove
+ * ✅ Uses cookie session (credentials: include)
+ *
+ * Endpoints expected:
+ *   GET  /api/org/members/list
+ *   POST /api/org/members/invite
+ *   POST /api/org/members/remove          (deactivate)
+ *   POST /api/org/members/update          (inline edit)
+ *
+ * Data expected from GET /api/org/members/list:
+ * {
+ *   ok: true,
+ *   trainers: [{ id, Name, Email, Role, Active, createdTime?, ... }],
+ *   athletes: [...]
+ * }
+ *
+ * Notes:
+ * - This page supports inline editing of Name, Email, Role, Active.
+ * - "Remove" is treated as "Deactivate" (Active=false) by calling /api/org/members/remove
+ *   OR you can wire it to /api/org/members/update with active=false.
  */
 
 function normalizeEmail(email) {
@@ -129,8 +146,8 @@ function Modal({ open, title, children, onClose }) {
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
           <div className="p-5 border-b flex items-start justify-between gap-4">
-            <div>
-              <p className="text-lg font-extrabold text-gray-900">{title}</p>
+            <div className="min-w-0">
+              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
               <p className="text-[12px] text-gray-500 mt-1">
                 Manage org-side access (Admin/Trainer).
               </p>
@@ -159,10 +176,17 @@ function roleTone(role) {
   return "neutral";
 }
 
+function statusTone(active) {
+  return active ? "good" : "warn";
+}
+
 export default function TrainersPage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
+  /**
+   * Role normalization: organization | admin | trainer | athlete | ""
+   */
   const role = useMemo(() => {
     const r = String(user?.role || user?.Role || "").trim().toLowerCase();
     if (!r) return "";
@@ -177,6 +201,7 @@ export default function TrainersPage() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  const canManageMembers = role === "organization" || role === "admin"; // trainers can view, not edit/invite/remove
 
   const orgName = useMemo(() => {
     const guess =
@@ -223,20 +248,32 @@ export default function TrainersPage() {
   const [inviteRole, setInviteRole] = useState("trainer");
   const [inviteErr, setInviteErr] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
+  const [inviteOk, setInviteOk] = useState("");
 
   // UI
   const [search, setSearch] = useState("");
+
+  // Remove modal
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [removeErr, setRemoveErr] = useState("");
   const [removeBusy, setRemoveBusy] = useState(false);
+
+  // Inline edit
+  const [editRow, setEditRow] = useState(null); // { id, name, email, role, active }
+  const [savingId, setSavingId] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const [saveOk, setSaveOk] = useState("");
+
+  const inputBase =
+    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
 
   const refreshTrainers = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const res = await fetch("/api/org/trainers/list", {
+      const res = await fetch("/api/org/members/list", {
         method: "GET",
         credentials: "include",
       });
@@ -244,7 +281,20 @@ export default function TrainersPage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to load trainers");
 
-      setTrainers(Array.isArray(data?.trainers) ? data.trainers : []);
+      const raw = Array.isArray(data?.trainers) ? data.trainers : [];
+
+      // Normalize shape lightly (support both {Name,Email,Role,Active} and {name,email,role,active})
+      const normalized = raw.map((t) => ({
+        ...t,
+        id: t?.id,
+        Name: t?.Name ?? t?.name ?? "",
+        Email: t?.Email ?? t?.email ?? "",
+        Role: t?.Role ?? t?.role ?? "trainer",
+        Active: typeof t?.Active === "boolean" ? t.Active : typeof t?.active === "boolean" ? t.active : true,
+        createdAt: t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "",
+      }));
+
+      setTrainers(normalized);
     } catch (err) {
       console.error("[org/trainers] refreshTrainers error:", err);
       setError(err?.message || "Failed to load trainers.");
@@ -266,7 +316,7 @@ export default function TrainersPage() {
 
     if (q) {
       list = list.filter((t) => {
-        const hay = [t?.name, t?.email, t?.role, t?.status]
+        const hay = [t?.Name, t?.Email, t?.Role, t?.Active ? "active" : "inactive"]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -274,12 +324,21 @@ export default function TrainersPage() {
       });
     }
 
-    // stable sort: admins first, then trainers
+    // stable sort: admins first, then trainers, then inactive last
     list.sort((a, b) => {
-      const ar = String(a?.role || "").toLowerCase();
-      const br = String(b?.role || "").toLowerCase();
-      const score = (r) => (r === "admin" ? 2 : r === "trainer" ? 1 : 0);
-      return score(br) - score(ar);
+      const ar = String(a?.Role || "").toLowerCase();
+      const br = String(b?.Role || "").toLowerCase();
+      const scoreRole = (r) => (r === "admin" ? 2 : r === "trainer" ? 1 : 0);
+      const roleDiff = scoreRole(br) - scoreRole(ar);
+      if (roleDiff !== 0) return roleDiff;
+
+      const aActive = !!a?.Active;
+      const bActive = !!b?.Active;
+      if (aActive !== bActive) return aActive ? -1 : 1;
+
+      const ae = normalizeEmail(a?.Email);
+      const be = normalizeEmail(b?.Email);
+      return ae.localeCompare(be);
     });
 
     return list;
@@ -287,10 +346,11 @@ export default function TrainersPage() {
 
   const counts = useMemo(() => {
     const list = Array.isArray(trainers) ? trainers : [];
-    const admins = list.filter((t) => String(t?.role || "").toLowerCase() === "admin").length;
-    const coaches = list.filter((t) => String(t?.role || "").toLowerCase() === "trainer").length;
+    const admins = list.filter((t) => String(t?.Role || "").toLowerCase() === "admin").length;
+    const coaches = list.filter((t) => String(t?.Role || "").toLowerCase() === "trainer").length;
+    const inactive = list.filter((t) => !t?.Active).length;
     const total = list.length;
-    return { admins, coaches, total };
+    return { admins, coaches, inactive, total };
   }, [trainers]);
 
   const onLogout = async () => {
@@ -301,11 +361,19 @@ export default function TrainersPage() {
     }
   };
 
-  const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
-
+  // -----------------------------
+  // Invite
+  // -----------------------------
   const sendInvite = async () => {
     setInviteErr("");
+    setInviteOk("");
+    setSaveErr("");
+    setSaveOk("");
+
+    if (!canManageMembers) {
+      setInviteErr("Only Organization/Admin can invite members.");
+      return;
+    }
 
     const email = normalizeEmail(inviteEmail);
     if (!email || !email.includes("@")) {
@@ -320,7 +388,7 @@ export default function TrainersPage() {
 
     setInviteSending(true);
     try {
-      const res = await fetch("/api/org/trainers/invite", {
+      const res = await fetch("/api/org/members/invite", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -332,16 +400,122 @@ export default function TrainersPage() {
 
       setInviteEmail("");
       setInviteRole("trainer");
+      setInviteOk("Invite sent (or member created).");
       refreshTrainers();
     } catch (err) {
       setInviteErr(err?.message || "Failed to send invite.");
     } finally {
       setInviteSending(false);
+      setTimeout(() => setInviteOk(""), 2500);
     }
   };
 
+  // -----------------------------
+  // Inline edit
+  // -----------------------------
+  const startEdit = (t) => {
+    setSaveErr("");
+    setSaveOk("");
+    setInviteErr("");
+    setInviteOk("");
+
+    if (!canManageMembers) {
+      setSaveErr("Only Organization/Admin can edit members.");
+      return;
+    }
+
+    setEditRow({
+      id: t?.id,
+      name: t?.Name || "",
+      email: t?.Email || "",
+      role: String(t?.Role || "trainer").toLowerCase(),
+      active: Boolean(t?.Active ?? true),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditRow(null);
+    setSaveErr("");
+    setSavingId("");
+  };
+
+  const saveEdit = async () => {
+    setSaveErr("");
+    setSaveOk("");
+    if (!editRow?.id) return;
+
+    const payload = {
+      memberId: editRow.id,
+      name: String(editRow.name || "").trim(),
+      email: normalizeEmail(editRow.email),
+      role: String(editRow.role || "trainer").toLowerCase(),
+      active: Boolean(editRow.active),
+    };
+
+    if (!payload.email || !payload.email.includes("@")) {
+      setSaveErr("Enter a valid email.");
+      return;
+    }
+    if (!["trainer", "admin"].includes(payload.role)) {
+      setSaveErr("Role must be trainer or admin.");
+      return;
+    }
+
+    setSavingId(editRow.id);
+    try {
+      const res = await fetch("/api/org/members/update", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || "Failed to save changes.");
+
+      // Update local list
+      setTrainers((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        const idx = list.findIndex((x) => String(x?.id) === String(editRow.id));
+        if (idx >= 0) {
+          list[idx] = {
+            ...list[idx],
+            Name: payload.name,
+            Email: payload.email,
+            Role: payload.role,
+            Active: payload.active,
+          };
+        }
+        return list;
+      });
+
+      setSaveOk("Saved.");
+      cancelEdit();
+    } catch (err) {
+      setSaveErr(err?.message || "Failed to save.");
+    } finally {
+      setSavingId("");
+      setTimeout(() => setSaveOk(""), 2500);
+    }
+  };
+
+  // -----------------------------
+  // Remove / Deactivate
+  // -----------------------------
   const openRemove = (t) => {
     setRemoveErr("");
+    setSaveErr("");
+    setSaveOk("");
+    setInviteErr("");
+    setInviteOk("");
+
+    if (!canManageMembers) {
+      setRemoveErr("Only Organization/Admin can remove members.");
+      setRemoveTarget(t);
+      setRemoveOpen(true);
+      return;
+    }
+
     setRemoveTarget(t);
     setRemoveOpen(true);
   };
@@ -360,9 +534,16 @@ export default function TrainersPage() {
       return;
     }
 
+    if (!canManageMembers) {
+      setRemoveErr("Only Organization/Admin can remove members.");
+      return;
+    }
+
     setRemoveBusy(true);
     try {
-      const res = await fetch("/api/org/trainers/remove", {
+      // If you haven't created /api/org/members/remove yet:
+      // You can swap this call to /api/org/members/update with { active:false }
+      const res = await fetch("/api/org/members/remove", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -372,8 +553,14 @@ export default function TrainersPage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to remove trainer.");
 
-      // remove in place
-      setTrainers((prev) => (Array.isArray(prev) ? prev.filter((x) => x?.id !== removeTarget.id) : prev));
+      // Mark inactive in local list (or remove from list, your call)
+      setTrainers((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        const idx = list.findIndex((x) => String(x?.id) === String(removeTarget.id));
+        if (idx >= 0) list[idx] = { ...list[idx], Active: false };
+        return list;
+      });
+
       closeRemove();
     } catch (err) {
       setRemoveErr(err?.message || "Failed to remove.");
@@ -381,6 +568,9 @@ export default function TrainersPage() {
       setRemoveBusy(false);
     }
   };
+
+  // Prevent editing multiple rows at once (optional)
+  const isEditing = (id) => editRow?.id && String(editRow.id) === String(id);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -393,6 +583,7 @@ export default function TrainersPage() {
                 <Users className="w-6 h-6 text-[#46769B]" />
                 <h1 className="text-2xl font-extrabold truncate">Trainers</h1>
               </div>
+
               <p className="text-sm text-gray-600 mt-1">
                 {orgName} • Logged in as <span className="font-semibold">{orgEmail}</span>
               </p>
@@ -429,9 +620,57 @@ export default function TrainersPage() {
 
                 <Pill>
                   <Users className="w-3.5 h-3.5 mr-1.5" />
-                  Team: {counts.total} (Admins: {counts.admins}, Trainers: {counts.coaches})
+                  Team: {counts.total} (Admins: {counts.admins}, Trainers: {counts.coaches}, Inactive:{" "}
+                  {counts.inactive})
                 </Pill>
+
+                {!canManageMembers ? (
+                  <Pill tone="warn">
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+                    View-only (Trainer role)
+                  </Pill>
+                ) : null}
               </div>
+
+              {(error || saveErr || inviteErr) && (
+                <div className="mt-4 space-y-2">
+                  {error ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700 font-semibold">{error}</p>
+                      <p className="text-[11px] text-red-600 mt-1">
+                        If this persists, log out and back in to refresh your session cookie.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {saveErr ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700 font-semibold">{saveErr}</p>
+                    </div>
+                  ) : null}
+
+                  {inviteErr ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700 font-semibold">{inviteErr}</p>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {(saveOk || inviteOk) && (
+                <div className="mt-4 space-y-2">
+                  {saveOk ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="text-sm text-emerald-800 font-semibold">{saveOk}</p>
+                    </div>
+                  ) : null}
+                  {inviteOk ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="text-sm text-emerald-800 font-semibold">{inviteOk}</p>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -458,15 +697,6 @@ export default function TrainersPage() {
               </p>
             </div>
           ) : null}
-
-          {error ? (
-            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm text-red-700 font-semibold">{error}</p>
-              <p className="text-[11px] text-red-600 mt-1">
-                If this persists, log out and back in to refresh your session cookie.
-              </p>
-            </div>
-          ) : null}
         </div>
 
         {/* Invite + Search + Table */}
@@ -489,9 +719,14 @@ export default function TrainersPage() {
               </Button>
             </div>
 
-            {inviteErr ? (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3">
-                <p className="text-sm text-red-700 font-semibold">{inviteErr}</p>
+            {!canManageMembers ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm text-amber-900 font-semibold">
+                  Your role is Trainer. Invites are disabled.
+                </p>
+                <p className="text-[11px] text-amber-800 mt-1">
+                  Ask an Admin/Organization owner to invite new members.
+                </p>
               </div>
             ) : null}
 
@@ -505,6 +740,7 @@ export default function TrainersPage() {
                     placeholder="coach@domain.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
+                    disabled={!canManageMembers}
                   />
                 </div>
               </div>
@@ -515,6 +751,7 @@ export default function TrainersPage() {
                   className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
+                  disabled={!canManageMembers}
                 >
                   <option value="trainer">Trainer</option>
                   <option value="admin">Admin</option>
@@ -525,17 +762,18 @@ export default function TrainersPage() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={sendInvite} disabled={inviteSending}>
+                <Button onClick={sendInvite} disabled={inviteSending || !canManageMembers}>
                   <UserPlus className="w-4 h-4" />
                   {inviteSending ? "Sending..." : "Send Invite"}
                 </Button>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-sm font-extrabold text-gray-900">API wiring</p>
+                <p className="text-sm font-extrabold text-gray-900">Inline edit</p>
                 <p className="text-[11px] text-gray-600 mt-1">
-                  Implement <span className="font-mono">/api/org/trainers/invite</span> to email an invite
-                  (or create a member record in Airtable).
+                  Click <span className="font-semibold">Edit</span> on a member to update Name, Email, Role, or
+                  Active status. Saving calls{" "}
+                  <span className="font-mono">/api/org/members/update</span>.
                 </p>
               </div>
             </div>
@@ -548,6 +786,9 @@ export default function TrainersPage() {
                 <h2 className="text-lg font-extrabold">Team</h2>
                 <p className="text-sm text-gray-600 mt-1">
                   Admins and trainers who can access org tools.
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Tip: inactive members stay listed but show as Inactive (you can reactivate via Edit).
                 </p>
               </div>
 
@@ -583,51 +824,157 @@ export default function TrainersPage() {
                       <td colSpan={6} className="py-6 text-center text-gray-500">
                         No trainers found.
                         <div className="text-[11px] text-gray-400 mt-1">
-                          Implement <span className="font-mono">/api/org/trainers/list</span> to populate.
+                          Ensure <span className="font-mono">/api/org/members/list</span> returns{" "}
+                          <span className="font-mono">trainers</span>.
                         </div>
                       </td>
                     </tr>
                   )}
 
                   {filtered.map((t) => {
-                    const email = normalizeEmail(t?.email);
+                    const id = t?.id;
+                    const email = normalizeEmail(t?.Email);
+                    const editing = isEditing(id);
+
+                    const createdAt = t?.createdAt || t?.CreatedAt || "";
+                    const displayAdded = createdAt ? fmtDate(createdAt) : "—";
+
                     return (
-                      <tr key={t?.id || email || Math.random()} className="border-b">
+                      <tr key={id || email || Math.random()} className="border-b align-top">
+                        {/* Member */}
                         <td className="py-3 pr-4">
-                          <div className="font-semibold text-gray-900">{t?.name || "Member"}</div>
-                          <div className="text-[11px] text-gray-500">{t?.title || ""}</div>
+                          {editing ? (
+                            <div className="space-y-2">
+                              <input
+                                className={inputBase}
+                                value={editRow.name}
+                                onChange={(e) => setEditRow((p) => ({ ...p, name: e.target.value }))}
+                                placeholder="Name"
+                              />
+                              <div className="text-[11px] text-gray-500">Member name</div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="font-semibold text-gray-900">{t?.Name || "Member"}</div>
+                              <div className="text-[11px] text-gray-500">
+                                {String(t?.Role || "").toLowerCase() === "admin"
+                                  ? "Admin access"
+                                  : "Trainer access"}
+                              </div>
+                            </>
+                          )}
                         </td>
 
+                        {/* Email */}
                         <td className="py-3 pr-4">
-                          <div className="text-gray-700 font-medium">{email || "—"}</div>
+                          {editing ? (
+                            <div className="space-y-2">
+                              <input
+                                className={inputBase}
+                                value={editRow.email}
+                                onChange={(e) => setEditRow((p) => ({ ...p, email: e.target.value }))}
+                                placeholder="email@domain.com"
+                              />
+                              <div className="text-[11px] text-gray-500">Login email</div>
+                            </div>
+                          ) : (
+                            <div className="text-gray-700 font-medium">{email || "—"}</div>
+                          )}
                         </td>
 
+                        {/* Role */}
                         <td className="py-3 pr-4">
-                          <Pill tone={roleTone(t?.role)}>{String(t?.role || "trainer")}</Pill>
+                          {editing ? (
+                            <select
+                              className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm"
+                              value={editRow.role}
+                              onChange={(e) => setEditRow((p) => ({ ...p, role: e.target.value }))}
+                            >
+                              <option value="trainer">Trainer</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          ) : (
+                            <Pill tone={roleTone(t?.Role)}>{String(t?.Role || "trainer")}</Pill>
+                          )}
                         </td>
 
+                        {/* Status */}
                         <td className="py-3 pr-4">
-                          <Pill>{String(t?.status || "Active")}</Pill>
+                          {editing ? (
+                            <div className="space-y-2">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!editRow.active}
+                                  onChange={(e) =>
+                                    setEditRow((p) => ({ ...p, active: e.target.checked }))
+                                  }
+                                />
+                                <span>{editRow.active ? "Active" : "Inactive"}</span>
+                              </label>
+                              <div className="text-[11px] text-gray-500">Controls org access</div>
+                            </div>
+                          ) : (
+                            <Pill tone={statusTone(!!t?.Active)}>{t?.Active ? "Active" : "Inactive"}</Pill>
+                          )}
                         </td>
 
+                        {/* Added */}
                         <td className="py-3 pr-4">
-                          <div className="text-gray-700 font-medium">
-                            {t?.createdAt ? fmtDate(t.createdAt) : "—"}
-                          </div>
+                          <div className="text-gray-700 font-medium">{displayAdded}</div>
                         </td>
 
+                        {/* Actions */}
                         <td className="py-3 pr-2">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="secondary"
-                              className="px-3 py-2 text-xs"
-                              onClick={() => openRemove(t)}
-                              disabled={!t?.id}
-                              title="Remove member"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Remove
-                            </Button>
+                            {editing ? (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  className="px-3 py-2 text-xs"
+                                  onClick={cancelEdit}
+                                  disabled={savingId === id}
+                                  title="Cancel"
+                                >
+                                  <Ban className="w-4 h-4" />
+                                  Cancel
+                                </Button>
+
+                                <Button
+                                  className="px-3 py-2 text-xs"
+                                  onClick={saveEdit}
+                                  disabled={savingId === id}
+                                  title="Save"
+                                >
+                                  <Save className="w-4 h-4" />
+                                  {savingId === id ? "Saving..." : "Save"}
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  className="px-3 py-2 text-xs"
+                                  onClick={() => startEdit(t)}
+                                  disabled={!canManageMembers || !id}
+                                  title={!canManageMembers ? "Only Admin/Org can edit" : "Edit member"}
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                  Edit
+                                </Button>
+
+                                <Button
+                                  variant="secondary"
+                                  className="px-3 py-2 text-xs"
+                                  onClick={() => openRemove(t)}
+                                  disabled={!canManageMembers || !id}
+                                  title={!canManageMembers ? "Only Admin/Org can remove" : "Deactivate member"}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Remove
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -635,6 +982,17 @@ export default function TrainersPage() {
                   })}
                 </tbody>
               </table>
+
+              {editRow?.id ? (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-extrabold text-amber-900">
+                    Editing mode
+                  </p>
+                  <p className="text-[12px] text-amber-800 mt-1">
+                    You’re editing one member. Save to persist changes, or cancel to discard.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -642,7 +1000,11 @@ export default function TrainersPage() {
         {/* Remove Modal */}
         <Modal
           open={removeOpen}
-          title={removeTarget ? `Remove: ${removeTarget?.name || removeTarget?.email || "Member"}` : "Remove Member"}
+          title={
+            removeTarget
+              ? `Remove: ${removeTarget?.Name || removeTarget?.Email || "Member"}`
+              : "Remove Member"
+          }
           onClose={closeRemove}
         >
           {removeErr ? (
@@ -655,16 +1017,19 @@ export default function TrainersPage() {
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
               <p className="text-xs text-gray-500">Confirm</p>
               <p className="text-sm font-extrabold text-gray-900 mt-1">
-                This will revoke org access for:
+                This will deactivate org access for:
               </p>
               <p className="text-[12px] text-gray-700 mt-2">
-                <span className="font-semibold">{removeTarget?.name || "Member"}</span>
-                {removeTarget?.email ? (
+                <span className="font-semibold">{removeTarget?.Name || "Member"}</span>
+                {removeTarget?.Email ? (
                   <>
                     {" "}
-                    • <span className="font-mono">{normalizeEmail(removeTarget.email)}</span>
+                    • <span className="font-mono">{normalizeEmail(removeTarget.Email)}</span>
                   </>
                 ) : null}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Deactivated members can be reactivated later by editing and setting Active=true.
               </p>
             </div>
 
@@ -683,7 +1048,9 @@ export default function TrainersPage() {
             </div>
 
             <div className="text-[11px] text-gray-500">
-              Wire <span className="font-mono">/api/org/trainers/remove</span> to persist removal.
+              This calls <span className="font-mono">/api/org/members/remove</span>. If you prefer, you can
+              wire it to <span className="font-mono">/api/org/members/update</span> with{" "}
+              <span className="font-mono">active=false</span>.
             </div>
           </div>
         </Modal>

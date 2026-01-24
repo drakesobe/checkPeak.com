@@ -1,22 +1,62 @@
 // components/Modal/CompareModalContent.jsx
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import ModalTabs from "./ModalTabs";
 import OCRScanResults from "../OCRUpload/OCRScanResults";
 
-/* Caches for OCR and records (per image URL) */
-const ocrCache = {};
-const recordsCache = {};
-const loadingCache = {};
+/* -----------------------------------------------------------------------------
+  ✅ Capped caches (prevents memory leaks across long sessions)
+----------------------------------------------------------------------------- */
+const MAX_CACHE_ITEMS = 50;
+
+const ocrCache = Object.create(null); // imageUrl -> ocrText
+const recordsCache = Object.create(null); // imageUrl -> { banned: [], ingredients: [] }
+const loadingCache = Object.create(null); // imageUrl -> boolean
+const cacheOrder = [];
+
+function touchCache(map, key, value) {
+  if (!key) return;
+  if (!(key in map)) {
+    cacheOrder.push(key);
+    while (cacheOrder.length > MAX_CACHE_ITEMS) {
+      const oldest = cacheOrder.shift();
+      if (!oldest) continue;
+      delete ocrCache[oldest];
+      delete recordsCache[oldest];
+      delete loadingCache[oldest];
+    }
+  }
+  map[key] = value;
+}
+
+function deleteCacheKey(key) {
+  if (!key) return;
+  delete ocrCache[key];
+  delete recordsCache[key];
+  delete loadingCache[key];
+  const idx = cacheOrder.indexOf(key);
+  if (idx >= 0) cacheOrder.splice(idx, 1);
+}
+
+/* -----------------------------------------------------------------------------
+  ✅ Cache tesseract import (avoid re-import per scan)
+----------------------------------------------------------------------------- */
+let tesseractPromise = null;
+async function getTesseract() {
+  if (!tesseractPromise) {
+    tesseractPromise = import("tesseract.js").then((m) => m.default);
+  }
+  return tesseractPromise;
+}
 
 export default function CompareModalContent({ stack, allStacks = [], onClose }) {
-  // 'detected' | 'all' (or whatever your ModalTabs expects)
   const [activeTab, setActiveTab] = useState("detected");
 
   const [ocrText, setOcrText] = useState("");
-  const [matchedRecords, setMatchedRecords] = useState([]);
+  const [matchedBanned, setMatchedBanned] = useState([]);
+  const [matchedIngredients, setMatchedIngredients] = useState([]);
   const [loadingOCR, setLoadingOCR] = useState(false);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [animDots, setAnimDots] = useState("");
@@ -25,79 +65,39 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
   const imageRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const imageUrl = stack?.nutritionLabel || stack?.imageUrl || "";
+  const imageUrl =
+    stack?.nutritionLabel ||
+    stack?.imageUrl ||
+    stack?.fields?.["Nutrition Label URL"] ||
+    stack?.rawFields?.["Nutrition Label URL"] ||
+    stack?.image ||
+    "";
 
   // Animate dots during OCR / records fetch
   useEffect(() => {
-    if (!loadingOCR && !loadingRecords) return;
+    if (!loadingOCR && !loadingRecords) {
+      setAnimDots("");
+      return;
+    }
     const interval = setInterval(() => {
       setAnimDots((prev) => (prev.length >= 3 ? "" : prev + "."));
     }, 450);
     return () => clearInterval(interval);
   }, [loadingOCR, loadingRecords]);
 
-  const runOCR = async () => {
-    if (!imageUrl) {
-      setOcrText("");
-      setMatchedRecords([]);
-      return;
-    }
-
-    // Use cached OCR if available
-    if (ocrCache[imageUrl]) {
-      const cached = ocrCache[imageUrl];
-      setOcrText(cached);
-      if (!recordsCache[imageUrl]) {
-        await fetchRecords(cached);
-      } else {
-        setMatchedRecords(recordsCache[imageUrl]);
-      }
-      return;
-    }
-
-    // Already scanning this image somewhere else
-    if (loadingCache[imageUrl]) return;
-    loadingCache[imageUrl] = true;
-
-    setLoadingOCR(true);
-    setError("");
-
-    try {
-      const Tesseract = (await import("tesseract.js")).default;
-      const preprocessed = await preprocessImage();
-      const result = await Tesseract.recognize(preprocessed, "eng", {
-        logger: () => {},
-        tessedit_char_whitelist:
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
-        oem: 1,
-        psm: 6,
-      });
-
-      const text = (result?.data?.text || "").trim() || "No OCR text detected.";
-      ocrCache[imageUrl] = text;
-      setOcrText(text);
-
-      await fetchRecords(text);
-    } catch (err) {
-      console.error("OCR Error:", err);
-      setError("OCR failed. Try a clearer photo or re-open this comparison.");
-      const fallback = "No OCR text detected.";
-      ocrCache[imageUrl] = fallback;
-      setOcrText(fallback);
-      setMatchedRecords([]);
-    } finally {
-      setLoadingOCR(false);
-      loadingCache[imageUrl] = false;
-    }
-  };
-
-  const preprocessImage = async () => {
-    if (!imageRef.current || !canvasRef.current) return null;
-
+  const preprocessImage = useCallback(async () => {
     const img = imageRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
 
+    // If we can't preprocess, we will fall back to the <img> element for OCR
+    if (!img || !canvas) return null;
+
+    // Ensure image is ready
+    if (!img.complete || (img.naturalWidth ?? 0) === 0) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth || img.width || 800;
     canvas.height = img.naturalHeight || img.height || 600;
     ctx.drawImage(img, 0, 0);
@@ -111,8 +111,7 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
 
       // grayscale + find min/max
       for (let i = 0; i < data.length; i += 4) {
-        const gray =
-          0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+        const gray = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
         if (gray < min) min = gray;
         if (gray > max) max = gray;
       }
@@ -120,8 +119,7 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
       const scale = 255 / (max - min || 1);
 
       for (let i = 0; i < data.length; i += 4) {
-        let gray =
-          0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+        let gray = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
         gray = Math.max(0, Math.min(255, (gray - min) * scale));
         data[i] = data[i + 1] = data[i + 2] = gray;
       }
@@ -172,114 +170,181 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
       console.warn("Preprocess failed; using full canvas", err);
       return canvas;
     }
-  };
+  }, []);
 
-  const fetchRecords = async (text) => {
-    if (!text) return;
+  const fetchRecords = useCallback(
+    async (text) => {
+      const cleaned = String(text || "").trim();
+      if (!imageUrl) return;
+      if (!cleaned || cleaned.length < 2) return;
 
-    // Use cache if present
-    if (recordsCache[imageUrl]) {
-      setMatchedRecords(recordsCache[imageUrl]);
-      return;
-    }
+      const lower = cleaned.toLowerCase();
+      if (
+        lower === "no ocr text detected." ||
+        lower === "no ocr text detected" ||
+        lower === "no text detected." ||
+        lower === "no text detected"
+      ) {
+        return;
+      }
 
-    setLoadingRecords(true);
+      // Cache hit
+      if (recordsCache[imageUrl]) {
+        const c = recordsCache[imageUrl];
+        setMatchedBanned(c.banned || []);
+        setMatchedIngredients(c.ingredients || []);
+        return;
+      }
 
-    try {
-      const res = await fetch("/api/check-smartstack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ocrText: text }),
-      });
+      setLoadingRecords(true);
 
-      const data = await res.json();
-      const raw = data?.records || [];
+      try {
+        const res = await fetch("/api/check-smartstack", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // ✅ new contract
+          body: JSON.stringify({ ingredientsText: cleaned }),
+        });
 
-      const recs = raw.map((r) => {
-        if (r && typeof r === "object" && r.name) {
-          return {
-            id: r.id || r.recordId || null,
-            name: (r.name || "").toString().trim(),
-            banType: (r.banType || r["Ban Type"] || "").toString().trim(),
-            synonyms: r.synonyms || r["Synonyms"] || "",
-            bannedBy: r.bannedBy || r["Banned By"] || "",
-            dosageLimit: r.dosageLimit || r["Dosage Limit"] || "",
-            notes: r.notes || r["Notes"] || "",
-            source: r.source || r["Source / Citation"] || "",
-            _raw: r,
-          };
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "Failed to fetch records");
+
+        const banned = Array.isArray(data?.bannedSubstances)
+          ? data.bannedSubstances
+          : [];
+        const ingredients = Array.isArray(data?.ingredients)
+          ? data.ingredients
+          : [];
+
+        touchCache(recordsCache, imageUrl, { banned, ingredients });
+
+        setMatchedBanned(banned);
+        setMatchedIngredients(ingredients);
+      } catch (err) {
+        console.error("Fetch matched records failed", err);
+        setMatchedBanned([]);
+        setMatchedIngredients([]);
+      } finally {
+        setLoadingRecords(false);
+      }
+    },
+    [imageUrl]
+  );
+
+  const runOCR = useCallback(
+    async (force = false) => {
+      if (!imageUrl) {
+        setOcrText("");
+        setMatchedBanned([]);
+        setMatchedIngredients([]);
+        return;
+      }
+
+      // Force = true clears caches so it truly re-scans
+      if (force) deleteCacheKey(imageUrl);
+
+      // Use cached OCR if available
+      if (ocrCache[imageUrl] && !force) {
+        const cached = ocrCache[imageUrl];
+        setOcrText(cached);
+
+        if (recordsCache[imageUrl]) {
+          const c = recordsCache[imageUrl];
+          setMatchedBanned(c.banned || []);
+          setMatchedIngredients(c.ingredients || []);
+        } else {
+          await fetchRecords(cached);
         }
+        return;
+      }
 
-        if (r?.fields) {
-          const f = r.fields;
-          return {
-            id: r.id || null,
-            name: (f["Substance Name"] || "").toString().trim(),
-            banType: (f["Ban Type"] || "").toString().trim(),
-            synonyms: f["Synonyms"] || "",
-            bannedBy: f["Banned By"] || "",
-            dosageLimit: f["Dosage Limit"] || "",
-            notes: f["Notes"] || "",
-            source: f["Source / Citation"] || "",
-            _raw: r,
-          };
-        }
+      // Already scanning this image somewhere else
+      if (loadingCache[imageUrl]) return;
+      loadingCache[imageUrl] = true;
 
-        return {
-          id: r?.id || null,
-          name: r?.name || "",
-          banType: r?.banType || "",
-          _raw: r,
-        };
-      });
+      setLoadingOCR(true);
+      setError("");
 
-      recordsCache[imageUrl] = recs;
-      setMatchedRecords(recs);
-    } catch (err) {
-      console.error("Fetch matched records failed", err);
-      setMatchedRecords([]);
-    } finally {
-      setLoadingRecords(false);
-    }
-  };
+      try {
+        const Tesseract = await getTesseract();
+        const preprocessed = await preprocessImage();
 
-  // Auto-run OCR when image is ready
+        // If preprocess returns null, fall back to the image element
+        const target = preprocessed || imageRef.current;
+        if (!target) throw new Error("Image not ready for OCR.");
+
+        const result = await Tesseract.recognize(target, "eng", {
+          logger: () => {},
+          tessedit_char_whitelist:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
+          oem: 1,
+          psm: 6,
+        });
+
+        const text =
+          (result?.data?.text || "").trim() || "No OCR text detected.";
+
+        touchCache(ocrCache, imageUrl, text);
+        setOcrText(text);
+
+        await fetchRecords(text);
+      } catch (err) {
+        console.error("OCR Error:", err);
+        setError("OCR failed. Try a clearer photo or re-open this comparison.");
+        const fallback = "No OCR text detected.";
+        touchCache(ocrCache, imageUrl, fallback);
+        setOcrText(fallback);
+        setMatchedBanned([]);
+        setMatchedIngredients([]);
+      } finally {
+        setLoadingOCR(false);
+        loadingCache[imageUrl] = false;
+      }
+    },
+    [imageUrl, fetchRecords, preprocessImage]
+  );
+
+  // Auto-run OCR when image is ready (and hydrate from cache instantly)
   useEffect(() => {
     if (!imageUrl) return;
 
-    const img = imageRef.current;
-
+    // If cached OCR exists, hydrate immediately and fetch records if needed
     if (ocrCache[imageUrl]) {
       const cached = ocrCache[imageUrl];
       setOcrText(cached);
-      if (!recordsCache[imageUrl]) {
-        fetchRecords(cached);
+
+      if (recordsCache[imageUrl]) {
+        const c = recordsCache[imageUrl];
+        setMatchedBanned(c.banned || []);
+        setMatchedIngredients(c.ingredients || []);
       } else {
-        setMatchedRecords(recordsCache[imageUrl]);
+        fetchRecords(cached).catch(() => {});
       }
       return;
     }
 
+    // If image already loaded, kick off OCR with small delay
+    const img = imageRef.current;
     if (img && (img.complete || img.naturalWidth)) {
-      // small delay so layout has stabilized
-      const timer = setTimeout(() => runOCR(), 120);
+      const timer = setTimeout(() => runOCR(false), 120);
       return () => clearTimeout(timer);
     }
-  }, [imageUrl]);
+  }, [imageUrl, fetchRecords, runOCR]);
 
   const handleImageLoad = () => {
-    const timer = setTimeout(() => runOCR(), 120);
-    return () => clearTimeout(timer);
+    // Event handlers don’t support returning a cleanup — just run the timer.
+    setTimeout(() => runOCR(false), 120);
   };
 
-  const statusLabel = (() => {
+  const statusLabel = useMemo(() => {
     if (!imageUrl) return "No label image available";
     if (loadingOCR) return `Scanning label${animDots}`;
-    if (loadingRecords) return `Checking substances${animDots}`;
-    if (ocrText && matchedRecords.length) return "Scan complete · matches found";
-    if (ocrText && !matchedRecords.length) return "Scan complete · no matches found";
+    if (loadingRecords) return `Checking ingredients${animDots}`;
+    if (ocrText && (matchedBanned.length || matchedIngredients.length))
+      return "Scan complete · results ready";
+    if (ocrText) return "Scan complete · no matches found";
     return "Ready to scan this label";
-  })();
+  }, [imageUrl, loadingOCR, loadingRecords, animDots, ocrText, matchedBanned.length, matchedIngredients.length]);
 
   return (
     <div className="flex flex-col gap-4 w-full text-slate-50">
@@ -294,6 +359,13 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
               className="w-full max-h-64 object-contain bg-slate-900"
               crossOrigin="anonymous"
               onLoad={handleImageLoad}
+              onError={(e) => {
+                // Avoid infinite loops
+                if (!e.currentTarget.dataset.fallback) {
+                  e.currentTarget.dataset.fallback = "1";
+                  e.currentTarget.src = "/fallback-image.svg";
+                }
+              }}
             />
           </div>
           <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -310,41 +382,60 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           {statusLabel}
         </span>
+
         {ocrText && (
-          <span className="hidden sm:inline text-slate-400 truncate max-w-[140px] text-right">
-            {ocrText.slice(0, 40)}
-            {ocrText.length > 40 ? "…" : ""}
+          <span className="hidden sm:inline text-slate-400 truncate max-w-[180px] text-right">
+            {ocrText.slice(0, 48)}
+            {ocrText.length > 48 ? "…" : ""}
           </span>
         )}
       </div>
 
-      {/* Tabs (detected vs raw, etc.) */}
+      {/* Tabs */}
       <ModalTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Actions + results */}
       <div className="flex flex-col gap-3">
-        <motion.button
-          type="button"
-          onClick={runOCR}
-          disabled={loadingOCR || !imageUrl}
-          whileTap={{ scale: loadingOCR || !imageUrl ? 1 : 0.97 }}
-          className={`px-4 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition flex items-center justify-center ${
-            loadingOCR || !imageUrl
-              ? "bg-slate-600 text-slate-200 cursor-not-allowed"
-              : "bg-[#46769B] hover:brightness-110 text-white shadow-sm"
-          }`}
-        >
-          {loadingOCR
-            ? `Scanning${animDots}`
-            : !imageUrl
-            ? "No label to scan"
-            : "Rescan this label"}
-        </motion.button>
+        <div className="flex gap-2">
+          <motion.button
+            type="button"
+            onClick={() => runOCR(true)}
+            disabled={loadingOCR || !imageUrl}
+            whileTap={{ scale: loadingOCR || !imageUrl ? 1 : 0.97 }}
+            className={`flex-1 px-4 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition flex items-center justify-center ${
+              loadingOCR || !imageUrl
+                ? "bg-slate-600 text-slate-200 cursor-not-allowed"
+                : "bg-[#46769B] hover:brightness-110 text-white shadow-sm"
+            }`}
+          >
+            {loadingOCR
+              ? `Scanning${animDots}`
+              : !imageUrl
+              ? "No label to scan"
+              : "Rescan (force)"}
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={() => runOCR(false)}
+            disabled={loadingOCR || loadingRecords || !imageUrl}
+            whileTap={{ scale: loadingOCR || loadingRecords || !imageUrl ? 1 : 0.97 }}
+            className={`px-4 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition flex items-center justify-center ${
+              loadingOCR || loadingRecords || !imageUrl
+                ? "bg-slate-700 text-slate-300 cursor-not-allowed"
+                : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+            }`}
+            title="Uses cache when available"
+          >
+            Refresh
+          </motion.button>
+        </div>
 
         {activeTab === "detected" ? (
           <OCRScanResults
             ocrText={ocrText}
-            matchedSubstances={matchedRecords}
+            matchedSubstances={matchedBanned}
+            matchedIngredients={matchedIngredients}
           />
         ) : (
           <div className="mt-1 rounded-xl border border-slate-700/80 bg-slate-900/80 p-3 text-xs sm:text-sm text-slate-100 max-h-64 overflow-y-auto">

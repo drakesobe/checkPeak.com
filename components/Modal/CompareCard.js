@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 import ValueRatingSlim from "./modal/ValueRatingSlim";
 
 export default function CompareCard({
@@ -8,65 +8,67 @@ export default function CompareCard({
   selectedCompareStacks,
   setSelectedCompareStacks,
   openCompareModal,
+  // ✅ IMPORTANT: if CompareCard is used in a .map(), set this to false
+  // and render the sticky compare bar once at the page level.
+  showStickyCompareBar = true,
 }) {
   const isSelected = selectedCompareStacks.some((s) => s.id === stack.id);
   const selectedCount = selectedCompareStacks.length;
 
   const toggleCompare = () => {
     if (isSelected) {
-      setSelectedCompareStacks(selectedCompareStacks.filter((s) => s.id !== stack.id));
+      setSelectedCompareStacks(
+        selectedCompareStacks.filter((s) => s.id !== stack.id)
+      );
     } else if (selectedCompareStacks.length < 3) {
       setSelectedCompareStacks([...selectedCompareStacks, stack]);
     }
   };
 
   const productImage =
-    stack.nutritionLabel ||
-    stack.image ||
-    stack.rawFields?.["Image"] ||
+    stack?.imageUrl ||
+    stack?.nutritionLabel ||
+    stack?.image ||
+    stack?.rawFields?.["Image URL"] ||
+    stack?.rawFields?.["Nutrition Label URL"] ||
+    stack?.rawFields?.["Image"] ||
     "";
 
-  const stackName = stack.name || stack.rawFields?.Name || "Unknown Product";
-  const stackBrand = stack.brand || stack.rawFields?.Brand || "Unknown Brand";
+  const stackName = stack?.name || stack?.rawFields?.Name || "Unknown Product";
+  const stackBrand = stack?.brand || stack?.rawFields?.Brand || "Unknown Brand";
 
-  const servings =
-    stack.servings ??
-    stack.rawFields?.Servings ??
-    stack.rawFields?.["Servings"] ??
+  const servingsRaw =
+    stack?.servings ??
+    stack?.rawFields?.Servings ??
+    stack?.rawFields?.["Servings"] ??
     null;
 
-  const price =
-    stack.price ??
-    stack.rawFields?.Price ??
-    stack.rawFields?.["Price"] ??
+  const priceRaw =
+    stack?.price ??
+    stack?.rawFields?.Price ??
+    stack?.rawFields?.["Price"] ??
     null;
 
   const valueScore =
-    stack.rating ??
-    stack.valueScore ??
-    stack.rawFields?.Rating ??
-    stack.rawFields?.["Value Score"];
+    stack?.rating ??
+    stack?.valueScore ??
+    stack?.rawFields?.Rating ??
+    stack?.rawFields?.["Value Score"] ??
+    null;
 
-  // Responsive label shrink for very narrow devices
-  const [isVeryNarrow, setIsVeryNarrow] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 360px)");
-    const update = (e) => setIsVeryNarrow(!!e.matches);
+  const servings = useMemo(() => {
+    if (servingsRaw === null || servingsRaw === undefined) return null;
+    const n = Number(servingsRaw);
+    return Number.isFinite(n) ? n : String(servingsRaw);
+  }, [servingsRaw]);
 
-    setIsVeryNarrow(!!mq.matches);
-    if (mq.addEventListener) mq.addEventListener("change", update);
-    else mq.addListener(update);
+  const price = useMemo(() => {
+    if (priceRaw === null || priceRaw === undefined || priceRaw === "") return null;
+    const n = Number(priceRaw);
+    return Number.isFinite(n) ? n : null;
+  }, [priceRaw]);
 
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", update);
-      else mq.removeListener(update);
-    };
-  }, []);
-
-  const compareLabel = isVeryNarrow
-    ? "Compare"
-    : `Compare ${selectedCount} Stack${selectedCount > 1 ? "s" : ""}`;
+  const compareLabel = `Compare ${selectedCount} Stack${selectedCount > 1 ? "s" : ""}`;
 
   return (
     <>
@@ -78,6 +80,13 @@ export default function CompareCard({
             ? "border-emerald-400 ring-2 ring-emerald-400/40"
             : "border-gray-800 hover:border-gray-600"
         }`}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") toggleCompare();
+        }}
+        aria-pressed={isSelected}
+        aria-label={`${isSelected ? "Remove" : "Add"} ${stackName} to compare`}
       >
         {/* Selected overlay + pill */}
         {isSelected && (
@@ -100,8 +109,11 @@ export default function CompareCard({
               loading="lazy"
               className="w-full h-40 sm:h-44 object-contain rounded-xl bg-gray-800 border border-gray-700"
               onError={(e) => {
-                e.currentTarget.src = "/fallback-image.svg";
-                e.currentTarget.classList.add("object-contain");
+                // Avoid infinite loops
+                if (!e.currentTarget.dataset.fallback) {
+                  e.currentTarget.dataset.fallback = "1";
+                  e.currentTarget.src = "/fallback-image.svg";
+                }
               }}
             />
           ) : (
@@ -122,7 +134,7 @@ export default function CompareCard({
         </div>
 
         {/* Value rating */}
-        {valueScore !== undefined && valueScore !== null && (
+        {valueScore !== null && valueScore !== undefined && (
           <div className="mt-2">
             <ValueRatingSlim valueScore={valueScore} />
           </div>
@@ -130,22 +142,22 @@ export default function CompareCard({
 
         {/* Meta: servings / price */}
         <div className="mt-2 text-xs sm:text-sm text-gray-300 space-y-0.5">
-          {servings && (
+          {servings !== null && (
             <p>
               <span className="font-semibold text-gray-100">Servings:</span>{" "}
               {servings}
             </p>
           )}
-          {price && !Number.isNaN(Number(price)) && (
+          {price !== null && (
             <p>
               <span className="font-semibold text-gray-100">Price:</span>{" "}
-              ${Number(price).toFixed(2)}
+              ${price.toFixed(2)}
             </p>
           )}
         </div>
 
         {/* Affiliate CTA */}
-        {stack.affiliateLink && (
+        {stack?.affiliateLink && (
           <a
             href={stack.affiliateLink}
             target="_blank"
@@ -165,8 +177,8 @@ export default function CompareCard({
         </p>
       </div>
 
-      {/* Sticky Compare Button (only if 2+ selected) */}
-      {selectedCount >= 2 && (
+      {/* Sticky Compare Button (render once!) */}
+      {showStickyCompareBar && selectedCount >= 2 && (
         <>
           {/* Mobile sticky button */}
           <div
@@ -194,8 +206,7 @@ export default function CompareCard({
                 {compareLabel}
               </button>
               <p className="text-xs text-gray-300">
-                You’re viewing {selectedCount} stack
-                {selectedCount > 1 ? "s" : ""} &mdash; open the comparison modal
+                You’re viewing {selectedCount} stack{selectedCount > 1 ? "s" : ""} — open the comparison modal
                 to see them side-by-side.
               </p>
             </div>

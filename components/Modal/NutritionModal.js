@@ -11,18 +11,55 @@ import ModalFooter from "./ModalFooter";
  * NutritionModal
  *
  * - Runs OCR on nutrition label image and queries /api/check-smartstack
- * - Caches OCR + matched results by imageUrl
- * - Adds a "fake scan" (priming) state so there is no dead period:
- *    • user intent immediately shows "Preparing scan…"
- *    • real OCR/API only starts when image is loaded + not already busy
+ * - Caches OCR + matched results by imageUrl (with size cap to avoid memory growth)
+ * - Adds a "fake scan" (priming) state so there is no dead period
+ * - Prevents double OCR runs (run-once-per-open unless forced)
  * - Fixes API contract:
  *    • POST body uses { ingredientsText }
  *    • Response reads { bannedSubstances, ingredients }
  */
 
-const ocrCache = {}; // imageUrl -> ocr text (string)
-const recordsCache = {}; // imageUrl -> { banned: [], ingredients: [] }
-const loadingCache = {}; // imageUrl -> boolean (prevent concurrent OCR)
+// -----------------------------------------------------------------------------
+// ✅ Capped caches (prevents unbounded memory growth across long sessions)
+// -----------------------------------------------------------------------------
+const MAX_CACHE_ITEMS = 50;
+
+// imageUrl -> ocr text (string)
+const ocrCache = Object.create(null);
+// imageUrl -> { banned: [], ingredients: [] }
+const recordsCache = Object.create(null);
+// imageUrl -> boolean (prevent concurrent OCR)
+const loadingCache = Object.create(null);
+// imageUrl insertion order for simple eviction (good-enough FIFO)
+const cacheOrder = [];
+
+function touchCache(map, key, value) {
+  if (!key) return;
+
+  // If key is new, track order
+  if (!(key in map)) {
+    cacheOrder.push(key);
+    // Evict oldest until size <= MAX_CACHE_ITEMS
+    while (cacheOrder.length > MAX_CACHE_ITEMS) {
+      const oldest = cacheOrder.shift();
+      if (oldest && oldest in map) delete map[oldest];
+      if (oldest && oldest in recordsCache) delete recordsCache[oldest];
+      if (oldest && oldest in loadingCache) delete loadingCache[oldest];
+    }
+  }
+
+  map[key] = value;
+}
+
+function deleteCacheKey(key) {
+  if (!key) return;
+  if (key in ocrCache) delete ocrCache[key];
+  if (key in recordsCache) delete recordsCache[key];
+  if (key in loadingCache) delete loadingCache[key];
+  // Remove from order list
+  const idx = cacheOrder.indexOf(key);
+  if (idx >= 0) cacheOrder.splice(idx, 1);
+}
 
 function parseNumber(value) {
   if (value == null) return 0;
@@ -53,6 +90,9 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
   const imageRef = useRef(null);
   const canvasRef = useRef(null);
+
+  // ✅ Ensure OCR only auto-runs once per stack open (unless forced)
+  const startedRef = useRef({ url: "", started: false });
 
   // Animate "..." while loading OCR, loading records, OR primed (fake scan)
   useEffect(() => {
@@ -115,6 +155,11 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     if (imageUrl) console.log("[NutritionModal] OCR image source →", imageUrl);
   }, [imageUrl]);
 
+  // Reset one-run-per-open guard on imageUrl change
+  useEffect(() => {
+    startedRef.current = { url: imageUrl, started: false };
+  }, [imageUrl]);
+
   // -------------------------
   // Image preprocessing
   // -------------------------
@@ -169,7 +214,6 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       const cleaned = String(text || "").trim();
 
       // ✅ Hard gate: don't call API if OCR text is empty or placeholder
-      // Prevents "Missing ingredientsText" and avoids flashing empty results.
       if (!cleaned || cleaned.length < 2) return;
 
       const lower = cleaned.toLowerCase();
@@ -198,14 +242,12 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
         const res = await fetch("/api/check-smartstack", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // ✅ API expects ingredientsText
           body: JSON.stringify({ ingredientsText: cleaned }),
         });
 
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Failed to fetch records");
 
-        // ✅ API returns bannedSubstances + ingredients
         const rawBanned = data?.bannedSubstances || [];
         const rawIngredients = data?.ingredients || [];
 
@@ -240,7 +282,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
         const banned = normalize(rawBanned, "banned");
         const ingredients = normalize(rawIngredients, "ingredient");
 
-        recordsCache[imageUrl] = { banned, ingredients };
+        touchCache(recordsCache, imageUrl, { banned, ingredients });
         setMatchedRecords(banned);
         setMatchedIngredients(ingredients);
       } catch (err) {
@@ -270,8 +312,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
       // If forcing, clear caches so this is a true re-scan
       if (force) {
-        delete ocrCache[imageUrl];
-        delete recordsCache[imageUrl];
+        deleteCacheKey(imageUrl);
       }
 
       // If OCR cached and not forcing, use cache and ensure records are present
@@ -287,7 +328,6 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           await fetchRecords(cachedText);
         }
 
-        // We can end priming since we already hydrated
         setScanPrimed(false);
         return;
       }
@@ -314,7 +354,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
         // Keep a placeholder for display, but fetchRecords() will ignore placeholders
         const finalText = text || "No OCR text detected.";
-        ocrCache[imageUrl] = finalText;
+        touchCache(ocrCache, imageUrl, finalText);
         setOcrText(finalText);
 
         await fetchRecords(finalText);
@@ -322,14 +362,13 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
         console.error("OCR Error:", err);
         setError("OCR failed. Try a clearer photo or re-open this modal.");
         const fallback = "No OCR text detected.";
-        ocrCache[imageUrl] = fallback;
+        touchCache(ocrCache, imageUrl, fallback);
         setOcrText(fallback);
         setMatchedRecords([]);
         setMatchedIngredients([]);
       } finally {
         setLoadingOCR(false);
         loadingCache[imageUrl] = false;
-        // ✅ End priming regardless (real scan attempt completed)
         setScanPrimed(false);
       }
     },
@@ -337,26 +376,23 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   );
 
   // -------------------------
-  // Public scan trigger (this is what children should call)
-  // - Immediately enters "fake scan" state
-  // - Only starts real OCR when the image is loaded and we're not busy
+  // Public scan trigger
   // -------------------------
   const runOCR = useCallback(
     async (force = false) => {
-      // Fake scan starts immediately on intent
       setScanPrimed(true);
       setError("");
 
       if (!imageUrl) return;
-
-      // If forcing, we can start as soon as possible — but still wait for image readiness
-      // If image isn't loaded yet, we just keep primed and the effect below will start it.
       if (!imageLoaded) return;
-
-      // If already running, stay primed (UI shows preparing/scanning) and bail
       if (loadingOCR || loadingRecords) return;
 
-      // Tiny delay makes the UI feel responsive and avoids instantaneous flicker
+      // Avoid double-starts
+      if (startedRef.current.url === imageUrl && startedRef.current.started && !force) {
+        return;
+      }
+      startedRef.current.started = true;
+
       setTimeout(() => {
         runOCRInternal(force).catch(() => {});
       }, 200);
@@ -372,6 +408,10 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     if (!imageUrl) return;
     if (!imageLoaded) return;
     if (loadingOCR || loadingRecords) return;
+
+    // Avoid double-starts
+    if (startedRef.current.url === imageUrl && startedRef.current.started) return;
+    startedRef.current.started = true;
 
     const id = setTimeout(() => {
       runOCRInternal(false).catch(() => {});
@@ -392,13 +432,12 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     setLoadingRecords(false);
     setImageCollapsed(true);
 
-    // ✅ reset readiness/priming on stack change
     setScanPrimed(false);
     setImageLoaded(false);
 
     if (!imageUrl) return;
 
-    // If we have cached OCR, hydrate from cache; otherwise records will be fetched after OCR
+    // Hydrate from cache
     if (ocrCache[imageUrl]) {
       const cachedText = String(ocrCache[imageUrl] || "").trim();
       setOcrText(cachedText);
@@ -419,18 +458,24 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   const handleImageLoad = () => {
     setImageLoaded(true);
 
-    // Brief delay gives layout a moment to stabilize
     setTimeout(() => {
       if (!imageUrl) return;
 
-      // If the user already clicked something (primed), start real scan now
+      // Avoid double-starts
+      if (startedRef.current.url === imageUrl && startedRef.current.started) {
+        return;
+      }
+
+      // If user already primed, start now
       if (scanPrimed) {
+        startedRef.current.started = true;
         runOCRInternal(false).catch(() => {});
         return;
       }
 
-      // Auto-run scan only if we have no cached OCR
+      // Auto-run only if no cached OCR
       if (!ocrCache[imageUrl]) {
+        startedRef.current.started = true;
         runOCRInternal(false).catch(() => {});
       } else if (!recordsCache[imageUrl]) {
         fetchRecords(ocrCache[imageUrl]).catch(() => {});
@@ -467,8 +512,8 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           stack={stack}
           servingsNumber={servingsNumber}
           priceNumber={priceNumber}
-          matchedRecords={matchedRecords} // banned
-          matchedIngredients={matchedIngredients} // ingredients
+          matchedRecords={matchedRecords}
+          matchedIngredients={matchedIngredients}
           allStacks={allStacks}
           onClose={onClose}
         />
@@ -503,6 +548,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
               <div className="flex-1 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-start md:justify-end gap-2">
                   <button
+                    type="button"
                     className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm rounded text-white transition"
                     onClick={() => setImageCollapsed((s) => !s)}
                   >
@@ -520,12 +566,14 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                     rel="noreferrer"
                     onClick={(e) => {
                       if (!affiliateLink) e.preventDefault();
+                      else e.stopPropagation();
                     }}
                   >
                     {affiliateLink ? "Open product link" : "No product link"}
                   </a>
 
                   <button
+                    type="button"
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs sm:text-sm text-white rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
                     onClick={() => runOCR(true)}
                     title="Force re-run OCR & fetch matched records"
@@ -548,7 +596,6 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                   </p>
                 )}
 
-                {/* Optional: show a small hint during priming so it never feels dead */}
                 {scanPrimed && !loadingOCR && !loadingRecords && (
                   <p className="text-[11px] sm:text-xs text-gray-500">
                     Getting the scanner ready…
@@ -575,8 +622,8 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
             matchedRecords={matchedRecords}
             matchedIngredients={matchedIngredients}
             error={error}
-            runOCR={runOCR} // ✅ now includes fake-scan priming
-            scanPrimed={scanPrimed} // optional: ModalContent can show skeletons if you want
+            runOCR={runOCR}
+            scanPrimed={scanPrimed}
             stackId={stack?.id || imageUrl || Math.random().toString(36).slice(2)}
           />
         </div>

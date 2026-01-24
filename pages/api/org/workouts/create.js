@@ -14,9 +14,27 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const { athleteId, date, title, items = [] } = req.body || {};
+    const {
+      // ✅ allow either single athleteId or multiple athleteIds
+      athleteId,
+      athleteIds,
+      date,
+      title,
+      sport, // ✅ add
+      status, // ✅ add optional (default assigned)
+      items = [],
+    } = req.body || {};
 
-    if (!athleteId) return res.status(400).json({ error: "athleteId is required." });
+    const finalAthleteIds = Array.isArray(athleteIds)
+      ? athleteIds.filter(Boolean)
+      : athleteId
+      ? [athleteId]
+      : [];
+
+    if (!finalAthleteIds.length) {
+      return res.status(400).json({ error: "athleteId or athleteIds[] is required." });
+    }
+
     if (!date) return res.status(400).json({ error: "date is required (YYYY-MM-DD)." });
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "At least 1 workout item is required." });
@@ -25,23 +43,22 @@ export default async function handler(req, res) {
     const b = base();
 
     const orgId = user.orgId;
-    const memberId = user.memberId; // OrgMembers record id (trainer/admin OR ensured org owner)
+    const memberId = user.memberId; // OrgMembers record id
 
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
-    if (!memberId) {
-      return res.status(400).json({ error: "Missing memberId on session user. Re-login." });
-    }
+    if (!memberId) return res.status(400).json({ error: "Missing memberId on session user. Re-login." });
 
     // 1) Create DailyWorkout
     const createdDW = await b(AT.tables.dailyWorkouts).create([
       {
         fields: {
           [F.DW_ORG]: [orgId],
-          [F.DW_ATHLETE]: [athleteId],
+          [F.DW_ATHLETE]: finalAthleteIds, // ✅ multi-assign supported
           [F.DW_DATE]: String(date),
           [F.DW_TITLE]: String(title || "Daily Workout"),
-          [F.DW_STATUS]: "assigned",
-          [F.DW_CREATEDBY]: [memberId], // ✅ linked record
+          [F.DW_STATUS]: String(status || "assigned"),
+          ...(sport ? { [F.DW_SPORT]: String(sport) } : {}), // ✅ requires F.DW_SPORT in config
+          [F.DW_CREATEDBY]: [memberId],
         },
       },
     ]);
@@ -57,6 +74,8 @@ export default async function handler(req, res) {
         [F.WI_ORG]: [orgId],
         [F.WI_DW]: [dailyWorkoutId],
         [F.WI_ORDER]: Number.isFinite(Number(it.order)) ? Number(it.order) : idx + 1,
+
+        // exercise name
         [F.WI_NAME]: String(it.exerciseName || "").trim(),
 
         ...(it.sets !== undefined ? { [F.WI_SETS]: Number(it.sets) || 0 } : {}),

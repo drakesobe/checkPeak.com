@@ -5,26 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
-import WheelSelect from "@/components/WheelSelect";
+import SearchSelect from "@/components/SearchSelect";
 import { rangeOptions } from "@/lib/rangeOptions";
 import { Trash2 } from "lucide-react";
 
 /**
  * ORG → PRESCRIPTIONS
  *
- * Adds Plan Templates:
- * - Save current builder as a template (POST /api/org/createPlanTemplate)
- * - Load templates for org token (GET /api/org/getPlanTemplates)
- * - Apply a template to builder (fills structured fields)
- *
- * Adds Template Delete:
- * - Delete a selected template (DELETE /api/org/deletePlanTemplate)
- * - Confirmation modal before delete
- *
- * Speed mode for coaches:
- * - Save & Next (auto-advance through filtered roster)
- * - Keyboard: Enter = Save & Next, Ctrl/Cmd+Enter = Save
- * - Keeps builder values by default (so you can fly through 100 athletes)
+ * - Templates: save, load, apply, delete
+ * - Speed mode: Save & Next through filtered roster
+ * - Keyboard: Enter = Save & Next, Ctrl/Cmd+Enter = Save (inside notes textarea)
  */
 
 function normalizeEmail(email) {
@@ -118,7 +108,9 @@ function ConfirmDeleteModal({
           <div>
             <h3 className="text-base font-bold text-gray-900">{title}</h3>
             {description ? (
-              <p className="text-sm text-gray-600 mt-2 leading-relaxed">{description}</p>
+              <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                {description}
+              </p>
             ) : null}
           </div>
 
@@ -179,25 +171,26 @@ export default function OrgPrescriptionsPage() {
   }, [user]);
 
   const orgName = useMemo(
-    () => String(user?.Name || user?.name || user?.Organization || "Organization"),
+    () =>
+      String(user?.Name || user?.name || user?.Organization || "Organization"),
     [user]
   );
 
-  // Prefer org token from user context; used for template scoping
   const orgToken = useMemo(() => {
-    return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
+    return String(
+      user?.Token || user?.token || user?.["Organization Token"] || ""
+    ).trim();
   }, [user]);
 
   const orgAuthHeaders = useMemo(() => {
-    // Your org APIs typically read x-org-token; keep it consistent.
     return orgToken ? { "x-org-token": orgToken } : {};
   }, [orgToken]);
 
   /* ------------------------------------------------------------------------ */
-  /* Wheel “Unlimited-ish” Options                                            */
+  /* Options                                                                  */
   /* ------------------------------------------------------------------------ */
 
-  const WHEEL = useMemo(() => {
+  const OPTIONS = useMemo(() => {
     const calories = rangeOptions(0, 5000, 5);
     const grams = rangeOptions(0, 400, 1);
     const hydration = rangeOptions(0, 300, 1);
@@ -240,7 +233,6 @@ export default function OrgPrescriptionsPage() {
       "Weigh-in week: reduce sodium",
       "Increase calories gradually (+150/week)",
       "Increase hydration on travel days",
-      "Custom (type your own)",
     ];
 
     const notesSupps = [
@@ -249,10 +241,9 @@ export default function OrgPrescriptionsPage() {
       "Avoid proprietary blends",
       "Avoid stimulants",
       "Third-party tested only",
-      "Custom (type your own)",
     ];
 
-    const metaStatus = ["Active", "Draft", "Archived", "Paused", "Custom"];
+    const metaStatus = ["Active", "Draft", "Archived", "Paused"];
 
     return {
       calories,
@@ -319,7 +310,6 @@ export default function OrgPrescriptionsPage() {
     }
   }, [user, role, router]);
 
-  // Optional: allow direct linking /org/prescriptions?athleteEmail=...
   useEffect(() => {
     const q = router?.query?.athleteEmail;
     if (typeof q === "string" && q.includes("@")) {
@@ -343,7 +333,10 @@ export default function OrgPrescriptionsPage() {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = data?.error || data?.airtable?.message || "Failed to load athletes.";
+      const msg =
+        data?.error ||
+        data?.airtable?.message ||
+        "Failed to load athletes.";
       setLoadingAthletes(false);
       throw new Error(msg);
     }
@@ -370,7 +363,9 @@ export default function OrgPrescriptionsPage() {
     setError("");
 
     const res = await fetch(
-      `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(email)}`,
+      `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(
+        email
+      )}`,
       {
         method: "GET",
         credentials: "include",
@@ -383,12 +378,17 @@ export default function OrgPrescriptionsPage() {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = data?.error || data?.airtable?.message || "Failed to load prescriptions.";
+      const msg =
+        data?.error ||
+        data?.airtable?.message ||
+        "Failed to load prescriptions.";
       setLoadingPrescriptions(false);
       throw new Error(msg);
     }
 
-    setPrescriptions(Array.isArray(data?.prescriptions) ? data.prescriptions : []);
+    setPrescriptions(
+      Array.isArray(data?.prescriptions) ? data.prescriptions : []
+    );
     setLoadingPrescriptions(false);
   };
 
@@ -418,7 +418,6 @@ export default function OrgPrescriptionsPage() {
 
     const list = Array.isArray(data?.templates) ? data.templates : [];
 
-    // Friendly sort: Active first; then name
     const sorted = list.slice().sort((a, b) => {
       const aSt = String(a?.status || "Active").toLowerCase();
       const bSt = String(b?.status || "Active").toLowerCase();
@@ -463,16 +462,16 @@ export default function OrgPrescriptionsPage() {
           structured,
           notes: templateNotes || "",
           status: "Active",
-          // IMPORTANT:
-          // If your Airtable "Tags" is a single line text field, keep this a string.
-          // If your API ignores it, it won't matter — but this avoids sending an array.
           tags: "",
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.error || data?.airtable?.message || "Failed to save template.";
+        const msg =
+          data?.error ||
+          data?.airtable?.message ||
+          "Failed to save template.";
         throw new Error(msg);
       }
 
@@ -516,16 +515,15 @@ export default function OrgPrescriptionsPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.error || data?.airtable?.message || "Failed to delete template.";
+        const msg =
+          data?.error ||
+          data?.airtable?.message ||
+          "Failed to delete template.";
         throw new Error(msg);
       }
 
-      // If they deleted the currently selected template, clear selection
       setTemplateId("");
-
-      // Refresh list so it disappears immediately
       await fetchTemplates();
-
       setConfirmDeleteOpen(false);
     } catch (err) {
       console.error("[org/prescriptions] deleteTemplate error:", err);
@@ -544,7 +542,8 @@ export default function OrgPrescriptionsPage() {
 
       const qEmail = router?.query?.athleteEmail;
       const email =
-        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) || selectedAthleteEmail;
+        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) ||
+        selectedAthleteEmail;
 
       if (email) await fetchPrescriptionsForAthlete(email);
       else setPrescriptions([]);
@@ -648,7 +647,8 @@ export default function OrgPrescriptionsPage() {
   /* Next Athlete Navigation (Speed Mode)                                     */
   /* ------------------------------------------------------------------------ */
 
-  const getEmail = (a) => normalizeEmail(a?.email || a?.fields?.Email || a?.Email);
+  const getEmail = (a) =>
+    normalizeEmail(a?.email || a?.fields?.Email || a?.Email);
   const advancingRef = useRef(false);
 
   const goToNextAthlete = useCallback(() => {
@@ -678,9 +678,11 @@ export default function OrgPrescriptionsPage() {
 
     setSelectedAthleteEmail(nextEmail);
 
-    router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(nextEmail)}`, undefined, {
-      shallow: true,
-    });
+    router.push(
+      `/org/prescriptions?athleteEmail=${encodeURIComponent(nextEmail)}`,
+      undefined,
+      { shallow: true }
+    );
   }, [filteredAthletes, selectedAthleteEmail, router]);
 
   /* ------------------------------------------------------------------------ */
@@ -714,7 +716,8 @@ export default function OrgPrescriptionsPage() {
       structured.notesMacros ||
       structured.freeformNotes?.trim();
 
-    if (!hasAny) return "Add at least one recommendation (supplements, macros, or notes).";
+    if (!hasAny)
+      return "Add at least one recommendation (supplements, macros, or notes).";
     return "";
   };
 
@@ -765,7 +768,8 @@ export default function OrgPrescriptionsPage() {
             proteinRecommendation: structured.proteinRecommendation || "",
             creatineRecommendation: structured.creatineRecommendation || "",
             bcaaRecommendation: structured.bcaaRecommendation || "",
-            electrolytesRecommendation: structured.electrolytesRecommendation || "",
+            electrolytesRecommendation:
+              structured.electrolytesRecommendation || "",
             notesSupplements: structured.notesSupplements || "",
 
             metaStatus: structured.metaStatus || "Active",
@@ -776,7 +780,10 @@ export default function OrgPrescriptionsPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errMsg = data?.error || data?.airtable?.message || "Failed to create plan.";
+        const errMsg =
+          data?.error ||
+          data?.airtable?.message ||
+          "Failed to create plan.";
         throw new Error(errMsg);
       }
 
@@ -904,7 +911,8 @@ export default function OrgPrescriptionsPage() {
 
               {filteredAthletes.map((a) => {
                 const email = normalizeEmail(a?.email);
-                const isActive = email && email === normalizeEmail(selectedAthleteEmail);
+                const isActive =
+                  email && email === normalizeEmail(selectedAthleteEmail);
                 const done = email && completedEmails.has(email);
 
                 return (
@@ -921,8 +929,12 @@ export default function OrgPrescriptionsPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">{a?.name || "Athlete"}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{email || "Missing email"}</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {a?.name || "Athlete"}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {email || "Missing email"}
+                        </p>
                       </div>
 
                       {done ? (
@@ -961,11 +973,17 @@ export default function OrgPrescriptionsPage() {
                   <h2 className="text-lg font-bold">Selected Athlete</h2>
                   {selectedAthlete ? (
                     <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-semibold">{selectedAthlete.name || "Athlete"}</span>{" "}
-                      <span className="text-gray-500">({normalizeEmail(selectedAthlete.email)})</span>
+                      <span className="font-semibold">
+                        {selectedAthlete.name || "Athlete"}
+                      </span>{" "}
+                      <span className="text-gray-500">
+                        ({normalizeEmail(selectedAthlete.email)})
+                      </span>
                     </p>
                   ) : (
-                    <p className="text-sm text-gray-500 mt-1">Choose an athlete to begin.</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Choose an athlete to begin.
+                    </p>
                   )}
                 </div>
 
@@ -1029,13 +1047,6 @@ export default function OrgPrescriptionsPage() {
                   {templatesError ? (
                     <div className="rounded-xl bg-white border border-red-200 p-3">
                       <p className="text-sm text-red-600 font-medium">{templatesError}</p>
-                      <p className="text-[11px] text-gray-500 mt-2">
-                        If you see UNKNOWN_FIELD_NAME, confirm Airtable fields:{" "}
-                        <span className="font-semibold">
-                          Name, Organization Token, Structured, Created By, Status
-                        </span>
-                        .
-                      </p>
                     </div>
                   ) : null}
 
@@ -1079,36 +1090,6 @@ export default function OrgPrescriptionsPage() {
                   </div>
 
                   <div className="grid sm:grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTemplateId("");
-                        setTemplatesError("");
-                      }}
-                      className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
-                      disabled={!templateId}
-                    >
-                      Clear Selection
-                    </button>
-
-                    <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-                      <p className="text-[11px] text-gray-500">
-                        {activeTemplates.length === 0
-                          ? "No templates yet — build a plan and save one below."
-                          : `Templates available: ${activeTemplates.length}`}
-                      </p>
-                      {templateById ? (
-                        <p className="text-xs text-gray-700 mt-1">
-                          Selected: <span className="font-semibold">{templateById.name}</span>
-                          {templateById.createdBy ? (
-                            <span className="text-gray-500"> • {templateById.createdBy}</span>
-                          ) : null}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-3 gap-3">
                     <input
                       className={inputBase}
                       placeholder="Template name (e.g., Offseason Bulk)"
@@ -1139,7 +1120,10 @@ export default function OrgPrescriptionsPage() {
                   </p>
                 </div>
 
-                <form onSubmit={(e) => createPlan(e, { advance: false })} className="space-y-6">
+                <form
+                  onSubmit={(e) => createPlan(e, { advance: false })}
+                  className="space-y-6"
+                >
                   {/* Title + Meta */}
                   <div className="grid md:grid-cols-3 gap-4">
                     <div className="md:col-span-2">
@@ -1153,13 +1137,14 @@ export default function OrgPrescriptionsPage() {
                     </div>
 
                     <div>
-                      <WheelSelect
+                      <SearchSelect
                         label="Meta Status"
-                        options={WHEEL.metaStatus}
+                        options={OPTIONS.metaStatus}
                         value={structured.metaStatus}
                         onChange={(v) => onChange("metaStatus", v)}
-                        allowCustom
-                        placeholder="Type or scroll…"
+                        onCommit={(v) => onChange("metaStatus", v)}
+                        allowCustom={false}
+                        placeholder="Search status…"
                       />
                     </div>
 
@@ -1180,51 +1165,60 @@ export default function OrgPrescriptionsPage() {
                     <div>
                       <h4 className="font-semibold">Supplements</h4>
                       <p className="text-xs text-gray-500 mt-1">
-                        Scroll to select, or type to auto-jump. Custom values are allowed.
+                        Search + select instantly. Custom entries are allowed if you need them.
                       </p>
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-4">
-                      <WheelSelect
+                      <SearchSelect
                         label="Protein Recommendation"
-                        options={WHEEL.proteinRecommendation}
+                        options={OPTIONS.proteinRecommendation}
                         value={structured.proteinRecommendation}
                         onChange={(v) => onChange("proteinRecommendation", v)}
+                        onCommit={(v) => onChange("proteinRecommendation", v)}
                         allowCustom
+                        placeholder="Search protein…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Creatine Recommendation"
-                        options={WHEEL.creatineRecommendation}
+                        options={OPTIONS.creatineRecommendation}
                         value={structured.creatineRecommendation}
                         onChange={(v) => onChange("creatineRecommendation", v)}
+                        onCommit={(v) => onChange("creatineRecommendation", v)}
                         allowCustom
+                        placeholder="Search creatine…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="BCAA/EAA Recommendation"
-                        options={WHEEL.bcaaRecommendation}
+                        options={OPTIONS.bcaaRecommendation}
                         value={structured.bcaaRecommendation}
                         onChange={(v) => onChange("bcaaRecommendation", v)}
+                        onCommit={(v) => onChange("bcaaRecommendation", v)}
                         allowCustom
+                        placeholder="Search BCAA/EAA…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Electrolytes Recommendation"
-                        options={WHEEL.electrolytesRecommendation}
+                        options={OPTIONS.electrolytesRecommendation}
                         value={structured.electrolytesRecommendation}
                         onChange={(v) => onChange("electrolytesRecommendation", v)}
+                        onCommit={(v) => onChange("electrolytesRecommendation", v)}
                         allowCustom
+                        placeholder="Search electrolytes…"
                       />
 
                       <div className="md:col-span-2">
-                        <WheelSelect
+                        <SearchSelect
                           label="Notes (Supplements)"
-                          options={WHEEL.notesSupplements}
+                          options={OPTIONS.notesSupplements}
                           value={structured.notesSupplements}
                           onChange={(v) => onChange("notesSupplements", v)}
+                          onCommit={(v) => onChange("notesSupplements", v)}
                           allowCustom
-                          placeholder="Pick a suggestion or type your own…"
+                          placeholder="Search or type notes…"
                         />
                       </div>
                     </div>
@@ -1235,60 +1229,70 @@ export default function OrgPrescriptionsPage() {
                     <div>
                       <h4 className="font-semibold">Macros</h4>
                       <p className="text-xs text-gray-500 mt-1">
-                        Big ranges for speed. Still type any value if needed.
+                        Search values or type exact numbers.
                       </p>
                     </div>
 
                     <div className="grid md:grid-cols-3 gap-4">
-                      <WheelSelect
+                      <SearchSelect
                         label="Calories"
-                        options={WHEEL.calories}
+                        options={OPTIONS.calories}
                         value={structured.calories}
                         onChange={(v) => onChange("calories", v)}
+                        onCommit={(v) => onChange("calories", v)}
                         allowCustom
-                        placeholder="Type or scroll…"
+                        placeholder="Type or search…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Protein (g)"
-                        options={WHEEL.grams}
+                        options={OPTIONS.grams}
                         value={structured.proteinGrams}
                         onChange={(v) => onChange("proteinGrams", v)}
+                        onCommit={(v) => onChange("proteinGrams", v)}
                         allowCustom
+                        placeholder="Type or search…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Carbs (g)"
-                        options={WHEEL.grams}
+                        options={OPTIONS.grams}
                         value={structured.carbsGrams}
                         onChange={(v) => onChange("carbsGrams", v)}
+                        onCommit={(v) => onChange("carbsGrams", v)}
                         allowCustom
+                        placeholder="Type or search…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Fat (g)"
-                        options={WHEEL.grams}
+                        options={OPTIONS.grams}
                         value={structured.fatsGrams}
                         onChange={(v) => onChange("fatsGrams", v)}
+                        onCommit={(v) => onChange("fatsGrams", v)}
                         allowCustom
+                        placeholder="Type or search…"
                       />
 
-                      <WheelSelect
+                      <SearchSelect
                         label="Hydration (oz)"
-                        options={WHEEL.hydration}
+                        options={OPTIONS.hydration}
                         value={structured.hydrationOz}
                         onChange={(v) => onChange("hydrationOz", v)}
+                        onCommit={(v) => onChange("hydrationOz", v)}
                         allowCustom
+                        placeholder="Type or search…"
                       />
 
                       <div className="md:col-span-3">
-                        <WheelSelect
+                        <SearchSelect
                           label="Notes (Macros)"
-                          options={WHEEL.notesMacros}
+                          options={OPTIONS.notesMacros}
                           value={structured.notesMacros}
                           onChange={(v) => onChange("notesMacros", v)}
+                          onCommit={(v) => onChange("notesMacros", v)}
                           allowCustom
-                          placeholder="Pick a suggestion or type your own…"
+                          placeholder="Search or type notes…"
                         />
                       </div>
                     </div>
@@ -1302,14 +1306,11 @@ export default function OrgPrescriptionsPage() {
                       value={structured.freeformNotes}
                       onChange={(e) => onChange("freeformNotes", e.target.value)}
                       onKeyDown={(e) => {
-                        // Ctrl/Cmd+Enter = Save (no advance)
                         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                           e.preventDefault();
                           createPlan(e, { advance: false });
                           return;
                         }
-
-                        // Enter = Save & Next (unless Shift+Enter for newline)
                         if (
                           e.key === "Enter" &&
                           !e.shiftKey &&
@@ -1343,7 +1344,9 @@ export default function OrgPrescriptionsPage() {
                       onClick={(e) => createPlan(e, { advance: false })}
                       disabled={createLoading || !selectedAthleteEmail}
                       className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50 ${
-                        createLoading || !selectedAthleteEmail ? "opacity-70 cursor-not-allowed" : ""
+                        createLoading || !selectedAthleteEmail
+                          ? "opacity-70 cursor-not-allowed"
+                          : ""
                       }`}
                     >
                       {createLoading ? "Saving…" : "Save"}
@@ -1354,7 +1357,9 @@ export default function OrgPrescriptionsPage() {
                       onClick={(e) => createPlan(e, { advance: true })}
                       disabled={createLoading || !selectedAthleteEmail}
                       className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition ${
-                        createLoading || !selectedAthleteEmail ? "opacity-70 cursor-not-allowed" : ""
+                        createLoading || !selectedAthleteEmail
+                          ? "opacity-70 cursor-not-allowed"
+                          : ""
                       }`}
                     >
                       {createLoading ? "Saving…" : "Save & Next"}
@@ -1362,8 +1367,8 @@ export default function OrgPrescriptionsPage() {
                   </div>
 
                   <div className={subtleHint}>
-                    Built for speed: apply a template once, then Save & Next through the roster. All
-                    wheel inputs still allow custom values.
+                    Built for speed: apply a template once, then Save & Next through the roster.
+                    All fields support search; most allow custom values.
                   </div>
                 </form>
               </div>
@@ -1389,7 +1394,9 @@ export default function OrgPrescriptionsPage() {
                 </div>
 
                 {!selectedAthleteEmail && (
-                  <p className="text-sm text-gray-600">Select an athlete to view plan history.</p>
+                  <p className="text-sm text-gray-600">
+                    Select an athlete to view plan history.
+                  </p>
                 )}
 
                 {selectedAthleteEmail && prescriptions.length === 0 && (
@@ -1409,7 +1416,9 @@ export default function OrgPrescriptionsPage() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{p.title || "Plan"}</p>
+                          <p className="text-sm font-bold text-gray-900">
+                            {p.title || "Plan"}
+                          </p>
                           <p className="text-[11px] text-gray-500 mt-1">
                             Created: {formatDateTime(p.createdAt)}{" "}
                             {p.createdBy ? ` • By: ${p.createdBy}` : ""}

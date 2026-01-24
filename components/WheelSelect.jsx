@@ -1,4 +1,3 @@
-// components/WheelSelect.jsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,50 +18,42 @@ export default function WheelSelect({
   label = "",
   options = [],
   value = "",
-  onChange,
-  onCommit, // optional: fires when the wheel commits final selection
+  onChange, // still supported (for live typing outside modal if you want)
+  onCommit, // recommended: final commit point
   allowCustom = true,
   typeToJump = true,
   placeholder = "Type or scroll…",
   height = 260,
   itemHeight = 44,
-  scrollEndMs = 120,
+  scrollEndMs = 140,
 
-  // optional: display formatting for options
   formatOption, // (optString) => string
-  // optional: how we match typed input
   caseSensitive = false,
 }) {
   const listRef = useRef(null);
   const modalRef = useRef(null);
 
-  // UI state
   const [open, setOpen] = useState(false);
+
+  // Draft value inside modal (prevents wheel commits overriding typed values)
+  const [draftValue, setDraftValue] = useState("");
 
   // typed buffer for type-to-jump
   const [typed, setTyped] = useState("");
   const typedTimerRef = useRef(null);
 
-  // While scrolling, we preview selection here
+  // active row while scrolling
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // Debounce scroll end
   const scrollEndTimerRef = useRef(null);
 
-  // options as strings
   const strOptions = useMemo(() => options.map(toStr), [options]);
 
-  // padding spacer to center the active row
   const pad = useMemo(() => {
     return Math.max(0, Math.floor(height / 2) - Math.floor(itemHeight / 2));
   }, [height, itemHeight]);
 
   const displayValue = useMemo(() => toStr(value).trim(), [value]);
-
-  const selectedIndex = useMemo(() => {
-    if (!displayValue) return -1;
-    return strOptions.findIndex((o) => o === displayValue);
-  }, [displayValue, strOptions]);
 
   const format = useCallback(
     (opt) => {
@@ -72,14 +63,23 @@ export default function WheelSelect({
     [formatOption]
   );
 
+  const findIndexOfValue = useCallback(
+    (v) => {
+      const dv = toStr(v).trim();
+      if (!dv) return -1;
+      return strOptions.findIndex((o) => o === dv);
+    },
+    [strOptions]
+  );
+
   const scrollToIndex = useCallback(
     (idx, behavior = "smooth") => {
       const el = listRef.current;
       if (!el) return;
+      if (!strOptions.length) return;
 
       const i = clamp(idx, 0, strOptions.length - 1);
       const top = pad + i * itemHeight;
-
       el.scrollTo({ top, behavior });
     },
     [itemHeight, pad, strOptions.length]
@@ -87,53 +87,38 @@ export default function WheelSelect({
 
   const computeIndexFromScrollTop = useCallback(
     (scrollTop) => {
+      if (!strOptions.length) return 0;
       const raw = (scrollTop - pad) / itemHeight;
       return clamp(Math.round(raw), 0, strOptions.length - 1);
     },
     [itemHeight, pad, strOptions.length]
   );
 
-  const commitIndex = useCallback(
-    (idx) => {
-      const i = clamp(idx, 0, strOptions.length - 1);
-      const v = strOptions[i];
+  const close = () => setOpen(false);
 
-      // Always snap the wheel to exact center for the committed value
-      scrollToIndex(i, "smooth");
-
-      if (!v) return;
-
-      const current = toStr(value).trim();
-      if (v !== current) {
-        onChange?.(v);
-      }
-
-      onCommit?.(v, i);
-    },
-    [onChange, onCommit, scrollToIndex, strOptions, value]
-  );
-
-  // Open: lock background scroll, focus, align
+  // Open behavior: lock scroll, initialize draft, align wheel to current value
   useEffect(() => {
     if (!open) return;
 
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    // focus for type-to-jump immediately
+    // init draft from committed value
+    setDraftValue(displayValue);
+
+    // focus for type-to-jump
     setTimeout(() => modalRef.current?.focus?.(), 0);
 
-    // establish initial wheel position
-    const initial = selectedIndex >= 0 ? selectedIndex : 0;
+    // align wheel
+    const idx = findIndexOfValue(displayValue);
+    const initial = idx >= 0 ? idx : 0;
     setActiveIndex(initial);
-
-    // avoid animation on open
     setTimeout(() => scrollToIndex(initial, "auto"), 0);
 
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, selectedIndex, scrollToIndex]);
+  }, [open, displayValue, findIndexOfValue, scrollToIndex]);
 
   // Cleanup timers
   useEffect(() => {
@@ -143,48 +128,83 @@ export default function WheelSelect({
     };
   }, []);
 
-  const close = () => setOpen(false);
+  // Cancel: revert draft
+  const handleCancel = () => {
+    setTyped("");
+    setDraftValue(displayValue);
+    close();
+  };
 
-  // When the user hits Done:
-  // - If value matches an option, snap+commit that option
-  // - Otherwise, allow custom value and close
-  const handleDone = () => {
-    const v = toStr(value).trim();
+  // Commit helper (single source of truth)
+  const commitValue = useCallback(
+    (v, idx) => {
+      const final = toStr(v).trim();
+      if (!final) return;
 
-    // If they are scrolling and activeIndex is pointing somewhere, commit it
-    // This ensures Done always produces a deterministic selection.
-    if (strOptions.length && activeIndex >= 0) {
-      const centered = strOptions[activeIndex];
-      // If user typed something custom, only auto-commit wheel if value is empty
-      if (!v || v === centered) {
-        commitIndex(activeIndex);
-        close();
-        return;
+      // Only notify change if different
+      if (final !== displayValue) {
+        onChange?.(final);
       }
-    }
+      onCommit?.(final, typeof idx === "number" ? idx : -1);
+    },
+    [displayValue, onChange, onCommit]
+  );
 
-    // custom entry path
-    if (allowCustom && v) {
-      onCommit?.(v, -1);
+  // Tap option commits immediately (best UX)
+  const pick = (idx) => {
+    if (!strOptions.length) return;
+    const i = clamp(idx, 0, strOptions.length - 1);
+    setActiveIndex(i);
+    const v = strOptions[i];
+    setDraftValue(v);
+    scrollToIndex(i, "smooth");
+    commitValue(v, i);
+    close();
+  };
+
+  // Done behavior:
+  // - If draft matches an option -> commit that option
+  // - If draft empty -> commit active wheel option
+  // - Else if allowCustom -> commit custom
+  const handleDone = () => {
+    if (!strOptions.length) {
+      const dv = toStr(draftValue).trim();
+      if (allowCustom && dv) {
+        commitValue(dv, -1);
+      }
       close();
       return;
     }
 
-    // if custom not allowed, only close if it matches
-    const idx = strOptions.indexOf(v);
+    const dv = toStr(draftValue).trim();
+    const idx = findIndexOfValue(dv);
+
     if (idx >= 0) {
-      commitIndex(idx);
+      // typed matches an option exactly
+      commitValue(strOptions[idx], idx);
       close();
+      return;
     }
+
+    if (!dv) {
+      // empty draft: commit wheel selection
+      const v = strOptions[activeIndex] || "";
+      if (v) commitValue(v, activeIndex);
+      close();
+      return;
+    }
+
+    // custom
+    if (allowCustom) {
+      commitValue(dv, -1);
+      close();
+      return;
+    }
+
+    // custom not allowed: do nothing (stay open)
   };
 
-  const handleCancel = () => {
-    // optional: revert typed state
-    setTyped("");
-    close();
-  };
-
-  // Type-to-jump logic
+  // Type-to-jump: moves wheel, does NOT overwrite draft unless it’s empty
   const handleKeyDown = (e) => {
     if (!typeToJump) return;
 
@@ -194,14 +214,24 @@ export default function WheelSelect({
       return;
     }
 
-    // Backspace edits typed buffer and re-jumps
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleDone();
+      return;
+    }
+
+    // Backspace edits typed buffer only (not the input)
     if (e.key === "Backspace") {
+      // Let input handle backspace normally when focused
+      if (document.activeElement?.tagName === "INPUT") return;
       e.preventDefault();
       setTyped((prev) => prev.slice(0, -1));
       return;
     }
 
     if (!isPrintableKey(e.key)) return;
+    // Avoid hijacking keystrokes when typing in the input
+    if (document.activeElement?.tagName === "INPUT") return;
 
     const next = (typed + e.key).slice(0, 16);
     setTyped(next);
@@ -211,8 +241,9 @@ export default function WheelSelect({
 
     const needle = caseSensitive ? next : next.toLowerCase();
 
-    // 1) startsWith match
     let idx = -1;
+
+    // startsWith
     for (let i = 0; i < strOptions.length; i++) {
       const hay = caseSensitive ? strOptions[i] : strOptions[i].toLowerCase();
       if (hay.startsWith(needle)) {
@@ -221,7 +252,7 @@ export default function WheelSelect({
       }
     }
 
-    // 2) includes match
+    // includes
     if (idx < 0) {
       for (let i = 0; i < strOptions.length; i++) {
         const hay = caseSensitive ? strOptions[i] : strOptions[i].toLowerCase();
@@ -232,12 +263,11 @@ export default function WheelSelect({
       }
     }
 
-    // 3) numeric nearest (if typed looks numeric)
+    // numeric nearest
     if (idx < 0 && /^[0-9.]+$/.test(next)) {
       const target = Number(next);
       let bestIdx = -1;
       let bestDiff = Infinity;
-
       for (let i = 0; i < strOptions.length; i++) {
         const n = Number(strOptions[i]);
         if (!Number.isFinite(n)) continue;
@@ -254,32 +284,30 @@ export default function WheelSelect({
       setActiveIndex(idx);
       scrollToIndex(idx, "smooth");
 
-      // Debounced commit after key-jump to keep selection stable
+      // If they haven't typed anything into the input (draft is empty), preview the wheel value
+      setDraftValue((prev) => (toStr(prev).trim() ? prev : strOptions[idx]));
+
+      // debounce scroll settle to snap only (no commit)
       if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
       scrollEndTimerRef.current = setTimeout(() => {
-        commitIndex(idx);
+        scrollToIndex(idx, "smooth");
       }, scrollEndMs);
     }
   };
 
-  // Scroll preview + commit on scroll end
+  // Scroll preview only (no commit!)
   const handleScroll = () => {
     const el = listRef.current;
     if (!el) return;
-
     const idx = computeIndexFromScrollTop(el.scrollTop);
     setActiveIndex(idx);
 
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
-      commitIndex(idx);
+      scrollToIndex(idx, "smooth");
+      // Optional: if draft empty, keep preview synced
+      setDraftValue((prev) => (toStr(prev).trim() ? prev : strOptions[idx]));
     }, scrollEndMs);
-  };
-
-  // Tap option: immediate commit
-  const pick = (idx) => {
-    setActiveIndex(idx);
-    commitIndex(idx);
   };
 
   return (
@@ -332,9 +360,20 @@ export default function WheelSelect({
             {/* Input */}
             <div className="px-4 py-3 border-b border-gray-200">
               <input
-                value={toStr(value)}
-                onChange={(e) => onChange?.(e.target.value)}
-                placeholder="Type any value…"
+                value={draftValue}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDraftValue(next);
+                  // optional live update outside the modal:
+                  // onChange?.(next);
+                  // keep wheel aligned if typed matches an option
+                  const idx = findIndexOfValue(next);
+                  if (idx >= 0) {
+                    setActiveIndex(idx);
+                    scrollToIndex(idx, "smooth");
+                  }
+                }}
+                placeholder={allowCustom ? "Type any value…" : "Type to search…"}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-[#46769B]/30"
               />
 
@@ -347,16 +386,16 @@ export default function WheelSelect({
                     </>
                   ) : (
                     <>
-                      Tip: scroll, or type to jump.{" "}
+                      Tip: scroll, tap, or type to jump.{" "}
                       {allowCustom ? "Custom values allowed." : "Custom values disabled."}
                     </>
                   )}
                 </div>
 
-                {displayValue && (
+                {draftValue && (
                   <button
                     type="button"
-                    onClick={() => onChange?.("")}
+                    onClick={() => setDraftValue("")}
                     className="text-xs text-gray-500 hover:text-gray-700"
                   >
                     Clear
@@ -379,7 +418,7 @@ export default function WheelSelect({
                 }}
               />
 
-              {/* Soft fades at top/bottom (wheel depth) */}
+              {/* Soft fades */}
               <div
                 className="absolute left-0 right-0 top-0 pointer-events-none"
                 style={{
@@ -415,9 +454,8 @@ export default function WheelSelect({
                   const active = idx === activeIndex;
                   const dist = Math.abs(idx - activeIndex);
 
-                  // Wheel depth: subtle fade/scale
                   const opacity = clamp(1 - dist * 0.18, 0.25, 1);
-                  const scale = clamp(1 - dist * 0.035, 0.90, 1);
+                  const scale = clamp(1 - dist * 0.035, 0.9, 1);
 
                   return (
                     <button
@@ -430,7 +468,7 @@ export default function WheelSelect({
                         scrollSnapAlign: "center",
                         opacity,
                         transform: `scale(${scale})`,
-                        color: active ? "#111827" : "#6B7280", // gray-900 / gray-500
+                        color: active ? "#111827" : "#6B7280",
                         fontWeight: active ? 700 : 500,
                       }}
                     >
@@ -444,10 +482,19 @@ export default function WheelSelect({
 
             {/* Footer */}
             <div className="px-4 py-3 text-xs text-gray-600 border-t border-gray-200">
-              Selected:{" "}
+              Wheel:{" "}
               <span className="font-semibold text-gray-900">
                 {format(strOptions[activeIndex] ?? "")}
               </span>
+              {draftValue ? (
+                <>
+                  {" "}
+                  · Draft:{" "}
+                  <span className="font-semibold text-gray-900">
+                    {toStr(draftValue).trim()}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

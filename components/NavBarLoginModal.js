@@ -17,6 +17,11 @@ import { useAuthContext } from "@/hooks/useAuth";
  * 1) Better role routing after login (org-side -> /org/dashboard)
  * 2) Login placeholder text updated: org-side can be org/admin/trainer
  * 3) Keeps your existing athlete/org toggle (trainers login via "Organization")
+ *
+ * UX changes in this version:
+ * - ❌ No close on outside click
+ * - ✅ ESC closes
+ * - ✅ Body scroll locked while open
  */
 export default function NavBarLoginModal({
   isOpen,
@@ -115,6 +120,29 @@ export default function NavBarLoginModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, password, authRole]);
 
+  // ✅ Lock body scroll while modal open
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev || "";
+    };
+  }, [isOpen]);
+
+  // ✅ ESC closes modal (since outside click no longer does)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeAndReset();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   const closeAndReset = () => {
     // Clear login fields
     setEmail("");
@@ -155,7 +183,6 @@ export default function NavBarLoginModal({
   const rolePill =
     "px-3 py-2 rounded-xl border text-sm font-semibold transition";
 
-  const isAthlete = authRole === "athlete";
   const isOrgSideLogin = authRole === "organization"; // includes Org, Admin, Trainer accounts
 
   // ---- Error mapping for better UX + consistent messaging ----
@@ -241,8 +268,8 @@ export default function NavBarLoginModal({
 
       // ✅ Route by normalized role
       const r = getNormalizedRole(userData);
-
       const isOrgSide = ["organization", "trainer", "admin"].includes(r);
+
       if (isOrgSide) router.push("/org/dashboard");
       else router.push("/dashboard");
     } catch (err) {
@@ -291,12 +318,6 @@ export default function NavBarLoginModal({
   };
 
   // ---------- SIGNUP ----------
-  const handleAthleteSignupChange = (e) =>
-    setAthleteSignup((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-
-  const handleOrgSignupChange = (e) =>
-    setOrgSignup((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-
   const handleSignup = async (e) => {
     e.preventDefault();
     setSignupError("");
@@ -368,7 +389,9 @@ export default function NavBarLoginModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={closeAndReset}
+          // ❌ Removed onClick close: no outside-click dismissal
+          role="dialog"
+          aria-modal="true"
         >
           <motion.div
             className={`bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg relative max-h-[90vh] overflow-y-auto ${
@@ -561,6 +584,10 @@ export default function NavBarLoginModal({
                 >
                   {loginLoading ? "Logging in..." : "Log In"}
                 </button>
+
+                <p className="text-center text-[11px] text-gray-500">
+                  Tip: press <b>ESC</b> to close.
+                </p>
               </form>
             )}
 
@@ -810,6 +837,10 @@ export default function NavBarLoginModal({
                 >
                   {signupLoading ? "Creating..." : "Create Account"}
                 </button>
+
+                <p className="text-center text-[11px] text-gray-500">
+                  Tip: press <b>ESC</b> to close.
+                </p>
               </form>
             )}
 

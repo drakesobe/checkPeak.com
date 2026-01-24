@@ -57,14 +57,19 @@ function getValueLabel(stack) {
 /* -------------------------------------------------------------------------- */
 export default function SmartStackPage() {
   const { user } = useAuthContext();
-  // Match saved-stacks: support user.Email and user.email
-  const userEmail = user?.Email || user?.email || null;
+
+  // ✅ Normalize once
+  const userEmail = (user?.Email || user?.email || "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  const hasUserEmail = userEmail.includes("@");
 
   // Data
   const [allStacks, setAllStacks] = useState([]); // all SmartStack records
   const [filteredStacks, setFilteredStacks] = useState([]);
   const [savedStacks, setSavedStacks] = useState([]); // raw saved records from SavedStacks table
-  const [savedStackIDs, setSavedStackIDs] = useState([]); // derived list of SmartStack IDs
+  const [savedStackIDs, setSavedStackIDs] = useState([]); // derived list of SmartStack IDs (strings)
 
   // UI state
   const [modalStack, setModalStack] = useState(null);
@@ -106,10 +111,10 @@ export default function SmartStackPage() {
   }, []);
 
   /* ------------------------------------------------------------------------ */
-  /* Load saved stacks for the current user (same pattern as saved-stacks)    */
+  /* Load saved stacks for the current user                                   */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    if (!userEmail) {
+    if (!hasUserEmail) {
       setSavedStacks([]);
       return;
     }
@@ -117,13 +122,12 @@ export default function SmartStackPage() {
     async function loadSaved() {
       try {
         const resSaved = await fetch(
-          `/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}`
+          `/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}&t=${Date.now()}`
         );
         const savedData = resSaved.ok
           ? await resSaved.json()
           : { savedStacks: [] };
 
-        // Raw saved records (for StackCard, notes, etc.)
         setSavedStacks(savedData.savedStacks || []);
       } catch (err) {
         console.error("[SmartStack] Error loading saved stacks:", err);
@@ -132,20 +136,17 @@ export default function SmartStackPage() {
     }
 
     loadSaved();
-  }, [userEmail]);
+  }, [hasUserEmail, userEmail]);
 
   /* ------------------------------------------------------------------------ */
   /* Derive savedStackIDs from savedStacks                                    */
-  /*  - StackID is what saved-stacks uses to match stack.id                   */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
     const ids = (savedStacks || []).flatMap((s) => {
-      const raw = s.StackID;
+      const raw = s?.StackID;
       if (!raw) return [];
-      if (Array.isArray(raw)) {
-        return raw.filter(Boolean).map((id) => id.toString());
-      }
-      return [raw.toString()];
+      if (Array.isArray(raw)) return raw.filter(Boolean).map((id) => String(id));
+      return [String(raw)];
     });
 
     setSavedStackIDs(ids);
@@ -169,9 +170,10 @@ export default function SmartStackPage() {
       );
     }
 
-    // Saved-only filter: match stack.id against SavedStacks.StackID
-    if (showSavedOnly && savedStackIDs.length > 0) {
-      result = result.filter((stack) => savedStackIDs.includes(stack.id));
+    // Saved-only filter (fixed: if none saved, show none)
+    if (showSavedOnly) {
+      if (savedStackIDs.length === 0) result = [];
+      else result = result.filter((stack) => savedStackIDs.includes(String(stack.id)));
     }
 
     // Search filter
@@ -284,7 +286,7 @@ export default function SmartStackPage() {
                     </span>
                   </p>
                 )}
-                {userEmail && (
+                {hasUserEmail && (
                   <p className="mt-1">
                     Viewing as{" "}
                     <span className="font-semibold text-gray-300">
@@ -292,7 +294,7 @@ export default function SmartStackPage() {
                     </span>
                   </p>
                 )}
-                {userEmail && (
+                {hasUserEmail && (
                   <p className="mt-1 text-gray-600">
                     Saved stacks linked:{" "}
                     <span className="font-semibold">
@@ -438,9 +440,9 @@ export default function SmartStackPage() {
               {visibleCount > 0 && (
                 <div className="mb-3 text-xs text-gray-500">
                   Showing{" "}
-                    <span className="font-semibold text-gray-200">
-                      {humanStart}
-                    </span>{" "}
+                  <span className="font-semibold text-gray-200">
+                    {humanStart}
+                  </span>{" "}
                   –{" "}
                   <span className="font-semibold text-gray-200">
                     {humanEnd}
@@ -478,7 +480,7 @@ export default function SmartStackPage() {
                         setSelectedCompareStacks={setSelectedCompareStacks}
                         savedStacks={savedStacks}
                         setSavedStacks={setSavedStacks}
-                        userEmail={userEmail}
+                        userEmail={hasUserEmail ? userEmail : ""}
                       />
                     ))}
                   </motion.div>
@@ -515,11 +517,7 @@ export default function SmartStackPage() {
                     onClick={handleLoadMore}
                     className="rounded-full border border-gray-700 bg-gray-900 px-4 py-2 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
                   >
-                    Load{" "}
-                    {Math.min(
-                      itemsPerChunk,
-                      visibleCount - effectiveLimit
-                    )}{" "}
+                    Load {Math.min(itemsPerChunk, visibleCount - effectiveLimit)}{" "}
                     more stacks
                   </button>
                 </div>
@@ -567,6 +565,7 @@ export default function SmartStackPage() {
                   {stack.name}
                 </span>
                 <button
+                  type="button"
                   className="text-gray-400 hover:text-red-400"
                   onClick={() =>
                     setSelectedCompareStacks((prev) =>
@@ -580,6 +579,7 @@ export default function SmartStackPage() {
               </div>
             ))}
             <button
+              type="button"
               disabled={
                 selectedCompareStacks.length < 2 ||
                 selectedCompareStacks.length > 3

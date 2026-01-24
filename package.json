@@ -20,6 +20,7 @@
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.9.0",
+    "clsx": "^2.1.1",
     "exif-js": "^2.3.0",
     "formidable": "^2.1.5",
     "framer-motion": "^12.23.12",

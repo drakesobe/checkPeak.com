@@ -1,3 +1,4 @@
+// components/NavBar.jsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -40,13 +41,11 @@ export default function NavBar() {
     const raw = (user?.role || user?.Role || "").toString().trim().toLowerCase();
     if (!raw) return "";
 
-    // Prefer exact matches first
     if (raw === "organization") return "organization";
     if (raw === "athlete") return "athlete";
     if (raw === "trainer") return "trainer";
     if (raw === "admin") return "admin";
 
-    // Backward/legacy robustness
     if (raw.includes("org")) return "organization";
     if (raw.includes("ath")) return "athlete";
     if (raw.includes("train")) return "trainer";
@@ -58,7 +57,6 @@ export default function NavBar() {
   const isAthlete = role === "athlete";
   const isOrgSide = role === "organization" || role === "trainer" || role === "admin";
   const isAdmin = role === "admin";
-  const isTrainer = role === "trainer";
 
   // Tabs shown on left side (desktop)
   const leftTabs = useMemo(
@@ -71,12 +69,9 @@ export default function NavBar() {
   );
 
   // Mobile main tabs include SmartStack
-  const mainTabs = useMemo(
-    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
-    [leftTabs]
-  );
+  const mainTabs = useMemo(() => [...leftTabs, { name: "SmartStack", href: "/smartstack" }], [leftTabs]);
 
-  // ✅ Global event listener to open auth modal from anywhere (FinishSetupModal, etc.)
+  // ✅ Global event listener to open auth modal from anywhere
   useEffect(() => {
     const handler = (e) => {
       const detail = e?.detail || {};
@@ -121,7 +116,7 @@ export default function NavBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Click outside closes dropdowns (desktop)
+  // Click outside closes dropdown (desktop)
   useEffect(() => {
     if (!profileOpen) return;
 
@@ -144,21 +139,6 @@ export default function NavBar() {
     setProfileOpen((p) => !p);
   }, [loggedIn, openAuthModal]);
 
-  /**
-   * ✅ FIXED: logout now awaits cookie clearing, then routes to /login
-   * This prevents race conditions where the HttpOnly cookie lingers briefly.
-   */
-  const logoutAndClose = useCallback(async () => {
-    try {
-      await logout?.();
-    } finally {
-      setProfileOpen(false);
-      setMenuOpen(false);
-      router.replace("/login");
-      router.refresh(); // optional but helpful if some pages depend on cookie/server state
-    }
-  }, [logout, router]);
-
   const isActive = useCallback(
     (href) => {
       if (href === "/") return pathname === "/";
@@ -166,6 +146,19 @@ export default function NavBar() {
     },
     [pathname]
   );
+
+  const logoutAndClose = useCallback(async () => {
+    try {
+      await logout?.();
+    } finally {
+      setProfileOpen(false);
+      setMenuOpen(false);
+
+      // ✅ Send user to /login after logout (avoids staying on protected pages)
+      router.push("/login");
+      router.refresh();
+    }
+  }, [logout, router]);
 
   const NavItem = ({ tab, onClick }) => {
     const active = isActive(tab.href);
@@ -212,10 +205,8 @@ export default function NavBar() {
   };
 
   /**
-   * ✅ RoleLinks updated (matches today’s new routes)
-   * - /org/review-queue (NOT /org/review)
-   * - removes duplicate prescriptions link
-   * - adds active styling inside dropdown
+   * ✅ RoleLinks updated
+   * - Adds Workouts Calendar link: /org/workouts-calendar
    */
   const RoleLinks = () => {
     const L = ({ href, children }) => {
@@ -225,9 +216,7 @@ export default function NavBar() {
           href={href}
           className={[
             "block px-4 py-3 text-sm transition",
-            active
-              ? "bg-blue-50 text-[#46769B] font-semibold"
-              : "text-gray-700 hover:bg-gray-50",
+            active ? "bg-blue-50 text-[#46769B] font-semibold" : "text-gray-700 hover:bg-gray-50",
           ].join(" ")}
         >
           {children}
@@ -241,7 +230,9 @@ export default function NavBar() {
           <L href="/org/dashboard">Dashboard</L>
           <L href="/org/review-queue">Review Queue</L>
 
-          {/* Trainers + Admin + Org (org-side) */}
+          {/* ✅ NEW: Workouts Calendar */}
+          <L href="/org/workouts-calendar">Workouts Calendar</L>
+
           <L href="/org/prescriptions">Prescriptions</L>
 
           {/* Admin/Organization only */}
@@ -337,12 +328,8 @@ export default function NavBar() {
                           <p className="text-xs font-semibold text-gray-900 truncate">
                             {user?.Name || user?.name || "Profile"}
                           </p>
-                          <p className="text-[11px] text-gray-500 truncate">
-                            {user?.Email || user?.email}
-                          </p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">
-                            {roleLabel}
-                          </p>
+                          <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                         </div>
 
                         <RoleLinks />
@@ -365,14 +352,7 @@ export default function NavBar() {
             <div className="md:hidden flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  if (loggedIn) {
-                    setProfileOpen(false);
-                    setMenuOpen((v) => !v);
-                  } else {
-                    setMenuOpen((v) => !v);
-                  }
-                }}
+                onClick={() => setMenuOpen((v) => !v)}
                 aria-label="Toggle menu"
                 aria-expanded={menuOpen}
                 className="h-10 w-10 rounded-xl border border-gray-200 grid place-items-center bg-white hover:bg-gray-50 transition"
@@ -463,12 +443,8 @@ export default function NavBar() {
                       <p className="text-sm font-semibold text-gray-900 truncate">
                         {user?.Name || user?.name || "Profile"}
                       </p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {user?.Email || user?.email}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-1 truncate">
-                        {roleLabel}
-                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
+                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 overflow-hidden">

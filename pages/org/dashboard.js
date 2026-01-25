@@ -1,8 +1,8 @@
 // pages/org/dashboard.js
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
   RefreshCcw,
@@ -28,6 +28,8 @@ import {
   Pencil,
   Tag,
   ClipboardList,
+  CalendarDays,
+  Dumbbell,
 } from "lucide-react";
 
 /**
@@ -36,6 +38,17 @@ import {
  * 1) Role gating supports Organization + Admin + Trainer (OrgMembers)
  * 2) No x-org-token headers; rely on HttpOnly cookie session + requireOrg(req)
  * 3) Invite link still token-based, token read from session payload
+ *
+ * ✅ NEW:
+ * - Fixes triple-fetch spam by:
+ *   - using "once per mount" guards (refs)
+ *   - removing effect dependencies that can churn
+ *   - aborting stale requests
+ * - "Today's Workouts" panel with:
+ *   - sport toggle (Basketball/Football/Baseball/Soccer)
+ *   - workout + item + completion summary
+ *   - quick list of today's workouts
+ *   - CTA to /org/workouts-calendar
  */
 
 function normalizeEmail(email) {
@@ -88,6 +101,21 @@ function toCSV(rows) {
     return needs ? `"${escaped}"` : escaped;
   };
   return rows.map((r) => r.map(escape).join(",")).join("\n");
+}
+
+/** YYYY-MM-DD in America/New_York */
+function nyDateISO() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${d}`;
 }
 
 function StatCard({ icon: Icon, label, value, sub }) {
@@ -147,6 +175,7 @@ function Button({
   disabled = false,
   className = "",
   title = "",
+  type = "button",
 }) {
   const base =
     "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition";
@@ -168,7 +197,7 @@ function Button({
         disabled ? "opacity-70 cursor-not-allowed" : "",
         className
       )}
-      type="button"
+      type={type}
     >
       {children}
     </button>
@@ -216,7 +245,9 @@ function Modal({ open, title, children, onClose }) {
         <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
           <div className="p-5 border-b flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
+              <p className="text-lg font-extrabold text-gray-900 truncate">
+                {title}
+              </p>
               <p className="text-[12px] text-gray-500 mt-1">
                 Update status/tags to power filtering and workflow.
               </p>
@@ -304,7 +335,9 @@ function AthleteCard({
               <Pill>{athlete?.plansCount || 0} plans</Pill>
             </div>
 
-            <p className="mt-2 text-[12px] text-gray-700 break-all">{email || "—"}</p>
+            <p className="mt-2 text-[12px] text-gray-700 break-all">
+              {email || "—"}
+            </p>
             {email ? (
               <a
                 href={`mailto:${email}`}
@@ -352,7 +385,11 @@ function AthleteCard({
           History
         </Button>
 
-        <Button className="px-3 py-2 text-xs w-full" onClick={() => onBuild(email)} disabled={!email}>
+        <Button
+          className="px-3 py-2 text-xs w-full"
+          onClick={() => onBuild(email)}
+          disabled={!email}
+        >
           Build
           <ArrowRight className="w-4 h-4" />
         </Button>
@@ -390,19 +427,336 @@ function AthleteCard({
                   </Button>
                 ))}
               </div>
-              <p className="text-[11px] text-gray-500 mt-3">Opens builder pre-filled.</p>
+              <p className="text-[11px] text-gray-500 mt-3">
+                Opens builder pre-filled.
+              </p>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
               <p className="text-xs text-gray-500">Tags</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {tags.length ? tags.map((t) => <TagChip key={t} text={t} />) : <span className="text-[11px] text-gray-400">—</span>}
+                {tags.length ? (
+                  tags.map((t) => <TagChip key={t} text={t} />)
+                ) : (
+                  <span className="text-[11px] text-gray-400">—</span>
+                )}
               </div>
             </div>
           </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* NEW: Today's Workouts Panel                                                */
+/* -------------------------------------------------------------------------- */
+
+function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide }) {
+  const [sport, setSport] = useState("Basketball");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [day, setDay] = useState({
+    workouts: [],
+    itemsByWorkoutId: {},
+    completionByItemId: {},
+  });
+
+  const abortRef = useRef(null);
+  const todayISO = useMemo(() => nyDateISO(), []);
+
+  const fetchToday = useCallback(async () => {
+    if (!isOrgSide) return;
+
+    // Abort any in-flight request (prevents race + duplicates)
+    try {
+      abortRef.current?.abort?.();
+    } catch {}
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setLoading(true);
+    setErr("");
+
+    try {
+      const res = await fetch(
+        `/api/org/workouts/day?date=${encodeURIComponent(todayISO)}&sport=${encodeURIComponent(
+          sport
+        )}`,
+        { method: "GET", credentials: "include", signal: controller.signal }
+      );
+
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || "Failed to load today's workouts");
+
+      setDay({
+        workouts: Array.isArray(data?.workouts) ? data.workouts : [],
+        itemsByWorkoutId: data?.itemsByWorkoutId || {},
+        completionByItemId: data?.completionByItemId || {},
+      });
+    } catch (e) {
+      // Ignore abort errors
+      const msg = String(e?.name || "").toLowerCase();
+      if (msg.includes("abort")) return;
+
+      setErr(e?.message || "Failed to load");
+      setDay({ workouts: [], itemsByWorkoutId: {}, completionByItemId: {} });
+    } finally {
+      setLoading(false);
+    }
+  }, [isOrgSide, sport, todayISO]);
+
+  // ✅ Fetch once on mount + whenever sport changes
+  useEffect(() => {
+    fetchToday();
+    // Cleanup abort on unmount
+    return () => {
+      try {
+        abortRef.current?.abort?.();
+      } catch {}
+    };
+  }, [fetchToday]);
+
+  const summary = useMemo(() => {
+    const workouts = Array.isArray(day?.workouts) ? day.workouts : [];
+    const itemsByWorkoutId = day?.itemsByWorkoutId || {};
+    const completionByItemId = day?.completionByItemId || {};
+
+    let workoutCount = workouts.length;
+    let itemCount = 0;
+    let completedCount = 0;
+    let pendingReviewCount = 0;
+    let rejectedCount = 0;
+    let athleteSum = 0;
+
+    workouts.forEach((w) => {
+      athleteSum += Number(w?.athleteCount || 0);
+      const wid = String(w?.id || "");
+      const items = Array.isArray(itemsByWorkoutId?.[wid]) ? itemsByWorkoutId[wid] : [];
+      itemCount += items.length;
+
+      items.forEach((it) => {
+        const itemId = String(it?.id || "");
+        const completion = completionByItemId?.[itemId] || null;
+        const status = String(completion?.Status || "").toLowerCase();
+
+        if (!completion) return;
+        if (status === "completed") completedCount += 1;
+        else if (status === "pending_review") pendingReviewCount += 1;
+        else rejectedCount += 1;
+      });
+    });
+
+    const completionPct = itemCount > 0 ? Math.round((completedCount / itemCount) * 100) : 0;
+
+    return {
+      workoutCount,
+      itemCount,
+      athleteSum,
+      completedCount,
+      pendingReviewCount,
+      rejectedCount,
+      completionPct,
+    };
+  }, [day]);
+
+  const list = useMemo(() => {
+    const workouts = Array.isArray(day?.workouts) ? [...day.workouts] : [];
+    workouts.sort((a, b) =>
+      String(a?.Title || "").localeCompare(String(b?.Title || ""))
+    );
+    return workouts;
+  }, [day]);
+
+  const toneForStatus = (s) => {
+    const status = String(s || "").toLowerCase();
+    if (status.includes("complete")) return "good";
+    if (status.includes("assign")) return "warn";
+    return "neutral";
+  };
+
+  return (
+    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-6 h-6 text-[#46769B]" />
+            <h2 className="text-lg font-extrabold text-gray-900">Today’s Workouts</h2>
+            <Pill>{todayISO}</Pill>
+          </div>
+          <p className="text-sm text-gray-600 mt-1">
+            Quick ops view for <span className="font-semibold">{sport}</span>. Jump to the calendar to schedule/edit.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="secondary"
+            onClick={fetchToday}
+            disabled={loading}
+            className="w-full sm:w-auto"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Refresh
+          </Button>
+
+          <Button onClick={onOpenCalendar} className="w-full sm:w-auto" title="Open workouts calendar">
+            <ClipboardList className="w-4 h-4" />
+            Open calendar
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Sport toggle */}
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {["Basketball", "Football", "Baseball", "Soccer"].map((s) => {
+          const active = s === sport;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSport(s)}
+              className={classNames(
+                "px-3 py-2 rounded-2xl border text-sm font-semibold transition",
+                active
+                  ? "bg-[#46769B] text-white border-[#46769B]"
+                  : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+              )}
+            >
+              {s}
+            </button>
+          );
+        })}
+      </div>
+
+      {err ? (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700 font-semibold">{err}</p>
+          <p className="text-[11px] text-red-600 mt-1">
+            If this endpoint still uses x-org-token headers, update the API to rely on the org cookie session.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Summary cards */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs text-gray-500">Workouts scheduled</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1">
+            {loading ? "…" : summary.workoutCount}
+          </p>
+          <p className="text-[11px] text-gray-500 mt-2">For {sport} today</p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs text-gray-500">Total items</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1">
+            {loading ? "…" : summary.itemCount}
+          </p>
+          <p className="text-[11px] text-gray-500 mt-2">
+            <span className="font-semibold">{loading ? "…" : summary.athleteSum}</span> athlete assignments (sum)
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs text-gray-500">Completed items</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1">
+            {loading ? "…" : summary.completedCount}
+          </p>
+          <p className="text-[11px] text-gray-500 mt-2">
+            {summary.itemCount > 0 ? `${summary.completionPct}% complete` : "No items yet"}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs text-gray-500">Pending review</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1">
+            {loading ? "…" : summary.pendingReviewCount}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Pill tone={summary.pendingReviewCount > 0 ? "warn" : "good"}>
+              {summary.pendingReviewCount > 0 ? "Coach review needed" : "All clear"}
+            </Pill>
+            {summary.rejectedCount > 0 ? <Pill tone="bad">{summary.rejectedCount} other</Pill> : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Workouts list */}
+      <div className="mt-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-extrabold text-gray-900">Today list</p>
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-[#46769B] hover:underline"
+            onClick={onOpenCalendar}
+          >
+            View in calendar →
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <p className="text-sm text-gray-800 font-semibold">Loading today…</p>
+          </div>
+        ) : list.length === 0 ? (
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900">No workouts scheduled for today.</p>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Click <span className="font-semibold">Open calendar</span> to add a workout.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {list.slice(0, 6).map((w) => {
+              const wid = String(w?.id || "");
+              const items = Array.isArray(day?.itemsByWorkoutId?.[wid])
+                ? day.itemsByWorkoutId[wid]
+                : [];
+              return (
+                <div key={wid} className="rounded-2xl border border-gray-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-extrabold text-gray-900 truncate">
+                        {w?.Title || "Workout"}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {w?.Status ? (
+                          <Pill tone={toneForStatus(w.Status)}>{w.Status}</Pill>
+                        ) : (
+                          <Pill>assigned</Pill>
+                        )}
+                        <Pill>
+                          <Dumbbell className="w-3.5 h-3.5 mr-1.5" />
+                          {items.length} items
+                        </Pill>
+                        <Pill>
+                          <Users className="w-3.5 h-3.5 mr-1.5" />
+                          {w?.athleteCount ?? 0} athletes
+                        </Pill>
+                      </div>
+                    </div>
+                  </div>
+
+                  {items.length ? (
+                    <p className="mt-3 text-[11px] text-gray-500">
+                      First item:{" "}
+                      <span className="font-semibold text-gray-800">
+                        {items[0]?.ExerciseName || items[0]?.ExceciseName || "—"}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-3 text-[11px] text-gray-500">No items attached yet.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -478,6 +832,11 @@ export default function OrgDashboard() {
   const [sortMode, setSortMode] = useState("priority");
   const [expanded, setExpanded] = useState({});
 
+  // ✅ One-time fetch guards (prevents triple/quad requests on hydration + rerenders)
+  const didInitialLoadRef = useRef(false);
+  const overviewAbortRef = useRef(null);
+  const templatesAbortRef = useRef(null);
+
   const toggleExpanded = (email) => {
     const e = normalizeEmail(email);
     if (!e) return;
@@ -519,6 +878,13 @@ export default function OrgDashboard() {
   }, [user, role, isOrgSide, router]);
 
   const refreshOverview = useCallback(async () => {
+    // Abort in-flight
+    try {
+      overviewAbortRef.current?.abort?.();
+    } catch {}
+    const controller = new AbortController();
+    overviewAbortRef.current = controller;
+
     setLoading(true);
     setError("");
 
@@ -526,6 +892,7 @@ export default function OrgDashboard() {
       const res = await fetch(`/api/org/getOrgOverview`, {
         method: "GET",
         credentials: "include",
+        signal: controller.signal,
       });
 
       const data = await safeJson(res);
@@ -535,6 +902,8 @@ export default function OrgDashboard() {
       setAthletes(Array.isArray(data?.athletes) ? data.athletes : []);
       setRecentActivity(Array.isArray(data?.recentActivity) ? data.recentActivity : []);
     } catch (err) {
+      const name = String(err?.name || "").toLowerCase();
+      if (name.includes("abort")) return;
       console.error("[org/dashboard] refreshOverview error:", err);
       setError(err?.message || "Failed to load organization overview.");
     } finally {
@@ -544,21 +913,43 @@ export default function OrgDashboard() {
 
   const refreshTemplates = useCallback(async () => {
     try {
+      templatesAbortRef.current?.abort?.();
+    } catch {}
+    const controller = new AbortController();
+    templatesAbortRef.current = controller;
+
+    try {
       const res = await fetch(`/api/org/getPlanTemplates`, {
         method: "GET",
         credentials: "include",
+        signal: controller.signal,
       });
       const data = await safeJson(res);
       if (!res.ok) return;
       setTemplates(Array.isArray(data?.templates) ? data.templates : []);
-    } catch {}
+    } catch (err) {
+      const name = String(err?.name || "").toLowerCase();
+      if (name.includes("abort")) return;
+    }
   }, []);
 
+  // ✅ Single initial load (prevents duplicate fetches in dev + hydration churn)
   useEffect(() => {
     if (!user) return;
     if (!isOrgSide) return;
+
+    if (didInitialLoadRef.current) return;
+    didInitialLoadRef.current = true;
+
     refreshOverview();
     refreshTemplates();
+
+    return () => {
+      try {
+        overviewAbortRef.current?.abort?.();
+        templatesAbortRef.current?.abort?.();
+      } catch {}
+    };
   }, [user, isOrgSide, refreshOverview, refreshTemplates]);
 
   const counts = useMemo(() => {
@@ -734,6 +1125,10 @@ export default function OrgDashboard() {
   const inputBase =
     "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
 
+  const openWorkoutsCalendar = () => {
+    router.push("/org/workouts-calendar");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
       <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
@@ -796,6 +1191,17 @@ export default function OrgDashboard() {
                 <RefreshCcw className="w-4 h-4" />
                 Refresh
               </Button>
+
+              <Button
+                variant="secondary"
+                onClick={openWorkoutsCalendar}
+                className="w-full sm:w-auto"
+                title="Open workouts calendar"
+              >
+                <CalendarDays className="w-4 h-4" />
+                Workouts calendar
+              </Button>
+
               <Button
                 variant="secondary"
                 onClick={exportCSV}
@@ -805,6 +1211,7 @@ export default function OrgDashboard() {
                 <Download className="w-4 h-4" />
                 Export CSV
               </Button>
+
               <Button variant="dark" onClick={onLogout} className="w-full sm:w-auto">
                 <LogOut className="w-4 h-4" />
                 Log out
@@ -833,7 +1240,10 @@ export default function OrgDashboard() {
           ) : null}
         </div>
 
-        {/* Stats (more mobile friendly) */}
+        {/* NEW: Today panel */}
+        <TodayWorkoutsPanel onOpenCalendar={openWorkoutsCalendar} isOrgSide={isOrgSide} />
+
+        {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={Users} label="Athletes" value={stats.totalAthletes || 0} sub="Roster size" />
           <StatCard icon={FileText} label="Total Plans" value={stats.totalPlans || 0} sub="All-time plans created" />
@@ -1087,185 +1497,112 @@ export default function OrgDashboard() {
                     const email = normalizeEmail(a?.email);
                     const isExpanded = !!expanded[email];
 
-                    const planChip = (
-                      <PlanChip needsPlan={!!a?.needsPlan} stale={!!a?.stale} />
-                    );
-
                     const status = String(a?.status || "Active");
                     const tags = Array.isArray(a?.tags) ? a.tags : [];
 
                     return (
-                      <>
-                        <tr key={a.id} className="border-b">
-                          <td className="py-3 pr-4">
-                            <button
-                              type="button"
-                              onClick={() => toggleExpanded(email)}
-                              className="text-left w-full"
-                              title="Expand"
-                            >
-                              <div className="flex items-center gap-2">
-                                {isExpanded ? (
-                                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                                )}
-                                <div className="min-w-0">
-                                  <div className="font-semibold text-gray-900 truncate">
-                                    {a?.name || "Athlete"}
-                                  </div>
-                                  <div className="mt-1">{planChip}</div>
-                                </div>
-                              </div>
-                            </button>
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <div className="text-gray-700 font-medium break-all">
-                              {email}
-                            </div>
-                            {email ? (
-                              <a
-                                href={`mailto:${email}`}
-                                className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
-                              >
-                                <Mail className="w-3.5 h-3.5" />
-                                Email
-                              </a>
-                            ) : null}
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <Pill>{status}</Pill>
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <div className="flex flex-wrap gap-2">
-                              {tags.length ? (
-                                tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)
+                      <tr key={a.id || email} className="border-b">
+                        <td className="py-3 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(email)}
+                            className="text-left w-full"
+                            title="Expand"
+                          >
+                            <div className="flex items-center gap-2">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-gray-400" />
                               ) : (
-                                <span className="text-[11px] text-gray-400">—</span>
+                                <ChevronRight className="w-4 h-4 text-gray-400" />
                               )}
-                            </div>
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <Pill>{a?.plansCount || 0}</Pill>
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <div className="text-gray-700 font-medium">
-                              {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
-                            </div>
-                            {a?.lastPlanTitle ? (
-                              <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[240px]">
-                                {a.lastPlanTitle}
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">
+                                  {a?.name || "Athlete"}
+                                </div>
+                                <div className="mt-1">
+                                  <PlanChip needsPlan={!!a?.needsPlan} stale={!!a?.stale} />
+                                </div>
                               </div>
+                            </div>
+                          </button>
+                        </td>
+
+                        <td className="py-3 pr-4">
+                          <div className="text-gray-700 font-medium break-all">{email}</div>
+                          {email ? (
+                            <a
+                              href={`mailto:${email}`}
+                              className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              Email
+                            </a>
+                          ) : null}
+                        </td>
+
+                        <td className="py-3 pr-4">
+                          <Pill>{status}</Pill>
+                        </td>
+
+                        <td className="py-3 pr-4">
+                          <div className="flex flex-wrap gap-2">
+                            {tags.length ? (
+                              tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)
                             ) : (
-                              <div className="text-[11px] text-gray-400 mt-0.5">
-                                No plans yet
-                              </div>
+                              <span className="text-[11px] text-gray-400">—</span>
                             )}
-                          </td>
+                          </div>
+                        </td>
 
-                          <td className="py-3 pr-2">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="secondary"
-                                className="px-3 py-2 text-xs"
-                                onClick={() => openEdit(a)}
-                                disabled={!email}
-                              >
-                                <Pencil className="w-4 h-4" />
-                                Edit
-                              </Button>
+                        <td className="py-3 pr-4">
+                          <Pill>{a?.plansCount || 0}</Pill>
+                        </td>
 
-                              <Button
-                                variant="secondary"
-                                className="px-3 py-2 text-xs"
-                                onClick={() => goHistory(email)}
-                                disabled={!email}
-                              >
-                                History
-                              </Button>
-
-                              <Button
-                                className="px-3 py-2 text-xs"
-                                onClick={() => goBuildPlan(email)}
-                                disabled={!email}
-                              >
-                                Build
-                                <ArrowRight className="w-4 h-4" />
-                              </Button>
+                        <td className="py-3 pr-4">
+                          <div className="text-gray-700 font-medium">
+                            {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
+                          </div>
+                          {a?.lastPlanTitle ? (
+                            <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[240px]">
+                              {a.lastPlanTitle}
                             </div>
-                          </td>
-                        </tr>
+                          ) : (
+                            <div className="text-[11px] text-gray-400 mt-0.5">No plans yet</div>
+                          )}
+                        </td>
 
-                        {isExpanded ? (
-                          <tr className="border-b bg-gray-50">
-                            <td colSpan={7} className="py-4 px-4">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500">Plan status</p>
-                                  <p className="text-sm font-extrabold text-gray-900 mt-1">
-                                    {a?.needsPlan
-                                      ? "Needs first plan"
-                                      : a?.stale
-                                      ? "Needs update"
-                                      : "Current"}
-                                  </p>
-                                  <p className="text-[11px] text-gray-500 mt-2">
-                                    Coach workflow: handle needs-plan first, then stale.
-                                  </p>
-                                </div>
+                        <td className="py-3 pr-2">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="secondary"
+                              className="px-3 py-2 text-xs"
+                              onClick={() => openEdit(a)}
+                              disabled={!email}
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </Button>
 
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500">Quick templates</p>
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {templates.slice(0, 3).map((t) => (
-                                      <Button
-                                        key={t.id}
-                                        variant="secondary"
-                                        className="px-3 py-2 text-xs"
-                                        onClick={() => goBuildPlan(email, t.id)}
-                                      >
-                                        {t.name}
-                                        <ArrowRight className="w-4 h-4" />
-                                      </Button>
-                                    ))}
-                                  </div>
-                                  <p className="text-[11px] text-gray-500 mt-3">
-                                    These open the builder pre-filled (fast).
-                                  </p>
-                                </div>
+                            <Button
+                              variant="secondary"
+                              className="px-3 py-2 text-xs"
+                              onClick={() => goHistory(email)}
+                              disabled={!email}
+                            >
+                              History
+                            </Button>
 
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                                  <p className="text-xs text-gray-500">Shortcuts</p>
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button
-                                      className="px-3 py-2 text-xs"
-                                      onClick={() => goBuildPlan(email)}
-                                      disabled={!email}
-                                    >
-                                      <FileText className="w-4 h-4" />
-                                      Build / Edit
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      className="px-3 py-2 text-xs"
-                                      onClick={() => openEdit(a)}
-                                      disabled={!email}
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                      Update status/tags
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : null}
-                      </>
+                            <Button
+                              className="px-3 py-2 text-xs"
+                              onClick={() => goBuildPlan(email)}
+                              disabled={!email}
+                            >
+                              Build
+                              <ArrowRight className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>

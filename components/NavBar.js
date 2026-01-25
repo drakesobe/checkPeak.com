@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
@@ -10,6 +10,7 @@ import NavBarLoginModal from "@/components/NavBarLoginModal";
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuthContext();
 
   const [isMounted, setIsMounted] = useState(false);
@@ -143,11 +144,20 @@ export default function NavBar() {
     setProfileOpen((p) => !p);
   }, [loggedIn, openAuthModal]);
 
-  const logoutAndClose = useCallback(() => {
-    logout?.();
-    setProfileOpen(false);
-    setMenuOpen(false);
-  }, [logout]);
+  /**
+   * ✅ FIXED: logout now awaits cookie clearing, then routes to /login
+   * This prevents race conditions where the HttpOnly cookie lingers briefly.
+   */
+  const logoutAndClose = useCallback(async () => {
+    try {
+      await logout?.();
+    } finally {
+      setProfileOpen(false);
+      setMenuOpen(false);
+      router.replace("/login");
+      router.refresh(); // optional but helpful if some pages depend on cookie/server state
+    }
+  }, [logout, router]);
 
   const isActive = useCallback(
     (href) => {
@@ -215,7 +225,9 @@ export default function NavBar() {
           href={href}
           className={[
             "block px-4 py-3 text-sm transition",
-            active ? "bg-blue-50 text-[#46769B] font-semibold" : "text-gray-700 hover:bg-gray-50",
+            active
+              ? "bg-blue-50 text-[#46769B] font-semibold"
+              : "text-gray-700 hover:bg-gray-50",
           ].join(" ")}
         >
           {children}
@@ -328,7 +340,9 @@ export default function NavBar() {
                           <p className="text-[11px] text-gray-500 truncate">
                             {user?.Email || user?.email}
                           </p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">
+                            {roleLabel}
+                          </p>
                         </div>
 
                         <RoleLinks />
@@ -336,6 +350,7 @@ export default function NavBar() {
                         <button
                           onClick={logoutAndClose}
                           className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                          type="button"
                         >
                           Logout
                         </button>
@@ -451,7 +466,9 @@ export default function NavBar() {
                       <p className="text-[11px] text-gray-500 truncate">
                         {user?.Email || user?.email}
                       </p>
-                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                      <p className="text-[11px] text-gray-400 mt-1 truncate">
+                        {roleLabel}
+                      </p>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -459,6 +476,7 @@ export default function NavBar() {
                       <button
                         onClick={logoutAndClose}
                         className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                        type="button"
                       >
                         Logout
                       </button>

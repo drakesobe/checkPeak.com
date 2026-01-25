@@ -1,4 +1,3 @@
-// components/NavBarLoginModal.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -7,21 +6,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
 import { useAuthContext } from "@/hooks/useAuth";
 
+function classNames(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
 /**
- * ✅ Updated for new org-side roles:
- * - Organization (primary org account)
- * - Admin (OrgMembers)
- * - Trainer (OrgMembers)
- *
- * Key changes:
- * 1) Better role routing after login (org-side -> /org/dashboard)
- * 2) Login placeholder text updated: org-side can be org/admin/trainer
- * 3) Keeps your existing athlete/org toggle (trainers login via "Organization")
- *
- * UX changes in this version:
- * - ❌ No close on outside click
- * - ✅ ESC closes
- * - ✅ Body scroll locked while open
+ * UX notes:
+ * - No outside click close
+ * - ESC closes
+ * - ✅ Strong scroll lock (iOS-safe) while open
+ * - ✅ Mobile opens as a true bottom sheet (not floating halfway)
+ * - ✅ Modal content scrolls; background does not
  */
 export default function NavBarLoginModal({
   isOpen,
@@ -35,7 +30,6 @@ export default function NavBarLoginModal({
   const [tab, setTab] = useState(defaultTab);
 
   // Role selector: "athlete" | "organization"
-  // NOTE: Trainers/Admins also login under "organization"
   const [authRole, setAuthRole] = useState("athlete");
 
   // LOGIN state
@@ -77,7 +71,6 @@ export default function NavBarLoginModal({
   });
 
   const emailRef = useRef(null);
-  const passwordRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
 
   useEffect(() => {
@@ -87,17 +80,14 @@ export default function NavBarLoginModal({
       setSignupError("");
       setSignupSuccess(null);
 
-      // Forgot password reset
       setShowForgot(false);
       setForgotEmail("");
       setForgotLoading(false);
       setForgotError("");
       setForgotOk(false);
 
-      // default role reset per tab open is fine; keep last selection if you prefer
       setAuthRole("athlete");
 
-      // Optional: prefill email if dispatched by global event
       try {
         if (typeof window !== "undefined") {
           const pre = window.localStorage.getItem("cp_prefill_login_email");
@@ -113,24 +103,48 @@ export default function NavBarLoginModal({
     }
   }, [isOpen, tab, showForgot]);
 
-  // Clear "sticky" login errors as user types
   useEffect(() => {
     if (!isOpen) return;
     if (loginError) setLoginError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, password, authRole]);
 
-  // ✅ Lock body scroll while modal open
+  /**
+   * ✅ iOS-safe body scroll lock
+   */
   useEffect(() => {
     if (!isOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+
+    const body = document.body;
+    const html = document.documentElement;
+
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+      htmlOverflow: html.style.overflow,
+    };
+
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+
     return () => {
-      document.body.style.overflow = prev || "";
+      body.style.overflow = prev.bodyOverflow || "";
+      body.style.position = prev.bodyPosition || "";
+      body.style.top = prev.bodyTop || "";
+      body.style.width = prev.bodyWidth || "";
+      html.style.overflow = prev.htmlOverflow || "";
+
+      window.scrollTo(0, scrollY);
     };
   }, [isOpen]);
 
-  // ✅ ESC closes modal (since outside click no longer does)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -144,7 +158,6 @@ export default function NavBarLoginModal({
   }, [isOpen]);
 
   const closeAndReset = () => {
-    // Clear login fields
     setEmail("");
     setPassword("");
     setRememberMe(false);
@@ -152,22 +165,18 @@ export default function NavBarLoginModal({
     setLoginError("");
     setLoginLoading(false);
 
-    // Forgot password reset
     setShowForgot(false);
     setForgotEmail("");
     setForgotLoading(false);
     setForgotError("");
     setForgotOk(false);
 
-    // Clear signup fields
     setSignupError("");
     setSignupSuccess(null);
     setSignupLoading(false);
 
-    // Keep role selection reset (optional)
     setAuthRole("athlete");
 
-    // Clear prefill
     try {
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("cp_prefill_login_email");
@@ -180,12 +189,10 @@ export default function NavBarLoginModal({
   const inputBase =
     "w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300";
 
-  const rolePill =
-    "px-3 py-2 rounded-xl border text-sm font-semibold transition";
+  const rolePill = "px-3 py-2 rounded-xl border text-sm font-semibold transition";
 
-  const isOrgSideLogin = authRole === "organization"; // includes Org, Admin, Trainer accounts
+  const isOrgSideLogin = authRole === "organization";
 
-  // ---- Error mapping for better UX + consistent messaging ----
   const mapLoginError = (err) => {
     const rawMsg = String(err?.message || err?.error || "");
     const msg = rawMsg.toLowerCase();
@@ -212,7 +219,6 @@ export default function NavBarLoginModal({
       return "User not found.";
     }
 
-    // OrgMembers can fail with missing PasswordHash
     if (msg.includes("passwordhash")) {
       return "This account isn’t ready yet. Ask your organization admin to finish setup.";
     }
@@ -221,9 +227,7 @@ export default function NavBarLoginModal({
   };
 
   const getNormalizedRole = (userData) => {
-    const raw = String(userData?.role || userData?.Role || "")
-      .trim()
-      .toLowerCase();
+    const raw = String(userData?.role || userData?.Role || "").trim().toLowerCase();
     if (!raw) return "";
     if (raw === "organization") return "organization";
     if (raw === "trainer") return "trainer";
@@ -236,7 +240,6 @@ export default function NavBarLoginModal({
     return raw;
   };
 
-  // ---------- LOGIN ----------
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError("");
@@ -258,15 +261,12 @@ export default function NavBarLoginModal({
     try {
       const userData = await login(cleanEmail, password, authRole);
 
-      // NOTE: Your AuthProvider already stores user in localStorage on login.
-      // Keep rememberMe behavior as an override (fine).
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
       }
 
       closeAndReset();
 
-      // ✅ Route by normalized role
       const r = getNormalizedRole(userData);
       const isOrgSide = ["organization", "trainer", "admin"].includes(r);
 
@@ -280,7 +280,6 @@ export default function NavBarLoginModal({
     }
   };
 
-  // ---------- FORGOT PASSWORD ----------
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     if (forgotLoading) return;
@@ -301,12 +300,11 @@ export default function NavBarLoginModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: clean,
-          role: authRole, // org-side requests can cover Organization/Admin/Trainer
+          role: authRole,
           source: "navbar_login_modal",
         }),
       });
 
-      // Always show generic success to prevent account enumeration
       setForgotOk(true);
       setForgotEmail("");
     } catch (err) {
@@ -317,7 +315,6 @@ export default function NavBarLoginModal({
     }
   };
 
-  // ---------- SIGNUP ----------
   const handleSignup = async (e) => {
     e.preventDefault();
     setSignupError("");
@@ -328,10 +325,8 @@ export default function NavBarLoginModal({
         if (!athleteSignup.name || !athleteSignup.email || !athleteSignup.password) {
           throw new Error("Please provide name, email, and password.");
         }
-        if (!athleteSignup.email.includes("@"))
-          throw new Error("Please enter a valid email.");
-        if (athleteSignup.password.length < 6)
-          throw new Error("Password must be at least 6 characters.");
+        if (!athleteSignup.email.includes("@")) throw new Error("Please enter a valid email.");
+        if (athleteSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
 
         const payload = {
           token: athleteSignup.token,
@@ -348,14 +343,11 @@ export default function NavBarLoginModal({
         return;
       }
 
-      // Org signup
       if (!orgSignup.name || !orgSignup.email || !orgSignup.password) {
         throw new Error("Please provide organization name, email, and password.");
       }
-      if (!orgSignup.email.includes("@"))
-        throw new Error("Please enter a valid email.");
-      if (orgSignup.password.length < 6)
-        throw new Error("Password must be at least 6 characters.");
+      if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
+      if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
 
       const payload = {
         name: orgSignup.name,
@@ -381,43 +373,50 @@ export default function NavBarLoginModal({
 
   const disableRoleSwitch = loginLoading || signupLoading || forgotLoading;
 
+  const mobileSheetClass =
+    "w-full max-w-none rounded-t-3xl rounded-b-none mt-auto mb-0 " +
+    "max-h-[85svh] overflow-y-auto overscroll-contain touch-pan-y " +
+    "pb-[env(safe-area-inset-bottom)]";
+
+  const desktopModalClass = "w-full max-w-sm rounded-2xl max-h-[90vh] overflow-y-auto";
+
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4 sm:px-6 bg-black/40"
+          className={classNames(
+            "fixed inset-0 z-50 bg-black/40 px-4 sm:px-6",
+            isMobile ? "flex items-end justify-center" : "flex items-center justify-center"
+          )}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          // ❌ Removed onClick close: no outside-click dismissal
           role="dialog"
           aria-modal="true"
         >
           <motion.div
-            className={`bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg relative max-h-[90vh] overflow-y-auto ${
-              isMobile ? "mt-auto mb-0 rounded-t-3xl" : ""
-            }`}
-            initial={
-              isMobile
-                ? { y: "100%", opacity: 0 }
-                : { scale: 0.9, opacity: 0, y: -50 }
-            }
-            animate={
-              isMobile
-                ? { y: 0, opacity: 1 }
-                : { scale: 1, opacity: 1, y: 0 }
-            }
-            exit={
-              isMobile
-                ? { y: "100%", opacity: 0 }
-                : { scale: 0.9, opacity: 0, y: -50 }
-            }
-            transition={{ type: "spring", stiffness: 400, damping: 35 }}
+            className={classNames(
+              "bg-white shadow-lg relative",
+              isMobile ? mobileSheetClass : desktopModalClass,
+              isMobile ? "p-5" : "p-6"
+            )}
+            initial={isMobile ? { y: "100%" } : { scale: 0.92, opacity: 0, y: -20 }}
+            animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1, y: 0 }}
+            exit={isMobile ? { y: "100%" } : { scale: 0.92, opacity: 0, y: -20 }}
+            transition={{ type: "spring", stiffness: 420, damping: 36 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close */}
+            {isMobile ? (
+              <div className="flex justify-center pb-2">
+                <div className="h-1.5 w-12 rounded-full bg-gray-200" />
+              </div>
+            ) : null}
+
             <button
-              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+              className={classNames(
+                "absolute text-gray-500 hover:text-gray-700",
+                isMobile ? "top-3 right-4" : "top-3 right-3"
+              )}
               onClick={closeAndReset}
               aria-label="Close"
               type="button"
@@ -489,7 +488,6 @@ export default function NavBarLoginModal({
               </button>
             </div>
 
-            {/* Small hint for org-side */}
             {tab === "login" && isOrgSideLogin && !showForgot && (
               <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
                 Organization login includes <b>Admins</b> and <b>Trainers</b>.
@@ -500,9 +498,7 @@ export default function NavBarLoginModal({
             {tab === "login" && !showForgot && (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block mb-1 font-medium text-gray-800">
-                    Email
-                  </label>
+                  <label className="block mb-1 font-medium text-gray-800">Email</label>
                   <input
                     ref={emailRef}
                     type="email"
@@ -517,12 +513,9 @@ export default function NavBarLoginModal({
                 </div>
 
                 <div>
-                  <label className="block mb-1 font-medium text-gray-800">
-                    Password
-                  </label>
+                  <label className="block mb-1 font-medium text-gray-800">Password</label>
                   <div className="relative">
                     <input
-                      ref={passwordRef}
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter your password"
                       value={password}
@@ -543,9 +536,7 @@ export default function NavBarLoginModal({
                   </div>
                 </div>
 
-                {loginError && (
-                  <p className="text-red-500 text-sm">{loginError}</p>
-                )}
+                {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
 
                 <div className="flex items-center justify-between">
                   <label className="flex items-center space-x-2 text-gray-700">
@@ -595,9 +586,7 @@ export default function NavBarLoginModal({
             {tab === "login" && showForgot && (
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <div className="text-center">
-                  <h3 className="text-lg font-bold text-gray-900">
-                    Reset your password
-                  </h3>
+                  <h3 className="text-lg font-bold text-gray-900">Reset your password</h3>
                   <p className="mt-1 text-sm text-gray-600">
                     Enter your email and we’ll send you reset instructions.
                   </p>
@@ -607,9 +596,7 @@ export default function NavBarLoginModal({
                 </div>
 
                 <div>
-                  <label className="block mb-1 font-medium text-gray-800">
-                    Email
-                  </label>
+                  <label className="block mb-1 font-medium text-gray-800">Email</label>
                   <input
                     type="email"
                     value={forgotEmail}
@@ -622,9 +609,7 @@ export default function NavBarLoginModal({
                   />
                 </div>
 
-                {forgotError && (
-                  <p className="text-red-500 text-sm">{forgotError}</p>
-                )}
+                {forgotError && <p className="text-red-500 text-sm">{forgotError}</p>}
 
                 {forgotOk && (
                   <p className="text-emerald-600 text-sm">
@@ -774,7 +759,6 @@ export default function NavBarLoginModal({
                       autoComplete="new-password"
                       disabled={signupLoading}
                     />
-
                     <input
                       type="text"
                       name="contactName"
@@ -823,9 +807,7 @@ export default function NavBarLoginModal({
                   </>
                 )}
 
-                {signupError && (
-                  <p className="text-red-500 text-sm">{signupError}</p>
-                )}
+                {signupError && <p className="text-red-500 text-sm">{signupError}</p>}
 
                 <button
                   type="submit"
@@ -844,7 +826,6 @@ export default function NavBarLoginModal({
               </form>
             )}
 
-            {/* optional success */}
             {tab === "signup" && signupSuccess && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -852,9 +833,7 @@ export default function NavBarLoginModal({
                 className="p-4 text-center bg-green-50 rounded-xl"
               >
                 <h2 className="text-lg font-bold text-green-600">Success!</h2>
-                <p className="text-gray-700 mt-1">
-                  Account created successfully.
-                </p>
+                <p className="text-gray-700 mt-1">Account created successfully.</p>
               </motion.div>
             )}
           </motion.div>

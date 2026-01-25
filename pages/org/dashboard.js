@@ -34,16 +34,8 @@ import {
  * ✅ ORG ISSUE FIXES APPLIED HERE
  *
  * 1) Role gating supports Organization + Admin + Trainer (OrgMembers)
- *    - Admin/Trainer are org-side and should access /org/*
- *
- * 2) Remove x-org-token header usage and STOP putting orgToken in URLs.
- *    - Org APIs should rely on HttpOnly session cookie + requireOrg(req)
- *    - All fetches use credentials: "include"
- *
- * 3) Invite link: keep token-based invite working, but read token from session cookie payload.
- *    - If token is missing, we still render the UI but show "Missing Token".
- *
- * 4) Keep everything else UI/UX identical.
+ * 2) No x-org-token headers; rely on HttpOnly cookie session + requireOrg(req)
+ * 3) Invite link still token-based, token read from session payload
  */
 
 function normalizeEmail(email) {
@@ -102,12 +94,14 @@ function StatCard({ icon: Icon, label, value, sub }) {
   return (
     <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs text-gray-500">{label}</p>
-          <p className="text-2xl font-extrabold text-gray-900 mt-1">{value}</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1 break-words">
+            {value}
+          </p>
           {sub ? <p className="text-[11px] text-gray-500 mt-2">{sub}</p> : null}
         </div>
-        <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+        <div className="shrink-0 w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
           <Icon className="w-5 h-5 text-[#46769B]" />
         </div>
       </div>
@@ -141,7 +135,7 @@ function TagChip({ text }) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold border border-gray-200 bg-white text-gray-700">
       <Tag className="w-3.5 h-3.5 text-gray-400" />
-      {text}
+      <span className="break-words">{text}</span>
     </span>
   );
 }
@@ -221,8 +215,8 @@ function Modal({ open, title, children, onClose }) {
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
           <div className="p-5 border-b flex items-start justify-between gap-4">
-            <div>
-              <p className="text-lg font-extrabold text-gray-900">{title}</p>
+            <div className="min-w-0">
+              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
               <p className="text-[12px] text-gray-500 mt-1">
                 Update status/tags to power filtering and workflow.
               </p>
@@ -243,11 +237,179 @@ function Modal({ open, title, children, onClose }) {
   );
 }
 
+function PlanChip({ needsPlan, stale }) {
+  if (needsPlan) {
+    return (
+      <Pill tone="bad">
+        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+        Needs plan
+      </Pill>
+    );
+  }
+  if (stale) {
+    return (
+      <Pill tone="warn">
+        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+        Needs update
+      </Pill>
+    );
+  }
+  return (
+    <Pill tone="good">
+      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+      Current
+    </Pill>
+  );
+}
+
+/** Mobile roster card (small screens) */
+function AthleteCard({
+  athlete,
+  templates,
+  isExpanded,
+  onToggle,
+  onEdit,
+  onHistory,
+  onBuild,
+  fmtDate,
+}) {
+  const email = normalizeEmail(athlete?.email);
+  const status = String(athlete?.status || "Active");
+  const tags = Array.isArray(athlete?.tags) ? athlete.tags : [];
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      <button
+        type="button"
+        onClick={() => onToggle(email)}
+        className="w-full text-left"
+        title="Expand"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+              )}
+              <p className="font-extrabold text-gray-900 truncate">
+                {athlete?.name || "Athlete"}
+              </p>
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <PlanChip needsPlan={!!athlete?.needsPlan} stale={!!athlete?.stale} />
+              <Pill>{status}</Pill>
+              <Pill>{athlete?.plansCount || 0} plans</Pill>
+            </div>
+
+            <p className="mt-2 text-[12px] text-gray-700 break-all">{email || "—"}</p>
+            {email ? (
+              <a
+                href={`mailto:${email}`}
+                className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Email
+              </a>
+            ) : null}
+
+            <div className="mt-3">
+              <p className="text-[11px] text-gray-500">Last plan</p>
+              <p className="text-[12px] text-gray-800 font-semibold">
+                {athlete?.lastPlanAt ? fmtDate(athlete.lastPlanAt) : "—"}
+              </p>
+              {athlete?.lastPlanTitle ? (
+                <p className="text-[11px] text-gray-500 mt-0.5 break-words">
+                  {athlete.lastPlanTitle}
+                </p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-0.5">No plans yet</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </button>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Button
+          variant="secondary"
+          className="px-3 py-2 text-xs w-full"
+          onClick={() => onEdit(athlete)}
+          disabled={!email}
+        >
+          <Pencil className="w-4 h-4" />
+          Edit
+        </Button>
+
+        <Button
+          variant="secondary"
+          className="px-3 py-2 text-xs w-full"
+          onClick={() => onHistory(email)}
+          disabled={!email}
+        >
+          History
+        </Button>
+
+        <Button className="px-3 py-2 text-xs w-full" onClick={() => onBuild(email)} disabled={!email}>
+          Build
+          <ArrowRight className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {isExpanded ? (
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">Plan status</p>
+              <p className="text-sm font-extrabold text-gray-900 mt-1">
+                {athlete?.needsPlan
+                  ? "Needs first plan"
+                  : athlete?.stale
+                  ? "Needs update"
+                  : "Current"}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Handle needs-plan first, then stale.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">Quick templates</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {templates.slice(0, 3).map((t) => (
+                  <Button
+                    key={t.id}
+                    variant="secondary"
+                    className="px-3 py-2 text-xs"
+                    onClick={() => onBuild(email, t.id)}
+                  >
+                    {t.name}
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-3">Opens builder pre-filled.</p>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <p className="text-xs text-gray-500">Tags</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {tags.length ? tags.map((t) => <TagChip key={t} text={t} />) : <span className="text-[11px] text-gray-400">—</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function OrgDashboard() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
-  // ✅ Role normalization: allow Organization + Admin + Trainer (org-side)
   const role = useMemo(() => {
     const r = String(user?.role || user?.Role || "").trim().toLowerCase();
     if (!r) return "";
@@ -263,8 +425,6 @@ export default function OrgDashboard() {
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
 
-  // ✅ If org login, Name is org name. If trainer/admin, Name is member name.
-  // Prefer Organization Name fields when present.
   const orgName = useMemo(() => {
     const guess =
       user?.OrgName ||
@@ -272,7 +432,6 @@ export default function OrgDashboard() {
       user?.OrganizationName ||
       user?.organizationName ||
       user?.Organization ||
-      // fallback: org account name
       (role === "organization" ? (user?.Name || user?.name) : "") ||
       "Organization";
     return String(guess || "Organization");
@@ -280,14 +439,10 @@ export default function OrgDashboard() {
 
   const orgEmail = useMemo(() => String(user?.Email || user?.email || ""), [user]);
 
-  // ✅ Legacy token still supported for invite links
   const orgToken = useMemo(() => {
-    return String(
-      user?.Token || user?.token || user?.["Organization Token"] || ""
-    ).trim();
+    return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
   }, [user]);
 
-  // ✅ Canonical org record id (for trainer/admin sessions, lookupUser sets orgId)
   const orgId = useMemo(() => {
     return String(user?.orgId || user?.OrgId || "").trim();
   }, [user]);
@@ -302,7 +457,6 @@ export default function OrgDashboard() {
     return `${origin}/signup?role=athlete&token=${encodeURIComponent(orgToken)}`;
   }, [origin, orgToken]);
 
-  // Overview payload
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -319,18 +473,17 @@ export default function OrgDashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [templates, setTemplates] = useState([]);
 
-  // UI controls
   const [search, setSearch] = useState("");
-  const [filterMode, setFilterMode] = useState("all"); // all | needsPlan | stale | current
-  const [sortMode, setSortMode] = useState("priority"); // priority | lastPlan | name
+  const [filterMode, setFilterMode] = useState("all");
+  const [sortMode, setSortMode] = useState("priority");
   const [expanded, setExpanded] = useState({});
+
   const toggleExpanded = (email) => {
     const e = normalizeEmail(email);
     if (!e) return;
     setExpanded((prev) => ({ ...prev, [e]: !prev[e] }));
   };
 
-  // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editErr, setEditErr] = useState("");
@@ -354,7 +507,6 @@ export default function OrgDashboard() {
     setEditAthlete(null);
   };
 
-  // ✅ Guards
   useEffect(() => {
     if (!user) {
       router.push("/");
@@ -366,10 +518,6 @@ export default function OrgDashboard() {
     }
   }, [user, role, isOrgSide, router]);
 
-  /**
-   * ✅ ORG ISSUE FIX: do NOT send x-org-token headers.
-   * Org endpoints should use HttpOnly cookie session + requireOrg(req).
-   */
   const refreshOverview = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -413,7 +561,6 @@ export default function OrgDashboard() {
     refreshTemplates();
   }, [user, isOrgSide, refreshOverview, refreshTemplates]);
 
-  // Derived: counts + triage
   const counts = useMemo(() => {
     const list = Array.isArray(athletes) ? athletes : [];
     const needsPlan = list.filter((a) => !!a?.needsPlan).length;
@@ -424,12 +571,12 @@ export default function OrgDashboard() {
 
   const triageHeadline = useMemo(() => {
     if (!counts.total) return "No athletes yet — invite athletes to begin.";
-    if (counts.needsPlan > 0) return `Start here: ${counts.needsPlan} athlete(s) need their first plan`;
+    if (counts.needsPlan > 0)
+      return `Start here: ${counts.needsPlan} athlete(s) need their first plan`;
     if (counts.stale > 0) return `Next: ${counts.stale} athlete(s) need an update`;
     return "All athletes are current — keep it up.";
   }, [counts]);
 
-  // Filtered athletes
   const filteredAthletes = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
     let list = Array.isArray(athletes) ? [...athletes] : [];
@@ -477,7 +624,6 @@ export default function OrgDashboard() {
     return list;
   }, [athletes, search, filterMode, sortMode]);
 
-  // Actions
   const goBuildPlan = (athleteEmail, templateId = "") => {
     const e = normalizeEmail(athleteEmail);
     const qs = new URLSearchParams();
@@ -537,7 +683,6 @@ export default function OrgDashboard() {
     );
   };
 
-  // Save edit modal
   const saveEdit = async () => {
     setEditErr("");
     if (!editAthlete?.email) {
@@ -562,7 +707,6 @@ export default function OrgDashboard() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to update athlete");
 
-      // Update roster in-place (so you see changes instantly)
       setAthletes((prev) => {
         const list = Array.isArray(prev) ? [...prev] : [];
         const idx = list.findIndex(
@@ -592,16 +736,16 @@ export default function OrgDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <LayoutDashboard className="w-6 h-6 text-[#46769B]" />
                 <h1 className="text-2xl font-extrabold truncate">{orgName}</h1>
               </div>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-gray-600 mt-1 break-all">
                 Logged in as <span className="font-semibold">{orgEmail}</span>
               </p>
 
@@ -611,7 +755,6 @@ export default function OrgDashboard() {
                   Org Session Active
                 </Pill>
 
-                {/* Token visibility: still useful for invites */}
                 {orgToken ? (
                   <Pill tone="good">
                     <Sparkles className="w-3.5 h-3.5 mr-1.5" />
@@ -624,7 +767,6 @@ export default function OrgDashboard() {
                   </Pill>
                 )}
 
-                {/* orgId visibility: useful for debugging trainer/admin sessions */}
                 {orgId ? (
                   <Pill tone="good">
                     <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
@@ -644,16 +786,26 @@ export default function OrgDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={refreshOverview} disabled={loading}>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:justify-end">
+              <Button
+                variant="secondary"
+                onClick={refreshOverview}
+                disabled={loading}
+                className="w-full sm:w-auto"
+              >
                 <RefreshCcw className="w-4 h-4" />
                 Refresh
               </Button>
-              <Button variant="secondary" onClick={exportCSV} disabled={!athletes?.length}>
+              <Button
+                variant="secondary"
+                onClick={exportCSV}
+                disabled={!athletes?.length}
+                className="w-full sm:w-auto"
+              >
                 <Download className="w-4 h-4" />
                 Export CSV
               </Button>
-              <Button variant="dark" onClick={onLogout}>
+              <Button variant="dark" onClick={onLogout} className="w-full sm:w-auto">
                 <LogOut className="w-4 h-4" />
                 Log out
               </Button>
@@ -681,8 +833,8 @@ export default function OrgDashboard() {
           ) : null}
         </div>
 
-        {/* Stats */}
-        <div className="grid md:grid-cols-4 gap-4">
+        {/* Stats (more mobile friendly) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={Users} label="Athletes" value={stats.totalAthletes || 0} sub="Roster size" />
           <StatCard icon={FileText} label="Total Plans" value={stats.totalPlans || 0} sub="All-time plans created" />
           <StatCard
@@ -696,15 +848,19 @@ export default function OrgDashboard() {
 
         {/* Templates + Invite */}
         <div className="grid lg:grid-cols-12 gap-6">
-          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-extrabold">Templates</h2>
                 <p className="text-sm text-gray-600 mt-1">
                   One click to preload a plan (then tweak).
                 </p>
               </div>
-              <Button variant="secondary" className="px-3 py-2 text-xs" onClick={refreshTemplates}>
+              <Button
+                variant="secondary"
+                className="px-3 py-2 text-xs shrink-0"
+                onClick={refreshTemplates}
+              >
                 <RefreshCcw className="w-4 h-4" />
                 Refresh
               </Button>
@@ -721,12 +877,12 @@ export default function OrgDashboard() {
               ) : (
                 templates.slice(0, 4).map((t) => (
                   <div key={t.id} className="rounded-2xl border border-gray-200 p-4">
-                    <p className="text-sm font-extrabold text-gray-900">{t.name}</p>
-                    <p className="text-[11px] text-gray-500 mt-1">{t.description}</p>
+                    <p className="text-sm font-extrabold text-gray-900 break-words">{t.name}</p>
+                    <p className="text-[11px] text-gray-500 mt-1 break-words">{t.description}</p>
                     <div className="mt-3">
                       <Button
                         variant="secondary"
-                        className="px-3 py-2 text-xs"
+                        className="px-3 py-2 text-xs w-full sm:w-auto"
                         onClick={() => goBuildPlan("", t.id)}
                       >
                         Use template
@@ -742,21 +898,21 @@ export default function OrgDashboard() {
             </div>
           </section>
 
-          <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+          <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="min-w-0">
                 <h2 className="text-lg font-extrabold">Invite Athletes</h2>
                 <p className="text-sm text-gray-600 mt-1">
                   Token + link are always visible for coaching ops.
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
                 <CopyButton text={orgToken} label="Copy token" compact />
                 <CopyButton text={inviteLink} label="Copy link" compact />
               </div>
             </div>
 
-            <div className="mt-4 grid md:grid-cols-2 gap-4">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                 <p className="text-xs text-gray-500">Organization Token</p>
                 <p className="font-mono text-sm font-semibold break-all mt-1">
@@ -792,9 +948,9 @@ export default function OrgDashboard() {
         {/* Roster + Activity */}
         <div className="grid lg:grid-cols-12 gap-6">
           {/* Roster */}
-          <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+          <section className="lg:col-span-8 bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-extrabold">Roster</h2>
                 <p className="text-sm text-gray-600 mt-1">
                   Status + tags make filtering & coaching workflow real.
@@ -876,7 +1032,35 @@ export default function OrgDashboard() {
               </div>
             </div>
 
-            <div className="mt-5 overflow-x-auto">
+            {/* MOBILE: cards */}
+            <div className="mt-5 space-y-3 lg:hidden">
+              {filteredAthletes.length === 0 ? (
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-center text-gray-500">
+                  No athletes found.
+                </div>
+              ) : (
+                filteredAthletes.map((a) => {
+                  const email = normalizeEmail(a?.email);
+                  const isExpanded = !!expanded[email];
+                  return (
+                    <AthleteCard
+                      key={a.id || email}
+                      athlete={a}
+                      templates={templates}
+                      isExpanded={isExpanded}
+                      onToggle={toggleExpanded}
+                      onEdit={openEdit}
+                      onHistory={goHistory}
+                      onBuild={goBuildPlan}
+                      fmtDate={fmtDate}
+                    />
+                  );
+                })
+              )}
+            </div>
+
+            {/* DESKTOP: table */}
+            <div className="mt-5 hidden lg:block overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b">
@@ -903,21 +1087,8 @@ export default function OrgDashboard() {
                     const email = normalizeEmail(a?.email);
                     const isExpanded = !!expanded[email];
 
-                    const planChip = a?.needsPlan ? (
-                      <Pill tone="bad">
-                        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                        Needs plan
-                      </Pill>
-                    ) : a?.stale ? (
-                      <Pill tone="warn">
-                        <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                        Needs update
-                      </Pill>
-                    ) : (
-                      <Pill tone="good">
-                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                        Current
-                      </Pill>
+                    const planChip = (
+                      <PlanChip needsPlan={!!a?.needsPlan} stale={!!a?.stale} />
                     );
 
                     const status = String(a?.status || "Active");
@@ -950,7 +1121,9 @@ export default function OrgDashboard() {
                           </td>
 
                           <td className="py-3 pr-4">
-                            <div className="text-gray-700 font-medium">{email}</div>
+                            <div className="text-gray-700 font-medium break-all">
+                              {email}
+                            </div>
                             {email ? (
                               <a
                                 href={`mailto:${email}`}
@@ -1031,7 +1204,7 @@ export default function OrgDashboard() {
                         {isExpanded ? (
                           <tr className="border-b bg-gray-50">
                             <td colSpan={7} className="py-4 px-4">
-                              <div className="grid md:grid-cols-3 gap-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 <div className="rounded-2xl border border-gray-200 bg-white p-4">
                                   <p className="text-xs text-gray-500">Plan status</p>
                                   <p className="text-sm font-extrabold text-gray-900 mt-1">
@@ -1101,15 +1274,15 @@ export default function OrgDashboard() {
           </section>
 
           {/* Activity */}
-          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+          <section className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-extrabold">Recent Activity</h2>
                 <p className="text-sm text-gray-600 mt-1">Latest plan events.</p>
               </div>
               <Button
                 variant="secondary"
-                className="px-3 py-2 text-xs"
+                className="px-3 py-2 text-xs shrink-0"
                 onClick={refreshOverview}
                 disabled={loading}
               >
@@ -1132,8 +1305,10 @@ export default function OrgDashboard() {
                     key={`${it.athleteEmail}-${idx}`}
                     className="rounded-2xl border border-gray-200 p-4"
                   >
-                    <p className="text-sm font-extrabold text-gray-900">{it.title || "Plan"}</p>
-                    <p className="text-[12px] text-gray-700 mt-1">
+                    <p className="text-sm font-extrabold text-gray-900 break-words">
+                      {it.title || "Plan"}
+                    </p>
+                    <p className="text-[12px] text-gray-700 mt-1 break-all">
                       <span className="font-semibold">{it.athleteEmail}</span>
                     </p>
                     <p className="text-[11px] text-gray-500 mt-2">
@@ -1143,7 +1318,7 @@ export default function OrgDashboard() {
                     <div className="mt-3">
                       <Button
                         variant="secondary"
-                        className="px-3 py-2 text-xs"
+                        className="px-3 py-2 text-xs w-full sm:w-auto"
                         onClick={() => goHistory(it.athleteEmail)}
                       >
                         View History
@@ -1172,10 +1347,12 @@ export default function OrgDashboard() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
               <p className="text-xs text-gray-500">Athlete</p>
-              <p className="text-sm font-extrabold text-gray-900 mt-1">
+              <p className="text-sm font-extrabold text-gray-900 mt-1 break-words">
                 {editAthlete?.name || "Athlete"}
               </p>
-              <p className="text-[12px] text-gray-600 mt-1">{editAthlete?.email || ""}</p>
+              <p className="text-[12px] text-gray-600 mt-1 break-all">
+                {editAthlete?.email || ""}
+              </p>
             </div>
 
             <div>
@@ -1229,11 +1406,11 @@ export default function OrgDashboard() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={closeEdit}>
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={closeEdit} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={saveEdit} disabled={editSaving}>
+              <Button onClick={saveEdit} disabled={editSaving} className="w-full sm:w-auto">
                 {editSaving ? "Saving..." : "Save"}
                 <ArrowRight className="w-4 h-4" />
               </Button>

@@ -3,7 +3,6 @@ import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
 function nyDateISO() {
-  // YYYY-MM-DD in America/New_York
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -37,8 +36,6 @@ function parseJsonMaybe(s) {
   }
 }
 
-// We store completion events in Attachment Summary as JSON array.
-// This maps workoutItemId -> { fileUrl, at, note }
 function buildCompletionMap(summaryRaw) {
   const parsed = parseJsonMaybe(String(summaryRaw || "").trim());
   const list = Array.isArray(parsed) ? parsed : [];
@@ -49,6 +46,17 @@ function buildCompletionMap(summaryRaw) {
     map[id] = x;
   });
   return map;
+}
+
+function getAuthEmail(auth) {
+  const email =
+    auth?.user?.Email ||
+    auth?.user?.email ||
+    auth?.athlete?.Email ||
+    auth?.athlete?.email ||
+    null;
+
+  return email ? String(email).trim().toLowerCase() : "";
 }
 
 export default async function handler(req, res) {
@@ -70,28 +78,33 @@ export default async function handler(req, res) {
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  // Best: athlete Airtable record id in cookie
-  const athleteRecordId = String(auth.athlete?.id || "").trim();
-  if (!athleteRecordId) {
+  const athleteEmail = getAuthEmail(auth);
+  if (!athleteEmail) {
     return res.status(400).json({
-      error:
-        "Missing athleteId in auth cookie. Add athleteId (AthleteScans record id) to the cookie user payload so we can filter DailyWorkouts by linked Athlete field.",
+      error: "Missing athlete email in auth cookie/session. Ensure requireAthlete returns user.email (or Email).",
     });
   }
 
   const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
     process.env.DAILYWORKOUTS_BASE_ID
   );
-  const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
 
+  const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
   const today = nyDateISO();
 
   try {
-    // Linked-record fields in Airtable are arrays of record ids.
-    // We'll match records that contain athleteRecordId AND same day.
+    /**
+     * ✅ Requires a Lookup field on DailyWorkouts:
+     * Field name: AthleteEmail
+     * Type: Lookup (from DailyWorkouts.Athlete -> AthleteScans.Email)
+     *
+     * Because AthleteEmail is an array (multi lookup), we ARRAYJOIN it then FIND.
+     */
+    const EMAIL_LOOKUP_FIELD = "AthleteEmail";
+
     const formula = `AND(
       IS_SAME({Date}, "${today}", "day"),
-      FIND("${athleteRecordId}", ARRAYJOIN({Athlete}&""))
+      FIND("${athleteEmail}", LOWER(ARRAYJOIN({${EMAIL_LOOKUP_FIELD}}, ",")))
     )`;
 
     const rows = await DailyWorkouts.select({
@@ -107,10 +120,8 @@ export default async function handler(req, res) {
     const f = rec.fields || {};
 
     const completionMap = buildCompletionMap(f["Attachment Summary"]);
-
     const workoutItemIds = safeArray(f.WorkoutItems);
 
-    // ✅ MVP items (until WorkoutItems table is wired)
     const items = workoutItemIds.map((id, idx) => {
       const key = String(id || "").trim();
       const completion = completionMap[key];
@@ -119,7 +130,7 @@ export default async function handler(req, res) {
       return {
         id: key,
         ExerciseName: `Workout Item ${idx + 1}`,
-        EvidenceRequired: false, // later: pull from WorkoutItems
+        EvidenceRequired: false,
         Sets: "",
         Reps: "",
         Load: "",

@@ -1,4 +1,3 @@
-// components/athlete-today/WorkoutItemRow.jsx
 "use client";
 
 import { AlertTriangle, CheckCircle2, PlayCircle, Upload } from "lucide-react";
@@ -19,10 +18,13 @@ export default function WorkoutItemRow({
     String(item?.Completed || item?.completed || "").toLowerCase() === "true" ||
     String(item?.Status || "").toLowerCase() === "completed";
 
+  // ✅ Prefer Weight, fallback to Load for older rows
+  const weightValue = item?.Weight ?? item?.Load ?? "";
+
   const metaBits = [
     item?.Sets ? `${item.Sets} sets` : "",
     item?.Reps ? `${item.Reps} reps` : "",
-    item?.Load ? `Load: ${item.Load}` : "",
+    weightValue ? `Weight: ${weightValue}` : "",
     item?.RPE ? `RPE: ${item.RPE}` : "",
     item?.Rest ? `Rest: ${item.Rest}` : "",
   ].filter(Boolean);

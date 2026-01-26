@@ -2,28 +2,16 @@
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
-function nyTodayISO() {
-  // YYYY-MM-DD in America/New_York
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  return `${y}-${m}-${d}`;
-}
-
-function isISODate(s) {
-  // strict YYYY-MM-DD
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
+}
+
+function normEmail(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function escapeAirtableString(str) {
+  return String(str || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function envMissing() {
@@ -31,117 +19,133 @@ function envMissing() {
     DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
     DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
+    WORKOUTITEMS_TABLE_ID: !process.env.WORKOUTITEMS_TABLE_ID,
   };
 }
 
-function parseJsonMaybe(s) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
+function pickBestDailyWorkout(rows) {
+  // Prefer the workout that actually has WorkoutItems linked (most items wins)
+  const scored = (rows || []).map((r) => {
+    const f = r.fields || {};
+    const count = safeArray(f.WorkoutItems).length;
+    return { r, f, count };
+  });
+  scored.sort((a, b) => b.count - a.count);
+  return scored[0] || null;
 }
 
-// We store completion events in Attachment Summary as JSON array.
-// This maps workoutItemId -> { fileUrl, at, note }
-function buildCompletionMap(summaryRaw) {
-  const parsed = parseJsonMaybe(String(summaryRaw || "").trim());
-  const list = Array.isArray(parsed) ? parsed : [];
-  const map = {};
-  list.forEach((x) => {
-    const id = String(x?.workoutItemId || "").trim();
-    if (!id) return;
-    map[id] = x;
-  });
-  return map;
+// Airtable "IN" helper to fetch by record IDs in batches
+async function fetchWorkoutItemsByIds(WorkoutItemsTable, ids) {
+  const unique = Array.from(new Set((ids || []).map((x) => String(x || "").trim()).filter(Boolean)));
+  if (unique.length === 0) return [];
+
+  // Airtable max OR() args can get big; chunk to be safe
+  const chunkSize = 50;
+  const chunks = [];
+  for (let i = 0; i < unique.length; i += chunkSize) chunks.push(unique.slice(i, i + chunkSize));
+
+  const results = [];
+  for (const chunk of chunks) {
+    const formula = `OR(${chunk.map((id) => `RECORD_ID()="${escapeAirtableString(id)}"`).join(",")})`;
+    const rows = await WorkoutItemsTable.select({
+      filterByFormula: formula,
+      pageSize: 100,
+    }).firstPage();
+    results.push(...rows);
+  }
+
+  return results;
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const missing = envMissing();
   if (
     missing.DAILYWORKOUTS_API_KEY ||
     missing.DAILYWORKOUTS_BASE_ID ||
-    missing.DAILYWORKOUTS_TABLE_ID
+    missing.DAILYWORKOUTS_TABLE_ID ||
+    missing.WORKOUTITEMS_TABLE_ID
   ) {
     return res.status(500).json({
-      error: "DailyWorkouts Airtable env vars missing.",
+      error: "Airtable env vars missing.",
       missing,
-      debug: { cwd: process.cwd() },
     });
   }
 
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  // Best: athlete Airtable record id in cookie
-  const athleteRecordId = String(auth.athlete?.id || "").trim();
-  if (!athleteRecordId) {
-    return res.status(400).json({
-      error:
-        "Missing athleteId in auth cookie. Add athleteId (AthleteScans record id) to the cookie user payload so we can filter DailyWorkouts by linked Athlete field.",
-    });
-  }
+  // date is required here
+  const isoDate = String(req.query?.date || "").trim(); // YYYY-MM-DD
+  if (!isoDate) return res.status(400).json({ error: "Missing date (YYYY-MM-DD)." });
 
-  // date=YYYY-MM-DD (NY anchored)
-  const q = String(req.query?.date || "").trim();
-  const date = isISODate(q) ? q : nyTodayISO();
+  // Pull athlete email from auth cookie/session
+  const athleteEmailRaw =
+    auth?.athlete?.Email ||
+    auth?.athlete?.email ||
+    auth?.email ||
+    auth?.user?.Email ||
+    auth?.user?.email ||
+    "";
 
-  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
-    process.env.DAILYWORKOUTS_BASE_ID
-  );
+  const athleteEmail = normEmail(athleteEmailRaw);
+  if (!athleteEmail) return res.status(400).json({ error: "Missing athlete email in auth session." });
+
+  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
+
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
+  const WorkoutItemsTable = base(process.env.WORKOUTITEMS_TABLE_ID);
 
   try {
-    // Linked-record fields in Airtable are arrays of record ids.
-    // We'll match records that contain athleteRecordId AND same day.
+    // AthleteEmail is a lookup -> array -> ARRAYJOIN
+    const emailEsc = escapeAirtableString(athleteEmail);
+    const dateEsc = escapeAirtableString(isoDate);
+
     const formula = `AND(
-      IS_SAME({Date}, "${date}", "day"),
-      FIND("${athleteRecordId}", ARRAYJOIN({Athlete}&""))
+      IS_SAME({Date}, "${dateEsc}", "day"),
+      FIND("${emailEsc}", LOWER(SUBSTITUTE(ARRAYJOIN({AthleteEmail}), " ", "")))
     )`;
 
     const rows = await DailyWorkouts.select({
       filterByFormula: formula,
-      maxRecords: 1,
+      maxRecords: 10,
     }).firstPage();
 
     if (!rows?.length) {
       return res.status(200).json({ dailyWorkout: null, items: [] });
     }
 
-    const rec = rows[0];
+    const picked = pickBestDailyWorkout(rows);
+    const rec = picked?.r || rows[0];
     const f = rec.fields || {};
-
-    const completionMap = buildCompletionMap(f["Attachment Summary"]);
 
     const workoutItemIds = safeArray(f.WorkoutItems);
 
-    // ✅ MVP items (until WorkoutItems table is wired)
-    const items = workoutItemIds.map((id, idx) => {
-      const key = String(id || "").trim();
-      const completion = completionMap[key];
-      const done = !!completion;
+    // ✅ HYDRATE: fetch full WorkoutItems records
+    const itemRows = await fetchWorkoutItemsByIds(WorkoutItemsTable, workoutItemIds);
 
+    // Keep original DailyWorkouts order
+    const byId = new Map(itemRows.map((r) => [r.id, r]));
+    const ordered = workoutItemIds.map((id) => byId.get(String(id)) || null).filter(Boolean);
+
+    // Normalize item fields for your UI
+    const items = ordered.map((r) => {
+      const it = r.fields || {};
       return {
-        id: key,
-        ExerciseName: `Workout Item ${idx + 1}`,
-        EvidenceRequired: false, // later: pull from WorkoutItems
-        Sets: "",
-        Reps: "",
-        Load: "",
-        RPE: "",
-        Rest: "",
-        Instructions: "",
-        VideoURL: "",
-        Completed: done ? "true" : "false",
-        EvidenceUrl: completion?.fileUrl || "",
-        CompletedAt: completion?.at || "",
-        Note: completion?.note || "",
+        id: r.id,
+        ExerciseName: it.ExerciseName || it.Title || it.Name || "Exercise",
+        EvidenceRequired: !!it.EvidenceRequired,
+        Sets: it.Sets ?? "",
+        Reps: it.Reps ?? "",
+        Weight: it.Weight ?? it.Load ?? "", // ✅ normalize to Weight
+        RPE: it.RPE ?? "",
+        Rest: it.Rest ?? "",
+        Instructions: it.Instructions ?? "",
+        VideoURL: it.VideoURL ?? "",
+        Completed: "false", // completion state can be layered later (Attachment Summary map, etc.)
       };
     });
 
@@ -149,7 +153,7 @@ export default async function handler(req, res) {
       dailyWorkout: {
         id: rec.id,
         Title: f.Title || "Daily Workout",
-        Date: f.Date || date,
+        Date: f.Date || isoDate,
         Status: f.Status || "assigned",
       },
       items,

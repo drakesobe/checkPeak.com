@@ -1,113 +1,96 @@
-// components/athlete-today/WorkoutItemRow.jsx
 "use client";
 
-import { AlertTriangle, CheckCircle2, PlayCircle, Upload } from "lucide-react";
-import { Button, Pill, SwipeRow } from "./ui";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Pill, statusTone } from "./ui";
+import WorkoutItemRow from "./WorkoutItemRow";
 
-export default function WorkoutItemRow({
-  item,
-  submitting = false,
+export default function WorkoutCard({
+  loading = false,
+  dailyWorkout,
+  items = [],
   onUpload,
   onQuickComplete,
+  submittingId = "",
 }) {
-  const id = String(item?.id || item?.ID || "");
-  const exercise = item?.ExerciseName || item?.Title || "Exercise";
+  const list = Array.isArray(items) ? items : [];
+  const hasWorkout = !!dailyWorkout;
+  const hasItems = list.length > 0;
 
-  const evidenceRequired = String(item?.EvidenceRequired || "").toLowerCase() === "true";
+  const workoutStatus = String(dailyWorkout?.Status || "").toLowerCase();
 
-  const isDone =
-    String(item?.Completed || item?.completed || "").toLowerCase() === "true" ||
-    String(item?.Status || "").toLowerCase() === "completed";
-
-  const metaBits = [
-    item?.Sets ? `${item.Sets} sets` : "",
-    item?.Reps ? `${item.Reps} reps` : "",
-    item?.Load ? `Load: ${item.Load}` : "",
-    item?.RPE ? `RPE: ${item.RPE}` : "",
-    item?.Rest ? `Rest: ${item.Rest}` : "",
-  ].filter(Boolean);
-
-  const disabled = isDone || submitting;
+  if (!loading && !hasWorkout) {
+    return (
+      <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-600" />
+          <p className="text-sm font-semibold text-gray-900">No workout assigned for this day.</p>
+        </div>
+        <p className="text-[12px] text-gray-600 mt-2">
+          If you think this is wrong, refresh or contact your coach.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <SwipeRow
-      disabled={disabled}
-      onCommit={() => onUpload?.({ ...item, id })}
-      hint={isDone ? "Completed" : "Swipe right to upload"}
-    >
-      <div className="rounded-2xl border border-gray-200 bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-extrabold text-gray-900 truncate">{exercise}</p>
+    <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs text-gray-500">Daily Workout</p>
+          <p className="text-lg font-extrabold text-gray-900 mt-1 truncate">
+            {dailyWorkout?.Title || "Daily Workout"}
+          </p>
 
-              {isDone ? (
-                <Pill tone="good">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                  Done
-                </Pill>
-              ) : evidenceRequired ? (
-                <Pill tone="warn">
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                  Photo required
-                </Pill>
-              ) : (
-                <Pill>Optional photo</Pill>
-              )}
+          <p className="text-[12px] text-gray-600 mt-2">
+            Swipe right on an item to upload a photo — or tap Upload.
+          </p>
+        </div>
 
-              {submitting ? <Pill tone="warn">Submitting…</Pill> : null}
-            </div>
+        <div className="flex flex-col items-end gap-2">
+          <Pill tone={statusTone(dailyWorkout?.Status)}>
+            {dailyWorkout?.Status || "assigned"}
+          </Pill>
 
-            {metaBits.length ? (
-              <p className="text-[12px] text-gray-600 mt-2">{metaBits.join(" • ")}</p>
-            ) : null}
-
-            {item?.Instructions ? (
-              <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                <p className="text-[12px] text-gray-700 whitespace-pre-wrap">{item.Instructions}</p>
-              </div>
-            ) : null}
-
-            {item?.VideoURL ? (
-              <a
-                href={item.VideoURL}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#46769B] hover:underline"
-              >
-                <PlayCircle className="w-4 h-4" />
-                Watch demo video
-              </a>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Button
-              variant="secondary"
-              className="px-3 py-2 text-xs"
-              onClick={() => onUpload?.({ ...item, id })}
-              disabled={disabled}
-              title="Upload photo / complete"
-            >
-              <Upload className="w-4 h-4" />
-              Upload
-            </Button>
-
-            {!isDone && !evidenceRequired ? (
-              <Button
-                variant="dark"
-                className="px-3 py-2 text-xs"
-                onClick={() => onQuickComplete?.(id)}
-                disabled={submitting}
-                title="Mark complete without uploading"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Done
-              </Button>
-            ) : null}
-          </div>
+          {workoutStatus === "completed" ? (
+            <Pill tone="good">
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+              Workout complete
+            </Pill>
+          ) : null}
         </div>
       </div>
-    </SwipeRow>
+
+      {/* Items */}
+      <div className="mt-5 space-y-3">
+        {loading ? (
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <p className="text-sm text-gray-800 font-semibold">Loading items…</p>
+          </div>
+        ) : hasItems ? (
+          list.map((it) => {
+            const id = String(it?.id || it?.ID || "");
+            const submitting = Boolean(submittingId && id && submittingId === id);
+
+            return (
+              <WorkoutItemRow
+                key={id || Math.random().toString(36).slice(2)}
+                item={it}
+                submitting={submitting}
+                onUpload={onUpload}
+                onQuickComplete={onQuickComplete}
+              />
+            );
+          })
+        ) : (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-extrabold text-gray-900">Workout assigned, but no items found.</p>
+            <p className="text-[12px] text-gray-700 mt-1">
+              Your coach assigned a workout for this date, but the <span className="font-semibold">WorkoutItems</span>{" "}
+              field on the DailyWorkouts record has no linked items.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

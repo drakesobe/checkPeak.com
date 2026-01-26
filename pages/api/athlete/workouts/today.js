@@ -25,6 +25,7 @@ function envMissing() {
     DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
     DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
+    WORKOUTITEMS_TABLE_ID: !process.env.WORKOUTITEMS_TABLE_ID,
   };
 }
 
@@ -36,6 +37,7 @@ function parseJsonMaybe(s) {
   }
 }
 
+// Maps workoutItemId -> completion object
 function buildCompletionMap(summaryRaw) {
   const parsed = parseJsonMaybe(String(summaryRaw || "").trim());
   const list = Array.isArray(parsed) ? parsed : [];
@@ -48,15 +50,28 @@ function buildCompletionMap(summaryRaw) {
   return map;
 }
 
-function getAuthEmail(auth) {
-  const email =
-    auth?.user?.Email ||
-    auth?.user?.email ||
-    auth?.athlete?.Email ||
-    auth?.athlete?.email ||
-    null;
+function escapeAirtableString(str) {
+  return String(str || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
 
-  return email ? String(email).trim().toLowerCase() : "";
+function normEmail(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function pickBestDailyWorkout(rows) {
+  const scored = (rows || []).map((r) => {
+    const f = r.fields || {};
+    const count = safeArray(f.WorkoutItems).length;
+    return { r, count };
+  });
+  scored.sort((a, b) => b.count - a.count);
+  return scored[0]?.r || null;
 }
 
 export default async function handler(req, res) {
@@ -67,22 +82,27 @@ export default async function handler(req, res) {
   }
 
   const missing = envMissing();
-  if (missing.DAILYWORKOUTS_API_KEY || missing.DAILYWORKOUTS_BASE_ID || missing.DAILYWORKOUTS_TABLE_ID) {
+  if (Object.values(missing).some(Boolean)) {
     return res.status(500).json({
-      error: "DailyWorkouts Airtable env vars missing.",
+      error: "Airtable env vars missing.",
       missing,
-      debug: { cwd: process.cwd() },
     });
   }
 
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  const athleteEmail = getAuthEmail(auth);
+  const athleteEmailRaw =
+    auth?.athlete?.Email ||
+    auth?.athlete?.email ||
+    auth?.email ||
+    auth?.user?.Email ||
+    auth?.user?.email ||
+    "";
+
+  const athleteEmail = normEmail(athleteEmailRaw);
   if (!athleteEmail) {
-    return res.status(400).json({
-      error: "Missing athlete email in auth cookie/session. Ensure requireAthlete returns user.email (or Email).",
-    });
+    return res.status(400).json({ error: "Missing athlete email in auth session." });
   }
 
   const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
@@ -90,54 +110,82 @@ export default async function handler(req, res) {
   );
 
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
+  const WorkoutItems = base(process.env.WORKOUTITEMS_TABLE_ID);
+
   const today = nyDateISO();
 
   try {
-    /**
-     * ✅ Requires a Lookup field on DailyWorkouts:
-     * Field name: AthleteEmail
-     * Type: Lookup (from DailyWorkouts.Athlete -> AthleteScans.Email)
-     *
-     * Because AthleteEmail is an array (multi lookup), we ARRAYJOIN it then FIND.
-     */
-    const EMAIL_LOOKUP_FIELD = "AthleteEmail";
-
+    const emailNeedle = escapeAirtableString(athleteEmail.replace(/\s+/g, ""));
     const formula = `AND(
       IS_SAME({Date}, "${today}", "day"),
-      FIND("${athleteEmail}", LOWER(ARRAYJOIN({${EMAIL_LOOKUP_FIELD}}, ",")))
+      FIND(
+        "${emailNeedle}",
+        LOWER(SUBSTITUTE(ARRAYJOIN({AthleteEmail}), " ", ""))
+      )
     )`;
 
+    // ✅ Pull a few, then pick the one that actually has WorkoutItems
     const rows = await DailyWorkouts.select({
       filterByFormula: formula,
-      maxRecords: 1,
+      maxRecords: 10,
     }).firstPage();
 
     if (!rows?.length) {
-      return res.status(200).json({ dailyWorkout: null, items: [] });
+      return res.status(200).json({
+        dailyWorkout: null,
+        items: [],
+        debug: { reason: "No match for today + AthleteEmail", today, athleteEmail, formula },
+      });
     }
 
-    const rec = rows[0];
+    const rec = pickBestDailyWorkout(rows) || rows[0];
     const f = rec.fields || {};
 
     const completionMap = buildCompletionMap(f["Attachment Summary"]);
-    const workoutItemIds = safeArray(f.WorkoutItems);
+
+    const workoutItemIds = safeArray(f.WorkoutItems)
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+
+    // Hydrate WorkoutItems linked records
+    let hydrated = [];
+    if (workoutItemIds.length) {
+      const batches = chunk(workoutItemIds, 50);
+      for (const ids of batches) {
+        const orParts = ids.map((id) => `RECORD_ID()="${escapeAirtableString(id)}"`).join(",");
+        const batchRows = await WorkoutItems.select({
+          filterByFormula: `OR(${orParts})`,
+          pageSize: 100,
+        }).firstPage();
+
+        hydrated.push(...(batchRows || []));
+      }
+    }
+
+    const byId = new Map(hydrated.map((r) => [r.id, r]));
 
     const items = workoutItemIds.map((id, idx) => {
-      const key = String(id || "").trim();
-      const completion = completionMap[key];
+      const row = byId.get(id);
+      const wf = row?.fields || {};
+
+      const completion = completionMap[id];
       const done = !!completion;
 
       return {
-        id: key,
-        ExerciseName: `Workout Item ${idx + 1}`,
-        EvidenceRequired: false,
-        Sets: "",
-        Reps: "",
-        Load: "",
-        RPE: "",
-        Rest: "",
-        Instructions: "",
-        VideoURL: "",
+        id,
+        missing: !row, // helpful for debugging if a linked record didn’t hydrate
+
+        ExerciseName: wf.ExerciseName || wf.Title || wf.Name || `Workout Item ${idx + 1}`,
+        EvidenceRequired: wf.EvidenceRequired ?? false,
+
+        Sets: wf.Sets ?? "",
+        Reps: wf.Reps ?? "",
+        Weight: wf.Weight ?? wf.Load ?? "",
+        RPE: wf.RPE ?? "",
+        Rest: wf.Rest ?? "",
+        Instructions: wf.Instructions ?? "",
+        VideoURL: wf.VideoURL ?? wf.Video ?? "",
+
         Completed: done ? "true" : "false",
         EvidenceUrl: completion?.fileUrl || "",
         CompletedAt: completion?.at || "",

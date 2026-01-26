@@ -20,26 +20,27 @@ function envMissing() {
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
     DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
     WORKOUTITEMS_TABLE_ID: !process.env.WORKOUTITEMS_TABLE_ID,
+
+    WORKOUTCOMPLETIONS_API_KEY: !process.env.WORKOUTCOMPLETIONS_API_KEY,
+    WORKOUTCOMPLETIONS_BASE_ID: !process.env.WORKOUTCOMPLETIONS_BASE_ID,
+    WORKOUTCOMPLETIONS_TABLE_ID: !process.env.WORKOUTCOMPLETIONS_TABLE_ID,
   };
 }
 
 function pickBestDailyWorkout(rows) {
-  // Prefer the workout that actually has WorkoutItems linked (most items wins)
   const scored = (rows || []).map((r) => {
     const f = r.fields || {};
     const count = safeArray(f.WorkoutItems).length;
-    return { r, f, count };
+    return { r, count };
   });
   scored.sort((a, b) => b.count - a.count);
-  return scored[0] || null;
+  return scored[0]?.r || null;
 }
 
-// Airtable "IN" helper to fetch by record IDs in batches
 async function fetchWorkoutItemsByIds(WorkoutItemsTable, ids) {
   const unique = Array.from(new Set((ids || []).map((x) => String(x || "").trim()).filter(Boolean)));
   if (unique.length === 0) return [];
 
-  // Airtable max OR() args can get big; chunk to be safe
   const chunkSize = 50;
   const chunks = [];
   for (let i = 0; i < unique.length; i += chunkSize) chunks.push(unique.slice(i, i + chunkSize));
@@ -57,18 +58,30 @@ async function fetchWorkoutItemsByIds(WorkoutItemsTable, ids) {
   return results;
 }
 
+const WC_FIELDS = {
+  CompletedAt: "CompletedAt",
+  Athlete: "Athlete",
+  WorkoutItem: "WorkoutItem",
+  Status: "Status",
+  AttachmentSummary: "Attachment Summary",
+  CompletionEvidence: "CompletionEvidence",
+};
+
+function statusNorm(s) {
+  return String(s || "").trim().toLowerCase();
+}
+function isAthleteDone(status) {
+  const st = statusNorm(status);
+  return st === "completed" || st === "pending_review";
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const missing = envMissing();
-  if (
-    missing.DAILYWORKOUTS_API_KEY ||
-    missing.DAILYWORKOUTS_BASE_ID ||
-    missing.DAILYWORKOUTS_TABLE_ID ||
-    missing.WORKOUTITEMS_TABLE_ID
-  ) {
+  if (Object.values(missing).some(Boolean)) {
     return res.status(500).json({
       error: "Airtable env vars missing.",
       missing,
@@ -78,11 +91,9 @@ export default async function handler(req, res) {
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  // date is required here
   const isoDate = String(req.query?.date || "").trim(); // YYYY-MM-DD
   if (!isoDate) return res.status(400).json({ error: "Missing date (YYYY-MM-DD)." });
 
-  // Pull athlete email from auth cookie/session
   const athleteEmailRaw =
     auth?.athlete?.Email ||
     auth?.athlete?.email ||
@@ -94,13 +105,24 @@ export default async function handler(req, res) {
   const athleteEmail = normEmail(athleteEmailRaw);
   if (!athleteEmail) return res.status(400).json({ error: "Missing athlete email in auth session." });
 
-  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
+  const athleteRecordId = String(auth?.athlete?.id || "").trim();
+  if (!athleteRecordId) {
+    return res.status(400).json({
+      error:
+        "Missing athlete record id in auth session (expected AthleteScans record id). Needed for WorkoutCompletions matching.",
+    });
+  }
 
+  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
   const WorkoutItemsTable = base(process.env.WORKOUTITEMS_TABLE_ID);
 
+  const wcBase = new Airtable({ apiKey: process.env.WORKOUTCOMPLETIONS_API_KEY }).base(
+    process.env.WORKOUTCOMPLETIONS_BASE_ID
+  );
+  const WorkoutCompletions = wcBase(process.env.WORKOUTCOMPLETIONS_TABLE_ID);
+
   try {
-    // AthleteEmail is a lookup -> array -> ARRAYJOIN
     const emailEsc = escapeAirtableString(athleteEmail);
     const dateEsc = escapeAirtableString(isoDate);
 
@@ -118,34 +140,65 @@ export default async function handler(req, res) {
       return res.status(200).json({ dailyWorkout: null, items: [] });
     }
 
-    const picked = pickBestDailyWorkout(rows);
-    const rec = picked?.r || rows[0];
+    const rec = (pickBestDailyWorkout(rows) || rows[0]);
     const f = rec.fields || {};
 
-    const workoutItemIds = safeArray(f.WorkoutItems);
+    const workoutItemIds = safeArray(f.WorkoutItems).map(String).map((s) => s.trim()).filter(Boolean);
 
-    // ✅ HYDRATE: fetch full WorkoutItems records
     const itemRows = await fetchWorkoutItemsByIds(WorkoutItemsTable, workoutItemIds);
 
-    // Keep original DailyWorkouts order
     const byId = new Map(itemRows.map((r) => [r.id, r]));
-    const ordered = workoutItemIds.map((id) => byId.get(String(id)) || null).filter(Boolean);
+    const ordered = workoutItemIds.map((id) => byId.get(String(id)) || null);
 
-    // Normalize item fields for your UI
-    const items = ordered.map((r) => {
-      const it = r.fields || {};
+    // completions for that day
+    const wcDateFormula = `IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day")`;
+    const wcRows = await WorkoutCompletions.select({
+      filterByFormula: wcDateFormula,
+      maxRecords: 200,
+    }).firstPage();
+
+    const completionByWorkoutItemId = new Map();
+    for (const r of wcRows || []) {
+      const wf = r.fields || {};
+      const athleteLinks = Array.isArray(wf[WC_FIELDS.Athlete]) ? wf[WC_FIELDS.Athlete] : [];
+      if (!athleteLinks.map(String).includes(String(athleteRecordId))) continue;
+
+      const itemLinks = Array.isArray(wf[WC_FIELDS.WorkoutItem]) ? wf[WC_FIELDS.WorkoutItem] : [];
+      const itemId = String(itemLinks?.[0] || "").trim();
+      if (!itemId) continue;
+
+      completionByWorkoutItemId.set(itemId, r);
+    }
+
+    const items = ordered.map((r, idx) => {
+      const id = workoutItemIds[idx];
+      const it = r?.fields || {};
+
+      const completionRec = completionByWorkoutItemId.get(id);
+      const cf = completionRec?.fields || {};
+      const status = statusNorm(cf[WC_FIELDS.Status] || "");
+      const doneForAthlete = isAthleteDone(status);
+
       return {
-        id: r.id,
-        ExerciseName: it.ExerciseName || it.Title || it.Name || "Exercise",
+        id,
+        missing: !r,
+
+        ExerciseName: it.ExerciseName || it.Title || it.Name || `Workout Item ${idx + 1}`,
         EvidenceRequired: !!it.EvidenceRequired,
         Sets: it.Sets ?? "",
         Reps: it.Reps ?? "",
-        Weight: it.Weight ?? it.Load ?? "", // ✅ normalize to Weight
+        Weight: it.Weight ?? it.Load ?? "",
         RPE: it.RPE ?? "",
         Rest: it.Rest ?? "",
         Instructions: it.Instructions ?? "",
-        VideoURL: it.VideoURL ?? "",
-        Completed: "false", // completion state can be layered later (Attachment Summary map, etc.)
+        VideoURL: it.VideoURL ?? it.Video ?? "",
+
+        Completed: doneForAthlete ? "true" : "false",
+        Status: status || "",
+        CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
+        Note: cf[WC_FIELDS.AttachmentSummary] || "",
+        CompletionId: completionRec?.id || "",
+        CompletionEvidence: safeArray(cf[WC_FIELDS.CompletionEvidence]),
       };
     });
 

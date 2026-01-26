@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       "Organization",
 
       // NEW — use these in your CreateWorkoutModal “Select team”
-      "Sport",        // ex: football, basketball
+      "sport",        // ex: football, basketball
       "Team",         // optional (if you have sub-teams like Varsity/JV)
       "Status",       // optional
       "LastUpdated",  // optional (for stale pill logic)

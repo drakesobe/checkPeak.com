@@ -26,28 +26,11 @@ function envMissing() {
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
     DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
     WORKOUTITEMS_TABLE_ID: !process.env.WORKOUTITEMS_TABLE_ID,
+
+    WORKOUTCOMPLETIONS_API_KEY: !process.env.WORKOUTCOMPLETIONS_API_KEY,
+    WORKOUTCOMPLETIONS_BASE_ID: !process.env.WORKOUTCOMPLETIONS_BASE_ID,
+    WORKOUTCOMPLETIONS_TABLE_ID: !process.env.WORKOUTCOMPLETIONS_TABLE_ID,
   };
-}
-
-function parseJsonMaybe(s) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-
-// Maps workoutItemId -> completion object
-function buildCompletionMap(summaryRaw) {
-  const parsed = parseJsonMaybe(String(summaryRaw || "").trim());
-  const list = Array.isArray(parsed) ? parsed : [];
-  const map = {};
-  list.forEach((x) => {
-    const id = String(x?.workoutItemId || "").trim();
-    if (!id) return;
-    map[id] = x;
-  });
-  return map;
 }
 
 function escapeAirtableString(str) {
@@ -72,6 +55,24 @@ function pickBestDailyWorkout(rows) {
   });
   scored.sort((a, b) => b.count - a.count);
   return scored[0]?.r || null;
+}
+
+const WC_FIELDS = {
+  CompletedAt: "CompletedAt",
+  Athlete: "Athlete",
+  WorkoutItem: "WorkoutItem",
+  Status: "Status",
+  AttachmentSummary: "Attachment Summary",
+  CompletionEvidence: "CompletionEvidence",
+};
+
+function statusNorm(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function isAthleteDone(status) {
+  const st = statusNorm(status);
+  return st === "completed" || st === "pending_review";
 }
 
 export default async function handler(req, res) {
@@ -105,6 +106,18 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing athlete email in auth session." });
   }
 
+  // ✅ IMPORTANT: we need the athlete Airtable record id (AthleteScans rec...)
+  const athleteRecordId = String(auth?.athlete?.id || "").trim();
+  if (!athleteRecordId) {
+    return res.status(400).json({
+      error:
+        "Missing athlete record id in auth session (expected AthleteScans record id). Needed for WorkoutCompletions matching.",
+    });
+  }
+
+  const today = nyDateISO();
+
+  // DailyWorkouts base
   const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
     process.env.DAILYWORKOUTS_BASE_ID
   );
@@ -112,9 +125,14 @@ export default async function handler(req, res) {
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
   const WorkoutItems = base(process.env.WORKOUTITEMS_TABLE_ID);
 
-  const today = nyDateISO();
+  // WorkoutCompletions base (can be same base, but uses its own env vars)
+  const wcBase = new Airtable({ apiKey: process.env.WORKOUTCOMPLETIONS_API_KEY }).base(
+    process.env.WORKOUTCOMPLETIONS_BASE_ID
+  );
+  const WorkoutCompletions = wcBase(process.env.WORKOUTCOMPLETIONS_TABLE_ID);
 
   try {
+    // --- 1) Find today's DailyWorkout for this athlete (email lookup logic stays) ---
     const emailNeedle = escapeAirtableString(athleteEmail.replace(/\s+/g, ""));
     const formula = `AND(
       IS_SAME({Date}, "${today}", "day"),
@@ -124,7 +142,6 @@ export default async function handler(req, res) {
       )
     )`;
 
-    // ✅ Pull a few, then pick the one that actually has WorkoutItems
     const rows = await DailyWorkouts.select({
       filterByFormula: formula,
       maxRecords: 10,
@@ -141,13 +158,11 @@ export default async function handler(req, res) {
     const rec = pickBestDailyWorkout(rows) || rows[0];
     const f = rec.fields || {};
 
-    const completionMap = buildCompletionMap(f["Attachment Summary"]);
-
     const workoutItemIds = safeArray(f.WorkoutItems)
       .map((x) => String(x || "").trim())
       .filter(Boolean);
 
-    // Hydrate WorkoutItems linked records
+    // --- 2) Hydrate WorkoutItems records ---
     let hydrated = [];
     if (workoutItemIds.length) {
       const batches = chunk(workoutItemIds, 50);
@@ -164,31 +179,64 @@ export default async function handler(req, res) {
 
     const byId = new Map(hydrated.map((r) => [r.id, r]));
 
+    // --- 3) Pull WorkoutCompletions for today; then match athlete + workoutItem in JS ---
+    const wcDateFormula = `IS_SAME({${WC_FIELDS.CompletedAt}}, "${escapeAirtableString(today)}", "day")`;
+
+    const wcRows = await WorkoutCompletions.select({
+      filterByFormula: wcDateFormula,
+      maxRecords: 200,
+    }).firstPage();
+
+    const completionByWorkoutItemId = new Map();
+
+    for (const r of wcRows || []) {
+      const wf = r.fields || {};
+      const athleteLinks = Array.isArray(wf[WC_FIELDS.Athlete]) ? wf[WC_FIELDS.Athlete] : [];
+      if (!athleteLinks.map(String).includes(String(athleteRecordId))) continue;
+
+      const itemLinks = Array.isArray(wf[WC_FIELDS.WorkoutItem]) ? wf[WC_FIELDS.WorkoutItem] : [];
+      const itemId = String(itemLinks?.[0] || "").trim();
+      if (!itemId) continue;
+
+      // if multiple completions exist, keep the latest by CompletedAt (Airtable returns unsorted sometimes)
+      const prev = completionByWorkoutItemId.get(itemId);
+      const prevAt = prev?.fields?.[WC_FIELDS.CompletedAt] ? String(prev.fields[WC_FIELDS.CompletedAt]) : "";
+      const nextAt = wf?.[WC_FIELDS.CompletedAt] ? String(wf[WC_FIELDS.CompletedAt]) : "";
+      if (!prev || (nextAt && nextAt > prevAt)) completionByWorkoutItemId.set(itemId, r);
+    }
+
+    // --- 4) Build response items in DailyWorkouts order ---
     const items = workoutItemIds.map((id, idx) => {
       const row = byId.get(id);
-      const wf = row?.fields || {};
+      const it = row?.fields || {};
 
-      const completion = completionMap[id];
-      const done = !!completion;
+      const completionRec = completionByWorkoutItemId.get(id);
+      const cf = completionRec?.fields || {};
+      const status = statusNorm(cf[WC_FIELDS.Status] || "");
+      const doneForAthlete = isAthleteDone(status);
 
       return {
         id,
-        missing: !row, // helpful for debugging if a linked record didn’t hydrate
+        missing: !row,
 
-        ExerciseName: wf.ExerciseName || wf.Title || wf.Name || `Workout Item ${idx + 1}`,
-        EvidenceRequired: wf.EvidenceRequired ?? false,
+        ExerciseName: it.ExerciseName || it.Title || it.Name || `Workout Item ${idx + 1}`,
+        EvidenceRequired: !!it.EvidenceRequired,
 
-        Sets: wf.Sets ?? "",
-        Reps: wf.Reps ?? "",
-        Weight: wf.Weight ?? wf.Load ?? "",
-        RPE: wf.RPE ?? "",
-        Rest: wf.Rest ?? "",
-        Instructions: wf.Instructions ?? "",
-        VideoURL: wf.VideoURL ?? wf.Video ?? "",
+        Sets: it.Sets ?? "",
+        Reps: it.Reps ?? "",
+        Weight: it.Weight ?? it.Load ?? "",
+        RPE: it.RPE ?? "",
+        Rest: it.Rest ?? "",
+        Instructions: it.Instructions ?? "",
+        VideoURL: it.VideoURL ?? it.Video ?? "",
 
-        Completed: done ? "true" : "false",
-        EvidenceUrl: completion?.fileUrl || "",
-        CompletedAt: completion?.at || "",
+        // ✅ Completion state from WorkoutCompletions
+        Completed: doneForAthlete ? "true" : "false",
+        Status: status || "", // completed | pending_review | rejected | ""
+        CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
+        Note: cf[WC_FIELDS.AttachmentSummary] || "",
+        CompletionId: completionRec?.id || "",
+        CompletionEvidence: safeArray(cf[WC_FIELDS.CompletionEvidence]),
       };
     });
 

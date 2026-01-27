@@ -1,7 +1,7 @@
 // /components/athlete-today/ui.jsx
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /* -------------------------------------------------------------------------- */
 /* Tiny helpers                                                               */
@@ -74,7 +74,9 @@ export function statusTone(status) {
 
 export function Pill({ children, tone = "neutral" }) {
   const toneCls =
-    tone === "warn"
+    tone === "attention"
+      ? "bg-red-50 text-red-800 border-red-200"
+      : tone === "warn"
       ? "bg-amber-50 text-amber-800 border-amber-200"
       : tone === "bad"
       ? "bg-red-50 text-red-800 border-red-200"
@@ -118,7 +120,12 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={classNames(base, styles, disabled ? "opacity-70 cursor-not-allowed" : "", className)}
+      className={classNames(
+        base,
+        styles,
+        disabled ? "opacity-70 cursor-not-allowed" : "",
+        className
+      )}
     >
       {children}
     </button>
@@ -162,43 +169,148 @@ export function Modal({ open, title, subtitle, children, onClose }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Swipe row                                                                  */
+/* Swipe row (enhanced “skim / lane” feel)                                    */
 /* -------------------------------------------------------------------------- */
 
-export function SwipeRow({ children, onCommit, disabled = false, hint = "Swipe right to upload" }) {
+/**
+ * SwipeRow
+ * - Feels like a “skimmer lane”: as you drag, an action rail reveals underneath.
+ * - Has elastic drag (resistance as you near max), and a crisp commit threshold.
+ * - Prevents vertical scroll lock unless the gesture is clearly horizontal.
+ * - Supports optional `actionLabel` and `actionIcon` slot (keeps default if omitted).
+ *
+ * Props:
+ * - children: row content
+ * - onCommit: called when swipe exceeds threshold on release (or if "snap" completes)
+ * - disabled: disables interactions
+ * - hint: small rail text (e.g. "Swipe right to upload")
+ * - actionLabel: bigger rail label (e.g. "Upload")
+ * - actionIcon: React node (e.g. <Upload className="..." />)
+ * - maxDx: how far the foreground can travel (default 160)
+ * - threshold: commit threshold (default 96)
+ */
+export function SwipeRow({
+  children,
+  onCommit,
+  disabled = false,
+  hint = "Swipe right to upload",
+  actionLabel = "Upload",
+  actionIcon = null,
+  maxDx = 160,
+  threshold = 96,
+}) {
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
-  const startX = useRef(0);
 
-  const threshold = 90; // px to trigger
+  // We only “lock” into horizontal mode once the user clearly swipes sideways.
+  const [locked, setLocked] = useState(false);
+
+  const start = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(0);
+
+  // Smooth performance: apply dx updates with rAF batching
+  const setDxRaf = (next) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => setDx(next));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  // “Elastic” resistance near max
+  const applyResistance = (raw) => {
+    const clamped = Math.max(0, raw);
+    if (clamped <= maxDx) return clamped;
+
+    // resistance: additional pixels beyond max get reduced heavily
+    const extra = clamped - maxDx;
+    return maxDx + extra * 0.18;
+  };
 
   const onDown = (e) => {
     if (disabled) return;
+    const pt = e.touches ? e.touches[0] : e;
     setDragging(true);
-    startX.current = e.touches ? e.touches[0].clientX : e.clientX;
+    setLocked(false);
+    start.current = { x: pt.clientX, y: pt.clientY };
   };
 
   const onMove = (e) => {
     if (!dragging || disabled) return;
-    const x = e.touches ? e.touches[0].clientX : e.clientX;
-    const d = Math.max(0, x - startX.current);
-    setDx(Math.min(d, 140));
+
+    const pt = e.touches ? e.touches[0] : e;
+    const rawDx = pt.clientX - start.current.x;
+    const rawDy = pt.clientY - start.current.y;
+
+    // determine lock
+    if (!locked) {
+      const ax = Math.abs(rawDx);
+      const ay = Math.abs(rawDy);
+
+      // If user is scrolling vertically, do NOT hijack.
+      if (ay > 10 && ay > ax * 1.2) {
+        // let scroll happen; also stop dragging visuals
+        setDragging(false);
+        setLocked(false);
+        setDxRaf(0);
+        return;
+      }
+
+      // lock into horizontal when clear intent
+      if (ax > 10 && ax > ay) setLocked(true);
+    }
+
+    if (!locked) return;
+
+    // When locked, prevent page scroll (touch) so swipe feels crisp
+    if (e.cancelable && e.touches) e.preventDefault();
+
+    // Only allow swipe to the right
+    const next = applyResistance(rawDx);
+    setDxRaf(Math.min(next, maxDx + 60));
+  };
+
+  const reset = () => setDx(0);
+
+  const commit = () => {
+    setDx(0);
+    onCommit?.();
   };
 
   const onUp = () => {
     if (!dragging) return;
     setDragging(false);
-    if (dx >= threshold) {
-      setDx(0);
-      onCommit?.();
+
+    // If not locked, treat as a tap/no-op
+    if (!locked) {
+      reset();
       return;
     }
-    setDx(0);
+
+    // Commit if threshold met
+    if (dx >= threshold) {
+      commit();
+      return;
+    }
+
+    reset();
   };
+
+  // Progress values for UI rail
+  const pct = Math.max(0, Math.min(1, dx / threshold));
+  const glow = pct > 0.65;
+  const railOpacity = Math.min(1, 0.22 + pct * 0.55);
+  const railScale = 0.98 + pct * 0.02;
 
   return (
     <div
-      className="relative"
+      className={classNames(
+        "relative select-none",
+        disabled ? "opacity-[0.92]" : ""
+      )}
       onMouseDown={onDown}
       onMouseMove={onMove}
       onMouseUp={onUp}
@@ -208,18 +320,78 @@ export function SwipeRow({ children, onCommit, disabled = false, hint = "Swipe r
       onTouchEnd={onUp}
       role="group"
       aria-label={hint}
+      style={{
+        // Helps iOS not delay touch; gives a snappy feel
+        touchAction: disabled ? "auto" : "pan-y",
+      }}
     >
-      {/* background action */}
-      <div className="absolute inset-0 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-end pr-4">
-        <div className="text-[#46769B] font-semibold text-sm">{hint}</div>
+      {/* Background action rail */}
+      <div
+        className={classNames(
+          "absolute inset-0 rounded-2xl border flex items-center justify-end pr-4 overflow-hidden",
+          glow ? "border-blue-200" : "border-blue-100"
+        )}
+        style={{
+          background: `linear-gradient(90deg, rgba(70,118,155,0.08), rgba(70,118,155,${railOpacity}))`,
+        }}
+      >
+        {/* Rail content */}
+        <div
+          className="flex items-center gap-3"
+          style={{
+            transform: `scale(${railScale})`,
+            transition: dragging ? "none" : "transform 160ms ease",
+          }}
+        >
+          <div className="text-right">
+            <div className="text-[#46769B] font-extrabold text-sm leading-tight">
+              {actionLabel}
+            </div>
+            <div className="text-[11px] text-[#46769B]/80 font-semibold">
+              {hint}
+            </div>
+          </div>
+
+          {/* Icon bubble */}
+          <div
+            className={classNames(
+              "h-10 w-10 rounded-2xl border flex items-center justify-center",
+              glow ? "bg-white border-blue-200" : "bg-white/80 border-blue-100"
+            )}
+            style={{
+              transform: `translateX(${Math.max(0, (1 - pct) * 10)}px)`,
+              transition: dragging ? "none" : "transform 160ms ease",
+            }}
+          >
+            {actionIcon ? (
+              actionIcon
+            ) : (
+              <span className="text-[#46769B] text-sm font-extrabold">→</span>
+            )}
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="absolute left-0 top-0 bottom-0 w-1.5">
+          <div
+            className="h-full bg-[#46769B]"
+            style={{
+              width: "100%",
+              transform: `scaleY(${Math.max(0.12, pct)})`,
+              transformOrigin: "bottom",
+              opacity: 0.55 + pct * 0.35,
+              transition: dragging ? "none" : "transform 160ms ease, opacity 160ms ease",
+            }}
+          />
+        </div>
       </div>
 
-      {/* foreground */}
+      {/* Foreground (actual row content) */}
       <div
         className="relative rounded-2xl"
         style={{
           transform: `translateX(${dx}px)`,
-          transition: dragging ? "none" : "transform 220ms ease",
+          transition: dragging ? "none" : "transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1)",
         }}
       >
         {children}

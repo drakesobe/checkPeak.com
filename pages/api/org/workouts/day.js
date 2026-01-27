@@ -14,21 +14,19 @@ function safeJsonString(s) {
   return String(s ?? "").trim();
 }
 
-// Escape double quotes for Airtable formulas
-function escFormulaString(s) {
-  return String(s ?? "").replace(/"/g, '\\"');
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-function envMissing() {
-  return {
-    DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
-    DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
-    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
-  };
+function escFormulaString(s) {
+  return String(s ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .trim();
+}
+
+function normLower(v) {
+  return String(v ?? "").trim().toLowerCase();
 }
 
 async function safeJson(res) {
@@ -37,6 +35,37 @@ async function safeJson(res) {
   } catch {
     return {};
   }
+}
+
+function envMissing() {
+  return {
+    DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
+    DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
+    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
+
+    // AthleteScans
+    ATHLETE_API_KEY: !process.env.ATHLETE_API_KEY,
+    ATHLETE_BASE_ID: !process.env.ATHLETE_BASE_ID,
+    ATHLETE_TABLE_NAME: !process.env.ATHLETE_TABLE_NAME,
+  };
+}
+
+function buildOrgCandidates(user) {
+  const orgId = String(user?.org?.id || user?.orgId || user?.OrgId || "").trim();
+  const orgToken = String(user?.org?.token || user?.Token || user?.token || "").trim();
+  const orgName = String(
+    user?.org?.name ||
+      user?.org?.Name ||
+      user?.orgName ||
+      user?.OrgName ||
+      user?.organizationName ||
+      user?.["Organization Name"] ||
+      ""
+  ).trim();
+
+  // Most likely to match linked primary = orgName
+  const candidates = [orgName, orgToken, orgId].filter(Boolean);
+  return { orgId, orgToken, orgName, candidates };
 }
 
 export default async function handler(req, res) {
@@ -48,6 +77,7 @@ export default async function handler(req, res) {
   }
 
   const missing = envMissing();
+
   if (missing.DAILYWORKOUTS_API_KEY || missing.DAILYWORKOUTS_BASE_ID || missing.DAILYWORKOUTS_TABLE_ID) {
     return res.status(500).json({
       error: "DailyWorkouts Airtable env vars missing.",
@@ -59,29 +89,54 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  // Query params
   const date = safeJsonString(req.query?.date) || toISODateLocal(new Date());
-  const sportRaw = safeJsonString(req.query?.sport);
-  const sport = sportRaw ? sportRaw.toLowerCase() : "";
+  const sport = normLower(req.query?.sport);
 
-  // Airtable
-  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
-    process.env.DAILYWORKOUTS_BASE_ID
-  );
+  const { orgId, orgToken, orgName, candidates } = buildOrgCandidates(user);
+
+  const debug = {
+    date,
+    sport,
+    orgId,
+    orgTokenPresent: Boolean(orgToken),
+    orgName,
+    orgCandidates: candidates,
+    athleteQueryEnabled: !(missing.ATHLETE_API_KEY || missing.ATHLETE_BASE_ID || missing.ATHLETE_TABLE_NAME),
+    formulas: {},
+    counts: { workouts: 0, athletes: 0 },
+  };
+
+  if (!candidates.length) {
+    return res.status(400).json({
+      error:
+        "Missing org identity on session (need orgName or orgToken or orgId). Ensure requireOrgSideUser sets org.name/token in cookie session.",
+      debug,
+    });
+  }
+
+  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
 
+  // ---- 1) Workouts for org + day (+ sport) ----
+  let workouts = [];
   try {
-    // ✅ IMPORTANT: field name must match Airtable exactly: {Sport}
-    // ✅ IMPORTANT: your single select values are lowercase ("basketball"), so normalize.
-    const parts = [
-      `IS_SAME({Date}, "${escFormulaString(date)}", "day")`,
-    ];
+    const parts = [];
+
+    const orgJoin = `ARRAYJOIN({Organization}&"")`;
+    const orgMatch =
+      candidates.length === 1
+        ? `FIND("${escFormulaString(candidates[0])}", ${orgJoin})`
+        : `OR(${candidates.map((c) => `FIND("${escFormulaString(c)}", ${orgJoin})`).join(",")})`;
+
+    parts.push(orgMatch);
+    parts.push(`IS_SAME({Date}, "${escFormulaString(date)}", "day")`);
 
     if (sport) {
-      parts.push(`{Sport} = "${escFormulaString(sport)}"`);
+      parts.push(`LOWER({Sport}&"")="${escFormulaString(sport)}"`);
     }
 
     const formula = `AND(${parts.join(",")})`;
+    debug.formulas.dailyWorkouts = formula;
 
     const rows = await DailyWorkouts.select({
       filterByFormula: formula,
@@ -89,45 +144,117 @@ export default async function handler(req, res) {
       sort: [{ field: "Date", direction: "asc" }],
     }).firstPage();
 
-    if (!rows?.length) {
-      // ✅ Empty state is NOT an error
-      return res.status(200).json({
-        workouts: [],
-        itemsByWorkoutId: {},
-        completionByItemId: {},
-        debug: { date, sport, formula },
-      });
-    }
-
-    // Minimal “day” payload for calendar
-    const workouts = rows.map((rec) => {
+    workouts = (rows || []).map((rec) => {
       const f = rec.fields || {};
       return {
         id: rec.id,
         Title: f.Title || "Workout",
-        Date: f.Date || date,
+        Date: f.Date ? String(f.Date).slice(0, 10) : date,
         Status: f.Status || "assigned",
+        Sport: f.Sport || "",
         athleteCount: safeArray(f.Athlete).length,
         itemCount: safeArray(f.WorkoutItems).length,
+        _orgLink: f.Organization,
       };
     });
 
-    // For now we’re not joining WorkoutItems in this endpoint.
-    // The calendar page can call a "workouts/items" endpoint later if we want.
-    const itemsByWorkoutId = {};
-    const completionByItemId = {};
-
-    return res.status(200).json({
-      workouts,
-      itemsByWorkoutId,
-      completionByItemId,
-      debug: { date, sport, formula },
-    });
+    debug.counts.workouts = workouts.length;
   } catch (e) {
-    console.error("[api/org/workouts/day] error:", e);
+    console.error("[api/org/workouts/day] dailyWorkouts error:", e);
     return res.status(500).json({
-      error: "Failed to load day.",
+      error: "Failed to load day workouts.",
       details: e?.message || String(e),
+      debug,
     });
   }
+
+  // ---- 2) Athletes roster (AthleteScans) for org (+ optional sport) ----
+  let athletes = [];
+  if (!(missing.ATHLETE_API_KEY || missing.ATHLETE_BASE_ID || missing.ATHLETE_TABLE_NAME)) {
+    try {
+      const athleteTable = encodeURIComponent(process.env.ATHLETE_TABLE_NAME);
+      const athleteBaseUrl = `https://api.airtable.com/v0/${process.env.ATHLETE_BASE_ID}/${athleteTable}`;
+
+      // AthleteScans.{Organization} is also linked; same rule: it joins to primary values
+      const athleteOrgJoin = `ARRAYJOIN({Organization}&"")`;
+
+      const athleteParts = [];
+
+      // org candidates against linked primary values
+      if (candidates.length === 1) {
+        athleteParts.push(`FIND("${escFormulaString(candidates[0])}", ${athleteOrgJoin})`);
+      } else {
+        athleteParts.push(
+          `OR(${candidates.map((c) => `FIND("${escFormulaString(c)}", ${athleteOrgJoin})`).join(",")})`
+        );
+      }
+
+      // token fallback (if AthleteScans has {Token})
+      if (orgToken) {
+        athleteParts.push(`{Token}="${escFormulaString(orgToken)}"`);
+        athleteParts.push(`FIND("${escFormulaString(orgToken)}", ARRAYJOIN({Token}&""))`);
+      }
+
+      let athleteFormula = athleteParts.length === 1 ? athleteParts[0] : `OR(${athleteParts.join(",")})`;
+
+      if (sport) {
+        athleteFormula = `AND(${athleteFormula}, {sport}="${escFormulaString(sport)}")`;
+      }
+
+      debug.formulas.athletes = athleteFormula;
+
+      const qs = new URLSearchParams();
+      qs.set("filterByFormula", athleteFormula);
+      qs.set("sort[0][field]", "CreatedAt");
+      qs.set("sort[0][direction]", "desc");
+
+      ["Name", "Email", "CreatedAt", "Organization", "Token", "sport", "Team", "Status"].forEach((f) =>
+        qs.append("fields[]", f)
+      );
+
+      const url = `${athleteBaseUrl}?${qs.toString()}`;
+
+      const atRes = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${process.env.ATHLETE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await safeJson(atRes);
+      if (!atRes.ok) {
+        console.error("[api/org/workouts/day] athletes airtable error:", atRes.status, data);
+        debug.athletesError = { status: atRes.status, data };
+      } else {
+        const records = Array.isArray(data?.records) ? data.records : [];
+        athletes = records.map((r) => {
+          const f = r.fields || {};
+          return {
+            id: r.id,
+            name: String(f.Name || "").trim(),
+            email: String(f.Email || "").trim(),
+            createdAt: String(f.CreatedAt || "").trim(),
+            sport: String(f.sport || "").trim(),
+            team: String(f.Team || "").trim(),
+            status: String(f.Status || "").trim(),
+            organization: f.Organization,
+            token: f.Token,
+          };
+        });
+        debug.counts.athletes = athletes.length;
+      }
+    } catch (e) {
+      console.error("[api/org/workouts/day] athletes query error:", e);
+      debug.athletesError = { message: e?.message || String(e) };
+    }
+  }
+
+  return res.status(200).json({
+    workouts,
+    athletes,
+    itemsByWorkoutId: {},
+    completionByItemId: {},
+    debug,
+  });
 }

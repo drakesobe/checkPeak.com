@@ -75,6 +75,17 @@ function isAthleteDone(status) {
   return st === "completed" || st === "pending_review";
 }
 
+// Airtable may return weird objects for empty/stale lookups; normalize to a clean string
+function normalizeTextValue(v) {
+  if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
+  if (v && typeof v === "object") {
+    // Handle Airtable "cell value" objects like {state:"empty", value:null}
+    const maybe = v?.value;
+    return String(maybe ?? "").trim();
+  }
+  return String(v ?? "").trim();
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -125,7 +136,7 @@ export default async function handler(req, res) {
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
   const WorkoutItems = base(process.env.WORKOUTITEMS_TABLE_ID);
 
-  // WorkoutCompletions base (can be same base, but uses its own env vars)
+  // WorkoutCompletions base
   const wcBase = new Airtable({ apiKey: process.env.WORKOUTCOMPLETIONS_API_KEY }).base(
     process.env.WORKOUTCOMPLETIONS_BASE_ID
   );
@@ -198,7 +209,6 @@ export default async function handler(req, res) {
       const itemId = String(itemLinks?.[0] || "").trim();
       if (!itemId) continue;
 
-      // if multiple completions exist, keep the latest by CompletedAt (Airtable returns unsorted sometimes)
       const prev = completionByWorkoutItemId.get(itemId);
       const prevAt = prev?.fields?.[WC_FIELDS.CompletedAt] ? String(prev.fields[WC_FIELDS.CompletedAt]) : "";
       const nextAt = wf?.[WC_FIELDS.CompletedAt] ? String(wf[WC_FIELDS.CompletedAt]) : "";
@@ -230,7 +240,7 @@ export default async function handler(req, res) {
         Instructions: it.Instructions ?? "",
         VideoURL: it.VideoURL ?? it.Video ?? "",
 
-        // ✅ Completion state from WorkoutCompletions
+        // ✅ Completion state
         Completed: doneForAthlete ? "true" : "false",
         Status: status || "", // completed | pending_review | rejected | ""
         CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
@@ -240,12 +250,20 @@ export default async function handler(req, res) {
       };
     });
 
+    // ✅ NEW: include review feedback fields on the dailyWorkout object
+    const reviewStatus = normalizeTextValue(f.ReviewStatus) || "pending";
+    const reviewedNotes = normalizeTextValue(f.ReviewedNotes) || "";
+
     return res.status(200).json({
       dailyWorkout: {
         id: rec.id,
         Title: f.Title || "Daily Workout",
         Date: f.Date || today,
         Status: f.Status || "assigned",
+
+        // ✅ These drive the athlete UI
+        ReviewStatus: reviewStatus,
+        ReviewedNotes: reviewedNotes,
       },
       items,
     });

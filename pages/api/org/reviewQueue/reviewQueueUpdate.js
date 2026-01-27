@@ -1,4 +1,4 @@
-// pages/api/org/reviewQueueUpdate.js
+// pages/api/org/reviewQueue/reviewQueueUpdate.js
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
@@ -15,9 +15,6 @@ function anyMissing(m) {
 }
 
 function normalizeIdArray(v) {
-  // Airtable linked fields usually come back as:
-  // - array of recordId strings: ["rec123", "rec456"]
-  // - sometimes array of objects (rare in REST): [{id:"rec123"}]
   if (!Array.isArray(v)) return [];
   return v
     .map((x) => {
@@ -29,8 +26,18 @@ function normalizeIdArray(v) {
     .filter(Boolean);
 }
 
+function toLowerStr(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function firstFromLookup(v) {
+  if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
+  return String(v ?? "").trim();
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -46,17 +53,31 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ cookie session → org-side auth
     const auth = requireOrg(req);
     if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
-    // ✅ Organizations record id (recXXXX...) from cookie
+    const orgToken = String(auth?.org?.token || auth?.token || "").trim();
     const orgId = String(auth?.org?.id || "").trim();
-    if (!orgId) return res.status(401).json({ error: "Unauthorized (missing orgId)." });
+    if (!orgToken && !orgId) {
+      return res.status(401).json({ error: "Unauthorized (missing org token/id)." });
+    }
 
-    const { id, reviewStatus, coachNotes } = req.body || {};
-    const recordId = String(id || "").trim();
-    const next = String(reviewStatus || "").trim().toLowerCase();
+    const body = req.body || {};
+    const recordId = String(body?.id || "").trim();
+
+    // Accept either { reviewStatus } or { status }
+    const incomingStatus = body?.reviewStatus ?? body?.status;
+    const next = toLowerStr(incomingStatus);
+
+    // Accept either { reviewedNotes } or legacy { coachNotes }
+    const incomingNotes =
+      typeof body?.reviewedNotes === "string"
+        ? body.reviewedNotes
+        : typeof body?.coachNotes === "string"
+        ? body.coachNotes
+        : "";
+
+    const reviewedNotes = String(incomingNotes || "").trim();
 
     const allowed = new Set(["pending", "approved", "needs_info"]);
     if (!recordId) return res.status(400).json({ error: "Missing id." });
@@ -67,30 +88,41 @@ export default async function handler(req, res) {
     );
     const table = base(process.env.DAILYWORKOUTS_TABLE_ID);
 
-    // ✅ Safety: verify this DailyWorkout belongs to org
     const existing = await table.find(recordId);
-    const orgLinks = normalizeIdArray(existing?.fields?.Organization);
 
-    const owns = orgLinks.includes(orgId);
+    // Ownership check: prefer OrgToken lookup, fallback to Organization links
+    const recOrgToken = firstFromLookup(existing?.fields?.OrgToken);
+
+    let owns = false;
+    if (orgToken && recOrgToken) owns = String(recOrgToken).trim() === String(orgToken).trim();
+
+    if (!owns && orgId) {
+      const orgLinks = normalizeIdArray(existing?.fields?.Organization);
+      owns = orgLinks.includes(orgId);
+    }
+
     if (!owns) return res.status(403).json({ error: "Forbidden." });
 
-    // ReviewedBy: prefer member identity (trainer/admin), else org account email/name
+    // Reviewer email -> ReviewedByText
     const reviewerEmail = String(auth?.user?.Email || auth?.user?.email || auth?.org?.email || "").trim();
-    const reviewerName = String(auth?.user?.Name || auth?.user?.name || auth?.org?.name || "Coach").trim();
+    const reviewerName = String(auth?.user?.Name || auth?.user?.name || auth?.org?.name || "").trim();
+    const reviewerText = reviewerEmail || reviewerName || "Coach";
 
-    // NOTE: These fields must exist in Airtable to be written:
-    // - ReviewStatus (single select: pending | approved | needs_info)
-    // - ReviewedAt (date)
-    // - ReviewedBy (single line OR link to OrgMembers if you prefer)
-    // - CoachNotes (long text) optional
     const updates = {
       ReviewStatus: next,
       ReviewedAt: new Date().toISOString(),
-      ReviewedBy: reviewerEmail || reviewerName,
+      ReviewedByText: reviewerText, // ✅ your text field (NOT the linked ReviewedBy)
     };
 
-    if (typeof coachNotes === "string" && coachNotes.trim()) {
-      updates.CoachNotes = coachNotes.trim();
+    // ✅ If needs_info, require a message (or keep existing if already present)
+    if (next === "needs_info") {
+      if (!reviewedNotes) return res.status(400).json({ error: "ReviewedNotes is required for Needs Info." });
+      updates.ReviewedNotes = reviewedNotes;
+    }
+
+    // ✅ For approved: clear notes (optional). Comment out if you want to keep.
+    if (next === "approved") {
+      updates.ReviewedNotes = "";
     }
 
     const updated = await table.update(recordId, updates);
@@ -99,9 +131,23 @@ export default async function handler(req, res) {
       ok: true,
       id: updated.id,
       reviewStatus: next,
+      reviewedBy: reviewerText,
     });
   } catch (err) {
     console.error("[reviewQueueUpdate] error:", err);
+    const status = err?.statusCode || err?.status || 500;
+
+    if (status === 422) {
+      return res.status(500).json({
+        error: err?.message || "Airtable rejected a value (check field types).",
+        details: {
+          statusCode: err?.statusCode,
+          airtableError: err?.error,
+          message: err?.message,
+        },
+      });
+    }
+
     return res.status(500).json({ error: err?.message || "Server error" });
   }
 }

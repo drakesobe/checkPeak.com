@@ -22,7 +22,6 @@ import {
   endOfMonth,
   endOfWeek,
   isoToDate,
-  isSameISO,
   nyDateISO,
   startOfMonth,
   startOfWeek,
@@ -60,10 +59,37 @@ function sumCountsForDay(list) {
   return { workoutsCount, athleteCount, itemCount };
 }
 
+// Deterministic fallback to avoid SSR/client mismatches
+const FALLBACK_ISO = "2000-01-01";
+const FALLBACK_DATE = new Date("2000-01-01T12:00:00Z");
+
 // ---------- page ----------
 export default function WorkoutsCalendarPage() {
   const router = useRouter();
   const { user } = useAuthContext();
+
+  // ✅ Always run hooks in the same order (no early return before hooks)
+  const [mounted, setMounted] = useState(false);
+
+  // Persist view + selected sports
+  const LS_KEY = "org_workouts_calendar_sports_v1";
+  const LS_VIEW = "org_workouts_calendar_view_v1";
+
+  const [viewMode, setViewMode] = useState("week"); // "week" | "month"
+
+  // ✅ Start with deterministic values to prevent hydration mismatch
+  const [todayISO, setTodayISO] = useState(FALLBACK_ISO);
+  const [anchorISO, setAnchorISO] = useState(FALLBACK_ISO);
+  const [selectedSports, setSelectedSports] = useState([]); // start empty on SSR + first client render
+
+  // Networking state
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [workouts, setWorkouts] = useState([]);
+
+  // Cache + abort
+  const cacheRef = useRef(new Map());
+  const abortRef = useRef(null);
 
   // Role gating
   const role = useMemo(() => {
@@ -80,6 +106,10 @@ export default function WorkoutsCalendarPage() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -104,43 +134,57 @@ export default function WorkoutsCalendarPage() {
     []
   );
 
-  // Persist view + selected sports
-  const LS_KEY = "org_workouts_calendar_sports_v1";
-  const LS_VIEW = "org_workouts_calendar_view_v1";
+  // ✅ After mount: compute today + restore localStorage (client only)
+  useEffect(() => {
+    if (!mounted) return;
 
-  const [viewMode, setViewMode] = useState("week"); // "week" | "month"
-  const [anchorISO, setAnchorISO] = useState(() => nyDateISO());
-
-  const [selectedSports, setSelectedSports] = useState(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const t = nyDateISO();
+      setTodayISO(t);
+      setAnchorISO((prev) => (prev && prev !== FALLBACK_ISO ? prev : t));
+    } catch {
+      // keep fallbacks
+    }
+
+    try {
+      const raw = window.localStorage.getItem(LS_KEY);
       const parsed = JSON.parse(raw || "[]");
-      if (Array.isArray(parsed)) return parsed.map(normalizeSport).filter(Boolean);
+      if (Array.isArray(parsed)) {
+        setSelectedSports(parsed.map(normalizeSport).filter(Boolean));
+      }
     } catch {}
-    return [];
-  });
 
-  useEffect(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(selectedSports));
-    } catch {}
-  }, [selectedSports]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_VIEW);
+      const raw = window.localStorage.getItem(LS_VIEW);
       if (raw === "week" || raw === "month") setViewMode(raw);
     } catch {}
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
+
+  // ✅ Persist changes (client only)
+  useEffect(() => {
+    if (!mounted) return;
+    try {
+      window.localStorage.setItem(LS_KEY, JSON.stringify(selectedSports));
+    } catch {}
+  }, [selectedSports, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     try {
-      localStorage.setItem(LS_VIEW, viewMode);
+      window.localStorage.setItem(LS_VIEW, viewMode);
     } catch {}
-  }, [viewMode]);
+  }, [viewMode, mounted]);
 
-  const todayISO = useMemo(() => nyDateISO(), []);
-  const anchorDate = useMemo(() => isoToDate(anchorISO), [anchorISO]);
+  const anchorDate = useMemo(() => {
+    // Use deterministic fallback until mounted + real dates load
+    if (!anchorISO) return FALLBACK_DATE;
+    try {
+      return isoToDate(anchorISO);
+    } catch {
+      return FALLBACK_DATE;
+    }
+  }, [anchorISO]);
 
   // Range calc
   const weekStartsOn = 0; // Sunday
@@ -185,16 +229,7 @@ export default function WorkoutsCalendarPage() {
 
   const monthDays = useMemo(() => days, [days]);
 
-  // Networking state (kept in page; can swap to hook later)
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [workouts, setWorkouts] = useState([]);
-
   const workoutsByDate = useMemo(() => groupByDate(workouts), [workouts]);
-
-  // Cache + abort
-  const cacheRef = useRef(new Map());
-  const abortRef = useRef(null);
 
   const sportsKey = useMemo(() => {
     const s = Array.isArray(selectedSports) ? selectedSports : [];
@@ -213,7 +248,7 @@ export default function WorkoutsCalendarPage() {
     const selected = Array.isArray(selectedSports) ? selectedSports.filter(Boolean) : [];
 
     if (selected.length === 1) {
-      params.set("sport", titleSport(selected[0]));
+      params.set("sport", titleSport(selected[0])); // server lowercases it
     } else if (selected.length > 1) {
       params.set("sports", selected.join(","));
       params.set("sport", titleSport(selected[0])); // fallback
@@ -225,6 +260,10 @@ export default function WorkoutsCalendarPage() {
   const fetchRange = useCallback(
     async (force = false) => {
       if (!isOrgSide) return;
+
+      // Don’t fetch until mounted so SSR placeholder doesn’t cause mismatch-y UI states
+      if (!mounted) return;
+
       setErr("");
 
       if (!force && cacheRef.current.has(cacheKey)) {
@@ -260,18 +299,24 @@ export default function WorkoutsCalendarPage() {
         setLoading(false);
       }
     },
-    [isOrgSide, cacheKey, buildRangeURL]
+    [isOrgSide, mounted, cacheKey, buildRangeURL]
   );
 
   useEffect(() => {
     if (!user || !isOrgSide) return;
+    if (!mounted) return;
     fetchRange(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, isOrgSide, cacheKey]);
+  }, [user, isOrgSide, mounted, cacheKey]);
 
   // Day bottom sheet
   const [dayOpen, setDayOpen] = useState(false);
-  const [selectedDayISO, setSelectedDayISO] = useState(() => nyDateISO());
+  const [selectedDayISO, setSelectedDayISO] = useState(FALLBACK_ISO);
+
+  useEffect(() => {
+    if (!mounted) return;
+    setSelectedDayISO((prev) => (prev && prev !== FALLBACK_ISO ? prev : todayISO));
+  }, [mounted, todayISO]);
 
   const openDay = (iso) => {
     setSelectedDayISO(String(iso || "").slice(0, 10));
@@ -282,10 +327,15 @@ export default function WorkoutsCalendarPage() {
 
   // Create workout modal
   const [createOpen, setCreateOpen] = useState(false);
-  const [createDayISO, setCreateDayISO] = useState(() => nyDateISO());
+  const [createDayISO, setCreateDayISO] = useState(FALLBACK_ISO);
+
+  useEffect(() => {
+    if (!mounted) return;
+    setCreateDayISO((prev) => (prev && prev !== FALLBACK_ISO ? prev : todayISO));
+  }, [mounted, todayISO]);
 
   const openCreateForDay = (iso) => {
-    const d = String(iso || "").slice(0, 10) || nyDateISO();
+    const d = String(iso || "").slice(0, 10) || todayISO;
     setCreateDayISO(d);
     setCreateOpen(true);
   };
@@ -307,6 +357,7 @@ export default function WorkoutsCalendarPage() {
     else setAnchorISO(dateToISO(new Date(d.getFullYear(), d.getMonth() + 1, 1, 12, 0, 0)));
   };
 
+  // Labels (safe during SSR because we start deterministic)
   const monthLabel = useMemo(() => {
     const d = isoToDate(anchorISO);
     return d.toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -331,8 +382,6 @@ export default function WorkoutsCalendarPage() {
     const id = String(w?.id || "").trim();
     const date = String(w?.Date || "").slice(0, 10);
     if (!id) return;
-
-    // For now: open day sheet on that date
     if (date) {
       setSelectedDayISO(date);
       setDayOpen(true);
@@ -374,6 +423,9 @@ export default function WorkoutsCalendarPage() {
 
   const goDashboard = () => router.push("/org/dashboard");
 
+  // ✅ Optional: show a stable “client boot” state so UI doesn’t flicker weirdly
+  const clientReady = mounted && todayISO && anchorISO;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
       <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
@@ -381,11 +433,11 @@ export default function WorkoutsCalendarPage() {
         <CalendarHeader
           viewMode={viewMode}
           setViewMode={setViewMode}
-          weekLabel={weekLabel}
-          monthLabel={monthLabel}
+          weekLabel={clientReady ? weekLabel : "—"}
+          monthLabel={clientReady ? monthLabel : "—"}
           headerSubtitle={headerSubtitle}
           err={err}
-          loading={loading}
+          loading={loading || !clientReady}
           rangeStart={range.start}
           rangeEnd={range.end}
           rangeSummary={rangeSummary}
@@ -405,12 +457,19 @@ export default function WorkoutsCalendarPage() {
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900">{viewMode === "week" ? "Week View" : "Month View"}</p>
+              <p className="text-lg font-extrabold text-gray-900">
+                {viewMode === "week" ? "Week View" : "Month View"}
+              </p>
               <p className="text-sm text-gray-600 mt-1">
                 {viewMode === "week"
                   ? "Open a day to see all workouts scheduled. Create new workouts directly from any day."
                   : "Tap any day to open the day sheet. Month view is great for planning."}
               </p>
+              {!clientReady && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Loading calendar…
+                </p>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -418,13 +477,15 @@ export default function WorkoutsCalendarPage() {
                 type="button"
                 onClick={() => openDay(todayISO)}
                 className="px-3 py-2 rounded-2xl border text-xs font-semibold transition bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+                disabled={!clientReady}
               >
                 Open Today →
               </button>
               <button
                 type="button"
                 onClick={() => openCreateForDay(todayISO)}
-                className="px-3 py-2 rounded-2xl text-xs font-semibold transition bg-[#46769B] text-white hover:brightness-110"
+                className="px-3 py-2 rounded-2xl text-xs font-semibold transition bg-[#46769B] text-white hover:brightness-110 disabled:opacity-60"
+                disabled={!clientReady}
               >
                 + Create
               </button>
@@ -436,7 +497,7 @@ export default function WorkoutsCalendarPage() {
               <WeekView
                 weekDays={weekDays}
                 todayISO={todayISO}
-                loading={loading}
+                loading={loading || !clientReady}
                 workoutsByDate={workoutsByDate}
                 onOpenDay={openDay}
                 onOpenWorkout={openWorkout}
@@ -447,7 +508,7 @@ export default function WorkoutsCalendarPage() {
                 monthDays={monthDays}
                 anchorISO={anchorISO}
                 todayISO={todayISO}
-                loading={loading}
+                loading={loading || !clientReady}
                 workoutsByDate={workoutsByDate}
                 weekdayLabels={weekdayLabels}
                 onOpenDay={openDay}
@@ -484,7 +545,7 @@ export default function WorkoutsCalendarPage() {
           onClose={closeDay}
           titleISO={selectedDayISO}
           todayISO={todayISO}
-          loading={loading}
+          loading={loading || !clientReady}
           workoutsByDate={workoutsByDate}
           selectedSports={selectedSports}
           setSelectedSports={setSelectedSports}

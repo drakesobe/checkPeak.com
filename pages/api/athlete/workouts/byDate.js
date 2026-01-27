@@ -75,6 +75,15 @@ function isAthleteDone(status) {
   return st === "completed" || st === "pending_review";
 }
 
+function normalizeTextValue(v) {
+  if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
+  if (v && typeof v === "object") {
+    // handle Airtable "cell value" objects like {state:"empty", value:null}
+    return String(v?.value ?? "").trim();
+  }
+  return String(v ?? "").trim();
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -123,7 +132,7 @@ export default async function handler(req, res) {
   const WorkoutCompletions = wcBase(process.env.WORKOUTCOMPLETIONS_TABLE_ID);
 
   try {
-    const emailEsc = escapeAirtableString(athleteEmail);
+    const emailEsc = escapeAirtableString(athleteEmail.replace(/\s+/g, ""));
     const dateEsc = escapeAirtableString(isoDate);
 
     const formula = `AND(
@@ -140,7 +149,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ dailyWorkout: null, items: [] });
     }
 
-    const rec = (pickBestDailyWorkout(rows) || rows[0]);
+    const rec = pickBestDailyWorkout(rows) || rows[0];
     const f = rec.fields || {};
 
     const workoutItemIds = safeArray(f.WorkoutItems).map(String).map((s) => s.trim()).filter(Boolean);
@@ -202,12 +211,19 @@ export default async function handler(req, res) {
       };
     });
 
+    // ✅ NEW: include review fields for athlete UI
+    const reviewStatus = normalizeTextValue(f.ReviewStatus) || "pending";
+    const reviewedNotes = normalizeTextValue(f.ReviewedNotes) || "";
+
     return res.status(200).json({
       dailyWorkout: {
         id: rec.id,
         Title: f.Title || "Daily Workout",
         Date: f.Date || isoDate,
         Status: f.Status || "assigned",
+
+        ReviewStatus: reviewStatus,
+        ReviewedNotes: reviewedNotes,
       },
       items,
     });

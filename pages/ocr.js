@@ -11,6 +11,10 @@ import { useAuthContext } from "../hooks/useAuth";
 import { toast } from "react-hot-toast";
 import { trackEvent } from "@/lib/analytics";
 
+function normalizeRole(r) {
+  return r === "Organization" ? "Organization" : "Athlete";
+}
+
 export default function OCRPage() {
   const { user } = useAuthContext();
 
@@ -32,8 +36,8 @@ export default function OCRPage() {
   // 🔒 Conversion Gate (Email unlock)
   // -----------------------------
   const [unlockEmail, setUnlockEmail] = useState("");
-  const [unlockRole, setUnlockRole] = useState("Athlete");
-  const [unlockOrg, setUnlockOrg] = useState("");
+  const [unlockRole, setUnlockRole] = useState("Athlete"); // ✅ only Athlete/Organization
+  const [unlockOrgToken, setUnlockOrgToken] = useState(""); // ✅ token (optional)
   const [unlockLoading, setUnlockLoading] = useState(false);
   const [unlockError, setUnlockError] = useState("");
   const [unlockSuccess, setUnlockSuccess] = useState(false);
@@ -134,12 +138,31 @@ export default function OCRPage() {
     detectedIngredients.length,
   ]);
 
+  const resolveOrgToken = async (token) => {
+    const t = String(token || "").trim();
+    if (!t) return null;
+
+    const res = await fetch(`/api/org/resolveToken?token=${encodeURIComponent(t)}`, {
+      method: "GET",
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Invalid organization token.");
+    }
+
+    return data?.org || null; // { id, name, token }
+  };
+
   const handleUnlockSubmit = async (e) => {
     e.preventDefault();
     setUnlockError("");
     setUnlockSuccess(false);
 
     const email = unlockEmail.trim();
+    const role = normalizeRole(unlockRole);
+    const orgToken = String(unlockOrgToken || "").trim();
+
     if (!email || !email.includes("@")) {
       setUnlockError("Please enter a valid email.");
       return;
@@ -147,14 +170,23 @@ export default function OCRPage() {
 
     setUnlockLoading(true);
     try {
+      // ✅ If they picked Organization and provided a token, resolve it.
+      // Token remains OPTIONAL: if blank, proceed.
+      let resolvedOrg = null;
+      if (role === "Organization" && orgToken) {
+        resolvedOrg = await resolveOrgToken(orgToken);
+      }
+
       // Save to your existing waitlist endpoint (Airtable)
       const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          role: unlockRole,
-          organization: unlockOrg || null,
+          role,
+          organizationToken: orgToken || null,
+          organizationId: resolvedOrg?.id || null,
+          organizationName: resolvedOrg?.name || null,
           source: "ocr_unlock_gate",
         }),
       });
@@ -167,8 +199,10 @@ export default function OCRPage() {
       // persist soft-unlock identity for step 2
       setLs("cp_unlocked", "1");
       setLs("cp_unlocked_email", email);
-      setLs("cp_unlocked_role", unlockRole || "Athlete");
-      setLs("cp_unlocked_org", unlockOrg || "");
+      setLs("cp_unlocked_role", role);
+      setLs("cp_unlocked_org_token", orgToken || "");
+      setLs("cp_unlocked_org_id", resolvedOrg?.id || "");
+      setLs("cp_unlocked_org_name", resolvedOrg?.name || "");
 
       // Analytics: unlock completed
       try {
@@ -184,6 +218,11 @@ export default function OCRPage() {
             ingredientCount:
               lastScanMeta?.ingredientCount ?? detectedIngredients.length,
             productName: lastScanMeta?.productName || null,
+            org: resolvedOrg
+              ? { id: resolvedOrg?.id || "", name: resolvedOrg?.name || "", token: orgToken || "" }
+              : orgToken
+              ? { token: orgToken }
+              : null,
           },
         });
       } catch (e2) {
@@ -388,9 +427,18 @@ export default function OCRPage() {
       ? "Unlock details + save scan history so you can reference this later."
       : "Save this scan to build history and get alerts as our database expands.";
 
-  const finishEmail = useMemo(() => getLs("cp_unlocked_email") || "", [showFinishSetup]);
-  const finishRole = useMemo(() => getLs("cp_unlocked_role") || "Athlete", [showFinishSetup]);
-  const finishOrg = useMemo(() => getLs("cp_unlocked_org") || "", [showFinishSetup]);
+  const finishEmail = useMemo(
+    () => getLs("cp_unlocked_email") || "",
+    [showFinishSetup]
+  );
+  const finishRole = useMemo(
+    () => getLs("cp_unlocked_role") || "Athlete",
+    [showFinishSetup]
+  );
+  const finishOrg = useMemo(
+    () => getLs("cp_unlocked_org_token") || "",
+    [showFinishSetup]
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -399,7 +447,7 @@ export default function OCRPage() {
       <FinishSetupModal
         isOpen={showFinishSetup && !(user && (user.Email || user.email))}
         defaultEmail={finishEmail}
-        defaultRole={finishRole}
+        defaultRole={normalizeRole(finishRole)}
         defaultOrg={finishOrg}
         onClose={(meta) => {
           setShowFinishSetup(false);
@@ -545,18 +593,18 @@ export default function OCRPage() {
                         <div className="flex flex-col sm:flex-row gap-2">
                           <select
                             value={unlockRole}
-                            onChange={(e) => setUnlockRole(e.target.value)}
+                            onChange={(e) => setUnlockRole(normalizeRole(e.target.value))}
                             className="w-full sm:w-48 px-3 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
                           >
-                            <option>Athlete</option>
-                            <option>Organization</option>
+                            <option value="Athlete">Athlete</option>
+                            <option value="Organization">Organization</option>
                           </select>
 
                           <input
                             type="text"
-                            value={unlockOrg}
-                            onChange={(e) => setUnlockOrg(e.target.value)}
-                            placeholder="Team / org (optional)"
+                            value={unlockOrgToken}
+                            onChange={(e) => setUnlockOrgToken(e.target.value)}
+                            placeholder="Team / Organization Token (optional)"
                             className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
                           />
                         </div>

@@ -1,14 +1,20 @@
+// /components/FinishSetupModal.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthContext } from "@/hooks/useAuth";
 
+function normalizeRole(r) {
+  return r === "Organization" ? "Organization" : "Athlete";
+}
+
 export default function FinishSetupModal({
   isOpen,
   onClose,
   defaultEmail = "",
   defaultRole = "Athlete",
+  // ✅ this is now the Org Token (optional) coming from cp_unlocked_org_token
   defaultOrg = "",
 }) {
   const { signupAthlete } = useAuthContext();
@@ -18,8 +24,10 @@ export default function FinishSetupModal({
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
 
-  const [role, setRole] = useState(defaultRole || "Athlete");
-  const [org, setOrg] = useState(defaultOrg || "");
+  // ✅ Only two roles supported
+  const [role, setRole] = useState(normalizeRole(defaultRole));
+  // ✅ Token (optional)
+  const [orgToken, setOrgToken] = useState(defaultOrg || "");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,14 +35,18 @@ export default function FinishSetupModal({
 
   useEffect(() => {
     if (!isOpen) return;
+
     setEmail(defaultEmail || "");
-    setRole(defaultRole || "Athlete");
-    setOrg(defaultOrg || "");
+    setRole(normalizeRole(defaultRole));
+    setOrgToken(defaultOrg || "");
+
     setError("");
     setPassword("");
     setAccountExists(false);
     // leave name as-is so they don’t lose typing if they reopen quickly
   }, [isOpen, defaultEmail, defaultRole, defaultOrg]);
+
+  const emailLocked = Boolean(defaultEmail);
 
   const canSubmit = useMemo(() => {
     return (
@@ -62,8 +74,10 @@ export default function FinishSetupModal({
     setAccountExists(false);
 
     const cleanName = String(name || "").trim();
-    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanEmail = String(email || defaultEmail || "").trim().toLowerCase();
     const cleanPw = String(password || "");
+    const cleanRole = normalizeRole(role);
+    const cleanOrgToken = String(orgToken || "").trim();
 
     if (!cleanName) return setError("Please enter your name.");
     if (!cleanEmail.includes("@")) return setError("Please enter a valid email.");
@@ -71,11 +85,21 @@ export default function FinishSetupModal({
 
     setLoading(true);
     try {
+      /**
+       * ✅ IMPORTANT:
+       * Your server-side signup endpoint should route to:
+       * - Athlete table when role === "Athlete"
+       * - Organizations table when role === "Organization"
+       *
+       * and (optionally) resolve cleanOrgToken against the Organizations Airtable {Token}.
+       */
       await signupAthlete({
         token: "",
         name: cleanName,
         email: cleanEmail,
         password: cleanPw,
+        role: cleanRole,              // "Athlete" | "Organization"
+        organizationToken: cleanOrgToken || null, // ✅ optional
       });
 
       // cleanup soft-unlock flags (now a real user)
@@ -83,7 +107,12 @@ export default function FinishSetupModal({
         window.localStorage.removeItem("cp_unlocked");
         window.localStorage.removeItem("cp_unlocked_email");
         window.localStorage.removeItem("cp_unlocked_role");
-        window.localStorage.removeItem("cp_unlocked_org");
+
+        // ✅ updated keys
+        window.localStorage.removeItem("cp_unlocked_org_token");
+        window.localStorage.removeItem("cp_unlocked_org_id");
+        window.localStorage.removeItem("cp_unlocked_org_name");
+
         window.localStorage.setItem("cp_finish_setup_completed", "1");
       }
 
@@ -153,8 +182,11 @@ export default function FinishSetupModal({
                 type="email"
                 placeholder="Email"
                 value={email}
+                readOnly={emailLocked}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                className={`w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B] ${
+                  emailLocked ? "bg-gray-50 text-gray-600" : ""
+                }`}
                 autoComplete="email"
                 required
               />
@@ -178,24 +210,32 @@ export default function FinishSetupModal({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
-                >
-                  <option>Athlete</option>
-                  <option>Organization</option>
-                </select>
+              {/* ✅ Minimal friction: only two roles */}
+              <div className="flex items-center justify-between rounded-xl border border-gray-300 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">Account type</p>
+                  <p className="text-xs text-gray-500">Most users choose Athlete</p>
+                </div>
 
-                <input
-                  type="text"
-                  value={org}
-                  onChange={(e) => setOrg(e.target.value)}
-                  placeholder="Team / org (optional)"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
-                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRole((r) => (normalizeRole(r) === "Organization" ? "Athlete" : "Organization"))
+                  }
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50"
+                >
+                  {normalizeRole(role)}
+                </button>
               </div>
+
+              {/* ✅ Optional token field (matches OCR gate wording) */}
+              <input
+                type="text"
+                value={orgToken}
+                onChange={(e) => setOrgToken(e.target.value)}
+                placeholder="Team / Organization Token (optional)"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+              />
 
               {error && <p className="text-xs text-red-500">{error}</p>}
 

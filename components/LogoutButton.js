@@ -3,12 +3,29 @@
 
 import { useState } from "react";
 import { useAuthContext } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+
+// Routes that are allowed to remain visible after logout
+const PUBLIC_PATH_PREFIXES = [
+  "/smartstack",
+  "/search",
+  "/scans",
+  "/ocr",
+  "/supplement-label-scanner",
+  "/", // landing page
+];
+
+function isPublicPath(pathname = "") {
+  return PUBLIC_PATH_PREFIXES.some((p) =>
+    pathname === p || pathname.startsWith(`${p}/`)
+  );
+}
 
 export default function LogoutButton() {
   const { logout } = useAuthContext();
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
@@ -16,14 +33,21 @@ export default function LogoutButton() {
     setLoading(true);
 
     try {
-      await logout?.(); // ✅ clears local user + hits /api/logout to clear HttpOnly cookie
+      // Clears user state + HttpOnly cookie via /api/logout
+      await logout?.();
     } catch (e) {
       console.warn("[LogoutButton] logout failed:", e);
     } finally {
-      // ✅ keep user in-app, but show the login page
-      // replace prevents Back from returning to the protected page
-      router.replace("/login");
-      router.refresh(); // optional but fine
+      const stayOnPage = isPublicPath(pathname);
+
+      if (!stayOnPage) {
+        // 🔒 Protected page → force login
+        router.replace("/login");
+      } else {
+        // 🌍 Public page → just refresh auth state
+        router.refresh();
+      }
+
       setLoading(false);
     }
   };

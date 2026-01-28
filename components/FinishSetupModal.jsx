@@ -185,9 +185,6 @@ export default function FinishSetupModal({
                   className="w-full px-3 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
                 >
                   <option>Athlete</option>
-                  <option>Coach / Staff</option>
-                  <option>Compliance</option>
-                  <option>Performance Gym</option>
                   <option>Organization</option>
                 </select>
 

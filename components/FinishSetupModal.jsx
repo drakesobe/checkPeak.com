@@ -9,15 +9,21 @@ function normalizeRole(r) {
   return r === "Organization" ? "Organization" : "Athlete";
 }
 
+function roleForApi(displayRole) {
+  // API expects: "athlete" | "organization"
+  return normalizeRole(displayRole) === "Organization" ? "organization" : "athlete";
+}
+
 export default function FinishSetupModal({
   isOpen,
   onClose,
   defaultEmail = "",
   defaultRole = "Athlete",
-  // ✅ this is the Organization TOKEN (optional)
+  // ✅ Organization token (optional)
   defaultOrg = "",
 }) {
-  const { signupAthlete } = useAuthContext();
+  // ✅ Use finishSetup (upsert), not signupAthlete (create-only)
+  const { finishSetup } = useAuthContext();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState(defaultEmail || "");
@@ -73,7 +79,7 @@ export default function FinishSetupModal({
     const cleanName = String(name || "").trim();
     const cleanEmail = String(email || defaultEmail || "").trim().toLowerCase();
     const cleanPw = String(password || "");
-    const cleanRole = normalizeRole(role);
+    const roleApi = roleForApi(role); // "athlete" | "organization"
     const cleanOrgToken = String(orgToken || "").trim();
 
     if (!cleanName) return setError("Please enter your name.");
@@ -82,12 +88,11 @@ export default function FinishSetupModal({
 
     setLoading(true);
     try {
-      await signupAthlete({
-        token: "",
+      await finishSetup({
         name: cleanName,
         email: cleanEmail,
         password: cleanPw,
-        role: cleanRole, // "Athlete" | "Organization"
+        role: roleApi,
         organizationToken: cleanOrgToken || null,
       });
 
@@ -105,7 +110,10 @@ export default function FinishSetupModal({
       onClose?.({ completed: true });
     } catch (err) {
       const msg = String(err?.message || "Account setup failed.");
-      if (msg.toLowerCase().includes("already exists")) {
+      const lower = msg.toLowerCase();
+
+      // With upsert, "already exists" should be rare, but keep UX fallback
+      if (lower.includes("already exists") || lower.includes("exists")) {
         setAccountExists(true);
         setError("You already have an account. Log in to continue.");
       } else {
@@ -144,9 +152,7 @@ export default function FinishSetupModal({
             </button>
 
             <p className="text-xs font-semibold text-[#46769B]">Finish setup</p>
-            <h2 className="text-xl font-bold text-gray-900 mt-1">
-              Create your password
-            </h2>
+            <h2 className="text-xl font-bold text-gray-900 mt-1">Create your password</h2>
             <p className="text-sm text-gray-600 mt-2">
               Save scans, unlock history, and access your dashboard.
             </p>
@@ -194,7 +200,7 @@ export default function FinishSetupModal({
                 </button>
               </div>
 
-              {/* ✅ Athlete / Organization segmented selector */}
+              {/* Athlete / Organization segmented selector */}
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2">
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -209,7 +215,7 @@ export default function FinishSetupModal({
                   >
                     Athlete
                     <div className="mt-0.5 text-[11px] font-medium text-gray-500">
-                      Personal scans
+                      Personal scans & history
                     </div>
                   </button>
 
@@ -225,22 +231,27 @@ export default function FinishSetupModal({
                   >
                     Organization
                     <div className="mt-0.5 text-[11px] font-medium text-gray-500">
-                      Program Oversight
+                      Manage athletes, scans, and compliance
                     </div>
                   </button>
                 </div>
               </div>
 
-              {/* ✅ Only show token input for Organization */}
-              {normalizeRole(role) === "Organization" && (
+              {/* Token input optional for both roles */}
+              <div className="space-y-1">
                 <input
                   type="text"
                   value={orgToken}
                   onChange={(e) => setOrgToken(e.target.value)}
-                  placeholder="Team / Organization Token (optional)"
+                  placeholder="Organization Token (optional)"
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
                 />
-              )}
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  {normalizeRole(role) === "Athlete"
+                    ? "If your trainer sent you a token/link, paste the token here to connect to your organization."
+                    : "Optional. Paste an org token if you were given one."}
+                </p>
+              </div>
 
               {error && <p className="text-xs text-red-500">{error}</p>}
 

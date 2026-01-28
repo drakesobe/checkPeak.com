@@ -192,6 +192,59 @@ export function useProvideAuth() {
     };
   };
 
+  /**
+   * FINISH SETUP (UPSERT)
+   * - Used by FinishSetupModal after OCR "unlock"
+   * - If email already exists: UPDATE password/name (+ optional org token link)
+   * - If email doesn't exist: CREATE
+   * - Then logs in (server sets HttpOnly cookie)
+   *
+   * Expected server route: POST /api/finish-setup
+   * Body: { name, email, password, role: "athlete"|"organization", organizationToken?: string|null }
+   */
+  const finishSetup = async ({
+    name,
+    email,
+    password,
+    role = "athlete",
+    organizationToken = null,
+  }) => {
+    const emailNorm = String(email || "").trim().toLowerCase();
+    const roleNorm =
+      String(role || "").trim().toLowerCase() === "organization"
+        ? "organization"
+        : "athlete";
+
+    const res = await apiFetch("/api/finish-setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: String(name || "").trim(),
+        email: emailNorm,
+        password: String(password || ""), // plain; server hashes
+        role: roleNorm,
+        organizationToken: organizationToken
+          ? String(organizationToken).trim()
+          : null,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Finish setup failed");
+
+    // Login using the new password they just set
+    const loggedInUser = await login(emailNorm, password, roleNorm);
+
+    return {
+      ...data,
+      user: loggedInUser,
+      role: roleNorm === "organization" ? "Organization" : "Athlete",
+      message: `Account updated and logged in as ${
+        loggedInUser?.Name || loggedInUser?.name || "User"
+      }`,
+    };
+  };
+
   return {
     user,
     authReady,
@@ -199,6 +252,7 @@ export function useProvideAuth() {
     logout,
     signupAthlete,
     signupOrganization,
+    finishSetup, // ✅ NEW
     setUser, // optional escape hatch
   };
 }

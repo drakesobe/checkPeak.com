@@ -231,7 +231,7 @@ export default function FinishSetupModal({
                   >
                     Organization
                     <div className="mt-0.5 text-[11px] font-medium text-gray-500">
-                      Manage athletes, scans, and compliance
+                      Manage your Program
                     </div>
                   </button>
                 </div>

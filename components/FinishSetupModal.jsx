@@ -14,7 +14,7 @@ export default function FinishSetupModal({
   onClose,
   defaultEmail = "",
   defaultRole = "Athlete",
-  // ✅ this is now the Org Token (optional) coming from cp_unlocked_org_token
+  // ✅ this is the Organization TOKEN (optional)
   defaultOrg = "",
 }) {
   const { signupAthlete } = useAuthContext();
@@ -24,9 +24,7 @@ export default function FinishSetupModal({
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
 
-  // ✅ Only two roles supported
   const [role, setRole] = useState(normalizeRole(defaultRole));
-  // ✅ Token (optional)
   const [orgToken, setOrgToken] = useState(defaultOrg || "");
 
   const [loading, setLoading] = useState(false);
@@ -43,7 +41,7 @@ export default function FinishSetupModal({
     setError("");
     setPassword("");
     setAccountExists(false);
-    // leave name as-is so they don’t lose typing if they reopen quickly
+    // intentionally keep name if reopened quickly
   }, [isOpen, defaultEmail, defaultRole, defaultOrg]);
 
   const emailLocked = Boolean(defaultEmail);
@@ -57,7 +55,6 @@ export default function FinishSetupModal({
   }, [name, email, password]);
 
   const openLoginModal = () => {
-    // 🔥 Global event your NavBar can listen for
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("cp:open-auth-modal", {
@@ -85,43 +82,30 @@ export default function FinishSetupModal({
 
     setLoading(true);
     try {
-      /**
-       * ✅ IMPORTANT:
-       * Your server-side signup endpoint should route to:
-       * - Athlete table when role === "Athlete"
-       * - Organizations table when role === "Organization"
-       *
-       * and (optionally) resolve cleanOrgToken against the Organizations Airtable {Token}.
-       */
       await signupAthlete({
         token: "",
         name: cleanName,
         email: cleanEmail,
         password: cleanPw,
-        role: cleanRole,              // "Athlete" | "Organization"
-        organizationToken: cleanOrgToken || null, // ✅ optional
+        role: cleanRole, // "Athlete" | "Organization"
+        organizationToken: cleanOrgToken || null,
       });
 
-      // cleanup soft-unlock flags (now a real user)
+      // cleanup soft-unlock flags
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("cp_unlocked");
         window.localStorage.removeItem("cp_unlocked_email");
         window.localStorage.removeItem("cp_unlocked_role");
-
-        // ✅ updated keys
         window.localStorage.removeItem("cp_unlocked_org_token");
         window.localStorage.removeItem("cp_unlocked_org_id");
         window.localStorage.removeItem("cp_unlocked_org_name");
-
         window.localStorage.setItem("cp_finish_setup_completed", "1");
       }
 
       onClose?.({ completed: true });
     } catch (err) {
       const msg = String(err?.message || "Account setup failed.");
-      const lower = msg.toLowerCase();
-
-      if (lower.includes("already exists")) {
+      if (msg.toLowerCase().includes("already exists")) {
         setAccountExists(true);
         setError("You already have an account. Log in to continue.");
       } else {
@@ -161,10 +145,10 @@ export default function FinishSetupModal({
 
             <p className="text-xs font-semibold text-[#46769B]">Finish setup</p>
             <h2 className="text-xl font-bold text-gray-900 mt-1">
-              Create your password to save scans
+              Create your password
             </h2>
             <p className="text-sm text-gray-600 mt-2">
-              This unlocks scan history, alerts, and your dashboard.
+              Save scans, unlock history, and access your dashboard.
             </p>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-3">
@@ -210,32 +194,53 @@ export default function FinishSetupModal({
                 </button>
               </div>
 
-              {/* ✅ Minimal friction: only two roles */}
-              <div className="flex items-center justify-between rounded-xl border border-gray-300 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Account type</p>
-                  <p className="text-xs text-gray-500">Most users choose Athlete</p>
-                </div>
+              {/* ✅ Athlete / Organization segmented selector */}
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRole("Athlete")}
+                    aria-pressed={normalizeRole(role) === "Athlete"}
+                    className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                      normalizeRole(role) === "Athlete"
+                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#46769B]/30"
+                        : "text-gray-600 hover:bg-white/70"
+                    }`}
+                  >
+                    Athlete
+                    <div className="mt-0.5 text-[11px] font-medium text-gray-500">
+                      Personal scans
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setRole((r) => (normalizeRole(r) === "Organization" ? "Athlete" : "Organization"))
-                  }
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50"
-                >
-                  {normalizeRole(role)}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setRole("Organization")}
+                    aria-pressed={normalizeRole(role) === "Organization"}
+                    className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                      normalizeRole(role) === "Organization"
+                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#46769B]/30"
+                        : "text-gray-600 hover:bg-white/70"
+                    }`}
+                  >
+                    Organization
+                    <div className="mt-0.5 text-[11px] font-medium text-gray-500">
+                      Team access
+                    </div>
+                  </button>
+                </div>
               </div>
 
-              {/* ✅ Optional token field (matches OCR gate wording) */}
-              <input
-                type="text"
-                value={orgToken}
-                onChange={(e) => setOrgToken(e.target.value)}
-                placeholder="Team / Organization Token (optional)"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
-              />
+              {/* ✅ Only show token input for Organization */}
+              {normalizeRole(role) === "Organization" && (
+                <input
+                  type="text"
+                  value={orgToken}
+                  onChange={(e) => setOrgToken(e.target.value)}
+                  placeholder="Team / Organization Token (optional)"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                />
+              )}
 
               {error && <p className="text-xs text-red-500">{error}</p>}
 

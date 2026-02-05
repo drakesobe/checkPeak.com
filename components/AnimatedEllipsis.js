@@ -1,21 +1,37 @@
-// components/AnimatedEllipsis.js
-import { useState, useEffect } from "react";
+"use client";
 
-export default function AnimatedEllipsis({ text = "Analyzing ingredients" }) {
+import { useEffect, useRef, useState } from "react";
+
+export default function AnimatedEllipsis({
+  text = "Analyzing ingredients",
+  maxDots = 3,
+  intervalMs = 500,
+}) {
   const [dots, setDots] = useState("");
+  const intervalRef = useRef(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => (prev.length < 3 ? prev + "." : ""));
-    }, 500); // change every 500ms
+    // Clear any existing interval (safety for React strict mode)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
-    return () => clearInterval(interval);
-  }, []);
+    intervalRef.current = setInterval(() => {
+      setDots((prev) => (prev.length < maxDots ? prev + "." : ""));
+    }, intervalMs);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [maxDots, intervalMs]);
 
   return (
-    <span>
-      {text}
-      {dots}
+    <span className="inline-flex items-center whitespace-nowrap">
+      <span>{text}</span>
+      <span className="w-[1.25em] text-left">{dots}</span>
     </span>
   );
 }

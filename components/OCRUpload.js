@@ -1,7 +1,6 @@
-// components/OCRUpload.jsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import ProgressBar from "./ProgressBar";
 import Cropper from "react-easy-crop";
 
@@ -263,6 +262,11 @@ export default function OCRUpload({ multiple = false, onScan }) {
       reader.readAsDataURL(file);
     });
 
+  /**
+   * Preprocess image for OCR:
+   * - grayscale + contrast stretch
+   * - (removed aggressive auto-dark-region crop; user crop is better)
+   */
   const preprocessImage = async (img, canvas) => {
     const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth;
@@ -288,41 +292,60 @@ export default function OCRUpload({ multiple = false, onScan }) {
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Auto-crop darker region (text area) + upscale slightly
-    let top = canvas.height,
-      bottom = 0,
-      left = canvas.width,
-      right = 0;
-    for (let y = 0; y < canvas.height; y += 2) {
-      for (let x = 0; x < canvas.width; x += 2) {
-        const idx = (y * canvas.width + x) * 4;
-        if (data[idx] < 100) {
-          if (x < left) left = x;
-          if (x > right) right = x;
-          if (y < top) top = y;
-          if (y > bottom) bottom = y;
-        }
-      }
-    }
-    if (right - left < 20 || bottom - top < 20) return canvas;
+    return canvas;
+  };
 
-    const scaleFactor = 3;
-    const croppedCanvas = document.createElement("canvas");
-    croppedCanvas.width = (right - left) * scaleFactor;
-    croppedCanvas.height = (bottom - top) * scaleFactor;
-    const cctx = croppedCanvas.getContext("2d");
-    cctx.drawImage(
-      canvas,
-      left,
-      top,
-      right - left,
-      bottom - top,
-      0,
-      0,
-      croppedCanvas.width,
-      croppedCanvas.height
-    );
-    return croppedCanvas;
+  /**
+   * ✅ Single-worker OCR init (compatible with your tesseract.js build)
+   * - Avoids DataCloneError: no functions passed into createWorker()
+   * - Avoids loadLanguage crash: only call methods that exist
+   */
+  const initWorker = async () => {
+    const mod = await import("tesseract.js");
+
+    // Support both export styles
+    const createWorker = mod.createWorker || mod.default?.createWorker;
+    if (!createWorker) {
+      throw new Error("Tesseract createWorker not found. Check your tesseract.js version.");
+    }
+
+    const worker = await createWorker();
+
+    if (typeof worker.load === "function") {
+      await worker.load();
+    }
+
+    if (typeof worker.reinitialize === "function") {
+      await worker.reinitialize("eng");
+    } else if (typeof worker.initialize === "function") {
+      await worker.initialize("eng");
+    }
+
+    if (typeof worker.setParameters === "function") {
+      await worker.setParameters({
+        preserve_interword_spaces: "1",
+        tessedit_pageseg_mode: "6",
+      });
+    }
+
+    return worker;
+  };
+
+  const runRecognize = async (worker, imageLike, psm) => {
+    if (typeof worker.setParameters === "function" && psm) {
+      await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
+    }
+    // ✅ Do NOT pass logger functions (can cause DataCloneError in some builds)
+    const result = await worker.recognize(imageLike);
+    return result?.data?.text || "";
+  };
+
+  const textLooksWeak = (t) => {
+    const s = String(t || "").trim();
+    if (s.length < 30) return true;
+    const letters = (s.match(/[A-Za-z]/g) || []).length;
+    const total = s.length || 1;
+    return letters / total < 0.15;
   };
 
   const handleScan = async () => {
@@ -330,13 +353,17 @@ export default function OCRUpload({ multiple = false, onScan }) {
       setError("Please add a label photo first.");
       return;
     }
+
     setLoading(true);
     setError("");
     setOcrTexts(new Array(files.length).fill(""));
     setCurrentScanIndex(0);
 
+    let worker = null;
+
     try {
-      const Tesseract = (await import("tesseract.js")).default;
+      worker = await initWorker();
+
       const resizedFiles = await Promise.all(
         files.map((file) =>
           resizeImage(file).catch((err) => {
@@ -350,14 +377,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       for (let i = 0; i < resizedFiles.length; i++) {
         setCurrentScanIndex(i);
+
         const file = resizedFiles[i];
         const img = new Image();
         const reader = new FileReader();
 
         const imgLoaded = new Promise((res, rej) => {
           img.onload = res;
-          img.onerror = (err) =>
-            rej(err || new Error("Failed to load image."));
+          img.onerror = (err) => rej(err || new Error("Failed to load image."));
         });
 
         reader.onload = (e) => {
@@ -374,15 +401,20 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
         const preprocessed = await preprocessImage(img, canvas);
 
-        const result = await Tesseract.recognize(preprocessed, "eng", {
-          logger: (m) => console.log("OCR progress:", m),
-          tessedit_char_whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
-          oem: 1,
-          psm: 6,
-        });
+        // Try multiple PSMs for better label text extraction
+        let text = await runRecognize(worker, preprocessed, 6);
 
-        const text = result.data.text || "";
+        if (textLooksWeak(text)) {
+          const t2 = await runRecognize(worker, preprocessed, 4);
+          if (!textLooksWeak(t2)) text = t2;
+          else {
+            const t3 = await runRecognize(worker, preprocessed, 11);
+            if (String(t3 || "").trim().length > String(text || "").trim().length) {
+              text = t3;
+            }
+          }
+        }
+
         setOcrTexts((prev) => {
           const updated = [...prev];
           updated[i] = text;
@@ -404,6 +436,14 @@ export default function OCRUpload({ multiple = false, onScan }) {
           "OCR failed on this photo. Try zooming in on the ingredients panel or taking a screenshot and uploading that."
       );
     } finally {
+      try {
+        if (worker && typeof worker.terminate === "function") {
+          await worker.terminate();
+        }
+      } catch (e) {
+        console.warn("Worker terminate failed (non-fatal):", e);
+      }
+
       setLoading(false);
       setCurrentScanIndex(null);
     }
@@ -464,12 +504,18 @@ export default function OCRUpload({ multiple = false, onScan }) {
   };
 
   // Derived aspect value from mode
-  let aspectValue;
-  if (aspectMode === "label") {
-    aspectValue = 3 / 4; // tall-ish for ingredient panels
-  } else {
-    aspectValue = undefined; // free-form
-  }
+  const aspectValue = useMemo(() => {
+    if (aspectMode === "label") return 3 / 4; // tall-ish for ingredient panels
+    return undefined;
+  }, [aspectMode]);
+
+  // Progress: 0% at start; 100% after last label completes
+  const progressPercent = useMemo(() => {
+    if (!loading) return 0;
+    const total = Math.max(1, files.length);
+    const completed = Math.max(0, (currentScanIndex ?? 0)); // current index in progress
+    return Math.round((completed / total) * 100);
+  }, [loading, files.length, currentScanIndex]);
 
   return (
     <div className="mt-6 font-sans space-y-5">
@@ -503,9 +549,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
       >
         <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
           {files.length
-            ? `${files.length} label photo${
-                files.length > 1 ? "s" : ""
-              } selected`
+            ? `${files.length} label photo${files.length > 1 ? "s" : ""} selected`
             : "Tap to add a nutrition label photo"}
         </span>
         <span className="mt-1 text-[11px] sm:text-xs text-gray-500 text-center max-w-md">
@@ -541,9 +585,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Add Label Photo
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Add Label Photo</h2>
               <button
                 onClick={() => setShowChoiceModal(false)}
                 className="text-gray-400 hover:text-gray-700 text-lg leading-none"
@@ -591,9 +633,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
               <div className="flex flex-col">
-                <h2 className="text-sm font-semibold text-white">
-                  Crop Label Area
-                </h2>
+                <h2 className="text-sm font-semibold text-white">Crop Label Area</h2>
                 <p className="text-[11px] text-neutral-400">
                   Drag the box over just the ingredients panel. Use the zoom slider if
                   needed.
@@ -652,9 +692,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
               {/* Zoom slider */}
               <div className="flex items-center gap-3">
-                <span className="text-[11px] text-neutral-300 w-12">
-                  Zoom
-                </span>
+                <span className="text-[11px] text-neutral-300 w-12">Zoom</span>
                 <input
                   type="range"
                   min={1}
@@ -752,11 +790,7 @@ export default function OCRUpload({ multiple = false, onScan }) {
 
       {loading && (
         <div className="max-w-3xl mx-auto space-y-2">
-          <ProgressBar
-            progress={Math.round(
-              (ocrTexts.filter((r) => r).length / (files.length || 1)) * 100
-            )}
-          />
+          <ProgressBar progress={progressPercent} />
           {currentScanIndex != null && (
             <p className="text-[11px] text-gray-500 text-right">
               Scanning label {currentScanIndex + 1} of {files.length}

@@ -1,4 +1,3 @@
-// components/NavBar.jsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -27,16 +26,9 @@ export default function NavBar() {
 
   const loggedIn = !!user;
 
-  /**
-   * ✅ Updated Role Normalization
-   * cookie/user.role can now be:
-   * - "Organization" (primary org account)
-   * - "Trainer" (OrgMembers)
-   * - "Admin" (OrgMembers)
-   * - "Athlete"
-   *
-   * Normalize to: organization | trainer | admin | athlete
-   */
+  /* =========================
+     ROLE NORMALIZATION
+  ========================= */
   const role = useMemo(() => {
     const raw = (user?.role || user?.Role || "").toString().trim().toLowerCase();
     if (!raw) return "";
@@ -58,7 +50,9 @@ export default function NavBar() {
   const isOrgSide = role === "organization" || role === "trainer" || role === "admin";
   const isAdmin = role === "admin";
 
-  // Tabs shown on left side (desktop)
+  /* =========================
+     NAV TABS
+  ========================= */
   const leftTabs = useMemo(
     () => [
       { name: "Scan", href: "/nutrition-label-scanner" },
@@ -68,10 +62,14 @@ export default function NavBar() {
     []
   );
 
-  // Mobile main tabs include SmartStack
-  const mainTabs = useMemo(() => [...leftTabs, { name: "SmartStack", href: "/smartstack" }], [leftTabs]);
+  const mainTabs = useMemo(
+    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
+    [leftTabs]
+  );
 
-  // ✅ Global event listener to open auth modal from anywhere
+  /* =========================
+     GLOBAL AUTH MODAL EVENT
+  ========================= */
   useEffect(() => {
     const handler = (e) => {
       const detail = e?.detail || {};
@@ -88,23 +86,18 @@ export default function NavBar() {
       setLoginModalOpen(true);
     };
 
-    if (typeof window !== "undefined") {
-      window.addEventListener("cp:open-auth-modal", handler);
-    }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("cp:open-auth-modal", handler);
-      }
-    };
+    window.addEventListener("cp:open-auth-modal", handler);
+    return () => window.removeEventListener("cp:open-auth-modal", handler);
   }, []);
 
-  // Close dropdowns/menus when route changes
+  /* =========================
+     CLOSE MENUS ON NAV
+  ========================= */
   useEffect(() => {
     setMenuOpen(false);
     setProfileOpen(false);
   }, [pathname]);
 
-  // ESC to close mobile menu + profile dropdown
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -116,15 +109,12 @@ export default function NavBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Click outside closes dropdown (desktop)
   useEffect(() => {
     if (!profileOpen) return;
-
     const onDown = (e) => {
       if (!navRef.current) return;
       if (!navRef.current.contains(e.target)) setProfileOpen(false);
     };
-
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [profileOpen]);
@@ -153,8 +143,6 @@ export default function NavBar() {
     } finally {
       setProfileOpen(false);
       setMenuOpen(false);
-
-      // ✅ Send user to /login after logout (avoids staying on protected pages)
       router.push("/login");
       router.refresh();
     }
@@ -171,8 +159,7 @@ export default function NavBar() {
         aria-current={active ? "page" : undefined}
         className={[
           "relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition",
-          active ? "text-[#46769B]" : "text-gray-700 hover:text-[#46769B]",
-          active ? "bg-blue-50" : "hover:bg-gray-50",
+          active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50",
         ].join(" ")}
       >
         {isSmartStack ? (
@@ -185,29 +172,16 @@ export default function NavBar() {
               draggable={false}
             />
           ) : (
-            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+            <svg viewBox="0 0 24 24" className="h-4 w-4">
               <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
             </svg>
           )
         ) : null}
-
         <span>{tab.name}</span>
-
-        {active && (
-          <motion.span
-            layoutId="navActivePill"
-            className="absolute inset-0 -z-10 rounded-2xl bg-blue-50"
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
-          />
-        )}
       </Link>
     );
   };
 
-  /**
-   * ✅ RoleLinks updated
-   * - Adds Workouts Calendar link: /org/workouts-calendar
-   */
   const RoleLinks = () => {
     const L = ({ href, children }) => {
       const active = isActive(href);
@@ -229,20 +203,14 @@ export default function NavBar() {
         <>
           <L href="/org/dashboard">Dashboard</L>
           <L href="/org/review-queue">Review Queue</L>
-
-          {/* ✅ NEW: Workouts Calendar */}
           <L href="/org/workouts-calendar">Workouts Calendar</L>
-
           <L href="/org/prescriptions">Prescriptions</L>
-
-          {/* Admin/Organization only */}
           {(isAdmin || role === "organization") && (
             <>
               <L href="/org/athletes">Athletes</L>
               <L href="/org/trainers">Trainers</L>
             </>
           )}
-
           <L href="/account">Account</L>
         </>
       );
@@ -267,7 +235,7 @@ export default function NavBar() {
     if (role === "admin") return "Admin";
     if (role === "trainer") return "Trainer";
     if (role === "athlete") return "Athlete";
-    return role ? role[0].toUpperCase() + role.slice(1) : "Member";
+    return "Member";
   }, [role]);
 
   return (
@@ -275,21 +243,23 @@ export default function NavBar() {
       <nav
         ref={navRef}
         className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
-        aria-label="Main navigation"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          {/* Top bar */}
+          {/* TOP BAR */}
           <div className="h-16 md:h-20 flex items-center justify-between gap-3">
-            {/* Left (desktop tabs) */}
+            {/* Desktop left tabs */}
             <div className="hidden md:flex items-center gap-2">
               {leftTabs.map((tab) => (
                 <NavItem key={tab.href} tab={tab} />
               ))}
             </div>
 
-            {/* Center Logo */}
+            {/* ✅ MOBILE LEFT SPACER (fixes logo centering) */}
+            <div className="md:hidden h-10 w-10" aria-hidden />
+
+            {/* CENTER LOGO */}
             <div className="flex-1 flex justify-center">
-              <Link href="/" aria-label="PEAK Home" className="inline-flex">
+              <Link href="/" aria-label="PEAK Home" className="inline-flex items-center">
                 <div className="block md:hidden">
                   <Logo size="medium" />
                 </div>
@@ -299,7 +269,7 @@ export default function NavBar() {
               </Link>
             </div>
 
-            {/* Right (desktop) */}
+            {/* Desktop right */}
             <div className="hidden md:flex items-center gap-2">
               <NavItem tab={{ name: "SmartStack", href: "/smartstack" }} />
 
@@ -308,9 +278,7 @@ export default function NavBar() {
                   <button
                     type="button"
                     onClick={handleProfileClick}
-                    className="inline-flex items-center justify-center rounded-2xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
-                    aria-haspopup="menu"
-                    aria-expanded={profileOpen}
+                    className="rounded-2xl border border-gray-200 text-gray-900 px-4 py-2 text-sm font-medium hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
                   >
                     {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
                   </button>
@@ -321,23 +289,24 @@ export default function NavBar() {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
-                        role="menu"
+                        className="absolute right-0 mt-2 w-64 rounded-xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden"
                       >
-                        <div className="px-4 py-3 border-b border-gray-100">
-                          <p className="text-xs font-semibold text-gray-900 truncate">
-                            {user?.Name || user?.name || "Profile"}
+                        <div className="px-4 py-3 border-b">
+                          <p className="text-xs font-semibold truncate">
+                            {user?.Name || user?.name}
                           </p>
-                          <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {user?.Email || user?.email}
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">
+                            {roleLabel}
+                          </p>
                         </div>
-
                         <RoleLinks />
-
                         <button
                           onClick={logoutAndClose}
-                          className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
                           type="button"
+                          className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
                         >
                           Logout
                         </button>
@@ -348,116 +317,73 @@ export default function NavBar() {
               )}
             </div>
 
-            {/* Mobile controls */}
-            <div className="md:hidden flex items-center gap-2">
+            {/* Mobile hamburger */}
+            <div className="md:hidden">
               <button
-                type="button"
                 onClick={() => setMenuOpen((v) => !v)}
-                aria-label="Toggle menu"
-                aria-expanded={menuOpen}
-                className="h-10 w-10 rounded-xl border border-gray-200 grid place-items-center bg-white hover:bg-gray-50 transition"
+                className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900grid place-items-center"
               >
-                <div className="flex flex-col justify-center items-center">
-                  <span
-                    className={`block w-5 h-0.5 bg-gray-700 mb-1 rounded transition ${
-                      menuOpen ? "rotate-45 translate-y-1.5" : ""
-                    }`}
-                  />
-                  <span
-                    className={`block w-5 h-0.5 bg-gray-700 mb-1 rounded transition ${
-                      menuOpen ? "opacity-0" : "opacity-100"
-                    }`}
-                  />
-                  <span
-                    className={`block w-5 h-0.5 bg-gray-700 rounded transition ${
-                      menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-                    }`}
-                  />
+                <div className="flex flex-col">
+                  <span className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${menuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
+                  <span className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${menuOpen ? "opacity-0" : ""}`} />
+                  <span className={`w-5 h-0.5 bg-gray-700 transition ${menuOpen ? "-rotate-45 -translate-y-1.5" : ""}`} />
                 </div>
               </button>
             </div>
           </div>
         </div>
 
-        {/* Mobile menu panel */}
+        {/* MOBILE MENU */}
         <AnimatePresence>
           {menuOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="md:hidden overflow-hidden bg-white border-t border-gray-200"
+              className="md:hidden bg-white border-t border-gray-200 text-gray-900"
             >
-              <div className="px-4 sm:px-6 py-4 space-y-2">
-                {/* Nav links */}
-                <div className="grid gap-1">
-                  {mainTabs.map((tab) => (
-                    <Link
-                      key={tab.href}
-                      href={tab.href}
-                      aria-current={isActive(tab.href) ? "page" : undefined}
-                      onClick={() => setMenuOpen(false)}
-                      className={[
-                        "rounded-xl px-4 py-3 text-sm font-medium transition",
-                        isActive(tab.href)
-                          ? "bg-blue-50 text-[#46769B]"
-                          : "text-gray-700 hover:bg-gray-50 hover:text-[#46769B]",
-                      ].join(" ")}
-                    >
-                      {tab.name}
-                    </Link>
-                  ))}
-                </div>
+              <div className="px-4 py-4 space-y-2">
+                {mainTabs.map((tab) => (
+                  <Link
+                    key={tab.href}
+                    href={tab.href}
+                    onClick={() => setMenuOpen(false)}
+                    className={[
+                      "block rounded-xl px-4 py-3 text-sm font-medium",
+                      isActive(tab.href)
+                        ? "bg-blue-50 text-[#46769B]"
+                        : "hover:bg-gray-50",
+                    ].join(" ")}
+                  >
+                    {tab.name}
+                  </Link>
+                ))}
 
-                <div className="border-t border-gray-100 pt-3" />
+                <div className="border-t pt-3" />
 
-                {/* Auth area */}
-                {isMounted && !loggedIn && (
+                {!loggedIn ? (
                   <div className="grid gap-2">
                     <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        openAuthModal("login");
-                      }}
-                      className="w-full rounded-xl bg-[#46769B] text-white py-3 text-sm font-semibold hover:opacity-95 transition"
+                      onClick={() => openAuthModal("login")}
+                      className="rounded-xl bg-[#46769B] text-white py-3 font-semibold"
                     >
                       Log in
                     </button>
                     <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        openAuthModal("signup");
-                      }}
-                      className="w-full rounded-xl border border-gray-200 bg-white text-gray-800 py-3 text-sm font-semibold hover:bg-gray-50 transition"
+                      onClick={() => openAuthModal("signup")}
+                      className="rounded-xl border py-3 font-semibold"
                     >
                       Sign up
                     </button>
                   </div>
-                )}
-
-                {isMounted && loggedIn && (
-                  <div className="space-y-2">
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                      <p className="text-sm font-semibold text-gray-900 truncate">
-                        {user?.Name || user?.name || "Profile"}
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
-                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 overflow-hidden">
-                      <RoleLinks />
-                      <button
-                        onClick={logoutAndClose}
-                        className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                        type="button"
-                      >
-                        Logout
-                      </button>
-                    </div>
-                  </div>
+                ) : (
+                  <button
+                    onClick={logoutAndClose}
+                    type="button"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
+                  >
+                    Logout
+                  </button>
                 )}
               </div>
             </motion.div>
@@ -465,7 +391,6 @@ export default function NavBar() {
         </AnimatePresence>
       </nav>
 
-      {/* LOGIN/SIGNUP MODAL */}
       <NavBarLoginModal
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}

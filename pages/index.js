@@ -237,7 +237,7 @@ export default function HomePage() {
                   className="w-full flex items-center justify-center gap-3 px-8 py-3.5 bg-[#46769B] text-white font-extrabold rounded-2xl shadow-xl hover:shadow-2xl hover:brightness-110 transition-all border border-white/20"
                   aria-label="Run a free supplement label scan"
                 >
-                  Run a Free Scan
+                  Scan a Label
                   <span className="text-white font-extrabold">→</span>
                 </motion.button>
               </Link>

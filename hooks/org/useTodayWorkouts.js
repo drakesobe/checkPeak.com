@@ -9,7 +9,7 @@ function normKey(s) {
 }
 
 export function useTodayWorkouts({ isOrgSide }) {
-  const [sport, setSport] = useState("Basketball");
+  const [sport, setSport] = useState("basketball");
   const [availableSports, setAvailableSports] = useState([]);
 
   const [loading, setLoading] = useState(false);

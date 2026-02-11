@@ -11,7 +11,20 @@ import { useAuthContext } from "@/hooks/useAuth";
 import OrgTrainersHeader from "@/components/org/trainers/OrgTrainersHeader";
 import InviteCard from "@/components/org/trainers/InviteCard";
 import TeamTableCard from "@/components/org/trainers/TeamTableCard";
+import TrainersTable from "@/components/org/trainers/TrainersTable";
 import RemoveMemberModal from "@/components/org/trainers/RemoveMemberModal";
+
+/* ----------------------------------------------------- */
+/* Helpers                                               */
+/* ----------------------------------------------------- */
+
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
 
 /* ----------------------------------------------------- */
 /* Page                                                  */
@@ -21,7 +34,7 @@ export default function TrainersPage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
-  // Normalize role for gating
+  // Normalize role for gating + UI
   const role = useMemo(() => {
     const r = String(user?.role || user?.Role || "").trim().toLowerCase();
     if (!r) return "";
@@ -49,19 +62,13 @@ export default function TrainersPage() {
   }, [user, role]);
 
   const orgEmail = useMemo(() => String(user?.Email || user?.email || ""), [user]);
+  const orgToken = useMemo(() => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(), [user]);
+  const orgId = useMemo(() => String(user?.orgId || user?.OrgId || "").trim(), [user]);
 
-  const orgToken = useMemo(() => {
-    return String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
-  }, [user]);
-
-  const orgId = useMemo(() => {
-    return String(user?.orgId || user?.OrgId || "").trim();
-  }, [user]);
-
+  // Optional: show who sent the invite (defaults nicely)
   const inviterName = useMemo(() => {
-    // best guess for who is inviting
-    return String(user?.Name || user?.name || user?.Email || user?.email || "Team Admin");
-  }, [user]);
+    return String(user?.Name || user?.name || orgName || "Organization").trim();
+  }, [user, orgName]);
 
   /* ----------------------------- */
   /* Guards                        */
@@ -79,7 +86,7 @@ export default function TrainersPage() {
   }, [user, isOrgSide, router]);
 
   /* ----------------------------- */
-  /* Data + UI state               */
+  /* Page-owned UI state           */
   /* ----------------------------- */
 
   const [loading, setLoading] = useState(true);
@@ -87,17 +94,17 @@ export default function TrainersPage() {
 
   const [trainers, setTrainers] = useState([]);
 
-  // Invite OK/ERR (owned by page so header can show)
-  const [inviteOk, setInviteOk] = useState("");
+  // Header banner states
   const [inviteErr, setInviteErr] = useState("");
+  const [inviteOk, setInviteOk] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const [saveOk, setSaveOk] = useState("");
 
-  // Remove modal state (page-owned so table can open it)
+  // Remove modal state
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
 
   const openRemove = useCallback((member) => {
-    setInviteOk("");
-    setInviteErr("");
     setRemoveTarget(member || null);
     setRemoveOpen(true);
   }, []);
@@ -107,13 +114,9 @@ export default function TrainersPage() {
     setRemoveTarget(null);
   }, []);
 
-  async function safeJson(res) {
-    try {
-      return await res.json();
-    } catch {
-      return {};
-    }
-  }
+  /* ----------------------------- */
+  /* Data fetch                    */
+  /* ----------------------------- */
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -130,7 +133,6 @@ export default function TrainersPage() {
 
       const raw = Array.isArray(data?.trainers) ? data.trainers : [];
 
-      // Normalize minimally so components get consistent props
       const normalized = raw.map((t) => ({
         ...t,
         id: t?.id,
@@ -142,7 +144,7 @@ export default function TrainersPage() {
             ? t.Active
             : typeof t?.active === "boolean"
             ? t.active
-            : true,
+            : false,
         createdAt: t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "",
       }));
 
@@ -161,7 +163,7 @@ export default function TrainersPage() {
   }, [user, isOrgSide, refresh]);
 
   /* ----------------------------- */
-  /* Actions                        */
+  /* Actions                       */
   /* ----------------------------- */
 
   const onLogout = useCallback(async () => {
@@ -174,8 +176,8 @@ export default function TrainersPage() {
 
   const updateMember = useCallback(
     async ({ memberId, name, email, role: nextRole, active }) => {
-      setInviteOk("");
-      setInviteErr("");
+      setSaveErr("");
+      setSaveOk("");
 
       if (!canManageMembers) throw new Error("Only Organization/Admin can update members.");
 
@@ -189,6 +191,9 @@ export default function TrainersPage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to update member.");
 
+      setSaveOk("Saved.");
+      setTimeout(() => setSaveOk(""), 2500);
+
       await refresh();
       return data;
     },
@@ -197,8 +202,8 @@ export default function TrainersPage() {
 
   const deactivateMember = useCallback(
     async ({ memberId }) => {
-      setInviteOk("");
-      setInviteErr("");
+      setSaveErr("");
+      setSaveOk("");
 
       if (!canManageMembers) throw new Error("Only Organization/Admin can remove members.");
 
@@ -212,24 +217,29 @@ export default function TrainersPage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to remove member.");
 
+      setSaveOk("Member deactivated.");
+      setTimeout(() => setSaveOk(""), 2500);
+
       await refresh();
       return data;
     },
     [canManageMembers, refresh]
   );
 
+  /* ----------------------------- */
+  /* Counts                        */
+  /* ----------------------------- */
+
   const counts = useMemo(() => {
     const list = Array.isArray(trainers) ? trainers : [];
-    return {
-      total: list.length,
-      admins: list.filter((t) => String(t?.Role || "").toLowerCase() === "admin").length,
-      coaches: list.filter((t) => String(t?.Role || "").toLowerCase() === "trainer").length,
-      inactive: list.filter((t) => !t?.Active).length,
-    };
+    const admins = list.filter((t) => String(t?.Role || "").toLowerCase() === "admin").length;
+    const coaches = list.filter((t) => String(t?.Role || "").toLowerCase() === "trainer").length;
+    const inactive = list.filter((t) => !t?.Active).length;
+    return { total: list.length, admins, coaches, inactive };
   }, [trainers]);
 
   /* ----------------------------------------------------- */
-  /* Render                                                */
+  /* Render                                                 */
   /* ----------------------------------------------------- */
 
   return (
@@ -241,13 +251,17 @@ export default function TrainersPage() {
           orgToken={orgToken}
           orgId={orgId}
           role={role}
+          canManageMembers={canManageMembers}
+          counts={counts}
           loading={loading}
-          error={error || inviteErr}
-          ok={inviteOk}
+          error={error}
+          inviteErr={inviteErr}
+          saveErr={saveErr}
+          inviteOk={inviteOk}
+          saveOk={saveOk}
           onRefresh={refresh}
           onLogout={onLogout}
           onBack={() => router.push("/org/dashboard")}
-          counts={counts}
         />
 
         <div className="grid lg:grid-cols-12 gap-6">
@@ -263,18 +277,24 @@ export default function TrainersPage() {
             />
           </div>
 
-          {/* Right: Table (NO children, TeamTableCard owns table rendering) */}
+          {/* Right: Table */}
           <div className="lg:col-span-8">
             <TeamTableCard
               title="Team"
               subtitle="Admins and trainers who can access org tools."
               hint="Tip: inactive members stay listed and can be reactivated via Edit."
-              rows={trainers}
-              loading={loading}
-              canManage={canManageMembers}
-              onEditSave={updateMember}
-              onRemoveClick={openRemove}
-            />
+              rows={trainers} // in case TeamTableCard expects rows for header counts/search
+            >
+              <TrainersTable
+                trainers={trainers}
+                loading={loading}
+                canManage={canManageMembers}
+                onEditSave={updateMember}
+                onRemoveClick={openRemove}
+                setSaveErr={setSaveErr}
+                setSaveOk={setSaveOk}
+              />
+            </TeamTableCard>
           </div>
         </div>
 
@@ -285,12 +305,8 @@ export default function TrainersPage() {
           disabled={!canManageMembers}
           onConfirm={async () => {
             if (!removeTarget?.id) return;
-            try {
-              await deactivateMember({ memberId: removeTarget.id });
-              closeRemove();
-            } catch (e) {
-              setInviteErr(e?.message || "Failed to remove member.");
-            }
+            await deactivateMember({ memberId: removeTarget.id });
+            closeRemove();
           }}
         />
       </main>

@@ -1,4 +1,3 @@
-// components/org/trainers/TeamTableCard.js
 "use client";
 
 import { useMemo, useState } from "react";
@@ -13,7 +12,7 @@ export default function TeamTableCard({
   title = "Team",
   subtitle = "",
   hint = "",
-  rows = [],              // ✅ default so rows.length is safe
+  rows = [], // safe default
   loading = false,
   canManage = false,
   onEditSave,
@@ -69,7 +68,7 @@ export default function TeamTableCard({
 
       <div className="mt-5 overflow-x-auto">
         <TrainersTable
-          trainers={filtered}          // ✅ TrainersTable receives trainers
+          trainers={filtered}
           loading={loading}
           canManage={canManage}
           onEditSave={onEditSave}

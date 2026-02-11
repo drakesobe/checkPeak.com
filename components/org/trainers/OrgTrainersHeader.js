@@ -15,23 +15,63 @@ import {
 import Pill from "./ui/Pill";
 import Button from "./ui/Button";
 
+/**
+ * OrgTrainersHeader
+ *
+ * ✅ Designed to work with the modular Trainers page you posted.
+ *
+ * Accepts either:
+ * - canManageMembers (explicit boolean), OR
+ * - role (string: "organization" | "admin" | "trainer" | "athlete") and we derive canManageMembers
+ *
+ * Supports status banners via:
+ * - error
+ * - inviteErr, saveErr
+ * - inviteOk, saveOk
+ *
+ * If you don’t pass invite/save banners, it won’t render them.
+ */
+
 export default function OrgTrainersHeader({
-  orgName,
-  orgEmail,
-  orgToken,
-  orgId,
-  counts,
-  canManageMembers,
-  loading,
+  orgName = "Organization",
+  orgEmail = "",
+  orgToken = "",
+  orgId = "",
+  counts = { total: 0, admins: 0, coaches: 0, inactive: 0 },
+
+  // Either pass `role` or `canManageMembers`
+  role = "",
+  canManageMembers: canManageMembersProp,
+
+  loading = false,
+
   onBack,
   onRefresh,
   onLogout,
-  error,
-  inviteErr,
-  saveErr,
-  inviteOk,
-  saveOk,
+
+  // banners
+  error = "",
+  inviteErr = "",
+  saveErr = "",
+  inviteOk = "",
+  saveOk = "",
 }) {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+
+  const derivedCanManage =
+    normalizedRole === "organization" || normalizedRole === "admin";
+
+  const canManageMembers =
+    typeof canManageMembersProp === "boolean" ? canManageMembersProp : derivedCanManage;
+
+  const hasErr = Boolean(error || inviteErr || saveErr);
+  const hasOk = Boolean(inviteOk || saveOk);
+
+  const total = Number(counts?.total || 0);
+  const admins = Number(counts?.admins || 0);
+  const coaches = Number(counts?.coaches || 0);
+  const inactive = Number(counts?.inactive || 0);
+
   return (
     <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -42,7 +82,12 @@ export default function OrgTrainersHeader({
           </div>
 
           <p className="text-sm text-gray-600 mt-1">
-            {orgName} • Logged in as <span className="font-semibold">{orgEmail}</span>
+            {orgName}{" "}
+            {orgEmail ? (
+              <>
+                • Logged in as <span className="font-semibold">{orgEmail}</span>
+              </>
+            ) : null}
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -77,8 +122,7 @@ export default function OrgTrainersHeader({
 
             <Pill>
               <Users className="w-3.5 h-3.5 mr-1.5" />
-              Team: {counts.total} (Admins: {counts.admins}, Trainers: {counts.coaches}, Inactive:{" "}
-              {counts.inactive})
+              Team: {total} (Admins: {admins}, Trainers: {coaches}, Inactive: {inactive})
             </Pill>
 
             {!canManageMembers ? (
@@ -89,7 +133,7 @@ export default function OrgTrainersHeader({
             ) : null}
           </div>
 
-          {(error || saveErr || inviteErr) && (
+          {hasErr ? (
             <div className="mt-4 space-y-2">
               {error ? (
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
@@ -112,9 +156,9 @@ export default function OrgTrainersHeader({
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
 
-          {(saveOk || inviteOk) && (
+          {hasOk ? (
             <div className="mt-4 space-y-2">
               {saveOk ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
@@ -127,19 +171,36 @@ export default function OrgTrainersHeader({
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={onBack}>
+          <Button
+            variant="secondary"
+            onClick={onBack}
+            disabled={typeof onBack !== "function"}
+            title={typeof onBack !== "function" ? "Back handler not provided" : ""}
+          >
             <ArrowRight className="w-4 h-4 rotate-180" />
             Back
           </Button>
-          <Button variant="secondary" onClick={onRefresh} disabled={loading}>
+
+          <Button
+            variant="secondary"
+            onClick={onRefresh}
+            disabled={loading || typeof onRefresh !== "function"}
+            title={typeof onRefresh !== "function" ? "Refresh handler not provided" : ""}
+          >
             <RefreshCcw className="w-4 h-4" />
             Refresh
           </Button>
-          <Button variant="dark" onClick={onLogout}>
+
+          <Button
+            variant="dark"
+            onClick={onLogout}
+            disabled={typeof onLogout !== "function"}
+            title={typeof onLogout !== "function" ? "Logout handler not provided" : ""}
+          >
             <LogOut className="w-4 h-4" />
             Log out
           </Button>

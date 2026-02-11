@@ -206,7 +206,7 @@ export default function AccountPage() {
     const initial = {
       name: String(user?.Name || user?.name || ""),
       email: String(user?.Email || user?.email || ""),
-      phone: String(user?.Phone || user?.phone || ""),
+      phone: String(user?.["Phone Number"] || user?.phone || ""),
       created: String(createdGuess || ""),
       organization: String(orgName || ""),
       organizationId: String(orgId || ""),
@@ -267,7 +267,7 @@ export default function AccountPage() {
       const updates = {
         Name: formData.name,
         Email: formData.email,
-        Phone: formData.phone,
+        "Phone Number": formData.phone,
       };
 
       // Choose endpoint by role (match your current backend)
@@ -322,7 +322,7 @@ export default function AccountPage() {
           ...user,
           Name: formData.name,
           Email: formData.email,
-          Phone: formData.phone,
+          "Phone Number": formData.phone,
         };
         setUser?.(nextUser);
         if (typeof window !== "undefined") localStorage.setItem("user", JSON.stringify(nextUser));

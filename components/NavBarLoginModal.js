@@ -29,8 +29,11 @@ export default function NavBarLoginModal({
   // Tabs
   const [tab, setTab] = useState(defaultTab);
 
-  // Role selector: "athlete" | "organization"
+  // Role selector: "athlete" | "organization" | "staff"
   const [authRole, setAuthRole] = useState("athlete");
+
+  // Staff subtype: "trainer" | "admin"
+  const [staffRole, setStaffRole] = useState("trainer");
 
   // LOGIN state
   const [email, setEmail] = useState("");
@@ -87,6 +90,7 @@ export default function NavBarLoginModal({
       setForgotOk(false);
 
       setAuthRole("athlete");
+      setStaffRole("trainer");
 
       try {
         if (typeof window !== "undefined") {
@@ -107,7 +111,7 @@ export default function NavBarLoginModal({
     if (!isOpen) return;
     if (loginError) setLoginError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, password, authRole]);
+  }, [email, password, authRole, staffRole]);
 
   /**
    * ✅ iOS-safe body scroll lock
@@ -176,6 +180,7 @@ export default function NavBarLoginModal({
     setSignupLoading(false);
 
     setAuthRole("athlete");
+    setStaffRole("trainer");
 
     try {
       if (typeof window !== "undefined") {
@@ -191,31 +196,26 @@ export default function NavBarLoginModal({
 
   const rolePill = "px-3 py-2 rounded-xl border text-sm font-semibold transition";
 
-  const isOrgSideLogin = authRole === "organization";
+  const isOrgSideLogin = authRole === "organization" || authRole === "staff";
 
   const mapLoginError = (err) => {
     const rawMsg = String(err?.message || err?.error || "");
     const msg = rawMsg.toLowerCase();
 
-    const status =
-      err?.status ||
-      err?.statusCode ||
-      err?.response?.status ||
-      err?.data?.statusCode ||
-      err?.data?.status;
+    // best-effort mapping (your login throws Error(message), no status)
+    if (msg.includes("multiple organizations")) {
+      return "This email belongs to multiple organizations. Please contact your admin to confirm which org you should use.";
+    }
 
-    const isLookupUserFailure =
-      msg.includes("failed to lookup user") ||
-      msg.includes("lookupuser") ||
-      msg.includes("lookup user");
+    if (msg.includes("failed to lookup user") || msg.includes("lookupuser") || msg.includes("lookup user")) {
+      return "Login failed.";
+    }
 
-    if (status >= 500 || isLookupUserFailure) return "Login failed.";
-
-    if (status === 401 || msg.includes("invalid credentials")) {
+    if (msg.includes("invalid credentials")) {
       return "Invalid email or password.";
     }
 
-    if (status === 404 || msg.includes("user not found")) {
+    if (msg.includes("user not found")) {
       return "User not found.";
     }
 
@@ -259,7 +259,8 @@ export default function NavBarLoginModal({
     }
 
     try {
-      const userData = await login(cleanEmail, password, authRole);
+      const roleForLogin = authRole === "staff" ? staffRole : authRole;
+      const userData = await login(cleanEmail, password, roleForLogin);
 
       if (rememberMe && typeof window !== "undefined") {
         localStorage.setItem("user", JSON.stringify(userData));
@@ -300,7 +301,8 @@ export default function NavBarLoginModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: clean,
-          role: authRole,
+          // if staff, send the underlying staff role; otherwise pass authRole
+          role: authRole === "staff" ? staffRole : authRole,
           source: "navbar_login_modal",
         }),
       });
@@ -321,6 +323,10 @@ export default function NavBarLoginModal({
     setSignupLoading(true);
 
     try {
+      if (authRole === "staff") {
+        throw new Error("Staff accounts are invite-only. Please use Log In.");
+      }
+
       if (authRole === "athlete") {
         if (!athleteSignup.name || !athleteSignup.email || !athleteSignup.password) {
           throw new Error("Please provide name, email, and password.");
@@ -343,6 +349,7 @@ export default function NavBarLoginModal({
         return;
       }
 
+      // Organization signup
       if (!orgSignup.name || !orgSignup.email || !orgSignup.password) {
         throw new Error("Please provide organization name, email, and password.");
       }
@@ -447,6 +454,8 @@ export default function NavBarLoginModal({
                 onClick={() => {
                   setTab("signup");
                   setShowForgot(false);
+                  // Staff is login-only
+                  if (authRole === "staff") setAuthRole("athlete");
                 }}
                 className={`pb-2 border-b-2 ${
                   tab === "signup"
@@ -474,6 +483,7 @@ export default function NavBarLoginModal({
               >
                 Athlete
               </button>
+
               <button
                 type="button"
                 disabled={disableRoleSwitch}
@@ -486,11 +496,46 @@ export default function NavBarLoginModal({
               >
                 Organization
               </button>
+
+              <button
+                type="button"
+                disabled={disableRoleSwitch || tab === "signup"}
+                onClick={() => setAuthRole("staff")}
+                className={`${rolePill} ${
+                  authRole === "staff"
+                    ? "bg-[#46769B] text-white border-[#46769B]"
+                    : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                } ${(disableRoleSwitch || tab === "signup") ? "opacity-60 cursor-not-allowed" : ""}`}
+                title={tab === "signup" ? "Staff accounts are invite-only (login only)." : ""}
+              >
+                Staff
+              </button>
             </div>
 
-            {tab === "login" && isOrgSideLogin && !showForgot && (
+            {tab === "login" && authRole === "staff" && !showForgot && (
+              <div className="mb-3 space-y-2">
+                <label className="block text-xs font-semibold text-gray-700">
+                  Staff role
+                </label>
+                <select
+                  value={staffRole}
+                  onChange={(e) => setStaffRole(e.target.value)}
+                  className={inputBase}
+                  disabled={loginLoading}
+                >
+                  <option value="trainer">Trainer</option>
+                  <option value="admin">Head Trainer (Admin)</option>
+                </select>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
+                  Staff accounts are <b>invite-only</b>. Ask your Organization or Head Trainer to invite you.
+                </div>
+              </div>
+            )}
+
+            {tab === "login" && isOrgSideLogin && authRole !== "staff" && !showForgot && (
               <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
-                Organization login includes <b>Admins</b> and <b>Trainers</b>.
+                Organization login is for the <b>Organization Owner</b>.
               </div>
             )}
 

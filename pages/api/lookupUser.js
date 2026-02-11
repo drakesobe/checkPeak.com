@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 /* -------------------------------------------------------------------------- */
 
 function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 function normalizeEmail(email) {
@@ -20,7 +20,7 @@ function normalizeEmail(email) {
  */
 function normalizeRole(role) {
   const r = String(role || "").trim().toLowerCase();
-  if (r === "organization" || r === "org") return "organization";
+  if (r === "organization" || r === "org" || r === "owner") return "organization";
   if (r === "admin") return "admin";
   if (r === "trainer") return "trainer";
   return "athlete";
@@ -51,7 +51,7 @@ function toSessionUser(user) {
       ? "Admin"
       : roleLower === "trainer"
       ? "Trainer"
-      : roleLower.includes("org")
+      : roleLower === "organization" || roleLower === "org" || roleLower.includes("org")
       ? "Organization"
       : "Athlete";
 
@@ -64,8 +64,7 @@ function toSessionUser(user) {
 
   // ✅ Athlete convenience key (used by DailyWorkouts filtering)
   if (role === "Athlete") {
-    session.athleteId =
-      user?.athleteId || user?.AthleteId || user?.id || "";
+    session.athleteId = user?.athleteId || user?.AthleteId || user?.id || "";
   }
 
   // Org-side extras
@@ -106,6 +105,7 @@ function setUserCookie(res, sessionUser) {
 
 /**
  * ✅ Ensures the ORG OWNER (primary org account) also has an OrgMembers record
+ * Fix: owner gets Role="organization" (NOT "admin")
  */
 async function ensureOrgMemberForOrgOwner({
   orgBase,
@@ -119,7 +119,9 @@ async function ensureOrgMemberForOrgOwner({
 
   const existing = await orgBase(orgMembersTableId)
     .select({
-      filterByFormula: `AND(LOWER({Email})='${safeEmail}', FIND('${orgId}', ARRAYJOIN({Organization})))`,
+      filterByFormula: `AND(LOWER({Email})='${safeEmail}', FIND('${escapeAirtableString(
+        orgId
+      )}', ARRAYJOIN({Organization}&'')) > 0)`,
       maxRecords: 1,
     })
     .firstPage();
@@ -128,8 +130,8 @@ async function ensureOrgMemberForOrgOwner({
 
   const created = await orgBase(orgMembersTableId).create({
     Email: emailLower,
-    Name: String(orgName || "Org Admin").trim(),
-    Role: "admin",
+    Name: String(orgName || "Organization Owner").trim(),
+    Role: "organization", // ✅ IMPORTANT
     Active: true,
     Organization: [orgId],
   });
@@ -224,12 +226,8 @@ export default async function handler(req, res) {
         });
       }
 
-      const match = await bcrypt.compare(
-        String(password),
-        String(storedHash)
-      );
-      if (!match)
-        return res.status(401).json({ error: "Invalid credentials" });
+      const match = await bcrypt.compare(String(password), String(storedHash));
+      if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
       const safeFields = stripPassword(fields);
 
@@ -258,7 +256,7 @@ export default async function handler(req, res) {
 
     const wantsMemberOnly = roleNorm === "admin" || roleNorm === "trainer";
 
-    // 1) Try Organization primary account
+    // 1) Try Organization primary account (only when role isn't admin/trainer)
     if (!wantsMemberOnly) {
       const orgAccount = await orgBase(ORGANIZATIONS_TABLE_NAME)
         .select({
@@ -278,12 +276,8 @@ export default async function handler(req, res) {
           });
         }
 
-        const match = await bcrypt.compare(
-          String(password),
-          String(storedHash)
-        );
-        if (!match)
-          return res.status(401).json({ error: "Invalid credentials" });
+        const match = await bcrypt.compare(String(password), String(storedHash));
+        if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
         const safeFields = stripPassword(fields);
 
@@ -318,7 +312,7 @@ export default async function handler(req, res) {
           Email: safeFields.Email || emailLower,
           Token: orgToken,
           orgId: record.id,
-          memberId: ownerMemberId || undefined,
+          memberId: ownerMemberId || undefined, // ✅ owner has memberId too
           OrgName: String(orgName || "").trim(),
         };
 
@@ -329,16 +323,30 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2) OrgMembers (admin/trainer)
+    // 2) OrgMembers (organization/admin/trainer)
     const memberRecords = await orgBase(ORG_MEMBERS_TABLE_ID)
       .select({
         filterByFormula: `AND(LOWER({Email})='${safeEmail}', {Active}=TRUE())`,
-        maxRecords: 1,
+        maxRecords: 10, // ✅ detect multi-org membership
       })
       .firstPage();
 
     if (!memberRecords.length) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    if (memberRecords.length > 1) {
+      const orgIds = memberRecords
+        .map((m) =>
+          Array.isArray(m.fields?.Organization) ? m.fields.Organization[0] : null
+        )
+        .filter(Boolean);
+
+      return res.status(409).json({
+        error:
+          "This email belongs to multiple organizations. Please select your organization.",
+        orgIds,
+      });
     }
 
     const member = memberRecords[0];
@@ -351,17 +359,20 @@ export default async function handler(req, res) {
       });
     }
 
-    const match = await bcrypt.compare(
-      String(password),
-      String(storedHash)
-    );
-    if (!match)
-      return res.status(401).json({ error: "Invalid credentials" });
+    const match = await bcrypt.compare(String(password), String(storedHash));
+    if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
     const roleField = String(fields.Role || "").trim().toLowerCase();
+
+    // If they chose admin/trainer login explicitly, enforce it
     if (wantsMemberOnly && roleNorm !== roleField) {
       return res.status(403).json({ error: "Not authorized" });
     }
+
+    // Compute output role (supports organization role in OrgMembers too)
+    let outRole = "Trainer";
+    if (roleField === "admin") outRole = "Admin";
+    if (roleField === "organization" || roleField === "org") outRole = "Organization";
 
     const orgLinks = fields.Organization;
     const orgId = Array.isArray(orgLinks) && orgLinks.length ? orgLinks[0] : null;
@@ -380,10 +391,10 @@ export default async function handler(req, res) {
     const userOut = {
       id: member.id,
       ...safeFields,
-      role: roleField === "admin" ? "Admin" : "Trainer",
-      Role: roleField === "admin" ? "Admin" : "Trainer",
+      role: outRole,
+      Role: outRole,
       Email: safeFields.Email || emailLower,
-      Name: safeFields.Name || (roleField === "admin" ? "Admin" : "Trainer"),
+      Name: safeFields.Name || outRole,
       Token: orgToken,
       orgId,
       memberId: member.id,

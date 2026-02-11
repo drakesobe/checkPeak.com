@@ -57,15 +57,21 @@ export function useProvideAuth() {
 
   /**
    * LOGIN
-   * - role: "athlete" | "organization"
+   * - role: "athlete" | "organization" | "admin" | "trainer"
    * - Server sets HttpOnly cookie in /api/lookupUser
    * - We store user in localStorage for UI hydration only
    */
   const login = async (email, password, role = "athlete") => {
     const emailNorm = String(email || "").trim().toLowerCase();
+
+    const raw = String(role || "").trim().toLowerCase();
     const roleNorm =
-      String(role || "").trim().toLowerCase() === "organization"
+      raw === "organization"
         ? "organization"
+        : raw === "admin"
+        ? "admin"
+        : raw === "trainer"
+        ? "trainer"
         : "athlete";
 
     const res = await apiFetch("/api/lookupUser", {

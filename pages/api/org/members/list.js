@@ -1,5 +1,44 @@
+// pages/api/org/members/list.js
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base, F, escapeAirtableString } from "@/lib/airtableOrgWorkoutConfig";
+
+function roleOf(user) {
+  return String(user?.role || user?.Role || "").trim().toLowerCase();
+}
+
+function isOrg(role) {
+  return role === "organization" || role === "org" || role.includes("organization");
+}
+
+function isAdmin(role) {
+  return role === "admin" || role.includes("admin") || role.includes("head");
+}
+
+function canViewMembers(actorRole) {
+  // Org + Admin can see staff/athletes list; trainers can be allowed if you want.
+  return isOrg(actorRole) || isAdmin(actorRole);
+}
+
+function orgFilterFormula(ORG_FIELD, orgId) {
+  const safeOrg = escapeAirtableString(String(orgId || "").trim());
+  return `FIND('${safeOrg}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0`;
+}
+
+async function selectAll(table, selectOpts = {}) {
+  const all = [];
+  await new Promise((resolve, reject) => {
+    table
+      .select({ pageSize: 100, ...selectOpts })
+      .eachPage(
+        (records, fetchNextPage) => {
+          all.push(...records);
+          fetchNextPage();
+        },
+        (err) => (err ? reject(err) : resolve())
+      );
+  });
+  return all;
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -10,33 +49,41 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const b = base();
+    const actorRole = roleOf(user);
+    if (!canViewMembers(actorRole)) {
+      return res.status(403).json({ error: "Only Organization/Admin can view members." });
+    }
 
-    // orgId must be on cookie user (we'll add it in lookupUser update)
-    const orgId = user.orgId;
+    const b = base();
+    const orgId = String(user.orgId || "").trim();
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
 
-    const members = await b(AT.tables.orgMembers)
-      .select({
-        filterByFormula: `AND({${F.MEM_ACTIVE}}=TRUE())`,
-        maxRecords: 100,
-      })
-      .firstPage();
+    const memOrgField = F.MEM_ORG || "Organization";
+    const memActiveField = F.MEM_ACTIVE || "Active";
+    const memRoleField = F.MEM_ROLE || "Role";
 
-    const inOrg = members.filter((m) => Array.isArray(m.fields?.[F.MEM_ORG]) && m.fields[F.MEM_ORG].includes(orgId));
+    const athOrgField = F.ATH_ORG || "Organization";
 
-    // optionally also pull athletes
-    const athletes = await b(AT.tables.athletes)
-      .select({ maxRecords: 200 })
-      .firstPage();
-    const athletesInOrg = athletes.filter((a) => Array.isArray(a.fields?.[F.ATH_ORG]) && a.fields[F.ATH_ORG].includes(orgId));
+    // ✅ members filtered by org + active IN Airtable
+    const members = await selectAll(b(AT.tables.orgMembers), {
+      filterByFormula: `AND({${memActiveField}}=TRUE(), ${orgFilterFormula(memOrgField, orgId)})`,
+    });
+
+    // ✅ athletes filtered by org IN Airtable
+    const athletes = await selectAll(b(AT.tables.athletes), {
+      filterByFormula: orgFilterFormula(athOrgField, orgId),
+    });
+
+    const trainers = members
+      .filter((m) => ["trainer", "admin"].includes(String(m.fields?.[memRoleField] || "").toLowerCase()))
+      .map((m) => ({ id: m.id, ...m.fields }));
+
+    const athletesInOrg = athletes.map((a) => ({ id: a.id, ...a.fields }));
 
     return res.status(200).json({
       ok: true,
-      trainers: inOrg
-        .filter((m) => ["trainer", "admin"].includes(String(m.fields?.[F.MEM_ROLE] || "").toLowerCase()))
-        .map((m) => ({ id: m.id, ...m.fields })),
-      athletes: athletesInOrg.map((a) => ({ id: a.id, ...a.fields })),
+      trainers,
+      athletes: athletesInOrg,
     });
   } catch (err) {
     console.error("[org/members/list] error:", err);

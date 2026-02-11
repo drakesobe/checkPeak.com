@@ -1,9 +1,35 @@
 // pages/api/org/members/remove.js
 import { requireOrgSideUser } from "@/lib/requireUser";
-import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
+import { AT, base, F, escapeAirtableString } from "@/lib/airtableOrgWorkoutConfig";
 
 function pickField(obj, key, fallback) {
   return obj && obj[key] ? obj[key] : fallback;
+}
+
+function roleOf(user) {
+  return String(user?.role || user?.Role || "").trim().toLowerCase();
+}
+
+function isOrg(role) {
+  return role === "organization" || role === "org" || role.includes("organization");
+}
+
+function isAdmin(role) {
+  return role === "admin" || role.includes("admin") || role.includes("head");
+}
+
+function canManage(actorRole, targetRole) {
+  const t = String(targetRole || "").toLowerCase();
+  if (t === "organization" || t === "org") return false;
+
+  if (isOrg(actorRole)) return t === "admin" || t === "trainer";
+  if (isAdmin(actorRole) && !isOrg(actorRole)) return t === "trainer";
+  return false;
+}
+
+function orgFilterFormula(ORG_FIELD, orgId) {
+  const safeOrg = escapeAirtableString(String(orgId || "").trim());
+  return `FIND('${safeOrg}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0`;
 }
 
 export default async function handler(req, res) {
@@ -15,12 +41,7 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const role = String(user?.role || user?.Role || "").toLowerCase();
-    const isAdminish = role.includes("admin") || role.includes("org");
-    if (!isAdminish) {
-      return res.status(403).json({ error: "Only Organization/Admin can remove members." });
-    }
-
+    const actorRole = roleOf(user);
     const orgId = String(user?.orgId || user?.OrgId || "").trim();
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
 
@@ -31,20 +52,33 @@ export default async function handler(req, res) {
     // Optional safety: don’t let someone remove themselves
     const selfMemberId = String(user?.memberId || user?.MemberId || "").trim();
     if (selfMemberId && memberId === selfMemberId) {
-      return res.status(400).json({ error: "You cannot remove yourself." });
+      return res.status(409).json({ error: "You cannot remove yourself." });
     }
 
     const b = base();
 
     const ACTIVE_FIELD = pickField(F, "MEM_ACTIVE", "Active");
     const ORG_FIELD = pickField(F, "MEM_ORG", "Organization");
+    const ROLE_FIELD = pickField(F, "MEM_ROLE", "Role");
 
     const rec = await b(AT.tables.orgMembers).find(memberId);
     if (!rec) return res.status(404).json({ error: "Member not found." });
 
-    const links = rec?.fields?.[ORG_FIELD];
-    const inOrg = Array.isArray(links) && links.map(String).includes(orgId);
-    if (!inOrg) return res.status(403).json({ error: "Forbidden." });
+    // Must be in org (hard check)
+    const inOrgFormula = `AND(RECORD_ID()='${escapeAirtableString(memberId)}', ${orgFilterFormula(ORG_FIELD, orgId)})`;
+    const verify = await b(AT.tables.orgMembers)
+      .select({ filterByFormula: inOrgFormula, maxRecords: 1 })
+      .firstPage();
+    if (!verify?.length) return res.status(403).json({ error: "Forbidden." });
+
+    const targetRole = String(rec.fields?.[ROLE_FIELD] || "").toLowerCase();
+    if (!canManage(actorRole, targetRole)) {
+      return res.status(403).json({
+        error: isOrg(actorRole)
+          ? "Organization can manage admins + trainers."
+          : "Admin can manage trainers only.",
+      });
+    }
 
     const updated = await b(AT.tables.orgMembers).update(memberId, {
       [ACTIVE_FIELD]: false,

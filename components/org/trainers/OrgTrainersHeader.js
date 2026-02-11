@@ -10,67 +10,71 @@ import {
   RefreshCcw,
   LogOut,
   ArrowRight,
+  User,
 } from "lucide-react";
 
 import Pill from "./ui/Pill";
 import Button from "./ui/Button";
 
-/**
- * OrgTrainersHeader
- *
- * ✅ Designed to work with the modular Trainers page you posted.
- *
- * Accepts either:
- * - canManageMembers (explicit boolean), OR
- * - role (string: "organization" | "admin" | "trainer" | "athlete") and we derive canManageMembers
- *
- * Supports status banners via:
- * - error
- * - inviteErr, saveErr
- * - inviteOk, saveOk
- *
- * If you don’t pass invite/save banners, it won’t render them.
- */
+function normalizeRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  if (!r) return "";
+  if (r === "organization" || r === "org" || r.includes("org")) return "organization";
+  if (r === "admin" || r.includes("admin") || r.includes("head")) return "admin";
+  if (r === "trainer" || r.includes("train")) return "trainer";
+  if (r === "athlete" || r.includes("ath")) return "athlete";
+  return r;
+}
+
+function roleLabel(r) {
+  const role = normalizeRole(r);
+  if (role === "organization") return "Organization";
+  if (role === "admin") return "Admin";
+  if (role === "trainer") return "Trainer";
+  if (role === "athlete") return "Athlete";
+  return role ? role : "Unknown";
+}
+
+function roleTone(r) {
+  const role = normalizeRole(r);
+  if (role === "organization") return "good";
+  if (role === "admin") return "good";
+  if (role === "trainer") return "neutral";
+  if (role === "athlete") return "warn";
+  return "neutral";
+}
 
 export default function OrgTrainersHeader({
-  orgName = "Organization",
-  orgEmail = "",
-  orgToken = "",
-  orgId = "",
+  orgName,
+  orgEmail,
+  orgToken,
+  orgId,
   counts = { total: 0, admins: 0, coaches: 0, inactive: 0 },
 
-  // Either pass `role` or `canManageMembers`
+  // ✅ Pass this from page: role={role}
   role = "",
-  canManageMembers: canManageMembersProp,
+
+  // ✅ Still used for permissions messaging
+  canManageMembers = false,
 
   loading = false,
-
   onBack,
   onRefresh,
   onLogout,
 
-  // banners
   error = "",
   inviteErr = "",
   saveErr = "",
   inviteOk = "",
   saveOk = "",
 }) {
-  const normalizedRole = String(role || "").trim().toLowerCase();
-
-  const derivedCanManage =
-    normalizedRole === "organization" || normalizedRole === "admin";
-
-  const canManageMembers =
-    typeof canManageMembersProp === "boolean" ? canManageMembersProp : derivedCanManage;
-
-  const hasErr = Boolean(error || inviteErr || saveErr);
-  const hasOk = Boolean(inviteOk || saveOk);
-
   const total = Number(counts?.total || 0);
   const admins = Number(counts?.admins || 0);
   const coaches = Number(counts?.coaches || 0);
   const inactive = Number(counts?.inactive || 0);
+
+  const hasErr = Boolean(error || saveErr || inviteErr);
+  const hasOk = Boolean(saveOk || inviteOk);
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6">
@@ -82,18 +86,19 @@ export default function OrgTrainersHeader({
           </div>
 
           <p className="text-sm text-gray-600 mt-1">
-            {orgName}{" "}
-            {orgEmail ? (
-              <>
-                • Logged in as <span className="font-semibold">{orgEmail}</span>
-              </>
-            ) : null}
+            {orgName} • Logged in as <span className="font-semibold">{orgEmail}</span>
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <Pill tone="good">
               <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
               Org Session Active
+            </Pill>
+
+            {/* ✅ NEW: Explicit "You are: ROLE" pill */}
+            <Pill tone={roleTone(role)}>
+              <User className="w-3.5 h-3.5 mr-1.5" />
+              You are: {roleLabel(role)}
             </Pill>
 
             {orgToken ? (
@@ -175,32 +180,17 @@ export default function OrgTrainersHeader({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            onClick={onBack}
-            disabled={typeof onBack !== "function"}
-            title={typeof onBack !== "function" ? "Back handler not provided" : ""}
-          >
+          <Button variant="secondary" onClick={onBack}>
             <ArrowRight className="w-4 h-4 rotate-180" />
             Back
           </Button>
 
-          <Button
-            variant="secondary"
-            onClick={onRefresh}
-            disabled={loading || typeof onRefresh !== "function"}
-            title={typeof onRefresh !== "function" ? "Refresh handler not provided" : ""}
-          >
+          <Button variant="secondary" onClick={onRefresh} disabled={loading}>
             <RefreshCcw className="w-4 h-4" />
             Refresh
           </Button>
 
-          <Button
-            variant="dark"
-            onClick={onLogout}
-            disabled={typeof onLogout !== "function"}
-            title={typeof onLogout !== "function" ? "Logout handler not provided" : ""}
-          >
+          <Button variant="dark" onClick={onLogout}>
             <LogOut className="w-4 h-4" />
             Log out
           </Button>

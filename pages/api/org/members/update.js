@@ -27,17 +27,33 @@ function isValidRole(r) {
   return x === "trainer" || x === "admin";
 }
 
+/**
+ * Allow management of:
+ * - trainer/admin
+ * - pending invites where Role is blank/undefined
+ *
+ * Block:
+ * - organization role (owner record if it ever exists in OrgMembers)
+ */
 function canManageTarget(actorRole, targetRole) {
-  const t = String(targetRole || "").toLowerCase();
+  const t = String(targetRole || "").trim().toLowerCase();
+
+  // never allow editing org owner role via this endpoint
   if (t === "organization" || t === "org") return false;
 
-  if (isOrg(actorRole)) return t === "admin" || t === "trainer";
-  if (isAdmin(actorRole) && !isOrg(actorRole)) return t === "trainer";
+  // org owner can manage anyone (admin/trainer/pending)
+  if (isOrg(actorRole)) return true;
+
+  // admin can manage trainers + pending invites
+  if (isAdmin(actorRole) && !isOrg(actorRole)) {
+    return t === "" || t === "trainer";
+  }
+
   return false;
 }
 
 function canSetRole(actorRole, desiredRole) {
-  const d = String(desiredRole || "").toLowerCase();
+  const d = String(desiredRole || "").trim().toLowerCase();
   if (d === "organization" || d === "org") return false;
 
   // admin can only set trainer
@@ -65,7 +81,6 @@ export default async function handler(req, res) {
 
   try {
     const b = base();
-
     const actorRole = roleOf(user);
 
     const orgId = String(user.orgId || "").trim();
@@ -75,35 +90,38 @@ export default async function handler(req, res) {
     const id = String(memberId || "").trim();
     if (!id) return res.status(400).json({ error: "Missing memberId." });
 
-    // Optional: block self-deactivation (matches your previous behavior)
+    // ✅ Field names with safe fallbacks (critical)
+    const ORG_FIELD = F.MEM_ORG || "Organization";
+    const ROLE_FIELD = F.MEM_ROLE || "Role";
+    const NAME_FIELD = F.MEM_NAME || "Name";
+    const EMAIL_FIELD = F.MEM_EMAIL || "Email";
+    const ACTIVE_FIELD = F.MEM_ACTIVE || "Active";
+
+    // Optional: block self-deactivation
     if (user.memberId && String(user.memberId) === id && active === false) {
       return res.status(409).json({ error: "You can’t deactivate your own account." });
     }
 
-    // Load existing member
-    const record = await b(AT.tables.orgMembers).find(id);
-    if (!record) return res.status(404).json({ error: "Member not found." });
-
-    const ORG_FIELD = F.MEM_ORG || "Organization";
-    const ROLE_FIELD = F.MEM_ROLE || "Role";
-
-    // Must belong to org (strong check)
+    // Strong org membership check (don’t rely on .find alone)
     const verify = await b(AT.tables.orgMembers)
       .select({
         maxRecords: 1,
-        filterByFormula: `AND(RECORD_ID()='${escapeAirtableString(id)}', ${orgFilterFormula(ORG_FIELD, orgId)})`,
+        filterByFormula: `AND(RECORD_ID()='${escapeAirtableString(id)}', ${orgFilterFormula(
+          ORG_FIELD,
+          orgId
+        )})`,
       })
       .firstPage();
 
     if (!verify?.length) return res.status(403).json({ error: "Forbidden." });
 
-    const targetRole = String(record.fields?.[ROLE_FIELD] || "").toLowerCase();
+    const record = verify[0];
+    const targetRole = String(record.fields?.[ROLE_FIELD] || "").trim().toLowerCase();
 
-    // Actor must be allowed to manage this target at all
     if (!canManageTarget(actorRole, targetRole)) {
       return res.status(403).json({
         error: isOrg(actorRole)
-          ? "Organization can manage admins + trainers."
+          ? "Organization can manage members."
           : "Admin can manage trainers only.",
       });
     }
@@ -112,7 +130,7 @@ export default async function handler(req, res) {
 
     // Name
     if (name !== undefined) {
-      updates[F.MEM_NAME] = pickString(name);
+      updates[NAME_FIELD] = pickString(name);
     }
 
     // Role
@@ -129,13 +147,13 @@ export default async function handler(req, res) {
         });
       }
 
-      updates[F.MEM_ROLE] = desired;
+      updates[ROLE_FIELD] = desired;
     }
 
     // Active
     if (active !== undefined) {
-      // Only org/admin can deactivate/reactivate, but trainers shouldn't reach here anyway
-      updates[F.MEM_ACTIVE] = Boolean(active);
+      // actorRole gate already handled by canManageTarget (trainer never gets here)
+      updates[ACTIVE_FIELD] = Boolean(active);
     }
 
     // Email (unique within org)
@@ -149,7 +167,7 @@ export default async function handler(req, res) {
         .select({
           maxRecords: 1,
           filterByFormula: `AND(
-            LOWER({${F.MEM_EMAIL}})='${safe}',
+            LOWER({${EMAIL_FIELD}})='${safe}',
             ${orgFilterFormula(ORG_FIELD, orgId)},
             RECORD_ID()!='${escapeAirtableString(id)}'
           )`,
@@ -157,10 +175,12 @@ export default async function handler(req, res) {
         .firstPage();
 
       if (conflict?.length) {
-        return res.status(409).json({ error: "Email already exists for another member in this organization." });
+        return res
+          .status(409)
+          .json({ error: "Email already exists for another member in this organization." });
       }
 
-      updates[F.MEM_EMAIL] = nextEmail;
+      updates[EMAIL_FIELD] = nextEmail;
     }
 
     if (!Object.keys(updates).length) {
@@ -175,6 +195,14 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("[org/members/update] error:", err);
-    return res.status(500).json({ error: "Failed to update member", details: err?.message });
+    return res.status(500).json({
+      error: "Failed to update member",
+      details: err?.message,
+      airtable: {
+        statusCode: err?.statusCode,
+        message: err?.message,
+        error: err?.error,
+      },
+    });
   }
 }

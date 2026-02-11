@@ -23,14 +23,6 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
-async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return {};
-  }
-}
-
 function makeInviteToken() {
   return crypto.randomBytes(24).toString("hex");
 }
@@ -41,10 +33,30 @@ function addDaysISO(days = 7) {
   return d.toISOString();
 }
 
+function originFromReq(req) {
+  const proto = req.headers["x-forwarded-proto"];
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+
+  if (proto && host) return `${proto}://${host}`;
+  return `http://${host}`;
+}
+
+// Add rich query params so setup page can show context + prefill email on login
+function buildSetupUrl({ origin, token, email, orgName, role, inviterName, expiresAt }) {
+  const qs = new URLSearchParams();
+  qs.set("token", token);
+  if (email) qs.set("email", email);
+  if (orgName) qs.set("org", orgName);
+  if (role) qs.set("role", role);
+  if (inviterName) qs.set("inviter", inviterName);
+  if (expiresAt) qs.set("expiresAt", expiresAt);
+
+  return `${origin}/setup/trainer?${qs.toString()}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const user = requireOrgSideUser(req, res);
@@ -58,6 +70,9 @@ export default async function handler(req, res) {
 
     const orgId = String(user?.orgId || "").trim();
     const orgToken = String(user?.Token || "").trim();
+    const orgName = String(user?.OrgName || user?.OrgName?.Name || user?.OrganizationName || "").trim();
+    const inviterName = String(user?.Name || user?.name || "").trim();
+    const inviterEmail = String(user?.Email || user?.email || "").trim().toLowerCase();
 
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
     if (!orgToken) return res.status(400).json({ error: "Missing Token on session user." });
@@ -83,12 +98,13 @@ export default async function handler(req, res) {
     const memActiveField = F.MEM_ACTIVE || "Active";
     const memOrgField = F.MEM_ORG || "Organization";
 
-    // ✅ NEW: OrgToken debug field
+    // ✅ store org token on member (your debug / filtering strategy)
     const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
 
-    // Optional invite token fields (only if you created them)
+    // Invite token fields (must exist in Airtable)
     const memInviteTokenField = F.MEM_INVITE_TOKEN || "InviteToken";
     const memInviteExpiresField = F.MEM_INVITE_EXPIRES || "InviteExpiresAt";
+    const memInviteUsedField = F.MEM_INVITE_USED || "InviteUsedAt";
 
     // Find existing member in this org by email + org link
     const safeEmail = escapeAirtableString(emailLower);
@@ -101,28 +117,28 @@ export default async function handler(req, res) {
       })
       .firstPage();
 
+    // New invite token + expiration
     const inviteToken = makeInviteToken();
     const expiresAt = addDaysISO(7);
 
-    // Build fields to write
+    // Fields to write
     const fieldsToWrite = {
       [memEmailField]: emailLower,
       [memRoleField]: roleLower,
-      [memOrgTokenField]: orgToken,     // ✅ store org token on member
-      [memOrgField]: [orgId],           // ✅ keep correct link to org record
+      [memOrgTokenField]: orgToken, // ✅ new debug field
+      [memOrgField]: [orgId], // ✅ keep link
+      [memActiveField]: false, // ✅ pending until finishSetup flips it
     };
 
+    // Optional: name
     if (name && String(name).trim()) fieldsToWrite[memNameField] = String(name).trim();
 
-    // If you want invited members to be "pending" until setup:
-    // set Active=false now; then your setup/password endpoint can flip Active=true.
-    // If you want them immediately active, set true.
-    fieldsToWrite[memActiveField] = false;
-
-    // Only write invite fields if your table actually has them
-    // (If these fields don't exist, Airtable will 422)
-    if (memInviteTokenField) fieldsToWrite[memInviteTokenField] = inviteToken;
-    if (memInviteExpiresField) fieldsToWrite[memInviteExpiresField] = expiresAt;
+    // Invite state
+    // If these fields don't exist in Airtable you will get 422; keep your table aligned.
+    fieldsToWrite[memInviteTokenField] = inviteToken;
+    fieldsToWrite[memInviteExpiresField] = expiresAt;
+    // clear any prior used marker on re-invite
+    if (memInviteUsedField) fieldsToWrite[memInviteUsedField] = "";
 
     let record;
     if (existing?.length) {
@@ -131,13 +147,18 @@ export default async function handler(req, res) {
       record = await b(AT.tables.orgMembers).create(fieldsToWrite);
     }
 
-    // Construct setup URL (adjust path to your real setup page)
-    const origin =
-      req.headers["x-forwarded-proto"] && req.headers["x-forwarded-host"]
-        ? `${req.headers["x-forwarded-proto"]}://${req.headers["x-forwarded-host"]}`
-        : `http://${req.headers.host}`;
+    // Build setup URL with rich context
+    const origin = originFromReq(req);
 
-    const inviteUrl = `${origin}/setup/trainer?token=${encodeURIComponent(inviteToken)}`;
+    const inviteUrl = buildSetupUrl({
+      origin,
+      token: inviteToken,
+      email: emailLower,
+      orgName: orgName || "Organization",
+      role: roleLower,
+      inviterName: inviterName || inviterEmail || "Admin",
+      expiresAt,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -146,10 +167,22 @@ export default async function handler(req, res) {
       expiresAt,
       role: roleLower,
       email: emailLower,
+
+      // ✅ Optional payload useful for your InviteCard email builder
+      context: {
+        orgId,
+        orgToken,
+        orgName: orgName || "Organization",
+        inviterName: inviterName || "",
+        inviterEmail: inviterEmail || "",
+      },
+
       debug: {
         wroteOrgId: orgId,
         wroteOrgToken: orgToken,
         active: fieldsToWrite[memActiveField],
+        wroteInviteTokenField: memInviteTokenField,
+        wroteInviteExpiresField: memInviteExpiresField,
       },
     });
   } catch (err) {

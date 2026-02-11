@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
     const safeToken = escapeAirtableString(token);
 
-    // Find member by invite token
+    // Find member by invite token (token should be unique)
     const matches = await b(AT.tables.orgMembers)
       .select({
         filterByFormula: `AND({${INVITE_TOKEN_FIELD}}='${safeToken}')`,
@@ -55,43 +55,41 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Invite link is invalid or has already been used." });
     }
 
-    // Prefer the first match (token should be unique)
     const member = matches[0];
     const fields = member.fields || {};
 
-    if (fields[ACTIVE_FIELD] === false) {
-      return res.status(403).json({ error: "This invite is inactive. Ask your org admin to resend." });
-    }
-
+    // Expiry / used checks
     const expiresAt = fields[INVITE_EXPIRES_FIELD];
     if (isExpired(expiresAt)) {
       return res.status(410).json({ error: "Invite link expired. Ask your org admin to resend." });
     }
 
-    // Optional: block if already used
     const usedAt = fields[INVITE_USED_FIELD];
     if (usedAt) {
       return res.status(409).json({ error: "Invite already used. Please log in." });
     }
 
-    // Only allow trainer/admin through this flow (safety)
+    // Only allow trainer/admin through this flow
     const role = String(fields[ROLE_FIELD] || "").toLowerCase();
     if (!["trainer", "admin"].includes(role)) {
       return res.status(403).json({ error: "This invite is not valid for staff setup." });
     }
 
+    // ✅ IMPORTANT:
+    // We treat Active=false as "pending invite" (allowed to setup).
+    // After successful setup we set Active=true (checkmark in Airtable).
     const hash = await bcrypt.hash(pw, 10);
 
-    // Save password + burn token
     await b(AT.tables.orgMembers).update(member.id, {
       PasswordHash: hash,
       [INVITE_USED_FIELD]: new Date().toISOString(),
-      [INVITE_TOKEN_FIELD]: "", // burn token
+      [INVITE_TOKEN_FIELD]: "", // burn token so link can't be reused
+      [ACTIVE_FIELD]: true,     // ✅ activate account (checkbox checkmark)
     });
 
     return res.status(200).json({
       ok: true,
-      message: "Password set! You can now log in as Staff.",
+      message: "Password set! Your account is now active — you can log in as Trainer/Admin.",
     });
   } catch (err) {
     console.error("[org/members/finishSetup] error:", err);

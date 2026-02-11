@@ -18,11 +18,7 @@ function classNames(...xs) {
  * - ✅ Mobile opens as a true bottom sheet (not floating halfway)
  * - ✅ Modal content scrolls; background does not
  */
-export default function NavBarLoginModal({
-  isOpen,
-  onClose,
-  defaultTab = "login",
-}) {
+export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login" }) {
   const { login, signupAthlete, signupOrganization } = useAuthContext();
   const router = useRouter();
 
@@ -79,15 +75,23 @@ export default function NavBarLoginModal({
   useEffect(() => {
     if (isOpen) {
       setTab(defaultTab);
+
+      setEmail("");
+      setPassword("");
+      setRememberMe(false);
+      setShowPassword(false);
       setLoginError("");
-      setSignupError("");
-      setSignupSuccess(null);
+      setLoginLoading(false);
 
       setShowForgot(false);
       setForgotEmail("");
       setForgotLoading(false);
       setForgotError("");
       setForgotOk(false);
+
+      setSignupLoading(false);
+      setSignupError("");
+      setSignupSuccess(null);
 
       setAuthRole("athlete");
       setStaffRole("trainer");
@@ -195,39 +199,17 @@ export default function NavBarLoginModal({
     "w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300";
 
   const rolePill = "px-3 py-2 rounded-xl border text-sm font-semibold transition";
+  const disableRoleSwitch = loginLoading || signupLoading || forgotLoading;
 
   const isOrgSideLogin = authRole === "organization" || authRole === "staff";
 
-  const mapLoginError = (err) => {
-    const rawMsg = String(err?.message || err?.error || "");
-    const msg = rawMsg.toLowerCase();
-
-    // best-effort mapping (your login throws Error(message), no status)
-    if (msg.includes("multiple organizations")) {
-      return "This email belongs to multiple organizations. Please contact your admin to confirm which org you should use.";
-    }
-
-    if (msg.includes("failed to lookup user") || msg.includes("lookupuser") || msg.includes("lookup user")) {
-      return "Login failed.";
-    }
-
-    if (msg.includes("invalid credentials")) {
-      return "Invalid email or password.";
-    }
-
-    if (msg.includes("user not found")) {
-      return "User not found.";
-    }
-
-    if (msg.includes("passwordhash")) {
-      return "This account isn’t ready yet. Ask your organization admin to finish setup.";
-    }
-
-    return "Login failed. Check email/password.";
+  const unwrapUser = (loginResult) => {
+    // ✅ supports either: { user: {...} } OR direct user object
+    return loginResult?.user ?? loginResult;
   };
 
-  const getNormalizedRole = (userData) => {
-    const raw = String(userData?.role || userData?.Role || "").trim().toLowerCase();
+  const getNormalizedRole = (userObj) => {
+    const raw = String(userObj?.role || userObj?.Role || "").trim().toLowerCase();
     if (!raw) return "";
     if (raw === "organization") return "organization";
     if (raw === "trainer") return "trainer";
@@ -238,6 +220,41 @@ export default function NavBarLoginModal({
     if (raw.includes("admin")) return "admin";
     if (raw.includes("ath")) return "athlete";
     return raw;
+  };
+
+  const mapLoginError = (err) => {
+    const rawMsg = String(err?.message || err?.error || "");
+    const msg = rawMsg.toLowerCase();
+
+    if (msg.includes("multiple organizations")) {
+      return "This email belongs to multiple organizations. Please contact your admin to confirm which org you should use.";
+    }
+
+    if (msg.includes("not authorized") || msg.includes("not authorised")) {
+      return "Not authorized for that role. Double-check you selected the correct role (Trainer/Admin/Organization).";
+    }
+
+    if (msg.includes("only organization/admin") || msg.includes("only organization") || msg.includes("only admin")) {
+      return "Your account doesn’t have permission for that action. Try Staff → Trainer/Admin if you are a staff member.";
+    }
+
+    if (msg.includes("invalid credentials")) {
+      return "Invalid email or password.";
+    }
+
+    if (msg.includes("user not found")) {
+      return "User not found.";
+    }
+
+    if (msg.includes("passwordhash") || msg.includes("isn’t ready") || msg.includes("isn't ready")) {
+      return "This staff account isn’t ready yet. Complete the invite setup link first (set password).";
+    }
+
+    if (msg.includes("failed to lookup user") || msg.includes("lookupuser") || msg.includes("lookup user")) {
+      return "Login failed.";
+    }
+
+    return "Login failed. Check email/password.";
   };
 
   const handleLogin = async (e) => {
@@ -259,16 +276,20 @@ export default function NavBarLoginModal({
     }
 
     try {
+      // ✅ staff -> trainer/admin (underlying role)
       const roleForLogin = authRole === "staff" ? staffRole : authRole;
-      const userData = await login(cleanEmail, password, roleForLogin);
 
+      const loginResult = await login(cleanEmail, password, roleForLogin);
+      const userObj = unwrapUser(loginResult);
+
+      // Remember me (store ONLY the user object)
       if (rememberMe && typeof window !== "undefined") {
-        localStorage.setItem("user", JSON.stringify(userData));
+        localStorage.setItem("user", JSON.stringify(userObj));
       }
 
       closeAndReset();
 
-      const r = getNormalizedRole(userData);
+      const r = getNormalizedRole(userObj);
       const isOrgSide = ["organization", "trainer", "admin"].includes(r);
 
       if (isOrgSide) router.push("/org/dashboard");
@@ -377,8 +398,6 @@ export default function NavBarLoginModal({
       setSignupLoading(false);
     }
   };
-
-  const disableRoleSwitch = loginLoading || signupLoading || forgotLoading;
 
   const mobileSheetClass =
     "w-full max-w-none rounded-t-3xl rounded-b-none mt-auto mb-0 " +
@@ -514,9 +533,7 @@ export default function NavBarLoginModal({
 
             {tab === "login" && authRole === "staff" && !showForgot && (
               <div className="mb-3 space-y-2">
-                <label className="block text-xs font-semibold text-gray-700">
-                  Staff role
-                </label>
+                <label className="block text-xs font-semibold text-gray-700">Staff role</label>
                 <select
                   value={staffRole}
                   onChange={(e) => setStaffRole(e.target.value)}

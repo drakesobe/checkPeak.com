@@ -14,14 +14,20 @@ function isAdmin(role) {
   return role === "admin" || role.includes("admin") || role.includes("head");
 }
 
-// ✅ your decision: keep trainer view blocked or allow trainer view
+// keep as-is (trainers can't view members list)
 function canViewMembers(actorRole) {
   return isOrg(actorRole) || isAdmin(actorRole);
 }
 
-function orgFilterFormula(ORG_FIELD, orgId) {
+function orgLinkFormula(orgField, orgId) {
   const safeOrg = escapeAirtableString(String(orgId || "").trim());
-  return `FIND('${safeOrg}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0`;
+  return `FIND('${safeOrg}', ARRAYJOIN({${orgField}}&'')) > 0`;
+}
+
+function orgTokenFormula(tokenField, token) {
+  const safeTok = escapeAirtableString(String(token || "").trim().toLowerCase());
+  // handle blank field safely with &'' coercion
+  return `LOWER({${tokenField}}&'')='${safeTok}'`;
 }
 
 async function selectAll(table, selectOpts = {}) {
@@ -54,29 +60,30 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "Only Organization/Admin can view members." });
     }
 
-    const b = base();
-    const orgId = String(user.orgId || "").trim();
+    const orgId = String(user?.orgId || "").trim();
+    const orgToken = String(user?.Token || "").trim();
+
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
+    if (!orgToken) return res.status(400).json({ error: "Missing Token on session user." });
+
+    const b = base();
 
     const memOrgField = F.MEM_ORG || "Organization";
     const memActiveField = F.MEM_ACTIVE || "Active";
     const memRoleField = F.MEM_ROLE || "Role";
+    const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
 
     const athOrgField = F.ATH_ORG || "Organization";
 
-    /**
-     * ✅ IMPORTANT CHANGE:
-     * Previously you filtered to Active=TRUE().
-     * That hides invited members who are inactive/pending.
-     *
-     * Now: filter by org only, return Active status as-is.
-     */
+    // ✅ Filter members by org link OR org token
+    const memberFilter = `OR(${orgLinkFormula(memOrgField, orgId)}, ${orgTokenFormula(memOrgTokenField, orgToken)})`;
+
     const members = await selectAll(b(AT.tables.orgMembers), {
-      filterByFormula: orgFilterFormula(memOrgField, orgId),
+      filterByFormula: memberFilter,
     });
 
     const athletes = await selectAll(b(AT.tables.athletes), {
-      filterByFormula: orgFilterFormula(athOrgField, orgId),
+      filterByFormula: orgLinkFormula(athOrgField, orgId),
     });
 
     const trainers = members
@@ -87,7 +94,6 @@ export default async function handler(req, res) {
       .map((m) => ({
         id: m.id,
         ...m.fields,
-        // ✅ normalize missing Active to false (so UI is consistent)
         [memActiveField]:
           typeof m.fields?.[memActiveField] === "boolean" ? m.fields[memActiveField] : false,
       }));
@@ -98,6 +104,13 @@ export default async function handler(req, res) {
       ok: true,
       trainers,
       athletes: athletesInOrg,
+      debug: {
+        orgId,
+        orgToken,
+        memberFilter,
+        memberCount: members.length,
+        trainerCount: trainers.length,
+      },
     });
   } catch (err) {
     console.error("[org/members/list] error:", err);

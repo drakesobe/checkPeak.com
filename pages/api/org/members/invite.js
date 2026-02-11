@@ -3,35 +3,42 @@ import crypto from "crypto";
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base, F, escapeAirtableString } from "@/lib/airtableOrgWorkoutConfig";
 
-function normEmail(email) {
+function roleOf(user) {
+  return String(user?.role || user?.Role || "").trim().toLowerCase();
+}
+
+function isOrg(role) {
+  return role === "organization" || role === "org" || role.includes("organization");
+}
+
+function isAdmin(role) {
+  return role === "admin" || role.includes("admin") || role.includes("head");
+}
+
+function canInvite(actorRole) {
+  return isOrg(actorRole) || isAdmin(actorRole);
+}
+
+function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
-function pickField(obj, key, fallback) {
-  return obj && obj[key] ? obj[key] : fallback;
-}
-
-function normalizeRole(raw) {
-  const r = String(raw || "").trim().toLowerCase();
-  if (r === "organization" || r === "org" || r.includes("org")) return "organization";
-  if (r === "admin" || r.includes("admin")) return "admin";
-  if (r === "trainer" || r.includes("train")) return "trainer";
-  return r;
-}
-
-function canInviteRole(inviterRole, nextRole) {
-  // ✅ Permission layering:
-  // - Organization can invite admin + trainer
-  // - Admin can invite trainer only
-  // - Trainer cannot invite
-  if (inviterRole === "organization") return nextRole === "trainer" || nextRole === "admin";
-  if (inviterRole === "admin") return nextRole === "trainer";
-  return false;
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 function makeInviteToken() {
-  // URL-safe token
-  return crypto.randomBytes(24).toString("base64url");
+  return crypto.randomBytes(24).toString("hex");
+}
+
+function addDaysISO(days = 7) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days || 7));
+  return d.toISOString();
 }
 
 export default async function handler(req, res) {
@@ -44,116 +51,117 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const inviterRole = normalizeRole(user?.role || user?.Role);
-    if (!["organization", "admin"].includes(inviterRole)) {
+    const actorRole = roleOf(user);
+    if (!canInvite(actorRole)) {
       return res.status(403).json({ error: "Only Organization/Admin can invite members." });
     }
 
-    const orgId = String(user?.orgId || user?.OrgId || "").trim();
+    const orgId = String(user?.orgId || "").trim();
+    const orgToken = String(user?.Token || "").trim();
+
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
+    if (!orgToken) return res.status(400).json({ error: "Missing Token on session user." });
 
-    const body = req.body || {};
-    const email = normEmail(body.email);
-    const nextRole = String(body.role || "trainer").trim().toLowerCase();
-    const name = String(body.name || "").trim();
+    const { email, role, name } = req.body || {};
+    const emailLower = normalizeEmail(email);
 
-    if (!email || !email.includes("@")) return res.status(400).json({ error: "Valid email is required." });
-    if (!["trainer", "admin"].includes(nextRole)) {
-      return res.status(400).json({ error: "Role must be 'trainer' or 'admin'." });
+    if (!emailLower || !emailLower.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required." });
     }
 
-    // ✅ permission gating
-    if (!canInviteRole(inviterRole, nextRole)) {
-      return res.status(403).json({
-        error:
-          inviterRole === "admin"
-            ? "Admins can invite Trainers only."
-            : "Not authorized to invite this role.",
-      });
+    const roleLower = String(role || "trainer").trim().toLowerCase();
+    if (!["trainer", "admin"].includes(roleLower)) {
+      return res.status(400).json({ error: "Role must be trainer or admin." });
     }
 
     const b = base();
 
-    // Field name fallbacks
-    const EMAIL_FIELD = pickField(F, "MEM_EMAIL", "Email");
-    const NAME_FIELD = pickField(F, "MEM_NAME", "Name");
-    const ROLE_FIELD = pickField(F, "MEM_ROLE", "Role");
-    const ACTIVE_FIELD = pickField(F, "MEM_ACTIVE", "Active");
-    const ORG_FIELD = pickField(F, "MEM_ORG", "Organization");
+    // ---- Field names (defaults)
+    const memEmailField = F.MEM_EMAIL || "Email";
+    const memNameField = F.MEM_NAME || "Name";
+    const memRoleField = F.MEM_ROLE || "Role";
+    const memActiveField = F.MEM_ACTIVE || "Active";
+    const memOrgField = F.MEM_ORG || "Organization";
 
-    // Invite fields (add these columns in Airtable OrgMembers)
-    const INVITE_TOKEN_FIELD = pickField(F, "MEM_INVITE_TOKEN", "InviteToken");
-    const INVITE_EXPIRES_FIELD = pickField(F, "MEM_INVITE_EXPIRES", "InviteExpiresAt");
-    const INVITE_USED_FIELD = pickField(F, "MEM_INVITE_USED", "InviteUsedAt");
+    // ✅ NEW: OrgToken debug field
+    const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
 
-    const safeEmail = escapeAirtableString(email);
+    // Optional invite token fields (only if you created them)
+    const memInviteTokenField = F.MEM_INVITE_TOKEN || "InviteToken";
+    const memInviteExpiresField = F.MEM_INVITE_EXPIRES || "InviteExpiresAt";
 
-    // Find existing member by email (then verify linked to this org)
+    // Find existing member in this org by email + org link
+    const safeEmail = escapeAirtableString(emailLower);
+    const safeOrgId = escapeAirtableString(orgId);
+
     const existing = await b(AT.tables.orgMembers)
       .select({
-        filterByFormula: `LOWER({${EMAIL_FIELD}})='${safeEmail}'`,
-        maxRecords: 20,
+        filterByFormula: `AND(LOWER({${memEmailField}})='${safeEmail}', FIND('${safeOrgId}', ARRAYJOIN({${memOrgField}}&'')) > 0)`,
+        maxRecords: 1,
       })
       .firstPage();
 
-    const inOrg =
-      (existing || []).find((m) => {
-        const links = m?.fields?.[ORG_FIELD];
-        return Array.isArray(links) && links.map(String).includes(orgId);
-      }) || null;
-
-    // ✅ generate one-time invite token + expiry
     const inviteToken = makeInviteToken();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(); // 7 days
+    const expiresAt = addDaysISO(7);
 
-    const updates = {
-      [ROLE_FIELD]: nextRole,
-      [ACTIVE_FIELD]: true,
-      [INVITE_TOKEN_FIELD]: inviteToken,
-      [INVITE_EXPIRES_FIELD]: expiresAt,
-      [INVITE_USED_FIELD]: "", // clear used marker if re-inviting
+    // Build fields to write
+    const fieldsToWrite = {
+      [memEmailField]: emailLower,
+      [memRoleField]: roleLower,
+      [memOrgTokenField]: orgToken,     // ✅ store org token on member
+      [memOrgField]: [orgId],           // ✅ keep correct link to org record
     };
-    if (name) updates[NAME_FIELD] = name;
+
+    if (name && String(name).trim()) fieldsToWrite[memNameField] = String(name).trim();
+
+    // If you want invited members to be "pending" until setup:
+    // set Active=false now; then your setup/password endpoint can flip Active=true.
+    // If you want them immediately active, set true.
+    fieldsToWrite[memActiveField] = false;
+
+    // Only write invite fields if your table actually has them
+    // (If these fields don't exist, Airtable will 422)
+    if (memInviteTokenField) fieldsToWrite[memInviteTokenField] = inviteToken;
+    if (memInviteExpiresField) fieldsToWrite[memInviteExpiresField] = expiresAt;
 
     let record;
-    let mode;
-
-    if (inOrg) {
-      record = await b(AT.tables.orgMembers).update(inOrg.id, updates);
-      mode = "updated";
+    if (existing?.length) {
+      record = await b(AT.tables.orgMembers).update(existing[0].id, fieldsToWrite);
     } else {
-      const createFields = {
-        [EMAIL_FIELD]: email,
-        [ROLE_FIELD]: nextRole,
-        [ACTIVE_FIELD]: true,
-        [ORG_FIELD]: [orgId],
-        [INVITE_TOKEN_FIELD]: inviteToken,
-        [INVITE_EXPIRES_FIELD]: expiresAt,
-      };
-      if (name) createFields[NAME_FIELD] = name;
-
-      record = await b(AT.tables.orgMembers).create(createFields);
-      mode = "created";
+      record = await b(AT.tables.orgMembers).create(fieldsToWrite);
     }
 
-    // Build invite URL (works on localhost + prod)
+    // Construct setup URL (adjust path to your real setup page)
     const origin =
-      String(req.headers["x-forwarded-proto"] || "").startsWith("https")
-        ? `https://${req.headers["x-forwarded-host"] || req.headers.host}`
+      req.headers["x-forwarded-proto"] && req.headers["x-forwarded-host"]
+        ? `${req.headers["x-forwarded-proto"]}://${req.headers["x-forwarded-host"]}`
         : `http://${req.headers.host}`;
 
-    const inviteUrl = `${origin}/finish-setup?invite=${encodeURIComponent(inviteToken)}`;
+    const inviteUrl = `${origin}/setup/trainer?token=${encodeURIComponent(inviteToken)}`;
 
     return res.status(200).json({
       ok: true,
-      mode,
+      memberId: record?.id,
       inviteUrl,
       expiresAt,
-      member: { id: record.id, ...(record.fields || {}) },
-      note: "This invite link lets the staff member set their password. Email sending is not wired yet.",
+      role: roleLower,
+      email: emailLower,
+      debug: {
+        wroteOrgId: orgId,
+        wroteOrgToken: orgToken,
+        active: fieldsToWrite[memActiveField],
+      },
     });
   } catch (err) {
     console.error("[org/members/invite] error:", err);
-    return res.status(500).json({ error: "Failed to invite member", details: err?.message });
+    return res.status(500).json({
+      error: "Failed to invite member",
+      details: err?.message,
+      airtable: {
+        statusCode: err?.statusCode,
+        message: err?.message,
+        error: err?.error,
+      },
+    });
   }
 }

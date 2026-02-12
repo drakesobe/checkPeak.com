@@ -1,12 +1,6 @@
 // pages/api/org/billing/status.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import {
-  findBillingRecordByOrgId,
-  findBillingRecordByOrgToken,
-  upsertBillingForOrg,
-  F,
-  firstLookupValue,
-} from "@/lib/airtableBilling";
+import { findBillingRecordByOrgId, findBillingRecordByOrgToken, F, firstLookupValue } from "@/lib/airtableBilling";
 
 function toDateOrNull(v) {
   if (!v) return null;
@@ -31,16 +25,13 @@ function lower(v) {
 function computeIsPaidOk({ status, trialEnds, currentPeriodEnd }) {
   const s = lower(status);
 
-  // Always allow during trial/active
   if (s.includes("trial")) return true;
   if (s === "active") return true;
 
-  // Block states
   if (s.includes("past") || s.includes("due")) return false;
   if (s.includes("cancel")) return false;
   if (s.includes("unpaid") || s.includes("suspend")) return false;
 
-  // If status missing/blank, allow if still inside trialEnds
   const te = toDateOrNull(trialEnds);
   if (te) {
     const now = Date.now();
@@ -48,7 +39,6 @@ function computeIsPaidOk({ status, trialEnds, currentPeriodEnd }) {
     if (!Number.isNaN(end) && now < end) return true;
   }
 
-  // Optional: if you want to allow “currentPeriodEnd” too:
   const cpe = toDateOrNull(currentPeriodEnd);
   if (cpe) {
     const now = Date.now();
@@ -83,7 +73,7 @@ export default async function handler(req, res) {
     if (!rec && sessionToken) rec = await findBillingRecordByOrgToken(sessionToken);
 
     if (!rec?.id) {
-      // No billing record yet -> NOT OK (trial must be created by ensureTrial)
+      // No billing record yet -> treat as locked
       return res.status(200).json({
         ok: true,
         billing: {
@@ -105,34 +95,19 @@ export default async function handler(req, res) {
     const createdAt = toDateOrNull(createdRaw);
 
     const statusRaw = String(f?.[F.BillingStatus] || "").trim();
-    const status = statusRaw || ""; // keep raw, we’ll compute isPaidOk
 
     let trialEnds = f?.[F.TrialEnds] || "";
-    let currentPeriodEnd = f?.[F.CurrentPeriodEnd] || "";
-    let renewalDate = f?.[F.RenewalDate] || "";
+    const currentPeriodEnd = f?.[F.CurrentPeriodEnd] || "";
+    const renewalDate = f?.[F.RenewalDate] || "";
 
-    // If trialEnds missing but Created exists, compute it (and optional writeback)
+    // Compute trialEnds if missing (READ ONLY — no writeback)
     const trialEndsDate = toDateOrNull(trialEnds);
     if (!trialEndsDate && createdAt) {
-      const computed = addDays(createdAt, 30);
-      trialEnds = iso(computed);
-
-      const writeback = String(req.query?.writeback ?? "1").trim() !== "0";
-      if (writeback) {
-        try {
-          await upsertBillingForOrg(sessionOrgId || (Array.isArray(f?.[F.Organization]) ? f[F.Organization]?.[0] : ""), {
-            [F.TrialEnds]: trialEnds,
-            // If your status is blank, we can write Trial while trial is active
-            ...(statusRaw ? {} : { [F.BillingStatus]: "Trial" }),
-          });
-        } catch {
-          // ignore
-        }
-      }
+      trialEnds = iso(addDays(createdAt, 30));
     }
 
     const isPaidOk = computeIsPaidOk({
-      status: statusRaw || status,
+      status: statusRaw,
       trialEnds,
       currentPeriodEnd,
     });
@@ -140,23 +115,14 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       billing: {
-        // what the dashboard gate expects
         isPaidOk,
-
-        // what your gate screen displays
         status: statusRaw || "",
         statusRaw: statusRaw || "",
-
-        // useful dates
         trialEnds: trialEnds || "",
         currentPeriodEnd: currentPeriodEnd || "",
         renewalDate: renewalDate || "",
-
-        // stripe ids (read-only)
         stripeCustomerId: f?.[F.StripeCustomerId] || "",
         stripeSubscriptionId: f?.[F.StripeSubscriptionId] || "",
-
-        // optional debug helpers
         created: createdRaw || "",
       },
     });

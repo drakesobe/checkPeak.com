@@ -1,4 +1,4 @@
-// /pages/org/dashboard.js
+// pages/org/dashboard.js
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -148,7 +148,6 @@ export default function OrgDashboard() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
-  const canInitTrial = role === "organization" || role === "admin";
 
   const orgName = useMemo(() => {
     const guess =
@@ -194,11 +193,7 @@ export default function OrgDashboard() {
     abort: abortOverview,
   } = useOrgOverview();
 
-  const {
-    templates,
-    refresh: refreshTemplates,
-    abort: abortTemplates,
-  } = usePlanTemplates();
+  const { templates, refresh: refreshTemplates, abort: abortTemplates } = usePlanTemplates();
 
   // One-time initial load guard
   const didInitialLoadRef = useRef(false);
@@ -234,7 +229,11 @@ export default function OrgDashboard() {
     }
   }, [user, role, isOrgSide, router]);
 
-  // Billing gate: ensure trial + fetch status
+  /**
+   * Billing gate: READ-ONLY status check
+   * - Does NOT create or update Billing records
+   * - Prevents duplicate/empty Airtable Billing rows
+   */
   useEffect(() => {
     let mounted = true;
 
@@ -246,14 +245,6 @@ export default function OrgDashboard() {
       setBillingErr("");
 
       try {
-        // If owner/admin, ensure a trial record exists (idempotent)
-        if (canInitTrial) {
-          await fetch("/api/org/billing/ensureTrial", {
-            method: "POST",
-            credentials: "include",
-          }).catch(() => null);
-        }
-
         const res = await fetch("/api/org/billing/status", {
           method: "GET",
           credentials: "include",
@@ -274,7 +265,7 @@ export default function OrgDashboard() {
     return () => {
       mounted = false;
     };
-  }, [user, isOrgSide, canInitTrial]);
+  }, [user, isOrgSide]);
 
   // Initial load (only after billing is OK)
   useEffect(() => {

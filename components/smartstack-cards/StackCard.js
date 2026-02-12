@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   FaDumbbell,
   FaBolt,
@@ -10,6 +10,9 @@ import {
   FaAppleAlt,
   FaCapsules,
   FaHeart,
+  FaLock,
+  FaSignInAlt,
+  FaTimes,
 } from "react-icons/fa";
 import ValueBadge from "./ValueBadge";
 import { useAuthContext } from "@/hooks/useAuth";
@@ -38,6 +41,36 @@ function normalizeId(v) {
   return String(v);
 }
 
+/**
+ * Polished auth CTA:
+ * - Shows a "toast-like" CTA card inside the StackCard (not a tiny banner)
+ * - Tries to open your NavBarLoginModal (global hook or window event)
+ * - Falls back to redirect with ?login=1 so it *always* works even if wiring isn't done
+ */
+function openLogin(reason = "auth_required") {
+  try {
+    if (typeof window === "undefined") return;
+
+    // 1) Preferred: app-level opener (if you registered it)
+    if (typeof window.__openLoginModal === "function") {
+      window.__openLoginModal({ reason, tab: "login" });
+      return;
+    }
+
+    // 2) Event-based (if your navbar listens for it)
+    window.dispatchEvent(new CustomEvent("auth:open", { detail: { reason, tab: "login" } }));
+
+    // 3) Fallback: take them to a route that renders your navbar+modal
+    // Adjust the fallback path if needed ("/smartstack" etc.)
+    window.location.href = `/?login=1&reason=${encodeURIComponent(reason)}`;
+  } catch {
+    // ultra-safe fallback
+    try {
+      if (typeof window !== "undefined") window.location.href = "/?login=1";
+    } catch {}
+  }
+}
+
 export default function StackCard({
   stack,
   setModalStack,
@@ -45,14 +78,13 @@ export default function StackCard({
   setSelectedCompareStacks,
   savedStacks,
   setSavedStacks,
-  userEmail: userEmailProp, // ✅ accept prop (page already passes it)
+  userEmail: userEmailProp,
   maxCompare = 3,
   maxSuppPills = 6,
 }) {
   const { user } = useAuthContext();
 
   const userEmail = useMemo(() => {
-    // prefer prop (page knows best), fallback to context
     const e = userEmailProp || user?.Email || user?.email || "";
     const clean = String(e).trim().toLowerCase();
     return clean.includes("@") ? clean : "";
@@ -60,7 +92,6 @@ export default function StackCard({
 
   const stackId = useMemo(() => normalizeId(stack?.id), [stack?.id]);
 
-  // ✅ Single source of truth: derive saved state from savedStacks prop
   const savedRecord = useMemo(() => {
     const list = Array.isArray(savedStacks) ? savedStacks : [];
     return list.find((s) => normalizeId(s?.StackID || s?.id) === stackId) || null;
@@ -76,12 +107,16 @@ export default function StackCard({
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState("");
 
+  // Polished auth UX
+  const [authToastOpen, setAuthToastOpen] = useState(false);
+  const [pulse, setPulse] = useState(false);
+  const lastAuthToastAtRef = useRef(0);
+
   const canOpenModal = Boolean(stack?.nutritionLabel);
 
   const displayedSupps = useMemo(() => {
     const supps = Array.isArray(stack?.supplements) ? stack.supplements : [];
-    const unique = Array.from(new Set(supps.map((x) => String(x).trim()).filter(Boolean)));
-    return unique;
+    return Array.from(new Set(supps.map((x) => String(x).trim()).filter(Boolean)));
   }, [stack?.supplements]);
 
   const suppPreview = displayedSupps.slice(0, maxSuppPills);
@@ -90,8 +125,38 @@ export default function StackCard({
   const showBanner = (msg) => {
     setBanner(msg);
     window.clearTimeout(showBanner._t);
-    showBanner._t = window.setTimeout(() => setBanner(""), 1600);
+    showBanner._t = window.setTimeout(() => setBanner(""), 1800);
   };
+
+  const openAuthToast = useCallback((why = "save_stack") => {
+    const now = Date.now();
+    // debounce so it doesn't spam if user clicks rapidly
+    if (now - lastAuthToastAtRef.current < 900) return;
+    lastAuthToastAtRef.current = now;
+
+    setAuthToastOpen(true);
+    setPulse(true);
+
+    window.clearTimeout(openAuthToast._p);
+    openAuthToast._p = window.setTimeout(() => setPulse(false), 650);
+
+    window.clearTimeout(openAuthToast._t);
+    openAuthToast._t = window.setTimeout(() => setAuthToastOpen(false), 3200);
+
+    // Optional tiny helper message (kept)
+    showBanner("Sign in to save stacks.");
+    // Don't auto-open modal here (we keep it user-driven for polish)
+    // But you CAN uncomment this if you want immediate modal:
+    // openLogin(why);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(openAuthToast._t);
+      window.clearTimeout(openAuthToast._p);
+      window.clearTimeout(showBanner._t);
+    };
+  }, [openAuthToast]);
 
   const toggleCompare = (e) => {
     e.stopPropagation();
@@ -99,6 +164,7 @@ export default function StackCard({
     setSelectedCompareStacks((prev) => {
       const exists = prev.some((s) => normalizeId(s?.id) === stackId);
       if (exists) return prev.filter((s) => normalizeId(s?.id) !== stackId);
+
       if (prev.length >= maxCompare) {
         showBanner(`Max ${maxCompare} stacks to compare.`);
         return prev;
@@ -109,12 +175,14 @@ export default function StackCard({
 
   const toggleSave = async (e) => {
     e.stopPropagation();
+
     if (!userEmail) {
-      showBanner("Log in to save stacks.");
+      // 🔥 polished: show toast + pulse
+      openAuthToast("save_stack");
       return;
     }
-    if (saving) return;
 
+    if (saving) return;
     setSaving(true);
 
     const optimisticAdd = () => {
@@ -156,6 +224,7 @@ export default function StackCard({
       } else {
         const recordId = savedRecord?.recordId;
         if (!recordId) {
+          // rollback (keep saved)
           optimisticAdd();
           showBanner("Couldn’t unsave (missing record). Refresh and try again.");
           setSaving(false);
@@ -180,7 +249,7 @@ export default function StackCard({
     } catch (err) {
       console.error(err);
 
-      // Rollback optimistic change
+      // rollback optimistic change
       if (!wasSaved) optimisticRemove();
       else optimisticAdd();
 
@@ -216,7 +285,8 @@ export default function StackCard({
     >
       <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700" />
 
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
+      {/* Top controls */}
+      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
         <motion.button
           onClick={toggleCompare}
           className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -243,21 +313,49 @@ export default function StackCard({
           )}
         </motion.button>
 
-        <motion.button
-          onClick={toggleSave}
-          className={`w-9 h-9 rounded-full border flex items-center justify-center ${
-            isSaved ? "border-red-500/60 bg-gray-900/70" : "border-gray-600 bg-gray-900/60"
-          } ${saving ? "opacity-60 cursor-not-allowed" : ""}`}
-          whileTap={{ scale: 0.92 }}
-          title={isSaved ? "Unsave" : "Save"}
-          aria-label={isSaved ? "Unsave stack" : "Save stack"}
-          type="button"
-          disabled={saving}
-        >
-          <FaHeart size={18} className={isSaved ? "text-red-500" : "text-gray-300"} />
-        </motion.button>
+        <div className="relative">
+          {/* Shockwave ring (pulse) */}
+          <AnimatePresence>
+            {pulse ? (
+              <motion.div
+                key="shock"
+                className="absolute inset-0 rounded-full border border-white/30"
+                initial={{ scale: 0.7, opacity: 0.7 }}
+                animate={{ scale: 1.9, opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: "tween", duration: 0.55, ease: "easeOut" }}
+                aria-hidden="true"
+              />
+            ) : null}
+          </AnimatePresence>
+
+          <motion.button
+            onClick={toggleSave}
+            className={`relative w-9 h-9 rounded-full border flex items-center justify-center ${
+              isSaved ? "border-red-500/60 bg-gray-900/70" : "border-gray-600 bg-gray-900/60"
+            } ${saving ? "opacity-60 cursor-not-allowed" : ""}`}
+            whileTap={{ scale: 0.92 }}
+            animate={
+              pulse
+                ? {
+                    scale: [1, 1.12, 1],
+                    rotate: [0, -7, 7, 0],
+                  }
+                : { scale: 1, rotate: 0 }
+            }
+            // IMPORTANT: keyframes -> use tween (avoids Motion spring limitation)
+            transition={pulse ? { type: "tween", duration: 0.28, ease: "easeOut" } : { type: "spring", stiffness: 520, damping: 18 }}
+            title={isSaved ? "Unsave" : "Save"}
+            aria-label={isSaved ? "Unsave stack" : "Save stack"}
+            type="button"
+            disabled={saving}
+          >
+            <FaHeart size={18} className={isSaved ? "text-red-500" : "text-gray-300"} />
+          </motion.button>
+        </div>
       </div>
 
+      {/* Image */}
       <div className="relative z-[1]">
         {stack?.imageUrl ? (
           <>
@@ -277,6 +375,7 @@ export default function StackCard({
         )}
       </div>
 
+      {/* Content */}
       <div className="relative z-[1] p-5 flex flex-col flex-1">
         <h3 className="text-xl md:text-2xl font-bold text-white leading-tight line-clamp-2">
           {stack?.name || "Untitled Stack"}
@@ -309,10 +408,67 @@ export default function StackCard({
         )}
 
         {stack?.notes && (
-          <p className="text-gray-200/90 text-sm md:text-base mt-3 line-clamp-4">
-            {stack.notes}
-          </p>
+          <p className="text-gray-200/90 text-sm md:text-base mt-3 line-clamp-4">{stack.notes}</p>
         )}
+
+        {/* Polished inline "auth toast" CTA */}
+        <AnimatePresence>
+          {authToastOpen ? (
+            <motion.div
+              key="authToast"
+              className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/45 backdrop-blur px-4 py-3 text-white"
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+              onClick={(e) => e.stopPropagation()}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 w-9 h-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
+                  <FaLock className="text-white/90" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-extrabold leading-tight">Sign in to save stacks</p>
+                      <p className="text-[12px] text-white/80 mt-0.5 leading-snug">
+                        Your favorites sync across devices in SmartStack.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="shrink-0 p-2 -m-2 text-white/70 hover:text-white"
+                      onClick={() => setAuthToastOpen(false)}
+                      aria-label="Dismiss"
+                    >
+                      <FaTimes />
+                    </button>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                  </div>
+                </div>
+              </div>
+
+              {/* subtle progress indicator */}
+              <motion.div
+                className="mt-3 h-1 w-full rounded-full bg-white/10 overflow-hidden"
+                aria-hidden="true"
+              >
+                <motion.div
+                  className="h-full rounded-full bg-white/40"
+                  initial={{ width: "100%" }}
+                  animate={{ width: "0%" }}
+                  transition={{ type: "tween", duration: 3.2, ease: "linear" }}
+                />
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <div className="flex gap-2 mt-auto pt-4 flex-wrap">
           {stack?.affiliateLink && (
@@ -334,9 +490,7 @@ export default function StackCard({
               else showBanner("No nutrition label available.");
             }}
             className={`px-4 py-2 rounded-2xl text-sm md:text-base font-semibold transition-colors ${
-              canOpenModal
-                ? "bg-white/10 hover:bg-white/15 text-white"
-                : "bg-white/5 text-white/60 cursor-not-allowed"
+              canOpenModal ? "bg-white/10 hover:bg-white/15 text-white" : "bg-white/5 text-white/60 cursor-not-allowed"
             }`}
             type="button"
             disabled={!canOpenModal}
@@ -352,7 +506,7 @@ export default function StackCard({
         </p>
 
         {banner && (
-          <div className="mt-3 inline-flex w-fit max-w-full items-center rounded-xl border border-white/10 bg-black/35 px-3 py-1.5 text-xs md:text-sm text-white">
+          <div className="mt-3 inline-flex w-fit max-w-full items-center rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 text-xs md:text-sm text-white">
             {banner}
           </div>
         )}

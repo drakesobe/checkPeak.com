@@ -17,8 +17,18 @@ function classNames(...xs) {
  * - ✅ Strong scroll lock (iOS-safe) while open
  * - ✅ Mobile opens as a true bottom sheet (not floating halfway)
  * - ✅ Modal content scrolls; background does not
+ *
+ * ✅ New:
+ * - Global open trigger: window.dispatchEvent(new CustomEvent("auth:open", { detail: {...} }))
+ * - Convenience: window.__openLoginModal({...})
+ * - Parent-controlled open via onRequestOpen()
  */
-export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login" }) {
+export default function NavBarLoginModal({
+  isOpen,
+  onClose,
+  defaultTab = "login",
+  onRequestOpen, // ✅ NEW: lets any component ask parent to open modal
+}) {
   const { login, signupAthlete, signupOrganization } = useAuthContext();
   const router = useRouter();
 
@@ -71,6 +81,47 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
 
   const emailRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
+
+  /* ------------------------------------------------------------------ */
+  /* ✅ NEW: Global open hook for SmartStack (and anywhere else)          */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handler = (ev) => {
+      const d = ev?.detail || {};
+
+      // Optional email prefill
+      if (d?.email) {
+        try {
+          window.localStorage.setItem("cp_prefill_login_email", String(d.email));
+        } catch {}
+      }
+
+      // Optional preselects (only if provided)
+      if (d?.tab === "login" || d?.tab === "signup") setTab(d.tab);
+      if (d?.role === "athlete" || d?.role === "organization" || d?.role === "staff") setAuthRole(d.role);
+      if (d?.staffRole === "trainer" || d?.staffRole === "admin") setStaffRole(d.staffRole);
+
+      // Ask parent to open modal (single source of truth)
+      if (typeof onRequestOpen === "function") onRequestOpen(d);
+    };
+
+    window.addEventListener("auth:open", handler);
+
+    // Convenience helper
+    window.__openLoginModal = (detail = {}) => {
+      handler({ detail });
+    };
+
+    return () => {
+      window.removeEventListener("auth:open", handler);
+      try {
+        delete window.__openLoginModal;
+      } catch {}
+    };
+  }, [onRequestOpen]);
+  /* ------------------------------------------------------------------ */
 
   useEffect(() => {
     if (isOpen) {
@@ -460,9 +511,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   setForgotError("");
                 }}
                 className={`pb-2 border-b-2 ${
-                  tab === "login"
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500"
+                  tab === "login" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"
                 }`}
                 type="button"
                 disabled={signupLoading || forgotLoading}
@@ -477,9 +526,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   if (authRole === "staff") setAuthRole("athlete");
                 }}
                 className={`pb-2 border-b-2 ${
-                  tab === "signup"
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500"
+                  tab === "signup" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"
                 }`}
                 type="button"
                 disabled={loginLoading || forgotLoading}
@@ -541,7 +588,6 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                   disabled={loginLoading}
                 >
                   <option value="trainer">Trainer</option>
-                  <option value="admin">Head Trainer (Admin)</option>
                 </select>
 
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
@@ -649,12 +695,8 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <div className="text-center">
                   <h3 className="text-lg font-bold text-gray-900">Reset your password</h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Enter your email and we’ll send you reset instructions.
-                  </p>
-                  <p className="mt-1 text-[11px] text-gray-500">
-                    (If your account exists, you’ll receive an email.)
-                  </p>
+                  <p className="mt-1 text-sm text-gray-600">Enter your email and we’ll send you reset instructions.</p>
+                  <p className="mt-1 text-[11px] text-gray-500">(If your account exists, you’ll receive an email.)</p>
                 </div>
 
                 <div>
@@ -673,11 +715,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
 
                 {forgotError && <p className="text-red-500 text-sm">{forgotError}</p>}
 
-                {forgotOk && (
-                  <p className="text-emerald-600 text-sm">
-                    If your account exists, we’ve sent reset instructions.
-                  </p>
-                )}
+                {forgotOk && <p className="text-emerald-600 text-sm">If your account exists, we’ve sent reset instructions.</p>}
 
                 <button
                   type="submit"
@@ -768,9 +806,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                       className={inputBase}
                       disabled={signupLoading}
                     />
-                    <p className="text-[11px] text-gray-500">
-                      If your organization provided a token, paste it here.
-                    </p>
+                    <p className="text-[11px] text-gray-500">If your organization provided a token, paste it here.</p>
                   </>
                 ) : (
                   <>
@@ -863,9 +899,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
                       className={inputBase}
                       disabled={signupLoading}
                     />
-                    <p className="text-[11px] text-gray-500">
-                      We’ll generate a secure token for your organization automatically.
-                    </p>
+                    <p className="text-[11px] text-gray-500">We’ll generate a secure token for your organization automatically.</p>
                   </>
                 )}
 
@@ -889,11 +923,7 @@ export default function NavBarLoginModal({ isOpen, onClose, defaultTab = "login"
             )}
 
             {tab === "signup" && signupSuccess && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 text-center bg-green-50 rounded-xl"
-              >
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-4 text-center bg-green-50 rounded-xl">
                 <h2 className="text-lg font-bold text-green-600">Success!</h2>
                 <p className="text-gray-700 mt-1">Account created successfully.</p>
               </motion.div>

@@ -2,26 +2,78 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Copy, X, Tag, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { classNames } from "@/lib/org/dashboard-utils";
 
-export function StatCard({ icon: Icon, label, value, sub }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
+export function StatCard({ icon: Icon, label, value, sub, href, onClick }) {
+  const clickable = Boolean(href || onClick);
+
+  const inner = (
+    <div
+      className={classNames(
+        "bg-white rounded-2xl shadow-md border border-blue-100 p-5",
+        clickable ? "transition hover:shadow-lg hover:-translate-y-[1px]" : "",
+        clickable ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" : ""
+      )}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs text-gray-500">{label}</p>
-          <p className="text-2xl font-extrabold text-gray-900 mt-1 break-words">
-            {value}
-          </p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-1 break-words">{value}</p>
           {sub ? <p className="text-[11px] text-gray-500 mt-2">{sub}</p> : null}
+
+          {clickable ? (
+            <p className="text-[11px] font-semibold text-[#46769B] mt-3">View details →</p>
+          ) : null}
         </div>
-        <div className="shrink-0 w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+
+        <div
+          className={classNames(
+            "shrink-0 w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center",
+            clickable ? "transition" : ""
+          )}
+        >
           <Icon className="w-5 h-5 text-[#46769B]" />
         </div>
       </div>
     </div>
   );
+
+  // Prefer Link when href is provided
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={classNames(
+          "block",
+          clickable ? "cursor-pointer rounded-2xl" : ""
+        )}
+        aria-label={`${label} details`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  // Otherwise allow button behavior
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={classNames(
+          "block w-full text-left rounded-2xl",
+          clickable ? "cursor-pointer" : ""
+        )}
+        aria-label={`${label} details`}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return inner;
 }
 
 export function Pill({ children, tone = "neutral" }) {

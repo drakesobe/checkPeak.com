@@ -603,15 +603,37 @@ export default function OrgDashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Users} label="Athletes" value={stats.totalAthletes || 0} sub="Roster size" />
-          <StatCard icon={FileText} label="Total Plans" value={stats.totalPlans || 0} sub="All-time plans created" />
           <StatCard
-            icon={CheckCircle2}
-            label="Coverage"
-            value={`${stats.coveragePct || 0}%`}
-            sub={`${stats.athletesWithPlans || 0} of ${stats.totalAthletes || 0} have at least 1 plan`}
-          />
-          <StatCard icon={Activity} label="Needs Attention" value={stats.staleCount || 0} sub="Missing plan or stale plan" />
+          icon={Users}
+          label="Athletes"
+          value={stats.totalAthletes || 0}
+          sub="Roster size"
+          href="/org/athletes"
+        />
+
+        <StatCard
+          icon={ClipboardList}
+          label="Total Plans"
+          value={stats.totalPlans || 0}
+          sub="Active prescriptions"
+          href="/org/prescriptions"
+        />
+
+        <StatCard
+          icon={ShieldCheck}
+          label="Coverage"
+          value={`${stats.coveragePercent || 0}%`}
+          sub="Athletes with plans"
+          href="/org/prescriptions"
+        />
+
+        <StatCard
+          icon={AlertTriangle}
+          label="Needs Plan"
+          value={stats.needsPlan || 0}
+          sub="Action required"
+          href="/org/prescriptions"
+        />
         </div>
 
         {/* Templates + Invite */}

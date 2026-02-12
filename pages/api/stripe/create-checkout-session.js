@@ -1,5 +1,5 @@
 // pages/api/stripe/create-checkout-session.js
-import { stripe } from "@/lib/stripe";
+import stripe from "@/lib/stripe";
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import { findBillingRecordByOrgId, upsertBillingForOrg, F } from "@/lib/airtableBilling";
 

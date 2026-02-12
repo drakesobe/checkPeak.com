@@ -1,6 +1,7 @@
 // pages/api/org/reviewQueue/getReviewQueue.js
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
+import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
 
 function missingEnv() {
   return {
@@ -56,6 +57,10 @@ export default async function handler(req, res) {
     const auth = requireOrg(req);
     if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
+    // ✅ HARD GATE: subscription check (prevents direct API access)
+    const sub = await requireActiveOrgSubscription(req, res, auth);
+    if (!sub) return;
+
     const orgToken = String(auth?.org?.token || auth?.token || "").trim();
     const orgId = String(auth?.org?.id || "").trim(); // legacy fallback
     if (!orgToken && !orgId) {
@@ -94,11 +99,9 @@ export default async function handler(req, res) {
       orgMatchParts.push(`FIND("${orgIdSafe}", ARRAYJOIN({Organization})) > 0`);
     }
 
-    const orgMatch =
-      orgMatchParts.length === 1 ? orgMatchParts[0] : `OR(${orgMatchParts.join(",")})`;
+    const orgMatch = orgMatchParts.length === 1 ? orgMatchParts[0] : `OR(${orgMatchParts.join(",")})`;
 
-    // ✅ IMPORTANT CHANGE:
-    // We NO LONGER filter to only pending. Return all statuses, UI filters.
+    // Return all statuses; UI filters.
     const filterByFormula = `AND(
       {Status} != "draft",
       OR(COUNTA({Attachments})>0, LEN(TRIM({Attachment Summary}&""))>0),
@@ -109,11 +112,10 @@ export default async function handler(req, res) {
       .select({
         pageSize: 100,
         filterByFormula,
-        sort: [{ field: "ReviewedAt", direction: "desc" }], // optional; safe if field exists? we'll keep simple below
+        sort: [{ field: "ReviewedAt", direction: "desc" }],
       })
       .all()
       .catch(async () => {
-        // If ReviewedAt doesn't exist/sort fails, retry without sort
         return await table
           .select({
             pageSize: 100,
@@ -201,6 +203,7 @@ export default async function handler(req, res) {
           count: items.length,
           diag,
           sample,
+          billingGate: sub,
         },
       });
     }

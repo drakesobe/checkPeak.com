@@ -1,6 +1,7 @@
 // pages/api/org/reviewQueue/reviewQueueUpdate.js
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
+import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
 
 function missingEnv() {
   return {
@@ -55,6 +56,10 @@ export default async function handler(req, res) {
   try {
     const auth = requireOrg(req);
     if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
+
+    // ✅ HARD GATE: subscription check (prevents direct API updates when not subscribed)
+    const sub = await requireActiveOrgSubscription(req, res, auth);
+    if (!sub) return;
 
     const orgToken = String(auth?.org?.token || auth?.token || "").trim();
     const orgId = String(auth?.org?.id || "").trim();
@@ -114,7 +119,7 @@ export default async function handler(req, res) {
       ReviewedByText: reviewerText, // ✅ your text field (NOT the linked ReviewedBy)
     };
 
-    // ✅ If needs_info, require a message (or keep existing if already present)
+    // ✅ If needs_info, require a message
     if (next === "needs_info") {
       if (!reviewedNotes) return res.status(400).json({ error: "ReviewedNotes is required for Needs Info." });
       updates.ReviewedNotes = reviewedNotes;
@@ -132,6 +137,10 @@ export default async function handler(req, res) {
       id: updated.id,
       reviewStatus: next,
       reviewedBy: reviewerText,
+      billingGate: {
+        status: sub?.status || "",
+        trialEnds: sub?.trialEnds || "",
+      },
     });
   } catch (err) {
     console.error("[reviewQueueUpdate] error:", err);

@@ -15,12 +15,107 @@ import ReviewQueueModal from "@/components/org/reviewQueue/ReviewQueueModal";
 import ReviewQueueLightbox from "@/components/org/reviewQueue/ReviewQueueLightbox";
 
 import { normalizeText } from "@/components/org/reviewQueue/utils";
+import { Lock, ArrowRight, LogOut } from "lucide-react";
+
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function fmtDate(v) {
+  if (!v) return "—";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return String(v);
+  }
+}
+
+function BillingGateScreen({ role, billing, error, onLogout, onGoAccount }) {
+  const canManageBilling = role === "admin" || role === "organization";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
+      <main className="max-w-3xl mx-auto px-4 py-10">
+        <div className="bg-white rounded-3xl shadow-md border border-blue-100 p-7">
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-[#46769B]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold tracking-wide text-[#46769B]">CHECKPEAK</p>
+              <h1 className="text-2xl font-extrabold text-gray-900 mt-1">Subscription required</h1>
+              <p className="text-sm text-gray-600 mt-2">
+                Your organization’s access is currently locked. Start a subscription to continue using the Review Queue.
+              </p>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-700">{error}</p>
+            </div>
+          ) : (
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="text-xs font-semibold text-gray-600">Status</div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">
+                  {billing?.statusRaw || billing?.status || "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="text-xs font-semibold text-gray-600">Trial ends</div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">{fmtDate(billing?.trialEnds)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-end">
+            {canManageBilling ? (
+              <button
+                type="button"
+                onClick={onGoAccount}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2 rounded-2xl font-semibold bg-[#46769B] text-white hover:brightness-110 transition shadow-sm"
+              >
+                Manage Billing
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <div className="text-sm text-gray-600 py-2">
+                Ask your Org Owner/Admin to update billing in <span className="font-semibold">Account → Billing</span>.
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2 rounded-2xl font-semibold bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 transition"
+            >
+              <LogOut className="w-4 h-4" />
+              Log out
+            </button>
+          </div>
+
+          <div className="mt-4 text-[11px] text-gray-500">
+            Note: Billing IDs (Stripe Customer/Subscription) are never user-entered. They come from Stripe checkout +
+            webhooks.
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
 export default function ReviewQueuePage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
-  const { loading, error, items, setItems, refreshQueue, counts, fmtDate } = useReviewQueue();
+  const { loading, error, items, setItems, refreshQueue, counts, fmtDate: rqFmtDate } = useReviewQueue();
 
   const role = useMemo(() => {
     const r = String(user?.role || user?.Role || "").trim().toLowerCase();
@@ -36,6 +131,7 @@ export default function ReviewQueuePage() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  const canInitTrial = role === "organization" || role === "admin";
 
   const orgName = useMemo(() => {
     const guess =
@@ -57,6 +153,13 @@ export default function ReviewQueuePage() {
   );
   const orgId = useMemo(() => String(user?.orgId || user?.OrgId || user?.org?.id || "").trim(), [user]);
 
+  // ---------------- Billing Gate State ----------------
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingErr, setBillingErr] = useState("");
+  const [billing, setBilling] = useState(null);
+
+  const isPaidOk = Boolean(billing?.isPaidOk);
+
   // Guards
   useEffect(() => {
     if (!user) {
@@ -65,6 +168,48 @@ export default function ReviewQueuePage() {
     }
     if (role && !isOrgSide) router.push("/dashboard");
   }, [user, role, isOrgSide, router]);
+
+  // Billing gate: ensure trial + fetch status
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      if (!user) return;
+      if (!isOrgSide) return;
+
+      setBillingLoading(true);
+      setBillingErr("");
+
+      try {
+        // Owner/admin ensures trial exists (idempotent)
+        if (canInitTrial) {
+          await fetch("/api/org/billing/ensureTrial", {
+            method: "POST",
+            credentials: "include",
+          }).catch(() => null);
+        }
+
+        const res = await fetch("/api/org/billing/status", {
+          method: "GET",
+          credentials: "include",
+        });
+
+        const json = await safeJson(res);
+        if (!res.ok) throw new Error(json?.error || "Failed to load billing status.");
+
+        if (mounted) setBilling(json?.billing || null);
+      } catch (e) {
+        if (mounted) setBillingErr(e?.message || "Failed to load billing status.");
+      } finally {
+        if (mounted) setBillingLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, [user, isOrgSide, canInitTrial]);
 
   // UI state
   const [search, setSearch] = useState("");
@@ -79,11 +224,13 @@ export default function ReviewQueuePage() {
   const [saveErr, setSaveErr] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState("");
 
-  // Initial load
+  // Initial load (ONLY if billing ok)
   useEffect(() => {
     if (!user || !isOrgSide) return;
+    if (billingLoading) return;
+    if (!isPaidOk) return;
     refreshQueue();
-  }, [user, isOrgSide, refreshQueue]);
+  }, [user, isOrgSide, billingLoading, isPaidOk, refreshQueue]);
 
   const headline = useMemo(() => {
     if (!counts.total) return "No items in queue.";
@@ -106,7 +253,7 @@ export default function ReviewQueuePage() {
           it?.attachmentSummary,
           it?.athleteName,
           it?.athleteEmail,
-          it?.coachNotes, // ✅ include notes in search too
+          it?.coachNotes,
         ]
           .filter(Boolean)
           .join(" ")
@@ -171,7 +318,6 @@ export default function ReviewQueuePage() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          // ✅ send coachNotes along when provided
           body: JSON.stringify({ id: rid, status: reviewStatus, coachNotes }),
         });
 
@@ -206,6 +352,31 @@ export default function ReviewQueuePage() {
     },
     [setItems, closeModal]
   );
+
+  // ---- Billing gate screens ----
+  if (billingLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
+        <main className="max-w-3xl mx-auto px-4 py-10">
+          <div className="bg-white rounded-3xl shadow-md border border-blue-100 p-7">
+            <p className="text-sm text-gray-600">Loading billing status…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role}
+        billing={billing}
+        error={billingErr}
+        onLogout={onLogout}
+        onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -242,7 +413,7 @@ export default function ReviewQueuePage() {
               expanded={expanded}
               toggleExpanded={toggleExpanded}
               openModal={openModal}
-              fmtDate={fmtDate}
+              fmtDate={rqFmtDate}
               normalizeText={normalizeText}
               counts={counts}
             />
@@ -256,9 +427,8 @@ export default function ReviewQueuePage() {
           active={active}
           saving={saving}
           saveErr={saveErr}
-          fmtDate={fmtDate}
+          fmtDate={rqFmtDate}
           onClose={closeModal}
-          // ✅ NEW: modal will pass note string to onNeedsInfo(note)
           onNeedsInfo={(note) => updateReviewStatus(active?.id, "needs_info", note)}
           onApprove={() => updateReviewStatus(active?.id, "approved")}
           onOpenLightbox={(url) => setLightboxUrl(url)}

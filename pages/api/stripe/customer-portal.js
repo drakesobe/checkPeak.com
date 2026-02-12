@@ -12,17 +12,22 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
-  const orgId = String(user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || "").trim();
+  const orgId = String(
+    user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
+  ).trim();
   if (!orgId) return res.status(400).json({ error: "Missing orgId in session." });
 
   try {
     const origin =
       req.headers.origin ||
-      (process.env.NEXT_PUBLIC_APP_URL ? process.env.NEXT_PUBLIC_APP_URL : "http://localhost:3000");
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000";
 
     const rec = await findBillingRecordByOrgId(orgId);
     const customerId = String(rec?.fields?.[F.StripeCustomerId] || "").trim();
-    if (!customerId) return res.status(400).json({ error: "No Stripe customer found. Start a subscription first." });
+    if (!customerId) {
+      return res.status(400).json({ error: "No Stripe customer found. Start a subscription first." });
+    }
 
     const portal = await stripe.billingPortal.sessions.create({
       customer: customerId,
@@ -32,6 +37,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, url: portal.url });
   } catch (e) {
     console.error("[stripe/customer-portal] error:", e);
-    return res.status(500).json({ error: "Failed to create customer portal session." });
+    return res.status(500).json({ error: e?.message || "Failed to create customer portal session." });
   }
 }

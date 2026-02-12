@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   ClipboardList,
   CalendarDays,
+  Lock,
 } from "lucide-react";
 
 import {
@@ -45,6 +46,90 @@ import RosterSection from "@/components/org/dashboard/RosterSection";
 import RecentActivityPanel from "@/components/org/dashboard/RecentActivityPanel";
 import EditAthleteModal from "@/components/org/dashboard/EditAthleteModal";
 
+/* ---------------------------- helpers ---------------------------- */
+
+function fmtDate(v) {
+  if (!v) return "—";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return String(v);
+  }
+}
+
+/* ---------------------------- Gate UI ---------------------------- */
+
+function BillingGateScreen({ role, billing, error, onLogout, onGoAccount }) {
+  const canManageBilling = role === "admin" || role === "organization";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
+      <main className="max-w-3xl mx-auto px-4 py-10">
+        <div className="bg-white rounded-3xl shadow-md border border-blue-100 p-7">
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-[#46769B]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold tracking-wide text-[#46769B]">CHECKPEAK</p>
+              <h1 className="text-2xl font-extrabold text-gray-900 mt-1">Subscription required</h1>
+              <p className="text-sm text-gray-600 mt-2">
+                Your organization’s access is currently locked. Start a subscription to continue using the org dashboard.
+              </p>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-700">{error}</p>
+            </div>
+          ) : (
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="text-xs font-semibold text-gray-600">Status</div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">
+                  {billing?.statusRaw || billing?.status || "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="text-xs font-semibold text-gray-600">Trial ends</div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">{fmtDate(billing?.trialEnds)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-end">
+            {canManageBilling ? (
+              <Button variant="dark" onClick={onGoAccount} className="w-full sm:w-auto">
+                Manage Billing
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            ) : (
+              <div className="text-sm text-gray-600 py-2">
+                Ask your Org Owner/Admin to update billing in <span className="font-semibold">Account → Billing</span>.
+              </div>
+            )}
+
+            <Button variant="secondary" onClick={onLogout} className="w-full sm:w-auto">
+              <LogOut className="w-4 h-4" />
+              Log out
+            </Button>
+          </div>
+
+          <div className="mt-4 text-[11px] text-gray-500">
+            Note: Billing IDs (Stripe Customer/Subscription) should never be manually entered by users. They’re set by
+            Stripe checkout + webhooks.
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ---------------------------- Page ---------------------------- */
+
 export default function OrgDashboard() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
@@ -63,6 +148,7 @@ export default function OrgDashboard() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  const canInitTrial = role === "organization" || role === "admin";
 
   const orgName = useMemo(() => {
     const guess =
@@ -129,23 +215,12 @@ export default function OrgDashboard() {
   const [editErr, setEditErr] = useState("");
   const [editAthlete, setEditAthlete] = useState(null);
 
-  // Counts + headline
-  const counts = useMemo(() => {
-    const list = Array.isArray(athletes) ? athletes : [];
-    const needsPlan = list.filter((a) => !!a?.needsPlan).length;
-    const stale = list.filter((a) => !!a?.stale && !a?.needsPlan).length;
-    const current = list.filter((a) => !a?.stale && !a?.needsPlan).length;
-    return { needsPlan, stale, current, total: list.length };
-  }, [athletes]);
+  // ---------------- Billing Gate State ----------------
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingErr, setBillingErr] = useState("");
+  const [billing, setBilling] = useState(null);
 
-  const triageHeadline = useMemo(() => {
-    if (!counts.total) return "No athletes yet — invite athletes to begin.";
-    if (counts.needsPlan > 0)
-      return `Start here: ${counts.needsPlan} athlete(s) need their first plan`;
-    if (counts.stale > 0)
-      return `Next: ${counts.stale} athlete(s) need an update`;
-    return "All athletes are current — keep it up.";
-  }, [counts]);
+  const isPaidOk = Boolean(billing?.isPaidOk);
 
   // Role gating
   useEffect(() => {
@@ -159,10 +234,54 @@ export default function OrgDashboard() {
     }
   }, [user, role, isOrgSide, router]);
 
-  // Initial load (prevents dev-mode doubles + hydration churn)
+  // Billing gate: ensure trial + fetch status
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      if (!user) return;
+      if (!isOrgSide) return;
+
+      setBillingLoading(true);
+      setBillingErr("");
+
+      try {
+        // If owner/admin, ensure a trial record exists (idempotent)
+        if (canInitTrial) {
+          await fetch("/api/org/billing/ensureTrial", {
+            method: "POST",
+            credentials: "include",
+          }).catch(() => null);
+        }
+
+        const res = await fetch("/api/org/billing/status", {
+          method: "GET",
+          credentials: "include",
+        });
+
+        const json = await safeJson(res);
+        if (!res.ok) throw new Error(json?.error || "Failed to load billing status.");
+
+        if (mounted) setBilling(json?.billing || null);
+      } catch (e) {
+        if (mounted) setBillingErr(e?.message || "Failed to load billing status.");
+      } finally {
+        if (mounted) setBillingLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, [user, isOrgSide, canInitTrial]);
+
+  // Initial load (only after billing is OK)
   useEffect(() => {
     if (!user) return;
     if (!isOrgSide) return;
+    if (billingLoading) return;
+    if (!isPaidOk) return;
 
     if (didInitialLoadRef.current) return;
     didInitialLoadRef.current = true;
@@ -174,7 +293,32 @@ export default function OrgDashboard() {
       abortOverview();
       abortTemplates();
     };
-  }, [user, isOrgSide, refreshOverview, refreshTemplates, abortOverview, abortTemplates]);
+  }, [
+    user,
+    isOrgSide,
+    billingLoading,
+    isPaidOk,
+    refreshOverview,
+    refreshTemplates,
+    abortOverview,
+    abortTemplates,
+  ]);
+
+  // Counts + headline
+  const counts = useMemo(() => {
+    const list = Array.isArray(athletes) ? athletes : [];
+    const needsPlan = list.filter((a) => !!a?.needsPlan).length;
+    const stale = list.filter((a) => !!a?.stale && !a?.needsPlan).length;
+    const current = list.filter((a) => !a?.stale && !a?.needsPlan).length;
+    return { needsPlan, stale, current, total: list.length };
+  }, [athletes]);
+
+  const triageHeadline = useMemo(() => {
+    if (!counts.total) return "No athletes yet — invite athletes to begin.";
+    if (counts.needsPlan > 0) return `Start here: ${counts.needsPlan} athlete(s) need their first plan`;
+    if (counts.stale > 0) return `Next: ${counts.stale} athlete(s) need an update`;
+    return "All athletes are current — keep it up.";
+  }, [counts]);
 
   const goBuildPlan = useCallback(
     (athleteEmail, templateId = "") => {
@@ -289,9 +433,7 @@ export default function OrgDashboard() {
 
       setAthletes((prev) => {
         const list = Array.isArray(prev) ? [...prev] : [];
-        const idx = list.findIndex(
-          (x) => normalizeEmail(x?.email) === normalizeEmail(editAthlete.email)
-        );
+        const idx = list.findIndex((x) => normalizeEmail(x?.email) === normalizeEmail(editAthlete.email));
         if (idx >= 0) {
           list[idx] = {
             ...list[idx],
@@ -310,6 +452,44 @@ export default function OrgDashboard() {
       setEditSaving(false);
     }
   }, [editAthlete, setAthletes, closeEdit]);
+
+  // If billing gate says "not paid", show gate screen (instead of dashboard)
+  if (billingLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
+        <main className="max-w-3xl mx-auto px-4 py-10">
+          <div className="bg-white rounded-3xl shadow-md border border-blue-100 p-7">
+            <p className="text-sm text-gray-600">Loading billing status…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!billingErr && !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role}
+        billing={billing}
+        error={billingErr}
+        onLogout={onLogout}
+        onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
+  // If billing check errored, also show gate screen (so it doesn’t leak dashboard)
+  if (billingErr) {
+    return (
+      <BillingGateScreen
+        role={role}
+        billing={billing}
+        error={billingErr}
+        onLogout={onLogout}
+        onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -355,6 +535,11 @@ export default function OrgDashboard() {
                     orgId missing (legacy session)
                   </Pill>
                 )}
+
+                <Pill tone="good">
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                  Billing OK
+                </Pill>
 
                 <Pill>
                   <ClipboardList className="w-3.5 h-3.5 mr-1.5" />

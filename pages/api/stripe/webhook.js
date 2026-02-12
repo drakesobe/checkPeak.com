@@ -28,7 +28,6 @@ function mapSubStatusToBillingStatus(subStatus) {
   if (s === "canceled") return "Canceled";
   if (s === "unpaid") return "Suspended";
 
-  // fallback (still write something useful)
   if (!s) return "";
   return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
@@ -38,7 +37,6 @@ export default async function handler(req, res) {
 
   const sig = req.headers["stripe-signature"];
   const whsec = process.env.STRIPE_WEBHOOK_SECRET;
-
   if (!whsec) return res.status(500).send("Missing STRIPE_WEBHOOK_SECRET");
 
   let event;
@@ -54,7 +52,7 @@ export default async function handler(req, res) {
     const type = event.type;
     const obj = event.data.object;
 
-    // Many billing events include a customer; prefer string id
+    // Prefer string id
     const customerId =
       obj?.customer && typeof obj.customer === "string"
         ? obj.customer
@@ -62,40 +60,42 @@ export default async function handler(req, res) {
         ? obj.customer.id
         : "";
 
-    // If no customer, nothing to sync in Billing table
     if (!customerId) return res.json({ received: true });
 
-    // Find billing record by Stripe Customer ID
-    const rec = await findBillingRecordByStripeCustomerId(customerId);
-    const orgRecordId = rec?.fields?.[F.Organization]?.[0]; // linked org record id
+    // Find Billing record by Stripe Customer ID
+    const billingRec = await findBillingRecordByStripeCustomerId(customerId);
+    const orgRecordId = billingRec?.fields?.[F.Organization]?.[0]; // linked org record id in Airtable
 
-    // If not linked yet, we can't upsert (Billing table should always link to Org)
+    // If billing record isn't linked to org, we can't safely upsert by org
     if (!orgRecordId) return res.json({ received: true });
 
     const patch = {};
 
-    // ---- Checkout completed (subscription checkout) ----
+    // ---- Checkout completed ----
     if (type === "checkout.session.completed") {
       const subId = obj?.subscription ? String(obj.subscription) : "";
       if (subId) patch[F.StripeSubscriptionId] = subId;
 
-      // If checkout completes, we consider it started (Stripe will also send subscription.updated)
-      // If it’s a trial checkout, subscription.updated will set Trial.
-      patch[F.BillingStatus] = "Active";
-      patch[F.Plan] = "Org";
+      patch[F.Plan] = "Organization";
+      // Don’t over-assume status here; subscription.updated will correct it.
     }
 
     // ---- Subscription lifecycle ----
-    if (type === "customer.subscription.created" || type === "customer.subscription.updated" || type === "customer.subscription.deleted") {
+    if (
+      type === "customer.subscription.created" ||
+      type === "customer.subscription.updated" ||
+      type === "customer.subscription.deleted"
+    ) {
       const sub = obj;
 
       patch[F.StripeSubscriptionId] = String(sub?.id || "");
       patch[F.BillingStatus] = mapSubStatusToBillingStatus(sub?.status);
-      patch[F.Plan] = "Org";
+      patch[F.Plan] = "Organization";
 
-      // Stripe unix seconds -> ISO -> Airtable date
-      patch[F.RenewalDate] = isoDateFromUnixSeconds(sub?.current_period_end);
+      // Stripe unix seconds -> ISO
       patch[F.TrialEnds] = isoDateFromUnixSeconds(sub?.trial_end);
+      patch[F.RenewalDate] = isoDateFromUnixSeconds(sub?.current_period_end);
+      patch[F.CurrentPeriodEnd] = isoDateFromUnixSeconds(sub?.current_period_end);
     }
 
     // ---- Invoice signals ----
@@ -104,16 +104,10 @@ export default async function handler(req, res) {
     }
 
     if (type === "invoice.payment_succeeded") {
-      // Usually subscription.updated handles it, but safe bump
-      // If still trialing, subscription.updated will override back to Trial
+      // If trialing, subscription.updated will override back to Trial.
       patch[F.BillingStatus] = "Active";
     }
 
-    // Optional: pull payment method brand/last4 if you want
-    // (This is more complex because invoice may not include default payment method details directly.
-    // We'll keep those fields editable or populated elsewhere if needed.)
-
-    // Apply update if there is anything to write
     if (Object.keys(patch).length) {
       await upsertBillingForOrg(orgRecordId, patch);
     }

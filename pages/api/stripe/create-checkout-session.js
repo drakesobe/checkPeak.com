@@ -23,7 +23,8 @@ export default async function handler(req, res) {
   try {
     const origin =
       req.headers.origin ||
-      (process.env.NEXT_PUBLIC_APP_URL ? process.env.NEXT_PUBLIC_APP_URL : "http://localhost:3000");
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000";
 
     // Try to reuse existing Stripe customer from Airtable
     const billingRec = await findBillingRecordByOrgId(orgId);
@@ -31,15 +32,16 @@ export default async function handler(req, res) {
 
     if (!customerId) {
       const customer = await stripe.customers.create({
-        metadata: { orgId },
         description: "CheckPeak organization customer",
+        metadata: { orgId },
       });
       customerId = customer.id;
 
+      // Save customer id immediately (safe)
       await upsertBillingForOrg(orgId, {
         [F.StripeCustomerId]: customerId,
         [F.Plan]: "Organization",
-        [F.BillingStatus]: "Trial",
+        [F.BillingStatus]: "Trial", // will be corrected by webhook to Trial/Active/etc
         [F.Currency]: "USD",
       });
     }
@@ -62,6 +64,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, url: session.url });
   } catch (e) {
     console.error("[stripe/create-checkout-session] error:", e);
-    return res.status(500).json({ error: "Failed to create checkout session." });
+    return res.status(500).json({ error: e?.message || "Failed to create checkout session." });
   }
 }

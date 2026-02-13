@@ -41,11 +41,15 @@ export default function OrgPrescriptionsPage() {
     [user]
   );
 
-  const orgToken = useMemo(() => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(), [user]);
+  const orgToken = useMemo(
+    () => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(),
+    [user]
+  );
 
   const orgAuthHeaders = useMemo(() => (orgToken ? { "x-org-token": orgToken } : {}), [orgToken]);
 
-  // UI state
+  /* ---------------- UI state ---------------- */
+
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("builder"); // builder | history
   const [title, setTitle] = useState("Nutrition + Supplements Plan");
@@ -53,6 +57,17 @@ export default function OrgPrescriptionsPage() {
 
   const [athleteSearch, setAthleteSearch] = useState("");
   const [selectedAthleteEmail, setSelectedAthleteEmail] = useState("");
+
+  // ✅ history is user-driven; capped + paginated
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyOffset, setHistoryOffset] = useState(null);
+
+  // ✅ roster "Done" derived from whether athlete has >=1 NutritionPlan
+  const [doneEmailsFromPlans, setDoneEmailsFromPlans] = useState(() => new Set());
+  const [statusLoading, setStatusLoading] = useState(false);
 
   // templates ui state
   const [templateId, setTemplateId] = useState("");
@@ -68,12 +83,10 @@ export default function OrgPrescriptionsPage() {
 
   const {
     athletes,
-    prescriptions,
     templates,
     activeTemplates,
 
     loadingAthletes,
-    loadingPrescriptions,
     templatesLoading,
 
     error,
@@ -83,10 +96,10 @@ export default function OrgPrescriptionsPage() {
     setTemplatesError,
 
     fetchAthletes,
-    fetchPrescriptionsForAthlete,
     fetchTemplates,
-    setTemplates,
   } = useOrgPrescriptionsData({ orgAuthHeaders, orgToken });
+
+  /* ---------------- OPTIONS ---------------- */
 
   const OPTIONS = useMemo(() => {
     const calories = rangeOptions(0, 5000, 5);
@@ -119,21 +132,30 @@ export default function OrgPrescriptionsPage() {
     };
   }, []);
 
-  // styles
+  /* ---------------- Styles ---------------- */
+
   const inputBase =
     "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30";
   const subtleHint = "text-[11px] text-gray-500 mt-2 leading-relaxed";
 
-  // guards
+  /* ---------------- Guards ---------------- */
+
   useEffect(() => {
     if (!user) return;
     if (role && role !== "organization") router.push("/dashboard");
   }, [user, role, router]);
 
-  // preselect by athleteEmail OR athleteToken
+  /* ---------------- Preselect from URL ---------------- */
+
   useEffect(() => {
     const qEmail = router?.query?.athleteEmail;
     const qToken = router?.query?.athleteToken;
+
+    // reset history when route param changes
+    setHistoryRequested(false);
+    setHistoryItems([]);
+    setHistoryHasMore(false);
+    setHistoryOffset(null);
 
     if (typeof qEmail === "string" && qEmail.includes("@")) {
       setSelectedAthleteEmail(normalizeEmail(qEmail));
@@ -172,12 +194,22 @@ export default function OrgPrescriptionsPage() {
     return templates.find((t) => String(t?.id) === id) || null;
   }, [templates, templateId]);
 
-  const { completedEmails, markDone, goToNextAthlete, advanceSafely } = useRosterSpeedMode({
+  const { completedEmails: completedFromSpeedMode, markDone, goToNextAthlete, advanceSafely } = useRosterSpeedMode({
     filteredAthletes,
     selectedAthleteEmail,
     setSelectedAthleteEmail,
     router,
   });
+
+  // ✅ merged done set: from automatic plan status + from "Save & Next" speed mode
+  const completedEmails = useMemo(() => {
+    const merged = new Set();
+    for (const e of doneEmailsFromPlans) merged.add(e);
+    if (completedFromSpeedMode?.forEach) completedFromSpeedMode.forEach((e) => merged.add(e));
+    return merged;
+  }, [doneEmailsFromPlans, completedFromSpeedMode]);
+
+  /* ---------------- Initial load ---------------- */
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -186,31 +218,17 @@ export default function OrgPrescriptionsPage() {
       const list = await fetchAthletes();
       await fetchTemplates();
 
-      // if not selected yet, pick first
       if (!selectedAthleteEmail) {
         const first = (list || []).find((a) => a?.email);
         if (first?.email) setSelectedAthleteEmail(normalizeEmail(first.email));
       }
-
-      const qEmail = router?.query?.athleteEmail;
-      const email =
-        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) || selectedAthleteEmail;
-
-      if (email) await fetchPrescriptionsForAthlete(email);
     } catch (err) {
       console.error("[org/prescriptions] refreshAll error:", err);
       setError(err?.message || "Failed to load data.");
     } finally {
       setLoading(false);
     }
-  }, [
-    fetchAthletes,
-    fetchTemplates,
-    fetchPrescriptionsForAthlete,
-    router?.query?.athleteEmail,
-    selectedAthleteEmail,
-    setError,
-  ]);
+  }, [fetchAthletes, fetchTemplates, selectedAthleteEmail, setError]);
 
   useEffect(() => {
     if (!user) return;
@@ -219,17 +237,64 @@ export default function OrgPrescriptionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, role, orgToken]);
 
-  useEffect(() => {
-    if (!user) return;
-    if (role !== "organization") return;
-    if (!selectedAthleteEmail) return;
-    fetchPrescriptionsForAthlete(selectedAthleteEmail).catch((err) =>
-      setError(err?.message || "Failed to load prescriptions.")
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAthleteEmail]);
+  /* ---------------- ✅ On-load roster status: mark Done if athlete has >=1 plan ---------------- */
 
-  // builder helpers
+  const refreshRosterPlanStatus = useCallback(
+    async (athleteList) => {
+      const list = Array.isArray(athleteList) ? athleteList : athletes;
+      if (!list || list.length === 0) {
+        setDoneEmailsFromPlans(new Set());
+        return;
+      }
+
+      setStatusLoading(true);
+      try {
+        // token-first, keep it light: pageSize=1
+        const tasks = list.map(async (a) => {
+          const email = normalizeEmail(a?.email);
+          const token = String(getAthleteToken(a) || "").trim();
+          if (!email || !token) return { email, has: false };
+
+          const res = await fetch(
+            `/api/org/nutrition/plans/getByAthlete?athleteToken=${encodeURIComponent(token)}&pageSize=1`,
+            {
+              method: "GET",
+              credentials: "include",
+              headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+            }
+          );
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) return { email, has: false };
+
+          const plans = Array.isArray(data?.plans) ? data.plans : [];
+          return { email, has: plans.length > 0 };
+        });
+
+        const results = await Promise.all(tasks);
+
+        const next = new Set();
+        for (const r of results) {
+          if (r?.email && r?.has) next.add(r.email);
+        }
+        setDoneEmailsFromPlans(next);
+      } catch (e) {
+        console.warn("[org/prescriptions] refreshRosterPlanStatus failed:", e);
+      } finally {
+        setStatusLoading(false);
+      }
+    },
+    [athletes, orgAuthHeaders]
+  );
+
+  // run once after athletes load (and whenever list changes)
+  useEffect(() => {
+    if (!athletes || athletes.length === 0) return;
+    refreshRosterPlanStatus(athletes);
+  }, [athletes, refreshRosterPlanStatus]);
+
+  /* ---------------- Builder helpers ---------------- */
+
   const onChange = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
 
   const resetBuilder = () => {
@@ -260,27 +325,24 @@ export default function OrgPrescriptionsPage() {
     return "";
   };
 
-  // templates actions
+  /* ---------------- Template actions ---------------- */
+
   const applyTemplateToBuilder = useCallback(
     (tplId) => {
       const id = String(tplId || "").trim();
       if (!id) return;
 
       const tpl = templates.find((t) => String(t?.id) === id);
-      if (!tpl) {
-        setTemplatesError("Template not found.");
-        return;
-      }
+      if (!tpl) return setTemplatesError("Template not found.");
+
       if (!tpl.structured || typeof tpl.structured !== "object") {
-        setTemplatesError(
-          "This template is missing structured JSON. Open Airtable and confirm the “Structured” field is valid JSON."
-        );
-        return;
+        return setTemplatesError("This template is missing structured JSON. Open Airtable and confirm the “Structured” field is valid JSON.");
       }
 
       setStructured((prev) => ({ ...prev, ...tpl.structured }));
 
       if (!title || title === "Nutrition + Supplements Plan") setTitle(tpl.name || "Nutrition + Supplements Plan");
+
       setView("builder");
     },
     [templates, title, setTemplatesError]
@@ -292,7 +354,6 @@ export default function OrgPrescriptionsPage() {
 
     const name = String(templateName || "").trim();
     if (!name) return setTemplatesError("Enter a template name first.");
-    if (!orgToken) return setTemplatesError("Missing org token. Re-login as org.");
 
     try {
       const res = await fetch("/api/org/createPlanTemplate", {
@@ -300,7 +361,6 @@ export default function OrgPrescriptionsPage() {
         credentials: "include",
         headers: { "Content-Type": "application/json", ...orgAuthHeaders },
         body: JSON.stringify({
-          token: orgToken,
           templateName: name,
           createdBy: user?.Email || user?.email || "",
           structured,
@@ -322,7 +382,7 @@ export default function OrgPrescriptionsPage() {
       console.error("[org/prescriptions] saveAsTemplate error:", err);
       setTemplatesError(err?.message || "Failed to save template.");
     }
-  }, [orgAuthHeaders, orgToken, user, structured, templateName, templateNotes, fetchTemplates, setError, setTemplatesError]);
+  }, [orgAuthHeaders, user, structured, templateName, templateNotes, fetchTemplates, setError, setTemplatesError]);
 
   const openDeleteTemplateConfirm = () => {
     setDeleteError("");
@@ -358,7 +418,77 @@ export default function OrgPrescriptionsPage() {
     }
   }, [templateId, orgAuthHeaders, fetchTemplates]);
 
-  // create plan
+  /* ---------------- ✅ History (NutritionPlans) capped + Load More ---------------- */
+
+  const PAGE_SIZE = 10;
+
+  const searchHistory = useCallback(
+    async ({ reset = true } = {}) => {
+      const token = String(selectedAthleteToken || "").trim();
+      if (!token) {
+        setError("Selected athlete is missing AthleteToken.");
+        return;
+      }
+
+      setHistoryRequested(true);
+      setHistoryLoading(true);
+      setError("");
+
+      try {
+        const offset = reset ? null : historyOffset;
+
+        const url =
+          `/api/org/nutrition/plans/getByAthlete?athleteToken=${encodeURIComponent(token)}` +
+          `&pageSize=${PAGE_SIZE}` +
+          (offset ? `&offset=${encodeURIComponent(offset)}` : "");
+
+        const res = await fetch(url, {
+          method: "GET",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.detail || "Failed to load plans.");
+
+        const plans = Array.isArray(data?.plans) ? data.plans : [];
+        const mapped = plans.map((p) => ({
+          id: p.id,
+          title: p.phase ? `Nutrition Plan • ${p.phase}` : "Nutrition Plan",
+          prescription: p.prescription || "",
+          createdAt: p.createdAt || "",
+          createdBy: p.createdBy || "",
+          _raw: p,
+        }));
+
+        if (reset) setHistoryItems(mapped);
+        else setHistoryItems((prev) => prev.concat(mapped));
+
+        const nextOffset = data?.nextOffset ? String(data.nextOffset) : null;
+        const hasMore = Boolean(data?.hasMore) || Boolean(nextOffset);
+
+        setHistoryOffset(nextOffset);
+        setHistoryHasMore(hasMore);
+      } catch (err) {
+        console.error("[org/prescriptions] searchHistory error:", err);
+        if (reset) setHistoryItems([]);
+        setHistoryHasMore(false);
+        setHistoryOffset(null);
+        setError(err?.message || "Failed to load plans.");
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [selectedAthleteToken, historyOffset, orgAuthHeaders, setError]
+  );
+
+  const loadMoreHistory = useCallback(() => {
+    if (!historyHasMore || historyLoading) return;
+    return searchHistory({ reset: false });
+  }, [historyHasMore, historyLoading, searchHistory]);
+
+  /* ---------------- Create plan ---------------- */
+
   const createPlan = useCallback(
     async (e, { advance = false } = {}) => {
       e?.preventDefault?.();
@@ -369,7 +499,8 @@ export default function OrgPrescriptionsPage() {
       if (msg) return setError(msg);
 
       const athleteEmail = normalizeEmail(selectedAthleteEmail);
-      const athleteToken = selectedAthleteToken;
+      const athleteToken = String(selectedAthleteToken || "").trim();
+
       if (!athleteEmail) return setError("Select an athlete first.");
       if (!athleteToken) return setError("Selected athlete is missing AthleteToken.");
 
@@ -380,7 +511,7 @@ export default function OrgPrescriptionsPage() {
         const summaryText = buildPlanSummaryText(structured);
         const planJson = buildNutritionPlanJson(structured, { createdBy });
 
-        // 1) new NutritionPlans upsert
+        // 1) NutritionPlans upsert (source of truth)
         const upsertRes = await fetch("/api/org/nutrition/plans/upsert", {
           method: "POST",
           credentials: "include",
@@ -404,43 +535,21 @@ export default function OrgPrescriptionsPage() {
         const upsertData = await upsertRes.json().catch(() => ({}));
         if (!upsertRes.ok) throw new Error(upsertData?.error || "Failed to save NutritionPlan (PlanJson).");
 
-        // 2) legacy prescription history (non-blocking)
-        const res = await fetch("/api/org/createPrescription", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", ...orgAuthHeaders },
-          body: JSON.stringify({
-            athleteEmail,
-            organizationName: orgName,
-            title: title.trim() || "Nutrition + Supplements Plan",
-            prescription: summaryText,
-            createdBy,
-            structured: {
-              phase: structured.phase || "Maintain",
-              calories: structured.calories || "",
-              proteinGrams: structured.proteinGrams || "",
-              carbsGrams: structured.carbsGrams || "",
-              fatsGrams: structured.fatsGrams || "",
-              hydrationOz: structured.hydrationOz || "",
-              notesMacros: structured.notesMacros || "",
-              proteinRecommendation: structured.proteinRecommendation || "",
-              creatineRecommendation: structured.creatineRecommendation || "",
-              bcaaRecommendation: structured.bcaaRecommendation || "",
-              electrolytesRecommendation: structured.electrolytesRecommendation || "",
-              notesSupplements: structured.notesSupplements || "",
-              metaStatus: structured.metaStatus || "Active",
-              metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
-            },
-          }),
+        // ✅ mark done immediately (UI + speed mode)
+        markDone(athleteEmail);
+        setDoneEmailsFromPlans((prev) => {
+          const next = new Set(prev);
+          next.add(athleteEmail);
+          return next;
         });
 
-        const legacyData = await res.json().catch(() => ({}));
-        if (!res.ok) console.warn("[org/prescriptions] legacy createPrescription failed:", legacyData);
+        // If history is open, refresh first page so newest is visible
+        if (view === "history") {
+          setHistoryOffset(null);
+          await searchHistory({ reset: true });
+        }
 
-        markDone(athleteEmail);
-        fetchPrescriptionsForAthlete(athleteEmail).catch(() => {});
         setView("builder");
-
         if (advance) advanceSafely(() => goToNextAthlete(), 150);
       } catch (err) {
         console.error("[org/prescriptions] createPlan error:", err);
@@ -454,19 +563,19 @@ export default function OrgPrescriptionsPage() {
       selectedAthleteEmail,
       selectedAthleteToken,
       structured,
-      title,
-      orgName,
       user,
       createLoading,
-      fetchPrescriptionsForAthlete,
+      validateBuilder,
+      markDone,
+      view,
+      searchHistory,
       goToNextAthlete,
       advanceSafely,
-      markDone,
       setError,
     ]
   );
 
-  const isBusy = loading || loadingAthletes || loadingPrescriptions || templatesLoading;
+  const isBusy = loading || loadingAthletes || templatesLoading;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -481,6 +590,9 @@ export default function OrgPrescriptionsPage() {
             <p className="text-[11px] text-gray-500 mt-2">
               Logged in as <span className="font-semibold">{orgName}</span>
             </p>
+            {statusLoading ? (
+              <p className="text-[11px] text-gray-500 mt-1">Checking plan status…</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
@@ -499,7 +611,10 @@ export default function OrgPrescriptionsPage() {
               Athletes
             </button>
             <button
-              onClick={refreshAll}
+              onClick={async () => {
+                await refreshAll();
+                await refreshRosterPlanStatus();
+              }}
               className="px-4 py-2 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110"
               type="button"
             >
@@ -528,10 +643,19 @@ export default function OrgPrescriptionsPage() {
             athleteSearch={athleteSearch}
             setAthleteSearch={setAthleteSearch}
             selectedAthleteEmail={selectedAthleteEmail}
-            setSelectedAthleteEmail={setSelectedAthleteEmail}
+            setSelectedAthleteEmail={(email) => {
+              setSelectedAthleteEmail(email);
+
+              // reset history for new athlete
+              setHistoryRequested(false);
+              setHistoryItems([]);
+              setHistoryHasMore(false);
+              setHistoryOffset(null);
+            }}
             completedEmails={completedEmails}
             router={router}
             inputBase={inputBase}
+            selectedAthleteToken={selectedAthleteToken}
           />
 
           <section className="lg:col-span-8 space-y-6">
@@ -539,16 +663,21 @@ export default function OrgPrescriptionsPage() {
               selectedAthlete={selectedAthlete}
               selectedAthleteToken={selectedAthleteToken}
               view={view}
-              setView={setView}
+              setView={(v) => {
+                setView(v);
+
+                // Optional QoL: load first page when you enter history (still capped)
+                if (v === "history" && !historyRequested) {
+                  searchHistory({ reset: true });
+                }
+              }}
             />
 
             {view === "builder" && (
               <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-6">
                 <div>
                   <h3 className="text-lg font-bold">Create Plan</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    This now saves both: (1) NutritionPlans PlanJson (new) and (2) legacy Prescription history.
-                  </p>
+                  <p className="text-sm text-gray-600 mt-1">Saves to NutritionPlans (PlanJson + Prescription).</p>
                 </div>
 
                 <TemplatesPanel
@@ -575,7 +704,7 @@ export default function OrgPrescriptionsPage() {
                   title={title}
                   setTitle={setTitle}
                   structured={structured}
-                  onChange={(k, v) => setStructured((prev) => ({ ...prev, [k]: v }))}
+                  onChange={(k, v) => onChange(k, v)}
                   OPTIONS={OPTIONS}
                   createLoading={createLoading}
                   selectedAthleteEmail={selectedAthleteEmail}
@@ -588,9 +717,15 @@ export default function OrgPrescriptionsPage() {
 
             {view === "history" && (
               <PlanHistory
-                prescriptions={prescriptions}
+                prescriptions={historyRequested ? historyItems : []}
+                selectedAthleteToken={selectedAthleteToken}
                 selectedAthleteEmail={selectedAthleteEmail}
-                onRefresh={() => fetchPrescriptionsForAthlete(selectedAthleteEmail)}
+                selectedAthleteName={selectedAthlete?.name || ""}
+                historyRequested={historyRequested}
+                loading={historyLoading}
+                hasMore={historyHasMore}
+                onSearch={() => searchHistory({ reset: true })}
+                onLoadMore={loadMoreHistory}
                 subtleHint={subtleHint}
                 onCopyNotesToBuilder={(p) => {
                   setTitle(p.title || "Nutrition + Supplements Plan");

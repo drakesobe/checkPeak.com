@@ -3,17 +3,33 @@
 
 import { normalizeEmail } from "@/lib/org/prescriptions/prescriptions-utils";
 
-export default function SelectedAthleteCard({ selectedAthlete, selectedAthleteToken, view, setView }) {
+export default function SelectedAthleteCard({
+  selectedAthlete,
+  selectedAthleteToken,
+  view,
+  setView,
+}) {
+  const name = selectedAthlete?.name || "Athlete";
+  const emailRaw = selectedAthlete?.email || "";
+  const email = emailRaw ? normalizeEmail(emailRaw) : "";
+
   return (
     <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-lg font-bold">Selected Athlete</h2>
-          {selectedAthlete ? (
+
+          {selectedAthleteToken ? (
             <p className="text-sm text-gray-700 mt-1 truncate">
-              <span className="font-semibold">{selectedAthlete.name || "Athlete"}</span>{" "}
-              <span className="text-gray-500">({normalizeEmail(selectedAthlete.email)})</span>
-              {selectedAthleteToken ? <span className="text-gray-400"> • {selectedAthleteToken}</span> : null}
+              <span className="font-semibold">{name}</span>
+              {email ? <span className="text-gray-500"> ({email})</span> : null}
+              <span className="text-gray-400"> • {selectedAthleteToken}</span>
+            </p>
+          ) : selectedAthlete ? (
+            <p className="text-sm text-gray-700 mt-1 truncate">
+              <span className="font-semibold">{name}</span>
+              {email ? <span className="text-gray-500"> ({email})</span> : null}
+              <span className="text-amber-700"> • Token missing</span>
             </p>
           ) : (
             <p className="text-sm text-gray-500 mt-1">Choose an athlete to begin.</p>
@@ -32,6 +48,7 @@ export default function SelectedAthleteCard({ selectedAthlete, selectedAthleteTo
           >
             Builder
           </button>
+
           <button
             type="button"
             onClick={() => setView("history")}

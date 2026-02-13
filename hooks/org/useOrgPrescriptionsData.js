@@ -2,26 +2,10 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { normalizeEmail } from "@/lib/org/prescriptions/prescriptions-utils";
 
-/**
- * useOrgPrescriptionsData
- * - Athletes list
- * - Templates list
- * - Prescriptions history list (token-first)
- *
- * ✅ Prescriptions fetch supports:
- *    - athleteToken (preferred)
- *    - athleteEmail (legacy fallback)
- *
- * Endpoint expected:
- *   /api/org/getPrescriptionsForAthlete?athleteToken=ATH-...
- *   OR
- *   /api/org/getPrescriptionsForAthlete?athleteEmail=...
- */
 export function useOrgPrescriptionsData({ orgAuthHeaders, orgToken }) {
   const [athletes, setAthletes] = useState([]);
-  const [prescriptions, setPrescriptions] = useState([]);
+  const [prescriptions, setPrescriptions] = useState([]); // NutritionPlans history
   const [templates, setTemplates] = useState([]);
 
   const [loadingAthletes, setLoadingAthletes] = useState(false);
@@ -42,73 +26,67 @@ export function useOrgPrescriptionsData({ orgAuthHeaders, orgToken }) {
     setLoadingAthletes(true);
     setError("");
 
-    const res = await fetch("/api/org/getAthletes", {
-      method: "GET",
-      credentials: "include",
-      headers: { ...orgAuthHeaders },
-    });
+    try {
+      const res = await fetch("/api/org/getAthletes", {
+        method: "GET",
+        credentials: "include",
+        headers: { ...orgAuthHeaders },
+      });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const msg = data?.error || data?.airtable?.message || "Failed to load athletes.";
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.airtable?.message || "Failed to load athletes.");
+
+      const list = Array.isArray(data?.athletes) ? data.athletes : [];
+      setAthletes(list);
+      return list;
+    } finally {
       setLoadingAthletes(false);
-      throw new Error(msg);
     }
-
-    const list = Array.isArray(data?.athletes) ? data.athletes : [];
-    setAthletes(list);
-
-    setLoadingAthletes(false);
-    return list;
   }, [orgAuthHeaders]);
 
   /**
-   * Token-first prescriptions history fetch
-   * Usage:
-   *   fetchPrescriptionsForAthlete({ athleteToken })
-   *   fetchPrescriptionsForAthlete({ athleteEmail }) // legacy fallback
+   * ✅ History fetch reads ONLY from NutritionPlans (token required)
    */
   const fetchPrescriptionsForAthlete = useCallback(
-    async ({ athleteToken, athleteEmail } = {}) => {
+    async ({ athleteToken } = {}) => {
       const token = String(athleteToken || "").trim();
-      const email = normalizeEmail(athleteEmail);
 
-      if (!token && !email) {
+      if (!token) {
         setPrescriptions([]);
-        return [];
+        throw new Error("athleteToken is required.");
       }
 
       setLoadingPrescriptions(true);
       setError("");
 
-      const qs = token
-        ? `athleteToken=${encodeURIComponent(token)}`
-        : `athleteEmail=${encodeURIComponent(email)}`;
+      try {
+        const res = await fetch(
+          `/api/org/nutrition/plans/getByAthlete?athleteToken=${encodeURIComponent(token)}`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+          }
+        );
 
-      const res = await fetch(`/api/org/getPrescriptionsForAthlete?${qs}`, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...orgAuthHeaders,
-        },
-      });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.detail || "Failed to load nutrition plans.");
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg =
-          data?.error ||
-          data?.airtable?.message ||
-          "Failed to load prescriptions.";
+        const plans = Array.isArray(data?.plans) ? data.plans : [];
+        const mapped = plans.map((p) => ({
+          id: p.id,
+          title: p.phase ? `Nutrition Plan • ${p.phase}` : "Nutrition Plan",
+          prescription: p.prescription || "",
+          createdAt: p.createdAt || "",
+          createdBy: p.createdBy || "",
+          _raw: p,
+        }));
+
+        setPrescriptions(mapped);
+        return mapped;
+      } finally {
         setLoadingPrescriptions(false);
-        throw new Error(msg);
       }
-
-      const list = Array.isArray(data?.prescriptions) ? data.prescriptions : [];
-      setPrescriptions(list);
-
-      setLoadingPrescriptions(false);
-      return list;
     },
     [orgAuthHeaders]
   );
@@ -117,65 +95,61 @@ export function useOrgPrescriptionsData({ orgAuthHeaders, orgToken }) {
     setTemplatesLoading(true);
     setTemplatesError("");
 
-    if (!orgToken) {
-      setTemplates([]);
+    try {
+      if (!orgToken) {
+        setTemplates([]);
+        return [];
+      }
+
+      const res = await fetch("/api/org/getPlanTemplates", {
+        method: "GET",
+        credentials: "include",
+        headers: { ...orgAuthHeaders },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTemplates([]);
+        setTemplatesError(data?.error || "Failed to load templates");
+        return [];
+      }
+
+      const list = Array.isArray(data?.templates) ? data.templates : [];
+      const sorted = list.slice().sort((a, b) => {
+        const aSt = String(a?.status || "Active").toLowerCase();
+        const bSt = String(b?.status || "Active").toLowerCase();
+        const aIsArch = aSt.includes("arch");
+        const bIsArch = bSt.includes("arch");
+        if (aIsArch !== bIsArch) return aIsArch ? 1 : -1;
+        return String(a?.name || "").localeCompare(String(b?.name || ""));
+      });
+
+      setTemplates(sorted);
+      return sorted;
+    } finally {
       setTemplatesLoading(false);
-      return [];
     }
-
-    const res = await fetch("/api/org/getPlanTemplates", {
-      method: "GET",
-      credentials: "include",
-      headers: { ...orgAuthHeaders },
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setTemplates([]);
-      setTemplatesLoading(false);
-      setTemplatesError(data?.error || "Failed to load templates");
-      return [];
-    }
-
-    const list = Array.isArray(data?.templates) ? data.templates : [];
-    const sorted = list.slice().sort((a, b) => {
-      const aSt = String(a?.status || "Active").toLowerCase();
-      const bSt = String(b?.status || "Active").toLowerCase();
-      const aIsArch = aSt.includes("arch");
-      const bIsArch = bSt.includes("arch");
-      if (aIsArch !== bIsArch) return aIsArch ? 1 : -1;
-      return String(a?.name || "").localeCompare(String(b?.name || ""));
-    });
-
-    setTemplates(sorted);
-    setTemplatesLoading(false);
-    return sorted;
   }, [orgAuthHeaders, orgToken]);
 
   return {
-    // data
     athletes,
     prescriptions,
     templates,
     activeTemplates,
 
-    // loading states
     loadingAthletes,
     loadingPrescriptions,
     templatesLoading,
 
-    // errors
     error,
     templatesError,
 
-    // setters (sometimes useful for orchestrator pages)
     setAthletes,
     setPrescriptions,
     setTemplates,
     setError,
     setTemplatesError,
 
-    // actions
     fetchAthletes,
     fetchPrescriptionsForAthlete,
     fetchTemplates,

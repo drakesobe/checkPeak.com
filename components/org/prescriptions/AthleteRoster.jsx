@@ -1,19 +1,23 @@
+// components/org/prescriptions/AthleteRoster.jsx
 "use client";
 
-import {
-  formatDateTime,
-  getAthleteToken,
-  normalizeEmail,
-} from "@/lib/org/prescriptions/prescriptions-utils";
+import { formatDateTime, getAthleteToken, normalizeEmail } from "@/lib/org/prescriptions/prescriptions-utils";
 
 export default function AthleteRoster({
   athletes = [],
   filteredAthletes = [],
   athleteSearch,
   setAthleteSearch,
+
   selectedAthleteEmail,
   setSelectedAthleteEmail,
-  completedEmails,
+
+  selectedAthleteToken,
+
+  completedEmails, // local speed-mode done (optional)
+  doneTokens = new Set(), // ✅ Airtable truth
+  doneTokensLoading = false,
+
   router,
   inputBase,
 }) {
@@ -23,8 +27,11 @@ export default function AthleteRoster({
         <div>
           <h2 className="text-lg font-bold">Athletes</h2>
           <p className="text-xs text-gray-500 mt-1">
-            Filter the list, then Save & Next to batch through that subset.
+            Status is based on NutritionPlans (token). Switching athletes won’t spam history calls.
           </p>
+          {doneTokensLoading ? (
+            <p className="text-[11px] text-gray-400 mt-1">Updating Done/Pending…</p>
+          ) : null}
         </div>
         <span className="text-xs text-gray-500">
           {filteredAthletes.length}/{athletes.length}
@@ -41,84 +48,62 @@ export default function AthleteRoster({
       <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
         {filteredAthletes.length === 0 && (
           <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-            <p className="text-sm text-gray-700 font-semibold">
-              No athletes found
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Clear search or confirm signups.
-            </p>
+            <p className="text-sm text-gray-700 font-semibold">No athletes found</p>
+            <p className="text-xs text-gray-500 mt-1">Clear search or confirm signups.</p>
           </div>
         )}
 
         {filteredAthletes.map((a) => {
           const email = normalizeEmail(a?.email);
-          const token = getAthleteToken(a);
+          const token = String(getAthleteToken(a) || "").trim();
 
           const isActive =
-            email && email === normalizeEmail(selectedAthleteEmail);
+            (token && selectedAthleteToken && token === String(selectedAthleteToken).trim()) ||
+            (email && email === normalizeEmail(selectedAthleteEmail));
 
-          const done = email && completedEmails?.has?.(email);
+          // ✅ Done/Pending: Airtable truth by token
+          const doneByToken = token ? doneTokens?.has?.(token) : false;
+
+          // optional local done (speed-mode)
+          const doneByEmail = email && completedEmails?.has?.(email);
+
+          const done = doneByToken || doneByEmail;
 
           return (
             <button
-              key={
-                a.id ||
-                token ||
-                email ||
-                Math.random().toString(36).slice(2)
-              }
+              key={a.id || token || email || Math.random().toString(36).slice(2)}
               type="button"
               onClick={() => {
-                if (!email) return;
+                if (email) setSelectedAthleteEmail(email);
 
-                // Keep email state for internal logic
-                setSelectedAthleteEmail(email);
-
-                // ✅ TOKEN-FIRST URL
                 if (token) {
-                  router.push(
-                    `/org/prescriptions?athleteToken=${encodeURIComponent(
-                      token
-                    )}`,
-                    undefined,
-                    { shallow: true }
-                  );
-                } else {
-                  // Fallback (legacy)
-                  router.push(
-                    `/org/prescriptions?athleteEmail=${encodeURIComponent(
-                      email
-                    )}`,
-                    undefined,
-                    { shallow: true }
-                  );
+                  router.push(`/org/prescriptions?athleteToken=${encodeURIComponent(token)}`, undefined, {
+                    shallow: true,
+                  });
+                  return;
+                }
+
+                if (email) {
+                  router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(email)}`, undefined, {
+                    shallow: true,
+                  });
                 }
               }}
               className={`w-full text-left rounded-xl border p-3 transition ${
-                isActive
-                  ? "border-[#46769B] bg-blue-50"
-                  : "border-gray-200 bg-white hover:bg-gray-50"
+                isActive ? "border-[#46769B] bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"
               }`}
-              disabled={!email}
+              disabled={!token && !email}
+              title={!token && !email ? "Missing token and email" : ""}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
-                    {a?.name || "Athlete"}
-                  </p>
-
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">
-                    {email || "Missing email"}
-                  </p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{a?.name || "Athlete"}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{email || "Missing email"}</p>
 
                   {token ? (
-                    <p className="text-[11px] text-gray-400 mt-1 truncate">
-                      Token: {token}
-                    </p>
+                    <p className="text-[11px] text-gray-400 mt-1 truncate">Token: {token}</p>
                   ) : (
-                    <p className="text-[11px] text-amber-700 mt-1 truncate">
-                      Token missing (lookup)
-                    </p>
+                    <p className="text-[11px] text-amber-700 mt-1 truncate">Token missing (lookup)</p>
                   )}
                 </div>
 
@@ -133,19 +118,14 @@ export default function AthleteRoster({
                 )}
               </div>
 
-              {a?.createdAt && (
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Joined: {formatDateTime(a.createdAt)}
-                </p>
-              )}
+              {a?.createdAt && <p className="text-[11px] text-gray-400 mt-1">Joined: {formatDateTime(a.createdAt)}</p>}
             </button>
           );
         })}
       </div>
 
       <div className="text-[11px] text-gray-500">
-        Speed shortcuts:{" "}
-        <span className="font-semibold">Enter</span> = Save & Next,{" "}
+        Speed shortcuts: <span className="font-semibold">Enter</span> = Save & Next,{" "}
         <span className="font-semibold">Ctrl/Cmd+Enter</span> = Save
       </div>
     </aside>

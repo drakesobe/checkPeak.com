@@ -2,200 +2,265 @@
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
-function safeJson(res, code, obj) {
-  return res.status(code).json(obj);
+/* ---------------- helpers ---------------- */
+
+function asString(v) {
+  if (v === 0) return "0";
+  return String(v ?? "").trim();
 }
 
-function escFormulaStr(v) {
-  return String(v || "").replace(/'/g, "\\'");
-}
-
-function envMissingMap(obj) {
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) out[k] = !v;
-  return out;
-}
-
-function safeStringifyJson(v) {
-  if (v == null) return "";
-  if (typeof v === "string") return v.trim();
+function safeJsonStringify(obj) {
+  if (!obj) return "";
+  if (typeof obj === "string") return obj;
   try {
-    return JSON.stringify(v);
+    return JSON.stringify(obj);
   } catch {
     return "";
   }
 }
 
-async function batchUpdate(base, table, updates, batchSize = 10) {
-  const list = Array.isArray(updates) ? updates : [];
-  for (let i = 0; i < list.length; i += batchSize) {
-    const chunk = list.slice(i, i + batchSize);
-    // eslint-disable-next-line no-await-in-loop
-    await base(table).update(chunk);
+function safeJsonParse(s) {
+  const raw = asString(s);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
-// Helper: supports BOTH auth styles:
-// - requireOrg(req,res) returning truthy org object (newer)
-// - requireOrg(req) returning { ok: true } / { ok:false, error } (older)
-function requireOrgCompat(req, res) {
-  try {
-    const out = requireOrg.length >= 2 ? requireOrg(req, res) : requireOrg(req);
-    if (!out) return { ok: false, error: "Unauthorized" };
-    if (typeof out === "object" && "ok" in out) return out; // {ok:...}
-    return { ok: true, org: out };
-  } catch (e) {
-    return { ok: false, error: e?.message || "Unauthorized" };
-  }
+function escapeAirtableString(str = "") {
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
+
+function getTable(apiKey, baseId, tableNameOrId) {
+  if (!apiKey || !baseId || !tableNameOrId) return null;
+  const base = new Airtable({ apiKey }).base(baseId);
+  return base(tableNameOrId);
+}
+
+function pickFirstNonEmptyString(...vals) {
+  for (const v of vals) {
+    const s = asString(v);
+    if (s) return s;
+  }
+  return "";
+}
+
+/* ---------------- env ---------------- */
+
+// NutritionPlans base/table
+const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
+const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
+const NUTRITION_PLANS_TABLE =
+  process.env.NUTRITION_PLANS_TABLE ||
+  process.env.NUTRITION_TABLE_NAME ||
+  process.env.NUTRITION_TABLE_ID ||
+  "NutritionPlans";
+
+// AthleteScans base/table (needed to link the plan to the athlete record)
+const ATHLETE_API_KEY = process.env.ATHLETE_API_KEY;
+const ATHLETE_BASE_ID = process.env.ATHLETE_BASE_ID;
+const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME; // AthleteScans
+
+/* ---------------- Airtable field names (STRICT) ---------------- */
+
+// AthleteScans
+const ATH_TOKEN = "AthleteToken";
+const ATH_ORG_TOKEN = "Token"; // org token stored on athlete record (text)
+
+// NutritionPlans
+const PLAN_ATH_LINK = "Athlete"; // linked to AthleteScans record
+const PLAN_STATUS = "Status";
+const PLAN_CREATED_AT = "CreatedAt";
+const PLAN_CREATED_BY = "CreatedBy";
+
+const PLAN_PHASE = "Phase";
+const PLAN_DCAL = "DailyCalories";
+const PLAN_DPRO = "DailyProtein"; // ✅ your real Airtable field name
+const PLAN_DCARB = "DailyCarbs";  // ✅ your real Airtable field name
+const PLAN_DFAT = "DailyFat";
+const PLAN_JSON = "PlanJson";
+const PLAN_PRESCRIPTION = "Prescription";
+
+/* ---------------- handler ---------------- */
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  if (req.method !== "POST") return safeJson(res, 405, { error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const auth = requireOrgCompat(req, res);
-  if (!auth?.ok) return safeJson(res, 401, { error: auth?.error || "Unauthorized" });
+  const auth = requireOrg(req, res);
+  if (!auth?.ok) return;
 
-  // ✅ Trim envs so leading/trailing whitespace can't break config
-  const NUTRITION_API_KEY = String(process.env.NUTRITION_API_KEY || "").trim();
-  const NUTRITION_BASE_ID = String(process.env.NUTRITION_BASE_ID || "").trim();
+  const orgToken = asString(auth?.org?.token);
+  if (!orgToken) return res.status(401).json({ error: "Org token missing from session." });
 
-  /**
-   * ✅ Table env name compatibility
-   * Your .env.local currently has:
-   *   NUTRITION_TABLE_NAME=tblbN4C6BWn6MNWzu   (this is the PLANS table ID)
-   *
-   * This API originally expected:
-   *   NUTRITION_PLANS_TABLE / NUTRITION_ROSTER_TABLE
-   */
-  const NUTRITION_PLANS_TABLE = String(
-    process.env.NUTRITION_PLANS_TABLE ||
-      process.env.NUTRITION_TABLE_NAME || // 👈 backwards compatible with your env
-      "tblbN4C6BWn6MNWzu"
-  ).trim();
+  const plansTable = getTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE);
+  const athleteTable = getTable(ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME);
 
-  const NUTRITION_ROSTER_TABLE = String(process.env.NUTRITION_ROSTER_TABLE || "tblyfqbVBXKR7jPEz").trim();
-
-  // Fields (override via env if needed)
-  const TOKEN_FIELD = String(process.env.NUTRITION_TOKEN_FIELD || "AthleteToken").trim();
-  const PLANS_LINK_FIELD = String(process.env.NUTRITION_PLANS_LINK_FIELD || "Athlete").trim();
-  const STATUS_FIELD = String(process.env.NUTRITION_STATUS_FIELD || "Status").trim();
-  const CREATEDAT_FIELD = String(process.env.NUTRITION_CREATEDAT_FIELD || "CreatedAt").trim();
-
-  const ARCHIVED_AT_FIELD = String(process.env.NUTRITION_ARCHIVEDAT_FIELD || "ArchivedAt").trim();
-  const ARCHIVED_BY_FIELD = String(process.env.NUTRITION_ARCHIVEDBY_FIELD || "ArchivedBy").trim();
-
-  if (!NUTRITION_API_KEY || !NUTRITION_BASE_ID) {
-    return safeJson(res, 500, {
-      error: "Nutrition Airtable not configured. Set NUTRITION_API_KEY and NUTRITION_BASE_ID.",
-      missing: envMissingMap({ NUTRITION_API_KEY, NUTRITION_BASE_ID }),
-      debug: {
-        // ✅ helps you confirm which table envs are being used
-        NUTRITION_PLANS_TABLE,
-        NUTRITION_ROSTER_TABLE,
-        TOKEN_FIELD,
-        PLANS_LINK_FIELD,
-        STATUS_FIELD,
-        CREATEDAT_FIELD,
+  if (!plansTable) {
+    return res.status(500).json({
+      error: "NutritionPlans Airtable not configured.",
+      missing: {
+        NUTRITION_API_KEY: !NUTRITION_API_KEY,
+        NUTRITION_BASE_ID: !NUTRITION_BASE_ID,
+        NUTRITION_PLANS_TABLE: !NUTRITION_PLANS_TABLE,
       },
     });
   }
 
-  const base = new Airtable({ apiKey: NUTRITION_API_KEY }).base(NUTRITION_BASE_ID);
+  if (!athleteTable) {
+    return res.status(500).json({
+      error: "AthleteScans Airtable not configured (needed to link Athlete).",
+      missing: {
+        ATHLETE_API_KEY: !ATHLETE_API_KEY,
+        ATHLETE_BASE_ID: !ATHLETE_BASE_ID,
+        ATHLETE_TABLE_NAME: !ATHLETE_TABLE_NAME,
+      },
+    });
+  }
 
   try {
-    const {
-      athleteToken,
-      phase = "",
-      daily = {},
-      planJson,
-      prescription = "",
-      createdBy = "",
-      status = "active",
-    } = req.body || {};
+    const body = req.body || {};
 
-    const token = String(athleteToken || "").trim();
-    if (!token) return safeJson(res, 400, { error: "athleteToken is required" });
+    const athleteToken = asString(body.athleteToken);
+    const phase = asString(body.phase || "Maintain");
+    const status = asString(body.status || "active").toLowerCase();
+    const createdBy = asString(body.createdBy || "");
+    const prescription = asString(body.prescription || "");
 
-    // 1) Find athlete record in roster by token (lookup-safe)
-    const safeToken = escFormulaStr(token);
-    const rosterFilter = `OR(
-      {${TOKEN_FIELD}}='${safeToken}',
-      FIND('${safeToken}', ARRAYJOIN({${TOKEN_FIELD}}&''))>0
+    // Daily macros come in under body.daily (numbers or strings)
+    const daily = body.daily && typeof body.daily === "object" ? body.daily : {};
+
+    // PlanJson may be object or string
+    const planJsonRaw = body.planJson ?? null;
+    const planJsonObj =
+      planJsonRaw && typeof planJsonRaw === "object"
+        ? planJsonRaw
+        : safeJsonParse(planJsonRaw);
+
+    if (!athleteToken) return res.status(400).json({ error: "athleteToken is required" });
+    if (athleteToken.toUpperCase().startsWith("ORG-")) {
+      return res.status(400).json({ error: "Expected AthleteToken (ATH-...), but received an ORG- token." });
+    }
+
+    /* ---------------- 1) Find athlete record (must belong to org) ---------------- */
+
+    const tok = escapeAirtableString(athleteToken);
+    const ot = escapeAirtableString(orgToken);
+
+    const athleteFilter = `AND(
+      FIND('${ot}', ARRAYJOIN({${ATH_ORG_TOKEN}}&'')),
+      FIND('${tok}', ARRAYJOIN({${ATH_TOKEN}}&''))
     )`;
 
-    const rosterFound = await base(NUTRITION_ROSTER_TABLE)
-      .select({ maxRecords: 1, filterByFormula: rosterFilter })
-      .firstPage();
+    const athleteRec = await athleteTable
+      .select({ filterByFormula: athleteFilter, maxRecords: 1 })
+      .firstPage()
+      .then((xs) => (xs?.length ? xs[0] : null));
 
-    const athleteRec = rosterFound?.[0];
     if (!athleteRec) {
-      return safeJson(res, 404, {
-        error: "Athlete not found for token",
-        debug: { token, tokenField: TOKEN_FIELD, rosterTable: NUTRITION_ROSTER_TABLE, rosterFilter },
+      return res.status(404).json({
+        error: "Athlete not found for this organization.",
+        debug: { athleteFilter },
       });
     }
 
-    // 2) Find active plans for that athlete
-    const findActivePlans = `AND(
-      FIND('${athleteRec.id}', ARRAYJOIN({${PLANS_LINK_FIELD}}&''))>0,
-      LOWER({${STATUS_FIELD}}&'')='active'
-    )`;
+    /* ---------------- 2) Find latest ACTIVE plan for this athlete (update-or-create) ---------------- */
 
-    const activePlans = await base(NUTRITION_PLANS_TABLE)
+    const planAthMatch = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
+    const latestActiveFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
+
+    const existing = await plansTable
       .select({
-        filterByFormula: findActivePlans,
-        fields: [STATUS_FIELD],
-        maxRecords: 100,
+        filterByFormula: latestActiveFilter,
+        sort: [{ field: PLAN_CREATED_AT, direction: "desc" }],
+        maxRecords: 1,
       })
-      .firstPage();
+      .firstPage()
+      .then((xs) => (xs?.length ? xs[0] : null));
 
-    const nowISO = new Date().toISOString();
+    /* ---------------- 3) Robust macro extraction ----------------
+       Goal: Populate Airtable columns even if UI payload shifts.
+       Priority:
+       - body.daily.* (what your UI intends)
+       - planJson.daily.* (fallback)
+    -------------------------------------------------------------- */
 
-    // 3) Archive existing active plans (if any)
-    if (activePlans?.length) {
-      const updates = activePlans.map((rec) => {
-        const fields = { [STATUS_FIELD]: "archived" };
+    const pjDaily = planJsonObj?.daily && typeof planJsonObj.daily === "object" ? planJsonObj.daily : {};
 
-        // Only write archive metadata if fields exist / env names are not blank
-        if (ARCHIVED_AT_FIELD) fields[ARCHIVED_AT_FIELD] = nowISO;
-        if (ARCHIVED_BY_FIELD) fields[ARCHIVED_BY_FIELD] = String(createdBy || "");
+    const dailyCalories = pickFirstNonEmptyString(daily?.calories, pjDaily?.calories);
+    const dailyProtein  = pickFirstNonEmptyString(daily?.protein,  pjDaily?.protein); // ✅ DailyProtein
+    const dailyCarbs    = pickFirstNonEmptyString(daily?.carbs,    pjDaily?.carbs);   // ✅ DailyCarbs
+    const dailyFat      = pickFirstNonEmptyString(daily?.fat,      pjDaily?.fat);
 
-        return { id: rec.id, fields };
-      });
+    /* ---------------- 4) Build Airtable fields ---------------- */
 
-      await batchUpdate(base, NUTRITION_PLANS_TABLE, updates, 10);
-    }
+    const fields = {
+      [PLAN_ATH_LINK]: [athleteRec.id],
+      [PLAN_STATUS]: status || "active",
+      [PLAN_PHASE]: phase,
 
-    // 4) Create the new plan
-    const planJsonStr = safeStringifyJson(planJson);
+      // ✅ These are Single line text fields in Airtable: always store as strings
+      [PLAN_DCAL]: dailyCalories,
+      [PLAN_DPRO]: dailyProtein,
+      [PLAN_DCARB]: dailyCarbs,
+      [PLAN_DFAT]: dailyFat,
 
-    const newFields = {
-      [PLANS_LINK_FIELD]: [athleteRec.id],
-      Phase: String(phase || ""),
-      DailyCalories: daily?.calories ?? "",
-      DailyProtein: daily?.protein ?? "",
-      DailyCarbs: daily?.carbs ?? "",
-      DailyFat: daily?.fat ?? "",
-      PlanJson: planJsonStr,
-      Prescription: String(prescription || ""),
-      [CREATEDAT_FIELD]: nowISO,
-      CreatedBy: String(createdBy || ""),
-      [STATUS_FIELD]: String(status || "active") || "active",
+      [PLAN_JSON]: safeJsonStringify(planJsonRaw),
+      [PLAN_PRESCRIPTION]: prescription,
+
+      // meta
+      [PLAN_CREATED_BY]: createdBy,
+      [PLAN_CREATED_AT]: new Date().toISOString(),
     };
 
-    const created = await base(NUTRITION_PLANS_TABLE).create(newFields);
+    /* ---------------- 5) Save ---------------- */
 
-    return safeJson(res, 200, {
+    let saved;
+    if (existing) saved = await plansTable.update(existing.id, fields);
+    else saved = await plansTable.create(fields);
+
+    return res.status(200).json({
       ok: true,
-      athleteId: athleteRec.id,
-      archivedCount: activePlans?.length || 0,
-      planId: created?.id || "",
+      plan: { id: saved.id, fields: saved.fields || {} },
+
+      // Helpful debug (safe to keep or remove)
+      debug: {
+        athleteToken,
+        extractedDaily: {
+          fromBody: {
+            calories: asString(daily?.calories),
+            protein: asString(daily?.protein),
+            carbs: asString(daily?.carbs),
+            fat: asString(daily?.fat),
+          },
+          fromPlanJson: {
+            calories: asString(pjDaily?.calories),
+            protein: asString(pjDaily?.protein),
+            carbs: asString(pjDaily?.carbs),
+            fat: asString(pjDaily?.fat),
+          },
+          finalFields: {
+            DailyCalories: dailyCalories,
+            DailyProtein: dailyProtein,
+            DailyCarbs: dailyCarbs,
+            DailyFat: dailyFat,
+          },
+        },
+      },
     });
-  } catch (err) {
-    console.error("[nutrition/plans/upsert] error:", err);
-    return safeJson(res, 500, { error: err?.message || "Failed to upsert nutrition plan" });
+  } catch (e) {
+    console.error("[nutrition/plans/upsert] error:", e);
+    return res.status(500).json({
+      error: e?.message || "Failed to upsert NutritionPlan.",
+      airtable: {
+        statusCode: e?.statusCode,
+        message: e?.message,
+        error: e?.error,
+      },
+    });
   }
 }

@@ -33,14 +33,52 @@ function tokenMatchFormula(fieldName, tokenValue) {
   return `FIND('${safeTok}', ARRAYJOIN({${fieldName}}&''))`;
 }
 
-function safeJsonParse(s) {
-  const raw = asString(s);
+function safeJsonParse(value) {
+  if (!value) return null;
+
+  // Airtable sometimes returns an object already (depending on how you store it / automation)
+  if (typeof value === "object") return value;
+
+  const raw = asString(value);
   if (!raw) return null;
+
   try {
     return JSON.parse(raw);
   } catch {
     return null;
   }
+}
+
+// Ensure planJson has mealBlocks if possible (handles older shapes gracefully)
+function normalizePlanJson(planJson) {
+  if (!planJson || typeof planJson !== "object") return null;
+
+  // If already has mealBlocks, we’re done
+  if (planJson.mealBlocks && typeof planJson.mealBlocks === "object") return planJson;
+
+  // If it has meals array (our new builder saves both), derive mealBlocks
+  const meals = Array.isArray(planJson.meals) ? planJson.meals : null;
+  if (!meals) return planJson;
+
+  const blocks = {};
+  for (const m of meals) {
+    const key = asString(m?.key);
+    if (!key) continue;
+    blocks[key] = {
+      name: asString(m?.name) || key,
+      targets: {
+        calories: m?.targets?.calories ?? "",
+        protein: m?.targets?.protein ?? "",
+        carbs: m?.targets?.carbs ?? "",
+        fat: m?.targets?.fat ?? "",
+      },
+      diningHallRules: asString(m?.diningHallRules),
+      homeExamples: asString(m?.homeExamples),
+      smartStackItems: Array.isArray(m?.smartStackItems) ? m.smartStackItems : [],
+    };
+  }
+
+  return { ...planJson, mealBlocks: Object.keys(blocks).length ? blocks : undefined };
 }
 
 /* ---------------- env ---------------- */
@@ -156,8 +194,6 @@ export default async function handler(req, res) {
 
     /* ---------------- 1) Athlete (must belong to org) ---------------- */
 
-    // ✅ Membership: athlete record has org Token text field
-    // ✅ AthleteToken can be lookup array -> tokenMatchFormula handles it
     const athleteFilter = `AND(${tokenMatchFormula(ATH_ORG_TOKEN, safeOrg)}, ${tokenMatchFormula(
       ATH_TOKEN,
       safeAthTok
@@ -185,10 +221,7 @@ export default async function handler(req, res) {
 
     /* ---------------- 2) NutritionPlans: latest ACTIVE + history ---------------- */
 
-    // Linked record field contains record ids (array)
     const planAthMatch = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
-
-    // Latest ACTIVE plan
     const latestActiveFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
 
     const latestActiveRecs = await plansTable
@@ -204,10 +237,11 @@ export default async function handler(req, res) {
     let latestPlan = null;
     if (latestRec) {
       const f = latestRec.fields || {};
+      const parsed = normalizePlanJson(safeJsonParse(f[PLAN_JSON]));
+
       latestPlan = {
         id: latestRec.id,
 
-        // New structured fields
         phase: asString(f[PLAN_PHASE]),
         daily: {
           calories: f[PLAN_DCAL] ?? "",
@@ -215,13 +249,12 @@ export default async function handler(req, res) {
           carbs: f[PLAN_DCARB] ?? "",
           fat: f[PLAN_DFAT] ?? "",
         },
-        planJsonRaw: asString(f[PLAN_JSON]),
-        planJson: safeJsonParse(f[PLAN_JSON]),
 
-        // Human readable
+        planJsonRaw: typeof f[PLAN_JSON] === "string" ? asString(f[PLAN_JSON]) : "",
+        planJson: parsed,
+
         prescription: asString(f[PLAN_PRESCRIPTION]),
 
-        // Meta
         status: asString(f[PLAN_STATUS]) || "active",
         createdAt: asString(f[PLAN_CREATED_AT]) || asString(latestRec._rawJson?.createdTime),
         createdBy: asString(f[PLAN_CREATED_BY]),
@@ -231,12 +264,9 @@ export default async function handler(req, res) {
     }
 
     // History: include active + archived, newest first
-    // (You can raise/lower this number later)
-    const historyFilter = planAthMatch;
-
     const historyRecs = await plansTable
       .select({
-        filterByFormula: historyFilter,
+        filterByFormula: planAthMatch,
         sort: [{ field: PLAN_CREATED_AT, direction: "desc" }],
         maxRecords: 25,
       })
@@ -244,6 +274,7 @@ export default async function handler(req, res) {
 
     const plans = safeArr(historyRecs).map((r) => {
       const f = r.fields || {};
+      const parsed = normalizePlanJson(safeJsonParse(f[PLAN_JSON]));
       return {
         id: r.id,
         phase: asString(f[PLAN_PHASE]),
@@ -253,8 +284,8 @@ export default async function handler(req, res) {
           carbs: f[PLAN_DCARB] ?? "",
           fat: f[PLAN_DFAT] ?? "",
         },
-        planJsonRaw: asString(f[PLAN_JSON]),
-        planJson: safeJsonParse(f[PLAN_JSON]),
+        planJsonRaw: typeof f[PLAN_JSON] === "string" ? asString(f[PLAN_JSON]) : "",
+        planJson: parsed,
         prescription: asString(f[PLAN_PRESCRIPTION]),
         status: asString(f[PLAN_STATUS]) || "",
         createdAt: asString(f[PLAN_CREATED_AT]) || asString(r._rawJson?.createdTime),
@@ -295,13 +326,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       athlete,
-
-      // Keep this name for your existing UI
       latestPlan,
-
-      // New: plan history for UI upgrades
       plans,
-
       checkins,
     });
   } catch (e) {

@@ -44,6 +44,7 @@ function asChoiceOrText(v) {
 function hasAnyStructuredValue(structured = {}) {
   if (!structured || typeof structured !== "object") return false;
   const keys = [
+    "phase",
     "calories",
     "proteinGrams",
     "carbsGrams",
@@ -59,6 +60,14 @@ function hasAnyStructuredValue(structured = {}) {
     "metaEffectiveDate",
   ];
   return keys.some((k) => cleanString(structured[k]));
+}
+
+function safeJsonStringify(obj) {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return "";
+  }
 }
 
 function formatAirtableError(err) {
@@ -95,6 +104,8 @@ export default async function handler(req, res) {
     organizationName,
     createdBy,
     structured,
+    // ✅ New optional payloads
+    planJson, // object (recommended) OR string (ok)
   } = req.body || {};
 
   const email = normalizeEmail(athleteEmail);
@@ -125,6 +136,11 @@ export default async function handler(req, res) {
       },
     });
   }
+
+  // ✅ Optional: allow saving Phase / PlanJson into Prescriptions table *only if you configure field names*
+  // This avoids Airtable "Unknown field names" hard failures.
+  const PRES_PHASE_FIELD = cleanString(process.env.PRESCRIPTIONS_PHASE_FIELD); // e.g. "Phase"
+  const PRES_PLANJSON_FIELD = cleanString(process.env.PRESCRIPTIONS_PLANJSON_FIELD); // e.g. "PlanJson"
 
   // ---- Athletes Airtable config (for linking AthleteScans)
   const ATH_API_KEY = process.env.ATHLETE_API_KEY;
@@ -179,6 +195,15 @@ export default async function handler(req, res) {
         "Athletes Airtable not configured (ATHLETE_API_KEY/ATHLETE_BASE_ID/ATHLETE_TABLE_NAME). Saved plan without AthleteScans link.";
     }
 
+    // --- Build optional phase + planJson fields safely
+    const phaseValue = cleanString(s?.phase);
+    const planJsonString =
+      typeof planJson === "string" ? cleanString(planJson) : safeJsonStringify(planJson);
+
+    const optionalFields = {};
+    if (PRES_PHASE_FIELD && phaseValue) optionalFields[PRES_PHASE_FIELD] = phaseValue;
+    if (PRES_PLANJSON_FIELD && planJsonString) optionalFields[PRES_PLANJSON_FIELD] = planJsonString;
+
     const fields = stripEmpty({
       // -----------------------
       // Your columns
@@ -193,10 +218,10 @@ export default async function handler(req, res) {
       CreatedAt: nowISO,
       CreatedBy: cleanString(createdBy) || cleanString(user?.Email || user?.email) || cleanString(org?.email),
 
-      // ✅ NEW: Athlete (single-line text) gets a STRING, not an array
+      // ✅ Athlete (single-line text) gets a STRING, not an array
       Athlete: email,
 
-      // ✅ NEW: AthleteScans is the linked record field
+      // ✅ AthleteScans is the linked record field
       ...(athleteScansId ? { AthleteScans: [athleteScansId] } : {}),
 
       // -----------------------
@@ -224,6 +249,11 @@ export default async function handler(req, res) {
       "Meta Status": asChoiceOrText(s.metaStatus || "Active"),
       "Meta Effective Date": coerceMaybeDateISO(s.metaEffectiveDate) || nowISO,
       "Meta Last Updated": nowISO,
+
+      // -----------------------
+      // ✅ Optional Upgrades (only if env vars configured)
+      // -----------------------
+      ...optionalFields,
     });
 
     const created = await presBase(PRES_TABLE).create(fields);
@@ -244,6 +274,8 @@ export default async function handler(req, res) {
           athleteScansLinked: !!athleteScansId,
           athleteScansId: athleteScansId || "",
           linkWarning: linkWarning || "",
+          savedPhaseField: PRES_PHASE_FIELD || "",
+          savedPlanJsonField: PRES_PLANJSON_FIELD || "",
         },
       });
     } catch (e) {
@@ -256,6 +288,10 @@ export default async function handler(req, res) {
       record: { id: created?.id, fields: created?.fields || {} },
       athleteScansId: athleteScansId || null,
       warning: linkWarning || null,
+      upgrades: {
+        phaseField: PRES_PHASE_FIELD || null,
+        planJsonField: PRES_PLANJSON_FIELD || null,
+      },
     });
   } catch (err) {
     console.error("[createPrescription] Airtable error:", err);

@@ -1,163 +1,29 @@
 // pages/org/prescriptions.js
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
-import SearchSelect from "@/components/SearchSelect";
 import { rangeOptions } from "@/lib/rangeOptions";
-import { Trash2 } from "lucide-react";
+import {
+  buildNutritionPlanJson,
+  buildPlanSummaryText,
+  dateToISO,
+  DEFAULT_STRUCTURED,
+  getAthleteToken,
+  normalizeEmail,
+} from "@/lib/org/prescriptions/prescriptions-utils";
 
-/**
- * ORG → PRESCRIPTIONS
- *
- * - Templates: save, load, apply, delete
- * - Speed mode: Save & Next through filtered roster
- * - Keyboard: Enter = Save & Next, Ctrl/Cmd+Enter = Save (inside notes textarea)
- */
+import { useOrgPrescriptionsData } from "@/hooks/org/useOrgPrescriptionsData";
+import { useRosterSpeedMode } from "@/hooks/org/useRosterSpeedMode";
 
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
-}
-
-function formatDateTime(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString();
-}
-
-function dateToISO(dateStr) {
-  const s = String(dateStr || "").trim();
-  if (!s) return "";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString();
-}
-
-function buildPlanSummaryText(plan) {
-  const lines = [];
-
-  lines.push("SUPPLEMENTS");
-  lines.push(`- Protein: ${plan.proteinRecommendation || "—"}`);
-  lines.push(`- Creatine: ${plan.creatineRecommendation || "—"}`);
-  lines.push(`- BCAA/EAA: ${plan.bcaaRecommendation || "—"}`);
-  lines.push(`- Electrolytes: ${plan.electrolytesRecommendation || "—"}`);
-  lines.push(`- Notes (Supplements): ${plan.notesSupplements || "—"}`);
-
-  lines.push("");
-  lines.push("MACROS");
-  lines.push(`- Calories: ${plan.calories || "—"}`);
-  lines.push(`- Protein (g): ${plan.proteinGrams || "—"}`);
-  lines.push(`- Carbs (g): ${plan.carbsGrams || "—"}`);
-  lines.push(`- Fat (g): ${plan.fatsGrams || "—"}`);
-  lines.push(`- Hydration (oz): ${plan.hydrationOz || "—"}`);
-  lines.push(`- Notes (Macros): ${plan.notesMacros || "—"}`);
-
-  if (plan.freeformNotes?.trim()) {
-    lines.push("");
-    lines.push("COACH NOTES");
-    lines.push(plan.freeformNotes.trim());
-  }
-
-  return lines.join("\n");
-}
-
-const DEFAULT_STRUCTURED = {
-  calories: "",
-  proteinGrams: "",
-  carbsGrams: "",
-  fatsGrams: "",
-  hydrationOz: "",
-  notesMacros: "",
-
-  proteinRecommendation: "",
-  creatineRecommendation: "",
-  bcaaRecommendation: "",
-  electrolytesRecommendation: "",
-  notesSupplements: "",
-
-  metaStatus: "Active",
-  metaEffectiveDate: "",
-
-  freeformNotes: "",
-};
-
-function ConfirmDeleteModal({
-  open,
-  title = "Delete",
-  description = "",
-  confirmText = "Delete",
-  cancelText = "Cancel",
-  loading = false,
-  error = "",
-  onConfirm,
-  onClose,
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={() => (loading ? null : onClose?.())}
-      />
-      <div className="relative w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">{title}</h3>
-            {description ? (
-              <p className="text-sm text-gray-600 mt-2 leading-relaxed">
-                {description}
-              </p>
-            ) : null}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => (loading ? null : onClose?.())}
-            className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-            disabled={loading}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {error ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-            <p className="text-sm text-red-700 font-medium">{error}</p>
-          </div>
-        ) : null}
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => onClose?.()}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-            disabled={loading}
-          >
-            {cancelText}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onConfirm?.()}
-            className="w-full px-4 py-3 rounded-xl bg-red-600 text-white text-sm font-semibold hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={loading}
-          >
-            {loading ? "Deleting…" : confirmText}
-          </button>
-        </div>
-
-        <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
-          This action permanently removes the template for your organization.
-        </p>
-      </div>
-    </div>
-  );
-}
+import ConfirmDeleteModal from "@/components/org/prescriptions/ConfirmDeleteModal";
+import AthleteRoster from "@/components/org/prescriptions/AthleteRoster";
+import SelectedAthleteCard from "@/components/org/prescriptions/SelectedAthleteCard";
+import TemplatesPanel from "@/components/org/prescriptions/TemplatesPanel";
+import PlanBuilderForm from "@/components/org/prescriptions/PlanBuilderForm";
+import PlanHistory from "@/components/org/prescriptions/PlanHistory";
 
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
@@ -171,389 +37,180 @@ export default function OrgPrescriptionsPage() {
   }, [user]);
 
   const orgName = useMemo(
-    () =>
-      String(user?.Name || user?.name || user?.Organization || "Organization"),
+    () => String(user?.Name || user?.name || user?.Organization || "Organization"),
     [user]
   );
 
-  const orgToken = useMemo(() => {
-    return String(
-      user?.Token || user?.token || user?.["Organization Token"] || ""
-    ).trim();
-  }, [user]);
+  const orgToken = useMemo(() => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(), [user]);
 
-  const orgAuthHeaders = useMemo(() => {
-    return orgToken ? { "x-org-token": orgToken } : {};
-  }, [orgToken]);
+  const orgAuthHeaders = useMemo(() => (orgToken ? { "x-org-token": orgToken } : {}), [orgToken]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Options                                                                  */
-  /* ------------------------------------------------------------------------ */
+  // UI state
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("builder"); // builder | history
+  const [title, setTitle] = useState("Nutrition + Supplements Plan");
+  const [createLoading, setCreateLoading] = useState(false);
+
+  const [athleteSearch, setAthleteSearch] = useState("");
+  const [selectedAthleteEmail, setSelectedAthleteEmail] = useState("");
+
+  // templates ui state
+  const [templateId, setTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [templateNotes, setTemplateNotes] = useState("");
+
+  // delete modal state
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
+
+  const {
+    athletes,
+    prescriptions,
+    templates,
+    activeTemplates,
+
+    loadingAthletes,
+    loadingPrescriptions,
+    templatesLoading,
+
+    error,
+    templatesError,
+
+    setError,
+    setTemplatesError,
+
+    fetchAthletes,
+    fetchPrescriptionsForAthlete,
+    fetchTemplates,
+    setTemplates,
+  } = useOrgPrescriptionsData({ orgAuthHeaders, orgToken });
 
   const OPTIONS = useMemo(() => {
     const calories = rangeOptions(0, 5000, 5);
     const grams = rangeOptions(0, 400, 1);
     const hydration = rangeOptions(0, 300, 1);
 
-    const proteinRec = [
-      "",
-      "Whey Isolate",
-      "Whey Concentrate",
-      "Casein (night)",
-      "Plant-based",
-      "Mass gainer",
-      "Hydrolyzed whey",
-      "None",
-    ];
+    const phases = ["Surplus", "Maintain", "Cut"];
 
-    const creatineRec = [
-      "",
-      "Creatine Monohydrate (3g daily)",
-      "Creatine Monohydrate (5g daily)",
-      "Creapure (5g daily)",
-      "Loading phase (20g/day x 5–7d) then 5g/day",
-      "None",
-    ];
-
+    const proteinRec = ["", "Whey Isolate", "Whey Concentrate", "Casein (night)", "Plant-based", "Mass gainer", "Hydrolyzed whey", "None"];
+    const creatineRec = ["", "Creatine Monohydrate (3g daily)", "Creatine Monohydrate (5g daily)", "Creapure (5g daily)", "Loading phase (20g/day x 5–7d) then 5g/day", "None"];
     const bcaaRec = ["", "BCAA 2:1:1", "EAA", "EAA (intra-workout)", "None"];
+    const electrolytesRec = ["", "Low sugar electrolytes", "Standard electrolytes", "High sodium (two-a-days)", "Sweat test guided", "None"];
 
-    const electrolytesRec = [
-      "",
-      "Low sugar electrolytes",
-      "Standard electrolytes",
-      "High sodium (two-a-days)",
-      "Sweat test guided",
-      "None",
-    ];
-
-    const notesMacros = [
-      "",
-      "Training days: +50g carbs",
-      "Rest days: -50g carbs",
-      "Weigh-in week: reduce sodium",
-      "Increase calories gradually (+150/week)",
-      "Increase hydration on travel days",
-    ];
-
-    const notesSupps = [
-      "",
-      "Only NSF Certified for Sport",
-      "Avoid proprietary blends",
-      "Avoid stimulants",
-      "Third-party tested only",
-    ];
-
+    const notesMacros = ["", "Training days: +50g carbs", "Rest days: -50g carbs", "Weigh-in week: reduce sodium", "Increase calories gradually (+150/week)", "Increase hydration on travel days"];
+    const notesSupps = ["", "Only NSF Certified for Sport", "Avoid proprietary blends", "Avoid stimulants", "Third-party tested only"];
     const metaStatus = ["Active", "Draft", "Archived", "Paused"];
 
     return {
       calories,
       grams,
       hydration,
-
+      phases,
       proteinRecommendation: proteinRec,
       creatineRecommendation: creatineRec,
       bcaaRecommendation: bcaaRec,
       electrolytesRecommendation: electrolytesRec,
-
       notesMacros,
       notesSupplements: notesSupps,
-
       metaStatus,
     };
   }, []);
 
-  /* ------------------------------------------------------------------------ */
-  /* State                                                                    */
-  /* ------------------------------------------------------------------------ */
+  // styles
+  const inputBase =
+    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30";
+  const subtleHint = "text-[11px] text-gray-500 mt-2 leading-relaxed";
 
-  const [athletes, setAthletes] = useState([]);
-  const [athleteSearch, setAthleteSearch] = useState("");
-  const [selectedAthleteEmail, setSelectedAthleteEmail] = useState("");
-
-  const [prescriptions, setPrescriptions] = useState([]);
-
-  const [loading, setLoading] = useState(true);
-  const [loadingAthletes, setLoadingAthletes] = useState(false);
-  const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
-
-  const [error, setError] = useState("");
-  const [view, setView] = useState("builder"); // builder | history
-  const [title, setTitle] = useState("Nutrition + Supplements Plan");
-  const [createLoading, setCreateLoading] = useState(false);
-
-  // Templates
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [templatesError, setTemplatesError] = useState("");
-  const [templates, setTemplates] = useState([]);
-  const [templateId, setTemplateId] = useState("");
-  const [templateName, setTemplateName] = useState("");
-  const [templateNotes, setTemplateNotes] = useState("");
-
-  // Delete template modal state
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
-
-  // Session-only “done” indicator for roster speed runs
-  const [completedEmails, setCompletedEmails] = useState(() => new Set());
-
-  const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
-
-  /* ------------------------------------------------------------------------ */
-  /* Guards                                                                   */
-  /* ------------------------------------------------------------------------ */
-
+  // guards
   useEffect(() => {
     if (!user) return;
-    if (role && role !== "organization") {
-      router.push("/dashboard");
-    }
+    if (role && role !== "organization") router.push("/dashboard");
   }, [user, role, router]);
 
+  // preselect by athleteEmail OR athleteToken
   useEffect(() => {
-    const q = router?.query?.athleteEmail;
-    if (typeof q === "string" && q.includes("@")) {
-      setSelectedAthleteEmail(normalizeEmail(q));
+    const qEmail = router?.query?.athleteEmail;
+    const qToken = router?.query?.athleteToken;
+
+    if (typeof qEmail === "string" && qEmail.includes("@")) {
+      setSelectedAthleteEmail(normalizeEmail(qEmail));
+      return;
     }
-  }, [router?.query?.athleteEmail]);
 
-  /* ------------------------------------------------------------------------ */
-  /* API Calls                                                                */
-  /* ------------------------------------------------------------------------ */
+    if (typeof qToken === "string" && qToken.startsWith("ATH-")) {
+      const token = qToken.trim();
+      const match = (athletes || []).find((a) => getAthleteToken(a) === token);
+      if (match?.email) setSelectedAthleteEmail(normalizeEmail(match.email));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router?.query?.athleteEmail, router?.query?.athleteToken, athletes]);
 
-  const fetchAthletes = async () => {
-    setLoadingAthletes(true);
-    setError("");
+  const selectedAthlete = useMemo(() => {
+    const email = normalizeEmail(selectedAthleteEmail);
+    return athletes.find((a) => normalizeEmail(a?.email) === email) || null;
+  }, [athletes, selectedAthleteEmail]);
 
-    const res = await fetch("/api/org/getAthletes", {
-      method: "GET",
-      credentials: "include",
-      headers: { ...orgAuthHeaders },
+  const selectedAthleteToken = useMemo(() => getAthleteToken(selectedAthlete), [selectedAthlete]);
+
+  const filteredAthletes = useMemo(() => {
+    const q = String(athleteSearch || "").trim().toLowerCase();
+    if (!q) return athletes;
+    return athletes.filter((a) => {
+      const name = String(a?.name || "").toLowerCase();
+      const email = String(a?.email || "").toLowerCase();
+      const token = String(getAthleteToken(a) || "").toLowerCase();
+      return name.includes(q) || email.includes(q) || token.includes(q);
     });
+  }, [athletes, athleteSearch]);
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const msg =
-        data?.error ||
-        data?.airtable?.message ||
-        "Failed to load athletes.";
-      setLoadingAthletes(false);
-      throw new Error(msg);
-    }
-
-    const list = Array.isArray(data?.athletes) ? data.athletes : [];
-    setAthletes(list);
-
-    if (!selectedAthleteEmail) {
-      const first = list.find((a) => a?.email);
-      if (first?.email) setSelectedAthleteEmail(normalizeEmail(first.email));
-    }
-
-    setLoadingAthletes(false);
-  };
-
-  const fetchPrescriptionsForAthlete = async (athleteEmail) => {
-    const email = normalizeEmail(athleteEmail);
-    if (!email) {
-      setPrescriptions([]);
-      return;
-    }
-
-    setLoadingPrescriptions(true);
-    setError("");
-
-    const res = await fetch(
-      `/api/org/getPrescriptionsForAthlete?athleteEmail=${encodeURIComponent(
-        email
-      )}`,
-      {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...orgAuthHeaders,
-        },
-      }
-    );
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const msg =
-        data?.error ||
-        data?.airtable?.message ||
-        "Failed to load prescriptions.";
-      setLoadingPrescriptions(false);
-      throw new Error(msg);
-    }
-
-    setPrescriptions(
-      Array.isArray(data?.prescriptions) ? data.prescriptions : []
-    );
-    setLoadingPrescriptions(false);
-  };
-
-  const fetchTemplates = async () => {
-    setTemplatesLoading(true);
-    setTemplatesError("");
-
-    if (!orgToken) {
-      setTemplates([]);
-      setTemplatesLoading(false);
-      return;
-    }
-
-    const res = await fetch("/api/org/getPlanTemplates", {
-      method: "GET",
-      credentials: "include",
-      headers: { ...orgAuthHeaders },
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setTemplates([]);
-      setTemplatesLoading(false);
-      setTemplatesError(data?.error || "Failed to load templates");
-      return;
-    }
-
-    const list = Array.isArray(data?.templates) ? data.templates : [];
-
-    const sorted = list.slice().sort((a, b) => {
-      const aSt = String(a?.status || "Active").toLowerCase();
-      const bSt = String(b?.status || "Active").toLowerCase();
-      const aIsArch = aSt.includes("arch");
-      const bIsArch = bSt.includes("arch");
-      if (aIsArch !== bIsArch) return aIsArch ? 1 : -1;
-      return String(a?.name || "").localeCompare(String(b?.name || ""));
-    });
-
-    setTemplates(sorted);
-    setTemplatesLoading(false);
-  };
-
-  const saveAsTemplate = async () => {
-    setError("");
-    setTemplatesError("");
-
-    const name = String(templateName || "").trim();
-    if (!name) {
-      setTemplatesError("Enter a template name first.");
-      return;
-    }
-    if (!orgToken) {
-      setTemplatesError("Missing org token. Re-login as org.");
-      return;
-    }
-
-    setTemplatesLoading(true);
-
-    try {
-      const res = await fetch("/api/org/createPlanTemplate", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...orgAuthHeaders,
-        },
-        body: JSON.stringify({
-          token: orgToken,
-          templateName: name,
-          createdBy: user?.Email || user?.email || "",
-          structured,
-          notes: templateNotes || "",
-          status: "Active",
-          tags: "",
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg =
-          data?.error ||
-          data?.airtable?.message ||
-          "Failed to save template.";
-        throw new Error(msg);
-      }
-
-      await fetchTemplates();
-
-      if (data?.template?.id) setTemplateId(String(data.template.id));
-
-      setTemplateName("");
-      setTemplateNotes("");
-    } catch (err) {
-      console.error("[org/prescriptions] saveAsTemplate error:", err);
-      setTemplatesError(err?.message || "Failed to save template.");
-    } finally {
-      setTemplatesLoading(false);
-    }
-  };
-
-  const openDeleteTemplateConfirm = () => {
-    setDeleteError("");
-    if (!templateId) return;
-    setConfirmDeleteOpen(true);
-  };
-
-  const deleteTemplate = async () => {
-    setDeleteError("");
-
+  const templateById = useMemo(() => {
     const id = String(templateId || "").trim();
-    if (!id) return;
+    if (!id) return null;
+    return templates.find((t) => String(t?.id) === id) || null;
+  }, [templates, templateId]);
 
-    setDeleteBusy(true);
-    try {
-      const res = await fetch("/api/org/deletePlanTemplate", {
-        method: "DELETE",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...orgAuthHeaders,
-        },
-        body: JSON.stringify({ templateId: id }),
-      });
+  const { completedEmails, markDone, goToNextAthlete, advanceSafely } = useRosterSpeedMode({
+    filteredAthletes,
+    selectedAthleteEmail,
+    setSelectedAthleteEmail,
+    router,
+  });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg =
-          data?.error ||
-          data?.airtable?.message ||
-          "Failed to delete template.";
-        throw new Error(msg);
-      }
-
-      setTemplateId("");
-      await fetchTemplates();
-      setConfirmDeleteOpen(false);
-    } catch (err) {
-      console.error("[org/prescriptions] deleteTemplate error:", err);
-      setDeleteError(err?.message || "Failed to delete template.");
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      await fetchAthletes();
+      const list = await fetchAthletes();
       await fetchTemplates();
+
+      // if not selected yet, pick first
+      if (!selectedAthleteEmail) {
+        const first = (list || []).find((a) => a?.email);
+        if (first?.email) setSelectedAthleteEmail(normalizeEmail(first.email));
+      }
 
       const qEmail = router?.query?.athleteEmail;
       const email =
-        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) ||
-        selectedAthleteEmail;
+        (typeof qEmail === "string" && qEmail.includes("@") && qEmail) || selectedAthleteEmail;
 
       if (email) await fetchPrescriptionsForAthlete(email);
-      else setPrescriptions([]);
     } catch (err) {
       console.error("[org/prescriptions] refreshAll error:", err);
       setError(err?.message || "Failed to load data.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    fetchAthletes,
+    fetchTemplates,
+    fetchPrescriptionsForAthlete,
+    router?.query?.athleteEmail,
+    selectedAthleteEmail,
+    setError,
+  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -565,133 +222,15 @@ export default function OrgPrescriptionsPage() {
   useEffect(() => {
     if (!user) return;
     if (role !== "organization") return;
-    if (!selectedAthleteEmail) {
-      setPrescriptions([]);
-      return;
-    }
+    if (!selectedAthleteEmail) return;
     fetchPrescriptionsForAthlete(selectedAthleteEmail).catch((err) =>
       setError(err?.message || "Failed to load prescriptions.")
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthleteEmail]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Derived UI                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const selectedAthlete = useMemo(() => {
-    const email = normalizeEmail(selectedAthleteEmail);
-    return athletes.find((a) => normalizeEmail(a?.email) === email) || null;
-  }, [athletes, selectedAthleteEmail]);
-
-  const filteredAthletes = useMemo(() => {
-    const q = String(athleteSearch || "").trim().toLowerCase();
-    if (!q) return athletes;
-    return athletes.filter((a) => {
-      const name = String(a?.name || "").toLowerCase();
-      const email = String(a?.email || "").toLowerCase();
-      return name.includes(q) || email.includes(q);
-    });
-  }, [athletes, athleteSearch]);
-
-  const activeTemplates = useMemo(() => {
-    return (templates || []).filter((t) => {
-      const st = String(t?.status || "Active").toLowerCase();
-      return !st.includes("arch");
-    });
-  }, [templates]);
-
-  const templateById = useMemo(() => {
-    const id = String(templateId || "").trim();
-    if (!id) return null;
-    return templates.find((t) => String(t?.id) === id) || null;
-  }, [templates, templateId]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Template Apply                                                           */
-  /* ------------------------------------------------------------------------ */
-
-  const applyTemplateToBuilder = useCallback(
-    (tplId) => {
-      const id = String(tplId || "").trim();
-      if (!id) return;
-
-      const tpl = templates.find((t) => String(t?.id) === id);
-      if (!tpl) {
-        setTemplatesError("Template not found.");
-        return;
-      }
-
-      if (!tpl.structured || typeof tpl.structured !== "object") {
-        setTemplatesError(
-          "This template is missing structured JSON. Open Airtable and confirm the “Structured” field is valid JSON."
-        );
-        return;
-      }
-
-      setStructured((prev) => ({
-        ...prev,
-        ...tpl.structured,
-      }));
-
-      if (!title || title === "Nutrition + Supplements Plan") {
-        setTitle(tpl.name || "Nutrition + Supplements Plan");
-      }
-
-      setView("builder");
-    },
-    [templates, title]
-  );
-
-  /* ------------------------------------------------------------------------ */
-  /* Next Athlete Navigation (Speed Mode)                                     */
-  /* ------------------------------------------------------------------------ */
-
-  const getEmail = (a) =>
-    normalizeEmail(a?.email || a?.fields?.Email || a?.Email);
-  const advancingRef = useRef(false);
-
-  const goToNextAthlete = useCallback(() => {
-    const list = Array.isArray(filteredAthletes) ? filteredAthletes : [];
-    if (!list.length) return;
-
-    const current = normalizeEmail(selectedAthleteEmail);
-    const currentIdx = list.findIndex((a) => getEmail(a) === current);
-
-    if (currentIdx < 0) {
-      const first = list.find((a) => getEmail(a));
-      if (first) setSelectedAthleteEmail(getEmail(first));
-      return;
-    }
-
-    let nextIdx = currentIdx + 1;
-    if (nextIdx >= list.length) nextIdx = 0;
-
-    let safety = 0;
-    while (safety < list.length && !getEmail(list[nextIdx])) {
-      nextIdx = (nextIdx + 1) % list.length;
-      safety++;
-    }
-
-    const nextEmail = getEmail(list[nextIdx]);
-    if (!nextEmail) return;
-
-    setSelectedAthleteEmail(nextEmail);
-
-    router.push(
-      `/org/prescriptions?athleteEmail=${encodeURIComponent(nextEmail)}`,
-      undefined,
-      { shallow: true }
-    );
-  }, [filteredAthletes, selectedAthleteEmail, router]);
-
-  /* ------------------------------------------------------------------------ */
-  /* Builder                                                                  */
-  /* ------------------------------------------------------------------------ */
-
-  const onChange = (key, value) => {
-    setStructured((prev) => ({ ...prev, [key]: value }));
-  };
+  // builder helpers
+  const onChange = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
 
   const resetBuilder = () => {
     setTitle("Nutrition + Supplements Plan");
@@ -701,6 +240,7 @@ export default function OrgPrescriptionsPage() {
   const validateBuilder = () => {
     const athleteEmail = normalizeEmail(selectedAthleteEmail);
     if (!athleteEmail) return "Select an athlete first.";
+    if (!selectedAthleteToken) return "Selected athlete is missing AthleteToken (lookup). Please fix the athlete record.";
 
     const hasAny =
       structured.proteinRecommendation ||
@@ -716,115 +256,217 @@ export default function OrgPrescriptionsPage() {
       structured.notesMacros ||
       structured.freeformNotes?.trim();
 
-    if (!hasAny)
-      return "Add at least one recommendation (supplements, macros, or notes).";
+    if (!hasAny) return "Add at least one recommendation (supplements, macros, or notes).";
     return "";
   };
 
-  const createPlan = async (e, { advance = false } = {}) => {
-    e?.preventDefault?.();
+  // templates actions
+  const applyTemplateToBuilder = useCallback(
+    (tplId) => {
+      const id = String(tplId || "").trim();
+      if (!id) return;
+
+      const tpl = templates.find((t) => String(t?.id) === id);
+      if (!tpl) {
+        setTemplatesError("Template not found.");
+        return;
+      }
+      if (!tpl.structured || typeof tpl.structured !== "object") {
+        setTemplatesError(
+          "This template is missing structured JSON. Open Airtable and confirm the “Structured” field is valid JSON."
+        );
+        return;
+      }
+
+      setStructured((prev) => ({ ...prev, ...tpl.structured }));
+
+      if (!title || title === "Nutrition + Supplements Plan") setTitle(tpl.name || "Nutrition + Supplements Plan");
+      setView("builder");
+    },
+    [templates, title, setTemplatesError]
+  );
+
+  const saveAsTemplate = useCallback(async () => {
     setError("");
+    setTemplatesError("");
 
-    if (createLoading) return;
-
-    const msg = validateBuilder();
-    if (msg) {
-      setError(msg);
-      return;
-    }
-
-    const athleteEmail = normalizeEmail(selectedAthleteEmail);
-    if (!athleteEmail) {
-      setError("Select an athlete first.");
-      return;
-    }
-
-    setCreateLoading(true);
+    const name = String(templateName || "").trim();
+    if (!name) return setTemplatesError("Enter a template name first.");
+    if (!orgToken) return setTemplatesError("Missing org token. Re-login as org.");
 
     try {
-      const summaryText = buildPlanSummaryText(structured);
-
-      const res = await fetch("/api/org/createPrescription", {
+      const res = await fetch("/api/org/createPlanTemplate", {
         method: "POST",
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...orgAuthHeaders,
-        },
+        headers: { "Content-Type": "application/json", ...orgAuthHeaders },
         body: JSON.stringify({
-          athleteEmail,
-          organizationName: orgName,
-          title: title.trim() || "Nutrition + Supplements Plan",
-          prescription: summaryText,
+          token: orgToken,
+          templateName: name,
           createdBy: user?.Email || user?.email || "",
-          structured: {
-            calories: structured.calories || "",
-            proteinGrams: structured.proteinGrams || "",
-            carbsGrams: structured.carbsGrams || "",
-            fatsGrams: structured.fatsGrams || "",
-            hydrationOz: structured.hydrationOz || "",
-            notesMacros: structured.notesMacros || "",
-
-            proteinRecommendation: structured.proteinRecommendation || "",
-            creatineRecommendation: structured.creatineRecommendation || "",
-            bcaaRecommendation: structured.bcaaRecommendation || "",
-            electrolytesRecommendation:
-              structured.electrolytesRecommendation || "",
-            notesSupplements: structured.notesSupplements || "",
-
-            metaStatus: structured.metaStatus || "Active",
-            metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
-          },
+          structured,
+          notes: templateNotes || "",
+          status: "Active",
+          tags: "",
         }),
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const errMsg =
-          data?.error ||
-          data?.airtable?.message ||
-          "Failed to create plan.";
-        throw new Error(errMsg);
-      }
+      if (!res.ok) throw new Error(data?.error || data?.airtable?.message || "Failed to save template.");
 
-      setCompletedEmails((prev) => {
-        const next = new Set(prev);
-        next.add(athleteEmail);
-        return next;
-      });
+      await fetchTemplates();
+      if (data?.template?.id) setTemplateId(String(data.template.id));
 
-      fetchPrescriptionsForAthlete(athleteEmail).catch(() => {});
-      setView("builder");
-
-      if (advance) {
-        if (!advancingRef.current) {
-          advancingRef.current = true;
-          setTimeout(() => {
-            goToNextAthlete();
-            advancingRef.current = false;
-          }, 150);
-        }
-      }
+      setTemplateName("");
+      setTemplateNotes("");
     } catch (err) {
-      console.error("[org/prescriptions] createPlan error:", err);
-      setError(err?.message || "Failed to create plan.");
-    } finally {
-      setCreateLoading(false);
+      console.error("[org/prescriptions] saveAsTemplate error:", err);
+      setTemplatesError(err?.message || "Failed to save template.");
     }
+  }, [orgAuthHeaders, orgToken, user, structured, templateName, templateNotes, fetchTemplates, setError, setTemplatesError]);
+
+  const openDeleteTemplateConfirm = () => {
+    setDeleteError("");
+    if (!templateId) return;
+    setConfirmDeleteOpen(true);
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* Styles                                                                   */
-  /* ------------------------------------------------------------------------ */
+  const deleteTemplate = useCallback(async () => {
+    setDeleteError("");
+    const id = String(templateId || "").trim();
+    if (!id) return;
 
-  const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30";
+    setDeleteBusy(true);
+    try {
+      const res = await fetch("/api/org/deletePlanTemplate", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+        body: JSON.stringify({ templateId: id }),
+      });
 
-  const subtleHint = "text-[11px] text-gray-500 mt-2 leading-relaxed";
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.airtable?.message || "Failed to delete template.");
 
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
-  /* ------------------------------------------------------------------------ */
+      setTemplateId("");
+      await fetchTemplates();
+      setConfirmDeleteOpen(false);
+    } catch (err) {
+      console.error("[org/prescriptions] deleteTemplate error:", err);
+      setDeleteError(err?.message || "Failed to delete template.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [templateId, orgAuthHeaders, fetchTemplates]);
+
+  // create plan
+  const createPlan = useCallback(
+    async (e, { advance = false } = {}) => {
+      e?.preventDefault?.();
+      setError("");
+      if (createLoading) return;
+
+      const msg = validateBuilder();
+      if (msg) return setError(msg);
+
+      const athleteEmail = normalizeEmail(selectedAthleteEmail);
+      const athleteToken = selectedAthleteToken;
+      if (!athleteEmail) return setError("Select an athlete first.");
+      if (!athleteToken) return setError("Selected athlete is missing AthleteToken.");
+
+      setCreateLoading(true);
+
+      try {
+        const createdBy = user?.Email || user?.email || "";
+        const summaryText = buildPlanSummaryText(structured);
+        const planJson = buildNutritionPlanJson(structured, { createdBy });
+
+        // 1) new NutritionPlans upsert
+        const upsertRes = await fetch("/api/org/nutrition/plans/upsert", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+          body: JSON.stringify({
+            athleteToken,
+            phase: structured.phase || "Maintain",
+            daily: {
+              calories: structured.calories || "",
+              protein: structured.proteinGrams || "",
+              carbs: structured.carbsGrams || "",
+              fat: structured.fatsGrams || "",
+            },
+            planJson,
+            prescription: summaryText,
+            createdBy,
+            status: "active",
+          }),
+        });
+
+        const upsertData = await upsertRes.json().catch(() => ({}));
+        if (!upsertRes.ok) throw new Error(upsertData?.error || "Failed to save NutritionPlan (PlanJson).");
+
+        // 2) legacy prescription history (non-blocking)
+        const res = await fetch("/api/org/createPrescription", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+          body: JSON.stringify({
+            athleteEmail,
+            organizationName: orgName,
+            title: title.trim() || "Nutrition + Supplements Plan",
+            prescription: summaryText,
+            createdBy,
+            structured: {
+              phase: structured.phase || "Maintain",
+              calories: structured.calories || "",
+              proteinGrams: structured.proteinGrams || "",
+              carbsGrams: structured.carbsGrams || "",
+              fatsGrams: structured.fatsGrams || "",
+              hydrationOz: structured.hydrationOz || "",
+              notesMacros: structured.notesMacros || "",
+              proteinRecommendation: structured.proteinRecommendation || "",
+              creatineRecommendation: structured.creatineRecommendation || "",
+              bcaaRecommendation: structured.bcaaRecommendation || "",
+              electrolytesRecommendation: structured.electrolytesRecommendation || "",
+              notesSupplements: structured.notesSupplements || "",
+              metaStatus: structured.metaStatus || "Active",
+              metaEffectiveDate: dateToISO(structured.metaEffectiveDate) || "",
+            },
+          }),
+        });
+
+        const legacyData = await res.json().catch(() => ({}));
+        if (!res.ok) console.warn("[org/prescriptions] legacy createPrescription failed:", legacyData);
+
+        markDone(athleteEmail);
+        fetchPrescriptionsForAthlete(athleteEmail).catch(() => {});
+        setView("builder");
+
+        if (advance) advanceSafely(() => goToNextAthlete(), 150);
+      } catch (err) {
+        console.error("[org/prescriptions] createPlan error:", err);
+        setError(err?.message || "Failed to create plan.");
+      } finally {
+        setCreateLoading(false);
+      }
+    },
+    [
+      orgAuthHeaders,
+      selectedAthleteEmail,
+      selectedAthleteToken,
+      structured,
+      title,
+      orgName,
+      user,
+      createLoading,
+      fetchPrescriptionsForAthlete,
+      goToNextAthlete,
+      advanceSafely,
+      markDone,
+      setError,
+    ]
+  );
+
+  const isBusy = loading || loadingAthletes || loadingPrescriptions || templatesLoading;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -867,7 +509,7 @@ export default function OrgPrescriptionsPage() {
         </div>
 
         {/* Status */}
-        {(loading || loadingAthletes || loadingPrescriptions || templatesLoading) && (
+        {isBusy && (
           <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-4">
             <p className="text-sm text-gray-600">Loading…</p>
           </div>
@@ -880,582 +522,82 @@ export default function OrgPrescriptionsPage() {
         )}
 
         <div className="grid lg:grid-cols-12 gap-6">
-          {/* Left: Athlete roster */}
-          <aside className="lg:col-span-4 bg-white rounded-2xl shadow-md border border-blue-100 p-5 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">Athletes</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  Filter the list, then Save & Next to batch through that subset.
-                </p>
-              </div>
-              <span className="text-xs text-gray-500">
-                {filteredAthletes.length}/{athletes.length}
-              </span>
-            </div>
+          <AthleteRoster
+            athletes={athletes}
+            filteredAthletes={filteredAthletes}
+            athleteSearch={athleteSearch}
+            setAthleteSearch={setAthleteSearch}
+            selectedAthleteEmail={selectedAthleteEmail}
+            setSelectedAthleteEmail={setSelectedAthleteEmail}
+            completedEmails={completedEmails}
+            router={router}
+            inputBase={inputBase}
+          />
 
-            <input
-              className={inputBase}
-              placeholder="Search name or email…"
-              value={athleteSearch}
-              onChange={(e) => setAthleteSearch(e.target.value)}
+          <section className="lg:col-span-8 space-y-6">
+            <SelectedAthleteCard
+              selectedAthlete={selectedAthlete}
+              selectedAthleteToken={selectedAthleteToken}
+              view={view}
+              setView={setView}
             />
 
-            <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
-              {filteredAthletes.length === 0 && (
-                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                  <p className="text-sm text-gray-700 font-semibold">No athletes found</p>
-                  <p className="text-xs text-gray-500 mt-1">Clear search or confirm signups.</p>
-                </div>
-              )}
-
-              {filteredAthletes.map((a) => {
-                const email = normalizeEmail(a?.email);
-                const isActive =
-                  email && email === normalizeEmail(selectedAthleteEmail);
-                const done = email && completedEmails.has(email);
-
-                return (
-                  <button
-                    key={a.id || email || Math.random().toString(36).slice(2)}
-                    type="button"
-                    onClick={() => email && setSelectedAthleteEmail(email)}
-                    className={`w-full text-left rounded-xl border p-3 transition ${
-                      isActive
-                        ? "border-[#46769B] bg-blue-50"
-                        : "border-gray-200 bg-white hover:bg-gray-50"
-                    }`}
-                    disabled={!email}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {a?.name || "Athlete"}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {email || "Missing email"}
-                        </p>
-                      </div>
-
-                      {done ? (
-                        <span className="text-xs px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200">
-                          ✓ Done
-                        </span>
-                      ) : (
-                        <span className="text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
-                          Pending
-                        </span>
-                      )}
-                    </div>
-
-                    {a?.createdAt && (
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        Joined: {formatDateTime(a.createdAt)}
-                      </p>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="text-[11px] text-gray-500">
-              Speed shortcuts: <span className="font-semibold">Enter</span> = Save & Next,{" "}
-              <span className="font-semibold">Ctrl/Cmd+Enter</span> = Save
-            </div>
-          </aside>
-
-          {/* Right: Builder/History */}
-          <section className="lg:col-span-8 space-y-6">
-            {/* Selected athlete + view toggle */}
-            <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-bold">Selected Athlete</h2>
-                  {selectedAthlete ? (
-                    <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-semibold">
-                        {selectedAthlete.name || "Athlete"}
-                      </span>{" "}
-                      <span className="text-gray-500">
-                        ({normalizeEmail(selectedAthlete.email)})
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-500 mt-1">
-                      Choose an athlete to begin.
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setView("builder")}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
-                      view === "builder"
-                        ? "bg-[#46769B] text-white border-[#46769B]"
-                        : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    Builder
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView("history")}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
-                      view === "history"
-                        ? "bg-[#46769B] text-white border-[#46769B]"
-                        : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    History
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Builder */}
             {view === "builder" && (
               <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-6">
                 <div>
                   <h3 className="text-lg font-bold">Create Plan</h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    Use templates to go fast: build once → Save Template → Apply + Save & Next.
+                    This now saves both: (1) NutritionPlans PlanJson (new) and (2) legacy Prescription history.
                   </p>
                 </div>
 
-                {/* Templates block */}
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">Plan Templates</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Templates are saved presets of the builder fields scoped to your org token.
-                      </p>
-                    </div>
+                <TemplatesPanel
+                  inputBase={inputBase}
+                  subtleHint={subtleHint}
+                  templatesLoading={templatesLoading}
+                  templatesError={templatesError}
+                  activeTemplates={activeTemplates}
+                  templateId={templateId}
+                  setTemplateId={setTemplateId}
+                  templateName={templateName}
+                  setTemplateName={setTemplateName}
+                  templateNotes={templateNotes}
+                  setTemplateNotes={setTemplateNotes}
+                  onRefreshTemplates={fetchTemplates}
+                  onApplyTemplate={applyTemplateToBuilder}
+                  onOpenDeleteConfirm={openDeleteTemplateConfirm}
+                  onSaveAsTemplate={saveAsTemplate}
+                />
 
-                    <button
-                      type="button"
-                      onClick={fetchTemplates}
-                      className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
-                      disabled={templatesLoading}
-                    >
-                      {templatesLoading ? "Refreshing…" : "Refresh Templates"}
-                    </button>
-                  </div>
-
-                  {templatesError ? (
-                    <div className="rounded-xl bg-white border border-red-200 p-3">
-                      <p className="text-sm text-red-600 font-medium">{templatesError}</p>
-                    </div>
-                  ) : null}
-
-                  <div className="grid sm:grid-cols-4 gap-3">
-                    <select
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30 sm:col-span-2"
-                      value={templateId}
-                      onChange={(e) => setTemplateId(e.target.value)}
-                    >
-                      <option value="">Select a template…</option>
-                      {activeTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name || "Template"}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => applyTemplateToBuilder(templateId)}
-                      className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
-                      disabled={!templateId}
-                    >
-                      Apply
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={openDeleteTemplateConfirm}
-                      className={`px-4 py-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 ${
-                        templateId
-                          ? "bg-white border-red-200 text-red-700 hover:bg-red-50"
-                          : "bg-white border-gray-200 text-gray-400 cursor-not-allowed"
-                      }`}
-                      disabled={!templateId}
-                      title={!templateId ? "Select a template first" : "Delete selected template"}
-                    >
-                      <Trash2 size={16} />
-                      Delete
-                    </button>
-                  </div>
-
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <input
-                      className={inputBase}
-                      placeholder="Template name (e.g., Offseason Bulk)"
-                      value={templateName}
-                      onChange={(e) => setTemplateName(e.target.value)}
-                    />
-
-                    <input
-                      className={inputBase}
-                      placeholder="Template notes (optional)"
-                      value={templateNotes}
-                      onChange={(e) => setTemplateNotes(e.target.value)}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={saveAsTemplate}
-                      className="px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
-                      disabled={templatesLoading || !templateName.trim()}
-                    >
-                      {templatesLoading ? "Saving…" : "Save as Template"}
-                    </button>
-                  </div>
-
-                  <p className={subtleHint}>
-                    Pro move: apply a template once, then don’t reset the builder — just Save & Next
-                    through the roster.
-                  </p>
-                </div>
-
-                <form
-                  onSubmit={(e) => createPlan(e, { advance: false })}
-                  className="space-y-6"
-                >
-                  {/* Title + Meta */}
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                      <p className="text-xs text-gray-500 mb-2">Plan Title</p>
-                      <input
-                        className={inputBase}
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="e.g. In-season maintenance plan"
-                      />
-                    </div>
-
-                    <div>
-                      <SearchSelect
-                        label="Meta Status"
-                        options={OPTIONS.metaStatus}
-                        value={structured.metaStatus}
-                        onChange={(v) => onChange("metaStatus", v)}
-                        onCommit={(v) => onChange("metaStatus", v)}
-                        allowCustom={false}
-                        placeholder="Search status…"
-                      />
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <p className="text-xs text-gray-500 mb-2">Meta Effective Date</p>
-                      <input
-                        type="date"
-                        className={inputBase}
-                        value={structured.metaEffectiveDate}
-                        onChange={(e) => onChange("metaEffectiveDate", e.target.value)}
-                      />
-                      <p className={subtleHint}>If blank, the API can default to “now”.</p>
-                    </div>
-                  </div>
-
-                  {/* Supplements */}
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-                    <div>
-                      <h4 className="font-semibold">Supplements</h4>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Search + select instantly. Custom entries are allowed if you need them.
-                      </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <SearchSelect
-                        label="Protein Recommendation"
-                        options={OPTIONS.proteinRecommendation}
-                        value={structured.proteinRecommendation}
-                        onChange={(v) => onChange("proteinRecommendation", v)}
-                        onCommit={(v) => onChange("proteinRecommendation", v)}
-                        allowCustom
-                        placeholder="Search protein…"
-                      />
-
-                      <SearchSelect
-                        label="Creatine Recommendation"
-                        options={OPTIONS.creatineRecommendation}
-                        value={structured.creatineRecommendation}
-                        onChange={(v) => onChange("creatineRecommendation", v)}
-                        onCommit={(v) => onChange("creatineRecommendation", v)}
-                        allowCustom
-                        placeholder="Search creatine…"
-                      />
-
-                      <SearchSelect
-                        label="BCAA/EAA Recommendation"
-                        options={OPTIONS.bcaaRecommendation}
-                        value={structured.bcaaRecommendation}
-                        onChange={(v) => onChange("bcaaRecommendation", v)}
-                        onCommit={(v) => onChange("bcaaRecommendation", v)}
-                        allowCustom
-                        placeholder="Search BCAA/EAA…"
-                      />
-
-                      <SearchSelect
-                        label="Electrolytes Recommendation"
-                        options={OPTIONS.electrolytesRecommendation}
-                        value={structured.electrolytesRecommendation}
-                        onChange={(v) => onChange("electrolytesRecommendation", v)}
-                        onCommit={(v) => onChange("electrolytesRecommendation", v)}
-                        allowCustom
-                        placeholder="Search electrolytes…"
-                      />
-
-                      <div className="md:col-span-2">
-                        <SearchSelect
-                          label="Notes (Supplements)"
-                          options={OPTIONS.notesSupplements}
-                          value={structured.notesSupplements}
-                          onChange={(v) => onChange("notesSupplements", v)}
-                          onCommit={(v) => onChange("notesSupplements", v)}
-                          allowCustom
-                          placeholder="Search or type notes…"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Macros */}
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-                    <div>
-                      <h4 className="font-semibold">Macros</h4>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Search values or type exact numbers.
-                      </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <SearchSelect
-                        label="Calories"
-                        options={OPTIONS.calories}
-                        value={structured.calories}
-                        onChange={(v) => onChange("calories", v)}
-                        onCommit={(v) => onChange("calories", v)}
-                        allowCustom
-                        placeholder="Type or search…"
-                      />
-
-                      <SearchSelect
-                        label="Protein (g)"
-                        options={OPTIONS.grams}
-                        value={structured.proteinGrams}
-                        onChange={(v) => onChange("proteinGrams", v)}
-                        onCommit={(v) => onChange("proteinGrams", v)}
-                        allowCustom
-                        placeholder="Type or search…"
-                      />
-
-                      <SearchSelect
-                        label="Carbs (g)"
-                        options={OPTIONS.grams}
-                        value={structured.carbsGrams}
-                        onChange={(v) => onChange("carbsGrams", v)}
-                        onCommit={(v) => onChange("carbsGrams", v)}
-                        allowCustom
-                        placeholder="Type or search…"
-                      />
-
-                      <SearchSelect
-                        label="Fat (g)"
-                        options={OPTIONS.grams}
-                        value={structured.fatsGrams}
-                        onChange={(v) => onChange("fatsGrams", v)}
-                        onCommit={(v) => onChange("fatsGrams", v)}
-                        allowCustom
-                        placeholder="Type or search…"
-                      />
-
-                      <SearchSelect
-                        label="Hydration (oz)"
-                        options={OPTIONS.hydration}
-                        value={structured.hydrationOz}
-                        onChange={(v) => onChange("hydrationOz", v)}
-                        onCommit={(v) => onChange("hydrationOz", v)}
-                        allowCustom
-                        placeholder="Type or search…"
-                      />
-
-                      <div className="md:col-span-3">
-                        <SearchSelect
-                          label="Notes (Macros)"
-                          options={OPTIONS.notesMacros}
-                          value={structured.notesMacros}
-                          onChange={(v) => onChange("notesMacros", v)}
-                          onCommit={(v) => onChange("notesMacros", v)}
-                          allowCustom
-                          placeholder="Search or type notes…"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Freeform notes */}
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Coach Notes (optional)</p>
-                    <textarea
-                      className="w-full min-h-[140px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
-                      value={structured.freeformNotes}
-                      onChange={(e) => onChange("freeformNotes", e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                          e.preventDefault();
-                          createPlan(e, { advance: false });
-                          return;
-                        }
-                        if (
-                          e.key === "Enter" &&
-                          !e.shiftKey &&
-                          !e.ctrlKey &&
-                          !e.metaKey &&
-                          !e.altKey
-                        ) {
-                          e.preventDefault();
-                          createPlan(e, { advance: true });
-                        }
-                      }}
-                      placeholder="Examples: lactose sensitive, practice days increase carbs… (Enter = Save & Next)"
-                    />
-                    <p className={subtleHint}>
-                      Tip: use <span className="font-semibold">Shift+Enter</span> for new lines.
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={resetBuilder}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-                    >
-                      Reset
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => createPlan(e, { advance: false })}
-                      disabled={createLoading || !selectedAthleteEmail}
-                      className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50 ${
-                        createLoading || !selectedAthleteEmail
-                          ? "opacity-70 cursor-not-allowed"
-                          : ""
-                      }`}
-                    >
-                      {createLoading ? "Saving…" : "Save"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => createPlan(e, { advance: true })}
-                      disabled={createLoading || !selectedAthleteEmail}
-                      className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition ${
-                        createLoading || !selectedAthleteEmail
-                          ? "opacity-70 cursor-not-allowed"
-                          : ""
-                      }`}
-                    >
-                      {createLoading ? "Saving…" : "Save & Next"}
-                    </button>
-                  </div>
-
-                  <div className={subtleHint}>
-                    Built for speed: apply a template once, then Save & Next through the roster.
-                    All fields support search; most allow custom values.
-                  </div>
-                </form>
+                <PlanBuilderForm
+                  inputBase={inputBase}
+                  subtleHint={subtleHint}
+                  title={title}
+                  setTitle={setTitle}
+                  structured={structured}
+                  onChange={(k, v) => setStructured((prev) => ({ ...prev, [k]: v }))}
+                  OPTIONS={OPTIONS}
+                  createLoading={createLoading}
+                  selectedAthleteEmail={selectedAthleteEmail}
+                  onReset={resetBuilder}
+                  onSave={(e) => createPlan(e, { advance: false })}
+                  onSaveNext={(e) => createPlan(e, { advance: true })}
+                />
               </div>
             )}
 
-            {/* History */}
             {view === "history" && (
-              <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold">Plan History</h3>
-                    <p className="text-sm text-gray-600 mt-1">Newest first.</p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => fetchPrescriptionsForAthlete(selectedAthleteEmail)}
-                    className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-                    disabled={!selectedAthleteEmail}
-                  >
-                    Refresh
-                  </button>
-                </div>
-
-                {!selectedAthleteEmail && (
-                  <p className="text-sm text-gray-600">
-                    Select an athlete to view plan history.
-                  </p>
-                )}
-
-                {selectedAthleteEmail && prescriptions.length === 0 && (
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-sm text-gray-700 font-medium">No plans yet.</p>
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      Switch to Builder to create the first plan.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  {(prescriptions || []).map((p) => (
-                    <div
-                      key={p.id || `${p.createdAt}-${p.title}`}
-                      className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">
-                            {p.title || "Plan"}
-                          </p>
-                          <p className="text-[11px] text-gray-500 mt-1">
-                            Created: {formatDateTime(p.createdAt)}{" "}
-                            {p.createdBy ? ` • By: ${p.createdBy}` : ""}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTitle(p.title || "Nutrition + Supplements Plan");
-                            setStructured((prev) => ({
-                              ...prev,
-                              freeformNotes: p.prescription || "",
-                            }));
-                            setView("builder");
-                          }}
-                          className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
-                        >
-                          Copy Notes to Builder
-                        </button>
-                      </div>
-
-                      <div className="mt-3">
-                        <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-xl p-3">
-                          {p.prescription || ""}
-                        </pre>
-                      </div>
-
-                      <div className={subtleHint}>
-                        If you want history to rehydrate structured fields (calories, creatine, etc.),
-                        update <span className="font-semibold">getPrescriptionsForAthlete</span> to
-                        return those Airtable columns too.
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PlanHistory
+                prescriptions={prescriptions}
+                selectedAthleteEmail={selectedAthleteEmail}
+                onRefresh={() => fetchPrescriptionsForAthlete(selectedAthleteEmail)}
+                subtleHint={subtleHint}
+                onCopyNotesToBuilder={(p) => {
+                  setTitle(p.title || "Nutrition + Supplements Plan");
+                  setStructured((prev) => ({ ...prev, freeformNotes: p.prescription || "" }));
+                  setView("builder");
+                }}
+              />
             )}
           </section>
         </div>

@@ -2,93 +2,88 @@
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
+function asString(v) {
+  return String(v ?? "").trim();
+}
+
+function normalizeEmail(v) {
+  return asString(v).toLowerCase();
+}
+
 function escapeAirtableString(str = "") {
   return String(str).replace(/'/g, "\\'");
 }
 
+/* ---------------- Airtable base ---------------- */
+
 const base =
   process.env.PRESCRIPTIONS_API_KEY && process.env.PRESCRIPTIONS_BASE_ID
-    ? new Airtable({ apiKey: process.env.PRESCRIPTIONS_API_KEY }).base(
-        process.env.PRESCRIPTIONS_BASE_ID
-      )
+    ? new Airtable({ apiKey: process.env.PRESCRIPTIONS_API_KEY }).base(process.env.PRESCRIPTIONS_BASE_ID)
     : null;
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Route", "getPrescriptionsForAthlete");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const TABLE = process.env.PRESCRIPTIONS_TABLE_NAME;
-
-  if (!base || !TABLE) {
-    return res.status(500).json({
-      error:
-        "Prescriptions Airtable not configured. Check PRESCRIPTIONS_API_KEY, PRESCRIPTIONS_BASE_ID, PRESCRIPTIONS_TABLE_NAME.",
-      missing: {
-        PRESCRIPTIONS_API_KEY: !process.env.PRESCRIPTIONS_API_KEY,
-        PRESCRIPTIONS_BASE_ID: !process.env.PRESCRIPTIONS_BASE_ID,
-        PRESCRIPTIONS_TABLE_NAME: !process.env.PRESCRIPTIONS_TABLE_NAME,
-      },
-    });
-  }
-
-  const auth = requireOrg(req);
-  if (!auth.ok) {
-    return res.status(401).json({ error: auth.error || "Unauthorized" });
-  }
-
-  const orgToken = String(auth?.org?.token || "").trim();
-  const athleteEmail = String(req.query?.athleteEmail || "")
-    .trim()
-    .toLowerCase();
-
-  if (!athleteEmail || !athleteEmail.includes("@")) {
-    return res.status(400).json({ error: "Missing athleteEmail" });
-  }
-
-  if (!orgToken) {
-    return res.status(401).json({
-      error:
-        "Organization token missing from session. Make sure org login returns Token and it is stored in the auth cookie.",
-    });
-  }
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const safeEmail = escapeAirtableString(athleteEmail);
-    const safeToken = escapeAirtableString(orgToken);
+    const org = requireOrg(req, res);
+    if (!org) return;
 
-    const formula = `AND({Athlete Email}='${safeEmail}', {Organization Token}='${safeToken}')`;
+    if (!base) {
+      return res.status(500).json({
+        error: "Missing Airtable config (PRESCRIPTIONS_API_KEY / PRESCRIPTIONS_BASE_ID).",
+      });
+    }
+
+    const athleteToken = asString(req.query?.athleteToken);
+    const athleteEmail = normalizeEmail(req.query?.athleteEmail);
+
+    if (!athleteToken && !athleteEmail) {
+      return res.status(400).json({ error: "athleteToken is required (preferred). athleteEmail is legacy fallback." });
+    }
+
+    // ✅ Build filter: TOKEN-first, else EMAIL
+    // IMPORTANT: Update field names below to match your Airtable schema exactly.
+    // Common ones: {AthleteToken} or {athleteToken} or {Athlete Token}
+    const filterByFormula = athleteToken
+      ? `{AthleteToken}='${escapeAirtableString(athleteToken)}'`
+      : `{AthleteEmail}='${escapeAirtableString(athleteEmail)}'`;
+
+    // If you also need org scoping, add AND() with your org field here, e.g.:
+    // const filterByFormula = `AND(${tokenOrEmailFormula}, FIND('${org.orgId}', ARRAYJOIN({Organization}&'')) > 0)`
+
+    const TABLE = process.env.PRESCRIPTIONS_TABLE_ID || "Prescriptions";
 
     const records = await base(TABLE)
       .select({
-        filterByFormula: formula,
-        sort: [{ field: "CreatedAt", direction: "desc" }],
+        filterByFormula,
+        sort: [{ field: "CreatedAt", direction: "desc" }], // adjust if your field differs
+        maxRecords: 50,
       })
       .firstPage();
 
-    const prescriptions = (records || []).map((r) => ({
+    const prescriptions = records.map((r) => ({
       id: r.id,
-      title: r.fields?.Title || "",
-      prescription: r.fields?.Prescription || "",
-      createdAt: r.fields?.CreatedAt || "",
-      createdBy: r.fields?.CreatedBy || "",
-      organization: r.fields?.Organization || "",
-      // optionally include structured fields if you want later
+      title: r.get("Title") || r.get("title") || "",
+      prescription: r.get("Prescription") || r.get("prescription") || "",
+      createdAt: r.get("CreatedAt") || r.get("createdAt") || r._rawJson?.createdTime || "",
+      createdBy: r.get("CreatedBy") || r.get("createdBy") || "",
     }));
 
-    return res.status(200).json({ prescriptions });
-  } catch (err) {
-    console.error("[getPrescriptionsForAthlete] error:", err);
-    return res.status(500).json({
-      error: "Failed to fetch prescriptions",
-      airtable: {
-        statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
+    return res.status(200).json({
+      ok: true,
+      prescriptions,
+      debug: {
+        used: athleteToken ? "athleteToken" : "athleteEmail",
+        athleteToken: athleteToken || "",
+        athleteEmail: athleteEmail || "",
+        filterByFormula,
       },
     });
+  } catch (err) {
+    console.error("[getPrescriptionsForAthlete] error:", err);
+    return res.status(500).json({ error: "Server error", detail: err?.message || String(err) });
   }
 }

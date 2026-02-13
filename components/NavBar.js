@@ -8,6 +8,10 @@ import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
 
+function classNames(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
 export default function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -50,6 +54,14 @@ export default function NavBar() {
   const isOrgSide = role === "organization" || role === "trainer" || role === "admin";
   const isAdmin = role === "admin";
 
+  const roleLabel = useMemo(() => {
+    if (role === "organization") return "Organization";
+    if (role === "admin") return "Admin";
+    if (role === "trainer") return "Trainer";
+    if (role === "athlete") return "Athlete";
+    return "Member";
+  }, [role]);
+
   /* =========================
      NAV TABS
   ========================= */
@@ -62,14 +74,16 @@ export default function NavBar() {
     []
   );
 
-  const mainTabs = useMemo(
-    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
-    [leftTabs]
-  );
+  const mainTabs = useMemo(() => [...leftTabs, { name: "SmartStack", href: "/smartstack" }], [leftTabs]);
 
   /* =========================
-     GLOBAL AUTH MODAL EVENT
+     AUTH MODAL OPENERS
+     - Supports BOTH:
+       1) cp:open-auth-modal (older pattern)
+       2) NavBarLoginModal's auth:open -> onRequestOpen bridge (newer pattern)
   ========================= */
+
+  // Backwards compatible open event (your existing pattern)
   useEffect(() => {
     const handler = (e) => {
       const detail = e?.detail || {};
@@ -88,6 +102,18 @@ export default function NavBar() {
 
     window.addEventListener("cp:open-auth-modal", handler);
     return () => window.removeEventListener("cp:open-auth-modal", handler);
+  }, []);
+
+  // ✅ required for NavBarLoginModal's global "auth:open" triggers
+  const onRequestOpen = useCallback((detail = {}) => {
+    const tab = detail?.tab === "signup" ? "signup" : "login";
+    setDefaultAuthTab(tab);
+    setLoginModalOpen(true);
+  }, []);
+
+  const openAuthModal = useCallback((tab = "login") => {
+    setDefaultAuthTab(tab);
+    setLoginModalOpen(true);
   }, []);
 
   /* =========================
@@ -119,10 +145,11 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [profileOpen]);
 
-  const openAuthModal = useCallback((tab = "login") => {
-    setDefaultAuthTab(tab);
-    setLoginModalOpen(true);
-  }, []);
+  /* =========================
+     ✅ REMOVE LOCK FEATURE
+     No body overflow/position locking here.
+     (So background can scroll even while menu is open.)
+  ========================= */
 
   const handleProfileClick = useCallback(() => {
     if (!loggedIn) return openAuthModal("login");
@@ -158,7 +185,7 @@ export default function NavBar() {
         onClick={onClick}
         aria-current={active ? "page" : undefined}
         className={[
-          "relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition",
+          "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
           active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50",
         ].join(" ")}
       >
@@ -182,14 +209,16 @@ export default function NavBar() {
     );
   };
 
-  const RoleLinks = () => {
+  const RoleLinks = ({ compact = false, onNavigate }) => {
     const L = ({ href, children }) => {
       const active = isActive(href);
       return (
         <Link
           href={href}
+          onClick={() => onNavigate?.()}
           className={[
-            "block px-4 py-3 text-sm transition",
+            "block transition rounded-xl",
+            compact ? "px-3 py-2 text-sm" : "px-4 py-3 text-sm",
             active ? "bg-blue-50 text-[#46769B] font-semibold" : "text-gray-700 hover:bg-gray-50",
           ].join(" ")}
         >
@@ -204,13 +233,16 @@ export default function NavBar() {
           <L href="/org/dashboard">Dashboard</L>
           <L href="/org/review-queue">Review Queue</L>
           <L href="/org/workouts-calendar">Workouts Calendar</L>
-          <L href="/org/prescriptions">Prescriptions</L>
+          {/* ✅ Prescriptions → Nutrition */}
+          <L href="/org/nutrition">Nutrition</L>
+
           {(isAdmin || role === "organization") && (
             <>
               <L href="/org/athletes">Athletes</L>
               <L href="/org/trainers">Trainers</L>
             </>
           )}
+
           <L href="/account">Account</L>
         </>
       );
@@ -230,20 +262,9 @@ export default function NavBar() {
     return <L href="/account">Account</L>;
   };
 
-  const roleLabel = useMemo(() => {
-    if (role === "organization") return "Organization";
-    if (role === "admin") return "Admin";
-    if (role === "trainer") return "Trainer";
-    if (role === "athlete") return "Athlete";
-    return "Member";
-  }, [role]);
-
   return (
     <>
-      <nav
-        ref={navRef}
-        className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
-      >
+      <nav ref={navRef} className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           {/* TOP BAR */}
           <div className="h-16 md:h-20 flex items-center justify-between gap-3">
@@ -254,10 +275,10 @@ export default function NavBar() {
               ))}
             </div>
 
-            {/* ✅ MOBILE LEFT SPACER (fixes logo centering) */}
+            {/* Mobile spacer (logo centering) */}
             <div className="md:hidden h-10 w-10" aria-hidden />
 
-            {/* CENTER LOGO */}
+            {/* Center logo */}
             <div className="flex-1 flex justify-center">
               <Link href="/" aria-label="PEAK Home" className="inline-flex items-center">
                 <div className="block md:hidden">
@@ -278,7 +299,7 @@ export default function NavBar() {
                   <button
                     type="button"
                     onClick={handleProfileClick}
-                    className="rounded-2xl border border-gray-200 text-gray-900 px-4 py-2 text-sm font-medium hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
+                    className="rounded-2xl border border-gray-200 text-gray-900 px-3 py-2 text-sm font-medium hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
                   >
                     {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
                   </button>
@@ -289,27 +310,28 @@ export default function NavBar() {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className="absolute right-0 mt-2 w-64 rounded-xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden"
+                        className="absolute right-0 mt-2 w-64 rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden"
                       >
                         <div className="px-4 py-3 border-b">
-                          <p className="text-xs font-semibold truncate">
-                            {user?.Name || user?.name}
-                          </p>
-                          <p className="text-[11px] text-gray-500 truncate">
-                            {user?.Email || user?.email}
-                          </p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">
-                            {roleLabel}
-                          </p>
+                          <p className="text-xs font-semibold truncate">{user?.Name || user?.name}</p>
+                          <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
+                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                         </div>
-                        <RoleLinks />
-                        <button
-                          onClick={logoutAndClose}
-                          type="button"
-                          className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
-                        >
-                          Logout
-                        </button>
+
+                        {/* Slightly tighter, scrollable area */}
+                        <div className="max-h-[300px] overflow-auto p-2">
+                          <RoleLinks compact />
+                        </div>
+
+                        <div className="p-2 border-t">
+                          <button
+                            onClick={logoutAndClose}
+                            type="button"
+                            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
+                          >
+                            Logout
+                          </button>
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -321,12 +343,22 @@ export default function NavBar() {
             <div className="md:hidden">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
-                className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900grid place-items-center"
+                className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900 grid place-items-center"
+                aria-label="Open menu"
+                type="button"
               >
                 <div className="flex flex-col">
-                  <span className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${menuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
+                  <span
+                    className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${
+                      menuOpen ? "rotate-45 translate-y-1.5" : ""
+                    }`}
+                  />
                   <span className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${menuOpen ? "opacity-0" : ""}`} />
-                  <span className={`w-5 h-0.5 bg-gray-700 transition ${menuOpen ? "-rotate-45 -translate-y-1.5" : ""}`} />
+                  <span
+                    className={`w-5 h-0.5 bg-gray-700 transition ${
+                      menuOpen ? "-rotate-45 -translate-y-1.5" : ""
+                    }`}
+                  />
                 </div>
               </button>
             </div>
@@ -350,9 +382,7 @@ export default function NavBar() {
                     onClick={() => setMenuOpen(false)}
                     className={[
                       "block rounded-xl px-4 py-3 text-sm font-medium",
-                      isActive(tab.href)
-                        ? "bg-blue-50 text-[#46769B]"
-                        : "hover:bg-gray-50",
+                      isActive(tab.href) ? "bg-blue-50 text-[#46769B]" : "hover:bg-gray-50",
                     ].join(" ")}
                   >
                     {tab.name}
@@ -366,24 +396,40 @@ export default function NavBar() {
                     <button
                       onClick={() => openAuthModal("login")}
                       className="rounded-xl bg-[#46769B] text-white py-3 font-semibold"
+                      type="button"
                     >
                       Log in
                     </button>
                     <button
                       onClick={() => openAuthModal("signup")}
                       className="rounded-xl border py-3 font-semibold"
+                      type="button"
                     >
                       Sign up
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={logoutAndClose}
-                    type="button"
-                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
-                  >
-                    Logout
-                  </button>
+                  <div className="space-y-2">
+                    {/* Mobile profile header */}
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                      <p className="text-sm font-semibold truncate">{user?.Name || user?.name || "Profile"}</p>
+                      <p className="text-xs text-gray-500 truncate">{user?.Email || user?.email}</p>
+                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                    </div>
+
+                    {/* Mobile-friendly role nav */}
+                    <div className="rounded-2xl border border-gray-200 bg-white p-2">
+                      <RoleLinks onNavigate={() => setMenuOpen(false)} compact />
+                    </div>
+
+                    <button
+                      onClick={logoutAndClose}
+                      type="button"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
+                    >
+                      Logout
+                    </button>
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -395,6 +441,7 @@ export default function NavBar() {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         defaultTab={defaultAuthTab}
+        onRequestOpen={onRequestOpen} // ✅ required for your modal's global open hook
       />
     </>
   );

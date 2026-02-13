@@ -33,14 +33,35 @@ function toStr(v) {
   return String(v);
 }
 
+// Make sure values are always arrays for safe ARRAYJOIN usage
+function safeArray(v) {
+  return Array.isArray(v) ? v : v ? [v] : [];
+}
+
+// Lookup-safe: if a field sometimes comes back as an array, take the first value
+function firstString(v) {
+  if (Array.isArray(v)) return String(v[0] || "").trim();
+  return String(v || "").trim();
+}
+
+/**
+ * Build a filter formula that can survive schema quirks:
+ * - Org link field "Organization" may be linked-record array (record IDs)
+ * - Org token field on athlete record "Token" may be a text field OR could be a lookup/array
+ *
+ * We check:
+ * 1) linked org record id
+ * 2) token exact match
+ * 3) token contained in ARRAYJOIN for lookup/array cases
+ */
 function buildFilterFormula({ orgToken, orgRecordId }) {
   const parts = [];
   const t = escapeFormulaString(orgToken || "");
   const oid = escapeFormulaString(orgRecordId || "");
 
-  if (oid) parts.push(`FIND('${oid}', ARRAYJOIN({Organization}))`);
+  if (oid) parts.push(`FIND('${oid}', ARRAYJOIN({Organization}&""))`);
   if (t) parts.push(`{Token}='${t}'`);
-  if (t) parts.push(`FIND('${t}', ARRAYJOIN({Token}))`);
+  if (t) parts.push(`FIND('${t}', ARRAYJOIN({Token}&""))`);
 
   const uniq = Array.from(new Set(parts)).filter(Boolean);
   if (!uniq.length) return "";
@@ -56,7 +77,7 @@ export default async function handler(req, res) {
 
   const ATHLETE_API_KEY = process.env.ATHLETE_API_KEY;
   const ATHLETE_BASE_ID = process.env.ATHLETE_BASE_ID;
-  const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME; // can be table name or table id
+  const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME; // table name or table id
 
   if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
     return res.status(500).json({
@@ -79,7 +100,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Organization token/orgId missing from session. Re-login and try again." });
   }
 
-  // DNS proof
+  // DNS proof (helps you distinguish Airtable downtime vs your code)
   try {
     const lookedUp = await dns.lookup("api.airtable.com");
     console.log("[getAthletes] dns.lookup(api.airtable.com) ok:", lookedUp);
@@ -99,6 +120,7 @@ export default async function handler(req, res) {
     orgToken,
     orgRecordId,
     filterByFormula: "",
+    fieldsRequested: [],
     pages: [],
     count: 0,
   };
@@ -117,18 +139,23 @@ export default async function handler(req, res) {
       });
     }
 
-    // ✅ Only request fields that exist (LastUpdated caused the 422)
+    /**
+     * ✅ Key fix:
+     * Always include AthleteToken so the Nutrition Queue can navigate by token.
+     */
     const FIELDS = [
       "Name",
       "Email",
+      "AthleteToken", // ✅ required (may be lookup array)
+      "Role",
       "CreatedAt",
       "Organization",
       "Token",
       "sport",
       "Team",
       "Status",
-      // "LastUpdated", // ❌ remove (unknown field)
     ];
+    debug.fieldsRequested = FIELDS;
 
     const sortField = "CreatedAt";
 
@@ -177,18 +204,23 @@ export default async function handler(req, res) {
       const records = Array.isArray(data?.records) ? data.records : [];
       for (const r of records) {
         const fields = r?.fields || {};
+
+        const athleteToken = firstString(fields.AthleteToken); // ✅ lookup-safe canonical string
+
         all.push({
-          id: r.id,
+          id: r.id, // ✅ AthleteScans record id (critical for NutritionPlans linking)
           name: toStr(fields.Name),
           email: toStr(fields.Email),
+          athleteToken, // ✅ canonical
+          role: toStr(fields.Role),
           createdAt: toStr(fields.CreatedAt),
           sport: toStr(fields.sport),
           team: toStr(fields.Team),
           status: toStr(fields.Status),
 
           // raw linkage for debugging
-          organization: fields.Organization,
-          token: fields.Token,
+          organization: safeArray(fields.Organization),
+          token: fields.Token, // could be text or array/lookup
         });
       }
 
@@ -198,6 +230,7 @@ export default async function handler(req, res) {
 
     debug.count = all.length;
 
+    // Optional: tidy sorts for UI filters
     const sports = Array.from(new Set(all.map((a) => String(a.sport || "").trim()).filter(Boolean))).sort();
     const teams = Array.from(new Set(all.map((a) => String(a.team || "").trim()).filter(Boolean))).sort();
 

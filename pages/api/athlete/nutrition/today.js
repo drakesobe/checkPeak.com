@@ -26,11 +26,6 @@ function getTable(apiKey, baseId, tableNameOrId) {
   return base(tableNameOrId);
 }
 
-function tokenMatchFormula(fieldName, tokenValue) {
-  const safeTok = escapeAirtableString(tokenValue);
-  return `FIND('${safeTok}', ARRAYJOIN({${fieldName}}&''))`;
-}
-
 function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
@@ -71,14 +66,19 @@ function nyISODate() {
   return `${y}-${m}-${d}`;
 }
 
-function toISODateOnlyFromAny(v) {
+/**
+ * Convert any date-like input into YYYY-MM-DD in NY timezone.
+ * Works for:
+ * - "YYYY-MM-DD"
+ * - ISO datetime like "2026-02-15T17:00:00.000Z"
+ * - Date-parsable strings
+ */
+function toISODateOnlyNY(v) {
   const s = asString(v);
   if (!s) return "";
   if (isISODateOnly(s)) return s;
 
-  // Airtable date fields often come as ISO datetime with Z
-  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
-
+  // Fast path: ISO datetime
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
 
@@ -93,15 +93,6 @@ function toISODateOnlyFromAny(v) {
   const m = parts.find((p) => p.type === "month")?.value;
   const dd = parts.find((p) => p.type === "day")?.value;
   return `${y}-${m}-${dd}`;
-}
-
-function toSortableCreatedAtISO(v) {
-  // Normalize createdAt for consistent comparisons
-  const s = asString(v);
-  if (!s) return "";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString();
 }
 
 /* ---------------- env ---------------- */
@@ -127,20 +118,22 @@ const ATH_EMAIL = "Email";
 const ATH_TOKEN = "AthleteToken";
 
 // NutritionPlans
-const PLAN_ATH_LINK = "Athlete";
 const PLAN_STATUS = "Status";
 const PLAN_CREATED_AT = "CreatedAt";
 const PLAN_CREATED_BY = "CreatedBy";
 
 const PLAN_PHASE = "Phase";
 const PLAN_DCAL = "DailyCalories";
-const PLAN_DPRO = "DailyProtein"; // ✅ confirmed
+const PLAN_DPRO = "DailyProtein";
 const PLAN_DCARB = "DailyCarbs";
 const PLAN_DFAT = "DailyFat";
 const PLAN_JSON = "PlanJson";
 const PLAN_PRESCRIPTION = "Prescription";
 
-// ✅ Source of truth effective date column
+// ✅ Lookup field in NutritionPlans (lookup may be array/string; ARRAYJOIN handles both)
+const PLAN_ATH_TOKEN_LOOKUP = "AthleteToken";
+
+// ✅ Single line text like 2026-02-15T17:00:00.000Z
 const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
 
 /* ---------------- handler ---------------- */
@@ -184,7 +177,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1) find athlete record
+    /* ---------------- 1) Find athlete record + token ---------------- */
+
     let athleteToken = pickFromAuth(auth, [
       "athlete.athleteToken",
       "athlete.AthleteToken",
@@ -200,14 +194,17 @@ export default async function handler(req, res) {
 
     let athleteRec = null;
 
+    // prefer token lookup
     if (athleteToken) {
-      const athleteFilter = tokenMatchFormula(ATH_TOKEN, athleteToken);
+      const safeTok = escapeAirtableString(athleteToken);
+      const filter = `FIND('${safeTok}', ARRAYJOIN({${ATH_TOKEN}}&''))`;
       athleteRec = await athleteTable
-        .select({ filterByFormula: athleteFilter, maxRecords: 1 })
+        .select({ filterByFormula: filter, maxRecords: 1 })
         .firstPage()
         .then((xs) => (xs?.length ? xs[0] : null));
     }
 
+    // fallback email only to recover token
     if (!athleteRec) {
       if (!athleteEmail) {
         return res.status(401).json({
@@ -216,9 +213,9 @@ export default async function handler(req, res) {
         });
       }
 
-      const emailFilter = `LOWER({${ATH_EMAIL}}&'')='${escapeAirtableString(athleteEmail)}'`;
+      const filter = `LOWER({${ATH_EMAIL}}&'')='${escapeAirtableString(athleteEmail)}'`;
       athleteRec = await athleteTable
-        .select({ filterByFormula: emailFilter, maxRecords: 1 })
+        .select({ filterByFormula: filter, maxRecords: 1 })
         .firstPage()
         .then((xs) => (xs?.length ? xs[0] : null));
 
@@ -239,15 +236,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) fetch ACTIVE plans for athlete (Airtable-side filter: athlete link + active status)
-    const planAthMatch = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
-    const activeFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
+    /* ---------------- 2) Fetch ACTIVE plans for this athleteToken (LOOKUP FIELD) ---------------- */
+
+    const safeTok = escapeAirtableString(athleteToken);
+
+    // AthleteToken is a LOOKUP field on NutritionPlans, so treat as array-ish and ARRAYJOIN it.
+    const tokMatch = `FIND('${safeTok}', ARRAYJOIN({${PLAN_ATH_TOKEN_LOOKUP}}&''))`;
+    const activeFilter = `AND(${tokMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
 
     const activeRecs = await plansTable
       .select({
         filterByFormula: activeFilter,
         sort: [{ field: PLAN_CREATED_AT, direction: "desc" }],
-        maxRecords: 50,
+        maxRecords: 25,
       })
       .firstPage();
 
@@ -256,56 +257,46 @@ export default async function handler(req, res) {
       const planJsonRaw = asString(f[PLAN_JSON]);
       const planJson = safeJsonParse(planJsonRaw);
 
-      // ✅ PRIMARY: Airtable column "Meta Effective Date"
-      // ✅ FALLBACK: planJson.meta.effectiveDate (legacy)
-      const effFromColumn = toISODateOnlyFromAny(f[PLAN_META_EFFECTIVE_DATE]);
-      const effFromJson = toISODateOnlyFromAny(planJson?.meta?.effectiveDate || "");
-      const effectiveDate = effFromColumn || effFromJson || "";
+      // ✅ Effective date: prefer Meta Effective Date column, fallback to PlanJson.meta.effectiveDate
+      const rawEff =
+        asString(f[PLAN_META_EFFECTIVE_DATE]) || asString(planJson?.meta?.effectiveDate) || "";
 
-      const createdAt = asString(f[PLAN_CREATED_AT]) || asString(r._rawJson?.createdTime) || "";
-      const createdAtISO = toSortableCreatedAtISO(createdAt);
+      const effectiveDate = toISODateOnlyNY(rawEff); // YYYY-MM-DD or ""
+
+      const createdAt = asString(f[PLAN_CREATED_AT]) || asString(r._rawJson?.createdTime);
 
       return {
-        rec: r,
         id: r.id,
         fields: f,
         planJsonRaw,
         planJson,
-        effectiveDate, // YYYY-MM-DD or ""
+        effectiveDate,
         createdAt,
-        createdAtISO,
       };
     });
 
-    // 3) pick plan effective for selectedDate:
-    // - Prefer plans with an effectiveDate
-    // - Choose the latest effectiveDate <= selectedDate
-    // - Tie-break by createdAt
-    const eligible = candidates.filter((p) => {
-      if (!p.effectiveDate) return true; // legacy: treat as effective
+    /* ---------------- 3) Choose plan effective for selectedDate ----------------
+       Rule:
+       - If effectiveDate missing => treat as always effective (legacy)
+       - else => effectiveDate <= selectedDate
+    --------------------------------------------------------------------------- */
+
+    const effective = candidates.filter((p) => {
+      if (!p.effectiveDate) return true;
       return p.effectiveDate <= selectedDate;
     });
 
-    const picked =
-      eligible
-        .slice()
-        .sort((a, b) => {
-          const aEff = a.effectiveDate || "0000-00-00";
-          const bEff = b.effectiveDate || "0000-00-00";
-          if (aEff !== bEff) return aEff < bEff ? 1 : -1; // desc
-          const aC = a.createdAtISO || "";
-          const bC = b.createdAtISO || "";
-          if (aC !== bC) return aC < bC ? 1 : -1; // desc
-          return 0;
-        })[0] || null;
+    const picked = effective[0] || null;
 
-    // Next upcoming = smallest effectiveDate > selectedDate
-    const upcoming =
-      candidates
-        .filter((p) => p.effectiveDate && p.effectiveDate > selectedDate)
-        .slice()
-        .sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0))[0] ||
-      null;
+    // next upcoming = earliest plan whose effectiveDate > selectedDate (candidates already newest-first;
+    // we’ll scan all and pick the soonest > selectedDate)
+    let upcoming = null;
+    for (const p of candidates) {
+      if (!p.effectiveDate) continue;
+      if (p.effectiveDate > selectedDate) {
+        if (!upcoming || p.effectiveDate < upcoming.effectiveDate) upcoming = p;
+      }
+    }
 
     if (!picked) {
       return res.status(200).json({
@@ -315,14 +306,16 @@ export default async function handler(req, res) {
         athleteEmail,
         latestPlan: null,
         nextPlan: upcoming
-          ? {
-              effectiveDate: upcoming.effectiveDate,
-              createdAt: upcoming.createdAt,
-            }
+          ? { effectiveDate: upcoming.effectiveDate, createdAt: upcoming.createdAt }
           : null,
         message: upcoming
           ? `No plan is effective on ${selectedDate}. Next plan starts ${upcoming.effectiveDate}.`
           : `No active plan is effective on ${selectedDate}.`,
+        debug: {
+          filterByFormula: activeFilter,
+          candidateCount: candidates.length,
+          note: "Using NutritionPlans AthleteToken LOOKUP for matching (stable).",
+        },
       });
     }
 
@@ -332,11 +325,10 @@ export default async function handler(req, res) {
       id: picked.id,
       phase: asString(f[PLAN_PHASE]),
       daily: {
-        // store as strings so UI parsing stays consistent
-        calories: asString(f[PLAN_DCAL]),
-        protein: asString(f[PLAN_DPRO]),
-        carbs: asString(f[PLAN_DCARB]),
-        fat: asString(f[PLAN_DFAT]),
+        calories: f[PLAN_DCAL] ?? "",
+        protein: f[PLAN_DPRO] ?? "",
+        carbs: f[PLAN_DCARB] ?? "",
+        fat: f[PLAN_DFAT] ?? "",
       },
       planJsonRaw: picked.planJsonRaw,
       planJson: picked.planJson,
@@ -344,7 +336,6 @@ export default async function handler(req, res) {
       status: asString(f[PLAN_STATUS]) || "active",
       createdAt: picked.createdAt,
       createdBy: asString(f[PLAN_CREATED_BY]),
-      // ✅ now guaranteed to reflect the Airtable column when present
       effectiveDate: picked.effectiveDate || "",
     };
 
@@ -355,10 +346,7 @@ export default async function handler(req, res) {
       athleteEmail,
       latestPlan,
       nextPlan: upcoming
-        ? {
-            effectiveDate: upcoming.effectiveDate,
-            createdAt: upcoming.createdAt,
-          }
+        ? { effectiveDate: upcoming.effectiveDate, createdAt: upcoming.createdAt }
         : null,
     });
   } catch (e) {

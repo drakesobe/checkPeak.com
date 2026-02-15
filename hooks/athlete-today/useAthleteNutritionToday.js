@@ -30,6 +30,41 @@ function isFutureDate(selectedDate, effectiveDate) {
 }
 
 /**
+ * Hydration normalization
+ * - Airtable column: "DailyHydration" (single line text)
+ * - UI key: daily.hydrationOz (string)
+ * - Also supports PlanJson daily keys (hydrationOz, hydration, dailyHydrationOz)
+ */
+function pickDailyHydrationOz({ plan, planJson, dailyObj }) {
+  // 1) Airtable top-level field (preferred for your table design)
+  const fromPlanField =
+    safeText(plan?.DailyHydration) ||
+    safeText(plan?.dailyHydration) ||
+    safeText(plan?.dailyHydrationOz);
+
+  if (fromPlanField) return fromPlanField;
+
+  // 2) Daily object (if API already flattened it)
+  const fromDailyObj =
+    safeText(dailyObj?.hydrationOz) ||
+    safeText(dailyObj?.DailyHydration) ||
+    safeText(dailyObj?.dailyHydrationOz) ||
+    safeText(dailyObj?.hydration);
+
+  if (fromDailyObj) return fromDailyObj;
+
+  // 3) PlanJson daily fallbacks
+  const pjDaily = planJson?.daily && typeof planJson.daily === "object" ? planJson.daily : {};
+  const fromPlanJson =
+    safeText(pjDaily?.hydrationOz) ||
+    safeText(pjDaily?.DailyHydration) ||
+    safeText(pjDaily?.dailyHydrationOz) ||
+    safeText(pjDaily?.hydration);
+
+  return fromPlanJson;
+}
+
+/**
  * Date-aware athlete nutrition hook
  * - Fetches /api/athlete/nutrition/today?date=YYYY-MM-DD
  * - Reads API shape: { latestPlan, nextPlan, selectedDate, message }
@@ -107,11 +142,34 @@ export function useAthleteNutritionToday({ authReady, user, isAthlete, selectedD
   const planJson = useMemo(() => pickPlanJson(plan), [plan]);
   const mealBlocks = useMemo(() => pickMealBlocks(planJson), [planJson]);
 
-  const daily = useMemo(() => {
+  const dailyRaw = useMemo(() => {
     // Prefer PlanJson.daily, fall back to plan.daily from API
     const d = planJson?.daily || plan?.daily || null;
     return d && typeof d === "object" ? d : null;
   }, [planJson, plan]);
+
+  // ✅ Hydration (oz) normalized from Airtable DailyHydration and/or PlanJson
+  const dailyHydrationOz = useMemo(() => {
+    return pickDailyHydrationOz({ plan, planJson, dailyObj: dailyRaw });
+  }, [plan, planJson, dailyRaw]);
+
+  // ✅ Daily object guaranteed to include hydrationOz when available
+  const daily = useMemo(() => {
+    const d = dailyRaw && typeof dailyRaw === "object" ? dailyRaw : null;
+    if (!d) {
+      // If there's no daily object but we do have hydration, still return a daily object for UI
+      if (dailyHydrationOz) return { hydrationOz: dailyHydrationOz };
+      return null;
+    }
+
+    // Don’t overwrite if already present
+    if (safeText(d?.hydrationOz)) return d;
+
+    // Add hydrationOz if we have it
+    if (dailyHydrationOz) return { ...d, hydrationOz: dailyHydrationOz };
+
+    return d;
+  }, [dailyRaw, dailyHydrationOz]);
 
   const effectiveDate = useMemo(() => {
     // You return effectiveDate at top-level on latestPlan
@@ -151,7 +209,8 @@ export function useAthleteNutritionToday({ authReady, user, isAthlete, selectedD
     hasPlan,
     plan,
     planJson,
-    daily,
+    daily, // ✅ now includes hydrationOz when found
+    dailyHydrationOz, // ✅ explicit convenience
     mealBlocks,
 
     // extra context for better UX

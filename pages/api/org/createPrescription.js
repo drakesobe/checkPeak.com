@@ -87,7 +87,7 @@ function hasAnyStructuredValue(structured = {}) {
     "proteinGrams",
     "carbsGrams",
     "fatsGrams",
-    "hydrationOz",
+    "hydrationOz", // ✅ already included
     "notesMacros",
     "notesSupplements",
     "metaStatus",
@@ -185,6 +185,12 @@ export default async function handler(req, res) {
   const F_DPRO = "DailyProtein";
   const F_DCARB = "DailyCarbs";
   const F_DFAT = "DailyFat";
+
+  // ✅ NEW: Daily Hydration (oz) summary field
+  // Make sure your NutritionPlans table column is named exactly "DailyHydration"
+  // (If your Airtable field is named differently, change this constant to match.)
+  const F_DHYDRATION = "DailyHydration";
+
   const F_PLANJSON = "PlanJson";
   const F_PRESCRIPTION = "Prescription";
 
@@ -218,6 +224,9 @@ export default async function handler(req, res) {
       toISODateOnly(parsedPlanJson?.meta?.effectiveDate) ||
       ""; // allow blank (legacy)
 
+    // ✅ Normalize hydration (oz)
+    const hydrationVal = cleanString(s?.hydrationOz) ? toNumOrBlank(s.hydrationOz) : null;
+
     const mergedPlanJson =
       parsedPlanJson && typeof parsedPlanJson === "object"
         ? {
@@ -234,6 +243,9 @@ export default async function handler(req, res) {
               ...(cleanString(s?.proteinGrams) ? { protein: toNumOrBlank(s.proteinGrams) } : {}),
               ...(cleanString(s?.carbsGrams) ? { carbs: toNumOrBlank(s.carbsGrams) } : {}),
               ...(cleanString(s?.fatsGrams) ? { fat: toNumOrBlank(s.fatsGrams) } : {}),
+
+              // ✅ NEW: daily hydration stored in PlanJson
+              ...(hydrationVal != null ? { hydrationOz: hydrationVal, hydration: hydrationVal } : {}),
             },
           }
         : {
@@ -246,6 +258,9 @@ export default async function handler(req, res) {
               protein: toNumOrBlank(s?.proteinGrams),
               carbs: toNumOrBlank(s?.carbsGrams),
               fat: toNumOrBlank(s?.fatsGrams),
+
+              // ✅ NEW: daily hydration stored in PlanJson
+              ...(hydrationVal != null ? { hydrationOz: hydrationVal, hydration: hydrationVal } : {}),
             },
           };
 
@@ -270,6 +285,9 @@ export default async function handler(req, res) {
       [F_DCARB]: toNumOrBlank(s?.carbsGrams),
       [F_DFAT]: toNumOrBlank(s?.fatsGrams),
 
+      // ✅ NEW: Daily hydration field saved to Airtable
+      [F_DHYDRATION]: toNumOrBlank(s?.hydrationOz),
+
       // Plan payload
       [F_PLANJSON]: planJsonString,
 
@@ -293,6 +311,8 @@ export default async function handler(req, res) {
         meta: {
           effectiveDate: effDateOnly || "",
           status: fields[F_STATUS] || "",
+          // ✅ helpful to log
+          dailyHydrationOz: fields[F_DHYDRATION] ?? "",
         },
       });
     } catch (e) {

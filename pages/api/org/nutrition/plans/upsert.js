@@ -125,6 +125,10 @@ const PLAN_DCAL = "DailyCalories";
 const PLAN_DPRO = "DailyProtein";
 const PLAN_DCARB = "DailyCarbs";
 const PLAN_DFAT = "DailyFat";
+
+// ✅ NEW: daily hydration summary field (rename if your column differs)
+const PLAN_DHYDRATION = "DailyHydration";
+
 const PLAN_JSON = "PlanJson";
 const PLAN_PRESCRIPTION = "Prescription";
 
@@ -192,13 +196,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Expected AthleteToken (ATH-...), but received an ORG- token." });
     }
 
-    /* ---------------- Effective date ----------------
-       Accepts:
-       - body.metaEffectiveDate
-       - body.structured.metaEffectiveDate
-       - body.planJson.meta.effectiveDate
-       - planJsonObj.meta.effectiveDate
-    --------------------------------------------------- */
+    /* ---------------- Effective date ---------------- */
 
     const effRaw =
       asString(body.metaEffectiveDate) ||
@@ -254,6 +252,16 @@ export default async function handler(req, res) {
     const dailyCarbs = pickFirstNonEmptyString(daily?.carbs, pjDaily?.carbs);
     const dailyFat = pickFirstNonEmptyString(daily?.fat, pjDaily?.fat);
 
+    // ✅ NEW: hydration (oz) — accept multiple possible keys
+    const dailyHydrationOz = pickFirstNonEmptyString(
+      daily?.hydrationOz,
+      daily?.hydration,
+      pjDaily?.hydrationOz,
+      pjDaily?.hydration,
+      pjDaily?.waterOz,
+      pjDaily?.water
+    );
+
     /* ---------------- 4) Merge PlanJson meta + daily ---------------- */
 
     const mergedPlanJson =
@@ -270,6 +278,9 @@ export default async function handler(req, res) {
               ...(dailyProtein ? { protein: dailyProtein } : {}),
               ...(dailyCarbs ? { carbs: dailyCarbs } : {}),
               ...(dailyFat ? { fat: dailyFat } : {}),
+
+              // ✅ NEW: always persist hydration in PlanJson
+              ...(dailyHydrationOz ? { hydrationOz: dailyHydrationOz, hydration: dailyHydrationOz } : {}),
             },
           }
         : {
@@ -279,6 +290,9 @@ export default async function handler(req, res) {
               protein: dailyProtein,
               carbs: dailyCarbs,
               fat: dailyFat,
+
+              // ✅ NEW
+              ...(dailyHydrationOz ? { hydrationOz: dailyHydrationOz, hydration: dailyHydrationOz } : {}),
             },
           };
 
@@ -295,6 +309,9 @@ export default async function handler(req, res) {
       [PLAN_DPRO]: dailyProtein,
       [PLAN_DCARB]: dailyCarbs,
       [PLAN_DFAT]: dailyFat,
+
+      // ✅ NEW: write daily hydration to Airtable summary column
+      [PLAN_DHYDRATION]: dailyHydrationOz,
 
       [PLAN_JSON]: planJsonString,
       [PLAN_PRESCRIPTION]: prescription,
@@ -321,6 +338,7 @@ export default async function handler(req, res) {
         athleteToken,
         effectiveDate,
         effectiveDateISOForAirtable,
+        dailyHydrationOz,
       },
     });
   } catch (e) {

@@ -1,4 +1,3 @@
-// pages/athlete/today.js
 "use client";
 
 import { useEffect, useMemo, useCallback } from "react";
@@ -17,6 +16,13 @@ import { toISODateLocal, addDays } from "@/components/athlete-today/ui.jsx";
 import { useAthleteToday } from "@/hooks/athlete-today/useAthleteToday";
 import { useWorkoutCompletion } from "@/hooks/athlete-today/useWorkoutCompletion";
 import { useAthleteNutritionToday } from "@/hooks/athlete-today/useAthleteNutritionToday";
+
+function safeNum(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function AthleteToday() {
   const router = useRouter();
@@ -70,6 +76,26 @@ export default function AthleteToday() {
     selectedDate,
   });
 
+  // ✅ IMPORTANT: keep this hook ABOVE any early returns
+  // This is optional — NutritionCard can also read hydration directly from nutrition.daily.
+  const dailyHydrationOz = useMemo(() => {
+    // Preferred: nutrition.daily.hydrationOz (new shape)
+    const v1 = nutrition?.daily?.hydrationOz;
+
+    // Fallbacks (older/alternate shapes)
+    const v2 = nutrition?.daily?.DailyHydration;
+    const v3 = nutrition?.planJson?.daily?.hydrationOz;
+    const v4 = nutrition?.planJson?.daily?.DailyHydration;
+
+    return (
+      safeNum(v1) ??
+      safeNum(v2) ??
+      safeNum(v3) ??
+      safeNum(v4) ??
+      null
+    );
+  }, [nutrition?.daily, nutrition?.planJson]);
+
   const goPrev = useCallback(() => {
     setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1)));
   }, [setSelectedDate]);
@@ -91,6 +117,7 @@ export default function AthleteToday() {
     reload(selectedDate);
   }, [authReady, user, isAthlete, selectedDate, reload]);
 
+  // ✅ Early returns MUST come after all hooks
   if (!authReady) return null;
   if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
   if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
@@ -160,9 +187,9 @@ export default function AthleteToday() {
           isFuture={nutrition.isFuture}
           message={nutrition.message}
           onRefresh={() => nutrition.reload(selectedDate)}
-          onOpenNutrition={() => router.push("/athlete/nutrition")} // ✅ MAIN nutrition page
-          // If you want the "today" nutrition page instead:
-          // onOpenNutrition={() => router.push("/athlete/nutrition/today")}
+          onOpenNutrition={() => router.push("/athlete/nutrition")}
+          // ✅ optional: pass it explicitly if you want
+          dailyHydrationOz={dailyHydrationOz}
         />
 
         {err ? (

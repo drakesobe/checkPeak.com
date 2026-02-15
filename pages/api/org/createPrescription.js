@@ -5,25 +5,41 @@ import { logAuditEvent } from "@/lib/audit";
 
 /* ---------------- Helpers ---------------- */
 
+function asString(v) {
+  return String(v ?? "").trim();
+}
+
 function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
+  return asString(email).toLowerCase();
 }
 
 function cleanString(v) {
-  const s = String(v ?? "").trim();
+  const s = asString(v);
   return s.length ? s : "";
 }
 
 function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-function coerceMaybeDateISO(v) {
+function safeJsonStringify(obj) {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return "";
+  }
+}
+
+function safeJsonParseMaybe(v) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
   const s = cleanString(v);
-  if (!s) return "";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString();
+  if (!s) return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
 
 function stripEmpty(fields) {
@@ -36,9 +52,31 @@ function stripEmpty(fields) {
   return out;
 }
 
-function asChoiceOrText(v) {
+function toNumOrBlank(v) {
   const s = cleanString(v);
-  return s || "";
+  if (!s) return "";
+  const n = Number(s);
+  return Number.isFinite(n) ? n : s; // supports number or single-line text columns safely
+}
+
+function isISODateOnly(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
+}
+
+/**
+ * Normalize a date input into YYYY-MM-DD (date-only)
+ */
+function toISODateOnly(v) {
+  const s = cleanString(v);
+  if (!s) return "";
+  if (isISODateOnly(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 function hasAnyStructuredValue(structured = {}) {
@@ -51,23 +89,11 @@ function hasAnyStructuredValue(structured = {}) {
     "fatsGrams",
     "hydrationOz",
     "notesMacros",
-    "proteinRecommendation",
-    "creatineRecommendation",
-    "bcaaRecommendation",
-    "electrolytesRecommendation",
     "notesSupplements",
     "metaStatus",
     "metaEffectiveDate",
   ];
   return keys.some((k) => cleanString(structured[k]));
-}
-
-function safeJsonStringify(obj) {
-  try {
-    return JSON.stringify(obj);
-  } catch {
-    return "";
-  }
 }
 
 function formatAirtableError(err) {
@@ -86,26 +112,20 @@ export default async function handler(req, res) {
   res.setHeader("Expires", "0");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const auth = requireOrg(req);
-  if (!auth?.ok) {
-    return res.status(401).json({ error: auth?.error || "Unauthorized" });
-  }
+  if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
   const { org, user } = auth;
 
   const {
     athleteEmail,
     prescription,
-    title,
-    organizationName,
-    createdBy,
+    title, // optional
+    createdBy, // optional
     structured,
-    // ✅ New optional payloads
-    planJson, // object (recommended) OR string (ok)
+    planJson, // object or string
   } = req.body || {};
 
   const email = normalizeEmail(athleteEmail);
@@ -120,183 +140,179 @@ export default async function handler(req, res) {
     });
   }
 
-  // ---- Prescriptions Airtable config
-  const PRES_API_KEY = process.env.PRESCRIPTIONS_API_KEY;
-  const PRES_BASE_ID = process.env.PRESCRIPTIONS_BASE_ID;
-  const PRES_TABLE = process.env.PRESCRIPTIONS_TABLE_NAME;
+  // ✅ NutritionPlans Airtable config (WRITE TARGET)
+  const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
+  const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
+  const NUTRITION_TABLE_NAME = process.env.NUTRITION_TABLE_NAME || process.env.NUTRITION_PLANS_TABLE;
 
-  if (!PRES_API_KEY || !PRES_BASE_ID || !PRES_TABLE) {
+  if (!NUTRITION_API_KEY || !NUTRITION_BASE_ID || !NUTRITION_TABLE_NAME) {
     return res.status(500).json({
       error:
-        "Prescriptions Airtable not configured. Check PRESCRIPTIONS_API_KEY, PRESCRIPTIONS_BASE_ID, PRESCRIPTIONS_TABLE_NAME.",
+        "NutritionPlans Airtable not configured. Check NUTRITION_API_KEY / NUTRITION_BASE_ID / NUTRITION_TABLE_NAME.",
       missing: {
-        PRESCRIPTIONS_API_KEY: !PRES_API_KEY,
-        PRESCRIPTIONS_BASE_ID: !PRES_BASE_ID,
-        PRESCRIPTIONS_TABLE_NAME: !PRES_TABLE,
+        NUTRITION_API_KEY: !NUTRITION_API_KEY,
+        NUTRITION_BASE_ID: !NUTRITION_BASE_ID,
+        NUTRITION_TABLE_NAME: !NUTRITION_TABLE_NAME,
       },
     });
   }
 
-  // ✅ Optional: allow saving Phase / PlanJson into Prescriptions table *only if you configure field names*
-  // This avoids Airtable "Unknown field names" hard failures.
-  const PRES_PHASE_FIELD = cleanString(process.env.PRESCRIPTIONS_PHASE_FIELD); // e.g. "Phase"
-  const PRES_PLANJSON_FIELD = cleanString(process.env.PRESCRIPTIONS_PLANJSON_FIELD); // e.g. "PlanJson"
-
-  // ---- Athletes Airtable config (for linking AthleteScans)
+  // Athlete table (to find the linked record id)
   const ATH_API_KEY = process.env.ATHLETE_API_KEY;
   const ATH_BASE_ID = process.env.ATHLETE_BASE_ID;
-  const ATH_TABLE = process.env.ATHLETE_TABLE_NAME;
+  const ATH_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
-  // We can still save without linking if this is missing.
-  const canLinkAthleteScans = !!(ATH_API_KEY && ATH_BASE_ID && ATH_TABLE);
+  if (!ATH_API_KEY || !ATH_BASE_ID || !ATH_TABLE_NAME) {
+    return res.status(500).json({
+      error:
+        "Athletes Airtable not configured (needed to link NutritionPlans → Athlete). Check ATHLETE_API_KEY / ATHLETE_BASE_ID / ATHLETE_TABLE_NAME.",
+      missing: {
+        ATHLETE_API_KEY: !ATH_API_KEY,
+        ATHLETE_BASE_ID: !ATH_BASE_ID,
+        ATHLETE_TABLE_NAME: !ATH_TABLE_NAME,
+      },
+    });
+  }
 
-  const presBase = new Airtable({ apiKey: PRES_API_KEY }).base(PRES_BASE_ID);
+  // Field names (match your athlete API defaults)
+  const F_ATHLETE_LINK = "Athlete";
+  const F_STATUS = "Status";
+  const F_CREATED_AT = "CreatedAt";
+  const F_CREATED_BY = "CreatedBy";
+
+  const F_PHASE = "Phase";
+  const F_DCAL = "DailyCalories";
+  const F_DPRO = "DailyProtein";
+  const F_DCARB = "DailyCarbs";
+  const F_DFAT = "DailyFat";
+  const F_PLANJSON = "PlanJson";
+  const F_PRESCRIPTION = "Prescription";
+
+  const nutritionBase = new Airtable({ apiKey: NUTRITION_API_KEY }).base(NUTRITION_BASE_ID);
+  const athleteBase = new Airtable({ apiKey: ATH_API_KEY }).base(ATH_BASE_ID);
 
   try {
     const nowISO = new Date().toISOString();
-    const orgToken = cleanString(org?.token);
 
-    if (!orgToken) {
-      return res.status(500).json({
-        error: "Org token missing from cookie auth. Re-login to the org and try again.",
+    // 1) Find athlete record id (linked field needs record id)
+    const safeEmail = escapeAirtableString(email);
+    const found = await athleteBase(ATH_TABLE_NAME)
+      .select({
+        filterByFormula: `LOWER({Email}&'')='${safeEmail}'`,
+        maxRecords: 1,
+      })
+      .firstPage();
+
+    const athleteRec = found?.[0] || null;
+    if (!athleteRec?.id) {
+      return res.status(404).json({
+        error: `No athlete found in Athletes table for ${email}.`,
       });
     }
 
-    // ✅ FIX: Athlete is SINGLE LINE TEXT in your Prescriptions table
-    // so we store email string there.
-    // AthleteScans is the LINKED field, we will set that with [athleteRecordId].
-    let athleteScansId = "";
-    let linkWarning = "";
+    // 2) Build effective date (DATE-ONLY) and inject into PlanJson.meta.effectiveDate
+    const parsedPlanJson = safeJsonParseMaybe(planJson) || {};
+    const effDateOnly =
+      toISODateOnly(s?.metaEffectiveDate) ||
+      toISODateOnly(s?.meta?.effectiveDate) ||
+      toISODateOnly(parsedPlanJson?.meta?.effectiveDate) ||
+      ""; // allow blank (legacy)
 
-    if (canLinkAthleteScans) {
-      try {
-        const athBase = new Airtable({ apiKey: ATH_API_KEY }).base(ATH_BASE_ID);
-        const safeEmail = escapeAirtableString(email);
+    const mergedPlanJson =
+      parsedPlanJson && typeof parsedPlanJson === "object"
+        ? {
+            ...parsedPlanJson,
+            meta: {
+              ...(parsedPlanJson.meta && typeof parsedPlanJson.meta === "object" ? parsedPlanJson.meta : {}),
+              ...(effDateOnly ? { effectiveDate: effDateOnly } : {}),
+              status: cleanString(s?.metaStatus || parsedPlanJson?.meta?.status || "active") || "active",
+            },
+            // Helpful conveniences (optional)
+            daily: {
+              ...(parsedPlanJson.daily && typeof parsedPlanJson.daily === "object" ? parsedPlanJson.daily : {}),
+              ...(cleanString(s?.calories) ? { calories: toNumOrBlank(s.calories) } : {}),
+              ...(cleanString(s?.proteinGrams) ? { protein: toNumOrBlank(s.proteinGrams) } : {}),
+              ...(cleanString(s?.carbsGrams) ? { carbs: toNumOrBlank(s.carbsGrams) } : {}),
+              ...(cleanString(s?.fatsGrams) ? { fat: toNumOrBlank(s.fatsGrams) } : {}),
+            },
+          }
+        : {
+            meta: {
+              ...(effDateOnly ? { effectiveDate: effDateOnly } : {}),
+              status: cleanString(s?.metaStatus || "active") || "active",
+            },
+            daily: {
+              calories: toNumOrBlank(s?.calories),
+              protein: toNumOrBlank(s?.proteinGrams),
+              carbs: toNumOrBlank(s?.carbsGrams),
+              fat: toNumOrBlank(s?.fatsGrams),
+            },
+          };
 
-        const found = await athBase(ATH_TABLE)
-          .select({
-            filterByFormula: `LOWER({Email})='${safeEmail}'`,
-            maxRecords: 1,
-          })
-          .firstPage();
+    const planJsonString = safeJsonStringify(mergedPlanJson);
 
-        if (found?.length) {
-          athleteScansId = found[0].id; // ✅ record id from ATHLETE table
-        } else {
-          linkWarning = `No athlete record found in Athletes table for ${email}. Saved plan without AthleteScans link.`;
-        }
-      } catch (e) {
-        linkWarning = `Failed to link AthleteScans (lookup error). Saved plan without link. ${String(
-          e?.message || e
-        )}`;
-      }
-    } else {
-      linkWarning =
-        "Athletes Airtable not configured (ATHLETE_API_KEY/ATHLETE_BASE_ID/ATHLETE_TABLE_NAME). Saved plan without AthleteScans link.";
-    }
-
-    // --- Build optional phase + planJson fields safely
-    const phaseValue = cleanString(s?.phase);
-    const planJsonString =
-      typeof planJson === "string" ? cleanString(planJson) : safeJsonStringify(planJson);
-
-    const optionalFields = {};
-    if (PRES_PHASE_FIELD && phaseValue) optionalFields[PRES_PHASE_FIELD] = phaseValue;
-    if (PRES_PLANJSON_FIELD && planJsonString) optionalFields[PRES_PLANJSON_FIELD] = planJsonString;
-
+    // 3) Create NutritionPlans record
     const fields = stripEmpty({
-      // -----------------------
-      // Your columns
-      // -----------------------
-      Title: cleanString(title) || "Prescription",
-      Prescription: text,
+      // Link to athlete
+      [F_ATHLETE_LINK]: [athleteRec.id],
 
-      // Keep these as you already do
-      "Organization Token": orgToken,
-      "Athlete Email": email,
-      Organization: cleanString(organizationName) || cleanString(org?.name) || "Organization",
-      CreatedAt: nowISO,
-      CreatedBy: cleanString(createdBy) || cleanString(user?.Email || user?.email) || cleanString(org?.email),
-
-      // ✅ Athlete (single-line text) gets a STRING, not an array
-      Athlete: email,
-
-      // ✅ AthleteScans is the linked record field
-      ...(athleteScansId ? { AthleteScans: [athleteScansId] } : {}),
-
-      // -----------------------
-      // Macros
-      // -----------------------
-      Calories: asChoiceOrText(s.calories),
-      "Protein (g)": asChoiceOrText(s.proteinGrams),
-      "Carbs (g)": asChoiceOrText(s.carbsGrams),
-      "Fat (g)": asChoiceOrText(s.fatsGrams),
-      "Hydration (oz)": asChoiceOrText(s.hydrationOz),
-      "Notes (Macros)": asChoiceOrText(s.notesMacros),
-
-      // -----------------------
-      // Supplements
-      // -----------------------
-      "Protein Recommendation": asChoiceOrText(s.proteinRecommendation),
-      "Creatine Recommendation": asChoiceOrText(s.creatineRecommendation),
-      "BCAA/EAA Recommendation": asChoiceOrText(s.bcaaRecommendation),
-      "Electrolytes Recommendation": asChoiceOrText(s.electrolytesRecommendation),
-      "Notes (Supplements)": asChoiceOrText(s.notesSupplements),
-
-      // -----------------------
       // Meta
-      // -----------------------
-      "Meta Status": asChoiceOrText(s.metaStatus || "Active"),
-      "Meta Effective Date": coerceMaybeDateISO(s.metaEffectiveDate) || nowISO,
-      "Meta Last Updated": nowISO,
+      [F_STATUS]: cleanString(s?.metaStatus || "active") || "active",
+      [F_CREATED_AT]: nowISO,
+      [F_CREATED_BY]: cleanString(createdBy) || cleanString(user?.Email || user?.email) || cleanString(org?.email),
 
-      // -----------------------
-      // ✅ Optional Upgrades (only if env vars configured)
-      // -----------------------
-      ...optionalFields,
+      // Plan summary fields (optional but nice)
+      [F_PHASE]: cleanString(s?.phase),
+
+      // Daily macros fields (match your athlete api constants)
+      [F_DCAL]: toNumOrBlank(s?.calories),
+      [F_DPRO]: toNumOrBlank(s?.proteinGrams),
+      [F_DCARB]: toNumOrBlank(s?.carbsGrams),
+      [F_DFAT]: toNumOrBlank(s?.fatsGrams),
+
+      // Plan payload
+      [F_PLANJSON]: planJsonString,
+
+      // Legacy / notes
+      [F_PRESCRIPTION]: text || cleanString(title) || "",
     });
 
-    const created = await presBase(PRES_TABLE).create(fields);
+    const created = await nutritionBase(NUTRITION_TABLE_NAME).create(fields);
 
-    // Best-effort audit log
+    // Audit (best effort)
     try {
       await logAuditEvent({
-        action: "CREATE_PLAN",
+        action: "CREATE_NUTRITION_PLAN",
         actorEmail: cleanString(user?.Email || user?.email || org?.email),
         actorId: cleanString(user?.id || ""),
-        orgToken,
-        orgName: cleanString(org?.name),
+        orgToken: cleanString(org?.token || ""),
+        orgName: cleanString(org?.name || ""),
         athleteEmail: email,
-        entityType: "Prescription",
+        entityType: "NutritionPlan",
         entityId: created?.id || "",
         meta: {
-          title: fields.Title || "",
-          athleteScansLinked: !!athleteScansId,
-          athleteScansId: athleteScansId || "",
-          linkWarning: linkWarning || "",
-          savedPhaseField: PRES_PHASE_FIELD || "",
-          savedPlanJsonField: PRES_PLANJSON_FIELD || "",
+          effectiveDate: effDateOnly || "",
+          status: fields[F_STATUS] || "",
         },
       });
     } catch (e) {
-      console.warn("[createPrescription] audit log failed:", e?.message || e);
+      console.warn("[createPrescription -> NutritionPlans] audit log failed:", e?.message || e);
     }
 
     return res.status(200).json({
-      success: true,
+      ok: true,
       id: created?.id,
-      record: { id: created?.id, fields: created?.fields || {} },
-      athleteScansId: athleteScansId || null,
-      warning: linkWarning || null,
-      upgrades: {
-        phaseField: PRES_PHASE_FIELD || null,
-        planJsonField: PRES_PLANJSON_FIELD || null,
+      nutritionPlan: {
+        id: created?.id,
+        fields: created?.fields || {},
       },
+      effectiveDate: effDateOnly || "",
+      linkedAthleteId: athleteRec.id,
     });
   } catch (err) {
-    console.error("[createPrescription] Airtable error:", err);
+    console.error("[createPrescription -> NutritionPlans] Airtable error:", err);
     return res.status(500).json({
-      error: "Failed to create prescription",
+      error: "Failed to create nutrition plan",
       airtable: formatAirtableError(err),
     });
   }

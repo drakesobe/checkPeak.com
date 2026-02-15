@@ -509,28 +509,50 @@ export default function OrgPrescriptionsPage() {
       try {
         const createdBy = user?.Email || user?.email || "";
         const summaryText = buildPlanSummaryText(structured);
-        const planJson = buildNutritionPlanJson(structured, { createdBy });
 
-        // 1) NutritionPlans upsert (source of truth)
-        const upsertRes = await fetch("/api/org/nutrition/plans/upsert", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", ...orgAuthHeaders },
-          body: JSON.stringify({
-            athleteToken,
-            phase: structured.phase || "Maintain",
-            daily: {
-              calories: structured.calories || "",
-              protein: structured.proteinGrams || "",
-              carbs: structured.carbsGrams || "",
-              fat: structured.fatsGrams || "",
-            },
-            planJson,
-            prescription: summaryText,
-            createdBy,
-            status: "active",
-          }),
-        });
+      // ✅ Choose effective date from builder (recommended: structured.metaEffectiveDate)
+      // Fallback: today
+      const effectiveISO =
+        dateToISO(structured?.metaEffectiveDate || structured?.startDate || new Date());
+
+      // Build plan json
+      const rawPlanJson = buildNutritionPlanJson(structured, { createdBy });
+
+      // ✅ Force planJson.meta.effectiveDate to match what we write to Airtable
+      const planJson = {
+        ...(rawPlanJson && typeof rawPlanJson === "object" ? rawPlanJson : {}),
+        meta: {
+          ...((rawPlanJson && typeof rawPlanJson === "object" && rawPlanJson.meta) ? rawPlanJson.meta : {}),
+          effectiveDate: effectiveISO,
+        },
+      };
+
+      // 1) NutritionPlans upsert (source of truth)
+      const upsertRes = await fetch("/api/org/nutrition/plans/upsert", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...orgAuthHeaders },
+        body: JSON.stringify({
+          athleteToken,
+          phase: structured.phase || "Maintain",
+          daily: {
+            calories: structured.calories || "",
+            protein: structured.proteinGrams || "",
+            carbs: structured.carbsGrams || "",
+            fat: structured.fatsGrams || "",
+          },
+
+          // ✅ NEW: write to Airtable column "Meta Effective Date"
+          metaEffectiveDate: effectiveISO,
+
+          // ✅ Keep PlanJson in sync too
+          planJson,
+
+          prescription: summaryText,
+          createdBy,
+          status: "active",
+        }),
+      });
 
         const upsertData = await upsertRes.json().catch(() => ({}));
         if (!upsertRes.ok) throw new Error(upsertData?.error || "Failed to save NutritionPlan (PlanJson).");

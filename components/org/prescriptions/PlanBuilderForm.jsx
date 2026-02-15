@@ -62,6 +62,21 @@ function getDefaultMealBlock(label) {
   };
 }
 
+/**
+ * ✅ Robust getter:
+ * supports builder shape (proteinGrams/carbsGrams/fatsGrams)
+ * AND PlanJson daily shape (protein/carbs/fat)
+ */
+function pickStructuredMacro(structured, keys) {
+  const s = structured && typeof structured === "object" ? structured : {};
+  for (const k of keys) {
+    const v = s?.[k];
+    const n = asNum(v);
+    if (n != null) return n;
+  }
+  return null;
+}
+
 /* ---------------- inputs ---------------- */
 
 function NumInput({
@@ -132,7 +147,10 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
   const split = structured?.mealSplit || {};
   const normSplit = useMemo(() => normalizeSplit(split), [split]);
 
-  const mealBlocks = structured?.mealBlocks && typeof structured.mealBlocks === "object" ? structured.mealBlocks : {};
+  const mealBlocks =
+    structured?.mealBlocks && typeof structured.mealBlocks === "object"
+      ? structured.mealBlocks
+      : {};
 
   const blocks = useMemo(
     () => [
@@ -144,12 +162,13 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
     []
   );
 
+  // ✅ Robust daily extraction (handles both structured + planJson daily key styles)
   const daily = useMemo(
     () => ({
-      calories: asNum(structured?.calories),
-      protein: asNum(structured?.proteinGrams),
-      carbs: asNum(structured?.carbsGrams),
-      fat: asNum(structured?.fatsGrams),
+      calories: pickStructuredMacro(structured, ["calories"]),
+      protein: pickStructuredMacro(structured, ["proteinGrams", "protein"]),
+      carbs: pickStructuredMacro(structured, ["carbsGrams", "carbs"]),
+      fat: pickStructuredMacro(structured, ["fatsGrams", "fat"]),
     }),
     [structured]
   );
@@ -176,7 +195,8 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
     return m;
   }, [daily, computedTotals]);
 
-  const anyDailySet = daily.calories != null || daily.protein != null || daily.carbs != null || daily.fat != null;
+  const anyDailySet =
+    daily.calories != null || daily.protein != null || daily.carbs != null || daily.fat != null;
 
   const setSplit = (key, ratio) => {
     const next = { ...(structured.mealSplit || {}) };
@@ -225,7 +245,11 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
   };
 
   const splitSumPct = useMemo(() => {
-    const s = (asNum(split.breakfast) || 0) + (asNum(split.lunch) || 0) + (asNum(split.afternoon) || 0) + (asNum(split.dinner) || 0);
+    const s =
+      (asNum(split.breakfast) || 0) +
+      (asNum(split.lunch) || 0) +
+      (asNum(split.afternoon) || 0) +
+      (asNum(split.dinner) || 0);
     return Math.round(s * 100);
   }, [split]);
 
@@ -283,10 +307,7 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
           <div className="text-xs text-gray-600">
             Sum:{" "}
             <span
-              className={cx(
-                "font-semibold",
-                splitSumPct === 100 ? "text-emerald-700" : "text-amber-700"
-              )}
+              className={cx("font-semibold", splitSumPct === 100 ? "text-emerald-700" : "text-amber-700")}
             >
               {splitSumPct}%
             </span>{" "}
@@ -297,14 +318,19 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
         <div className="mt-3 grid md:grid-cols-4 gap-3">
           <SplitPctInput label="Breakfast" value={split.breakfast ?? 0.25} onChange={(r) => setSplit("breakfast", r)} />
           <SplitPctInput label="Lunch" value={split.lunch ?? 0.3} onChange={(r) => setSplit("lunch", r)} />
-          <SplitPctInput label="Afternoon" value={split.afternoon ?? 0.15} onChange={(r) => setSplit("afternoon", r)} />
+          <SplitPctInput
+            label="Afternoon"
+            value={split.afternoon ?? 0.15}
+            onChange={(r) => setSplit("afternoon", r)}
+          />
           <SplitPctInput label="Dinner" value={split.dinner ?? 0.3} onChange={(r) => setSplit("dinner", r)} />
         </div>
 
         <p className={cx("mt-3", subtleHint)}>
           Current normalized split:{" "}
           <span className="font-semibold">
-            {pctStr(normSplit.breakfast)} / {pctStr(normSplit.lunch)} / {pctStr(normSplit.afternoon)} / {pctStr(normSplit.dinner)}
+            {pctStr(normSplit.breakfast)} / {pctStr(normSplit.lunch)} / {pctStr(normSplit.afternoon)} /{" "}
+            {pctStr(normSplit.dinner)}
           </span>
           . Dinner is adjusted to keep totals consistent after rounding.
         </p>
@@ -356,9 +382,7 @@ function MealBlockEditor({ subtleHint, structured, onChange }) {
         </div>
 
         {!anyDailySet ? (
-          <p className={cx("mt-3", subtleHint)}>
-            Set daily macros above to enable mismatch indicators.
-          </p>
+          <p className={cx("mt-3", subtleHint)}>Set daily macros above to enable mismatch indicators.</p>
         ) : null}
       </div>
 

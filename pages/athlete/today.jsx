@@ -1,20 +1,22 @@
-// /pages/athlete/today.js
+// pages/athlete/today.js
 "use client";
 
 import { useEffect, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
 import TodayHeader from "@/components/athlete-today/TodayHeader";
 import DateStrip from "@/components/athlete-today/DateStrip";
 import WorkoutCard from "@/components/athlete-today/WorkoutCard";
 import CompleteItemModal from "@/components/athlete-today/CompleteItemModal";
+import NutritionCard from "@/components/athlete-today/NutritionCard";
 
 // IMPORTANT: point to ui.jsx explicitly to avoid any path/alias weirdness
 import { toISODateLocal, addDays } from "@/components/athlete-today/ui.jsx";
 
 import { useAthleteToday } from "@/hooks/athlete-today/useAthleteToday";
 import { useWorkoutCompletion } from "@/hooks/athlete-today/useWorkoutCompletion";
+import { useAthleteNutritionToday } from "@/hooks/athlete-today/useAthleteNutritionToday";
 
 export default function AthleteToday() {
   const router = useRouter();
@@ -29,7 +31,6 @@ export default function AthleteToday() {
 
   const isAthlete = role === "athlete";
 
-  // Always call hooks (no conditional hooks)
   const {
     selectedDate,
     setSelectedDate,
@@ -37,7 +38,7 @@ export default function AthleteToday() {
     dailyWorkout,
     items,
     err,
-    setErr, // if you want to clear errors manually
+    setErr,
     reload,
     dateStrip,
     progress,
@@ -61,7 +62,14 @@ export default function AthleteToday() {
     setErr,
   });
 
-  // Stable helpers
+  // ✅ Nutrition (date-aware)
+  const nutrition = useAthleteNutritionToday({
+    authReady,
+    user,
+    isAthlete,
+    selectedDate,
+  });
+
   const goPrev = useCallback(() => {
     setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1)));
   }, [setSelectedDate]);
@@ -72,9 +80,10 @@ export default function AthleteToday() {
 
   const refresh = useCallback(() => {
     reload(selectedDate);
-  }, [reload, selectedDate]);
+    nutrition.reload(selectedDate);
+  }, [reload, selectedDate, nutrition]);
 
-  // Load on auth + date changes
+  // Load workouts on auth + date changes
   useEffect(() => {
     if (!authReady) return;
     if (!user) return;
@@ -82,7 +91,6 @@ export default function AthleteToday() {
     reload(selectedDate);
   }, [authReady, user, isAthlete, selectedDate, reload]);
 
-  // Guards AFTER hooks (prevents "Rendered more hooks" issues)
   if (!authReady) return null;
   if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
   if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
@@ -138,7 +146,25 @@ export default function AthleteToday() {
           }
         />
 
-        {/* Optional always-visible err block (in addition to header) */}
+        {/* ✅ Nutrition Today card */}
+        <NutritionCard
+          loading={nutrition.loading}
+          err={nutrition.err}
+          hasPlan={nutrition.hasPlan}
+          daily={nutrition.daily}
+          mealBlocks={nutrition.mealBlocks}
+          planJson={nutrition.planJson}
+          selectedDate={selectedDate}
+          effectiveDate={nutrition.effectiveDate}
+          nextPlan={nutrition.nextPlan}
+          isFuture={nutrition.isFuture}
+          message={nutrition.message}
+          onRefresh={() => nutrition.reload(selectedDate)}
+          onOpenNutrition={() => router.push("/athlete/nutrition")} // ✅ MAIN nutrition page
+          // If you want the "today" nutrition page instead:
+          // onOpenNutrition={() => router.push("/athlete/nutrition/today")}
+        />
+
         {err ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
             <p className="text-sm text-red-700 font-semibold">{err}</p>

@@ -47,6 +47,51 @@ function pickFirstNonEmptyString(...vals) {
   return "";
 }
 
+function isISODateOnly(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
+}
+
+/**
+ * Normalize input into YYYY-MM-DD (NY timezone safe)
+ * Accepts:
+ * - "YYYY-MM-DD"
+ * - ISO datetime
+ * - any Date-parseable string
+ */
+function toISODateOnly(v) {
+  const s = asString(v);
+  if (!s) return "";
+  if (isISODateOnly(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const dd = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${dd}`;
+}
+
+/**
+ * Convert YYYY-MM-DD into an ISO datetime at NY "noon" to avoid DST edge cases.
+ * Airtable Date fields are happiest with ISO datetimes.
+ */
+function isoDateOnlyToNYNoonISO(isoDateOnly) {
+  const d = asString(isoDateOnly);
+  if (!isISODateOnly(d)) return "";
+  const dt = new Date(`${d}T12:00:00-05:00`); // safe anchor; Airtable stores UTC anyway
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toISOString();
+}
+
 /* ---------------- env ---------------- */
 
 // NutritionPlans base/table
@@ -77,11 +122,14 @@ const PLAN_CREATED_BY = "CreatedBy";
 
 const PLAN_PHASE = "Phase";
 const PLAN_DCAL = "DailyCalories";
-const PLAN_DPRO = "DailyProtein"; // ✅ your real Airtable field name
-const PLAN_DCARB = "DailyCarbs";  // ✅ your real Airtable field name
+const PLAN_DPRO = "DailyProtein";
+const PLAN_DCARB = "DailyCarbs";
 const PLAN_DFAT = "DailyFat";
 const PLAN_JSON = "PlanJson";
 const PLAN_PRESCRIPTION = "Prescription";
+
+// ✅ Your actual Airtable column
+const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
 
 /* ---------------- handler ---------------- */
 
@@ -137,14 +185,29 @@ export default async function handler(req, res) {
     // PlanJson may be object or string
     const planJsonRaw = body.planJson ?? null;
     const planJsonObj =
-      planJsonRaw && typeof planJsonRaw === "object"
-        ? planJsonRaw
-        : safeJsonParse(planJsonRaw);
+      planJsonRaw && typeof planJsonRaw === "object" ? planJsonRaw : safeJsonParse(planJsonRaw);
 
     if (!athleteToken) return res.status(400).json({ error: "athleteToken is required" });
     if (athleteToken.toUpperCase().startsWith("ORG-")) {
       return res.status(400).json({ error: "Expected AthleteToken (ATH-...), but received an ORG- token." });
     }
+
+    /* ---------------- Effective date ----------------
+       Accepts:
+       - body.metaEffectiveDate
+       - body.structured.metaEffectiveDate
+       - body.planJson.meta.effectiveDate
+       - planJsonObj.meta.effectiveDate
+    --------------------------------------------------- */
+
+    const effRaw =
+      asString(body.metaEffectiveDate) ||
+      asString(body.structured?.metaEffectiveDate) ||
+      asString(body.planJson?.meta?.effectiveDate) ||
+      asString(planJsonObj?.meta?.effectiveDate);
+
+    const effectiveDate = toISODateOnly(effRaw); // YYYY-MM-DD or ""
+    const effectiveDateISOForAirtable = effectiveDate ? isoDateOnlyToNYNoonISO(effectiveDate) : "";
 
     /* ---------------- 1) Find athlete record (must belong to org) ---------------- */
 
@@ -182,42 +245,69 @@ export default async function handler(req, res) {
       .firstPage()
       .then((xs) => (xs?.length ? xs[0] : null));
 
-    /* ---------------- 3) Robust macro extraction ----------------
-       Goal: Populate Airtable columns even if UI payload shifts.
-       Priority:
-       - body.daily.* (what your UI intends)
-       - planJson.daily.* (fallback)
-    -------------------------------------------------------------- */
+    /* ---------------- 3) Robust macro extraction ---------------- */
 
     const pjDaily = planJsonObj?.daily && typeof planJsonObj.daily === "object" ? planJsonObj.daily : {};
 
     const dailyCalories = pickFirstNonEmptyString(daily?.calories, pjDaily?.calories);
-    const dailyProtein  = pickFirstNonEmptyString(daily?.protein,  pjDaily?.protein); // ✅ DailyProtein
-    const dailyCarbs    = pickFirstNonEmptyString(daily?.carbs,    pjDaily?.carbs);   // ✅ DailyCarbs
-    const dailyFat      = pickFirstNonEmptyString(daily?.fat,      pjDaily?.fat);
+    const dailyProtein = pickFirstNonEmptyString(daily?.protein, pjDaily?.protein);
+    const dailyCarbs = pickFirstNonEmptyString(daily?.carbs, pjDaily?.carbs);
+    const dailyFat = pickFirstNonEmptyString(daily?.fat, pjDaily?.fat);
 
-    /* ---------------- 4) Build Airtable fields ---------------- */
+    /* ---------------- 4) Merge PlanJson meta + daily ---------------- */
+
+    const mergedPlanJson =
+      planJsonObj && typeof planJsonObj === "object"
+        ? {
+            ...planJsonObj,
+            meta: {
+              ...(planJsonObj.meta && typeof planJsonObj.meta === "object" ? planJsonObj.meta : {}),
+              ...(effectiveDate ? { effectiveDate } : {}),
+            },
+            daily: {
+              ...(pjDaily && typeof pjDaily === "object" ? pjDaily : {}),
+              ...(dailyCalories ? { calories: dailyCalories } : {}),
+              ...(dailyProtein ? { protein: dailyProtein } : {}),
+              ...(dailyCarbs ? { carbs: dailyCarbs } : {}),
+              ...(dailyFat ? { fat: dailyFat } : {}),
+            },
+          }
+        : {
+            meta: effectiveDate ? { effectiveDate } : {},
+            daily: {
+              calories: dailyCalories,
+              protein: dailyProtein,
+              carbs: dailyCarbs,
+              fat: dailyFat,
+            },
+          };
+
+    const planJsonString = safeJsonStringify(mergedPlanJson);
+
+    /* ---------------- 5) Build Airtable fields ---------------- */
 
     const fields = {
       [PLAN_ATH_LINK]: [athleteRec.id],
       [PLAN_STATUS]: status || "active",
       [PLAN_PHASE]: phase,
 
-      // ✅ These are Single line text fields in Airtable: always store as strings
       [PLAN_DCAL]: dailyCalories,
       [PLAN_DPRO]: dailyProtein,
       [PLAN_DCARB]: dailyCarbs,
       [PLAN_DFAT]: dailyFat,
 
-      [PLAN_JSON]: safeJsonStringify(planJsonRaw),
+      [PLAN_JSON]: planJsonString,
       [PLAN_PRESCRIPTION]: prescription,
 
       // meta
       [PLAN_CREATED_BY]: createdBy,
       [PLAN_CREATED_AT]: new Date().toISOString(),
+
+      // ✅ Write a real ISO datetime for Airtable Date field reliability
+      ...(effectiveDateISOForAirtable ? { [PLAN_META_EFFECTIVE_DATE]: effectiveDateISOForAirtable } : {}),
     };
 
-    /* ---------------- 5) Save ---------------- */
+    /* ---------------- 6) Save ---------------- */
 
     let saved;
     if (existing) saved = await plansTable.update(existing.id, fields);
@@ -226,30 +316,11 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       plan: { id: saved.id, fields: saved.fields || {} },
-
-      // Helpful debug (safe to keep or remove)
+      effectiveDate: effectiveDate || "",
       debug: {
         athleteToken,
-        extractedDaily: {
-          fromBody: {
-            calories: asString(daily?.calories),
-            protein: asString(daily?.protein),
-            carbs: asString(daily?.carbs),
-            fat: asString(daily?.fat),
-          },
-          fromPlanJson: {
-            calories: asString(pjDaily?.calories),
-            protein: asString(pjDaily?.protein),
-            carbs: asString(pjDaily?.carbs),
-            fat: asString(pjDaily?.fat),
-          },
-          finalFields: {
-            DailyCalories: dailyCalories,
-            DailyProtein: dailyProtein,
-            DailyCarbs: dailyCarbs,
-            DailyFat: dailyFat,
-          },
-        },
+        effectiveDate,
+        effectiveDateISOForAirtable,
       },
     });
   } catch (e) {

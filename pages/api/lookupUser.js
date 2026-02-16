@@ -34,13 +34,19 @@ function stripPassword(fields = {}) {
   return out;
 }
 
+function pickAthleteToken(fields = {}) {
+  // Supports exact field name OR spaced variant
+  const v =
+    fields.AthleteToken ||
+    fields["AthleteToken"] ||
+    fields["Athlete Token"] ||
+    fields["Athlete_Token"] ||
+    "";
+  return String(v || "").trim();
+}
+
 /**
  * ✅ Session cookie payload for HttpOnly cookie
- * - role: "Athlete" | "Organization" | "Admin" | "Trainer"
- * - orgId: Organizations record id (org-side only)
- * - memberId: OrgMembers record id (trainer/admin AND org owner)
- * - Token: Organization Token (legacy org endpoints)
- * - athleteId: AthleteScans record id (athlete-side workflows)
  */
 function toSessionUser(user) {
   const rawRole = String(user?.role || user?.Role || "").trim();
@@ -62,20 +68,20 @@ function toSessionUser(user) {
     Name: user?.Name || user?.name || "",
   };
 
-  // ✅ Athlete convenience key (used by DailyWorkouts filtering)
+  // ✅ Athlete keys
   if (role === "Athlete") {
     session.athleteId = user?.athleteId || user?.AthleteId || user?.id || "";
+    if (user?.AthleteToken) session.AthleteToken = String(user.AthleteToken).trim();
+    // Optional: keep org Token if athlete has one (org join code). Not used for workouts.
+    if (user?.Token) session.Token = String(user.Token).trim();
   }
 
-  // Org-side extras
+  // ✅ Org-side extras
   if (role !== "Athlete") {
-    if (user?.Token) session.Token = user.Token;
+    if (user?.Token) session.Token = String(user.Token).trim();
     if (user?.orgId) session.orgId = user.orgId;
     if (user?.memberId) session.memberId = user.memberId;
     if (user?.OrgName) session.OrgName = user.OrgName;
-  } else {
-    // Athlete may still carry Token (org token)
-    if (user?.Token) session.Token = user.Token;
   }
 
   // Remove empties
@@ -104,8 +110,8 @@ function setUserCookie(res, sessionUser) {
 }
 
 /**
- * ✅ Ensures the ORG OWNER (primary org account) also has an OrgMembers record
- * Fix: owner gets Role="organization" (NOT "admin")
+ * ✅ Ensures the ORG OWNER also has an OrgMembers record
+ * IMPORTANT: your OrgMembers Role single-select uses "admin" for the owner
  */
 async function ensureOrgMemberForOrgOwner({
   orgBase,
@@ -131,7 +137,7 @@ async function ensureOrgMemberForOrgOwner({
   const created = await orgBase(orgMembersTableId).create({
     Email: emailLower,
     Name: String(orgName || "Organization Owner").trim(),
-    Role: "organization", // ✅ IMPORTANT
+    Role: "admin", // ✅ IMPORTANT: matches your single select options
     Active: true,
     Organization: [orgId],
   });
@@ -201,9 +207,7 @@ export default async function handler(req, res) {
     /* ATHLETE LOGIN           */
     /* ----------------------- */
     if (roleNorm === "athlete") {
-      const base = new Airtable({ apiKey: ATHLETE_API_KEY }).base(
-        ATHLETE_BASE_ID
-      );
+      const base = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
 
       const records = await base(ATHLETE_TABLE_NAME)
         .select({
@@ -231,6 +235,9 @@ export default async function handler(req, res) {
 
       const safeFields = stripPassword(fields);
 
+      // ✅ Pull AthleteToken from Airtable (ATH-XXXX)
+      const athleteToken = pickAthleteToken(fields);
+
       const userOut = {
         id: record.id,
         athleteId: record.id, // ✅ explicit + stable
@@ -238,12 +245,23 @@ export default async function handler(req, res) {
         role: "Athlete",
         Role: "Athlete",
         Email: safeFields.Email || emailLower,
+        AthleteToken: athleteToken || "", // ✅ must be present for workout/nutrition matching
       };
 
       const sessionUser = toSessionUser(userOut);
       setUserCookie(res, sessionUser);
 
-      return res.status(200).json({ user: userOut });
+      return res.status(200).json({
+        user: userOut,
+        debug: {
+          athleteTokenPresent: Boolean(athleteToken),
+          athleteToken: athleteToken ? athleteToken : null,
+          athleteTokenFieldHints: {
+            AthleteToken: fields.AthleteToken ?? null,
+            "Athlete Token": fields["Athlete Token"] ?? null,
+          },
+        },
+      });
     }
 
     /* -------------------------------------------- */
@@ -312,7 +330,7 @@ export default async function handler(req, res) {
           Email: safeFields.Email || emailLower,
           Token: orgToken,
           orgId: record.id,
-          memberId: ownerMemberId || undefined, // ✅ owner has memberId too
+          memberId: ownerMemberId || undefined,
           OrgName: String(orgName || "").trim(),
         };
 
@@ -323,11 +341,11 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2) OrgMembers (organization/admin/trainer)
+    // 2) OrgMembers (admin/trainer + (optionally) org-owner as admin in OrgMembers)
     const memberRecords = await orgBase(ORG_MEMBERS_TABLE_ID)
       .select({
         filterByFormula: `AND(LOWER({Email})='${safeEmail}', {Active}=TRUE())`,
-        maxRecords: 10, // ✅ detect multi-org membership
+        maxRecords: 10,
       })
       .firstPage();
 
@@ -364,12 +382,10 @@ export default async function handler(req, res) {
 
     const roleField = String(fields.Role || "").trim().toLowerCase();
 
-    // If they chose admin/trainer login explicitly, enforce it
     if (wantsMemberOnly && roleNorm !== roleField) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    // Compute output role (supports organization role in OrgMembers too)
     let outRole = "Trainer";
     if (roleField === "admin") outRole = "Admin";
     if (roleField === "organization" || roleField === "org") outRole = "Organization";

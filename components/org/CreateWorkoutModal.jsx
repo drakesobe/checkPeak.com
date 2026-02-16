@@ -56,6 +56,11 @@ function getAthleteTeam(a) {
   );
 }
 
+function getAthleteToken(a) {
+  // ✅ Canonical key for selection + assignment
+  return String(a?.AthleteToken || a?.athleteToken || a?.Token || "").trim();
+}
+
 function toNumberOrEmpty(v) {
   if (v === "" || v === null || typeof v === "undefined") return "";
   const n = Number(v);
@@ -155,7 +160,9 @@ function ModalShell({ open, title, subtitle, onClose, children }) {
         >
           <div className="p-5 border-b flex items-start justify-between gap-4 bg-white">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
+              <p className="text-lg font-extrabold text-gray-900 truncate">
+                {title}
+              </p>
               {subtitle ? (
                 <p className="text-[12px] text-gray-500 mt-1">{subtitle}</p>
               ) : null}
@@ -170,7 +177,9 @@ function ModalShell({ open, title, subtitle, onClose, children }) {
             </button>
           </div>
 
-          <div className="p-5 overflow-y-auto max-h-[calc(92vh-80px)]">{children}</div>
+          <div className="p-5 overflow-y-auto max-h-[calc(92vh-80px)]">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -192,15 +201,13 @@ function newItem(order) {
 }
 
 /**
- * CreateWorkoutModal
+ * CreateWorkoutModal (TOKEN-FIRST)
  *
- * - Sport is OPTIONAL (used for labeling/filtering only)
- * - Team dropdown filters athlete list (football, basketball, etc.)
- * - “Select shown” becomes effectively “Select team” after filtering
- * - Items builder maps to your Airtable columns (optional)
+ * ✅ Selects athletes by AthleteToken (NOT recordId)
+ * ✅ Sends athleteIds[] as AthleteToken strings to POST /api/org/workouts/create
  *
  * Requires:
- *  - GET  /api/org/getAthletes
+ *  - GET  /api/org/getAthletes  (must include AthleteToken in each athlete)
  *  - POST /api/org/workouts/create
  *    expects { date, title, athleteIds, status?, sport?, items? }
  */
@@ -216,11 +223,14 @@ export default function CreateWorkoutModal({
 
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("assigned");
-  const [selected, setSelected] = useState({}); // athleteId -> true
+
+  // ✅ Selection keyed by AthleteToken
+  const [selected, setSelected] = useState({}); // athleteToken -> true
+
   const [search, setSearch] = useState("");
 
-  // ✅ Team filter (All / Football / Basketball / etc.)
-  const [teamFilter, setTeamFilter] = useState("all"); // normalized team or "all"
+  // Team filter (All / Football / Basketball / etc.)
+  const [teamFilter, setTeamFilter] = useState("all");
 
   // Items builder
   const [itemsOpen, setItemsOpen] = useState(() => {
@@ -247,7 +257,6 @@ export default function CreateWorkoutModal({
     setSearch("");
     setTeamFilter("all");
 
-    // default items panel open on desktop, collapsed on mobile
     setItemsOpen(typeof window !== "undefined" ? window.innerWidth >= 1024 : true);
     setItems([newItem(1)]);
   }, [open, sport, dateISO]);
@@ -265,6 +274,15 @@ export default function CreateWorkoutModal({
       if (!res.ok) throw new Error(data?.error || "Failed to load athletes");
 
       const list = Array.isArray(data?.athletes) ? data.athletes : [];
+
+      // Optional: warn if AthleteToken missing (helps catch API shape issues fast)
+      const missingTokens = list.filter((a) => !getAthleteToken(a)).length;
+      if (missingTokens > 0) {
+        console.warn(
+          `[CreateWorkoutModal] ${missingTokens} athlete(s) missing AthleteToken from /api/org/getAthletes`
+        );
+      }
+
       setAthletes(list);
     } catch (e) {
       setAthletes([]);
@@ -279,7 +297,7 @@ export default function CreateWorkoutModal({
     fetchAthletes();
   }, [open, fetchAthletes]);
 
-  // Teams derived from athlete list (supports a.team/a.sport/etc)
+  // Teams derived from athlete list
   const teamsAll = useMemo(() => {
     const list = Array.isArray(athletes) ? athletes : [];
     const set = new Set();
@@ -307,7 +325,8 @@ export default function CreateWorkoutModal({
     });
   }, [athletes, search, teamFilter]);
 
-  const selectedIds = useMemo(() => {
+  // ✅ tokens selected
+  const selectedTokens = useMemo(() => {
     return Object.entries(selected)
       .filter(([, v]) => !!v)
       .map(([k]) => k);
@@ -316,14 +335,14 @@ export default function CreateWorkoutModal({
   const toggleAll = (on) => {
     const next = {};
     (filteredAthletes || []).forEach((a) => {
-      const id = a?.id || a?.recordId || a?.record_id || a?.airtableId;
-      if (id) next[String(id)] = !!on;
+      const token = getAthleteToken(a);
+      if (token) next[token] = !!on;
     });
     setSelected((prev) => ({ ...prev, ...next }));
   };
 
-  const toggleOne = (id) => {
-    const key = String(id || "");
+  const toggleOne = (token) => {
+    const key = String(token || "").trim();
     if (!key) return;
     setSelected((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -446,7 +465,7 @@ export default function CreateWorkoutModal({
 
     if (!dateISO) return setErr("Missing date.");
     if (!String(title || "").trim()) return setErr("Title is required.");
-    if (!selectedIds.length) return setErr("Select at least one athlete.");
+    if (!selectedTokens.length) return setErr("Select at least one athlete.");
 
     const itemsCheck = validateItems();
     if (!itemsCheck.ok) return setErr(itemsCheck.error || "Invalid items.");
@@ -457,9 +476,9 @@ export default function CreateWorkoutModal({
         date: String(dateISO).slice(0, 10),
         title: String(title).trim(),
         status,
-        athleteIds: selectedIds,
+        athleteIds: selectedTokens, // ✅ AthleteToken strings
         items: itemsCheck.items,
-        ...(sport ? { sport: String(sport) } : {}), // ✅ sport optional
+        ...(sport ? { sport: String(sport) } : {}),
       };
 
       const res = await fetch("/api/org/workouts/create", {
@@ -503,7 +522,7 @@ export default function CreateWorkoutModal({
           <div className="flex items-center gap-2">
             <Dumbbell className="w-4 h-4 text-gray-500" />
             <p className="text-[12px] text-gray-600">
-              Selected: <span className="font-semibold">{selectedIds.length}</span>
+              Selected: <span className="font-semibold">{selectedTokens.length}</span>
             </p>
             <Pill tone={hasAnyMeaningfulItem ? "good" : "neutral"}>
               Items: {hasAnyMeaningfulItem ? `${items.length}` : "none"}
@@ -773,12 +792,7 @@ export default function CreateWorkoutModal({
                 >
                   Clear shown
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="px-3 py-2 text-xs"
-                  onClick={fetchAthletes}
-                  disabled={loadingAthletes}
-                >
+                <Button variant="secondary" className="px-3 py-2 text-xs" onClick={fetchAthletes} disabled={loadingAthletes}>
                   Refresh
                 </Button>
               </div>
@@ -818,7 +832,7 @@ export default function CreateWorkoutModal({
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Pill>{teamFilter === "all" ? "All teams" : titleTeam(teamFilter)}</Pill>
-                  <Pill tone="good">{selectedIds.length} selected</Pill>
+                  <Pill tone="good">{selectedTokens.length} selected</Pill>
                 </div>
               </div>
             </div>
@@ -831,18 +845,20 @@ export default function CreateWorkoutModal({
               ) : (
                 <ul className="divide-y">
                   {filteredAthletes.map((a) => {
-                    const id = String(a?.id || a?.recordId || a?.record_id || a?.airtableId || "");
-                    const checked = !!selected[id];
+                    const token = getAthleteToken(a);
+                    if (!token) return null;
+
+                    const checked = !!selected[token];
                     const team = titleTeam(getAthleteTeam(a));
 
                     return (
-                      <li key={id} className="p-3 hover:bg-gray-50">
+                      <li key={token} className="p-3 hover:bg-gray-50">
                         <label className="flex items-start gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             className="mt-1"
                             checked={checked}
-                            onChange={() => toggleOne(id)}
+                            onChange={() => toggleOne(token)}
                           />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-gray-900 truncate">
@@ -852,6 +868,7 @@ export default function CreateWorkoutModal({
                               {normalizeEmail(a?.email || a?.Email) || "—"}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2">
+                              <Pill tone="neutral">Token: {token}</Pill>
                               {team ? <Pill>{team}</Pill> : null}
                               {a?.status ? <Pill>{a.status}</Pill> : null}
                               {a?.needsPlan ? <Pill tone="bad">Needs plan</Pill> : null}

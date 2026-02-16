@@ -13,8 +13,10 @@ import { useTodaySummary } from "@/hooks/dashboard/useTodaySummary";
 import AthleteSidebar from "@/components/dashboard/AthleteSidebar";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import TodayCard from "@/components/dashboard/TodayCard";
-import NextStepCard from "@/components/dashboard/NextStepCard";
 import StatsGrid from "@/components/dashboard/StatsGrid";
+
+/* ✅ Replace NextStepCard with TodayNutritionCard */
+import TodayNutritionCard from "@/components/dashboard/TodayNutritionCard";
 
 /* ---------------- Cards ---------------- */
 import ScanActivityCard from "@/components/dashboard/ScanActivityCard";
@@ -189,10 +191,9 @@ export default function DashboardPage() {
                 summary={todaySummary}
                 onOpen={() => nav(ROUTES.today)}
               />
-              <NextStepCard
-                actions={suggestedActions}
-                onAction={(a) => nav(a.to)}
-              />
+
+              {/* ✅ Replaces NextStepCard */}
+              <TodayNutritionCard />
             </section>
 
             <StatsGrid stats={stats} />

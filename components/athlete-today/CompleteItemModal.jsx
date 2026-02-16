@@ -2,11 +2,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Camera, Info, Upload, AlertTriangle, X } from "lucide-react";
+import { Camera, Info, Upload, AlertTriangle, X, Image as ImageIcon } from "lucide-react";
 import { Button, Modal, Pill } from "./ui";
 
 function normBool(v) {
   return String(v ?? "").trim().toLowerCase() === "true";
+}
+
+function safeText(v) {
+  return String(v ?? "").trim();
+}
+
+function fileLabel(file) {
+  if (!file) return "";
+  const name = safeText(file?.name);
+  const size = Number(file?.size || 0);
+  if (!name) return "Selected file";
+  if (!size) return name;
+  const kb = Math.round(size / 1024);
+  if (kb < 1024) return `${name} (${kb} KB)`;
+  const mb = (kb / 1024).toFixed(1);
+  return `${name} (${mb} MB)`;
 }
 
 export default function CompleteItemModal({
@@ -23,7 +39,7 @@ export default function CompleteItemModal({
   const [previewUrl, setPreviewUrl] = useState("");
 
   const evidenceRequired = useMemo(() => normBool(item?.EvidenceRequired), [item]);
-  const title = item?.ExerciseName || item?.Title || "Workout item";
+  const title = safeText(item?.ExerciseName || item?.Title || "") || "Workout item";
 
   // Build / clean up preview URL
   useEffect(() => {
@@ -62,9 +78,10 @@ export default function CompleteItemModal({
         <div className="space-y-4">
           {/* Requirement banner */}
           <div
-            className={`rounded-2xl border p-4 ${
-              evidenceRequired ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50"
-            }`}
+            className={[
+              "rounded-2xl border p-4",
+              evidenceRequired ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50",
+            ].join(" ")}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -72,30 +89,30 @@ export default function CompleteItemModal({
                   <Info className="w-4 h-4 text-gray-400" />
                   Tip
                 </p>
-                <p className="text-[12px] text-gray-700 mt-2">
+
+                <p className="text-[12px] text-gray-700 mt-2 leading-snug">
                   Quick proof works best: machine display, bar on rack, treadmill screen, or a selfie in the gym.
                 </p>
 
-                {evidenceRequired ? (
-                  <div className="mt-3">
+                <div className="mt-3">
+                  {evidenceRequired ? (
                     <Pill tone="warn">
                       <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
                       Evidence required
                     </Pill>
-                  </div>
-                ) : (
-                  <div className="mt-3">
+                  ) : (
                     <Pill>Evidence optional</Pill>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* Close button for fast mobile UX */}
               <button
                 type="button"
                 onClick={onClose}
-                className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 hover:bg-gray-50"
+                className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
                 title="Close"
+                aria-label="Close"
               >
                 <X className="w-4 h-4 text-gray-600" />
               </button>
@@ -104,29 +121,50 @@ export default function CompleteItemModal({
 
           {/* Upload */}
           <div className="rounded-2xl border border-gray-200 p-4">
-            <p className="text-sm font-extrabold text-gray-900">Upload proof</p>
-            <p className="text-[12px] text-gray-600 mt-1">
-              On mobile, this may open your camera. Photos work best.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-gray-900">Upload proof</p>
+                <p className="text-[12px] text-gray-600 mt-1 leading-snug">
+                  On mobile, this may open your camera. Photos work best.
+                </p>
+              </div>
+
+              {/* requirement chip (mobile-friendly) */}
+              <div className="shrink-0">
+                {evidenceRequired ? (
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900">
+                    Required
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                    Optional
+                  </span>
+                )}
+              </div>
+            </div>
 
             <div className="mt-3 grid gap-3">
               {/* Clickable upload area */}
               <label className="group cursor-pointer">
-                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 hover:bg-gray-100 transition">
+                <div
+                  className={[
+                    "rounded-2xl border border-dashed p-4 transition",
+                    evidenceRequired
+                      ? "border-amber-300 bg-amber-50/40 hover:bg-amber-50"
+                      : "border-gray-300 bg-gray-50 hover:bg-gray-100",
+                  ].join(" ")}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl border border-gray-200 bg-white p-2">
+                    <div className="rounded-xl border border-gray-200 bg-white p-2 shrink-0">
                       <Upload className="w-5 h-5 text-gray-700" />
                     </div>
+
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900">
                         {selectedFile ? "Change file" : "Tap to choose a photo"}
                       </p>
-                      <p className="text-[12px] text-gray-600">
-                        {selectedFile
-                          ? selectedFile.name
-                          : evidenceRequired
-                          ? "Required for this item"
-                          : "Optional for this item"}
+                      <p className="text-[12px] text-gray-600 truncate">
+                        {selectedFile ? fileLabel(selectedFile) : evidenceRequired ? "Required for this item" : "Optional for this item"}
                       </p>
                     </div>
                   </div>
@@ -152,23 +190,28 @@ export default function CompleteItemModal({
                 </div>
               ) : (
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                  <p className="text-[12px] text-gray-600">
-                    {evidenceRequired
-                      ? "You must select a photo to submit this item."
-                      : "You can submit without a photo, but uploading helps your coach approve faster."}
-                  </p>
+                  <div className="flex items-start gap-2">
+                    <span className="h-9 w-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center shrink-0">
+                      <ImageIcon className="w-4 h-4 text-gray-600" />
+                    </span>
+                    <p className="text-[12px] text-gray-600 leading-snug">
+                      {evidenceRequired
+                        ? "You must select a photo to submit this item."
+                        : "You can submit without a photo, but uploading helps your coach approve faster."}
+                    </p>
+                  </div>
                 </div>
               )}
 
               {/* Note */}
               <div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-extrabold text-gray-900">Note to coach (optional)</p>
-                  <p className="text-[11px] text-gray-500">{noteLen}/500</p>
+                  <p className="text-[11px] text-gray-500 shrink-0">{noteLen}/500</p>
                 </div>
 
                 <textarea
-                  className="mt-2 w-full min-h-[96px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                  className="mt-2 w-full min-h-[96px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/40"
                   placeholder="Example: changed weight, felt easy, modified exercise, short on time…"
                   value={noteText}
                   maxLength={500}
@@ -178,8 +221,8 @@ export default function CompleteItemModal({
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2">
+          {/* Actions (mobile-safe stacking) */}
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <Button variant="secondary" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>

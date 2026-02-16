@@ -6,3 +6,12 @@
 body {
   @apply bg-gray-900 text-gray-100 font-sans;
 }
+
+/* Hide scrollbars (keep scrolling) — used for mobile horizontal tab scrollers */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+}

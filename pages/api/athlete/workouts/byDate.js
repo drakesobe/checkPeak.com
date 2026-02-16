@@ -30,7 +30,6 @@ function envMissing() {
 function pickBestDailyWorkout(rows) {
   const scored = (rows || []).map((r) => {
     const f = r.fields || {};
-    // Prefer records that actually have items; if reciprocal isn't populated, this may be 0
     const count = safeArray(f.WorkoutItems).length;
     return { r, count };
   });
@@ -70,9 +69,34 @@ function mustAthleteToken(auth) {
     "";
 
   const token = String(raw || "").trim();
-  // ✅ Enforce ATH- only
   if (!token || !/^ATH-/i.test(token)) return "";
   return token;
+}
+
+function okNull(res, payload = {}) {
+  return res.status(200).json({ dailyWorkout: null, items: [], ...payload });
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function hydrateWorkoutItemsByIds(WorkoutItemsTable, ids = []) {
+  const itemIds = safeArray(ids).map(String).map((s) => s.trim()).filter(Boolean);
+  if (!itemIds.length) return [];
+
+  const rows = [];
+  for (const batch of chunk(itemIds, 50)) {
+    const orParts = batch.map((id) => `RECORD_ID()="${escapeAirtableString(id)}"`).join(",");
+    const formula = `OR(${orParts})`;
+    const got = await WorkoutItemsTable.select({ filterByFormula: formula, pageSize: 100 }).firstPage();
+    rows.push(...(got || []));
+  }
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return itemIds.map((id) => byId.get(id)).filter(Boolean);
 }
 
 export default async function handler(req, res) {
@@ -86,9 +110,11 @@ export default async function handler(req, res) {
   }
 
   const auth = requireAthlete(req);
-  if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
+  if (!auth.ok) {
+    return okNull(res, { error: auth.error || "Unauthorized", stopRetry: true });
+  }
 
-  const isoDate = String(req.query?.date || "").trim(); // YYYY-MM-DD
+  const isoDate = String(req.query?.date || "").trim();
   if (!isoDate) return res.status(400).json({ error: "Missing date (YYYY-MM-DD)." });
 
   const athleteEmailRaw =
@@ -102,23 +128,19 @@ export default async function handler(req, res) {
 
   const athleteToken = mustAthleteToken(auth);
   if (!athleteToken) {
-    return res.status(400).json({
+    return okNull(res, {
       error:
         "Missing AthleteToken (ATH-XXXX) in auth session cookie. Log out/in after verifying the athlete record has AthleteToken populated.",
-      debug: {
-        athleteEmail,
-        cookieKeys: Object.keys(auth?.user || {}),
-        got: auth?.user?.AthleteToken || auth?.user?.athleteToken || null,
-      },
+      stopRetry: true,
+      debug: { athleteEmail, cookieKeys: Object.keys(auth?.user || {}) },
     });
   }
 
-  // ✅ AthleteScans record id (used for WorkoutCompletions matching)
   const athleteRecordId = String(auth?.athlete?.id || "").trim();
   if (!athleteRecordId) {
-    return res.status(400).json({
-      error:
-        "Missing athlete record id in auth session (expected AthleteScans record id). Needed for WorkoutCompletions matching.",
+    return okNull(res, {
+      error: "Missing athlete record id in auth session (expected AthleteScans record id).",
+      stopRetry: true,
     });
   }
 
@@ -135,49 +157,43 @@ export default async function handler(req, res) {
     const dateEsc = escapeAirtableString(isoDate);
     const tokenEsc = escapeAirtableString(athleteToken);
 
-    // ✅ TOKEN-ONLY query (no email fallback, no Token fallback)
     const formula = `AND(
       IS_SAME({Date}, "${dateEsc}", "day"),
       {AthleteToken} = "${tokenEsc}"
     )`;
 
-    const rows = await DailyWorkouts.select({
-      filterByFormula: formula,
-      maxRecords: 10,
-    }).firstPage();
+    const rows = await DailyWorkouts.select({ filterByFormula: formula, maxRecords: 10 }).firstPage();
 
     if (!rows?.length) {
-      return res.status(200).json({
-        dailyWorkout: null,
-        items: [],
-        debug: { reason: "No match for date + AthleteToken", isoDate, athleteToken, formula },
-      });
+      return okNull(res, { debug: { reason: "No match for date + AthleteToken", isoDate, athleteToken, formula } });
     }
 
     const rec = pickBestDailyWorkout(rows) || rows[0];
     const f = rec.fields || {};
 
-    // ✅ Robust: query WorkoutItems by link-to DailyWorkout (does NOT depend on reciprocal "WorkoutItems" field being populated)
-    const dwIdEsc = escapeAirtableString(rec.id);
-    const wiFormula = `FIND("${dwIdEsc}", ARRAYJOIN({DailyWorkout}&""))>0`;
+    // ✅ PRIMARY: hydrate from DailyWorkouts.WorkoutItems
+    const linkedItemIds = safeArray(f.WorkoutItems).map(String).map((s) => s.trim()).filter(Boolean);
+    let hydrated = await hydrateWorkoutItemsByIds(WorkoutItemsTable, linkedItemIds);
 
-    const wiRows = await WorkoutItemsTable.select({
-      filterByFormula: wiFormula,
-      pageSize: 100,
-    }).firstPage();
+    // ✅ FALLBACK: reverse-link lookup (only if needed)
+    let wiFormula = "";
+    if (!hydrated.length) {
+      const dwIdEsc = escapeAirtableString(rec.id);
+      wiFormula = `FIND("${dwIdEsc}", ARRAYJOIN({DailyWorkout}&""))>0`;
 
-    const hydrated = (wiRows || []).slice().sort((a, b) => {
+      const wiRows = await WorkoutItemsTable.select({ filterByFormula: wiFormula, pageSize: 100 }).firstPage();
+      hydrated = (wiRows || []).slice();
+    }
+
+    hydrated.sort((a, b) => {
       const ao = Number(a?.fields?.Order ?? 999999);
       const bo = Number(b?.fields?.Order ?? 999999);
       return ao - bo;
     });
 
-    // completions for that day
+    // completions for the day
     const wcDateFormula = `IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day")`;
-    const wcRows = await WorkoutCompletions.select({
-      filterByFormula: wcDateFormula,
-      maxRecords: 200,
-    }).firstPage();
+    const wcRows = await WorkoutCompletions.select({ filterByFormula: wcDateFormula, maxRecords: 200 }).firstPage();
 
     const completionByWorkoutItemId = new Map();
     for (const r of wcRows || []) {
@@ -238,7 +254,13 @@ export default async function handler(req, res) {
         ReviewedNotes: reviewedNotes,
       },
       items,
-      debug: { wiFormula, foundItems: hydrated.length },
+      debug: {
+        formula,
+        linkedItemCount: linkedItemIds.length,
+        hydratedCount: hydrated.length,
+        wiFormula: wiFormula || null,
+        workoutItemsTableId: process.env.WORKOUTITEMS_TABLE_ID,
+      },
     });
   } catch (e) {
     console.error("[api/athlete/workouts/byDate] error:", e);

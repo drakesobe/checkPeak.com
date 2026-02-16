@@ -1,9 +1,32 @@
 // /components/athlete-today/DateStrip.jsx
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { classNames, labelForDate, prettyDate } from "./ui";
+
+/**
+ * DateStrip UX goals:
+ * ✅ No cropping / cutoff on smaller screens
+ * ✅ Smooth horizontal scrolling with snap
+ * ✅ Optional "Today" jump (desktop + mobile)
+ * ✅ Keeps selected day centered
+ * ✅ Arrow keys navigation (desktop)
+ * ✅ Small-screen friendly chip sizing + truncation
+ */
+
+function safeIso(v) {
+  return String(v ?? "").trim();
+}
+
+function getLocalTodayISO() {
+  // local date in YYYY-MM-DD
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export default function DateStrip({
   loading = false,
@@ -16,19 +39,15 @@ export default function DateStrip({
   onJumpToToday,
 }) {
   const itemRefs = useRef({});
-  const todayIso = useMemo(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }, []);
+  const scrollerRef = useRef(null);
+
+  const todayIso = useMemo(() => getLocalTodayISO(), []);
 
   const normalizedStrip = useMemo(() => {
     const list = Array.isArray(dateStrip) ? dateStrip : [];
     return list
       .map((d) => {
-        const iso = String(d?.iso || "").trim();
+        const iso = safeIso(d?.iso);
         if (!iso) return null;
         return {
           iso,
@@ -39,13 +58,61 @@ export default function DateStrip({
       .filter(Boolean);
   }, [dateStrip]);
 
+  // Mobile "hint" — show a fading edge gradient if scrollable
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollHints = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const left = el.scrollLeft;
+    const max = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(left > 2);
+    setCanScrollRight(max - left > 2);
+  }, []);
+
+  // Keep selected centered (prevents “cropped” feeling)
   useEffect(() => {
-    const iso = String(selectedDate || "").trim();
+    const iso = safeIso(selectedDate);
     if (!iso) return;
+
     const el = itemRefs.current?.[iso];
     if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+
+    // Use inline:center so the chosen chip is visible even on tight screens
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    } catch {
+      // fallback: no-op
+    }
   }, [selectedDate]);
+
+  // Measure scrollability after paint and on changes
+  useEffect(() => {
+    updateScrollHints();
+  }, [normalizedStrip.length, updateScrollHints]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const onScroll = () => updateScrollHints();
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    // Resize observer to re-evaluate on viewport changes (prevents cropping)
+    let ro;
+    try {
+      ro = new ResizeObserver(() => updateScrollHints());
+      ro.observe(el);
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (ro) ro.disconnect();
+    };
+  }, [updateScrollHints]);
 
   const jumpToToday = () => {
     if (loading) return;
@@ -58,7 +125,7 @@ export default function DateStrip({
     const list = normalizedStrip;
     if (!list.length) return;
 
-    const cur = String(selectedDate || "").trim();
+    const cur = safeIso(selectedDate);
     const idx = list.findIndex((x) => x.iso === cur);
 
     const nextIdx =
@@ -72,20 +139,47 @@ export default function DateStrip({
     if (nextIso) onSelectDate?.(nextIso);
   };
 
+  const selectedPretty = useMemo(() => {
+    const iso = safeIso(selectedDate);
+    if (!iso) return "";
+    // show a friendly string if possible
+    try {
+      return prettyDate(iso);
+    } catch {
+      return iso;
+    }
+  }, [selectedDate]);
+
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white/60 backdrop-blur p-3 sm:p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2 mb-2">
+    <section className="rounded-2xl border border-gray-200 bg-white/70 backdrop-blur p-3 sm:p-4 shadow-sm">
+      {/* Header row (no cropping on small screens) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-            Browse days
-          </p>
-          <p className="text-[11px] text-gray-500 truncate">
-            {selectedDate ? `Selected: ${selectedDate}` : "Select a day to view its workout."}
-          </p>
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center shrink-0">
+              <CalendarDays className="w-4.5 h-4.5 text-[#46769B]" />
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Browse days
+              </p>
+              <p className="text-[11px] text-gray-500 truncate">
+                {selectedDate ? (
+                  <>
+                    Selected: <span className="font-semibold text-gray-700">{selectedPretty}</span>
+                  </>
+                ) : (
+                  "Select a day to view its plan."
+                )}
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {showJumpToToday && (
+        {/* Controls wrap cleanly */}
+        <div className="flex items-center justify-between sm:justify-end gap-2">
+          {showJumpToToday ? (
             <button
               type="button"
               onClick={jumpToToday}
@@ -94,129 +188,161 @@ export default function DateStrip({
             >
               Today
             </button>
-          )}
+          ) : null}
 
-          <button
-            type="button"
-            onClick={onPrev}
-            disabled={loading}
-            className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
-            aria-label="Previous day"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onPrev}
+              disabled={loading}
+              className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+              aria-label="Previous day"
+              title="Previous day"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
 
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={loading}
-            className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
-            aria-label="Next day"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={loading}
+              className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+              aria-label="Next day"
+              title="Next day"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Strip */}
-      <div
-        className="overflow-x-auto"
-        role="listbox"
-        aria-label="Select a day"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            moveSelection(-1);
-          }
-          if (e.key === "ArrowRight") {
-            e.preventDefault();
-            moveSelection(1);
-          }
-          if (e.key === "Home") {
-            e.preventDefault();
-            if (normalizedStrip[0]?.iso) onSelectDate?.(normalizedStrip[0].iso);
-          }
-          if (e.key === "End") {
-            e.preventDefault();
-            if (normalizedStrip[normalizedStrip.length - 1]?.iso)
-              onSelectDate?.(normalizedStrip[normalizedStrip.length - 1].iso);
-          }
-        }}
-      >
-        {/* Snap scrolling for mobile */}
-        <div className="flex gap-2 min-w-max px-1 pb-1 snap-x snap-mandatory">
-          {normalizedStrip.length === 0 ? (
-            <div className="w-full rounded-2xl border border-dashed border-gray-300 bg-white p-4">
-              <p className="text-xs text-gray-600">
-                {loading ? "Loading days…" : "No days available."}
-              </p>
-            </div>
-          ) : (
-            normalizedStrip.map((d) => {
-              const active = d.iso === selectedDate;
-              const isToday = d.iso === todayIso;
+      {/* Scroll strip wrapper */}
+      <div className="relative">
+        {/* Left fade */}
+        {canScrollLeft ? (
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 sm:w-8 bg-gradient-to-r from-white/90 to-white/0 rounded-l-2xl" />
+        ) : null}
 
-              return (
-                <button
-                  key={d.iso}
-                  ref={(el) => {
-                    if (el) itemRefs.current[d.iso] = el;
-                  }}
-                  type="button"
-                  onClick={() => onSelectDate?.(d.iso)}
-                  disabled={loading}
-                  role="option"
-                  aria-selected={active}
-                  className={classNames(
-                    "snap-center relative text-left transition focus:outline-none focus:ring-2 focus:ring-[#46769B]/40",
-                    // bigger tap target on mobile
-                    "px-4 py-3 sm:px-3 sm:py-2 rounded-2xl border min-w-[120px] sm:min-w-[104px]",
-                    active
-                      ? "bg-[#46769B] text-white border-[#46769B] shadow-sm"
-                      : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
-                  )}
-                  title={d.iso}
-                >
-                  {isToday && !active ? (
-                    <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
-                  ) : null}
+        {/* Right fade */}
+        {canScrollRight ? (
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 sm:w-8 bg-gradient-to-l from-white/90 to-white/0 rounded-r-2xl" />
+        ) : null}
 
-                  {active ? (
-                    <span className="absolute inset-0 rounded-2xl ring-2 ring-white/30 pointer-events-none" />
-                  ) : null}
+        {/* Actual scroller */}
+        <div
+          ref={scrollerRef}
+          className={classNames(
+            "overflow-x-auto overscroll-x-contain",
+            "scrollbar-none", // if you have a utility; harmless if not
+            "rounded-2xl"
+          )}
+          role="listbox"
+          aria-label="Select a day"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              moveSelection(-1);
+            }
+            if (e.key === "ArrowRight") {
+              e.preventDefault();
+              moveSelection(1);
+            }
+            if (e.key === "Home") {
+              e.preventDefault();
+              if (normalizedStrip[0]?.iso) onSelectDate?.(normalizedStrip[0].iso);
+            }
+            if (e.key === "End") {
+              e.preventDefault();
+              const last = normalizedStrip[normalizedStrip.length - 1]?.iso;
+              if (last) onSelectDate?.(last);
+            }
+          }}
+        >
+          {/* Snap scrolling for mobile */}
+          <div className="flex gap-2 min-w-max px-1 pb-1 snap-x snap-mandatory">
+            {normalizedStrip.length === 0 ? (
+              <div className="w-full rounded-2xl border border-dashed border-gray-300 bg-white p-4">
+                <p className="text-xs text-gray-600">
+                  {loading ? "Loading days…" : "No days available."}
+                </p>
+              </div>
+            ) : (
+              normalizedStrip.map((d) => {
+                const active = safeIso(d.iso) === safeIso(selectedDate);
+                const isToday = d.iso === todayIso;
 
-                  <div className={classNames("text-xs font-extrabold", active ? "text-white" : "text-gray-900")}>
-                    {d.label}
-                  </div>
-                  <div className={classNames("text-[11px]", active ? "text-white/90" : "text-gray-500")}>
-                    {d.pretty}
-                  </div>
-
-                  <div className="mt-1 flex items-center gap-1">
-                    {active ? (
-                      <span className="inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold">
-                        Selected
-                      </span>
-                    ) : isToday ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                        Today
-                      </span>
+                return (
+                  <button
+                    key={d.iso}
+                    ref={(el) => {
+                      if (el) itemRefs.current[d.iso] = el;
+                    }}
+                    type="button"
+                    onClick={() => onSelectDate?.(d.iso)}
+                    disabled={loading}
+                    role="option"
+                    aria-selected={active}
+                    className={classNames(
+                      "snap-center relative text-left transition",
+                      "focus:outline-none focus:ring-2 focus:ring-[#46769B]/40",
+                      // ✅ Responsive sizing:
+                      // - mobile: wider & taller for thumb taps
+                      // - desktop: slightly tighter to fit more days
+                      "rounded-2xl border",
+                      "px-4 py-3 sm:px-3 sm:py-2",
+                      "min-w-[132px] sm:min-w-[108px]",
+                      "max-w-[170px] sm:max-w-[140px]",
+                      active
+                        ? "bg-[#46769B] text-white border-[#46769B] shadow-sm"
+                        : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
+                    )}
+                    title={d.iso}
+                  >
+                    {/* Today dot */}
+                    {isToday && !active ? (
+                      <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
                     ) : null}
-                  </div>
-                </button>
-              );
-            })
-          )}
+
+                    {/* Selected glow */}
+                    {active ? (
+                      <span className="absolute inset-0 rounded-2xl ring-2 ring-white/30 pointer-events-none" />
+                    ) : null}
+
+                    <div className={classNames("text-xs font-extrabold truncate", active ? "text-white" : "text-gray-900")}>
+                      {d.label}
+                    </div>
+
+                    <div className={classNames("text-[11px] truncate mt-0.5", active ? "text-white/90" : "text-gray-500")}>
+                      {d.pretty}
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-1">
+                      {active ? (
+                        <span className="inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold">
+                          Selected
+                        </span>
+                      ) : isToday ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                          Today
+                        </span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Footer / microcopy (no cropping; wraps on mobile) */}
       <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <p className="text-[11px] text-gray-500">
-          Tip: tap a day to view its workout, then swipe right on an item to upload proof.
+          Tip: swipe the strip left/right. Use ← / → keys on desktop to move days.
         </p>
 
-        {showJumpToToday && (
+        {showJumpToToday ? (
           <button
             type="button"
             onClick={jumpToToday}
@@ -225,7 +351,7 @@ export default function DateStrip({
           >
             Jump to Today
           </button>
-        )}
+        ) : null}
       </div>
     </section>
   );

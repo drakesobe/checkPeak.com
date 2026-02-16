@@ -1,6 +1,7 @@
+// pages/athlete/today.jsx
 "use client";
 
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
@@ -17,6 +18,12 @@ import { useAthleteToday } from "@/hooks/athlete-today/useAthleteToday";
 import { useWorkoutCompletion } from "@/hooks/athlete-today/useWorkoutCompletion";
 import { useAthleteNutritionToday } from "@/hooks/athlete-today/useAthleteNutritionToday";
 
+/* ---------------- helpers ---------------- */
+
+function cx(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
 function safeNum(v) {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -24,9 +31,124 @@ function safeNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function makeEmptyNutritionCompletion() {
+  return {
+    breakfast: { mealDone: false, hydrationDone: false },
+    lunch: { mealDone: false, hydrationDone: false },
+    afternoon: { mealDone: false, hydrationDone: false },
+    dinner: { mealDone: false, hydrationDone: false },
+  };
+}
+
+/**
+ * Counts nutrition items:
+ * - Each meal has 2 "items": mealDone + hydrationDone
+ * => 4 meals * 2 = 8 total
+ */
+function computeNutritionCounts(nutritionCompletion) {
+  const c = nutritionCompletion && typeof nutritionCompletion === "object" ? nutritionCompletion : {};
+  const keys = ["breakfast", "lunch", "afternoon", "dinner"];
+
+  let done = 0;
+  let total = 0;
+
+  for (const k of keys) {
+    const row = c?.[k] || {};
+    total += 2;
+    if (Boolean(row.mealDone)) done += 1;
+    if (Boolean(row.hydrationDone)) done += 1;
+  }
+
+  return { done, total };
+}
+
+function normalizeTab(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (s === "nutrition") return "nutrition";
+  return "workout";
+}
+
+/** localStorage helpers (persist nutrition completion by athlete+date) */
+function lsSafeGet(key) {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function lsSafeSet(key, value) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function isPlainObj(v) {
+  return v && typeof v === "object" && !Array.isArray(v);
+}
+
+function normalizeNutritionCompletionShape(raw) {
+  const base = makeEmptyNutritionCompletion();
+  if (!isPlainObj(raw)) return base;
+
+  const keys = ["breakfast", "lunch", "afternoon", "dinner"];
+  const out = { ...base };
+
+  for (const k of keys) {
+    const row = isPlainObj(raw?.[k]) ? raw[k] : {};
+    out[k] = {
+      mealDone: Boolean(row.mealDone),
+      hydrationDone: Boolean(row.hydrationDone),
+    };
+  }
+  return out;
+}
+
+function Tabs({ value, onChange }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-2">
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onChange("workout")}
+          className={cx(
+            "rounded-2xl px-4 py-3 text-sm font-extrabold transition border",
+            value === "workout"
+              ? "bg-[#46769B] text-white border-[#46769B] shadow-sm"
+              : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+          )}
+          aria-pressed={value === "workout"}
+        >
+          Workout
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onChange("nutrition")}
+          className={cx(
+            "rounded-2xl px-4 py-3 text-sm font-extrabold transition border",
+            value === "nutrition"
+              ? "bg-[#46769B] text-white border-[#46769B] shadow-sm"
+              : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+          )}
+          aria-pressed={value === "nutrition"}
+        >
+          Nutrition
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AthleteToday() {
   const router = useRouter();
   const { user, authReady } = useAuthContext();
+
+  /* ---------------- role gating ---------------- */
 
   const role = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
@@ -36,6 +158,41 @@ export default function AthleteToday() {
   }, [user]);
 
   const isAthlete = role === "athlete";
+
+  /* ---------------- tabs (persist in URL) ---------------- */
+
+  const tabFromUrl = useMemo(() => {
+    // router.query can be empty on first render; still safe
+    return normalizeTab(router?.query?.tab);
+  }, [router?.query?.tab]);
+
+  const [activeTab, setActiveTab] = useState("workout");
+
+  // Sync state <- URL when it changes
+  useEffect(() => {
+    setActiveTab(tabFromUrl);
+  }, [tabFromUrl]);
+
+  const setTab = useCallback(
+    (next) => {
+      const t = normalizeTab(next);
+      setActiveTab(t);
+
+      // Persist in URL without navigation refresh
+      try {
+        const nextQuery = { ...(router.query || {}), tab: t };
+        router.replace({ pathname: router.pathname, query: nextQuery }, undefined, {
+          shallow: true,
+          scroll: false,
+        });
+      } catch {
+        // no-op if router not ready
+      }
+    },
+    [router]
+  );
+
+  /* ---------------- workouts hook ---------------- */
 
   const {
     selectedDate,
@@ -68,7 +225,8 @@ export default function AthleteToday() {
     setErr,
   });
 
-  // ✅ Nutrition (date-aware)
+  /* ---------------- nutrition hook ---------------- */
+
   const nutrition = useAthleteNutritionToday({
     authReady,
     user,
@@ -76,8 +234,67 @@ export default function AthleteToday() {
     selectedDate,
   });
 
-  // ✅ IMPORTANT: keep this hook ABOVE any early returns
-  // This is optional — NutritionCard can also read hydration directly from nutrition.daily.
+  /**
+   * ✅ Lifted state: NutritionCard writes; TodayHeader reads.
+   * PLUS: we persist to localStorage so athlete sees the same checkmarks when returning.
+   */
+  const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyNutritionCompletion);
+
+  // A stable key for persistence: per-athlete, per-date
+  const nutritionCompletionKey = useMemo(() => {
+    const email = String(user?.Email || user?.email || "").trim().toLowerCase();
+    const token = String(user?.token || user?.Token || user?.athleteToken || "").trim();
+    const who = token || email || "athlete";
+    const day = String(selectedDate || "").trim() || "unknown-date";
+    return `checkpeak:nutritionCompletion:${who}:${day}`;
+  }, [user, selectedDate]);
+
+  // Prevent re-saving immediately while we are hydrating state from storage
+  const hydratingRef = useRef(false);
+
+  // ✅ Load completion from storage whenever date changes (or athlete changes)
+  useEffect(() => {
+    if (!authReady) return;
+    if (!user) return;
+    if (!isAthlete) return;
+
+    hydratingRef.current = true;
+
+    const raw = lsSafeGet(nutritionCompletionKey);
+    if (!raw) {
+      setNutritionCompletion(makeEmptyNutritionCompletion());
+      hydratingRef.current = false;
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      setNutritionCompletion(normalizeNutritionCompletionShape(parsed));
+    } catch {
+      setNutritionCompletion(makeEmptyNutritionCompletion());
+    } finally {
+      // allow next tick before enabling save
+      setTimeout(() => {
+        hydratingRef.current = false;
+      }, 0);
+    }
+  }, [authReady, user, isAthlete, nutritionCompletionKey]);
+
+  // ✅ Persist completion whenever athlete toggles something
+  useEffect(() => {
+    if (!authReady) return;
+    if (!user) return;
+    if (!isAthlete) return;
+    if (hydratingRef.current) return;
+
+    // only persist if key is sane
+    if (!nutritionCompletionKey) return;
+
+    const payload = normalizeNutritionCompletionShape(nutritionCompletion);
+    lsSafeSet(nutritionCompletionKey, JSON.stringify(payload));
+  }, [authReady, user, isAthlete, nutritionCompletionKey, nutritionCompletion]);
+
+  // Optional: NutritionCard can also read hydration directly from nutrition.daily.
   const dailyHydrationOz = useMemo(() => {
     // Preferred: nutrition.daily.hydrationOz (new shape)
     const v1 = nutrition?.daily?.hydrationOz;
@@ -87,14 +304,10 @@ export default function AthleteToday() {
     const v3 = nutrition?.planJson?.daily?.hydrationOz;
     const v4 = nutrition?.planJson?.daily?.DailyHydration;
 
-    return (
-      safeNum(v1) ??
-      safeNum(v2) ??
-      safeNum(v3) ??
-      safeNum(v4) ??
-      null
-    );
+    return safeNum(v1) ?? safeNum(v2) ?? safeNum(v3) ?? safeNum(v4) ?? null;
   }, [nutrition?.daily, nutrition?.planJson]);
+
+  /* ---------------- navigation actions ---------------- */
 
   const goPrev = useCallback(() => {
     setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1)));
@@ -107,6 +320,7 @@ export default function AthleteToday() {
   const refresh = useCallback(() => {
     reload(selectedDate);
     nutrition.reload(selectedDate);
+    // completion is local; no fetch required (and still persisted)
   }, [reload, selectedDate, nutrition]);
 
   // Load workouts on auth + date changes
@@ -117,7 +331,15 @@ export default function AthleteToday() {
     reload(selectedDate);
   }, [authReady, user, isAthlete, selectedDate, reload]);
 
-  // ✅ Early returns MUST come after all hooks
+  /* ---------------- derived counts ---------------- */
+
+  const nutritionCounts = useMemo(
+    () => computeNutritionCounts(nutritionCompletion),
+    [nutritionCompletion]
+  );
+
+  /* ---------------- early returns (AFTER all hooks) ---------------- */
+
   if (!authReady) return null;
   if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
   if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
@@ -134,10 +356,15 @@ export default function AthleteToday() {
           loading={loading}
           err={err}
           progress={progress}
+          // ✅ Header can show nutrition progress too (overall)
+          nutritionCompletion={nutritionCompletion}
+          nutritionDone={nutritionCounts.done}
+          nutritionTotal={nutritionCounts.total}
           onRefresh={refresh}
           onBack={() => router.push("/dashboard")}
         />
 
+        {/* “Browse Days” acts like header navigation for dates */}
         <DateStrip
           loading={loading}
           selectedDate={selectedDate}
@@ -147,50 +374,65 @@ export default function AthleteToday() {
           onSelectDate={setSelectedDate}
         />
 
-        <WorkoutCard
-          loading={loading}
-          dailyWorkout={dailyWorkout}
-          items={items}
-          onUpload={openModal}
-          onQuickComplete={quickComplete}
-          submittingId={submittingId}
-        />
+        {/* ✅ Tabs to switch between Workout / Nutrition */}
+        <Tabs value={activeTab} onChange={setTab} />
 
-        <CompleteItemModal
-          open={modalOpen}
-          item={activeItem}
-          selectedFile={selectedFile}
-          coachNote={coachNote}
-          submitting={isSubmittingActiveItem}
-          onClose={closeModal}
-          onPickFile={setSelectedFile}
-          onChangeNote={setCoachNote}
-          onSubmit={() =>
-            submitCompletion({
-              workoutItemId: String(activeItem?.id || ""),
-              evidenceRequired: String(activeItem?.EvidenceRequired || "").toLowerCase() === "true",
-            })
-          }
-        />
+        {/* Workout tab content */}
+        {activeTab === "workout" ? (
+          <>
+            <WorkoutCard
+              loading={loading}
+              dailyWorkout={dailyWorkout}
+              items={items}
+              onUpload={openModal}
+              onQuickComplete={quickComplete}
+              submittingId={submittingId}
+            />
 
-        {/* ✅ Nutrition Today card */}
-        <NutritionCard
-          loading={nutrition.loading}
-          err={nutrition.err}
-          hasPlan={nutrition.hasPlan}
-          daily={nutrition.daily}
-          mealBlocks={nutrition.mealBlocks}
-          planJson={nutrition.planJson}
-          selectedDate={selectedDate}
-          effectiveDate={nutrition.effectiveDate}
-          nextPlan={nutrition.nextPlan}
-          isFuture={nutrition.isFuture}
-          message={nutrition.message}
-          onRefresh={() => nutrition.reload(selectedDate)}
-          onOpenNutrition={() => router.push("/athlete/nutrition")}
-          // ✅ optional: pass it explicitly if you want
-          dailyHydrationOz={dailyHydrationOz}
-        />
+            <CompleteItemModal
+              open={modalOpen}
+              item={activeItem}
+              selectedFile={selectedFile}
+              coachNote={coachNote}
+              submitting={isSubmittingActiveItem}
+              onClose={closeModal}
+              onPickFile={setSelectedFile}
+              onChangeNote={setCoachNote}
+              onSubmit={() =>
+                submitCompletion({
+                  workoutItemId: String(activeItem?.id || ""),
+                  evidenceRequired: String(activeItem?.EvidenceRequired || "").toLowerCase() === "true",
+                })
+              }
+            />
+          </>
+        ) : null}
+
+        {/* Nutrition tab content */}
+        {activeTab === "nutrition" ? (
+          <NutritionCard
+            loading={nutrition.loading}
+            err={nutrition.err}
+            hasPlan={nutrition.hasPlan}
+            daily={nutrition.daily}
+            mealBlocks={nutrition.mealBlocks}
+            planJson={nutrition.planJson}
+            selectedDate={selectedDate}
+            effectiveDate={nutrition.effectiveDate}
+            nextPlan={nutrition.nextPlan}
+            isFuture={nutrition.isFuture}
+            message={nutrition.message}
+            onRefresh={() => nutrition.reload(selectedDate)}
+            onOpenNutrition={() => router.push("/athlete/nutrition")}
+            dailyHydrationOz={dailyHydrationOz}
+            // ✅ KEY: NutritionCard updates completion; header reflects it; page persists it
+            nutritionCompletion={nutritionCompletion}
+            onCompletionChange={(next) => {
+              // Normalize shape to keep everything stable
+              setNutritionCompletion(normalizeNutritionCompletionShape(next));
+            }}
+          />
+        ) : null}
 
         {err ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4">

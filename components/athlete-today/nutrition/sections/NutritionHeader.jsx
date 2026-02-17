@@ -1,18 +1,8 @@
-// components/athlete-today/nutrition/sections/NutritionHeader.jsx
 "use client";
 
 import { useMemo } from "react";
-import { RefreshCcw, ArrowRight, CheckCircle2, Utensils } from "lucide-react";
+import { RefreshCcw, CheckCircle2, Utensils } from "lucide-react";
 import { cx, isISODateOnly, fmtHumanDate, pct } from "../helpers";
-import ProgressBar from "../ui/ProgressBar";
-
-/**
- * NutritionHeader (polished SaaS)
- * ✅ mobile-safe wrapping (no weird second-line pills)
- * ✅ clear hierarchy + “card” header feel
- * ✅ better button affordance + consistent sizing
- * ✅ progress block reads fast
- */
 
 function TinyChip({ children, tone = "soft", className = "" }) {
   const toneCls =
@@ -27,7 +17,7 @@ function TinyChip({ children, tone = "soft", className = "" }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
         "text-[11px] font-semibold leading-none whitespace-nowrap",
         toneCls,
         className
@@ -38,16 +28,18 @@ function TinyChip({ children, tone = "soft", className = "" }) {
   );
 }
 
-function ActionButton({ onClick, children, variant = "secondary", title = "" }) {
-  const base =
-    "inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition whitespace-nowrap";
-  const cls =
-    variant === "primary"
-      ? "bg-[#46769B] text-white hover:brightness-110"
-      : "bg-white text-gray-800 border border-gray-200 hover:bg-gray-50";
-
+function ActionButton({ onClick, children, title = "" }) {
   return (
-    <button type="button" onClick={onClick} title={title} className={cx(base, cls)}>
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cx(
+        "inline-flex items-center justify-center gap-2 rounded-xl",
+        "px-2.5 py-2 text-xs font-semibold whitespace-nowrap",
+        "bg-white text-gray-800 border border-gray-200 hover:bg-gray-50 transition"
+      )}
+    >
       {children}
     </button>
   );
@@ -56,134 +48,106 @@ function ActionButton({ onClick, children, variant = "secondary", title = "" }) 
 function clampPct(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, n));
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-export default function NutritionHeader({
-  subtitle,
-  metaStatus,
-  metaEff,
-  counts,
-  onRefresh,
-  onOpenNutrition,
-}) {
+function progressTone(pctVal, isComplete) {
+  if (!pctVal) return "soft";
+  if (isComplete || pctVal >= 100) return "ok";
+  if (pctVal >= 50) return "blue";
+  return "soft";
+}
+
+function MiniBar({ pctValue }) {
+  const p = clampPct(pctValue);
+  return (
+    <div
+      className="mt-2 h-1.5 w-full rounded-full bg-gray-100 border border-gray-200 overflow-hidden"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={p}
+      aria-label="Nutrition completion progress"
+    >
+      <div className="h-full rounded-full bg-[#46769B] transition-all" style={{ width: `${p}%` }} />
+    </div>
+  );
+}
+
+export default function NutritionHeader({ subtitle, metaStatus, metaEff, counts, onRefresh }) {
   const done = Number(counts?.done || 0);
   const total = Number(counts?.total || 0);
   const pctRaw = clampPct(counts?.pct);
   const isComplete = total > 0 && done >= total;
 
-  const progressTone = useMemo(() => {
-    if (!total) return "soft";
-    if (isComplete) return "ok";
-    if (pctRaw >= 50) return "blue";
-    return "soft";
-  }, [total, isComplete, pctRaw]);
+  const tone = useMemo(() => progressTone(pctRaw, isComplete), [pctRaw, isComplete]);
 
   const progressLabel = useMemo(() => {
-    if (!total) return "—";
-    return `${done}/${total} complete (${pct(pctRaw)})`;
+    if (!total) return "No items";
+    return `${done}/${total} (${pct(pctRaw)})`;
   }, [done, total, pctRaw]);
 
+  const effLine =
+    metaEff && isISODateOnly(metaEff) ? (
+      <p className="text-[11px] text-gray-500 leading-none">
+        Effective: <span className="font-semibold text-gray-700">{fmtHumanDate(metaEff)}</span>
+      </p>
+    ) : null;
+
   return (
-    <div className="flex flex-col gap-3">
-      {/* Header card */}
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {/* subtle top accent */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#46769B] via-blue-400 to-emerald-400 opacity-60" />
+    <div className="rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
+      <div className="h-1 w-full bg-gradient-to-r from-[#46769B] via-blue-400 to-emerald-400 opacity-50" />
 
-        <div className="p-4 sm:p-5">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-            {/* Left */}
+      {/* tighter padding on mobile */}
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          {/* Left */}
+          <div className="min-w-0 flex items-start gap-3">
+            {/* slightly smaller icon bubble on mobile */}
+            <span className="shrink-0 h-9 w-9 sm:h-10 sm:w-10 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center">
+              <Utensils className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-[#46769B]" />
+            </span>
+
             <div className="min-w-0">
-              <div className="flex items-start gap-3">
-                <span className="shrink-0 h-10 w-10 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center">
-                  <Utensils className="w-5 h-5 text-[#46769B]" />
-                </span>
+              {/* Title row: keep tight + wrap cleanly */}
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <p className="text-base sm:text-lg font-extrabold text-gray-900 leading-tight">
+                  Nutrition
+                </p>
 
-                <div className="min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 gap-1">
-                    <h2 className="text-lg font-extrabold text-gray-900 leading-tight">
-                      Nutrition
-                    </h2>
+                <TinyChip tone="blue">Suggested</TinyChip>
 
-                    {/* chips: wrap nicely, never squeeze into ugly 2-line */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <TinyChip tone="blue">Suggested</TinyChip>
+                {metaStatus ? <TinyChip tone="soft">{metaStatus}</TinyChip> : null}
 
-                      {metaStatus ? <TinyChip tone="soft">{metaStatus}</TinyChip> : null}
-
-                      <TinyChip tone={progressTone}>
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        {progressLabel}
-                      </TinyChip>
-                    </div>
-                  </div>
-
-                  {subtitle ? (
-                    <p className="text-sm text-gray-500 mt-2 leading-snug">
-                      {subtitle}
-                    </p>
-                  ) : null}
-
-                  {metaEff && isISODateOnly(metaEff) ? (
-                    <p className="text-[11px] text-gray-500 mt-2 leading-none">
-                      Plan effective:{" "}
-                      <span className="font-semibold text-gray-700">
-                        {fmtHumanDate(metaEff)}
-                      </span>
-                    </p>
-                  ) : null}
-                </div>
+                <TinyChip tone={tone}>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {progressLabel}
+                </TinyChip>
               </div>
-            </div>
 
-            {/* Right actions */}
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-end">
-              <ActionButton onClick={onRefresh} title="Refresh nutrition data">
-                <RefreshCcw className="w-4 h-4" />
-                Refresh
-              </ActionButton>
+              {/* make subtitle less “loud” on mobile */}
+              {subtitle ? (
+                <p className="text-[11px] sm:text-[12px] text-gray-600 mt-1.5 leading-snug line-clamp-2">
+                  {subtitle}
+                </p>
+              ) : null}
 
-              <ActionButton
-                onClick={onOpenNutrition}
-                variant="primary"
-                title="Open full nutrition page"
-              >
-                Open
-                <ArrowRight className="w-4 h-4" />
-              </ActionButton>
+              <div className="mt-1.5">{effLine}</div>
+
+              {/* small feature: subtle progress bar */}
+              <MiniBar pctValue={total ? pctRaw : 0} />
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Progress card */}
-      <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 leading-snug">
-              Daily completion
-            </p>
-            <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-              Meal + hydration per meal (swipe right to complete).
-            </p>
+          {/* Right actions: keep compact */}
+          <div className="shrink-0">
+            <ActionButton onClick={onRefresh} title="Refresh nutrition data">
+              <RefreshCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">Refresh</span>
+              <span className="sm:hidden"> </span>
+            </ActionButton>
           </div>
-
-          <TinyChip tone={isComplete ? "ok" : "soft"} className="w-fit">
-            {total ? `${pct(pctRaw)} complete` : "No items"}
-          </TinyChip>
         </div>
-
-        <div className="mt-3">
-          <ProgressBar pctValue={pctRaw} />
-        </div>
-
-        {/* Optional microcopy line that doesn’t wreck mobile spacing */}
-        {total ? (
-          <p className="mt-2 text-[11px] text-gray-500 leading-snug">
-            Tip: you’re counting 8 checks total (4 meals × meal + hydration).
-          </p>
-        ) : null}
       </div>
     </div>
   );

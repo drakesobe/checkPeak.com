@@ -1,4 +1,3 @@
-// components/athlete-today/WorkoutCard.jsx
 "use client";
 
 import { useMemo } from "react";
@@ -6,27 +5,27 @@ import {
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
-  Upload,
   ChevronRight,
   Dumbbell,
-  Flame,
   ShieldAlert,
-  Camera,
 } from "lucide-react";
-import { Pill, statusTone, Button } from "./ui";
+import { statusTone } from "./ui";
 import WorkoutItemRow from "./WorkoutItemRow";
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
+function cx(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
 function norm(v) {
   return String(v ?? "").trim().toLowerCase();
 }
 
 function safeText(v) {
-  const s = String(v ?? "").trim();
-  return s;
+  return String(v ?? "").trim();
 }
 
 function pickNote(dw) {
@@ -38,11 +37,8 @@ function pickNote(dw) {
 function isDoneItem(it) {
   const st = norm(it?.Status || "");
   const completed = norm(it?.Completed || it?.completed || "") === "true";
+  // Athlete considers pending_review "checked off"
   return completed || st === "completed" || st === "pending_review";
-}
-
-function evidenceRequired(it) {
-  return norm(it?.EvidenceRequired || "") === "true" || it?.EvidenceRequired === true;
 }
 
 function clampPct(v) {
@@ -53,100 +49,64 @@ function clampPct(v) {
 
 function progressTone(pct) {
   const p = clampPct(pct);
-  if (p >= 100) return "good";
-  if (p >= 50) return "warn";
+  if (p >= 100) return "ok";
+  if (p >= 50) return "blue";
   return "neutral";
 }
 
 /* -------------------------------------------------------------------------- */
-/* Micro UI bits                                                              */
+/* Header UI                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function SectionHeader({ title, subtitle, icon }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="h-10 w-10 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center shrink-0">
-            {icon}
-          </span>
+function Chip({ children, tone = "neutral", className = "" }) {
+  const toneCls =
+    tone === "ok"
+      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+      : tone === "blue"
+      ? "bg-blue-50 text-blue-900 border-blue-200"
+      : tone === "warn"
+      ? "bg-amber-50 text-amber-900 border-amber-200"
+      : "bg-gray-100 text-gray-700 border-gray-200";
 
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {title}
-            </p>
-            {subtitle ? (
-              <p className="text-lg font-extrabold text-gray-900 mt-0.5 truncate">
-                {subtitle}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
+  return (
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
+        "text-[11px] font-semibold leading-none whitespace-nowrap",
+        toneCls,
+        className
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
-function MiniProgress({ pct, done, total }) {
+function MiniBar({ pct }) {
   const p = clampPct(pct);
-
   return (
-    <div className="mt-3">
-      <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
-        <span className="inline-flex items-center gap-1">
-          <Flame className="w-3.5 h-3.5" />
-          Progress
-        </span>
-
-        {total ? (
-          <span className="tabular-nums">
-            {done}/{total} ({p}%)
-          </span>
-        ) : (
-          <span>—</span>
-        )}
-      </div>
-
+    <div
+      className="h-2.5 w-full rounded-full bg-gray-100 border border-gray-200 overflow-hidden"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={p}
+      aria-label="Workout completion progress"
+    >
       <div
-        className="h-2.5 w-full rounded-full bg-gray-100 border border-gray-200 overflow-hidden"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={p}
-        aria-label="Workout completion progress"
-      >
-        <div
-          className="h-full rounded-full bg-[#46769B] transition-all"
-          style={{ width: `${p}%` }}
-        />
-      </div>
+        className="h-full rounded-full bg-[#46769B] transition-all"
+        style={{ width: `${p}%` }}
+      />
     </div>
   );
 }
 
-function ActionRail({ title, subtitle, children }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50 p-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900">{title}</p>
-          {subtitle ? (
-            <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-              {subtitle}
-            </p>
-          ) : null}
-        </div>
+/* -------------------------------------------------------------------------- */
+/* Small helper for chip tone priority                                         */
+/* -------------------------------------------------------------------------- */
 
-        <div className="shrink-0 flex items-center gap-2">{children}</div>
-      </div>
-
-      <div className="mt-3 rounded-xl border border-dashed border-gray-300 bg-white/70 px-3 py-2">
-        <p className="text-[11px] text-gray-600 leading-snug">
-          <span className="font-semibold">Pro tip:</span> On mobile, swipe right on any row below to open upload.
-        </p>
-      </div>
-    </div>
-  );
+function isCompleteChipTone(isWorkoutCompleted, chipTone) {
+  return isWorkoutCompleted ? "ok" : chipTone;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -181,25 +141,6 @@ export default function WorkoutCard({
     return { total, done, pct };
   }, [list]);
 
-  const nextUploadCandidate = useMemo(() => {
-    // Prefer evidence-required items that are NOT done
-    const preferred = list.find((x) => evidenceRequired(x) && !isDoneItem(x));
-    if (preferred) return preferred;
-
-    // Else any not-done item
-    const anyNotDone = list.find((x) => !isDoneItem(x));
-    return anyNotDone || null;
-  }, [list]);
-
-  const onQuickUpload = () => {
-    if (!nextUploadCandidate) return;
-    const id = String(nextUploadCandidate?.id || nextUploadCandidate?.ID || "").trim();
-    if (!id) return;
-
-    // This opens your CompleteItemModal, which has capture="environment" (camera on mobile)
-    onUpload?.({ ...nextUploadCandidate, id });
-  };
-
   // Empty state: no workout
   if (!loading && !hasWorkout) {
     return (
@@ -217,7 +158,7 @@ export default function WorkoutCard({
                 No workout assigned for this day
               </p>
               <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-                If you think this is wrong, refresh and check again — or contact your coach.
+                Refresh and check again — or contact your coach.
               </p>
             </div>
           </div>
@@ -226,97 +167,84 @@ export default function WorkoutCard({
     );
   }
 
-  const tone = progressTone(progress.pct);
+  const chipTone = progress.total ? progressTone(progress.pct) : "neutral";
 
   return (
     <div className="rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
-      {/* Subtle top accent to align with the SaaS look used elsewhere */}
       <div className="h-1 w-full bg-gradient-to-r from-[#46769B] via-blue-400 to-emerald-400 opacity-50" />
 
-      <div className="p-6">
+      <div className="p-5">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="min-w-0">
-            <SectionHeader
-              title="Daily workout"
-              subtitle={safeText(dailyWorkout?.Title) || "Daily Workout"}
-              icon={<Dumbbell className="w-5 h-5 text-[#46769B]" />}
-            />
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 h-10 w-10 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center">
+                <Dumbbell className="w-5 h-5 text-[#46769B]" />
+              </span>
 
-            <p className="text-[12px] text-gray-600 mt-2 leading-snug">
-              Upload proof when needed, and keep moving down the list. Quick Upload opens the next best item.
-            </p>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-lg font-extrabold text-gray-900 leading-tight">
+                    Workout
+                  </p>
 
-            {/* Chips row: status, progress, needs-info */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Pill tone={statusTone(dailyWorkout?.Status)}>
-                {workoutStatusRaw || "assigned"}
-              </Pill>
+                  <Chip
+                    tone={
+                      statusTone(dailyWorkout?.Status) === "good"
+                        ? "ok"
+                        : statusTone(dailyWorkout?.Status) === "warn"
+                        ? "warn"
+                        : statusTone(dailyWorkout?.Status) === "blue"
+                        ? "blue"
+                        : "neutral"
+                    }
+                  >
+                    {workoutStatusRaw || "assigned"}
+                  </Chip>
 
-              {progress.total ? (
-                <Pill tone={tone}>
-                  <Flame className="w-3.5 h-3.5 mr-1.5" />
-                  {progress.done}/{progress.total} ({clampPct(progress.pct)}%)
-                </Pill>
-              ) : (
-                <Pill tone="neutral">
-                  <Flame className="w-3.5 h-3.5 mr-1.5" />
-                  No items
-                </Pill>
-              )}
+                  <Chip tone={isCompleteChipTone(isWorkoutCompleted, chipTone)}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {progress.total
+                      ? `${progress.done}/${progress.total} (${clampPct(progress.pct)}%)`
+                      : "No items"}
+                  </Chip>
 
-              {isWorkoutCompleted ? (
-                <Pill tone="good">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                  Workout complete
-                </Pill>
-              ) : null}
+                  {isWorkoutCompleted ? (
+                    <Chip tone="ok">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Complete
+                    </Chip>
+                  ) : null}
 
-              {needsInfo ? (
-                <Pill tone="warn">
-                  <HelpCircle className="w-3.5 h-3.5 mr-1.5" />
-                  Needs info
-                </Pill>
-              ) : null}
+                  {needsInfo ? (
+                    <Chip tone="warn">
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      Needs info
+                    </Chip>
+                  ) : null}
+                </div>
+
+                {safeText(dailyWorkout?.Title) ? (
+                  <p className="text-[12px] text-gray-600 mt-2 leading-snug truncate">
+                    {safeText(dailyWorkout?.Title)}
+                  </p>
+                ) : null}
+
+                {progress.total ? (
+                  <div className="mt-3">
+                    <MiniBar pct={progress.pct} />
+                  </div>
+                ) : null}
+              </div>
             </div>
-
-            {/* Mini progress bar */}
-            {progress.total ? (
-              <MiniProgress pct={progress.pct} done={progress.done} total={progress.total} />
-            ) : null}
           </div>
 
-          {/* Right actions (kept tight + mobile safe) */}
-          <div className="flex flex-row lg:flex-col gap-2 lg:items-end">
-            <Button
-              variant="secondary"
-              className="px-3 py-2 text-xs"
-              onClick={onQuickUpload}
-              disabled={loading || !nextUploadCandidate}
-              title={!nextUploadCandidate ? "No pending items" : "Open camera/upload for next item"}
-            >
-              <Camera className="w-4 h-4" />
-              Quick Upload
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-
-            <Button
-              variant="secondary"
-              className="px-3 py-2 text-xs"
-              onClick={() => {
-                // quick complete for the next item that doesn't require evidence
-                const candidate = list.find((x) => !evidenceRequired(x) && !isDoneItem(x));
-                if (!candidate) return;
-                const id = String(candidate?.id || candidate?.ID || "").trim();
-                if (!id) return;
-                onQuickComplete?.({ ...candidate, id });
-              }}
-              disabled={loading || !list.some((x) => !evidenceRequired(x) && !isDoneItem(x))}
-              title="Quick complete the next non-evidence item"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Quick Complete
-            </Button>
+          {/* Right side: no quick upload anymore */}
+          <div className="flex items-center gap-2 lg:justify-end">
+            <span className="text-[12px] text-gray-500">
+              Swipe right on an item to submit.
+            </span>
+            <ChevronRight className="w-4 h-4 text-gray-300" />
           </div>
         </div>
 
@@ -336,38 +264,12 @@ export default function WorkoutCard({
                   {reviewedNotes}
                 </p>
                 <p className="text-[11px] text-gray-600 mt-2 leading-snug">
-                  Upload again with the requested details so your coach can approve it.
+                  Re-submit with the requested details.
                 </p>
               </div>
             </div>
           </div>
         ) : null}
-
-        {/* Quick action rail (explains what the button does) */}
-        <div className="mt-5">
-          <ActionRail
-            title="Quick Upload"
-            subtitle={
-              nextUploadCandidate
-                ? `Next up: ${safeText(nextUploadCandidate?.Title || nextUploadCandidate?.Name || "Workout item")} ${
-                    evidenceRequired(nextUploadCandidate) ? "(proof required)" : "(proof optional)"
-                  }`
-                : "No pending items right now."
-            }
-          >
-            <Button
-              variant="secondary"
-              className="px-3 py-2 text-xs"
-              onClick={onQuickUpload}
-              disabled={loading || !nextUploadCandidate}
-              title={!nextUploadCandidate ? "No pending items" : "Open camera/upload for next item"}
-            >
-              <Upload className="w-4 h-4" />
-              {evidenceRequired(nextUploadCandidate) ? "Upload proof" : "Upload (optional)"}
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </ActionRail>
-        </div>
 
         {/* Items */}
         <div className="mt-5 space-y-3">
@@ -382,8 +284,6 @@ export default function WorkoutCard({
             list.map((it, idx) => {
               const id = String(it?.id || it?.ID || it?.recordId || "").trim();
               const submitting = Boolean(submittingId && id && submittingId === id);
-
-              // Stable key fallback: id preferred; else deterministic-ish
               const key = id || `${idx}-${safeText(it?.Title || it?.Name || "item")}`;
 
               return (
@@ -406,7 +306,7 @@ export default function WorkoutCard({
                 <span className="font-semibold">WorkoutItems</span> field on the DailyWorkouts record has no linked items.
               </p>
               <p className="text-[11px] text-gray-600 mt-2 leading-snug">
-                If this looks wrong, refresh and ask your coach to link the items to the workout.
+                If this looks wrong, refresh and ask your coach to link the items.
               </p>
             </div>
           )}

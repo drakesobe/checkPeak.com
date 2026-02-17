@@ -1,9 +1,31 @@
 // components/athlete-today/CompleteItemModal.jsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Camera, Info, Upload, AlertTriangle, X, Image as ImageIcon } from "lucide-react";
-import { Button, Modal, Pill } from "./ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Camera,
+  Info,
+  Upload,
+  AlertTriangle,
+  X,
+  Image as ImageIcon,
+  CheckCircle2,
+  ClipboardEdit,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import { Button, Modal, Pill, classNames } from "./ui";
+
+/**
+ * CompleteItemModal (athlete-simple)
+ * Goals:
+ * ✅ Clean spacing on mobile (no “running into header”)
+ * ✅ Photo capture first (live camera on mobile via input capture)
+ * ✅ Proof-required gating stays strict
+ * ✅ Notes are optional + collapsible (keeps UI simple for “the lads”)
+ * ✅ Preview image when selected
+ * ✅ Small, clear copy (less SaaS-y, more athlete)
+ */
 
 function normBool(v) {
   return String(v ?? "").trim().toLowerCase() === "true";
@@ -25,6 +47,123 @@ function fileLabel(file) {
   return `${name} (${mb} MB)`;
 }
 
+function Card({ children, className = "" }) {
+  return (
+    <div
+      className={classNames(
+        "rounded-2xl border border-gray-200 bg-white p-4",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionTitle({ icon, title, subtitle = "", right = null }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          {icon ? (
+            <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
+              {icon}
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <p className="text-sm font-extrabold text-gray-900">{title}</p>
+            {subtitle ? (
+              <p className="text-[12px] text-gray-600 mt-0.5 leading-snug">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {right ? <div className="shrink-0">{right}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * NotesDropdown
+ * - Button row + animated open/close area
+ * - Keeps the main modal short and simple
+ */
+function NotesDropdown({ value, onChange, disabled, maxLength = 500 }) {
+  const [open, setOpen] = useState(false);
+  const text = String(value || "");
+  const len = text.length;
+
+  // Close dropdown if user clears everything (optional nice touch)
+  useEffect(() => {
+    if (!text.trim()) return;
+    // keep open if they’re actively typing; no-op
+  }, [text]);
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={classNames(
+          "w-full text-left rounded-2xl",
+          "focus:outline-none focus:ring-2 focus:ring-[#46769B]/25"
+        )}
+        aria-expanded={open}
+        disabled={disabled}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
+                <ClipboardEdit className="w-4 h-4 text-gray-700" />
+              </span>
+
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-gray-900">
+                  Notes (optional)
+                </p>
+                <p className="text-[12px] text-gray-600 mt-0.5 leading-snug truncate">
+                  {text.trim()
+                    ? "Note added"
+                    : "Add a quick note if you changed anything."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2">
+            <span className="text-[11px] text-gray-500 tabular-nums">
+              {len}/{maxLength}
+            </span>
+            <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center">
+              {open ? (
+                <ChevronUp className="w-5 h-5 text-gray-700" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-700" />
+              )}
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {open ? (
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <textarea
+            className="w-full min-h-[92px] sm:min-h-[104px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/40"
+            placeholder="Example: used 10 lbs less, swapped machine, short on time, felt easy/tough…"
+            value={text}
+            maxLength={maxLength}
+            onChange={(e) => onChange?.(e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 export default function CompleteItemModal({
   open,
   item,
@@ -37,9 +176,15 @@ export default function CompleteItemModal({
   onSubmit,
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
+  const inputRef = useRef(null);
 
-  const evidenceRequired = useMemo(() => normBool(item?.EvidenceRequired), [item]);
-  const title = safeText(item?.ExerciseName || item?.Title || "") || "Workout item";
+  const evidenceRequired = useMemo(
+    () => normBool(item?.EvidenceRequired),
+    [item]
+  );
+
+  const title =
+    safeText(item?.ExerciseName || item?.Title || "") || "Workout item";
 
   // Build / clean up preview URL
   useEffect(() => {
@@ -62,51 +207,71 @@ export default function CompleteItemModal({
   if (!open) return null;
 
   const noteText = String(coachNote || "");
-  const noteLen = noteText.length;
+  const canSubmit =
+    Boolean(item?.id) &&
+    !submitting &&
+    (!evidenceRequired || !!selectedFile);
 
-  const canSubmit = Boolean(item?.id) && !submitting && (!evidenceRequired || !!selectedFile);
   const submitLabel = evidenceRequired ? "Submit proof" : "Mark complete";
+
+  // Button copy simplified
+  const captureBtnLabel = selectedFile ? "Change photo" : "Take photo";
+
+  // “Live picture taking”
+  // On most mobile browsers, <input type="file" accept="image/*" capture="environment" />
+  // opens camera directly (or lets user choose camera).
+  // Desktop will open file picker (expected).
+  const openCamera = () => {
+    if (submitting) return;
+    if (inputRef.current) inputRef.current.click();
+  };
 
   return (
     <Modal
       open={open}
       title={item ? `Complete: ${title}` : "Complete item"}
       onClose={onClose}
-      subtitle={evidenceRequired ? "Proof required for this item." : "Proof optional — you can still complete it."}
+      subtitle={
+        evidenceRequired
+          ? "Take a photo to submit."
+          : "Photo is optional."
+      }
     >
-      {item ? (
-        <div className="space-y-4">
-          {/* Requirement banner */}
+      {!item ? null : (
+        <div className="space-y-3 sm:space-y-4">
+          {/* Top banner: tighter spacing so it doesn’t feel bulky on mobile */}
           <div
-            className={[
-              "rounded-2xl border p-4",
-              evidenceRequired ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50",
-            ].join(" ")}
+            className={classNames(
+              "rounded-2xl border p-3 sm:p-4",
+              evidenceRequired
+                ? "border-amber-200 bg-amber-50"
+                : "border-gray-200 bg-gray-50"
+            )}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs text-gray-500 flex items-center gap-2">
+                <p className="text-[11px] text-gray-700 font-semibold flex items-center gap-2">
                   <Info className="w-4 h-4 text-gray-400" />
-                  Tip
+                  Keep it quick
                 </p>
 
                 <p className="text-[12px] text-gray-700 mt-2 leading-snug">
-                  Quick proof works best: machine display, bar on rack, treadmill screen, or a selfie in the gym.
+                  Snap the machine display, bar on rack, treadmill screen, or a quick selfie in the gym.
                 </p>
 
-                <div className="mt-3">
+                <div className="mt-2">
                   {evidenceRequired ? (
                     <Pill tone="warn">
                       <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                      Evidence required
+                      Photo required
                     </Pill>
                   ) : (
-                    <Pill>Evidence optional</Pill>
+                    <Pill>Photo optional</Pill>
                   )}
                 </div>
               </div>
 
-              {/* Close button for fast mobile UX */}
+              {/* Close for fast mobile */}
               <button
                 type="button"
                 onClick={onClose}
@@ -119,19 +284,18 @@ export default function CompleteItemModal({
             </div>
           </div>
 
-          {/* Upload */}
-          <div className="rounded-2xl border border-gray-200 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-gray-900">Upload proof</p>
-                <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-                  On mobile, this may open your camera. Photos work best.
-                </p>
-              </div>
-
-              {/* requirement chip (mobile-friendly) */}
-              <div className="shrink-0">
-                {evidenceRequired ? (
+          {/* Upload / Camera card */}
+          <Card>
+            <SectionTitle
+              icon={<Camera className="w-4 h-4 text-[#46769B]" />}
+              title="Photo"
+              subtitle={
+                evidenceRequired
+                  ? "Required — take a quick pic and submit."
+                  : "Optional — take a pic if you want."
+              }
+              right={
+                evidenceRequired ? (
                   <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900">
                     Required
                   </span>
@@ -139,96 +303,111 @@ export default function CompleteItemModal({
                   <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
                     Optional
                   </span>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
 
             <div className="mt-3 grid gap-3">
-              {/* Clickable upload area */}
-              <label className="group cursor-pointer">
-                <div
-                  className={[
-                    "rounded-2xl border border-dashed p-4 transition",
-                    evidenceRequired
-                      ? "border-amber-300 bg-amber-50/40 hover:bg-amber-50"
-                      : "border-gray-300 bg-gray-50 hover:bg-gray-100",
-                  ].join(" ")}
+              {/* Primary “Take photo” action (simple for athletes) */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  onClick={openCamera}
+                  disabled={submitting}
+                  className="w-full sm:w-auto"
+                  title="Open camera / choose photo"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl border border-gray-200 bg-white p-2 shrink-0">
-                      <Upload className="w-5 h-5 text-gray-700" />
-                    </div>
+                  <Camera className="w-4 h-4" />
+                  {captureBtnLabel}
+                </Button>
 
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {selectedFile ? "Change file" : "Tap to choose a photo"}
-                      </p>
-                      <p className="text-[12px] text-gray-600 truncate">
-                        {selectedFile ? fileLabel(selectedFile) : evidenceRequired ? "Required for this item" : "Optional for this item"}
-                      </p>
-                    </div>
+                {/* Secondary “Upload” action for clarity (same input) */}
+                <Button
+                  variant="secondary"
+                  onClick={openCamera}
+                  disabled={submitting}
+                  className="w-full sm:w-auto"
+                  title="Choose from library"
+                >
+                  <Upload className="w-4 h-4" />
+                  Choose file
+                </Button>
+              </div>
+
+              {/* Hidden input (camera capture on mobile) */}
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => onPickFile?.(e.target.files?.[0] || null)}
+                className="hidden"
+              />
+
+              {/* File label / quick status */}
+              <div
+                className={classNames(
+                  "rounded-2xl border p-3",
+                  selectedFile ? "border-blue-200 bg-blue-50/40" : "border-gray-200 bg-gray-50"
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="h-9 w-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-4 h-4 text-gray-600" />
+                  </span>
+
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold text-gray-900">
+                      {selectedFile ? "Photo selected" : "No photo selected"}
+                    </p>
+                    <p className="text-[12px] text-gray-600 truncate">
+                      {selectedFile
+                        ? fileLabel(selectedFile)
+                        : evidenceRequired
+                        ? "You need a photo to submit."
+                        : "You can submit without a photo."}
+                    </p>
                   </div>
                 </div>
-
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => onPickFile?.(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-              </label>
+              </div>
 
               {/* Preview */}
               {previewUrl ? (
                 <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrl} alt="Preview" className="w-full h-56 object-cover" />
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="w-full h-52 sm:h-56 object-cover"
+                  />
                   <div className="px-3 py-2 text-[11px] text-gray-600">
-                    Looks good? Hit <span className="font-semibold">{submitLabel}</span>.
+                    {evidenceRequired
+                      ? "Looks good — submit when ready."
+                      : "Optional photo attached — submit when ready."}
                   </div>
                 </div>
-              ) : (
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                  <div className="flex items-start gap-2">
-                    <span className="h-9 w-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center shrink-0">
-                      <ImageIcon className="w-4 h-4 text-gray-600" />
-                    </span>
-                    <p className="text-[12px] text-gray-600 leading-snug">
-                      {evidenceRequired
-                        ? "You must select a photo to submit this item."
-                        : "You can submit without a photo, but uploading helps your coach approve faster."}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Note */}
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-extrabold text-gray-900">Note to coach (optional)</p>
-                  <p className="text-[11px] text-gray-500 shrink-0">{noteLen}/500</p>
-                </div>
-
-                <textarea
-                  className="mt-2 w-full min-h-[96px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/40"
-                  placeholder="Example: changed weight, felt easy, modified exercise, short on time…"
-                  value={noteText}
-                  maxLength={500}
-                  onChange={(e) => onChangeNote?.(e.target.value)}
-                />
-              </div>
+              ) : null}
             </div>
-          </div>
+          </Card>
+
+          {/* Notes dropdown (optional, keeps it simple) */}
+          <NotesDropdown
+            value={noteText}
+            onChange={onChangeNote}
+            disabled={submitting}
+          />
 
           {/* Actions (mobile-safe stacking) */}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
             <Button variant="secondary" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
 
             <Button onClick={onSubmit} disabled={!canSubmit}>
-              <Camera className="w-4 h-4" />
+              {evidenceRequired ? (
+                <Camera className="w-4 h-4" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
               {submitting ? "Submitting…" : submitLabel}
             </Button>
           </div>
@@ -237,12 +416,18 @@ export default function CompleteItemModal({
           {evidenceRequired && !selectedFile ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-[12px] text-amber-900 font-semibold">
-                A photo is required for this item before you can submit.
+                Photo required — take one before submitting.
               </p>
             </div>
           ) : null}
+
+          {/* Tiny help text (super minimal, but reduces confusion) */}
+          <p className="text-[11px] text-gray-500 leading-snug">
+            On mobile, <span className="font-semibold">Take photo</span> should open your camera.
+            If it doesn’t, your browser may ask whether to use the camera or photo library.
+          </p>
         </div>
-      ) : null}
+      )}
     </Modal>
   );
 }

@@ -1,3 +1,4 @@
+// components/athlete-today/NutritionCard.jsx
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
@@ -46,10 +47,7 @@ export default function NutritionCard({
     [nutritionCompletion]
   );
 
-  const counts = useMemo(
-    () => computeNutritionCounts(completion),
-    [completion]
-  );
+  const counts = useMemo(() => computeNutritionCounts(completion), [completion]);
 
   const coachNotes = useMemo(() => pickCoachNotes({ planJson }), [planJson]);
 
@@ -73,10 +71,8 @@ export default function NutritionCard({
 
   const subtitle = useMemo(() => {
     const d = safeText(selectedDate);
-    if (isISODateOnly(d)) {
-      return `Suggested targets for ${fmtHumanDate(d)} — built for real life (especially campus dining).`;
-    }
-    return "Suggested targets by meal + daily macros from your coach.";
+    if (isISODateOnly(d)) return `Suggested targets for ${fmtHumanDate(d)}.`;
+    return "Suggested targets by meal + daily macros.";
   }, [selectedDate]);
 
   const showUpcoming = Boolean(
@@ -101,12 +97,11 @@ export default function NutritionCard({
         metaEff={metaEff}
         counts={counts}
         onRefresh={onRefresh}
-        onOpenNutrition={onOpenNutrition}
       />
 
       {loading ? (
         <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">Loading nutrition plan…</p>
+          <p className="text-sm text-gray-600">Loading nutrition…</p>
         </div>
       ) : err ? (
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
@@ -125,8 +120,10 @@ export default function NutritionCard({
         />
       ) : (
         <div className="mt-4 space-y-4 overflow-visible">
+          {/* ✅ Daily Targets at the top */}
           <DailyTargets daily={daily} dailyHydrationOz={dailyHydrationOz} />
 
+          {/* Meals / checks */}
           <MealTargets
             mealBlocks={mealBlocks}
             completion={completion}
@@ -134,6 +131,7 @@ export default function NutritionCard({
             onSetCompletion={setCompletion}
           />
 
+          {/* Optional panels (collapsed) */}
           <SupplementsPanel
             open={suppOpen}
             onToggle={() => setSuppOpen((v) => !v)}

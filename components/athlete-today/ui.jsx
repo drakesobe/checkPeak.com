@@ -28,7 +28,6 @@ function pad2(n) {
 }
 
 export function toISODateLocal(d) {
-  // local YYYY-MM-DD (no timezone shift)
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
@@ -39,7 +38,6 @@ export function addDays(date, days) {
 }
 
 export function labelForDate(iso) {
-  // iso: YYYY-MM-DD
   const d = new Date(`${iso}T12:00:00`);
   const today = new Date();
   const todayIso = toISODateLocal(today);
@@ -60,11 +58,18 @@ export function prettyDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/**
+ * statusTone
+ * - broadened for your real statuses
+ */
 export function statusTone(status) {
   const s = String(status || "").toLowerCase();
+
   if (s === "completed") return "good";
-  if (s === "assigned") return "warn";
+  if (s === "pending_review" || s === "needs_info" || s === "assigned") return "warn";
+  if (s === "rejected") return "bad";
   if (s === "draft") return "neutral";
+
   return "neutral";
 }
 
@@ -72,14 +77,12 @@ export function statusTone(status) {
 /* UI atoms                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export function Pill({ children, tone = "neutral" }) {
+export function Pill({ children, tone = "neutral", className = "" }) {
   const toneCls =
-    tone === "attention"
+    tone === "attention" || tone === "bad"
       ? "bg-red-50 text-red-800 border-red-200"
       : tone === "warn"
       ? "bg-amber-50 text-amber-800 border-amber-200"
-      : tone === "bad"
-      ? "bg-red-50 text-red-800 border-red-200"
       : tone === "good"
       ? "bg-emerald-50 text-emerald-800 border-emerald-200"
       : "bg-gray-100 text-gray-700 border-gray-200";
@@ -87,8 +90,12 @@ export function Pill({ children, tone = "neutral" }) {
   return (
     <span
       className={classNames(
-        "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
-        toneCls
+        "inline-flex items-center rounded-full border",
+        "px-2 py-0.5 sm:px-2.5 sm:py-1",
+        "text-[10px] sm:text-[11px] font-semibold leading-none whitespace-nowrap",
+        "tabular-nums",
+        toneCls,
+        className
       )}
     >
       {children}
@@ -106,7 +113,8 @@ export function Button({
   title = "",
 }) {
   const base =
-    "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition";
+    "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition whitespace-nowrap";
+  const size = "px-3 py-2 sm:px-4 sm:py-2 text-xs sm:text-sm";
   const styles =
     variant === "primary"
       ? "bg-[#46769B] text-white hover:brightness-110"
@@ -122,6 +130,7 @@ export function Button({
       title={title}
       className={classNames(
         base,
+        size,
         styles,
         disabled ? "opacity-70 cursor-not-allowed" : "",
         className
@@ -132,7 +141,34 @@ export function Button({
   );
 }
 
+/**
+ * Modal
+ * Improvements:
+ * - Escape closes
+ * - Locks background scroll while open (mobile too)
+ * - Clicking inside panel does NOT close
+ */
 export function Modal({ open, title, subtitle, children, onClose }) {
+  // ESC to close
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // Scroll lock
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -145,11 +181,23 @@ export function Modal({ open, title, subtitle, children, onClose }) {
         aria-label="Close modal overlay"
       />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
-          <div className="p-5 border-b flex items-start justify-between gap-4">
+        <div
+          className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title || "Modal"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-4 sm:p-5 border-b flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
-              {subtitle ? <p className="text-[12px] text-gray-500 mt-1">{subtitle}</p> : null}
+              <p className="text-base sm:text-lg font-extrabold text-gray-900 truncate">
+                {title}
+              </p>
+              {subtitle ? (
+                <p className="text-[11px] sm:text-[12px] text-gray-500 mt-1">
+                  {subtitle}
+                </p>
+              ) : null}
             </div>
             <button
               className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50"
@@ -161,7 +209,7 @@ export function Modal({ open, title, subtitle, children, onClose }) {
             </button>
           </div>
 
-          <div className="p-5">{children}</div>
+          <div className="p-4 sm:p-5">{children}</div>
         </div>
       </div>
     </div>
@@ -169,46 +217,27 @@ export function Modal({ open, title, subtitle, children, onClose }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Swipe row (enhanced “skim / lane” feel)                                    */
+/* Swipe row                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/**
- * SwipeRow
- * - Feels like a “skimmer lane”: as you drag, an action rail reveals underneath.
- * - Has elastic drag (resistance as you near max), and a crisp commit threshold.
- * - Prevents vertical scroll lock unless the gesture is clearly horizontal.
- * - Supports optional `actionLabel` and `actionIcon` slot (keeps default if omitted).
- *
- * Props:
- * - children: row content
- * - onCommit: called when swipe exceeds threshold on release (or if "snap" completes)
- * - disabled: disables interactions
- * - hint: small rail text (e.g. "Swipe right to upload")
- * - actionLabel: bigger rail label (e.g. "Upload")
- * - actionIcon: React node (e.g. <Upload className="..." />)
- * - maxDx: how far the foreground can travel (default 160)
- * - threshold: commit threshold (default 96)
- */
 export function SwipeRow({
   children,
   onCommit,
   disabled = false,
-  hint = "Swipe right to upload",
-  actionLabel = "Upload",
+  hint = "Swipe right",
+  actionLabel = "Done",
   actionIcon = null,
-  maxDx = 160,
-  threshold = 96,
+  maxDx = 140,
+  threshold = 92,
+  railTone = "blue",
 }) {
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
-
-  // We only “lock” into horizontal mode once the user clearly swipes sideways.
   const [locked, setLocked] = useState(false);
 
   const start = useRef({ x: 0, y: 0 });
   const rafRef = useRef(0);
 
-  // Smooth performance: apply dx updates with rAF batching
   const setDxRaf = (next) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => setDx(next));
@@ -220,14 +249,62 @@ export function SwipeRow({
     };
   }, []);
 
-  // “Elastic” resistance near max
+  // If disabled flips on, reset immediately
+  useEffect(() => {
+    if (disabled) {
+      setDragging(false);
+      setLocked(false);
+      setDx(0);
+    }
+  }, [disabled]);
+
+  const colors = useMemo(() => {
+    if (railTone === "emerald") {
+      return {
+        railBg: "from-emerald-50 to-emerald-100/40",
+        railText: "text-emerald-800",
+        railSub: "text-emerald-700/80",
+        railBorder: "border-emerald-200",
+        railBar: "bg-emerald-600",
+        iconBorder: "border-emerald-200",
+      };
+    }
+    if (railTone === "gray") {
+      return {
+        railBg: "from-gray-50 to-gray-100/40",
+        railText: "text-gray-800",
+        railSub: "text-gray-700/80",
+        railBorder: "border-gray-200",
+        railBar: "bg-gray-800",
+        iconBorder: "border-gray-200",
+      };
+    }
+    return {
+      railBg: "from-blue-50 to-blue-100/40",
+      railText: "text-[#2F5E7A]",
+      railSub: "text-[#2F5E7A]/80",
+      railBorder: "border-blue-200",
+      railBar: "bg-[#46769B]",
+      iconBorder: "border-blue-200",
+    };
+  }, [railTone]);
+
   const applyResistance = (raw) => {
     const clamped = Math.max(0, raw);
     if (clamped <= maxDx) return clamped;
-
-    // resistance: additional pixels beyond max get reduced heavily
     const extra = clamped - maxDx;
     return maxDx + extra * 0.18;
+  };
+
+  const reset = () => {
+    setDx(0);
+    setLocked(false);
+  };
+
+  const commit = () => {
+    setDx(0);
+    setLocked(false);
+    onCommit?.();
   };
 
   const onDown = (e) => {
@@ -245,52 +322,35 @@ export function SwipeRow({
     const rawDx = pt.clientX - start.current.x;
     const rawDy = pt.clientY - start.current.y;
 
-    // determine lock
     if (!locked) {
       const ax = Math.abs(rawDx);
       const ay = Math.abs(rawDy);
 
-      // If user is scrolling vertically, do NOT hijack.
       if (ay > 10 && ay > ax * 1.2) {
-        // let scroll happen; also stop dragging visuals
         setDragging(false);
-        setLocked(false);
-        setDxRaf(0);
+        reset();
         return;
       }
-
-      // lock into horizontal when clear intent
       if (ax > 10 && ax > ay) setLocked(true);
     }
 
     if (!locked) return;
 
-    // When locked, prevent page scroll (touch) so swipe feels crisp
     if (e.cancelable && e.touches) e.preventDefault();
 
-    // Only allow swipe to the right
     const next = applyResistance(rawDx);
     setDxRaf(Math.min(next, maxDx + 60));
-  };
-
-  const reset = () => setDx(0);
-
-  const commit = () => {
-    setDx(0);
-    onCommit?.();
   };
 
   const onUp = () => {
     if (!dragging) return;
     setDragging(false);
 
-    // If not locked, treat as a tap/no-op
     if (!locked) {
       reset();
       return;
     }
 
-    // Commit if threshold met
     if (dx >= threshold) {
       commit();
       return;
@@ -299,18 +359,12 @@ export function SwipeRow({
     reset();
   };
 
-  // Progress values for UI rail
   const pct = Math.max(0, Math.min(1, dx / threshold));
-  const glow = pct > 0.65;
-  const railOpacity = Math.min(1, 0.22 + pct * 0.55);
-  const railScale = 0.98 + pct * 0.02;
+  const railOpacity = Math.min(1, 0.15 + pct * 0.5);
 
   return (
     <div
-      className={classNames(
-        "relative select-none",
-        disabled ? "opacity-[0.92]" : ""
-      )}
+      className={classNames("relative", disabled ? "opacity-[0.92]" : "")}
       onMouseDown={onDown}
       onMouseMove={onMove}
       onMouseUp={onUp}
@@ -321,77 +375,67 @@ export function SwipeRow({
       role="group"
       aria-label={hint}
       style={{
-        // Helps iOS not delay touch; gives a snappy feel
         touchAction: disabled ? "auto" : "pan-y",
       }}
     >
-      {/* Background action rail */}
       <div
         className={classNames(
-          "absolute inset-0 rounded-2xl border flex items-center justify-end pr-4 overflow-hidden",
-          glow ? "border-blue-200" : "border-blue-100"
+          "absolute inset-0 rounded-2xl border overflow-hidden",
+          colors.railBorder
         )}
-        style={{
-          background: `linear-gradient(90deg, rgba(70,118,155,0.08), rgba(70,118,155,${railOpacity}))`,
-        }}
       >
-        {/* Rail content */}
         <div
-          className="flex items-center gap-3"
-          style={{
-            transform: `scale(${railScale})`,
-            transition: dragging ? "none" : "transform 160ms ease",
-          }}
-        >
-          <div className="text-right">
-            <div className="text-[#46769B] font-extrabold text-sm leading-tight">
-              {actionLabel}
-            </div>
-            <div className="text-[11px] text-[#46769B]/80 font-semibold">
-              {hint}
-            </div>
-          </div>
+          className={classNames("absolute inset-0 bg-gradient-to-r", colors.railBg)}
+          style={{ opacity: railOpacity }}
+        />
 
-          {/* Icon bubble */}
-          <div
-            className={classNames(
-              "h-10 w-10 rounded-2xl border flex items-center justify-center",
-              glow ? "bg-white border-blue-200" : "bg-white/80 border-blue-100"
-            )}
-            style={{
-              transform: `translateX(${Math.max(0, (1 - pct) * 10)}px)`,
-              transition: dragging ? "none" : "transform 160ms ease",
-            }}
-          >
-            {actionIcon ? (
-              actionIcon
-            ) : (
-              <span className="text-[#46769B] text-sm font-extrabold">→</span>
-            )}
+        <div className="absolute inset-0 flex items-center justify-end pr-4">
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className={classNames("text-sm font-extrabold leading-tight", colors.railText)}>
+                {actionLabel}
+              </div>
+              <div className={classNames("text-[11px] font-semibold leading-tight", colors.railSub)}>
+                {hint}
+              </div>
+            </div>
+
+            <div
+              className={classNames(
+                "h-10 w-10 rounded-2xl border bg-white flex items-center justify-center",
+                colors.iconBorder
+              )}
+              style={{
+                transform: `translateX(${Math.max(0, (1 - pct) * 10)}px)`,
+                transition: dragging ? "none" : "transform 160ms ease",
+              }}
+            >
+              {actionIcon ? actionIcon : <span className={colors.railText}>→</span>}
+            </div>
           </div>
         </div>
 
-        {/* Progress bar */}
         <div className="absolute left-0 top-0 bottom-0 w-1.5">
           <div
-            className="h-full bg-[#46769B]"
+            className={classNames("h-full", colors.railBar)}
             style={{
               width: "100%",
               transform: `scaleY(${Math.max(0.12, pct)})`,
               transformOrigin: "bottom",
-              opacity: 0.55 + pct * 0.35,
+              opacity: 0.45 + pct * 0.45,
               transition: dragging ? "none" : "transform 160ms ease, opacity 160ms ease",
             }}
           />
         </div>
       </div>
 
-      {/* Foreground (actual row content) */}
       <div
         className="relative rounded-2xl"
         style={{
           transform: `translateX(${dx}px)`,
-          transition: dragging ? "none" : "transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+          transition: dragging
+            ? "none"
+            : "transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1)",
         }}
       >
         {children}

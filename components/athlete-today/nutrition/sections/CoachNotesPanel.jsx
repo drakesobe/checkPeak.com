@@ -1,25 +1,13 @@
-// components/athlete-today/nutrition/sections/CoachNotesPanel.jsx
 "use client";
 
 import { useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  ChevronDown,
-  ChevronUp,
-  NotebookText,
-  Info,
-  Sparkles,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, NotebookText, Info } from "lucide-react";
 import { cx, safeText } from "../helpers";
 
-/**
- * CoachNotesPanel
- * Mobile spacing + wrapping fixes:
- * ✅ no accidental 2-line chips (whitespace-nowrap)
- * ✅ header layout never “pushes” into weird wraps (flex-col on xs, row on sm+)
- * ✅ consistent vertical rhythm (gap + leading)
- * ✅ safe long text handling (break-words + whitespace-pre-wrap)
- */
+/* -------------------------------------------------------------------------- */
+/* Tiny UI                                                                    */
+/* -------------------------------------------------------------------------- */
 
 function SectionCard({ children, className = "" }) {
   return (
@@ -43,10 +31,12 @@ function IconBubble({ children }) {
   );
 }
 
-function TinyChip({ children, tone = "soft", className = "" }) {
+function Chip({ children, tone = "neutral", className = "" }) {
   const cls =
     tone === "ok"
       ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "blue"
+      ? "border-blue-200 bg-blue-50 text-blue-900"
       : tone === "warn"
       ? "border-amber-200 bg-amber-50 text-amber-900"
       : "border-gray-200 bg-gray-100 text-gray-700";
@@ -65,76 +55,53 @@ function TinyChip({ children, tone = "soft", className = "" }) {
   );
 }
 
-function NotesCard({ text }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-      <div className="flex items-start gap-3">
-        <span className="shrink-0 h-10 w-10 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center">
-          <NotebookText className="w-5 h-5 text-gray-800" />
-        </span>
-
-        <div className="min-w-0 flex-1">
-          {/* On mobile: stack label + chip so nothing squeezes into weird wraps */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <p className="text-[11px] text-gray-500 font-semibold leading-none">
-              Coach notes
-            </p>
-            <TinyChip tone="soft" className="w-fit">
-              <Info className="w-3.5 h-3.5" />
-              Guidance
-            </TinyChip>
-          </div>
-
-          <p className="text-sm text-gray-800 mt-3 leading-relaxed whitespace-pre-wrap break-words">
-            {text}
-          </p>
-
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-            <p className="text-[12px] text-gray-800 font-semibold leading-snug">
-              Use these as guardrails.
-            </p>
-            <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-              Keep it simple: protein + hydration + reasonable portions. Execute with consistency.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+function firstLinePreview(text) {
+  const s = String(text || "").trim();
+  if (!s) return "";
+  const line = s.split("\n").find(Boolean) || s;
+  return line.replace(/\s+/g, " ").slice(0, 120);
 }
 
-function EmptyCard() {
+function NotesBody({ text }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-      <p className="text-sm font-semibold text-gray-900 leading-snug">
-        No coach notes on this plan.
-      </p>
-      <p className="text-[12px] text-gray-600 mt-2 leading-snug">
-        If you’re unsure what to do, focus on the basics: hit protein each meal and stay on top of hydration.
+      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
+        {text}
       </p>
     </div>
   );
 }
+
+function EmptyBody() {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+      <p className="text-sm font-semibold text-gray-900">No coach notes</p>
+      <p className="text-[12px] text-gray-600 mt-1 leading-snug">
+        Keep it simple: protein each meal + hydration.
+      </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export default function CoachNotesPanel({ open, onToggle, coachNotes }) {
   const notes = safeText(coachNotes);
   const hasNotes = Boolean(notes);
+  const preview = useMemo(() => firstLinePreview(notes), [notes]);
 
-  const headerChip = useMemo(() => {
+  // ✅ simplified: no sparkle, no "Notes" chip
+  const statusChip = useMemo(() => {
     if (!hasNotes) {
       return (
-        <TinyChip tone="soft">
+        <Chip tone="neutral">
           <Info className="w-3.5 h-3.5" />
           None
-        </TinyChip>
+        </Chip>
       );
     }
-    return (
-      <TinyChip tone="ok">
-        <Sparkles className="w-3.5 h-3.5" />
-        View
-      </TinyChip>
-    );
   }, [hasNotes]);
 
   return (
@@ -148,7 +115,6 @@ export default function CoachNotesPanel({ open, onToggle, coachNotes }) {
         )}
         aria-expanded={open}
       >
-        {/* Mobile-safe header layout: stack meta under title, keep chevron pinned */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <IconBubble>
@@ -156,16 +122,19 @@ export default function CoachNotesPanel({ open, onToggle, coachNotes }) {
             </IconBubble>
 
             <div className="min-w-0 pt-[1px]">
-              {/* On xs: title + chip stack; on sm+: row */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-extrabold text-gray-900 leading-tight">
                   Coach Notes
                 </p>
-                <span className="shrink-0 w-fit">{headerChip}</span>
+                <span className="shrink-0">{statusChip}</span>
               </div>
 
-              <p className="text-xs text-gray-500 mt-1 leading-snug">
-              </p>
+              {/* Closed: show a single preview line (no extra noise). Open: hide this. */}
+              {!open ? (
+                <p className="text-[12px] text-gray-500 mt-1 leading-snug truncate">
+                  {hasNotes ? preview : "No notes on this plan."}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -189,9 +158,9 @@ export default function CoachNotesPanel({ open, onToggle, coachNotes }) {
             transition={{ duration: 0.18 }}
             className="overflow-hidden"
           >
-            <div className="mt-4 space-y-3">
-              <div className="h-px w-full bg-gray-200" />
-              {hasNotes ? <NotesCard text={notes} /> : <EmptyCard />}
+            <div className="mt-4">
+              <div className="h-px w-full bg-gray-200 mb-3" />
+              {hasNotes ? <NotesBody text={notes} /> : <EmptyBody />}
             </div>
           </motion.div>
         ) : null}

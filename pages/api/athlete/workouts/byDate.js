@@ -212,9 +212,19 @@ export default async function handler(req, res) {
       const id = row.id;
       const it = row?.fields || {};
 
+      // Completion record (truth for "submitted/pending_review/completed/rejected")
       const completionRec = completionByWorkoutItemId.get(id);
       const cf = completionRec?.fields || {};
-      const status = statusNorm(cf[WC_FIELDS.Status] || "");
+
+      const completionStatus = statusNorm(cf[WC_FIELDS.Status] || "");
+
+      // WorkoutItems.Status single select (your new column)
+      const itemStatus = statusNorm(it.Status || "");
+
+      // ✅ Athlete-facing status:
+      // prefer completionStatus (more correct), fallback to itemStatus
+      const status = completionStatus || itemStatus || "";
+
       const doneForAthlete = isAthleteDone(status);
 
       return {
@@ -231,8 +241,12 @@ export default async function handler(req, res) {
         Instructions: it.Instructions ?? "",
         VideoURL: it.VideoURL ?? it.Video ?? "",
 
+        // ✅ For your UI logic (row turns green)
         Completed: doneForAthlete ? "true" : "false",
-        Status: status || "",
+        Status: status,               // athlete-facing status (completion > item)
+        CompletionStatus: completionStatus, // helpful for debugging
+        ItemStatus: itemStatus,            // helpful for debugging
+
         CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
         Note: cf[WC_FIELDS.AttachmentSummary] || "",
         CompletionId: completionRec?.id || "",

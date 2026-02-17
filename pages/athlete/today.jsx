@@ -9,6 +9,9 @@ import TodayHeader from "@/components/athlete-today/TodayHeader";
 import DateStrip from "@/components/athlete-today/DateStrip";
 import WorkoutCard from "@/components/athlete-today/WorkoutCard";
 import CompleteItemModal from "@/components/athlete-today/CompleteItemModal";
+// If you DID NOT keep the wrapper re-export, use this instead:
+// import CompleteItemModal from "@/components/athlete-today/complete-item-modal/CompleteItemModal";
+
 import NutritionCard from "@/components/athlete-today/NutritionCard";
 
 // IMPORTANT: point to ui.jsx explicitly to avoid any path/alias weirdness
@@ -46,7 +49,10 @@ function makeEmptyNutritionCompletion() {
  * => 4 meals * 2 = 8 total
  */
 function computeNutritionCounts(nutritionCompletion) {
-  const c = nutritionCompletion && typeof nutritionCompletion === "object" ? nutritionCompletion : {};
+  const c =
+    nutritionCompletion && typeof nutritionCompletion === "object"
+      ? nutritionCompletion
+      : {};
   const keys = ["breakfast", "lunch", "afternoon", "dinner"];
 
   let done = 0;
@@ -108,6 +114,8 @@ function normalizeNutritionCompletionShape(raw) {
   return out;
 }
 
+/* ---------------- UI: tabs ---------------- */
+
 function Tabs({ value, onChange }) {
   return (
     <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-2">
@@ -162,13 +170,11 @@ export default function AthleteToday() {
   /* ---------------- tabs (persist in URL) ---------------- */
 
   const tabFromUrl = useMemo(() => {
-    // router.query can be empty on first render; still safe
     return normalizeTab(router?.query?.tab);
   }, [router?.query?.tab]);
 
   const [activeTab, setActiveTab] = useState("workout");
 
-  // Sync state <- URL when it changes
   useEffect(() => {
     setActiveTab(tabFromUrl);
   }, [tabFromUrl]);
@@ -178,15 +184,15 @@ export default function AthleteToday() {
       const t = normalizeTab(next);
       setActiveTab(t);
 
-      // Persist in URL without navigation refresh
       try {
         const nextQuery = { ...(router.query || {}), tab: t };
-        router.replace({ pathname: router.pathname, query: nextQuery }, undefined, {
-          shallow: true,
-          scroll: false,
-        });
+        router.replace(
+          { pathname: router.pathname, query: nextQuery },
+          undefined,
+          { shallow: true, scroll: false }
+        );
       } catch {
-        // no-op if router not ready
+        // router not ready
       }
     },
     [router]
@@ -236,27 +242,28 @@ export default function AthleteToday() {
 
   /**
    * ✅ Lifted state: NutritionCard writes; TodayHeader reads.
-   * PLUS: we persist to localStorage so athlete sees the same checkmarks when returning.
+   * PLUS: persist to localStorage so athlete sees same checkmarks on return.
    */
-  const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyNutritionCompletion);
+  const [nutritionCompletion, setNutritionCompletion] = useState(
+    makeEmptyNutritionCompletion
+  );
 
-  // A stable key for persistence: per-athlete, per-date
   const nutritionCompletionKey = useMemo(() => {
-    const email = String(user?.Email || user?.email || "").trim().toLowerCase();
-    const token = String(user?.token || user?.Token || user?.athleteToken || "").trim();
+    const email = String(user?.Email || user?.email || "")
+      .trim()
+      .toLowerCase();
+    const token = String(
+      user?.token || user?.Token || user?.athleteToken || ""
+    ).trim();
     const who = token || email || "athlete";
     const day = String(selectedDate || "").trim() || "unknown-date";
     return `checkpeak:nutritionCompletion:${who}:${day}`;
   }, [user, selectedDate]);
 
-  // Prevent re-saving immediately while we are hydrating state from storage
   const hydratingRef = useRef(false);
 
-  // ✅ Load completion from storage whenever date changes (or athlete changes)
   useEffect(() => {
-    if (!authReady) return;
-    if (!user) return;
-    if (!isAthlete) return;
+    if (!authReady || !user || !isAthlete) return;
 
     hydratingRef.current = true;
 
@@ -273,61 +280,50 @@ export default function AthleteToday() {
     } catch {
       setNutritionCompletion(makeEmptyNutritionCompletion());
     } finally {
-      // allow next tick before enabling save
       setTimeout(() => {
         hydratingRef.current = false;
       }, 0);
     }
   }, [authReady, user, isAthlete, nutritionCompletionKey]);
 
-  // ✅ Persist completion whenever athlete toggles something
   useEffect(() => {
-    if (!authReady) return;
-    if (!user) return;
-    if (!isAthlete) return;
+    if (!authReady || !user || !isAthlete) return;
     if (hydratingRef.current) return;
-
-    // only persist if key is sane
     if (!nutritionCompletionKey) return;
 
     const payload = normalizeNutritionCompletionShape(nutritionCompletion);
     lsSafeSet(nutritionCompletionKey, JSON.stringify(payload));
   }, [authReady, user, isAthlete, nutritionCompletionKey, nutritionCompletion]);
 
-  // Optional: NutritionCard can also read hydration directly from nutrition.daily.
   const dailyHydrationOz = useMemo(() => {
-    // Preferred: nutrition.daily.hydrationOz (new shape)
     const v1 = nutrition?.daily?.hydrationOz;
-
-    // Fallbacks (older/alternate shapes)
     const v2 = nutrition?.daily?.DailyHydration;
     const v3 = nutrition?.planJson?.daily?.hydrationOz;
     const v4 = nutrition?.planJson?.daily?.DailyHydration;
-
     return safeNum(v1) ?? safeNum(v2) ?? safeNum(v3) ?? safeNum(v4) ?? null;
   }, [nutrition?.daily, nutrition?.planJson]);
 
   /* ---------------- navigation actions ---------------- */
 
   const goPrev = useCallback(() => {
-    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1)));
+    setSelectedDate((d) =>
+      toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))
+    );
   }, [setSelectedDate]);
 
   const goNext = useCallback(() => {
-    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1)));
+    setSelectedDate((d) =>
+      toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1))
+    );
   }, [setSelectedDate]);
 
   const refresh = useCallback(() => {
     reload(selectedDate);
     nutrition.reload(selectedDate);
-    // completion is local; no fetch required (and still persisted)
   }, [reload, selectedDate, nutrition]);
 
-  // Load workouts on auth + date changes
   useEffect(() => {
-    if (!authReady) return;
-    if (!user) return;
-    if (!isAthlete) return;
+    if (!authReady || !user || !isAthlete) return;
     reload(selectedDate);
   }, [authReady, user, isAthlete, selectedDate, reload]);
 
@@ -344,7 +340,9 @@ export default function AthleteToday() {
   if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
   if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
 
-  const isSubmittingActiveItem = Boolean(submittingId && activeItem?.id === submittingId);
+  const isSubmittingActiveItem = Boolean(
+    submittingId && activeItem?.id === submittingId
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -356,7 +354,6 @@ export default function AthleteToday() {
           loading={loading}
           err={err}
           progress={progress}
-          // ✅ Header can show nutrition progress too (overall)
           nutritionCompletion={nutritionCompletion}
           nutritionDone={nutritionCounts.done}
           nutritionTotal={nutritionCounts.total}
@@ -364,7 +361,6 @@ export default function AthleteToday() {
           onBack={() => router.push("/dashboard")}
         />
 
-        {/* “Browse Days” acts like header navigation for dates */}
         <DateStrip
           loading={loading}
           selectedDate={selectedDate}
@@ -374,10 +370,8 @@ export default function AthleteToday() {
           onSelectDate={setSelectedDate}
         />
 
-        {/* ✅ Tabs to switch between Workout / Nutrition */}
         <Tabs value={activeTab} onChange={setTab} />
 
-        {/* Workout tab content */}
         {activeTab === "workout" ? (
           <>
             <WorkoutCard
@@ -402,13 +396,13 @@ export default function AthleteToday() {
                 submitCompletion({
                   workoutItemId: String(activeItem?.id || ""),
                   evidenceRequired: String(activeItem?.EvidenceRequired || "").toLowerCase() === "true",
+                  dailyWorkoutId: String(dailyWorkout?.id || dailyWorkout?.ID || dailyWorkout?.recordId || ""),
                 })
               }
             />
           </>
         ) : null}
 
-        {/* Nutrition tab content */}
         {activeTab === "nutrition" ? (
           <NutritionCard
             loading={nutrition.loading}
@@ -425,10 +419,8 @@ export default function AthleteToday() {
             onRefresh={() => nutrition.reload(selectedDate)}
             onOpenNutrition={() => router.push("/athlete/nutrition")}
             dailyHydrationOz={dailyHydrationOz}
-            // ✅ KEY: NutritionCard updates completion; header reflects it; page persists it
             nutritionCompletion={nutritionCompletion}
             onCompletionChange={(next) => {
-              // Normalize shape to keep everything stable
               setNutritionCompletion(normalizeNutritionCompletionShape(next));
             }}
           />

@@ -1,6 +1,8 @@
+// components/athlete-today/workout/WorkoutItemRow.jsx
 "use client";
 
 import {
+  Camera,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -26,6 +28,7 @@ export default function WorkoutItemRow({
   const exercise = safeText(item?.ExerciseName || item?.Title || "Exercise");
   const evidenceRequired = asBool(item?.EvidenceRequired);
 
+  // Prefer optimistic status for instant UI feedback after submit
   const status = normStatus(optimisticStatus || item?.Status || "");
   const completedFlag = normStatus(item?.Completed) === "true";
 
@@ -34,10 +37,19 @@ export default function WorkoutItemRow({
     completedFlag,
   });
 
-  const { cardTone, toneCardCls, toneIconWrap, linkTone, railTone } = getTone({
+  const {
+    cardTone,
+    toneCardCls,
+    toneIconWrap,
+    linkTone,
+    railTone,
+    hintToneText,
+    ringCls,
+  } = getTone({
     isRejected,
     isPending,
     isCompleted,
+    isCheckedOff,
     evidenceRequired,
   });
 
@@ -48,28 +60,27 @@ export default function WorkoutItemRow({
   const videoUrl = safeText(item?.VideoURL);
   const instructions = safeText(item?.Instructions);
 
-  // ✅ Swipe action remains:
-  // - proof-required => open upload modal
-  // - no-proof => quick complete
   const swipeAction = () => {
     if (disabled) return;
     if (evidenceRequired) return onUpload?.({ ...item, id });
     onQuickComplete?.(id);
   };
 
-  // ✅ Remove the wording that was messing you up.
-  // No “swipe to upload” / no “submitted…” rail text.
-  // Keep it empty so the rail is purely visual.
-  const swipeHint = "";
+  // Keep hint minimal (this is shown in the swipe rail)
+  const swipeHint = isRejected
+    ? "Swipe to re-upload"
+    : evidenceRequired
+    ? "Swipe to upload"
+    : "Swipe to complete";
 
-  // ✅ No camera icon anywhere in the row
+  // Left icon is a quick “state” indicator (no extra emoji text in the row)
   const iconNode =
     cardTone === "pending" ? (
       <Clock className="w-5 h-5 text-sky-800" />
     ) : cardTone === "completed" ? (
       <CheckCircle2 className="w-5 h-5 text-emerald-800" />
     ) : evidenceRequired ? (
-      <Upload className="w-5 h-5 text-amber-700" />
+      <Camera className="w-5 h-5 text-amber-700" />
     ) : (
       <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
     );
@@ -78,28 +89,27 @@ export default function WorkoutItemRow({
     <SwipeRow
       disabled={disabled}
       onCommit={swipeAction}
-      // ✅ kill the “Swipe to upload” hint text
       hint={swipeHint}
-      // ✅ Keep the rail action label SHORT (no “Swipe to…” wording)
-      actionLabel={evidenceRequired ? "Uploaded" : "Done"}
-      // ✅ Replace camera with upload icon
+      actionLabel={evidenceRequired ? "Upload" : "Done"}
+      // rail icon should be subtle + consistent (don’t show “camera emoji” in the row)
       actionIcon={
         evidenceRequired ? (
-          <Upload className="w-5 h-5 text-[#46769B]" />
+          <Camera className="w-5 h-5 text-[#46769B]" />
         ) : (
           <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
         )
       }
-      railTone={railTone}
+      railTone={railTone} // expects "blue" | "emerald" | "gray" | "sky" (if you added sky to SwipeRow)
     >
       <div
         className={cx(
           "relative rounded-2xl border p-4 transition shadow-sm overflow-hidden",
           toneCardCls,
+          ringCls,
           disabled ? "opacity-[0.98]" : ""
         )}
       >
-        {/* sheen only when checked off */}
+        {/* subtle sheen only when checked off */}
         {isCheckedOff ? (
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-white/45 blur-2xl" />
@@ -123,12 +133,10 @@ export default function WorkoutItemRow({
                 {/* Header layout: title row + chips row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="font-extrabold text-gray-900 truncate">
-                      {exercise}
-                    </p>
+                    <p className="font-extrabold text-gray-900 truncate">{exercise}</p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {/* ✅ ONE status indicator */}
+                      {/* One status indicator */}
                       <StatusBadge
                         isRejected={isRejected}
                         isPending={isPending}
@@ -144,7 +152,18 @@ export default function WorkoutItemRow({
                       ) : null}
                     </div>
 
-                    {/* guidance line only when targets missing and NOT checked off */}
+                    {/* One secondary line ONLY when checked off */}
+                    {isCheckedOff ? (
+                      <p className={cx("text-[12px] mt-2 leading-snug", hintToneText)}>
+                        {isRejected
+                          ? "Rejected — upload again with corrections."
+                          : isPending
+                          ? "Submitted — coach review pending."
+                          : "Completed."}
+                      </p>
+                    ) : null}
+
+                    {/* Guidance only when targets missing and NOT checked off */}
                     {!hasText(item?.Sets) &&
                     !hasText(item?.Reps) &&
                     !weightValue &&
@@ -152,7 +171,7 @@ export default function WorkoutItemRow({
                     !hasText(item?.Rest) &&
                     !isCheckedOff ? (
                       <p className="text-[12px] text-gray-500 mt-2 leading-snug">
-                        {evidenceRequired ? "Proof required." : "Swipe to complete."}
+                        {evidenceRequired ? "Proof required — swipe to upload." : "Swipe to mark complete."}
                       </p>
                     ) : null}
                   </div>
@@ -170,13 +189,7 @@ export default function WorkoutItemRow({
                   rest={safeText(item?.Rest)}
                   rpe={safeText(item?.RPE)}
                   muted={isCheckedOff}
-                  tone={
-                    cardTone === "pending"
-                      ? "pending"
-                      : cardTone === "completed"
-                      ? "completed"
-                      : "base"
-                  }
+                  tone={cardTone === "pending" ? "pending" : cardTone === "completed" ? "completed" : "base"}
                 />
 
                 {/* Instructions */}
@@ -185,9 +198,7 @@ export default function WorkoutItemRow({
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
                       <div className="flex items-center gap-2 mb-1">
                         <Info className="w-4 h-4 text-gray-400" />
-                        <p className="text-[11px] text-gray-500 font-semibold">
-                          Coach instructions
-                        </p>
+                        <p className="text-[11px] text-gray-500 font-semibold">Coach instructions</p>
                       </div>
                       <p className="text-[12px] text-gray-700 whitespace-pre-wrap break-words leading-snug">
                         {instructions}
@@ -228,7 +239,7 @@ export default function WorkoutItemRow({
                   disabled={submitting}
                   title={evidenceRequired ? "Upload required proof" : "Upload photo / video"}
                 >
-                  <Upload className="w-4 h-4" />
+                  {evidenceRequired ? <Camera className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
                   {isRejected ? "Re-upload" : evidenceRequired ? "Upload proof" : "Upload"}
                 </Button>
 

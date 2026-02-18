@@ -37,21 +37,42 @@ function pickBestDailyWorkout(rows) {
   return scored[0]?.r || null;
 }
 
+/**
+ * WorkoutCompletions field names
+ * NOTE: We support a couple of variants for AttachmentSummary just in case
+ */
 const WC_FIELDS = {
   CompletedAt: "CompletedAt",
   Athlete: "Athlete",
+  AthleteToken: "AthleteToken",
   WorkoutItem: "WorkoutItem",
   Status: "Status",
-  AttachmentSummary: "Attachment Summary",
-  CompletionEvidence: "CompletionEvidence",
+  Attachment: "Attachment",
+  AttachmentSummaryA: "AttachmentSummary",
+  AttachmentSummaryB: "Attachment Summary",
+  ReviewNote: "ReviewNote",
+  AthleteAcknowledged: "AthleteAcknowledged",
+  AthleteAcknowledgedAt: "AthleteAcknowledgedAt",
 };
 
 function statusNorm(s) {
   return String(s || "").trim().toLowerCase();
 }
-function isAthleteDone(status) {
+
+function toBool(v) {
+  if (typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes";
+}
+
+// ✅ “done” for athlete:
+// completed OR pending_review
+// OR rejected BUT acknowledged (so no endless loop)
+function isAthleteDone(status, acknowledged) {
   const st = statusNorm(status);
-  return st === "completed" || st === "pending_review";
+  if (st === "completed" || st === "pending_review") return true;
+  if (st === "rejected" && Boolean(acknowledged)) return true;
+  return false;
 }
 
 function normalizeTextValue(v) {
@@ -66,6 +87,8 @@ function mustAthleteToken(auth) {
     auth?.athlete?.athleteToken ||
     auth?.user?.AthleteToken ||
     auth?.user?.athleteToken ||
+    auth?.AthleteToken ||
+    auth?.athleteToken ||
     "";
 
   const token = String(raw || "").trim();
@@ -157,6 +180,7 @@ export default async function handler(req, res) {
     const dateEsc = escapeAirtableString(isoDate);
     const tokenEsc = escapeAirtableString(athleteToken);
 
+    // ✅ Find DailyWorkouts for that athlete/date
     const formula = `AND(
       IS_SAME({Date}, "${dateEsc}", "day"),
       {AthleteToken} = "${tokenEsc}"
@@ -191,41 +215,68 @@ export default async function handler(req, res) {
       return ao - bo;
     });
 
-    // completions for the day
-    const wcDateFormula = `IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day")`;
-    const wcRows = await WorkoutCompletions.select({ filterByFormula: wcDateFormula, maxRecords: 200 }).firstPage();
+    // ✅ Fetch WorkoutCompletions for the day for this athlete token
+    // (tighter than pulling all completions that day)
+    const wcFormula = `AND(
+      IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day"),
+      {${WC_FIELDS.AthleteToken}} = "${tokenEsc}"
+    )`;
+
+    const wcRows = await WorkoutCompletions.select({
+      filterByFormula: wcFormula,
+      maxRecords: 500,
+    }).firstPage();
 
     const completionByWorkoutItemId = new Map();
+
     for (const r of wcRows || []) {
       const wf = r.fields || {};
-      const athleteLinks = Array.isArray(wf[WC_FIELDS.Athlete]) ? wf[WC_FIELDS.Athlete] : [];
-      if (!athleteLinks.map(String).includes(String(athleteRecordId))) continue;
 
-      const itemLinks = Array.isArray(wf[WC_FIELDS.WorkoutItem]) ? wf[WC_FIELDS.WorkoutItem] : [];
+      // extra safety: if Athlete link exists, confirm it matches
+      const athleteLinks = safeArray(wf[WC_FIELDS.Athlete]).map(String);
+      if (athleteLinks.length && !athleteLinks.includes(String(athleteRecordId))) continue;
+
+      const itemLinks = safeArray(wf[WC_FIELDS.WorkoutItem]).map(String);
       const itemId = String(itemLinks?.[0] || "").trim();
       if (!itemId) continue;
 
-      completionByWorkoutItemId.set(itemId, r);
+      // If multiple completions for the same item exist, keep the most recent CompletedAt
+      const existing = completionByWorkoutItemId.get(itemId);
+      if (!existing) {
+        completionByWorkoutItemId.set(itemId, r);
+        continue;
+      }
+
+      const exT = new Date(existing?.fields?.[WC_FIELDS.CompletedAt] || 0).getTime();
+      const nxT = new Date(wf?.[WC_FIELDS.CompletedAt] || 0).getTime();
+      if (!Number.isNaN(nxT) && nxT >= exT) completionByWorkoutItemId.set(itemId, r);
     }
 
     const items = hydrated.map((row, idx) => {
       const id = row.id;
       const it = row?.fields || {};
 
-      // Completion record (truth for "submitted/pending_review/completed/rejected")
       const completionRec = completionByWorkoutItemId.get(id);
       const cf = completionRec?.fields || {};
 
       const completionStatus = statusNorm(cf[WC_FIELDS.Status] || "");
-
-      // WorkoutItems.Status single select (your new column)
       const itemStatus = statusNorm(it.Status || "");
 
-      // ✅ Athlete-facing status:
-      // prefer completionStatus (more correct), fallback to itemStatus
+      // ✅ Athlete-facing status: completion > item
       const status = completionStatus || itemStatus || "";
 
-      const doneForAthlete = isAthleteDone(status);
+      const reviewNote = String(cf[WC_FIELDS.ReviewNote] || "").trim();
+      const athleteAcknowledged = toBool(cf[WC_FIELDS.AthleteAcknowledged]);
+      const athleteAcknowledgedAt = String(cf[WC_FIELDS.AthleteAcknowledgedAt] || "").trim();
+
+      const doneForAthlete = isAthleteDone(status, athleteAcknowledged);
+
+      const attachmentSummary =
+        String(cf[WC_FIELDS.AttachmentSummaryA] || "").trim() ||
+        String(cf[WC_FIELDS.AttachmentSummaryB] || "").trim() ||
+        "";
+
+      const attachmentArr = safeArray(cf[WC_FIELDS.Attachment]); // Airtable attachment objects
 
       return {
         id,
@@ -241,16 +292,25 @@ export default async function handler(req, res) {
         Instructions: it.Instructions ?? "",
         VideoURL: it.VideoURL ?? it.Video ?? "",
 
-        // ✅ For your UI logic (row turns green)
+        // ✅ For row UI logic
         Completed: doneForAthlete ? "true" : "false",
-        Status: status,               // athlete-facing status (completion > item)
-        CompletionStatus: completionStatus, // helpful for debugging
-        ItemStatus: itemStatus,            // helpful for debugging
+        Status: status,
 
+        // helpful debugging
+        CompletionStatus: completionStatus,
+        ItemStatus: itemStatus,
+
+        // completion payload
         CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
-        Note: cf[WC_FIELDS.AttachmentSummary] || "",
         CompletionId: completionRec?.id || "",
-        CompletionEvidence: safeArray(cf[WC_FIELDS.CompletionEvidence]),
+
+        // uploads + review
+        Note: attachmentSummary || "", // keep existing prop name (your UI uses this sometimes)
+        AttachmentSummary: attachmentSummary || "",
+        Attachment: attachmentArr,
+        ReviewNote: reviewNote,
+        AthleteAcknowledged: athleteAcknowledged,
+        AthleteAcknowledgedAt: athleteAcknowledgedAt,
       };
     });
 
@@ -273,6 +333,7 @@ export default async function handler(req, res) {
         linkedItemCount: linkedItemIds.length,
         hydratedCount: hydrated.length,
         wiFormula: wiFormula || null,
+        wcFormula,
         workoutItemsTableId: process.env.WORKOUTITEMS_TABLE_ID,
       },
     });

@@ -3,11 +3,13 @@ import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
 
+/* ---------------- helpers ---------------- */
+
 function missingEnv() {
   return {
     DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
-    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
+    WORKOUTCOMPLETIONS_TABLE_ID: !process.env.WORKOUTCOMPLETIONS_TABLE_ID, // ✅ new
   };
 }
 
@@ -15,16 +17,12 @@ function anyMissing(m) {
   return Object.values(m).some(Boolean);
 }
 
-function pick(fields, keys, fallback = "") {
-  for (const k of keys) {
-    const v = fields?.[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-  }
-  return fallback;
-}
-
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
+}
+
+function asString(v) {
+  return String(v ?? "").trim();
 }
 
 // Escape for Airtable formula string literals (double-quoted)
@@ -38,6 +36,22 @@ function firstFromLookup(v) {
   return String(v ?? "").trim();
 }
 
+function pick(fields, keys, fallback = "") {
+  for (const k of keys) {
+    const v = fields?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return fallback;
+}
+
+// Normalize “review bucket” for UI from WorkoutCompletions.Status
+function reviewBucketFromCompletionStatus(status) {
+  const st = asString(status).toLowerCase();
+  if (st === "completed") return "approved";
+  if (st === "rejected") return "needs_info";
+  return "pending"; // includes pending_review
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -47,7 +61,7 @@ export default async function handler(req, res) {
   const missing = missingEnv();
   if (anyMissing(missing)) {
     return res.status(500).json({
-      error: "DailyWorkouts Airtable env vars missing.",
+      error: "Airtable env vars missing (DailyWorkouts base).",
       missing,
       debug: { cwd: process.cwd?.() || "" },
     });
@@ -61,8 +75,8 @@ export default async function handler(req, res) {
     const sub = await requireActiveOrgSubscription(req, res, auth);
     if (!sub) return;
 
-    const orgToken = String(auth?.org?.token || auth?.token || "").trim();
-    const orgId = String(auth?.org?.id || "").trim(); // legacy fallback
+    const orgToken = asString(auth?.org?.token || auth?.token || "");
+    const orgId = asString(auth?.org?.id || ""); // legacy fallback
     if (!orgToken && !orgId) {
       return res.status(401).json({ error: "Unauthorized (missing org token/id)." });
     }
@@ -70,7 +84,9 @@ export default async function handler(req, res) {
     const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
       process.env.DAILYWORKOUTS_BASE_ID
     );
-    const table = base(process.env.DAILYWORKOUTS_TABLE_ID);
+
+    // ✅ Source of truth: WorkoutCompletions
+    const table = base(process.env.WORKOUTCOMPLETIONS_TABLE_ID);
 
     // Detect fields (best effort)
     let fieldKeys = new Set();
@@ -81,41 +97,58 @@ export default async function handler(req, res) {
 
     const hasOrgTokenField = fieldKeys.size ? fieldKeys.has("OrgToken") : true;
     const hasOrganizationField = fieldKeys.size ? fieldKeys.has("Organization") : true;
-    const hasReviewStatusField = fieldKeys.size ? fieldKeys.has("ReviewStatus") : false;
 
     const orgTokenSafe = esc(orgToken);
     const orgIdSafe = esc(orgId);
 
-    // ✅ Org match
+    // ✅ Org match formula
     const orgMatchParts = [];
 
     if (orgTokenSafe && hasOrgTokenField) {
+      // OrgToken is usually text on WorkoutCompletions
       orgMatchParts.push(`{OrgToken} = "${orgTokenSafe}"`);
-      orgMatchParts.push(`FIND("${orgTokenSafe}", ARRAYJOIN({OrgToken})) > 0`);
+      // if OrgToken is lookup/array-like, this catches it
+      orgMatchParts.push(`FIND("${orgTokenSafe}", ARRAYJOIN({OrgToken}&"")) > 0`);
     }
 
-    // Legacy fallback (linked Organization record id)
     if (orgIdSafe && hasOrganizationField) {
-      orgMatchParts.push(`FIND("${orgIdSafe}", ARRAYJOIN({Organization})) > 0`);
+      // Organization is typically a link; stored as array of recordIds
+      orgMatchParts.push(`FIND("${orgIdSafe}", ARRAYJOIN({Organization}&"")) > 0`);
     }
 
-    const orgMatch = orgMatchParts.length === 1 ? orgMatchParts[0] : `OR(${orgMatchParts.join(",")})`;
+    if (!orgMatchParts.length) {
+      return res.status(401).json({ error: "Unauthorized (org match not possible)." });
+    }
 
-    // Return all statuses; UI filters.
+    const orgMatch =
+      orgMatchParts.length === 1 ? orgMatchParts[0] : `OR(${orgMatchParts.join(",")})`;
+
+    // ✅ Queue filter:
+    // - Only completions that have an Attachment OR an AttachmentSummary
+    // - Only within this org
+    // - Any Status (UI filters by bucket)
+    //
+    // Field names per you:
+    // - Attachment (not Attachments)
+    // - AttachmentSummary (optional)
+    //
     const filterByFormula = `AND(
-      {Status} != "draft",
-      OR(COUNTA({Attachments})>0, LEN(TRIM({Attachment Summary}&""))>0),
-      ${orgMatch}
+      ${orgMatch},
+      OR(
+        COUNTA({Attachment}) > 0,
+        LEN(TRIM({AttachmentSummary}&"")) > 0
+      )
     )`;
 
     const records = await table
       .select({
         pageSize: 100,
         filterByFormula,
-        sort: [{ field: "ReviewedAt", direction: "desc" }],
+        sort: [{ field: "CompletedAt", direction: "desc" }],
       })
       .all()
       .catch(async () => {
+        // If sorting field name differs in Airtable, fallback without sort
         return await table
           .select({
             pageSize: 100,
@@ -126,34 +159,63 @@ export default async function handler(req, res) {
 
     const items = records.map((r) => {
       const f = r.fields || {};
-      const reviewStatusRaw = hasReviewStatusField ? pick(f, ["ReviewStatus"], "pending") : "pending";
-      const reviewStatus = String(reviewStatusRaw || "pending").trim().toLowerCase();
+
+      const completionStatus = pick(f, ["Status"], "pending_review");
+      const reviewStatus = reviewBucketFromCompletionStatus(completionStatus);
+
+      // ✅ Acknowledgement fields (checkbox + datetime)
+      const athleteAcknowledged = Boolean(
+        pick(f, ["AthleteAcknowledged", "athleteAcknowledged"], false)
+      );
+      const athleteAcknowledgedAt = pick(
+        f,
+        ["AthleteAcknowledgedAt", "athleteAcknowledgedAt"],
+        ""
+      );
 
       return {
         id: r.id,
-        title: pick(f, ["Title"], "Daily Workout"),
-        date: pick(f, ["Date"], ""),
-        status: pick(f, ["Status"], ""),
+
+        // "title" can be derived from WorkoutItemName lookup if you have it
+        // otherwise keep generic
+        title: pick(f, ["WorkoutItemName", "ExerciseName", "Title", "Name"], "Workout Completion"),
+
+        // show a date-like value
+        date: pick(f, ["CompletedAt", "Date"], ""),
+
+        // workout completion status
+        status: completionStatus,
+
+        // UI bucket
         reviewStatus,
-        reviewedAt: pick(f, ["ReviewedAt"], ""),
-        reviewedByText: pick(f, ["ReviewedByText"], ""),
 
-        attachmentSummary: pick(f, ["Attachment Summary"], ""),
-        attachments: safeArray(f?.Attachments),
+        // Coach message field name: ReviewNote
+        coachNotes: pick(f, ["ReviewNote", "reviewNote"], ""),
 
+        // uploads
+        attachmentSummary: pick(f, ["AttachmentSummary", "Attachment Summary"], ""),
+        attachments: safeArray(f?.Attachment),
+
+        // athlete lookup fields if present
         athleteName: firstFromLookup(f?.AthleteName),
         athleteEmail: firstFromLookup(f?.AthleteEmail),
 
+        // keep raw linkage if you use it elsewhere
         athlete: safeArray(f?.Athlete),
         createdBy: safeArray(f?.CreatedBy),
-        workoutItems: safeArray(f?.WorkoutItems),
+        workoutItem: safeArray(f?.WorkoutItem),
+        organization: safeArray(f?.Organization),
+
+        // ✅ ack info
+        athleteAcknowledged,
+        athleteAcknowledgedAt,
 
         createdAt: r?._rawJson?.createdTime || "",
       };
     });
 
     const debugEnabled =
-      String(req.query?.debug || "").trim() === "1" || String(req.query?.debug || "").trim() === "true";
+      asString(req.query?.debug) === "1" || asString(req.query?.debug).toLowerCase() === "true";
 
     if (debugEnabled) {
       async function exists(formula) {
@@ -163,30 +225,25 @@ export default async function handler(req, res) {
 
       const diag = [];
       const orgOnly = orgMatch;
-      const orgAndNotDraft = `AND(${orgMatch}, {Status} != "draft")`;
-      const orgAndHasUploads = `AND(${orgMatch}, OR(COUNTA({Attachments})>0, LEN(TRIM({Attachment Summary}&""))>0))`;
+      const orgAndHasUploads = `AND(${orgMatch}, OR(COUNTA({Attachment})>0, LEN(TRIM({AttachmentSummary}&""))>0))`;
       const finalQueue = filterByFormula;
 
       diag.push({ name: "orgMatch_only", formula: orgOnly, count: await exists(orgOnly) });
-      diag.push({ name: "orgMatch_and_notDraft", formula: orgAndNotDraft, count: await exists(orgAndNotDraft) });
       diag.push({ name: "orgMatch_and_hasUploads", formula: orgAndHasUploads, count: await exists(orgAndHasUploads) });
       diag.push({ name: "final_queue", formula: finalQueue, count: items.length });
 
       const sampleRows = await table.select({ filterByFormula: orgOnly, maxRecords: 5 }).firstPage();
       const sample = (sampleRows || []).map((r) => ({
         id: r.id,
-        Date: r.fields?.Date,
         Status: r.fields?.Status,
-        ReviewStatus: r.fields?.ReviewStatus,
-        ReviewedAt: r.fields?.ReviewedAt,
-        ReviewedByText: r.fields?.ReviewedByText,
         OrgToken: r.fields?.OrgToken,
         Organization: r.fields?.Organization,
-        AthleteName: r.fields?.AthleteName,
-        AthleteEmail: r.fields?.AthleteEmail,
-        Attachments_count: Array.isArray(r.fields?.Attachments) ? r.fields.Attachments.length : 0,
-        Attachment_Summary: r.fields?.["Attachment Summary"],
-        Title: r.fields?.Title,
+        CompletedAt: r.fields?.CompletedAt,
+        Attachment_count: Array.isArray(r.fields?.Attachment) ? r.fields.Attachment.length : 0,
+        AttachmentSummary: r.fields?.AttachmentSummary,
+        ReviewNote: r.fields?.ReviewNote,
+        AthleteAcknowledged: r.fields?.AthleteAcknowledged,
+        AthleteAcknowledgedAt: r.fields?.AthleteAcknowledgedAt,
       }));
 
       return res.status(200).json({
@@ -197,7 +254,6 @@ export default async function handler(req, res) {
           detectedFields: Array.from(fieldKeys),
           hasOrgTokenField,
           hasOrganizationField,
-          hasReviewStatusField,
           orgMatch,
           filterByFormula,
           count: items.length,

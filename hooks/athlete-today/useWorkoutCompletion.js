@@ -13,16 +13,19 @@ import { safeJson } from "@/components/athlete-today/ui";
  *
  * Adds:
  * - optimisticStatusById: instant UI feedback on success (pending_review/completed)
+ * - acknowledgeCompletion: athlete confirms they saw coach note on rejected item
  */
 export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeItem, setActiveItem] = useState(null);
 
   const [submittingId, setSubmittingId] = useState("");
+  const [acknowledgingId, setAcknowledgingId] = useState("");
+
   const [selectedFile, setSelectedFile] = useState(null);
   const [coachNote, setCoachNote] = useState("");
 
-  // ✅ optimistic UI: { [workoutItemId]: "pending_review" | "completed" | "rejected" | "assigned" }
+  // ✅ optimistic UI: { [workoutItemId]: "pending_review" | "completed" | "rejected" | "assigned" | "acknowledged" }
   const [optimisticStatusById, setOptimisticStatusById] = useState({});
 
   const openModal = useCallback(
@@ -44,25 +47,28 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
     setSubmittingId("");
   }, []);
 
-  const postCompletion = useCallback(async ({ workoutItemId, evidenceRequired, dailyWorkoutId, file, note }) => {
-    const fd = new FormData();
-    fd.append("workoutItemId", String(workoutItemId || "").trim());
-    fd.append("evidenceRequired", String(Boolean(evidenceRequired)));
-    fd.append("dailyWorkoutId", String(dailyWorkoutId || "").trim());
-    fd.append("note", String(note || ""));
+  const postCompletion = useCallback(
+    async ({ workoutItemId, evidenceRequired, dailyWorkoutId, file, note }) => {
+      const fd = new FormData();
+      fd.append("workoutItemId", String(workoutItemId || "").trim());
+      fd.append("evidenceRequired", String(Boolean(evidenceRequired)));
+      fd.append("dailyWorkoutId", String(dailyWorkoutId || "").trim());
+      fd.append("note", String(note || ""));
 
-    if (file) fd.append("file", file);
+      if (file) fd.append("file", file);
 
-    const res = await fetch("/api/athlete/workouts/completeItem", {
-      method: "POST",
-      credentials: "include",
-      body: fd,
-    });
+      const res = await fetch("/api/athlete/workouts/completeItem", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
 
-    const data = await safeJson(res);
-    if (!res.ok) throw new Error(data?.error || "Failed to submit");
-    return data;
-  }, []);
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || "Failed to submit");
+      return data;
+    },
+    []
+  );
 
   const submitCompletion = useCallback(
     async ({ workoutItemId, evidenceRequired, dailyWorkoutId }) => {
@@ -91,14 +97,13 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
           note: coachNote || "",
         });
 
-        // ✅ INSTANT FEEDBACK: mark row as success immediately
+        // ✅ INSTANT FEEDBACK
         const nextStatus = String(data?.status || "").trim().toLowerCase();
         if (nextStatus) {
           setOptimisticStatusById((prev) => ({ ...prev, [id]: nextStatus }));
         }
 
         // keep the "instant" state around briefly even if reload is slow
-        // (reload will replace with real Airtable state)
         const keepMs = 2500;
         setTimeout(() => {
           setOptimisticStatusById((prev) => {
@@ -159,12 +164,71 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
     [postCompletion, reload, selectedDate, setErr]
   );
 
+  /**
+   * ✅ Athlete acknowledges a rejected completion.
+   * Expected API: POST /api/athlete/workouts/acknowledgeCompletion
+   * Accepts either:
+   *  - { completionId }
+   *  - OR { workoutItemId, date } (server can resolve latest completion)
+   */
+  const acknowledgeCompletion = useCallback(
+    async ({ completionId, workoutItemId }) => {
+      const wid = String(workoutItemId || "").trim();
+      const cid = String(completionId || "").trim();
+
+      if (!cid && !wid) {
+        setErr?.("Missing completion id.");
+        return;
+      }
+
+      setErr?.("");
+      setAcknowledgingId(wid || cid);
+
+      try {
+        // optimistic: mark as acknowledged (your UI can treat this as checked-off)
+        if (wid) {
+          setOptimisticStatusById((prev) => ({ ...prev, [wid]: "acknowledged" }));
+        }
+
+        const res = await fetch("/api/athlete/workouts/acknowledgeCompletion", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            completionId: cid || undefined,
+            workoutItemId: wid || undefined,
+            date: String(selectedDate || "").trim() || undefined,
+          }),
+        });
+
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(data?.error || "Failed to acknowledge");
+
+        // Let Airtable truth win
+        await reload(selectedDate);
+      } catch (e) {
+        // rollback optimistic if it was set
+        if (wid) {
+          setOptimisticStatusById((prev) => {
+            const { [wid]: _, ...rest } = prev || {};
+            return rest;
+          });
+        }
+        setErr?.(e?.message || "Failed to acknowledge");
+      } finally {
+        setAcknowledgingId("");
+      }
+    },
+    [reload, selectedDate, setErr]
+  );
+
   return {
     modalOpen,
     activeItem,
     selectedFile,
     coachNote,
     submittingId,
+    acknowledgingId,
     optimisticStatusById,
 
     openModal,
@@ -175,5 +239,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
 
     submitCompletion,
     quickComplete,
+    acknowledgeCompletion, // ✅ NEW
   };
 }

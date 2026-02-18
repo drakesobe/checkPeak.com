@@ -32,6 +32,8 @@ export default async function handler(req, res) {
   ).trim();
   if (!orgId) return res.status(400).json({ error: "Missing orgId in session." });
 
+  const orgToken = String(user?.Token || user?.token || user?.orgToken || "").trim().toUpperCase();
+
   // only allow org owner/admin to init trial (your dashboard already enforces this)
   const role = String(user?.role || user?.Role || "").trim().toLowerCase();
   const canInit = role === "organization" || role === "admin" || role.includes("org") || role.includes("admin");

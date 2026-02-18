@@ -45,7 +45,6 @@ function deriveDailyWorkoutStatus(itemStatuses = []) {
 function unwrapAuth(maybe) {
   if (!maybe) return { ok: false, athlete: null, user: null, raw: null };
 
-  // wrapper style
   if (typeof maybe === "object" && "ok" in maybe) {
     return {
       ok: Boolean(maybe.ok),
@@ -55,7 +54,6 @@ function unwrapAuth(maybe) {
     };
   }
 
-  // athlete direct style
   return { ok: true, athlete: maybe, user: null, raw: maybe };
 }
 
@@ -87,8 +85,11 @@ function mustAthleteToken({ athlete, user, raw, fields }) {
     fields?.Token,
   ];
 
-  const tok = asString(candidates.find((x) => asString(x)));
-  return tok;
+  return asString(candidates.find((x) => asString(x)));
+}
+
+function escapeAirtableString(str = "") {
+  return String(str).replace(/'/g, "\\'");
 }
 
 /* ---------------- Airtable base ---------------- */
@@ -159,6 +160,68 @@ async function uploadToCloudinary({ blob, filename }) {
   };
 }
 
+/* ---------------- Org resolve (from session OR AthleteScans) ---------------- */
+
+/**
+ * We want WorkoutCompletions.Organization (linked) + OrgToken (text)
+ * Preferred source: session user payload if you store orgId/orgToken there
+ * Fallback: lookup AthleteScans by athleteRecordId or athleteToken, read Organization link and OrgToken
+ */
+async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
+  // 1) try session payload shapes (best if you already store these on athlete session)
+  const orgId = asString(
+    auth?.user?.orgId ||
+      auth?.user?.OrgId ||
+      auth?.raw?.orgId ||
+      auth?.raw?.OrgId ||
+      auth?.athlete?.orgId ||
+      auth?.athlete?.OrgId ||
+      ""
+  );
+
+  const orgToken = asString(
+    auth?.user?.OrgToken ||
+      auth?.user?.orgToken ||
+      auth?.raw?.OrgToken ||
+      auth?.raw?.orgToken ||
+      auth?.athlete?.OrgToken ||
+      auth?.athlete?.orgToken ||
+      ""
+  ).toUpperCase();
+
+  if (orgId || orgToken) return { orgId, orgToken, source: "session" };
+
+  // 2) fallback: AthleteScans lookup
+  // - If we have athleteRecordId (AthleteScans record id), fetch it
+  // - else find by AthleteToken
+  try {
+    let rec = null;
+
+    if (athleteRecordId) {
+      rec = await base("AthleteScans").find(athleteRecordId);
+    } else if (athleteToken) {
+      const tok = escapeAirtableString(athleteToken);
+      const rows = await base("AthleteScans")
+        .select({
+          maxRecords: 1,
+          filterByFormula: `{AthleteToken}='${tok}'`,
+          fields: ["Organization", "OrgToken", "AthleteToken"],
+        })
+        .firstPage();
+      rec = rows?.[0] || null;
+    }
+
+    const f = rec?.fields || {};
+    const orgLinks = Array.isArray(f?.Organization) ? f.Organization : [];
+    const orgId2 = asString(orgLinks?.[0] || "");
+    const orgToken2 = asString(f?.OrgToken || "").toUpperCase();
+
+    return { orgId: orgId2, orgToken: orgToken2, source: rec ? "athleteScans" : "none" };
+  } catch {
+    return { orgId: "", orgToken: "", source: "error" };
+  }
+}
+
 /* ---------------- DailyWorkouts status recompute ---------------- */
 
 async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
@@ -203,7 +266,6 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: e?.message || "Unauthorized" });
     }
 
-    // If your requireAthlete(req,res) already responded, stop
     if (res.writableEnded) return;
 
     const auth = unwrapAuth(authRaw);
@@ -228,20 +290,18 @@ export default async function handler(req, res) {
     const athleteToken = mustAthleteToken({ athlete: auth.athlete, user: auth.user, raw: auth.raw, fields });
     if (!athleteToken) {
       return res.status(400).json({
-        error:
-          "Missing AthleteToken in session. Confirm AthleteScans.AthleteToken is populated, then log out/in.",
+        error: "Missing AthleteToken in session. Log out/in after AthleteScans.AthleteToken is populated.",
         debug: {
           athleteKeys: Object.keys(auth.athlete || {}),
           userKeys: Object.keys(auth.user || {}),
           rawKeys: Object.keys(auth.raw || {}),
           fieldsKeys: Object.keys(fields || {}),
-          tokenSample: {
-            athlete_AthleteToken: auth?.athlete?.AthleteToken,
-            user_AthleteToken: auth?.user?.AthleteToken,
-          },
         },
       });
     }
+
+    // AthleteScans record id (your link field expects AthleteScans)
+    const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
 
     const f = pickFirst(files?.file || files?.photo || files?.image);
     if (evidenceRequired && !f) {
@@ -250,6 +310,14 @@ export default async function handler(req, res) {
         debug: { evidenceRequired, filesKeys: Object.keys(files || {}) },
       });
     }
+
+    // Resolve org linkage for this completion
+    const orgResolved = await resolveOrgForCompletion({
+      base,
+      auth,
+      athleteToken,
+      athleteRecordId,
+    });
 
     // Upload to Cloudinary if file exists
     let uploaded = null;
@@ -272,31 +340,45 @@ export default async function handler(req, res) {
     }
 
     const nowIso = new Date().toISOString();
-    const completionStatus = evidenceRequired ? "pending_review" : "completed";
 
-    // Athlete record id (if present)
-    const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
+    // Athlete completion status:
+    // - evidence required => pending_review
+    // - else => completed immediately
+    const completionStatus = evidenceRequired ? "pending_review" : "completed";
 
     // 1) Create WorkoutCompletions
     const created = await base("WorkoutCompletions").create([
       {
         fields: {
           CompletedAt: nowIso,
+
+          // core identifiers
           AthleteToken: athleteToken,
           ...(athleteRecordId ? { Athlete: [athleteRecordId] } : {}),
+
+          // org linkage (so review queue can filter)
+          ...(orgResolved?.orgId ? { Organization: [orgResolved.orgId] } : {}),
+          ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken } : {}),
+
+          // link to the item completed
           WorkoutItem: [workoutItemId],
-          Attachment: attachment.length ? attachment : undefined,
-          AttachmentSummary: attachmentSummary || undefined,
+
+          // uploads
+          ...(attachment.length ? { Attachment: attachment } : {}),
+          ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
+
+          // status (single select): rejected | pending_review | completed
           Status: completionStatus,
-          // If you add a field for athlete notes:
-          // AthleteNote: athleteNote || undefined,
+
+          // optional: if you later add AthleteNote in Airtable, uncomment:
+          // ...(athleteNote ? { AthleteNote: athleteNote } : {}),
         },
       },
     ]);
 
     const wcId = created?.[0]?.id || "";
 
-    // 2) Update WorkoutItems.Status
+    // 2) Update WorkoutItems.Status so athlete UI reflects immediately
     await base("WorkoutItems").update([{ id: workoutItemId, fields: { Status: completionStatus } }]);
 
     // 3) Recompute + update DailyWorkouts.Status
@@ -316,6 +398,9 @@ export default async function handler(req, res) {
       noteReceived: Boolean(athleteNote),
       athleteTokenSent: athleteToken,
       athleteLinked: Boolean(athleteRecordId),
+      orgLinked: Boolean(orgResolved?.orgId),
+      orgTokenSet: Boolean(orgResolved?.orgToken),
+      orgSource: orgResolved?.source || "",
     });
   } catch (e) {
     console.error("completeItem error:", e);

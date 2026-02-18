@@ -1,3 +1,4 @@
+// components/athlete-today/workout/WorkoutCard.jsx
 "use client";
 
 import { useMemo } from "react";
@@ -34,13 +35,6 @@ function pickNote(dw) {
   return String(v ?? "").trim();
 }
 
-function isDoneItem(it) {
-  const st = norm(it?.Status || "");
-  const completed = norm(it?.Completed || it?.completed || "") === "true";
-  // Athlete considers pending_review "checked off"
-  return completed || st === "completed" || st === "pending_review";
-}
-
 function clampPct(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
@@ -52,6 +46,20 @@ function progressTone(pct) {
   if (p >= 100) return "ok";
   if (p >= 50) return "blue";
   return "neutral";
+}
+
+// ✅ Counts an item as "done" for athlete progress if it’s completed OR pending_review OR acknowledged.
+// (rejected is NOT done until acknowledged)
+function isDoneItem(it, optimisticStatus = "") {
+  const st = norm(optimisticStatus || it?.Status || "");
+  const completed = norm(it?.Completed || it?.completed || "") === "true";
+
+  if (completed) return true;
+  if (st === "completed") return true;
+  if (st === "pending_review") return true;
+  if (st === "acknowledged") return true;
+
+  return false;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -93,10 +101,7 @@ function MiniBar({ pct }) {
       aria-valuenow={p}
       aria-label="Workout completion progress"
     >
-      <div
-        className="h-full rounded-full bg-[#46769B] transition-all"
-        style={{ width: `${p}%` }}
-      />
+      <div className="h-full rounded-full bg-[#46769B] transition-all" style={{ width: `${p}%` }} />
     </div>
   );
 }
@@ -120,6 +125,13 @@ export default function WorkoutCard({
   onUpload,
   onQuickComplete,
   submittingId = "",
+
+  // ✅ NEW: acknowledge rejected note instead of re-upload loop
+  onAcknowledge, // ({ completionId, workoutItemId }) => void
+  acknowledgingId = "", // can be workoutItemId OR completionId depending on how your hook sets it
+
+  // ✅ NEW: optimistic UI statuses set by hook for instant feedback
+  optimisticStatusById = {}, // { [workoutItemId]: "pending_review" | "completed" | "acknowledged" | ... }
 }) {
   const list = Array.isArray(items) ? items : [];
   const hasWorkout = Boolean(dailyWorkout);
@@ -136,10 +148,15 @@ export default function WorkoutCard({
 
   const progress = useMemo(() => {
     const total = list.length;
-    const done = list.filter((x) => isDoneItem(x)).length;
+    const done = list.filter((x) => {
+      const id = String(x?.id || x?.ID || x?.recordId || "").trim();
+      const optimistic = optimisticStatusById?.[id] || "";
+      return isDoneItem(x, optimistic);
+    }).length;
+
     const pct = total ? Math.round((done / total) * 100) : 0;
     return { total, done, pct };
-  }, [list]);
+  }, [list, optimisticStatusById]);
 
   // Empty state: no workout
   if (!loading && !hasWorkout) {
@@ -154,9 +171,7 @@ export default function WorkoutCard({
             </span>
 
             <div className="min-w-0">
-              <p className="text-sm font-extrabold text-gray-900">
-                No workout assigned for this day
-              </p>
+              <p className="text-sm font-extrabold text-gray-900">No workout assigned for this day</p>
               <p className="text-[12px] text-gray-600 mt-1 leading-snug">
                 Refresh and check again — or contact your coach.
               </p>
@@ -184,9 +199,7 @@ export default function WorkoutCard({
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-lg font-extrabold text-gray-900 leading-tight">
-                    Workout
-                  </p>
+                  <p className="text-lg font-extrabold text-gray-900 leading-tight">Workout</p>
 
                   <Chip
                     tone={
@@ -204,9 +217,7 @@ export default function WorkoutCard({
 
                   <Chip tone={isCompleteChipTone(isWorkoutCompleted, chipTone)}>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    {progress.total
-                      ? `${progress.done}/${progress.total} (${clampPct(progress.pct)}%)`
-                      : "No items"}
+                    {progress.total ? `${progress.done}/${progress.total} (${clampPct(progress.pct)}%)` : "No items"}
                   </Chip>
 
                   {isWorkoutCompleted ? (
@@ -239,16 +250,14 @@ export default function WorkoutCard({
             </div>
           </div>
 
-          {/* Right side: no quick upload anymore */}
+          {/* Right side helper */}
           <div className="flex items-center gap-2 lg:justify-end">
-            <span className="text-[12px] text-gray-500">
-              Swipe right on an item to submit.
-            </span>
+            <span className="text-[12px] text-gray-500">Swipe right on an item to submit.</span>
             <ChevronRight className="w-4 h-4 text-gray-300" />
           </div>
         </div>
 
-        {/* Needs-info message */}
+        {/* Needs-info message (DailyWorkouts-level) */}
         {needsInfo && reviewedNotes ? (
           <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-start gap-3">
@@ -257,9 +266,7 @@ export default function WorkoutCard({
               </span>
 
               <div className="min-w-0">
-                <p className="text-sm font-extrabold text-gray-900">
-                  Coach message
-                </p>
+                <p className="text-sm font-extrabold text-gray-900">Coach message</p>
                 <p className="text-[12px] text-gray-700 mt-2 whitespace-pre-wrap break-words leading-snug">
                   {reviewedNotes}
                 </p>
@@ -276,14 +283,20 @@ export default function WorkoutCard({
           {loading ? (
             <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm text-gray-800 font-semibold">Loading items…</p>
-              <p className="text-[11px] text-gray-600 mt-1">
-                Pulling workout items for this date.
-              </p>
+              <p className="text-[11px] text-gray-600 mt-1">Pulling workout items for this date.</p>
             </div>
           ) : hasItems ? (
             list.map((it, idx) => {
               const id = String(it?.id || it?.ID || it?.recordId || "").trim();
+              const completionId = safeText(it?.CompletionId || it?.completionId || "");
               const submitting = Boolean(submittingId && id && submittingId === id);
+
+              // acknowledgingId could be set to completionId OR workoutItemId depending on your hook
+              const acknowledging = Boolean(
+                acknowledgingId &&
+                  (acknowledgingId === id || (completionId && acknowledgingId === completionId))
+              );
+
               const key = id || `${idx}-${safeText(it?.Title || it?.Name || "item")}`;
 
               return (
@@ -291,16 +304,17 @@ export default function WorkoutCard({
                   key={key}
                   item={it}
                   submitting={submitting}
+                  acknowledging={acknowledging}
+                  optimisticStatus={optimisticStatusById?.[id] || ""}
                   onUpload={onUpload}
                   onQuickComplete={onQuickComplete}
+                  onAcknowledge={onAcknowledge}
                 />
               );
             })
           ) : (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-extrabold text-gray-900">
-                Workout assigned, but no items found
-              </p>
+              <p className="text-sm font-extrabold text-gray-900">Workout assigned, but no items found</p>
               <p className="text-[12px] text-gray-700 mt-1 leading-snug">
                 Your coach assigned a workout for this date, but the{" "}
                 <span className="font-semibold">WorkoutItems</span> field on the DailyWorkouts record has no linked items.

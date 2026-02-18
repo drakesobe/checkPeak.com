@@ -1,7 +1,7 @@
 // pages/org/review-queue.js
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { useReviewQueue } from "@/hooks/org/useReviewQueue";
@@ -17,6 +17,8 @@ import ReviewQueueLightbox from "@/components/org/reviewQueue/ReviewQueueLightbo
 import { normalizeText } from "@/components/org/reviewQueue/utils";
 import { Lock, ArrowRight, LogOut } from "lucide-react";
 
+/* ---------------- helpers ---------------- */
+
 async function safeJson(res) {
   try {
     return await res.json();
@@ -30,10 +32,34 @@ function fmtDate(v) {
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(d);
   } catch {
     return String(v);
   }
+}
+
+function getRole(user) {
+  const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "organization") return "organization";
+  if (raw === "admin") return "admin";
+  if (raw === "trainer") return "trainer";
+  if (raw.includes("org")) return "organization";
+  if (raw.includes("admin")) return "admin";
+  if (raw.includes("train")) return "trainer";
+  if (raw.includes("ath")) return "athlete";
+  return raw;
+}
+
+function normalizeReviewStatus(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (!s) return "";
+  // common aliases coming back from Airtable / older code
+  if (s === "pending_review") return "pending";
+  if (s === "pending") return "pending";
+  if (s === "needs_info" || s === "needsinfo" || s === "needs info") return "needs_info";
+  if (s === "approved" || s === "complete" || s === "completed") return "approved";
+  return s;
 }
 
 function BillingGateScreen({ role, billing, error, onLogout, onGoAccount }) {
@@ -111,25 +137,15 @@ function BillingGateScreen({ role, billing, error, onLogout, onGoAccount }) {
   );
 }
 
+/* ---------------- page ---------------- */
+
 export default function ReviewQueuePage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
   const { loading, error, items, setItems, refreshQueue, counts, fmtDate: rqFmtDate } = useReviewQueue();
 
-  const role = useMemo(() => {
-    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
-    if (!r) return "";
-    if (r === "organization") return "organization";
-    if (r === "admin") return "admin";
-    if (r === "trainer") return "trainer";
-    if (r.includes("org")) return "organization";
-    if (r.includes("admin")) return "admin";
-    if (r.includes("train")) return "trainer";
-    if (r.includes("ath")) return "athlete";
-    return r;
-  }, [user]);
-
+  const role = useMemo(() => getRole(user), [user]);
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
   const canInitTrial = role === "organization" || role === "admin";
 
@@ -151,6 +167,7 @@ export default function ReviewQueuePage() {
     () => String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(),
     [user]
   );
+
   const orgId = useMemo(() => String(user?.orgId || user?.OrgId || user?.org?.id || "").trim(), [user]);
 
   // ---------------- Billing Gate State ----------------
@@ -159,6 +176,9 @@ export default function ReviewQueuePage() {
   const [billing, setBilling] = useState(null);
 
   const isPaidOk = Boolean(billing?.isPaidOk);
+
+  // Prevent repeated ensureTrial spam during quick re-renders
+  const ensuredTrialRef = useRef(false);
 
   // Guards
   useEffect(() => {
@@ -182,7 +202,8 @@ export default function ReviewQueuePage() {
 
       try {
         // Owner/admin ensures trial exists (idempotent)
-        if (canInitTrial) {
+        if (canInitTrial && !ensuredTrialRef.current) {
+          ensuredTrialRef.current = true;
           await fetch("/api/org/billing/ensureTrial", {
             method: "POST",
             credentials: "include",
@@ -262,9 +283,9 @@ export default function ReviewQueuePage() {
       });
     }
 
-    const st = String(filterMode || "pending").toLowerCase();
-    if (st !== "all") {
-      list = list.filter((it) => String(it?.reviewStatus || "").toLowerCase() === st);
+    const want = String(filterMode || "pending").toLowerCase();
+    if (want !== "all") {
+      list = list.filter((it) => normalizeReviewStatus(it?.reviewStatus) === want);
     }
 
     const byCreated = (a, b) => {
@@ -321,7 +342,7 @@ export default function ReviewQueuePage() {
           body: JSON.stringify({ id: rid, status: reviewStatus, coachNotes }),
         });
 
-        const data = await res.json().catch(() => ({}));
+        const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error || "Failed to update review");
 
         setItems((prev) => {

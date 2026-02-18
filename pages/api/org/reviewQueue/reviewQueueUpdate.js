@@ -3,21 +3,22 @@ import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
 
-function missingEnv() {
-  return {
-    DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
-    DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
-    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
-  };
+/* ---------------- helpers ---------------- */
+
+function safeArray(v) {
+  return Array.isArray(v) ? v : [];
 }
 
-function anyMissing(m) {
-  return Object.values(m).some(Boolean);
+function asString(v) {
+  return String(v ?? "").trim();
+}
+
+function toLowerStr(v) {
+  return asString(v).toLowerCase();
 }
 
 function normalizeIdArray(v) {
-  if (!Array.isArray(v)) return [];
-  return v
+  return safeArray(v)
     .map((x) => {
       if (!x) return "";
       if (typeof x === "string") return x.trim();
@@ -27,27 +28,104 @@ function normalizeIdArray(v) {
     .filter(Boolean);
 }
 
-function toLowerStr(v) {
-  return String(v || "").trim().toLowerCase();
-}
-
 function firstFromLookup(v) {
   if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
   return String(v ?? "").trim();
 }
 
+// Escape for Airtable formula string literals (double-quoted)
+function esc(str = "") {
+  return String(str).replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function normalizeCompletionStatusForAirtable(nextUiStatus) {
+  // UI sends: "approved" | "needs_info" | "pending"
+  // Airtable WorkoutCompletions wants: "completed" | "rejected" | "pending_review"
+  const s = toLowerStr(nextUiStatus);
+  if (s === "approved") return "completed";
+  if (s === "needs_info") return "rejected";
+  if (s === "pending") return "pending_review";
+  return "";
+}
+
+function normalizeItemStatus(v) {
+  const s = toLowerStr(v);
+  if (s === "completed") return "completed";
+  if (s === "pending_review") return "pending_review";
+  if (s === "rejected") return "rejected";
+  return "assigned";
+}
+
+function deriveDailyWorkoutStatus(itemStatuses = []) {
+  const statuses = (itemStatuses || []).map(normalizeItemStatus);
+  if (statuses.includes("rejected")) return "rejected";
+  if (statuses.includes("pending_review")) return "pending_review";
+  if (statuses.length > 0 && statuses.every((s) => s === "completed")) return "completed";
+  return "assigned";
+}
+
+/* ---------------- env ---------------- */
+
+function missingEnv() {
+  return {
+    DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
+    DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
+  };
+}
+
+function anyMissing(m) {
+  return Object.values(m).some(Boolean);
+}
+
+function getTable(base, envKey, fallbackName) {
+  const idOrName = process.env[envKey];
+  return base(idOrName || fallbackName);
+}
+
+/* ---------------- cascade helpers ---------------- */
+
+async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
+  if (!dailyWorkoutId) return { updated: false, status: "" };
+
+  const dw = await base("DailyWorkouts").find(dailyWorkoutId);
+  const itemIds = safeArray(dw?.fields?.WorkoutItems).map(String).filter(Boolean);
+
+  if (!itemIds.length) {
+    await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: "assigned" } }]);
+    return { updated: true, status: "assigned" };
+  }
+
+  const orFormula = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
+
+  const itemRecords = await base("WorkoutItems")
+    .select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 })
+    .all();
+
+  const statuses = (itemRecords || []).map((r) => r?.fields?.Status || "assigned");
+  const next = deriveDailyWorkoutStatus(statuses);
+
+  await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: next } }]);
+  return { updated: true, status: next };
+}
+
+/* ---------------- handler ---------------- */
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const missing = missingEnv();
   if (anyMissing(missing)) {
     return res.status(500).json({
-      error: "DailyWorkouts Airtable env vars missing.",
+      error: "Airtable env vars missing (DailyWorkouts base).",
       missing,
       debug: { cwd: process.cwd?.() || "" },
     });
@@ -57,24 +135,29 @@ export default async function handler(req, res) {
     const auth = requireOrg(req);
     if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
-    // ✅ HARD GATE: subscription check (prevents direct API updates when not subscribed)
+    // ✅ HARD GATE: subscription check
     const sub = await requireActiveOrgSubscription(req, res, auth);
     if (!sub) return;
 
-    const orgToken = String(auth?.org?.token || auth?.token || "").trim();
-    const orgId = String(auth?.org?.id || "").trim();
+    const orgToken = asString(auth?.org?.token || auth?.token || "");
+    const orgId = asString(auth?.org?.id || "");
+
     if (!orgToken && !orgId) {
       return res.status(401).json({ error: "Unauthorized (missing org token/id)." });
     }
 
     const body = req.body || {};
-    const recordId = String(body?.id || "").trim();
+    const recordId = asString(body?.id || "");
+    if (!recordId) return res.status(400).json({ error: "Missing id." });
 
-    // Accept either { reviewStatus } or { status }
+    // UI sends either { reviewStatus } or { status }
     const incomingStatus = body?.reviewStatus ?? body?.status;
-    const next = toLowerStr(incomingStatus);
+    const nextUi = toLowerStr(incomingStatus);
 
-    // Accept either { reviewedNotes } or legacy { coachNotes }
+    const allowedUi = new Set(["pending", "approved", "needs_info"]);
+    if (!allowedUi.has(nextUi)) return res.status(400).json({ error: "Invalid status." });
+
+    // UI sends either { reviewedNotes } or legacy { coachNotes }
     const incomingNotes =
       typeof body?.reviewedNotes === "string"
         ? body.reviewedNotes
@@ -82,61 +165,125 @@ export default async function handler(req, res) {
         ? body.coachNotes
         : "";
 
-    const reviewedNotes = String(incomingNotes || "").trim();
+    const reviewNote = asString(incomingNotes);
 
-    const allowed = new Set(["pending", "approved", "needs_info"]);
-    if (!recordId) return res.status(400).json({ error: "Missing id." });
-    if (!allowed.has(next)) return res.status(400).json({ error: "Invalid reviewStatus." });
+    // needs_info requires a note
+    if (nextUi === "needs_info" && reviewNote.length < 3) {
+      return res.status(400).json({ error: "ReviewNote is required for Needs Info." });
+    }
 
-    const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
-      process.env.DAILYWORKOUTS_BASE_ID
-    );
-    const table = base(process.env.DAILYWORKOUTS_TABLE_ID);
+    const nextCompletionStatus = normalizeCompletionStatusForAirtable(nextUi);
+    if (!nextCompletionStatus) return res.status(400).json({ error: "Invalid mapping for status." });
 
-    const existing = await table.find(recordId);
+    const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
 
-    // Ownership check: prefer OrgToken lookup, fallback to Organization links
-    const recOrgToken = firstFromLookup(existing?.fields?.OrgToken);
+    const WorkoutCompletions = getTable(base, "WORKOUTCOMPLETIONS_TABLE_ID", "WorkoutCompletions");
+    const WorkoutItems = getTable(base, "WORKOUTITEMS_TABLE_ID", "WorkoutItems");
+    const DailyWorkouts = getTable(base, "DAILYWORKOUTS_TABLE_ID", "DailyWorkouts");
+    const OrgMembers = getTable(base, "ORGMEMBERS_TABLE_ID", "OrgMembers");
 
+    // Load completion
+    const completion = await WorkoutCompletions.find(recordId);
+    const cf = completion?.fields || {};
+
+    // Ownership check: prefer OrgToken lookup, fallback to Organization linked ids
+    const recOrgToken = firstFromLookup(cf?.OrgToken);
     let owns = false;
-    if (orgToken && recOrgToken) owns = String(recOrgToken).trim() === String(orgToken).trim();
+
+    if (orgToken && recOrgToken) owns = asString(recOrgToken) === orgToken;
 
     if (!owns && orgId) {
-      const orgLinks = normalizeIdArray(existing?.fields?.Organization);
+      const orgLinks = normalizeIdArray(cf?.Organization);
       owns = orgLinks.includes(orgId);
     }
 
     if (!owns) return res.status(403).json({ error: "Forbidden." });
 
-    // Reviewer email -> ReviewedByText
-    const reviewerEmail = String(auth?.user?.Email || auth?.user?.email || auth?.org?.email || "").trim();
-    const reviewerName = String(auth?.user?.Name || auth?.user?.name || auth?.org?.name || "").trim();
-    const reviewerText = reviewerEmail || reviewerName || "Coach";
+    // Reviewer: try to set ReviewedBy (linked to OrgMembers)
+    // We'll attempt:
+    // - auth.user.memberId / auth.user.OrgMemberId / auth.user.id (if it’s an OrgMembers rec id)
+    // - else find OrgMembers by Email
+    let reviewedByLinkId = asString(
+      auth?.user?.memberId ||
+        auth?.user?.MemberId ||
+        auth?.user?.OrgMemberId ||
+        auth?.user?.orgMemberId ||
+        ""
+    );
+
+    const reviewerEmail = asString(auth?.user?.Email || auth?.user?.email || auth?.org?.email || "");
+    const reviewerName = asString(auth?.user?.Name || auth?.user?.name || auth?.org?.name || "");
+
+    // If we don't have a memberId but we do have email, try lookup in OrgMembers
+    if (!reviewedByLinkId && reviewerEmail) {
+      try {
+        const emailSafe = esc(reviewerEmail.toLowerCase());
+        const orgIdSafe = esc(orgId);
+
+        // If OrgMembers has Organization link, this keeps it scoped.
+        // If not, it still tries by email.
+        const formula = orgId
+          ? `AND(LOWER({Email}&"")="${emailSafe}", FIND("${orgIdSafe}", ARRAYJOIN({Organization}&""))>0)`
+          : `LOWER({Email}&"")="${emailSafe}"`;
+
+        const rows = await OrgMembers.select({ maxRecords: 1, filterByFormula: formula }).firstPage();
+        reviewedByLinkId = asString(rows?.[0]?.id || "");
+      } catch {
+        // ignore
+      }
+    }
 
     const updates = {
-      ReviewStatus: next,
-      ReviewedAt: new Date().toISOString(),
-      ReviewedByText: reviewerText, // ✅ your text field (NOT the linked ReviewedBy)
+      Status: nextCompletionStatus,
+      // ReviewNote is your long text field on WorkoutCompletions
+      ReviewNote: nextUi === "needs_info" ? reviewNote : "",
+      ...(reviewedByLinkId ? { ReviewedBy: [reviewedByLinkId] } : {}),
     };
 
-    // ✅ If needs_info, require a message
-    if (next === "needs_info") {
-      if (!reviewedNotes) return res.status(400).json({ error: "ReviewedNotes is required for Needs Info." });
-      updates.ReviewedNotes = reviewedNotes;
+    const updated = await WorkoutCompletions.update(recordId, updates);
+
+    // ---- Cascade: update WorkoutItems.Status ----
+    const workoutItemId = asString(safeArray(cf?.WorkoutItem)?.[0] || "");
+    if (workoutItemId) {
+      await WorkoutItems.update([{ id: workoutItemId, fields: { Status: nextCompletionStatus } }]);
     }
 
-    // ✅ For approved: clear notes (optional). Comment out if you want to keep.
-    if (next === "approved") {
-      updates.ReviewedNotes = "";
+    // ---- Cascade: recompute DailyWorkouts.Status ----
+    // Prefer to infer DailyWorkout via WorkoutItems.DailyWorkout link
+    let dailyWorkoutId = "";
+    try {
+      if (workoutItemId) {
+        const wi = await WorkoutItems.find(workoutItemId);
+        dailyWorkoutId = asString(safeArray(wi?.fields?.DailyWorkout)?.[0] || "");
+      }
+    } catch {
+      dailyWorkoutId = "";
     }
 
-    const updated = await table.update(recordId, updates);
+    let daily = { updated: false, status: "" };
+    try {
+      if (dailyWorkoutId) {
+        // ensure DailyWorkouts table exists (used in helper)
+        // helper uses base("DailyWorkouts") directly; keep that name stable
+        // If your table name isn't "DailyWorkouts", set DAILYWORKOUTS_TABLE_ID to the correct one
+        daily = await recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId });
+      }
+    } catch (e) {
+      console.error("[reviewQueueUpdate] DailyWorkouts recompute failed:", e);
+    }
 
     return res.status(200).json({
       ok: true,
       id: updated.id,
-      reviewStatus: next,
-      reviewedBy: reviewerText,
+      uiStatus: nextUi,
+      status: nextCompletionStatus,
+      reviewNote: updates.ReviewNote || "",
+      reviewedBy: reviewedByLinkId || (reviewerEmail || reviewerName || ""),
+      cascades: {
+        workoutItemUpdated: Boolean(workoutItemId),
+        dailyWorkoutUpdated: Boolean(dailyWorkoutId && daily?.updated),
+        dailyWorkoutStatus: daily?.status || "",
+      },
       billingGate: {
         status: sub?.status || "",
         trialEnds: sub?.trialEnds || "",

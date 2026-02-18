@@ -186,11 +186,10 @@ export default function AthleteToday() {
 
       try {
         const nextQuery = { ...(router.query || {}), tab: t };
-        router.replace(
-          { pathname: router.pathname, query: nextQuery },
-          undefined,
-          { shallow: true, scroll: false }
-        );
+        router.replace({ pathname: router.pathname, query: nextQuery }, undefined, {
+          shallow: true,
+          scroll: false,
+        });
       } catch {
         // router not ready
       }
@@ -219,12 +218,15 @@ export default function AthleteToday() {
     selectedFile,
     coachNote,
     submittingId,
+    acknowledgingId, // ✅ NEW
+    optimisticStatusById, // ✅ NEW (available if WorkoutCard/Row consumes it)
     openModal,
     closeModal,
     setSelectedFile,
     setCoachNote,
     submitCompletion,
     quickComplete,
+    acknowledgeCompletion, // ✅ NEW
   } = useWorkoutCompletion({
     selectedDate,
     reload,
@@ -249,12 +251,8 @@ export default function AthleteToday() {
   );
 
   const nutritionCompletionKey = useMemo(() => {
-    const email = String(user?.Email || user?.email || "")
-      .trim()
-      .toLowerCase();
-    const token = String(
-      user?.token || user?.Token || user?.athleteToken || ""
-    ).trim();
+    const email = String(user?.Email || user?.email || "").trim().toLowerCase();
+    const token = String(user?.token || user?.Token || user?.athleteToken || "").trim();
     const who = token || email || "athlete";
     const day = String(selectedDate || "").trim() || "unknown-date";
     return `checkpeak:nutritionCompletion:${who}:${day}`;
@@ -306,15 +304,11 @@ export default function AthleteToday() {
   /* ---------------- navigation actions ---------------- */
 
   const goPrev = useCallback(() => {
-    setSelectedDate((d) =>
-      toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))
-    );
+    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1)));
   }, [setSelectedDate]);
 
   const goNext = useCallback(() => {
-    setSelectedDate((d) =>
-      toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1))
-    );
+    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1)));
   }, [setSelectedDate]);
 
   const refresh = useCallback(() => {
@@ -329,10 +323,7 @@ export default function AthleteToday() {
 
   /* ---------------- derived counts ---------------- */
 
-  const nutritionCounts = useMemo(
-    () => computeNutritionCounts(nutritionCompletion),
-    [nutritionCompletion]
-  );
+  const nutritionCounts = useMemo(() => computeNutritionCounts(nutritionCompletion), [nutritionCompletion]);
 
   /* ---------------- early returns (AFTER all hooks) ---------------- */
 
@@ -340,9 +331,7 @@ export default function AthleteToday() {
   if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
   if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
 
-  const isSubmittingActiveItem = Boolean(
-    submittingId && activeItem?.id === submittingId
-  );
+  const isSubmittingActiveItem = Boolean(submittingId && activeItem?.id === submittingId);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
@@ -381,6 +370,12 @@ export default function AthleteToday() {
               onUpload={openModal}
               onQuickComplete={quickComplete}
               submittingId={submittingId}
+              // ✅ NEW: allow athlete to acknowledge rejected note
+              acknowledgingId={acknowledgingId}
+              optimisticStatusById={optimisticStatusById}
+              onAcknowledge={({ completionId, workoutItemId }) =>
+                acknowledgeCompletion({ completionId, workoutItemId })
+              }
             />
 
             <CompleteItemModal
@@ -395,7 +390,8 @@ export default function AthleteToday() {
               onSubmit={() =>
                 submitCompletion({
                   workoutItemId: String(activeItem?.id || ""),
-                  evidenceRequired: String(activeItem?.EvidenceRequired || "").toLowerCase() === "true",
+                  evidenceRequired:
+                    String(activeItem?.EvidenceRequired || "").toLowerCase() === "true",
                   dailyWorkoutId: String(dailyWorkout?.id || dailyWorkout?.ID || dailyWorkout?.recordId || ""),
                 })
               }

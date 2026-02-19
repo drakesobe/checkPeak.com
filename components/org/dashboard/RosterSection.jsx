@@ -1,4 +1,4 @@
-// /components/org/dashboard/RosterSection.jsx
+// components/org/dashboard/RosterSection.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -14,36 +14,17 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-import {
-  normalizeEmail,
-  safeDate,
-  fmtDate,
-  classNames,
-} from "@/lib/org/dashboard-utils";
-
+import { normalizeEmail, safeDate, fmtDate, classNames } from "@/lib/org/dashboard-utils";
 import { Button, Pill, TagChip, PlanChip } from "@/components/org/dashboard/DashboardUI";
 
-function AthleteCard({
-  athlete,
-  templates,
-  isExpanded,
-  onToggle,
-  onEdit,
-  onHistory,
-  onBuild,
-}) {
+function AthleteCard({ athlete, templates, isExpanded, onToggle, onEdit, onHistory, onBuild }) {
   const email = normalizeEmail(athlete?.email);
   const status = String(athlete?.status || "Active");
   const tags = Array.isArray(athlete?.tags) ? athlete.tags : [];
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <button
-        type="button"
-        onClick={() => onToggle(email)}
-        className="w-full text-left"
-        title="Expand"
-      >
+      <button type="button" onClick={() => onToggle(email)} className="w-full text-left" title="Expand">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -52,9 +33,7 @@ function AthleteCard({
               ) : (
                 <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
               )}
-              <p className="font-extrabold text-gray-900 truncate">
-                {athlete?.name || "Athlete"}
-              </p>
+              <p className="font-extrabold text-gray-900 truncate">{athlete?.name || "Athlete"}</p>
             </div>
 
             <div className="mt-2 flex flex-wrap gap-2">
@@ -64,6 +43,7 @@ function AthleteCard({
             </div>
 
             <p className="mt-2 text-[12px] text-gray-700 break-all">{email || "—"}</p>
+
             {email ? (
               <a
                 href={`mailto:${email}`}
@@ -80,9 +60,7 @@ function AthleteCard({
                 {athlete?.lastPlanAt ? fmtDate(athlete.lastPlanAt) : "—"}
               </p>
               {athlete?.lastPlanTitle ? (
-                <p className="text-[11px] text-gray-500 mt-0.5 break-words">
-                  {athlete.lastPlanTitle}
-                </p>
+                <p className="text-[11px] text-gray-500 mt-0.5 break-words">{athlete.lastPlanTitle}</p>
               ) : (
                 <p className="text-[11px] text-gray-400 mt-0.5">No plans yet</p>
               )}
@@ -111,11 +89,7 @@ function AthleteCard({
           History
         </Button>
 
-        <Button
-          className="px-3 py-2 text-xs w-full"
-          onClick={() => onBuild(email)}
-          disabled={!email}
-        >
+        <Button className="px-3 py-2 text-xs w-full" onClick={() => onBuild(email)} disabled={!email}>
           Build
           <ArrowRight className="w-4 h-4" />
         </Button>
@@ -127,35 +101,29 @@ function AthleteCard({
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
               <p className="text-xs text-gray-500">Plan status</p>
               <p className="text-sm font-extrabold text-gray-900 mt-1">
-                {athlete?.needsPlan
-                  ? "Needs first plan"
-                  : athlete?.stale
-                  ? "Needs update"
-                  : "Current"}
+                {athlete?.needsPlan ? "Needs first plan" : athlete?.stale ? "Needs update" : "Current"}
               </p>
-              <p className="text-[11px] text-gray-500 mt-2">
-                Handle needs-plan first, then stale.
-              </p>
+              <p className="text-[11px] text-gray-500 mt-2">Handle needs-plan first, then stale.</p>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
               <p className="text-xs text-gray-500">Quick templates</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {templates.slice(0, 3).map((t) => (
+                {(templates || []).slice(0, 3).map((t) => (
                   <Button
                     key={t.id}
                     variant="secondary"
                     className="px-3 py-2 text-xs"
                     onClick={() => onBuild(email, t.id)}
+                    disabled={!email}
+                    title="Open builder with template"
                   >
                     {t.name}
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 ))}
               </div>
-              <p className="text-[11px] text-gray-500 mt-3">
-                Opens builder pre-filled.
-              </p>
+              <p className="text-[11px] text-gray-500 mt-3">Opens builder pre-filled.</p>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
@@ -189,7 +157,7 @@ export default function RosterSection({
   onEdit,
   onHistory,
   onBuild,
-  pageSize = 25, // <- change default here
+  pageSize = 25,
 }) {
   const [page, setPage] = useState(1);
 
@@ -199,7 +167,6 @@ export default function RosterSection({
     setExpanded((prev) => ({ ...prev, [e]: !prev[e] }));
   };
 
-  // Reset to page 1 whenever controls change (search/filter/sort)
   useEffect(() => {
     setPage(1);
   }, [search, filterMode, sortMode]);
@@ -259,12 +226,11 @@ export default function RosterSection({
     return list;
   }, [athletes, search, filterMode, sortMode]);
 
-  const totalPages = useMemo(() => {
-    const n = filteredAthletes.length;
-    return Math.max(1, Math.ceil(n / pageSize));
-  }, [filteredAthletes.length, pageSize]);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredAthletes.length / pageSize)),
+    [filteredAthletes.length, pageSize]
+  );
 
-  // Keep page in bounds if list shrinks
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
     if (page < 1) setPage(1);
@@ -282,12 +248,13 @@ export default function RosterSection({
     "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
 
   return (
-    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+    // Tighten outer padding slightly; parent section already creates breathing room.
+    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-4 sm:p-5">
+      {/* Top controls (no repeated “Roster” title) */}
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-extrabold">Roster</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Status + tags make filtering & coaching workflow real.
+          <p className="text-sm text-gray-600">
+            Search, filter, and take action fast.
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -297,7 +264,7 @@ export default function RosterSection({
           </div>
         </div>
 
-        <div className="w-full sm:w-[460px] space-y-2">
+        <div className="w-full lg:w-[520px] space-y-2">
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -366,8 +333,8 @@ export default function RosterSection({
         </div>
       </div>
 
-      {/* Pager */}
-      <div className="mt-4 flex items-center justify-between gap-2">
+      {/* Pager (tightened) */}
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-2">
           <Pill>
             {filteredAthletes.length} athlete{filteredAthletes.length === 1 ? "" : "s"}
@@ -383,7 +350,6 @@ export default function RosterSection({
             className="px-3 py-2 text-xs"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={!canPrev}
-            title="Previous"
           >
             <ChevronLeft className="w-4 h-4" />
             Prev
@@ -394,7 +360,6 @@ export default function RosterSection({
             className="px-3 py-2 text-xs"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={!canNext}
-            title="Next"
           >
             Next
             <ChevronRightIcon className="w-4 h-4" />
@@ -402,7 +367,7 @@ export default function RosterSection({
         </div>
       </div>
 
-      {/* MOBILE */}
+      {/* MOBILE cards */}
       <div className="mt-5 space-y-3 lg:hidden">
         {pageItems.length === 0 ? (
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-center text-gray-500">
@@ -428,51 +393,43 @@ export default function RosterSection({
         )}
       </div>
 
-      {/* DESKTOP */}
-      <div className="mt-5 hidden lg:block overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 border-b">
-              <th className="py-3 pr-4">Athlete</th>
-              <th className="py-3 pr-4">Email</th>
-              <th className="py-3 pr-4">Status</th>
-              <th className="py-3 pr-4">Tags</th>
-              <th className="py-3 pr-4">Plans</th>
-              <th className="py-3 pr-4">Last Plan</th>
-              <th className="py-3 pr-2 text-right">Actions</th>
-            </tr>
-          </thead>
+      {/* DESKTOP table (tightened + contained) */}
+      <div className="mt-5 hidden lg:block">
+        <div className="rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-sm table-fixed">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-[11px] text-gray-500 border-b">
+                  <th className="py-2.5 px-3 w-[220px]">Athlete</th>
+                  <th className="py-2.5 px-3 w-[260px]">Email</th>
+                  <th className="py-2.5 px-3 w-[110px]">Status</th>
+                  <th className="py-2.5 px-3 w-[170px]">Tags</th>
+                  <th className="py-2.5 px-3 w-[90px]">Plans</th>
+                  <th className="py-2.5 px-3 w-[230px]">Last Plan</th>
+                  <th className="py-2.5 px-3 w-[220px] text-right">Actions</th>
+                </tr>
+              </thead>
 
-          <tbody>
-            {pageItems.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-6 text-center text-gray-500">
-                  No athletes found.
-                </td>
-              </tr>
-            )}
+              <tbody className="bg-white">
+                {pageItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-gray-500">
+                      No athletes found.
+                    </td>
+                  </tr>
+                ) : null}
 
-            {pageItems.map((a) => {
-              const email = normalizeEmail(a?.email);
-              const isExpanded = !!expanded[email];
-              const status = String(a?.status || "Active");
-              const tags = Array.isArray(a?.tags) ? a.tags : [];
+                {pageItems.map((a) => {
+                  const email = normalizeEmail(a?.email);
+                  const status = String(a?.status || "Active");
+                  const tags = Array.isArray(a?.tags) ? a.tags : [];
 
-              return (
-                <tr key={a.id || email} className="border-b">
-                  <td className="py-3 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(email)}
-                      className="text-left w-full"
-                      title="Expand"
+                  return (
+                    <tr
+                      key={a.id || email}
+                      className="border-b last:border-b-0 hover:bg-gray-50/60"
                     >
-                      <div className="flex items-center gap-2">
-                        {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        )}
+                      <td className="py-2.5 px-3 align-top">
                         <div className="min-w-0">
                           <div className="font-semibold text-gray-900 truncate">
                             {a?.name || "Athlete"}
@@ -481,90 +438,106 @@ export default function RosterSection({
                             <PlanChip needsPlan={!!a?.needsPlan} stale={!!a?.stale} />
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  </td>
+                      </td>
 
-                  <td className="py-3 pr-4">
-                    <div className="text-gray-700 font-medium break-all">{email}</div>
-                    {email ? (
-                      <a
-                        href={`mailto:${email}`}
-                        className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                        Email
-                      </a>
-                    ) : null}
-                  </td>
+                      <td className="py-2.5 px-3 align-top">
+                        <div className="text-gray-700 font-medium break-all line-clamp-2">
+                          {email || "—"}
+                        </div>
+                        {email ? (
+                          <a
+                            href={`mailto:${email}`}
+                            className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            Email
+                          </a>
+                        ) : null}
+                      </td>
 
-                  <td className="py-3 pr-4">
-                    <Pill>{status}</Pill>
-                  </td>
+                      <td className="py-2.5 px-3 align-top">
+                        <Pill>{status}</Pill>
+                      </td>
 
-                  <td className="py-3 pr-4">
-                    <div className="flex flex-wrap gap-2">
-                      {tags.length ? (
-                        tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)
-                      ) : (
-                        <span className="text-[11px] text-gray-400">—</span>
-                      )}
-                    </div>
-                  </td>
+                      <td className="py-2.5 px-3 align-top">
+                        <div className="flex flex-wrap gap-1.5">
+                          {tags.length ? (
+                            <>
+                              {tags.slice(0, 3).map((t) => (
+                                <TagChip key={t} text={t} />
+                              ))}
+                              {tags.length > 3 ? (
+                                <span className="text-[11px] text-gray-400">
+                                  +{tags.length - 3}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-gray-400">—</span>
+                          )}
+                        </div>
+                      </td>
 
-                  <td className="py-3 pr-4">
-                    <Pill>{a?.plansCount || 0}</Pill>
-                  </td>
+                      <td className="py-2.5 px-3 align-top">
+                        <Pill>{a?.plansCount || 0}</Pill>
+                      </td>
 
-                  <td className="py-3 pr-4">
-                    <div className="text-gray-700 font-medium">
-                      {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
-                    </div>
-                    {a?.lastPlanTitle ? (
-                      <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[240px]">
-                        {a.lastPlanTitle}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-gray-400 mt-0.5">No plans yet</div>
-                    )}
-                  </td>
+                      <td className="py-2.5 px-3 align-top">
+                        <div className="text-gray-700 font-medium">
+                          {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
+                        </div>
+                        {a?.lastPlanTitle ? (
+                          <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                            {a.lastPlanTitle}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-400 mt-0.5">No plans yet</div>
+                        )}
+                      </td>
 
-                  <td className="py-3 pr-2">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        className="px-3 py-2 text-xs"
-                        onClick={() => onEdit(a)}
-                        disabled={!email}
-                      >
-                        <Pencil className="w-4 h-4" />
-                        Edit
-                      </Button>
+                      <td className="py-2.5 px-3 align-top">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-2 text-xs"
+                            onClick={() => onEdit(a)}
+                            disabled={!email}
+                          >
+                            <Pencil className="w-4 h-4" />
+                            Edit
+                          </Button>
 
-                      <Button
-                        variant="secondary"
-                        className="px-3 py-2 text-xs"
-                        onClick={() => onHistory(email)}
-                        disabled={!email}
-                      >
-                        History
-                      </Button>
+                          <Button
+                            variant="secondary"
+                            className="px-3 py-2 text-xs"
+                            onClick={() => onHistory(email)}
+                            disabled={!email}
+                          >
+                            History
+                          </Button>
 
-                      <Button
-                        className="px-3 py-2 text-xs"
-                        onClick={() => onBuild(email)}
-                        disabled={!email}
-                      >
-                        Build
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                          <Button
+                            className="px-3 py-2 text-xs"
+                            onClick={() => onBuild(email)}
+                            disabled={!email}
+                          >
+                            Build
+                            <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* tiny helper for wide tables */}
+        <p className="mt-2 text-[11px] text-gray-500">
+          Tip: scroll horizontally if your screen is narrow.
+        </p>
       </div>
     </section>
   );

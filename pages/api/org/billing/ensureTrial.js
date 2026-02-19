@@ -1,78 +1,201 @@
 // pages/api/org/billing/ensureTrial.js
-import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgId, upsertBillingForOrg, F, firstLookupValue } from "@/lib/airtableBilling";
+import Airtable from "airtable";
+import { requireOrg } from "@/lib/requireOrg";
 
-function toDateOrNull(v) {
-  if (!v) return null;
-  const d = new Date(v);
+function asString(v) {
+  return String(v ?? "").trim();
+}
+
+function escapeAirtableString(str = "") {
+  return String(str).replace(/'/g, "\\'");
+}
+
+function firstValue(v) {
+  // Airtable sometimes returns lookups as arrays
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+function parseDateLoose(v) {
+  const raw = firstValue(v);
+  if (!raw) return null;
+  const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
+function addDays(d, days) {
+  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function iso(date) {
-  return date ? new Date(date).toISOString() : "";
+function normalizeStatus(v) {
+  const s = asString(v).toLowerCase();
+  if (!s) return "";
+  if (s.includes("trial")) return "Trial";
+  if (s.includes("active")) return "Active";
+  if (s.includes("past")) return "Past Due";
+  if (s.includes("cancel")) return "Cancelled";
+  if (s.includes("suspend")) return "Suspended";
+  return asString(v);
 }
+
+function isPaidOkFromStatus(status) {
+  // Define what "allowed" means for your org pages:
+  // Trial + Active allowed, everything else locked.
+  return status === "Trial" || status === "Active";
+}
+
+const base =
+  process.env.BILLING_API_KEY && process.env.BILLING_BASE_ID
+    ? new Airtable({ apiKey: process.env.BILLING_API_KEY }).base(process.env.BILLING_BASE_ID)
+    : null;
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("X-Route", "billing/ensureTrial");
 
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  // I recommend allowing GET too, but POST is fine. Your hook uses POST already.
+  const method = String(req.method || "GET").toUpperCase();
+  if (method !== "POST" && method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  const user = requireBillingAdmin(req, res);
-  if (!user) return;
+  const BILLING_TABLE = process.env.BILLING_TABLE_NAME;
+  if (!base || !BILLING_TABLE) {
+    return res.status(500).json({
+      error: "Billing Airtable not configured. Check BILLING_API_KEY, BILLING_BASE_ID, BILLING_TABLE_NAME.",
+    });
+  }
 
-  const orgId = String(
-    user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
-  ).trim();
-  if (!orgId) return res.status(400).json({ error: "Missing orgId in session." });
+  const auth = requireOrg(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  const orgToken = String(user?.Token || user?.token || user?.orgToken || "").trim().toUpperCase();
+  // ✅ org token should come from the cookie session
+  const orgToken = asString(auth?.org?.token || auth?.org?.Token || auth?.org?.["Organization Token"]);
+  if (!orgToken) return res.status(400).json({ error: "Organization token missing" });
 
-  // only allow org owner/admin to init trial (your dashboard already enforces this)
-  const role = String(user?.role || user?.Role || "").trim().toLowerCase();
-  const canInit = role === "organization" || role === "admin" || role.includes("org") || role.includes("admin");
-  if (!canInit) return res.status(403).json({ error: "Forbidden." });
+  // Trial expiry rule
+  const TRIAL_DAYS = 30;
 
   try {
-    const rec = await findBillingRecordByOrgId(orgId);
+    const safeToken = escapeAirtableString(orgToken);
 
-    // If no record, create minimal shell
-    if (!rec?.id) {
-      await upsertBillingForOrg(orgId, {
-        [F.Plan]: "Org",
-        [F.BillingStatus]: "Trial",
-        [F.Currency]: "USD",
-      });
+    // 1) Find existing billing row by {Token}
+    // NOTE: This assumes your Billing table has a field named "Token" (lookup or text).
+    const found = await base(BILLING_TABLE)
+      .select({
+        maxRecords: 1,
+        filterByFormula: `{Token}='${safeToken}'`,
+      })
+      .firstPage();
 
-      return res.status(200).json({ ok: true, created: true });
+    let record = found?.[0] || null;
+
+    // 2) If missing, create ONCE
+    if (!record) {
+      const now = new Date();
+      const trialEnds = addDays(now, TRIAL_DAYS).toISOString();
+
+      const created = await base(BILLING_TABLE).create([
+        {
+          fields: {
+            // If Token is a lookup, you often cannot write to it directly.
+            // But some setups use a plain text Token field in Billing (recommended).
+            Token: orgToken,
+
+            "Billing Status": "Trial",
+
+            // Optional but highly recommended so you're not relying only on lookup "Created"
+            TrialStart: now.toISOString(),
+            TrialEnds: trialEnds,
+          },
+        },
+      ]);
+
+      record = created?.[0] || null;
     }
 
-    // Record exists: ensure TrialEnds is populated if Created exists
-    const f = rec.fields || {};
-    const createdRaw = firstLookupValue(f?.[F.Created]);
-    const createdAt = toDateOrNull(createdRaw);
+    // 3) Compute what status SHOULD be today
+    const fields = record?.fields || {};
 
-    const hasTrialEnds = Boolean(toDateOrNull(f?.[F.TrialEnds]));
-    const statusRaw = String(f?.[F.BillingStatus] || "").trim();
+    // Pull current status
+    const currentStatus = normalizeStatus(fields["Billing Status"] || fields.BillingStatus);
 
-    if (createdAt && !hasTrialEnds) {
-      const trialEnds = addDays(createdAt, 30);
-      await upsertBillingForOrg(orgId, {
-        [F.TrialEnds]: iso(trialEnds),
-        ...(statusRaw ? {} : { [F.BillingStatus]: "Trial" }),
-      });
-      return res.status(200).json({ ok: true, updated: true });
+    // Determine trial start
+    // Priority:
+    //   A) Created lookup (your requested source)
+    //   B) TrialStart
+    //   C) Airtable record createdTime fallback (not available here without extra call)
+    const createdDate = parseDateLoose(fields.Created || fields["Created"]);
+    const trialStartDate = createdDate || parseDateLoose(fields.TrialStart);
+
+    // Determine trial end
+    const trialEndsDate =
+      parseDateLoose(fields.TrialEnds) ||
+      (trialStartDate ? addDays(trialStartDate, TRIAL_DAYS) : null);
+
+    let nextStatus = currentStatus || "Trial";
+
+    // Only auto-advance Trial -> Past Due after 30 days
+    if (nextStatus === "Trial" && trialEndsDate) {
+      const now = new Date();
+      if (now.getTime() > trialEndsDate.getTime()) {
+        nextStatus = "Past Due";
+      }
     }
 
-    return res.status(200).json({ ok: true, noop: true });
-  } catch (e) {
-    console.error("[billing/ensureTrial] error:", e);
-    return res.status(500).json({ error: e?.message || "Failed to ensure trial." });
+    // 4) Update Airtable ONLY if needed
+    const updates = {};
+    if (!currentStatus) updates["Billing Status"] = nextStatus; // if blank, set it
+    if (currentStatus && nextStatus !== currentStatus) updates["Billing Status"] = nextStatus;
+
+    // Persist TrialEnds if missing (helps keep consistent behavior)
+    if (!fields.TrialEnds && trialEndsDate) updates.TrialEnds = trialEndsDate.toISOString();
+    if (!fields.TrialStart && trialStartDate) updates.TrialStart = trialStartDate.toISOString();
+
+    if (Object.keys(updates).length) {
+      const updated = await base(BILLING_TABLE).update([
+        { id: record.id, fields: updates },
+      ]);
+      record = updated?.[0] || record;
+    }
+
+    // 5) Gate decision response
+    const finalFields = record?.fields || {};
+    const finalStatus = normalizeStatus(finalFields["Billing Status"] || finalFields.BillingStatus);
+
+    const isPaidOk = isPaidOkFromStatus(finalStatus);
+
+    const lockedReason =
+      isPaidOk
+        ? ""
+        : finalStatus === "Past Due"
+        ? "Trial ended — payment required."
+        : finalStatus === "Cancelled"
+        ? "Subscription cancelled."
+        : finalStatus === "Suspended"
+        ? "Subscription suspended."
+        : "Subscription not active.";
+
+    return res.status(200).json({
+      ok: true,
+      billing: {
+        status: finalStatus,
+        isPaidOk,
+        lockedReason,
+        trialStart: finalFields.TrialStart || finalFields["TrialStart"] || finalFields.Created || "",
+        trialEnds: finalFields.TrialEnds || finalFields["TrialEnds"] || "",
+        recordId: record?.id || "",
+      },
+    });
+  } catch (err) {
+    console.error("[billing/ensureTrial] error:", err);
+    return res.status(500).json({
+      error: "Failed to ensure billing status",
+      airtable: {
+        statusCode: err?.statusCode,
+        message: err?.message,
+        error: err?.error,
+      },
+    });
   }
 }

@@ -1,3 +1,4 @@
+// pages/org/trainers.js (or pages/org/trainers.jsx)
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -226,12 +227,12 @@ export default function TrainersPage() {
   }, [trainers]);
 
   /* ----------------------------------------------------- */
-  /* Render                                                 */
+  /* Render                                                */
   /* ----------------------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
+      <main className="max-w-7xl mx-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] sm:py-8 space-y-5 sm:space-y-6 overflow-x-hidden">
         <OrgTrainersHeader
           orgName={orgName}
           orgEmail={orgEmail}
@@ -250,31 +251,48 @@ export default function TrainersPage() {
           onBack={() => router.push("/org/dashboard")}
         />
 
-        <div className="grid lg:grid-cols-12 gap-6">
-          {/* Left: Invite */}
+        <div className="sm:hidden">
+          <p className="text-[11px] font-semibold text-gray-500 px-1">Invite teammates and manage access</p>
+        </div>
+
+        <div className="grid lg:grid-cols-12 gap-4 sm:gap-6">
           <div className="lg:col-span-4">
-            <InviteCard
-              canManageMembers={canManageMembers}
-              orgName={orgName}
-              inviterName={inviterName}
-              onInviteCreated={refresh}
-              setInviteOk={setInviteOk}
-              setInviteErr={setInviteErr}
-            />
+            <div className="space-y-3">
+              <div className="sm:hidden">
+                <p className="text-xs font-semibold text-gray-700 px-1">Invite</p>
+              </div>
+
+              <InviteCard
+                canManageMembers={canManageMembers}
+                orgName={orgName}
+                inviterName={inviterName}
+                onInviteCreated={refresh}
+                setInviteOk={setInviteOk}
+                setInviteErr={setInviteErr}
+              />
+            </div>
           </div>
 
-          {/* Right: Team */}
           <div className="lg:col-span-8">
-            <TeamTableCard
-              title="Team"
-              subtitle="Admins and trainers who can access org tools."
-              hint="Tip: inactive members stay listed and can be reactivated via Edit."
-              rows={trainers}
-              loading={loading}
-              canManage={canManageMembers}
-              onEditSave={updateMember}
-              onRemoveClick={openRemove}
-            />
+            <div className="space-y-3">
+              <div className="sm:hidden">
+                <p className="text-xs font-semibold text-gray-700 px-1">Team</p>
+                <p className="text-[11px] text-gray-500 px-1 mt-0.5">
+                  Admins and trainers who can access org tools.
+                </p>
+              </div>
+
+              <TeamTableCard
+                title="Team"
+                subtitle="Admins and trainers who can access org tools."
+                hint="Tip: inactive members stay listed and can be reactivated via Edit."
+                rows={trainers}
+                loading={loading}
+                canManage={canManageMembers}
+                onEditSave={updateMember}
+                onRemoveClick={openRemove}
+              />
+            </div>
           </div>
         </div>
 

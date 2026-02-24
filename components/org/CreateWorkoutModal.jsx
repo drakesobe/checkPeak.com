@@ -1,7 +1,7 @@
 // components/org/CreateWorkoutModal.jsx
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   X,
   Plus,
@@ -15,9 +15,16 @@ import {
   ClipboardList,
   Link as LinkIcon,
   Filter,
+  Search,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 
 function classNames(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
+function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
@@ -44,20 +51,10 @@ function titleTeam(v) {
 }
 
 function getAthleteTeam(a) {
-  // Supports common shapes from /api/org/getAthletes
-  return (
-    a?.team ||
-    a?.Team ||
-    a?.sport ||
-    a?.Sport ||
-    a?.primarySport ||
-    a?.PrimarySport ||
-    ""
-  );
+  return a?.team || a?.Team || a?.sport || a?.Sport || a?.primarySport || a?.PrimarySport || "";
 }
 
 function getAthleteToken(a) {
-  // ✅ Canonical key for selection + assignment
   return String(a?.AthleteToken || a?.athleteToken || a?.Token || "").trim();
 }
 
@@ -75,7 +72,7 @@ function sanitizeUrl(url) {
   return s;
 }
 
-function Pill({ children, tone = "neutral" }) {
+function Pill({ children, tone = "neutral", className = "" }) {
   const toneCls =
     tone === "warn"
       ? "bg-amber-50 text-amber-800 border-amber-200"
@@ -83,13 +80,16 @@ function Pill({ children, tone = "neutral" }) {
       ? "bg-red-50 text-red-800 border-red-200"
       : tone === "good"
       ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+      : tone === "blue"
+      ? "bg-blue-50 text-blue-900 border-blue-200"
       : "bg-gray-100 text-gray-700 border-gray-200";
 
   return (
     <span
       className={classNames(
         "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
-        toneCls
+        toneCls,
+        className
       )}
     >
       {children}
@@ -137,38 +137,52 @@ function Button({
  * ModalShell upgrades:
  * - max-height constrained to viewport
  * - scrollable body
+ * - ESC closes, locks page scroll
+ * - safe-area padding for mobile
  */
 function ModalShell({ open, title, subtitle, onClose, children }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999]">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        role="button"
-        tabIndex={0}
-      />
+    <div className="fixed inset-0 z-[10000]">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} role="button" tabIndex={0} />
 
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4">
+      <div className="absolute inset-0 flex items-center justify-center px-3 py-3 sm:px-4 sm:py-6">
         <div
           className={classNames(
             "w-full bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden",
             "max-w-3xl xl:max-w-5xl",
-            "max-h-[92vh]"
+            // dvh handles mobile browser chrome better than vh
+            "max-h-[calc(100dvh-24px)] sm:max-h-[calc(100vh-48px)]"
           )}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title || "Create workout"}
         >
-          <div className="p-5 border-b flex items-start justify-between gap-4 bg-white">
+          <div className="px-5 pt-5 pb-4 border-b flex items-start justify-between gap-4 bg-white">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900 truncate">
-                {title}
-              </p>
-              {subtitle ? (
-                <p className="text-[12px] text-gray-500 mt-1">{subtitle}</p>
-              ) : null}
+              <p className="text-lg font-extrabold text-gray-900 truncate">{title}</p>
+              {subtitle ? <p className="text-[12px] text-gray-500 mt-1">{subtitle}</p> : null}
             </div>
             <button
-              className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50"
+              className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 active:scale-[0.99] transition"
               onClick={onClose}
               type="button"
               aria-label="Close"
@@ -177,8 +191,9 @@ function ModalShell({ open, title, subtitle, onClose, children }) {
             </button>
           </div>
 
-          <div className="p-5 overflow-y-auto max-h-[calc(92vh-80px)]">
+          <div className="px-5 py-5 overflow-y-auto max-h-[calc(100dvh-140px)] sm:max-h-[calc(100vh-180px)]">
             {children}
+            <div className="h-2 sm:h-3" />
           </div>
         </div>
       </div>
@@ -196,26 +211,32 @@ function newItem(order) {
     Rest: "",
     Instructions: "",
     VideoURL: "",
-    EvidenceRequired: "none", // none | photo | video | photo_or_video
+    EvidenceRequired: "none",
   };
 }
 
 /**
  * CreateWorkoutModal (TOKEN-FIRST)
  *
- * ✅ Selects athletes by AthleteToken (NOT recordId)
- * ✅ Sends athleteIds[] as AthleteToken strings to POST /api/org/workouts/create
- *
- * Requires:
- *  - GET  /api/org/getAthletes  (must include AthleteToken in each athlete)
- *  - POST /api/org/workouts/create
- *    expects { date, title, athleteIds, status?, sport?, items? }
+ * Enhancements added:
+ * - Better modal shell behavior: ESC closes, scroll lock, dvh sizing
+ * - Footer CTA always reachable, clear disabled states
+ * - Athlete selection UX:
+ *   - Summary bar with counts
+ *   - “Select all shown” and “Clear shown” stays
+ *   - “Selected only” toggle for review
+ * - Team + Search refined with icons and helper microcopy
+ * - Items builder:
+ *   - Better spacing, clearer field grouping
+ *   - Quick add / clear, and row-level remove
+ *   - Validation preview microcopy
+ * - Safe URL normalization + item pruning already maintained
  */
 export default function CreateWorkoutModal({
   open,
   onClose,
-  dateISO, // "YYYY-MM-DD"
-  sport, // OPTIONAL label e.g. "Football" (can be empty)
+  dateISO,
+  sport,
   onCreated,
 }) {
   const [loadingAthletes, setLoadingAthletes] = useState(false);
@@ -224,15 +245,12 @@ export default function CreateWorkoutModal({
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("assigned");
 
-  // ✅ Selection keyed by AthleteToken
   const [selected, setSelected] = useState({}); // athleteToken -> true
 
   const [search, setSearch] = useState("");
-
-  // Team filter (All / Football / Basketball / etc.)
   const [teamFilter, setTeamFilter] = useState("all");
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 
-  // Items builder
   const [itemsOpen, setItemsOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
@@ -243,12 +261,15 @@ export default function CreateWorkoutModal({
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
 
+  const titleRef = useRef(null);
+
   const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
+    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/25";
 
   // Reset state whenever it opens
   useEffect(() => {
     if (!open) return;
+
     setErr("");
     setOkMsg("");
     setTitle((prev) => prev || `${sport || "Workout"} — ${dateISO || ""}`);
@@ -256,9 +277,17 @@ export default function CreateWorkoutModal({
     setSelected({});
     setSearch("");
     setTeamFilter("all");
+    setShowSelectedOnly(false);
 
     setItemsOpen(typeof window !== "undefined" ? window.innerWidth >= 1024 : true);
     setItems([newItem(1)]);
+
+    // Focus title field for fast flow
+    setTimeout(() => {
+      try {
+        titleRef.current?.focus?.();
+      } catch {}
+    }, 0);
   }, [open, sport, dateISO]);
 
   const fetchAthletes = useCallback(async () => {
@@ -266,16 +295,12 @@ export default function CreateWorkoutModal({
     setErr("");
 
     try {
-      const res = await fetch("/api/org/getAthletes", {
-        method: "GET",
-        credentials: "include",
-      });
+      const res = await fetch("/api/org/getAthletes", { method: "GET", credentials: "include" });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to load athletes");
 
       const list = Array.isArray(data?.athletes) ? data.athletes : [];
 
-      // Optional: warn if AthleteToken missing (helps catch API shape issues fast)
       const missingTokens = list.filter((a) => !getAthleteToken(a)).length;
       if (missingTokens > 0) {
         console.warn(
@@ -297,7 +322,6 @@ export default function CreateWorkoutModal({
     fetchAthletes();
   }, [open, fetchAthletes]);
 
-  // Teams derived from athlete list
   const teamsAll = useMemo(() => {
     const list = Array.isArray(athletes) ? athletes : [];
     const set = new Set();
@@ -308,31 +332,41 @@ export default function CreateWorkoutModal({
     return Array.from(set).sort();
   }, [athletes]);
 
-  const filteredAthletes = useMemo(() => {
-    const q = String(search || "").trim().toLowerCase();
-    const list = Array.isArray(athletes) ? athletes : [];
-
-    return list.filter((a) => {
-      const name = String(a?.name || a?.Name || "").toLowerCase();
-      const email = normalizeEmail(a?.email || a?.Email);
-
-      const team = normalizeTeam(getAthleteTeam(a));
-      const teamOk = teamFilter === "all" ? true : team === teamFilter;
-
-      const queryOk = !q ? true : name.includes(q) || email.includes(q);
-
-      return teamOk && queryOk;
-    });
-  }, [athletes, search, teamFilter]);
-
-  // ✅ tokens selected
   const selectedTokens = useMemo(() => {
     return Object.entries(selected)
       .filter(([, v]) => !!v)
       .map(([k]) => k);
   }, [selected]);
 
-  const toggleAll = (on) => {
+  const selectedCount = selectedTokens.length;
+
+  const filteredAthletes = useMemo(() => {
+    const q = String(search || "").trim().toLowerCase();
+    const list = Array.isArray(athletes) ? athletes : [];
+
+    let out = list.filter((a) => {
+      const token = getAthleteToken(a);
+      if (!token) return false;
+
+      const name = String(a?.name || a?.Name || "").toLowerCase();
+      const email = normalizeEmail(a?.email || a?.Email);
+      const team = normalizeTeam(getAthleteTeam(a));
+
+      const teamOk = teamFilter === "all" ? true : team === teamFilter;
+      const queryOk = !q ? true : name.includes(q) || email.includes(q);
+
+      return teamOk && queryOk;
+    });
+
+    if (showSelectedOnly) {
+      const setSel = new Set(selectedTokens);
+      out = out.filter((a) => setSel.has(getAthleteToken(a)));
+    }
+
+    return out;
+  }, [athletes, search, teamFilter, showSelectedOnly, selectedTokens]);
+
+  const toggleAllShown = (on) => {
     const next = {};
     (filteredAthletes || []).forEach((a) => {
       const token = getAthleteToken(a);
@@ -340,6 +374,8 @@ export default function CreateWorkoutModal({
     });
     setSelected((prev) => ({ ...prev, ...next }));
   };
+
+  const clearAllSelected = () => setSelected({});
 
   const toggleOne = (token) => {
     const key = String(token || "").trim();
@@ -459,6 +495,14 @@ export default function CreateWorkoutModal({
     return { ok: true, items: cleaned };
   };
 
+  const canSubmit = useMemo(() => {
+    if (!dateISO) return false;
+    if (!String(title || "").trim()) return false;
+    if (!selectedCount) return false;
+    if (saving) return false;
+    return true;
+  }, [dateISO, title, selectedCount, saving]);
+
   const submit = async () => {
     setErr("");
     setOkMsg("");
@@ -476,7 +520,7 @@ export default function CreateWorkoutModal({
         date: String(dateISO).slice(0, 10),
         title: String(title).trim(),
         status,
-        athleteIds: selectedTokens, // ✅ AthleteToken strings
+        athleteIds: selectedTokens,
         items: itemsCheck.items,
         ...(sport ? { sport: String(sport) } : {}),
       };
@@ -494,9 +538,10 @@ export default function CreateWorkoutModal({
       setOkMsg("Workout created!");
       onCreated?.(data?.dailyWorkout || data?.workout || null);
 
+      // Slight delay so success message flashes briefly (feels responsive)
       setTimeout(() => {
         onClose?.();
-      }, 400);
+      }, 350);
     } catch (e) {
       setErr(e?.message || "Failed to create workout");
     } finally {
@@ -512,20 +557,25 @@ export default function CreateWorkoutModal({
       subtitle="Pick a team (optional), assign athletes, set the title, and (optionally) build workout item rows."
     >
       <div className="space-y-5">
-        {/* Context */}
+        {/* Context / Summary */}
         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center flex-wrap gap-2">
             <CalendarDays className="w-4 h-4 text-gray-500" />
             <p className="text-sm font-semibold text-gray-900">{dateISO || "—"}</p>
-            {sport ? <Pill>{sport}</Pill> : <Pill tone="neutral">No sport label</Pill>}
+            {sport ? <Pill tone="blue">{sport}</Pill> : <Pill tone="neutral">No sport label</Pill>}
+            <Pill tone="good" className="ml-0 sm:ml-2">
+              <Users className="w-3.5 h-3.5 mr-1.5" />
+              {selectedCount} selected
+            </Pill>
           </div>
+
           <div className="flex items-center gap-2">
             <Dumbbell className="w-4 h-4 text-gray-500" />
             <p className="text-[12px] text-gray-600">
-              Selected: <span className="font-semibold">{selectedTokens.length}</span>
+              Items: <span className="font-semibold">{hasAnyMeaningfulItem ? items.length : 0}</span>
             </p>
             <Pill tone={hasAnyMeaningfulItem ? "good" : "neutral"}>
-              Items: {hasAnyMeaningfulItem ? `${items.length}` : "none"}
+              {hasAnyMeaningfulItem ? "Will submit rows" : "Optional"}
             </Pill>
           </div>
         </div>
@@ -541,7 +591,8 @@ export default function CreateWorkoutModal({
         ) : null}
 
         {okMsg ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
             <p className="text-sm text-emerald-800 font-semibold">{okMsg}</p>
           </div>
         ) : null}
@@ -550,14 +601,21 @@ export default function CreateWorkoutModal({
         <div>
           <label className="text-xs text-gray-600 font-semibold">Workout title</label>
           <input
+            ref={titleRef}
             className={classNames(inputBase, "mt-2")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Lower Body Strength (Player-specific or Team-wide)"
+            placeholder="e.g. Lower Body Strength (Team Wide)"
           />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Pill tone="neutral">
+              <Info className="w-3.5 h-3.5 mr-1.5" />
+              Tip: include the session goal (speed, strength, mobility)
+            </Pill>
+          </div>
         </div>
 
-        {/* Status */}
+        {/* Status + Quick guidance */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-gray-600 font-semibold">Status</label>
@@ -571,15 +629,17 @@ export default function CreateWorkoutModal({
               <option value="archived">archived</option>
             </select>
             <p className="text-[11px] text-gray-500 mt-2">
-              If your Airtable doesn’t use these exact values, you can remove this dropdown.
+              Keep <span className="font-semibold">assigned</span> for normal scheduling. Use{" "}
+              <span className="font-semibold">draft</span> if you want to build first, then assign later.
             </p>
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
             <p className="text-xs text-gray-500">Workflow</p>
-            <p className="text-sm font-semibold text-gray-900 mt-1">Select by team, then fine-tune</p>
+            <p className="text-sm font-semibold text-gray-900 mt-1">Filter → Select shown → Fine-tune</p>
             <p className="text-[11px] text-gray-500 mt-2">
-              Pick Football/Basketball/etc → select shown → deselect a few → create.
+              Choose a team, hit <span className="font-semibold">Select shown</span>, then uncheck a few athletes if
+              needed.
             </p>
           </div>
         </div>
@@ -588,7 +648,7 @@ export default function CreateWorkoutModal({
         <div className="rounded-2xl border border-gray-200 overflow-hidden">
           <button
             type="button"
-            className="w-full p-4 bg-white hover:bg-gray-50 flex items-center justify-between gap-3"
+            className="w-full px-4 py-4 bg-white hover:bg-gray-50 flex items-center justify-between gap-3"
             onClick={() => setItemsOpen((v) => !v)}
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -598,20 +658,22 @@ export default function CreateWorkoutModal({
                 {hasAnyMeaningfulItem ? `${items.length} rows` : "optional"}
               </Pill>
             </div>
-            {itemsOpen ? (
-              <ChevronUp className="w-4 h-4 text-gray-500" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-500" />
-            )}
+            {itemsOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
           </button>
 
           {itemsOpen ? (
             <div className="p-4 border-t bg-gray-50 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <p className="text-[12px] text-gray-600">
-                  Maps to Airtable: Order, ExerciseName, Sets, Reps, Weight, Rest, Instructions, VideoURL, EvidenceRequired.
-                </p>
-                <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12px] text-gray-700 font-semibold">Fields</p>
+                  <p className="text-[12px] text-gray-600">
+                    Order, ExerciseName, Sets, Reps, Weight, Rest, Instructions, VideoURL, EvidenceRequired
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Rows with blank <span className="font-semibold">ExerciseName</span> are ignored on submit.
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
                   <Button variant="secondary" className="px-3 py-2 text-xs" onClick={addItem}>
                     <Plus className="w-4 h-4" />
                     Add item
@@ -631,7 +693,13 @@ export default function CreateWorkoutModal({
                 {(items || []).map((it, idx) => (
                   <div key={idx} className="rounded-2xl border border-gray-200 bg-white p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-extrabold text-gray-900">Item {idx + 1}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-gray-900">Item {idx + 1}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Keep Order sequential for clean Airtable sort.
+                        </p>
+                      </div>
+
                       <button
                         type="button"
                         className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50"
@@ -676,7 +744,6 @@ export default function CreateWorkoutModal({
                           inputMode="numeric"
                         />
                       </div>
-
                       <div>
                         <label className="text-xs text-gray-600 font-semibold">Reps</label>
                         <input
@@ -686,7 +753,6 @@ export default function CreateWorkoutModal({
                           placeholder="8-10"
                         />
                       </div>
-
                       <div>
                         <label className="text-xs text-gray-600 font-semibold">Weight</label>
                         <input
@@ -696,7 +762,6 @@ export default function CreateWorkoutModal({
                           placeholder="225 lb"
                         />
                       </div>
-
                       <div>
                         <label className="text-xs text-gray-600 font-semibold">Rest</label>
                         <input
@@ -752,10 +817,6 @@ export default function CreateWorkoutModal({
                         placeholder="Coaching cues, tempo, technique notes..."
                       />
                     </div>
-
-                    <p className="text-[11px] text-gray-500 mt-3">
-                      Leaving ExerciseName blank means this row will not be submitted.
-                    </p>
                   </div>
                 ))}
               </div>
@@ -771,13 +832,14 @@ export default function CreateWorkoutModal({
                 <Users className="w-4 h-4 text-gray-500" />
                 <p className="text-sm font-extrabold text-gray-900">Assign athletes</p>
                 <Pill>{loadingAthletes ? "Loading…" : `${filteredAthletes.length} shown`}</Pill>
+                {selectedCount ? <Pill tone="good">{selectedCount} selected</Pill> : <Pill tone="warn">None selected</Pill>}
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="secondary"
                   className="px-3 py-2 text-xs"
-                  onClick={() => toggleAll(true)}
+                  onClick={() => toggleAllShown(true)}
                   disabled={loadingAthletes || !filteredAthletes.length}
                   title="Select athletes currently shown"
                 >
@@ -786,21 +848,35 @@ export default function CreateWorkoutModal({
                 <Button
                   variant="secondary"
                   className="px-3 py-2 text-xs"
-                  onClick={() => toggleAll(false)}
+                  onClick={() => toggleAllShown(false)}
                   disabled={loadingAthletes || !filteredAthletes.length}
                   title="Clear selection for athletes currently shown"
                 >
                   Clear shown
                 </Button>
-                <Button variant="secondary" className="px-3 py-2 text-xs" onClick={fetchAthletes} disabled={loadingAthletes}>
+                <Button
+                  variant="secondary"
+                  className="px-3 py-2 text-xs"
+                  onClick={clearAllSelected}
+                  disabled={!selectedCount}
+                  title="Clear all selected athletes"
+                >
+                  Clear all
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="px-3 py-2 text-xs"
+                  onClick={fetchAthletes}
+                  disabled={loadingAthletes}
+                >
                   Refresh
                 </Button>
               </div>
             </div>
 
-            {/* Team + Search */}
+            {/* Team + Search + Selected only */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-4">
                 <label className="text-xs text-gray-600 font-semibold flex items-center gap-2">
                   <Filter className="w-3.5 h-3.5" />
                   Team
@@ -822,22 +898,49 @@ export default function CreateWorkoutModal({
                 </p>
               </div>
 
-              <div className="sm:col-span-7">
+              <div className="sm:col-span-6">
                 <label className="text-xs text-gray-600 font-semibold">Search</label>
-                <input
-                  className={classNames(inputBase, "mt-2")}
-                  placeholder="Search athletes by name or email…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+                <div className="mt-2 relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <Search className="w-4 h-4" />
+                  </span>
+                  <input
+                    className={classNames(inputBase, "pl-10")}
+                    placeholder="Search athletes by name or email…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Pill>{teamFilter === "all" ? "All teams" : titleTeam(teamFilter)}</Pill>
-                  <Pill tone="good">{selectedTokens.length} selected</Pill>
+                  {search ? <Pill tone="blue">Search active</Pill> : <Pill tone="neutral">No search</Pill>}
                 </div>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs text-gray-600 font-semibold">View</label>
+                <button
+                  type="button"
+                  className={cx(
+                    "mt-2 w-full px-3 py-3 rounded-xl border text-sm font-semibold transition",
+                    showSelectedOnly
+                      ? "bg-[#46769B] text-white border-[#46769B]"
+                      : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+                  )}
+                  onClick={() => setShowSelectedOnly((v) => !v)}
+                  disabled={!selectedCount}
+                  title={!selectedCount ? "Select athletes first" : "Toggle showing only selected athletes"}
+                >
+                  {showSelectedOnly ? "Selected" : "All"}
+                </button>
+                <p className="text-[11px] text-gray-500 mt-2">
+                  Toggle to review selections quickly.
+                </p>
               </div>
             </div>
 
-            <div className="max-h-[320px] overflow-auto rounded-2xl border border-gray-200">
+            <div className="max-h-[340px] overflow-auto rounded-2xl border border-gray-200">
               {loadingAthletes ? (
                 <div className="p-4 text-sm text-gray-600">Loading athletes…</div>
               ) : filteredAthletes.length === 0 ? (
@@ -882,6 +985,20 @@ export default function CreateWorkoutModal({
                 </ul>
               )}
             </div>
+
+            {/* Selection summary */}
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs text-gray-500">Selection summary</p>
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                <Pill tone={selectedCount ? "good" : "warn"}>{selectedCount} selected</Pill>
+                <Pill tone="neutral">{filteredAthletes.length} shown</Pill>
+                {teamFilter !== "all" ? <Pill tone="blue">Team: {titleTeam(teamFilter)}</Pill> : null}
+                {search ? <Pill tone="blue">Search: “{search}”</Pill> : null}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                You must select at least one athlete to create the workout.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -892,9 +1009,9 @@ export default function CreateWorkoutModal({
           </Button>
           <Button
             onClick={submit}
-            disabled={saving}
+            disabled={!canSubmit}
             className="w-full sm:w-auto"
-            title="Create workout"
+            title={!selectedCount ? "Select at least one athlete" : "Create workout"}
           >
             <Plus className="w-4 h-4" />
             {saving ? "Creating..." : "Create workout"}

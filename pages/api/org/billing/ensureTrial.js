@@ -1,4 +1,4 @@
-// pages/api/org/billing/ensureTrial.js
+/// pages/api/org/billing/ensureTrial.js
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
@@ -11,7 +11,6 @@ function escapeAirtableString(str = "") {
 }
 
 function firstValue(v) {
-  // Airtable sometimes returns lookups as arrays
   if (Array.isArray(v)) return v[0];
   return v;
 }
@@ -39,10 +38,19 @@ function normalizeStatus(v) {
 }
 
 function isPaidOkFromStatus(status) {
-  // Define what "allowed" means for your org pages:
-  // Trial + Active allowed, everything else locked.
   return status === "Trial" || status === "Active";
 }
+
+/**
+ * ✅ Airtable field names (match your base exactly)
+ * You said you do NOT have TrialEnds, but DO have "Current Period End" as single line text.
+ */
+const FIELDS = {
+  token: "Token",
+  status: "Billing Status",
+  currentPeriodEnd: "Current Period End", // single line text field in your Billing table
+  createdLookup: "Created", // optional lookup you mentioned; safe if missing
+};
 
 const base =
   process.env.BILLING_API_KEY && process.env.BILLING_BASE_ID
@@ -53,7 +61,6 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Route", "billing/ensureTrial");
 
-  // I recommend allowing GET too, but POST is fine. Your hook uses POST already.
   const method = String(req.method || "GET").toUpperCase();
   if (method !== "POST" && method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -69,44 +76,36 @@ export default async function handler(req, res) {
   const auth = requireOrg(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  // ✅ org token should come from the cookie session
   const orgToken = asString(auth?.org?.token || auth?.org?.Token || auth?.org?.["Organization Token"]);
   if (!orgToken) return res.status(400).json({ error: "Organization token missing" });
 
-  // Trial expiry rule
   const TRIAL_DAYS = 30;
 
   try {
     const safeToken = escapeAirtableString(orgToken);
 
     // 1) Find existing billing row by {Token}
-    // NOTE: This assumes your Billing table has a field named "Token" (lookup or text).
     const found = await base(BILLING_TABLE)
       .select({
         maxRecords: 1,
-        filterByFormula: `{Token}='${safeToken}'`,
+        filterByFormula: `{${FIELDS.token}}='${safeToken}'`,
       })
       .firstPage();
 
     let record = found?.[0] || null;
 
-    // 2) If missing, create ONCE
+    // 2) If missing, create ONCE using only known fields
     if (!record) {
       const now = new Date();
-      const trialEnds = addDays(now, TRIAL_DAYS).toISOString();
+      const trialEndsISO = addDays(now, TRIAL_DAYS).toISOString();
 
       const created = await base(BILLING_TABLE).create([
         {
           fields: {
-            // If Token is a lookup, you often cannot write to it directly.
-            // But some setups use a plain text Token field in Billing (recommended).
-            Token: orgToken,
-
-            "Billing Status": "Trial",
-
-            // Optional but highly recommended so you're not relying only on lookup "Created"
-            TrialStart: now.toISOString(),
-            TrialEnds: trialEnds,
+            [FIELDS.token]: orgToken,
+            [FIELDS.status]: "Trial",
+            // ✅ Persist "trial end" into Current Period End
+            [FIELDS.currentPeriodEnd]: trialEndsISO,
           },
         },
       ]);
@@ -117,51 +116,51 @@ export default async function handler(req, res) {
     // 3) Compute what status SHOULD be today
     const fields = record?.fields || {};
 
-    // Pull current status
-    const currentStatus = normalizeStatus(fields["Billing Status"] || fields.BillingStatus);
+    const currentStatus = normalizeStatus(fields[FIELDS.status] || fields.BillingStatus);
 
-    // Determine trial start
-    // Priority:
-    //   A) Created lookup (your requested source)
-    //   B) TrialStart
-    //   C) Airtable record createdTime fallback (not available here without extra call)
-    const createdDate = parseDateLoose(fields.Created || fields["Created"]);
-    const trialStartDate = createdDate || parseDateLoose(fields.TrialStart);
+    // Trial start:
+    // - Prefer the Created lookup if you have it
+    // - Otherwise fall back to "now" (and we’ll still compute + persist end if missing)
+    const createdDate = parseDateLoose(fields[FIELDS.createdLookup] || fields.Created);
+    const trialStartDate = createdDate || new Date();
 
-    // Determine trial end
-    const trialEndsDate =
-      parseDateLoose(fields.TrialEnds) ||
-      (trialStartDate ? addDays(trialStartDate, TRIAL_DAYS) : null);
+    // Trial end:
+    // - Use Current Period End if present (single line text storing ISO)
+    // - Otherwise compute from trialStartDate and persist it
+    const currentPeriodEndRaw = fields[FIELDS.currentPeriodEnd];
+    const currentPeriodEndDate =
+      parseDateLoose(currentPeriodEndRaw) || addDays(trialStartDate, TRIAL_DAYS);
 
     let nextStatus = currentStatus || "Trial";
 
-    // Only auto-advance Trial -> Past Due after 30 days
-    if (nextStatus === "Trial" && trialEndsDate) {
+    // Only auto-advance Trial -> Past Due after trial end
+    if (nextStatus === "Trial" && currentPeriodEndDate) {
       const now = new Date();
-      if (now.getTime() > trialEndsDate.getTime()) {
+      if (now.getTime() > currentPeriodEndDate.getTime()) {
         nextStatus = "Past Due";
       }
     }
 
-    // 4) Update Airtable ONLY if needed
+    // 4) Update Airtable ONLY if needed (only fields that exist)
     const updates = {};
-    if (!currentStatus) updates["Billing Status"] = nextStatus; // if blank, set it
-    if (currentStatus && nextStatus !== currentStatus) updates["Billing Status"] = nextStatus;
 
-    // Persist TrialEnds if missing (helps keep consistent behavior)
-    if (!fields.TrialEnds && trialEndsDate) updates.TrialEnds = trialEndsDate.toISOString();
-    if (!fields.TrialStart && trialStartDate) updates.TrialStart = trialStartDate.toISOString();
+    // set status if missing or needs change
+    if (!currentStatus) updates[FIELDS.status] = nextStatus;
+    if (currentStatus && nextStatus !== currentStatus) updates[FIELDS.status] = nextStatus;
+
+    // persist Current Period End if missing/blank
+    if (!asString(currentPeriodEndRaw) && currentPeriodEndDate) {
+      updates[FIELDS.currentPeriodEnd] = currentPeriodEndDate.toISOString();
+    }
 
     if (Object.keys(updates).length) {
-      const updated = await base(BILLING_TABLE).update([
-        { id: record.id, fields: updates },
-      ]);
+      const updated = await base(BILLING_TABLE).update([{ id: record.id, fields: updates }]);
       record = updated?.[0] || record;
     }
 
     // 5) Gate decision response
     const finalFields = record?.fields || {};
-    const finalStatus = normalizeStatus(finalFields["Billing Status"] || finalFields.BillingStatus);
+    const finalStatus = normalizeStatus(finalFields[FIELDS.status] || finalFields.BillingStatus);
 
     const isPaidOk = isPaidOkFromStatus(finalStatus);
 
@@ -176,14 +175,24 @@ export default async function handler(req, res) {
         ? "Subscription suspended."
         : "Subscription not active.";
 
+    // Return trialEnds from Current Period End (so your UI still works)
+    const finalTrialEnds =
+      asString(finalFields[FIELDS.currentPeriodEnd]) ||
+      (currentPeriodEndDate ? currentPeriodEndDate.toISOString() : "");
+
+    // trialStart: created lookup if exists, else empty (or you can return now)
+    const finalTrialStart =
+      asString(finalFields[FIELDS.createdLookup] || finalFields.Created) ||
+      (trialStartDate ? trialStartDate.toISOString() : "");
+
     return res.status(200).json({
       ok: true,
       billing: {
         status: finalStatus,
         isPaidOk,
         lockedReason,
-        trialStart: finalFields.TrialStart || finalFields["TrialStart"] || finalFields.Created || "",
-        trialEnds: finalFields.TrialEnds || finalFields["TrialEnds"] || "",
+        trialStart: finalTrialStart,
+        trialEnds: finalTrialEnds,
         recordId: record?.id || "",
       },
     });

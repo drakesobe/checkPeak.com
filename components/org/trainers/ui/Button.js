@@ -1,4 +1,3 @@
-// components/org/trainers/ui/Button.js
 "use client";
 
 import { classNames } from "@/components/org/trainers/utils/strings";
@@ -11,9 +10,24 @@ export default function Button({
   className = "",
   title = "",
   type = "button",
+  fullWidth = false,        // ✅ optional helper
+  nowrap = false,           // ✅ optional: force single-line when needed
 }) {
-  const base =
-    "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition";
+  const base = classNames(
+    // layout
+    "inline-flex items-center justify-center gap-2",
+    // sizing
+    "px-4 py-2 rounded-xl",
+    // typography
+    "text-sm font-semibold text-center",
+    // ✅ mobile safety: allow shrinking + prevent overflow
+    "min-w-0 max-w-full",
+    // wrapping behavior
+    nowrap ? "whitespace-nowrap" : "whitespace-normal break-words",
+    // interaction
+    "transition active:scale-[0.99]"
+  );
+
   const styles =
     variant === "primary"
       ? "bg-[#46769B] text-white hover:brightness-110"
@@ -26,8 +40,14 @@ export default function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={classNames(base, styles, disabled ? "opacity-70 cursor-not-allowed" : "", className)}
       type={type}
+      className={classNames(
+        base,
+        styles,
+        fullWidth ? "w-full" : "",
+        disabled ? "opacity-70 cursor-not-allowed" : "",
+        className
+      )}
     >
       {children}
     </button>

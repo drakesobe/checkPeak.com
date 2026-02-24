@@ -455,16 +455,26 @@ export default function WorkoutsCalendarPage() {
 
         {/* Calendar */}
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900">
-                {viewMode === "week" ? "Week View" : "Month View"}
-              </p>
-              <p className="text-sm text-gray-600 mt-1">
-                {viewMode === "week"
-                  ? "Open a day to see all workouts scheduled. Create new workouts directly from any day."
-                  : "Tap any day to open the day sheet. Month view is great for planning."}
-              </p>
+              {/* Title + Period */}
+              <div className="flex flex-col gap-1">
+                <p className="text-lg font-extrabold text-gray-900">
+                  {viewMode === "week" ? "Week View" : "Month View"}
+                </p>
+
+                {/* ✅ This is the important part: show what they are looking at */}
+                <p className="text-sm font-semibold text-[#46769B]">
+                  {clientReady ? (viewMode === "week" ? weekLabel : monthLabel) : "—"}
+                </p>
+
+                {/* Optional: show exact ISO range (helps coaches/admins a lot) */}
+                <p className="text-[11px] text-gray-500">
+                  Range: <span className="font-semibold">{range.start}</span> →{" "}
+                  <span className="font-semibold">{range.end}</span>
+                </p>
+              </div>
+
               {!clientReady && (
                 <p className="text-xs text-gray-500 mt-2">
                   Loading calendar…
@@ -472,7 +482,8 @@ export default function WorkoutsCalendarPage() {
               )}
             </div>
 
-            <div className="flex gap-2">
+            {/* Actions */}
+            <div className="flex gap-2 sm:justify-end">
               <button
                 type="button"
                 onClick={() => openDay(todayISO)}
@@ -512,6 +523,7 @@ export default function WorkoutsCalendarPage() {
                 workoutsByDate={workoutsByDate}
                 weekdayLabels={weekdayLabels}
                 onOpenDay={openDay}
+                onJumpToMonth={(newAnchorISO) => setAnchorISO(newAnchorISO)} // if you added this earlier
               />
             )}
           </div>

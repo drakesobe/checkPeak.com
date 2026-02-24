@@ -1,4 +1,3 @@
-// components/Modal/CompareModal.jsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -63,9 +62,7 @@ export default function CompareModal({ stacks = [], onClose }) {
   // OCR / records state per index
   const [loadingOCR, setLoadingOCR] = useState(() => stacks.map(() => false));
   const [ocrTexts, setOcrTexts] = useState(() => stacks.map(() => ""));
-  const [matchedRecordsArr, setMatchedRecordsArr] = useState(() =>
-    stacks.map(() => [])
-  );
+  const [matchedRecordsArr, setMatchedRecordsArr] = useState(() => stacks.map(() => []));
 
   // Animated dots
   const [dotsTick, setDotsTick] = useState(0);
@@ -79,21 +76,31 @@ export default function CompareModal({ stacks = [], onClose }) {
   const getStackField = (stack, field, fallback = "") =>
     stack?.[field] ?? stack?.rawFields?.[field] ?? stack?.fields?.[field] ?? fallback;
 
-  const getImageUrlForStack = useCallback(
-    (stack) => {
-      // Match patterns across your codebase
-      return (
-        getStackField(stack, "nutritionLabel") ||
-        getStackField(stack, "Nutrition Label URL") ||
-        getStackField(stack, "imageUrl") ||
-        getStackField(stack, "image") ||
-        getStackField(stack, "Image URL") ||
-        ""
-      );
-    },
+  const getImageUrlForStack = useCallback((stack) => {
+    // Match patterns across your codebase
+    return (
+      getStackField(stack, "nutritionLabel") ||
+      getStackField(stack, "Nutrition Label URL") ||
+      getStackField(stack, "imageUrl") ||
+      getStackField(stack, "image") ||
+      getStackField(stack, "Image URL") ||
+      ""
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  }, []);
+
+  // ✅ Lock background scroll while modal is open (helps mobile a LOT)
+  useEffect(() => {
+    if (!(stacks.length >= 2 && stacks.length <= 3)) return;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, [stacks.length]);
 
   // Reset arrays whenever stacks list changes
   useEffect(() => {
@@ -149,17 +156,13 @@ export default function CompareModal({ stacks = [], onClose }) {
         const res = await fetch("/api/check-smartstack", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // ✅ new contract
           body: JSON.stringify({ ingredientsText: cleaned }),
         });
 
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || "Failed to fetch records");
 
-        // ✅ new contract
-        const banned = Array.isArray(data?.bannedSubstances)
-          ? data.bannedSubstances
-          : [];
+        const banned = Array.isArray(data?.bannedSubstances) ? data.bannedSubstances : [];
 
         touchCache(recordsCache, imageUrl, banned);
 
@@ -192,9 +195,7 @@ export default function CompareModal({ stacks = [], onClose }) {
       if (!imageUrl) return;
 
       // Force clears caches for this image
-      if (force) {
-        deleteCacheKey(imageUrl);
-      }
+      if (force) deleteCacheKey(imageUrl);
 
       // Cache hit
       if (ocrCache[imageUrl] && !force) {
@@ -220,13 +221,9 @@ export default function CompareModal({ stacks = [], onClose }) {
 
       try {
         const Tesseract = await getTesseract();
-
-        // OCR directly from image element (fine); if you want preprocessing,
-        // we can port the canvas grayscale trick from NutritionModal.
         const result = await Tesseract.recognize(imgEl, "eng", { logger: () => {} });
 
-        const text =
-          (result?.data?.text || "").trim() || "No OCR text detected.";
+        const text = (result?.data?.text || "").trim() || "No OCR text detected.";
 
         touchCache(ocrCache, imageUrl, text);
 
@@ -276,11 +273,7 @@ export default function CompareModal({ stacks = [], onClose }) {
 
   // Dynamic grid based on stacks
   const gridColsClass =
-    stacks.length === 2
-      ? "grid-cols-1 md:grid-cols-2"
-      : stacks.length === 3
-      ? "grid-cols-1 md:grid-cols-3"
-      : "grid-cols-1";
+    stacks.length === 2 ? "grid-cols-1 md:grid-cols-2" : stacks.length === 3 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1";
 
   // ---- Scroll logic for swipe hint + gradients ----
   const handleScroll = useCallback(() => {
@@ -306,7 +299,6 @@ export default function CompareModal({ stacks = [], onClose }) {
       setShowSwipeHint(false);
       setFadeHint(false);
     }
-    // ensure gradients correct
     setTimeout(() => handleScroll(), 0);
   }, [handleScroll]);
 
@@ -338,175 +330,178 @@ export default function CompareModal({ stacks = [], onClose }) {
     <AnimatePresence>
       {stacks.length >= 2 && stacks.length <= 3 && (
         <motion.div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-20 z-50"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          // If you WANT outside click to close, uncomment this:
-          // onClick={onClose}
+          onClick={onClose}
+          role="dialog"
+          aria-modal="true"
         >
-          {/* Modal container */}
-          <motion.div
-            className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl mx-3 sm:mx-4 p-3 sm:p-5 flex flex-col max-h-[90vh] overflow-hidden text-slate-50"
-            style={{ touchAction: "pan-y" }}
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 12, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={(e) => e.stopPropagation()}
+          {/* Centering + safe areas */}
+          <div
+            className="h-full w-full flex items-center justify-center px-3 sm:px-4"
+            style={{
+              paddingTop: "calc(12px + env(safe-area-inset-top, 0px))",
+              paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+            }}
           >
-            {/* Header / actions */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3 sm:mb-4 flex-shrink-0">
-              <div className="space-y-1">
-                <h2 className="text-lg sm:text-xl font-semibold">Compare stacks</h2>
-                {stackCountLabel && (
-                  <p className="text-xs sm:text-sm text-slate-300">
-                    {stackCountLabel}. Scroll horizontally on mobile to view all cards.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
-                <button
-                  type="button"
-                  className="px-3 sm:px-4 py-2 rounded-xl border border-slate-600 bg-slate-800 text-slate-100 text-xs sm:text-sm font-medium hover:bg-slate-700 transition"
-                  onClick={onClose}
-                >
-                  Close
-                </button>
-
-                <button
-                  type="button"
-                  className="px-3 sm:px-4 py-2 rounded-xl bg-[#46769B] text-white text-xs sm:text-sm font-semibold shadow-sm hover:brightness-110 transition"
-                  onClick={() => stacks.forEach((_, idx) => runOCR(idx, true))}
-                >
-                  {loadingOCR.some(Boolean) ? `Scanning labels${dots}` : "Rescan labels"}
-                </button>
-              </div>
-            </div>
-
-            {/* Scrollable content area */}
-            <div
-              className="relative flex-1 overflow-auto"
-              ref={scrollRef}
-              onScroll={handleScroll}
+            {/* Modal container */}
+            <motion.div
+              className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden text-slate-50 border border-slate-800/70 flex flex-col"
+              style={{
+                // ✅ dvh for mobile chrome
+                maxHeight: "calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))",
+                touchAction: "pan-y",
+              }}
+              initial={{ y: 18, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 12, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Left gradient */}
-              {showLeftShadow && (
-                <div
-                  className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
-                  style={{
-                    background:
-                      "linear-gradient(to right, rgba(15,23,42,0.95), transparent)",
-                  }}
-                />
-              )}
-              {/* Right gradient */}
-              {showRightShadow && (
-                <div
-                  className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
-                  style={{
-                    background:
-                      "linear-gradient(to left, rgba(15,23,42,0.95), transparent)",
-                  }}
-                />
-              )}
+              {/* Sticky header so actions are always accessible */}
+              <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800/80">
+                <div className="p-3 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="space-y-1">
+                    <h2 className="text-lg sm:text-xl font-semibold">Compare stacks</h2>
+                    {stackCountLabel && (
+                      <p className="text-xs sm:text-sm text-slate-300">
+                        {stackCountLabel}. On mobile, scroll if needed.
+                      </p>
+                    )}
+                  </div>
 
-              {/* Swipe hint */}
-              {showSwipeHint && (
-                <div
-                  className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-slate-200/70 text-[11px] sm:text-xs select-none z-20 rounded-full px-3 py-1 bg-slate-900/80 border border-slate-700/70 backdrop-blur-sm transition-opacity duration-500 ${
-                    fadeHint ? "opacity-100" : "opacity-0"
-                  }`}
-                >
-                  Swipe to view all stacks
-                </div>
-              )}
-
-              {/* Cards grid */}
-              <div className={`grid ${gridColsClass} gap-4 sm:gap-5 pr-4 sm:pr-6`}>
-                {stacks.map((stack, idx) => {
-                  const productImage =
-                    getImageUrlForStack(stack) || "/fallback-image.svg";
-
-                  const isScanning = Boolean(loadingOCR[idx]);
-                  const bannedCount = Array.isArray(matchedRecordsArr[idx])
-                    ? matchedRecordsArr[idx].length
-                    : 0;
-
-                  return (
-                    <motion.div
-                      key={stack.id || idx}
-                      className="flex flex-col bg-slate-800 rounded-xl p-4 sm:p-5 shadow-md border border-slate-700/80 relative min-w-0"
-                      whileHover={{ scale: 1.01 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 22 }}
+                  <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      className="px-3 sm:px-4 py-2 rounded-xl border border-slate-600 bg-slate-800 text-slate-100 text-xs sm:text-sm font-medium hover:bg-slate-700 transition"
+                      onClick={onClose}
                     >
-                      {/* Header */}
-                      <div className="min-w-0 mb-2">
-                        <ModalHeader
-                          stack={stack}
-                          servingsNumber={getStackField(stack, "Servings")}
-                          priceNumber={getStackField(stack, "Price")}
-                          matchedRecords={matchedRecordsArr[idx]}
-                          onClose={onClose}
-                        />
-                      </div>
+                      Close
+                    </button>
 
-                      {/* Image */}
-                      <div className="mt-1 mb-3">
-                        <div className="w-full rounded-lg bg-slate-900/60 border border-slate-700/70 flex items-center justify-center overflow-hidden">
-                          <img
-                            ref={(el) => (imageRefs.current[idx] = el)}
-                            src={productImage}
-                            alt={stack.name || `Stack ${idx + 1}`}
-                            className="w-full h-44 sm:h-52 object-contain"
-                            onError={(e) => {
-                              e.currentTarget.src = "/fallback-image.svg";
-                            }}
+                    <button
+                      type="button"
+                      className="px-3 sm:px-4 py-2 rounded-xl bg-[#46769B] text-white text-xs sm:text-sm font-semibold shadow-sm hover:brightness-110 transition"
+                      onClick={() => stacks.forEach((_, idx) => runOCR(idx, true))}
+                    >
+                      {loadingOCR.some(Boolean) ? `Scanning labels${dots}` : "Rescan labels"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scrollable content area */}
+              <div
+                className="relative flex-1 overflow-auto"
+                ref={scrollRef}
+                onScroll={handleScroll}
+              >
+                {/* Left gradient */}
+                {showLeftShadow && (
+                  <div
+                    className="pointer-events-none absolute top-0 left-0 h-full w-6 z-10"
+                    style={{
+                      background: "linear-gradient(to right, rgba(15,23,42,0.95), transparent)",
+                    }}
+                  />
+                )}
+                {/* Right gradient */}
+                {showRightShadow && (
+                  <div
+                    className="pointer-events-none absolute top-0 right-0 h-full w-6 z-10"
+                    style={{
+                      background: "linear-gradient(to left, rgba(15,23,42,0.95), transparent)",
+                    }}
+                  />
+                )}
+
+                {/* Swipe hint */}
+                {showSwipeHint && (
+                  <div
+                    className={`pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-slate-200/70 text-[11px] sm:text-xs select-none z-20 rounded-full px-3 py-1 bg-slate-900/80 border border-slate-700/70 backdrop-blur-sm transition-opacity duration-500 ${
+                      fadeHint ? "opacity-100" : "opacity-0"
+                    }`}
+                  >
+                    Swipe / scroll to view
+                  </div>
+                )}
+
+                {/* Cards grid */}
+                <div className={`p-3 sm:p-5 grid ${gridColsClass} gap-4 sm:gap-5`}>
+                  {stacks.map((stack, idx) => {
+                    const productImage = getImageUrlForStack(stack) || "/fallback-image.svg";
+
+                    const isScanning = Boolean(loadingOCR[idx]);
+                    const bannedCount = Array.isArray(matchedRecordsArr[idx]) ? matchedRecordsArr[idx].length : 0;
+
+                    return (
+                      <motion.div
+                        key={stack.id || idx}
+                        className="flex flex-col bg-slate-800 rounded-xl p-4 sm:p-5 shadow-md border border-slate-700/80 relative min-w-0"
+                        whileHover={{ scale: 1.01 }}
+                        transition={{ type: "spring", stiffness: 200, damping: 22 }}
+                      >
+                        {/* Header */}
+                        <div className="min-w-0 mb-2">
+                          <ModalHeader
+                            stack={stack}
+                            servingsNumber={getStackField(stack, "Servings")}
+                            priceNumber={getStackField(stack, "Price")}
+                            matchedRecords={matchedRecordsArr[idx]}
+                            onClose={onClose}
                           />
                         </div>
-                      </div>
 
-                      {/* Status line */}
-                      <div className="flex items-center justify-between text-[11px] sm:text-xs mb-2 text-slate-300">
-                        <span>
-                          {bannedCount ? `${bannedCount} banned matches` : "No banned matches yet"}
-                        </span>
-                        <span className="text-slate-400">
-                          {isScanning
-                            ? `Scanning${dots}`
-                            : ocrTexts[idx]
-                            ? "Scan complete"
-                            : "Waiting for scan"}
-                        </span>
-                      </div>
+                        {/* Image */}
+                        <div className="mt-1 mb-3">
+                          <div className="w-full rounded-lg bg-slate-900/60 border border-slate-700/70 flex items-center justify-center overflow-hidden">
+                            <img
+                              ref={(el) => (imageRefs.current[idx] = el)}
+                              src={productImage}
+                              alt={stack.name || `Stack ${idx + 1}`}
+                              className="w-full h-44 sm:h-52 object-contain"
+                              onError={(e) => {
+                                e.currentTarget.src = "/fallback-image.svg";
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                      {/* Detected substances */}
-                      <div className="mt-1 pointer-events-auto min-w-0">
-                        {isScanning ? (
-                          <p className="text-slate-300 text-xs sm:text-sm italic">
-                            Reading label… this can take a few seconds.
-                          </p>
-                        ) : (
-                          <DetectedSubstancesTab
-                            matchedRecords={matchedRecordsArr[idx]}
-                            hideCounts
-                          />
-                        )}
-                      </div>
+                        {/* Status line */}
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs mb-2 text-slate-300">
+                          <span>{bannedCount ? `${bannedCount} banned matches` : "No banned matches yet"}</span>
+                          <span className="text-slate-400">
+                            {isScanning ? `Scanning${dots}` : ocrTexts[idx] ? "Scan complete" : "Waiting for scan"}
+                          </span>
+                        </div>
 
-                      {/* Footer */}
-                      <div className="mt-3">
-                        <ModalFooter
-                          affiliateLink={getStackField(stack, "affiliateLink")}
-                        />
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                        {/* Detected substances */}
+                        <div className="mt-1 pointer-events-auto min-w-0">
+                          {isScanning ? (
+                            <p className="text-slate-300 text-xs sm:text-sm italic">
+                              Reading label… this can take a few seconds.
+                            </p>
+                          ) : (
+                            <DetectedSubstancesTab matchedRecords={matchedRecordsArr[idx]} hideCounts />
+                          )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="mt-3">
+                          <ModalFooter affiliateLink={getStackField(stack, "affiliateLink")} />
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* bottom safe-area breathing room */}
+                <div style={{ height: "calc(10px + env(safe-area-inset-bottom, 0px))" }} />
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

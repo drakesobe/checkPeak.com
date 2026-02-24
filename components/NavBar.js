@@ -28,6 +28,43 @@ export default function NavBar() {
 
   useEffect(() => setIsMounted(true), []);
 
+  /**
+   * ✅ Nav height -> CSS variable
+   * Sets: --app-header-h on <html>
+   *
+   * Why:
+   * - Your drawer/modals can respect the sticky NavBar without hardcoding 64/80.
+   * - Responsive (h-16 vs h-20), font changes, etc.
+   */
+  useEffect(() => {
+    if (!isMounted) return;
+    if (!navRef.current) return;
+
+    const setVar = () => {
+      const h = navRef.current?.getBoundingClientRect?.().height || 0;
+      // Put it on <html> so it is globally available
+      document.documentElement.style.setProperty("--app-header-h", `${Math.round(h)}px`);
+    };
+
+    // Initial set
+    setVar();
+
+    // Keep correct on resize / breakpoint changes
+    window.addEventListener("resize", setVar);
+
+    // Keep correct if nav changes size due to content/font load
+    let ro;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => setVar());
+      ro.observe(navRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", setVar);
+      if (ro) ro.disconnect();
+    };
+  }, [isMounted]);
+
   const loggedIn = !!user;
 
   /* =========================
@@ -74,7 +111,10 @@ export default function NavBar() {
     []
   );
 
-  const mainTabs = useMemo(() => [...leftTabs, { name: "SmartStack", href: "/smartstack" }], [leftTabs]);
+  const mainTabs = useMemo(
+    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
+    [leftTabs]
+  );
 
   /* =========================
      AUTH MODAL OPENERS
@@ -186,7 +226,9 @@ export default function NavBar() {
         aria-current={active ? "page" : undefined}
         className={[
           "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
-          active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50",
+          active
+            ? "text-[#46769B] bg-blue-50"
+            : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50",
         ].join(" ")}
       >
         {isSmartStack ? (
@@ -219,7 +261,9 @@ export default function NavBar() {
           className={[
             "block transition rounded-xl",
             compact ? "px-3 py-2 text-sm" : "px-4 py-3 text-sm",
-            active ? "bg-blue-50 text-[#46769B] font-semibold" : "text-gray-700 hover:bg-gray-50",
+            active
+              ? "bg-blue-50 text-[#46769B] font-semibold"
+              : "text-gray-700 hover:bg-gray-50",
           ].join(" ")}
         >
           {children}
@@ -264,7 +308,10 @@ export default function NavBar() {
 
   return (
     <>
-      <nav ref={navRef} className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200">
+      <nav
+        ref={navRef}
+        className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           {/* TOP BAR */}
           <div className="h-16 md:h-20 flex items-center justify-between gap-3">
@@ -353,7 +400,11 @@ export default function NavBar() {
                       menuOpen ? "rotate-45 translate-y-1.5" : ""
                     }`}
                   />
-                  <span className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${menuOpen ? "opacity-0" : ""}`} />
+                  <span
+                    className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${
+                      menuOpen ? "opacity-0" : ""
+                    }`}
+                  />
                   <span
                     className={`w-5 h-0.5 bg-gray-700 transition ${
                       menuOpen ? "-rotate-45 -translate-y-1.5" : ""
@@ -382,7 +433,9 @@ export default function NavBar() {
                     onClick={() => setMenuOpen(false)}
                     className={[
                       "block rounded-xl px-4 py-3 text-sm font-medium",
-                      isActive(tab.href) ? "bg-blue-50 text-[#46769B]" : "hover:bg-gray-50",
+                      isActive(tab.href)
+                        ? "bg-blue-50 text-[#46769B]"
+                        : "hover:bg-gray-50",
                     ].join(" ")}
                   >
                     {tab.name}
@@ -412,8 +465,12 @@ export default function NavBar() {
                   <div className="space-y-2">
                     {/* Mobile profile header */}
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-sm font-semibold truncate">{user?.Name || user?.name || "Profile"}</p>
-                      <p className="text-xs text-gray-500 truncate">{user?.Email || user?.email}</p>
+                      <p className="text-sm font-semibold truncate">
+                        {user?.Name || user?.name || "Profile"}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {user?.Email || user?.email}
+                      </p>
                       <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
                     </div>
 

@@ -17,6 +17,13 @@ import ModalFooter from "./ModalFooter";
  * - Fixes API contract:
  *    • POST body uses { ingredientsText }
  *    • Response reads { bannedSubstances, ingredients }
+ *
+ * UI/Spacing polish (mobile + web):
+ * - Uses dvh-based height so mobile browser chrome doesn’t squash the modal
+ * - Locks background scroll while modal is open (prevents “page behind” scroll)
+ * - Better padding + scroll containers (only the content area scrolls)
+ * - Adds safe-area bottom breathing room for iOS
+ * - Keeps ONLY ModalHeader’s close button (no duplicate X)
  */
 
 // -----------------------------------------------------------------------------
@@ -100,10 +107,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       setAnimDots("");
       return;
     }
-    const id = setInterval(
-      () => setAnimDots((p) => (p.length >= 3 ? "" : p + ".")),
-      450
-    );
+    const id = setInterval(() => setAnimDots((p) => (p.length >= 3 ? "" : p + ".")), 450);
     return () => clearInterval(id);
   }, [loadingOCR, loadingRecords, scanPrimed]);
 
@@ -115,6 +119,19 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  // ✅ Lock background scroll while modal is open
+  useEffect(() => {
+    if (!stack) return;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, [stack]);
 
   if (!stack) return null;
 
@@ -257,21 +274,13 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
               const f = r?.fields || r || {};
               return {
                 id: r?.id || null,
-                name:
-                  f["Substance Name"] ||
-                  f["Ingredient Name"] ||
-                  f["Name"] ||
-                  "",
+                name: f["Substance Name"] || f["Ingredient Name"] || f["Name"] || "",
                 type,
                 notes: f["Notes"] || "",
                 benefits: f["Benefits"] || "",
                 weaknesses: f["Weaknesses"] || "",
                 antagonism: f["Nutrient Antagonism"] || "",
-                source:
-                  f["Source"] ||
-                  f["Sources / References"] ||
-                  f["Source / Citation"] ||
-                  "",
+                source: f["Source"] || f["Sources / References"] || f["Source / Citation"] || "",
                 synonyms: f["Synonyms"] || f["Synonyms (Extended)"] || "",
                 _raw: f,
                 matchedTerms: Array.isArray(r?.matchedTerms) ? r.matchedTerms : [],
@@ -344,8 +353,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
         const result = await Tesseract.recognize(pre, "eng", {
           logger: () => {},
-          tessedit_char_whitelist:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
+          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%()-: ",
           oem: 1,
           psm: 6,
         });
@@ -495,141 +503,155 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       : "";
 
   // -------------------------
-  // Render
+  // Render (spacing polish, NO extra close button)
   // -------------------------
   return (
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3 sm:p-4"
-      onClick={onClose}
+      className="fixed inset-0 bg-black/70 z-50"
       role="dialog"
       aria-modal="true"
+      onClick={onClose}
     >
-      <div
-        className="bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 max-w-4xl w-full relative overflow-hidden flex flex-col max-h-[90vh] border border-gray-700 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <ModalHeader
-          stack={stack}
-          servingsNumber={servingsNumber}
-          priceNumber={priceNumber}
-          matchedRecords={matchedRecords}
-          matchedIngredients={matchedIngredients}
-          allStacks={allStacks}
-          onClose={onClose}
-        />
-
-        <div className="mt-4 flex-1 overflow-auto pr-1 sm:pr-2 space-y-3">
-          {/* Image + controls row */}
-          {imageUrl ? (
-            <div className="flex flex-col md:flex-row md:items-start gap-3 sm:gap-4 mb-2">
-              <div
-                className={`transition-all duration-200 ${
-                  imageCollapsed
-                    ? "w-32 sm:w-40 md:w-44"
-                    : "w-full md:w-1/3 lg:w-1/2"
-                }`}
-              >
-                <div
-                  className={`overflow-hidden rounded-lg border border-gray-700 bg-black/20 ${
-                    imageCollapsed ? "h-28 sm:h-32" : "h-auto max-h-[260px]"
-                  }`}
-                >
-                  <img
-                    ref={imageRef}
-                    src={imageUrl}
-                    alt="Nutrition Label"
-                    className="object-contain w-full h-full"
-                    crossOrigin="anonymous"
-                    onLoad={handleImageLoad}
-                  />
-                </div>
-              </div>
-
-              <div className="flex-1 flex flex-col gap-2">
-                <div className="flex flex-wrap items-center justify-start md:justify-end gap-2">
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm rounded text-white transition"
-                    onClick={() => setImageCollapsed((s) => !s)}
-                  >
-                    {imageCollapsed ? "Expand image" : "Collapse image"}
-                  </button>
-
-                  <a
-                    className={`text-xs sm:text-sm px-3 py-1.5 rounded transition ${
-                      affiliateLink
-                        ? "bg-gray-500 hover:bg-green-600 text-white"
-                        : "bg-gray-700 text-gray-400 cursor-not-allowed"
-                    }`}
-                    href={affiliateLink || "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => {
-                      if (!affiliateLink) e.preventDefault();
-                      else e.stopPropagation();
-                    }}
-                  >
-                    {affiliateLink ? "Open product link" : "No product link"}
-                  </a>
-
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs sm:text-sm text-white rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
-                    onClick={() => runOCR(true)}
-                    title="Force re-run OCR & fetch matched records"
-                    disabled={loadingOCR || loadingRecords}
-                  >
-                    {loadingOCR || loadingRecords ? "Re-scanning..." : "Re-scan"}
-                  </button>
-                </div>
-
-                {loadingLabel && (
-                  <p className="text-[11px] sm:text-xs text-gray-400 mt-1">
-                    {loadingLabel}
-                    {animDots}
-                  </p>
-                )}
-
-                {error && (
-                  <p className="text-[11px] sm:text-xs text-red-400 mt-1">
-                    {error}
-                  </p>
-                )}
-
-                {scanPrimed && !loadingOCR && !loadingRecords && (
-                  <p className="text-[11px] sm:text-xs text-gray-500">
-                    Getting the scanner ready…
-                  </p>
-                )}
-              </div>
-
-              <canvas ref={canvasRef} style={{ display: "none" }} />
-            </div>
-          ) : (
-            <div className="w-full h-32 sm:h-40 bg-gray-700 flex items-center justify-center rounded-lg mb-2 text-gray-400 text-xs sm:text-sm">
-              No nutrition label image available for this stack.
-            </div>
-          )}
-
-          <ModalTabs activeTab={activeTab} setActiveTab={setActiveTab} />
-
-          <ModalContent
-            activeTab={activeTab}
-            loadingOCR={loadingOCR}
-            loadingRecords={loadingRecords}
-            animDots={animDots}
-            ocrText={ocrText}
+      {/* Centering wrapper with responsive padding and safe-area */}
+      <div className="h-full w-full flex items-center justify-center p-3 sm:p-4">
+        <div
+          className={[
+            "bg-gray-800 border border-gray-700 shadow-2xl",
+            "rounded-xl sm:rounded-2xl",
+            // tighter on mobile, generous on desktop
+            "p-4 sm:p-6",
+            "w-full max-w-4xl",
+            "relative overflow-hidden flex flex-col",
+            // dvh makes this stable on mobile browser chrome
+            "max-h-[calc(100dvh-24px)] sm:max-h-[92vh]",
+          ].join(" ")}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ModalHeader
+            stack={stack}
+            servingsNumber={servingsNumber}
+            priceNumber={priceNumber}
             matchedRecords={matchedRecords}
             matchedIngredients={matchedIngredients}
-            error={error}
-            runOCR={runOCR}
-            scanPrimed={scanPrimed}
-            stackId={stack?.id || imageUrl || Math.random().toString(36).slice(2)}
+            allStacks={allStacks}
+            onClose={onClose}
           />
-        </div>
 
-        <div className="mt-3 pt-3 border-t border-gray-700 bg-gray-800 sticky bottom-0">
-          <ModalFooter affiliateLink={affiliateLink} runOCR={runOCR} />
+          {/* Scrollable main area */}
+          <div className="mt-4 flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-3">
+            {/* Image + controls row */}
+            {imageUrl ? (
+              <div className="flex flex-col md:flex-row md:items-start gap-3 sm:gap-4">
+                <div
+                  className={`transition-all duration-200 ${
+                    imageCollapsed ? "w-32 sm:w-40 md:w-44" : "w-full md:w-1/3 lg:w-1/2"
+                  }`}
+                >
+                  <div
+                    className={`overflow-hidden rounded-lg border border-gray-700 bg-black/20 ${
+                      imageCollapsed ? "h-28 sm:h-32" : "h-auto max-h-[280px]"
+                    }`}
+                  >
+                    <img
+                      ref={imageRef}
+                      src={imageUrl}
+                      alt="Nutrition Label"
+                      className="object-contain w-full h-full"
+                      crossOrigin="anonymous"
+                      onLoad={handleImageLoad}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 flex flex-col gap-2">
+                  {/* Actions (wrap cleanly on mobile) */}
+                  <div className="flex flex-wrap items-center justify-start md:justify-end gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-xs sm:text-sm rounded text-white transition"
+                      onClick={() => setImageCollapsed((s) => !s)}
+                    >
+                      {imageCollapsed ? "Expand image" : "Collapse image"}
+                    </button>
+
+                    <a
+                      className={`text-xs sm:text-sm px-3 py-1.5 rounded transition ${
+                        affiliateLink
+                          ? "bg-gray-500 hover:bg-green-600 text-white"
+                          : "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      }`}
+                      href={affiliateLink || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        // keep overlay click-to-close from triggering
+                        e.stopPropagation();
+                        if (!affiliateLink) e.preventDefault();
+                      }}
+                    >
+                      {affiliateLink ? "Open product link" : "No product link"}
+                    </a>
+
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-xs sm:text-sm text-white rounded transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      onClick={() => runOCR(true)}
+                      title="Force re-run OCR & fetch matched records"
+                      disabled={loadingOCR || loadingRecords}
+                    >
+                      {loadingOCR || loadingRecords ? "Re-scanning..." : "Re-scan"}
+                    </button>
+                  </div>
+
+                  {/* Status lines */}
+                  {loadingLabel && (
+                    <p className="text-[11px] sm:text-xs text-gray-400">
+                      {loadingLabel}
+                      {animDots}
+                    </p>
+                  )}
+
+                  {error && <p className="text-[11px] sm:text-xs text-red-400">{error}</p>}
+
+                  {scanPrimed && !loadingOCR && !loadingRecords && (
+                    <p className="text-[11px] sm:text-xs text-gray-500">Getting the scanner ready…</p>
+                  )}
+                </div>
+
+                <canvas ref={canvasRef} style={{ display: "none" }} />
+              </div>
+            ) : (
+              <div className="w-full h-32 sm:h-40 bg-gray-700 flex items-center justify-center rounded-lg text-gray-400 text-xs sm:text-sm">
+                No nutrition label image available for this stack.
+              </div>
+            )}
+
+            <ModalTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+
+            <ModalContent
+              activeTab={activeTab}
+              loadingOCR={loadingOCR}
+              loadingRecords={loadingRecords}
+              animDots={animDots}
+              ocrText={ocrText}
+              matchedRecords={matchedRecords}
+              matchedIngredients={matchedIngredients}
+              error={error}
+              runOCR={runOCR}
+              scanPrimed={scanPrimed}
+              stackId={stack?.id || imageUrl || Math.random().toString(36).slice(2)}
+            />
+
+            {/* Safe-area bottom breathing room inside scroll area */}
+            <div style={{ height: "calc(10px + env(safe-area-inset-bottom, 0px))" }} />
+          </div>
+
+          {/* Footer: sticky so actions are always reachable */}
+          <div className="mt-3 pt-3 border-t border-gray-700 bg-gray-800 sticky bottom-0">
+            <ModalFooter affiliateLink={affiliateLink} runOCR={runOCR} />
+            {/* extra safe area for iOS home bar */}
+            <div style={{ height: "calc(8px + env(safe-area-inset-bottom, 0px))" }} />
+          </div>
         </div>
       </div>
     </div>

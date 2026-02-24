@@ -208,6 +208,74 @@ function AccountInner({ user }) {
     hasProfileChanges.current = false;
   }, [user, isOrgPrimary, roleLabel, orgNameFromSession, orgIdFromSession]);
 
+  /**
+   * ✅ Athlete org hydrate (fix "Not connected" when Airtable has org but session doesn't)
+   * Requires API: GET /api/athlete/account/org
+   */
+  useEffect(() => {
+    if (!isAthlete) return;
+
+    const missingOrgName = !String(formData.organization || "").trim();
+    const missingOrgId = !String(formData.organizationId || "").trim();
+    if (!missingOrgName && !missingOrgId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/athlete/account/org", {
+          method: "GET",
+          credentials: "include",
+        });
+        const data = await safeJson(res);
+        if (!res.ok) return;
+
+        const newName = String(data?.org?.name || "").trim();
+        const newId = String(data?.org?.id || "").trim();
+        const newToken = String(data?.org?.token || "").trim();
+
+        if (cancelled) return;
+
+        if (newName || newId) {
+          setFormData((prev) => ({
+            ...prev,
+            organization: newName || prev.organization,
+            organizationId: newId || prev.organizationId,
+          }));
+          setOriginalData((prev) => ({
+            ...prev,
+            organization: newName || prev.organization,
+            organizationId: newId || prev.organizationId,
+          }));
+
+          // Patch AuthContext + localStorage so future loads show correctly
+          try {
+            const nextUser = {
+              ...user,
+              OrgName: newName || user?.OrgName,
+              OrganizationName: newName || user?.OrganizationName,
+              organizationName: newName || user?.organizationName,
+              OrganizationDisplay: newName || user?.OrganizationDisplay,
+              organizationDisplay: newName || user?.organizationDisplay,
+              ...(newId ? { organizationId: newId, OrganizationId: newId } : {}),
+              ...(newToken ? { Token: newToken } : {}),
+            };
+            setUser?.(nextUser);
+            if (typeof window !== "undefined") localStorage.setItem("user", JSON.stringify(nextUser));
+          } catch {}
+        }
+      } catch (e) {
+        // silent
+        console.warn("[account] org hydrate failed:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAthlete, user?.id]);
+
   const recomputeHasChanges = (nextData) => {
     const keys = Object.keys(originalData || {});
     for (const k of keys) {
@@ -343,7 +411,6 @@ function AccountInner({ user }) {
         setMessage("Saved successfully!");
         setTimeout(() => setMessage(""), 2500);
       } else {
-        // nothing saved (rare)
         setMessage("No changes to save.");
         setTimeout(() => setMessage(""), 1500);
       }
@@ -553,7 +620,6 @@ function AccountInner({ user }) {
             orgId={orgIdFromSession || formData.organizationId || ""}
             memberId={memberIdFromSession || ""}
             role={role}
-            // NEW: billing bridges
             onDirtyChange={(dirty) => setBillingDirty(Boolean(dirty))}
             onRegisterSave={(fn) => {
               billingSaveRef.current = fn;

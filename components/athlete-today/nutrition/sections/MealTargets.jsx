@@ -67,8 +67,7 @@ function safeMacro(v) {
 
 function pickMacroSummary(targets) {
   const t = targets && typeof targets === "object" ? targets : {};
-  const calories =
-    safeMacro(t.calories ?? t.Calories ?? t.kcal ?? t.Kcal ?? t.energy ?? t.Energy) ?? null;
+  const calories = safeMacro(t.calories ?? t.Calories ?? t.kcal ?? t.Kcal ?? t.energy ?? t.Energy) ?? null;
   const protein = safeMacro(t.protein ?? t.Protein) ?? null;
   const carbs = safeMacro(t.carbs ?? t.Carbs) ?? null;
   const fat = safeMacro(t.fat ?? t.Fat) ?? null;
@@ -135,6 +134,21 @@ function Chip({ children, tone = "neutral" }) {
   );
 }
 
+// Returns YYYY-MM-DD in America/New_York
+function nyISODate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${d}`;
+}
+
 /**
  * Mobile-friendly vertical macro list (readable on narrow screens)
  */
@@ -160,10 +174,7 @@ function MacroListMobile({ t }) {
       {rows.map((r, idx) => (
         <div
           key={r.k}
-          className={cx(
-            "flex items-center justify-between gap-3 px-4 py-3",
-            idx !== 0 ? "border-t border-gray-200" : ""
-          )}
+          className={cx("flex items-center justify-between gap-3 px-4 py-3", idx !== 0 ? "border-t border-gray-200" : "")}
         >
           <p className="text-[12px] font-semibold text-gray-700">{r.k}</p>
           <p className="text-[13px] font-extrabold text-gray-900 tabular-nums">
@@ -206,11 +217,7 @@ function CollapsibleTip({ title, icon, text }) {
             <p className="text-[11px] text-gray-500 mt-0.5 truncate">{open ? "Tap to hide" : preview || "Tap to view"}</p>
           </div>
         </div>
-        {open ? (
-          <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
-        ) : (
-          <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
-        )}
+        {open ? <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" /> : <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />}
       </button>
 
       <AnimatePresence initial={false}>
@@ -239,7 +246,14 @@ function CollapsibleTip({ title, icon, text }) {
 /* Component                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export default function MealTargets({ mealBlocks, completion, nutritionCompletion, onSetCompletion }) {
+export default function MealTargets({
+  mealBlocks,
+  // IMPORTANT: treat nutritionCompletion as source of truth for swipe states
+  nutritionCompletion,
+  onSetCompletion,
+  // optional: allow parent to pass date; defaults to NY today
+  dateISO,
+}) {
   const mealKeys = useMemo(() => ["breakfast", "lunch", "afternoon", "dinner"], []);
   const mealLabels = useMemo(
     () => ({ breakfast: "Breakfast", lunch: "Lunch", afternoon: "Afternoon", dinner: "Dinner" }),
@@ -248,8 +262,47 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
 
   const safeBlocks = useMemo(() => (mealBlocks && typeof mealBlocks === "object" ? mealBlocks : {}), [mealBlocks]);
 
+  const [saving, setSaving] = useState(false);
+  const effectiveDate = useMemo(() => (String(dateISO || "").trim() ? String(dateISO).trim() : nyISODate()), [dateISO]);
+
+  const setCompletionLocal = useCallback(
+    (next) => typeof onSetCompletion === "function" && onSetCompletion(next),
+    [onSetCompletion]
+  );
+
+  const saveToServer = useCallback(
+    async (nextCompletion) => {
+      // optimistic UI
+      setCompletionLocal(nextCompletion);
+      setSaving(true);
+
+      try {
+        const res = await fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(effectiveDate)}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ completion: nextCompletion }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "Failed to save nutrition completion.");
+
+        // keep state synced with server-normalized completion
+        const normalized = buildSafeCompletion(data?.completion);
+        setCompletionLocal(normalized);
+      } catch (e) {
+        // optional: you can show a toast here.
+        // for now we just rethrow silently; UI remains optimistic.
+        console.error("[MealTargets] save completion failed:", e);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [effectiveDate, setCompletionLocal]
+  );
+
   const counts = useMemo(() => {
-    const c = completion && typeof completion === "object" ? completion : {};
+    const c = buildSafeCompletion(nutritionCompletion);
     let done = 0;
     const total = mealKeys.length * 2;
     for (const k of mealKeys) {
@@ -258,37 +311,29 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
     }
     const pctVal = total ? Math.round((done / total) * 100) : 0;
     return { done, total, pctVal };
-  }, [completion, mealKeys]);
+  }, [nutritionCompletion, mealKeys]);
 
   const tone = counts.done === counts.total && counts.total > 0 ? "ok" : counts.pctVal >= 50 ? "blue" : "neutral";
 
-  // Simple selection model:
-  // - default to “recommended by time”
-  // - user can tap a meal row to open it
   const recommendedMeal = useMemo(() => mealForHour(new Date().getHours()), []);
   const [openMeal, setOpenMeal] = useState(recommendedMeal);
-
-  const setCompletion = useCallback(
-    (next) => typeof onSetCompletion === "function" && onSetCompletion(next),
-    [onSetCompletion]
-  );
 
   const toggleMealDone = useCallback(
     (mealKey) => {
       const safe = buildSafeCompletion(nutritionCompletion);
       const next = { ...safe, [mealKey]: { ...safe[mealKey], mealDone: !safe[mealKey].mealDone } };
-      setCompletion(next);
+      saveToServer(next);
     },
-    [nutritionCompletion, setCompletion]
+    [nutritionCompletion, saveToServer]
   );
 
   const toggleHydrationDone = useCallback(
     (mealKey) => {
       const safe = buildSafeCompletion(nutritionCompletion);
       const next = { ...safe, [mealKey]: { ...safe[mealKey], hydrationDone: !safe[mealKey].hydrationDone } };
-      setCompletion(next);
+      saveToServer(next);
     },
-    [nutritionCompletion, setCompletion]
+    [nutritionCompletion, saveToServer]
   );
 
   const anim = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6 } };
@@ -326,8 +371,11 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
         <div className="mt-4 space-y-2 sm:hidden">
           {mealKeys.map((k) => {
             const isOpen = openMeal === k;
-            const doneMeal = Boolean(completion?.[k]?.mealDone);
-            const doneWater = Boolean(completion?.[k]?.hydrationDone);
+
+            const safe = buildSafeCompletion(nutritionCompletion);
+            const doneMeal = Boolean(safe?.[k]?.mealDone);
+            const doneWater = Boolean(safe?.[k]?.hydrationDone);
+
             const doneBoth = doneMeal && doneWater;
             const partial = !doneBoth && (doneMeal || doneWater);
 
@@ -360,9 +408,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                         <p className="text-sm font-extrabold text-gray-900 truncate">{mealLabels[k]}</p>
                         <StatusDot doneBoth={doneBoth} partial={partial} />
                       </div>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {doneBoth ? "Done" : preview}
-                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">{doneBoth ? "Done" : preview}</p>
                     </div>
                   </div>
 
@@ -370,11 +416,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                     <span className="text-[11px] font-semibold text-gray-500 whitespace-nowrap">
                       {doneMeal ? "Meal ✓" : "Meal —"} · {doneWater ? "Water ✓" : "Water —"}
                     </span>
-                    {isOpen ? (
-                      <ChevronUp className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
-                    )}
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
                   </div>
                 </button>
 
@@ -399,12 +441,8 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                         <div className="pt-3 space-y-3">
                           {/* Targets */}
                           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                            <p className="text-[11px] font-extrabold uppercase tracking-wide text-gray-700">
-                              Targets
-                            </p>
-                            <p className="text-[11px] text-gray-500 mt-1 truncate">
-                              {macroLine(pickMacroSummary(targets))}
-                            </p>
+                            <p className="text-[11px] font-extrabold uppercase tracking-wide text-gray-700">Targets</p>
+                            <p className="text-[11px] text-gray-500 mt-1 truncate">{macroLine(pickMacroSummary(targets))}</p>
                             <div className="mt-3">
                               <MacroListMobile t={targets} />
                             </div>
@@ -417,13 +455,10 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                               title="Meal complete"
                               subtitle={doneMeal ? "Marked complete." : "Swipe right when you finish."}
                               done={doneMeal}
+                              disabled={saving}
                               onToggle={() => toggleMealDone(k)}
                               icon={
-                                doneMeal ? (
-                                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                                ) : (
-                                  <Circle className="w-4 h-4 text-gray-400" />
-                                )
+                                doneMeal ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : <Circle className="w-4 h-4 text-gray-400" />
                               }
                             />
 
@@ -432,6 +467,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                               title="Hydration complete"
                               subtitle={doneWater ? "Marked complete." : "Swipe right when you hit the water target."}
                               done={doneWater}
+                              disabled={saving}
                               onToggle={() => toggleHydrationDone(k)}
                               icon={<Droplets className={cx("w-4 h-4", doneWater ? "text-blue-700" : "text-gray-400")} />}
                             />
@@ -440,16 +476,8 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                           {/* Tips (optional) */}
                           {(dining || home) ? (
                             <div className="grid gap-3">
-                              <CollapsibleTip
-                                title="Dining hall"
-                                icon={<Utensils className="w-4 h-4 text-gray-700" />}
-                                text={dining}
-                              />
-                              <CollapsibleTip
-                                title="Home examples"
-                                icon={<Home className="w-4 h-4 text-gray-700" />}
-                                text={home}
-                              />
+                              <CollapsibleTip title="Dining hall" icon={<Utensils className="w-4 h-4 text-gray-700" />} text={dining} />
+                              <CollapsibleTip title="Home examples" icon={<Home className="w-4 h-4 text-gray-700" />} text={home} />
                             </div>
                           ) : null}
                         </div>
@@ -462,15 +490,16 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
           })}
         </div>
 
-        {/* SM+: Keep your richer view (simple selection, no pin wording) */}
+        {/* SM+: richer view */}
         <div className="hidden sm:block mt-4">
           {/* Selected meal buttons */}
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2">
             <div className="grid grid-cols-4 gap-2">
               {mealKeys.map((k) => {
                 const isActive = openMeal === k;
-                const doneMeal = Boolean(completion?.[k]?.mealDone);
-                const doneWater = Boolean(completion?.[k]?.hydrationDone);
+                const safe = buildSafeCompletion(nutritionCompletion);
+                const doneMeal = Boolean(safe?.[k]?.mealDone);
+                const doneWater = Boolean(safe?.[k]?.hydrationDone);
                 const doneBoth = doneMeal && doneWater;
 
                 return (
@@ -514,8 +543,9 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
             const dining = safeText(block?.diningHallRules);
             const home = safeText(block?.homeExamples);
 
-            const doneMeal = Boolean(completion?.[k]?.mealDone);
-            const doneWater = Boolean(completion?.[k]?.hydrationDone);
+            const safe = buildSafeCompletion(nutritionCompletion);
+            const doneMeal = Boolean(safe?.[k]?.mealDone);
+            const doneWater = Boolean(safe?.[k]?.hydrationDone);
 
             return (
               <div className="mt-4 rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
@@ -529,9 +559,8 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-extrabold text-gray-900">{mealLabels[k]}</p>
-                          <Chip tone={doneMeal && doneWater ? "ok" : "blue"}>
-                            {doneMeal && doneWater ? "Done" : "In progress"}
-                          </Chip>
+                          <Chip tone={doneMeal && doneWater ? "ok" : "blue"}>{doneMeal && doneWater ? "Done" : "In progress"}</Chip>
+                          {saving ? <Chip tone="blue">Saving…</Chip> : null}
                         </div>
                         <p className="text-[11px] text-gray-600 mt-1">Hit the targets. Then mark meal + water.</p>
                       </div>
@@ -541,9 +570,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                   <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-extrabold uppercase tracking-wide text-gray-700">Targets</p>
-                      <p className="text-[11px] font-semibold text-gray-500 truncate">
-                        {macroLine(pickMacroSummary(targets)) || ""}
-                      </p>
+                      <p className="text-[11px] font-semibold text-gray-500 truncate">{macroLine(pickMacroSummary(targets)) || ""}</p>
                     </div>
                     <div className="mt-3">
                       <MacroGrid t={targets} />
@@ -556,14 +583,9 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                       title="Meal complete"
                       subtitle={doneMeal ? "Marked complete." : "Swipe right when you finish."}
                       done={doneMeal}
+                      disabled={saving}
                       onToggle={() => toggleMealDone(k)}
-                      icon={
-                        doneMeal ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                        ) : (
-                          <Circle className="w-4 h-4 text-gray-400" />
-                        )
-                      }
+                      icon={doneMeal ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : <Circle className="w-4 h-4 text-gray-400" />}
                     />
 
                     <SwipeCompleteRow
@@ -571,6 +593,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
                       title="Hydration complete"
                       subtitle={doneWater ? "Marked complete." : "Swipe right when you hit the water target."}
                       done={doneWater}
+                      disabled={saving}
                       onToggle={() => toggleHydrationDone(k)}
                       icon={<Droplets className={cx("w-4 h-4", doneWater ? "text-blue-700" : "text-gray-400")} />}
                     />
@@ -588,9 +611,7 @@ export default function MealTargets({ mealBlocks, completion, nutritionCompletio
           })()}
         </div>
 
-        <p className="text-[11px] text-gray-500 sm:hidden mt-3">
-          Tap a meal to open it. Swipe right to mark meal + hydration.
-        </p>
+        <p className="text-[11px] text-gray-500 sm:hidden mt-3">Tap a meal to open it. Swipe right to mark meal + hydration.</p>
       </div>
     </div>
   );

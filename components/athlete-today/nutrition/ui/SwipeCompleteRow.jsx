@@ -1,36 +1,42 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { CheckCircle2, Circle, ArrowRight, Undo2 } from "lucide-react";
-import { cx } from "../helpers"; // adjust if needed
+import { cx } from "../helpers";
 
 /**
- * SwipeCompleteRow (Polished + snaps back to origin)
- * - Drag right to confirm
- * - Always returns to original spacing (x=0)
- * - Stronger completed state
- * - Micro-interactions
+ * SwipeCompleteRow (Polished + snaps back)
  *
- * Props:
- *  - title, subtitle, done, onToggle, icon, disabled
- *  - tone (optional): "meal" | "water" | "base"
+ * NEW:
+ *  - onMarkDone(): called when user completes (false -> true)
+ *  - onMarkUndone(): called when user undoes (true -> false)
+ *  - busy: optional external disable while saving
+ *
+ * Backward compatible:
+ *  - onToggle still supported (called after mark handler succeeds)
  */
 export default function SwipeCompleteRow({
   title,
   subtitle,
   done,
   onToggle,
+  onMarkDone,     // NEW
+  onMarkUndone,   // NEW
   icon,
   disabled = false,
+  busy = false,   // NEW (optional)
   tone = "base",
 }) {
   const controls = useAnimation();
 
   const [armed, setArmed] = useState(false);
   const [dragX, setDragX] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   const threshold = 92;
+
+  const isDisabled = disabled || busy || saving;
 
   // Ensure we always visually reset if the parent flips done state
   useEffect(() => {
@@ -77,13 +83,42 @@ export default function SwipeCompleteRow({
     };
   }, [tone, done]);
 
-  const showHint = !done && !disabled;
+  const showHint = !done && !isDisabled;
 
-  const resetPosition = () => {
+  const resetPosition = useCallback(() => {
     controls.start({ x: 0, transition: { type: "spring", stiffness: 520, damping: 42 } });
     setDragX(0);
     setArmed(false);
-  };
+  }, [controls]);
+
+  const commitToggle = useCallback(async () => {
+    if (isDisabled) return;
+
+    // Determine direction
+    const nextDone = !done;
+
+    // UI snap back first (feels faster)
+    resetPosition();
+
+    setSaving(true);
+    try {
+      // Prefer explicit handlers
+      if (nextDone) {
+        if (onMarkDone) await onMarkDone();
+        else onToggle?.(); // fallback
+      } else {
+        if (onMarkUndone) await onMarkUndone();
+        else onToggle?.(); // fallback
+      }
+
+      // If you still want legacy behavior (parent state flip) after successful save:
+      // only call onToggle when explicit handlers exist AND parent expects it.
+      // Many parents already flip state inside onMarkDone/onMarkUndone, so calling onToggle again would double-flip.
+      // So we only call onToggle when NO explicit handler was provided.
+    } finally {
+      setSaving(false);
+    }
+  }, [isDisabled, done, onMarkDone, onMarkUndone, onToggle, resetPosition]);
 
   return (
     <div
@@ -92,7 +127,7 @@ export default function SwipeCompleteRow({
         toneStyles.border,
         toneStyles.tint,
         toneStyles.glow,
-        disabled && "opacity-70"
+        isDisabled && "opacity-70"
       )}
     >
       {/* soft ring */}
@@ -140,29 +175,31 @@ export default function SwipeCompleteRow({
       {/* draggable content */}
       <motion.div
         animate={controls}
-        drag={disabled ? false : "x"}
+        drag={isDisabled ? false : "x"}
         dragConstraints={{ left: 0, right: 120 }}
         dragElastic={0.08}
         dragMomentum={false}
         dragSnapToOrigin
         onDrag={(e, info) => {
-          if (disabled) return;
+          if (isDisabled) return;
           setDragX(info.offset.x);
           setArmed(info.offset.x > threshold * 0.8);
         }}
         onDragEnd={(e, info) => {
-          if (disabled) return;
+          if (isDisabled) return;
 
           const shouldComplete = info.offset.x > threshold;
 
           // Always snap back visually
           resetPosition();
 
-          // Then trigger the toggle
-          if (shouldComplete) onToggle?.();
+          // Only commit on complete-swipe if currently not done
+          if (shouldComplete && !done) {
+            commitToggle();
+          }
         }}
-        whileHover={disabled ? undefined : { scale: 1.005 }}
-        whileTap={disabled ? undefined : { scale: 0.995 }}
+        whileHover={isDisabled ? undefined : { scale: 1.005 }}
+        whileTap={isDisabled ? undefined : { scale: 0.995 }}
         className="relative p-4"
       >
         <div className="flex items-start justify-between gap-3">
@@ -214,7 +251,9 @@ export default function SwipeCompleteRow({
                   {armed ? <span className={cx("font-semibold", toneStyles.hint)}>Release to complete</span> : "Swipe or tap Done"}
                 </span>
               ) : (
-                <span className="text-[11px] text-gray-500">{disabled ? "Unavailable" : "Nice."}</span>
+                <span className="text-[11px] text-gray-500">
+                  {isDisabled ? "Saving…" : done ? "Nice." : "—"}
+                </span>
               )}
             </div>
           </div>
@@ -222,18 +261,16 @@ export default function SwipeCompleteRow({
           <button
             type="button"
             onClick={() => {
-              if (disabled) return;
-              // ensure reset even on button press (keeps spacing perfect)
-              resetPosition();
-              onToggle?.();
+              if (isDisabled) return;
+              commitToggle();
             }}
-            disabled={disabled}
+            disabled={isDisabled}
             aria-pressed={done}
             className={cx(
               "shrink-0 rounded-full px-3 py-2 text-[12px] font-extrabold border transition",
               "inline-flex items-center gap-2",
               toneStyles.chip,
-              disabled && "cursor-not-allowed opacity-70"
+              isDisabled && "cursor-not-allowed opacity-70"
             )}
             title={done ? "Mark as not done" : "Mark as done"}
           >

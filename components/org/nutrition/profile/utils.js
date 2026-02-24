@@ -84,9 +84,10 @@ export function clampPct(n) {
   return Math.max(0, Math.min(100, Math.round(x)));
 }
 
-// Avg of available metrics (so missing fields don’t silently become 0 and drag the score)
+// Avg of available metrics (missing fields are ignored; they do NOT become 0)
+// Includes carbsPct when present.
 export function avgAdherence(c) {
-  const fields = [c?.caloriesPct, c?.proteinPct, c?.hydrationPct];
+  const fields = [c?.caloriesPct, c?.proteinPct, c?.carbsPct, c?.hydrationPct];
 
   const vals = fields
     .map((v) => Number(v))

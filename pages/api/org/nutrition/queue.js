@@ -8,32 +8,8 @@ function asString(v) {
   return String(v ?? "").trim();
 }
 
-function escapeAirtableString(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function weekStartISO(d = new Date()) {
-  // Sunday-start week
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  const day = x.getDay(); // 0=Sun
-  x.setDate(x.getDate() - day);
-  return x.toISOString().slice(0, 10);
-}
-
-function daysAgoISO(n) {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return {};
-  }
+function safeArr(v) {
+  return Array.isArray(v) ? v : [];
 }
 
 function chunk(arr, size = 25) {
@@ -61,6 +37,47 @@ function clampPct(n) {
   return Math.max(0, Math.min(100, Math.round(x)));
 }
 
+function weekStartISO(d = new Date()) {
+  // Sunday-start week
+  const x = new Date(d);
+  x.setHours(12, 0, 0, 0);
+  const day = x.getDay(); // 0=Sun
+  x.setDate(x.getDate() - day);
+  return x.toISOString().slice(0, 10);
+}
+
+function daysAgoISO(n) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+function normalizePlanStatus(raw) {
+  const s = asString(raw).toLowerCase();
+  if (!s) return "no_plan";
+  if (s === "active") return "active";
+  if (s === "no plan" || s === "no_plan" || s === "noplan") return "no_plan";
+  return s.replace(/\s+/g, "_");
+}
+
+function labelPlanStatus(norm) {
+  if (norm === "active") return "Active";
+  if (norm === "no_plan") return "No Plan";
+  return norm
+    .split("_")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+}
+
 /* ---------------- Airtable: NutritionCheckins ---------------- */
 
 const NUTRITIONCHECKINS_API_KEY = process.env.NUTRITIONCHECKINS_API_KEY;
@@ -73,7 +90,7 @@ function getCheckinsTable() {
   return base(NUTRITIONCHECKINS_TABLE);
 }
 
-/* ---------------- Airtable: NutritionPlans (NEW) ---------------- */
+/* ---------------- Airtable: NutritionPlans ---------------- */
 
 const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
 const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
@@ -87,18 +104,19 @@ function getPlansTable() {
 
 /* ---------------- STRICT FIELD NAMES ---------------- */
 
-// Athletes (from /api/org/getAthletes output)
-const ATHLETE_TOKEN_FIELD = "AthleteToken"; // for checkins matching
+// NutritionCheckins
+const CHECKIN_TOKEN_FIELD = "AthleteToken"; // lookup
 const CHECKIN_WEEK_FIELD = "WeekStartISO";
 const CHECKIN_CREATED_FIELD = "CreatedAt";
 const CHECKIN_CAL_FIELD = "CaloriesAdherencePct";
 const CHECKIN_PRO_FIELD = "ProteinAdherencePct";
 const CHECKIN_HYD_FIELD = "HydrationAdherencePct";
 const CHECKIN_NOTES_FIELD = "Notes";
+const CHECKIN_STATUS_FIELD = "Status"; // lookup
 
 // NutritionPlans
-const PLAN_LINK_FIELD = "Athlete"; // linked record -> AthleteScans
-const PLAN_STATUS_FIELD = "Status";
+const PLAN_TOKEN_FIELD = "AthleteToken"; // lookup
+const PLAN_STATUS_FIELD = "Status"; // text
 const PLAN_CREATED_FIELD = "CreatedAt";
 
 /* ---------------- main handler ---------------- */
@@ -113,7 +131,7 @@ export default async function handler(req, res) {
   if (!org?.ok) return;
 
   try {
-    // 1) Load athletes via internal endpoint (uses cookie session)
+    // 1) Load athletes via internal endpoint (cookie session)
     const host = req.headers.host;
     const proto = (req.headers["x-forwarded-proto"] || "http").toString();
 
@@ -131,22 +149,42 @@ export default async function handler(req, res) {
 
     const athletesRaw = Array.isArray(athletesJson?.athletes) ? athletesJson.athletes : [];
 
-    // STRICT: only athletes with AthleteToken are included (no email fallback)
-    // ALSO: we keep their AthleteScans record id (needed to match NutritionPlans linked record)
+    // ✅ Source of truth: getAthletes already returns sport/team from AthleteScans
     const athletes = athletesRaw
       .map((a) => {
-        const athleteToken = asString(a?.athleteToken || a?.AthleteToken || a?.ATHLETETOKEN);
+        const athleteToken = asString(a?.athleteToken);
         return {
-          id: asString(a?.id || a?.athleteId), // this should be AthleteScans record id
-          name: asString(a?.name || a?.Name) || "Athlete",
+          id: asString(a?.id || a?.athleteId),
+          name: asString(a?.name) || "Athlete",
+          email: asString(a?.email),
+          sport: asString(a?.sport), // single select in AthleteScans
+          team: asString(a?.team),   // Team field in AthleteScans
           athleteToken,
         };
       })
       .filter((a) => Boolean(a.athleteToken) && Boolean(a.id));
 
+    // ✅ Build dropdown options
+    const sports = Array.from(new Set(athletes.map((a) => asString(a.sport)).filter(Boolean))).sort();
+    const teams = Array.from(new Set(athletes.map((a) => asString(a.team)).filter(Boolean))).sort();
+
+    // ✅ sport -> teams map (for narrowing dropdown on sport selection)
+    const teamsBySport = athletes.reduce((acc, a) => {
+      const s = asString(a.sport);
+      const t = asString(a.team);
+      if (!s || !t) return acc;
+      if (!acc[s]) acc[s] = [];
+      acc[s].push(t);
+      return acc;
+    }, {});
+
+    for (const k of Object.keys(teamsBySport)) {
+      teamsBySport[k] = Array.from(new Set(teamsBySport[k])).sort();
+    }
+
     const thisWeek = weekStartISO(new Date());
 
-    /* -------- 2) Latest check-in per athlete (STRICT AthleteToken) -------- */
+    /* -------- 2) Latest check-in per athlete (by AthleteToken) -------- */
 
     const checkinsByToken = {};
     const chkTable = getCheckinsTable();
@@ -157,8 +195,11 @@ export default async function handler(req, res) {
 
       for (const group of chunk(tokens, 40)) {
         const filter = `AND(
-          IS_AFTER({${CHECKIN_WEEK_FIELD}}, '${minWeek}'),
-          ${makeOrEquals(ATHLETE_TOKEN_FIELD, group)}
+          IS_AFTER(
+            DATETIME_PARSE({${CHECKIN_WEEK_FIELD}} & ''),
+            DATETIME_PARSE('${minWeek}')
+          ),
+          ${makeOrEquals(CHECKIN_TOKEN_FIELD, group)}
         )`;
 
         const recs = await chkTable
@@ -170,11 +211,14 @@ export default async function handler(req, res) {
           .all();
 
         recs.forEach((r) => {
-          const tok = asString(r.get(ATHLETE_TOKEN_FIELD));
+          const tok = asString(r.get(CHECKIN_TOKEN_FIELD));
           if (!tok) return;
 
           const createdAt = asString(r.get(CHECKIN_CREATED_FIELD)) || asString(r._rawJson?.createdTime);
           const week = asString(r.get(CHECKIN_WEEK_FIELD)).slice(0, 10);
+
+          const statusLookup = r.get(CHECKIN_STATUS_FIELD);
+          const status = Array.isArray(statusLookup) ? asString(statusLookup[0]) : asString(statusLookup);
 
           const row = {
             weekStartISO: week,
@@ -183,6 +227,7 @@ export default async function handler(req, res) {
             proteinPct: clampPct(r.get(CHECKIN_PRO_FIELD)),
             hydrationPct: clampPct(r.get(CHECKIN_HYD_FIELD)),
             notes: asString(r.get(CHECKIN_NOTES_FIELD)),
+            status,
           };
 
           const prev = checkinsByToken[tok];
@@ -196,29 +241,17 @@ export default async function handler(req, res) {
       }
     }
 
-    /* -------- 3) Latest ACTIVE NutritionPlan per athlete (by linked record id) -------- */
+    /* -------- 3) Latest plan per athlete (by AthleteToken) -------- */
 
-    const latestPlanCreatedAtByAthleteId = {};
+    const plansByToken = {};
     const plansTable = getPlansTable();
 
     if (plansTable && athletes.length) {
-      // We query plans in groups by matching linked athlete record ids
-      const athleteIds = athletes.map((a) => a.id);
+      const tokens = athletes.map((a) => a.athleteToken);
 
-      for (const group of chunk(athleteIds, 25)) {
-        // Airtable linked field is an array of record ids.
-        // We can match if the record id appears inside ARRAYJOIN({Athlete}&'')
-        const ors = group
-          .map((id) => asString(id))
-          .filter(Boolean)
-          .map((id) => `FIND('${escapeAirtableString(id)}', ARRAYJOIN({${PLAN_LINK_FIELD}}&''))>0`);
-
-        if (!ors.length) continue;
-
-        const filter = `AND(
-          LOWER({${PLAN_STATUS_FIELD}}&'')='active',
-          OR(${ors.join(",")})
-        )`;
+      for (const group of chunk(tokens, 40)) {
+        const filter = `${makeOrEquals(PLAN_TOKEN_FIELD, group)}`;
+        if (!filter) continue;
 
         const recs = await plansTable
           .select({
@@ -228,23 +261,23 @@ export default async function handler(req, res) {
           })
           .all();
 
-        // For each plan record, map it to its linked athlete(s), taking newest createdAt
         recs.forEach((r) => {
+          const tok = asString(r.get(PLAN_TOKEN_FIELD));
+          if (!tok) return;
+
           const createdAt = asString(r.get(PLAN_CREATED_FIELD)) || asString(r._rawJson?.createdTime);
-          const linked = safeArr(r.get(PLAN_LINK_FIELD)); // array of record ids
+          const statusRaw = asString(r.get(PLAN_STATUS_FIELD));
+          const statusNorm = normalizePlanStatus(statusRaw);
 
-          linked.forEach((aid) => {
-            const athleteId = asString(aid);
-            if (!athleteId) return;
+          const next = { createdAt, statusRaw, statusNorm };
 
-            const prev = latestPlanCreatedAtByAthleteId[athleteId];
-            if (!prev) latestPlanCreatedAtByAthleteId[athleteId] = createdAt;
-            else {
-              const pt = prev ? new Date(prev).getTime() : 0;
-              const nt = createdAt ? new Date(createdAt).getTime() : 0;
-              if (nt >= pt) latestPlanCreatedAtByAthleteId[athleteId] = createdAt;
-            }
-          });
+          const prev = plansByToken[tok];
+          if (!prev) plansByToken[tok] = next;
+          else {
+            const pt = prev.createdAt ? new Date(prev.createdAt).getTime() : 0;
+            const nt = createdAt ? new Date(createdAt).getTime() : 0;
+            if (nt >= pt) plansByToken[tok] = next;
+          }
         });
       }
     }
@@ -254,8 +287,13 @@ export default async function handler(req, res) {
     const rows = athletes.map((a) => {
       const tok = a.athleteToken;
 
-      const latestPlanCreatedAt = latestPlanCreatedAtByAthleteId[a.id] || "";
-      const hasPlan = Boolean(latestPlanCreatedAt);
+      const plan = plansByToken[tok] || null;
+      const planStatusNorm = plan?.statusNorm || "no_plan";
+      const planStatusLabel = labelPlanStatus(planStatusNorm);
+
+      // hasPlan means ACTIVE only
+      const hasPlan = planStatusNorm === "active";
+      const latestPlanCreatedAt = plan?.createdAt || "";
 
       const lastCheckin = checkinsByToken[tok] || null;
       const missingCheckin = !lastCheckin || lastCheckin.weekStartISO !== thisWeek;
@@ -265,14 +303,31 @@ export default async function handler(req, res) {
         : 0;
 
       const lowAdherence = lastCheckin ? adherenceAvg < 70 : false;
-      const needsAction = !hasPlan || missingCheckin || lowAdherence;
 
+      const needsAction = !hasPlan || missingCheckin || lowAdherence;
       const priority = !hasPlan ? 1 : missingCheckin ? 2 : lowAdherence ? 3 : 9;
+
+      const reasons = [];
+      if (!hasPlan) reasons.push("No active plan");
+      if (missingCheckin) reasons.push("Missing this week’s check-in");
+      if (lowAdherence) reasons.push("Adherence below 70%");
+
+      const priorityLabel =
+        !hasPlan ? "No Plan" : missingCheckin ? "Missing Check-in" : lowAdherence ? "Low Adherence" : "Good";
 
       return {
         athleteId: a.id,
         athleteName: a.name,
+        athleteEmail: a.email,
         athleteToken: tok,
+
+        // ✅ used by filters/table
+        sport: a.sport,
+        team: a.team,
+
+        planStatus: planStatusLabel,
+        planStatusRaw: plan?.statusRaw || "",
+        planStatusNorm,
 
         hasPlan,
         latestPlanCreatedAt,
@@ -284,6 +339,8 @@ export default async function handler(req, res) {
 
         needsAction,
         priority,
+        reasons,
+        priorityLabel,
       };
     });
 
@@ -301,7 +358,17 @@ export default async function handler(req, res) {
       ok: true,
       rows,
       counts,
-      meta: { weekStartISO: thisWeek, mode: "strict_AthleteToken_only + NutritionPlans(active)" },
+      meta: {
+        weekStartISO: thisWeek,
+        generatedAt: new Date().toISOString(),
+        athletesCount: rows.length,
+        mode: "AthleteToken matching for Plans + Checkins",
+
+        // ✅ these feed NutritionControls dropdowns
+        sports,
+        teams,
+        teamsBySport,
+      },
     });
   } catch (e) {
     console.error("[nutrition/queue] error:", e);

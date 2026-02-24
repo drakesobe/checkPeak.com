@@ -87,10 +87,30 @@ function toISODateOnly(v) {
 function isoDateOnlyToNYNoonISO(isoDateOnly) {
   const d = asString(isoDateOnly);
   if (!isISODateOnly(d)) return "";
-  const dt = new Date(`${d}T12:00:00-05:00`); // safe anchor; Airtable stores UTC anyway
+  const dt = new Date(`${d}T12:00:00-05:00`);
   if (Number.isNaN(dt.getTime())) return "";
   return dt.toISOString();
 }
+
+function normalizePlanStatusInput(v) {
+  const s = asString(v).toLowerCase();
+  if (!s) return "active";
+
+  if (s === "active") return "active";
+  if (s === "no plan" || s === "no_plan" || s === "noplan") return "no_plan";
+  if (s === "inactive") return "inactive";
+  if (s === "draft") return "draft";
+
+  return s.replace(/\s+/g, "_");
+}
+
+/* ---------------- OPTIONAL MIRRORS ---------------- */
+/**
+ * These are optional QoL fields for debugging/UX.
+ * Keep false unless you also add the Airtable fields.
+ */
+const ENABLE_TOKEN_TEXT_MIRROR = false; // requires NutritionPlans field: "AthleteTokenText" (single line text)
+const ENABLE_EFFECTIVE_DATE_TEXT_MIRROR = false; // requires NutritionPlans field: "Meta Effective Date ISO" (single line text)
 
 /* ---------------- env ---------------- */
 
@@ -118,6 +138,7 @@ const ATH_ORG_TOKEN = "Token"; // org token stored on athlete record (text)
 const PLAN_ATH_LINK = "Athlete"; // linked to AthleteScans record
 const PLAN_STATUS = "Status";
 const PLAN_CREATED_AT = "CreatedAt";
+const PLAN_UPDATED_AT = "UpdatedAt"; // ✅ REQUIRED: create this Airtable field
 const PLAN_CREATED_BY = "CreatedBy";
 
 const PLAN_PHASE = "Phase";
@@ -125,15 +146,12 @@ const PLAN_DCAL = "DailyCalories";
 const PLAN_DPRO = "DailyProtein";
 const PLAN_DCARB = "DailyCarbs";
 const PLAN_DFAT = "DailyFat";
-
-// ✅ NEW: daily hydration summary field (rename if your column differs)
 const PLAN_DHYDRATION = "DailyHydration";
 
 const PLAN_JSON = "PlanJson";
 const PLAN_PRESCRIPTION = "Prescription";
 
-// ✅ Your actual Airtable column
-const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
+const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date"; // Airtable Date field
 
 /* ---------------- handler ---------------- */
 
@@ -179,7 +197,7 @@ export default async function handler(req, res) {
 
     const athleteToken = asString(body.athleteToken);
     const phase = asString(body.phase || "Maintain");
-    const status = asString(body.status || "active").toLowerCase();
+    const status = normalizePlanStatusInput(body.status || "active");
     const createdBy = asString(body.createdBy || "");
     const prescription = asString(body.prescription || "");
 
@@ -252,7 +270,6 @@ export default async function handler(req, res) {
     const dailyCarbs = pickFirstNonEmptyString(daily?.carbs, pjDaily?.carbs);
     const dailyFat = pickFirstNonEmptyString(daily?.fat, pjDaily?.fat);
 
-    // ✅ NEW: hydration (oz) — accept multiple possible keys
     const dailyHydrationOz = pickFirstNonEmptyString(
       daily?.hydrationOz,
       daily?.hydration,
@@ -278,8 +295,6 @@ export default async function handler(req, res) {
               ...(dailyProtein ? { protein: dailyProtein } : {}),
               ...(dailyCarbs ? { carbs: dailyCarbs } : {}),
               ...(dailyFat ? { fat: dailyFat } : {}),
-
-              // ✅ NEW: always persist hydration in PlanJson
               ...(dailyHydrationOz ? { hydrationOz: dailyHydrationOz, hydration: dailyHydrationOz } : {}),
             },
           }
@@ -290,15 +305,13 @@ export default async function handler(req, res) {
               protein: dailyProtein,
               carbs: dailyCarbs,
               fat: dailyFat,
-
-              // ✅ NEW
               ...(dailyHydrationOz ? { hydrationOz: dailyHydrationOz, hydration: dailyHydrationOz } : {}),
             },
           };
 
     const planJsonString = safeJsonStringify(mergedPlanJson);
 
-    /* ---------------- 5) Build Airtable fields ---------------- */
+    /* ---------------- 5) Build Airtable fields (without CreatedAt/UpdatedAt) ---------------- */
 
     const fields = {
       [PLAN_ATH_LINK]: [athleteRec.id],
@@ -309,26 +322,37 @@ export default async function handler(req, res) {
       [PLAN_DPRO]: dailyProtein,
       [PLAN_DCARB]: dailyCarbs,
       [PLAN_DFAT]: dailyFat,
-
-      // ✅ NEW: write daily hydration to Airtable summary column
       [PLAN_DHYDRATION]: dailyHydrationOz,
 
       [PLAN_JSON]: planJsonString,
       [PLAN_PRESCRIPTION]: prescription,
 
-      // meta
       [PLAN_CREATED_BY]: createdBy,
-      [PLAN_CREATED_AT]: new Date().toISOString(),
 
-      // ✅ Write a real ISO datetime for Airtable Date field reliability
       ...(effectiveDateISOForAirtable ? { [PLAN_META_EFFECTIVE_DATE]: effectiveDateISOForAirtable } : {}),
     };
 
-    /* ---------------- 6) Save ---------------- */
+    // Optional mirrors (ONLY enable if you created the Airtable fields)
+    if (ENABLE_TOKEN_TEXT_MIRROR) {
+      fields["AthleteTokenText"] = athleteToken;
+    }
+    if (ENABLE_EFFECTIVE_DATE_TEXT_MIRROR && effectiveDate) {
+      fields["Meta Effective Date ISO"] = effectiveDate;
+    }
 
+    /* ---------------- 6) Save (do NOT overwrite CreatedAt on update) ---------------- */
+
+    const now = new Date().toISOString();
     let saved;
-    if (existing) saved = await plansTable.update(existing.id, fields);
-    else saved = await plansTable.create(fields);
+
+    if (existing) {
+      fields[PLAN_UPDATED_AT] = now;
+      saved = await plansTable.update(existing.id, fields);
+    } else {
+      fields[PLAN_CREATED_AT] = now;
+      fields[PLAN_UPDATED_AT] = now;
+      saved = await plansTable.create(fields);
+    }
 
     return res.status(200).json({
       ok: true,
@@ -336,6 +360,10 @@ export default async function handler(req, res) {
       effectiveDate: effectiveDate || "",
       debug: {
         athleteToken,
+        athleteId: athleteRec.id,
+        athleteFilter,
+        existingPlanId: existing?.id || "",
+        status,
         effectiveDate,
         effectiveDateISOForAirtable,
         dailyHydrationOz,

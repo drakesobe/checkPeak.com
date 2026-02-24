@@ -1,8 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { Calendar, Activity, FileText } from "lucide-react";
 import { fmtDateTime, adherenceTone } from "./utils";
 import { SummaryCard, StatusPill } from "./ui";
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
 function weekLabel(weekStartISO) {
   const iso = String(weekStartISO || "").trim();
@@ -26,11 +31,11 @@ function weekLabel(weekStartISO) {
 }
 
 function adherenceSubtitle(avg) {
-  if (avg == null) return "Waiting for first check-in";
+  if (avg == null) return "Waiting for first completion";
   if (avg >= 85) return "Excellent consistency";
   if (avg >= 75) return "On track";
   if (avg >= 60) return "Needs attention";
-  return "Intervention needed";
+  return "Adjustments needed";
 }
 
 function adherencePillTone(avg) {
@@ -48,15 +53,25 @@ function adherencePillText(avg) {
   return "Critical";
 }
 
+function toneToCardTone(avg) {
+  const t = adherenceTone(avg);
+  if (t === "good" || t === "bad") return t;
+  return "neutral";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
+
 export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
-  const latestCheckinValue = useMemo(
+  const latestWeekText = useMemo(
     () => weekLabel(latestCheckin?.weekStartISO),
     [latestCheckin?.weekStartISO]
   );
 
   const latestCheckinSub = useMemo(() => {
-    if (latestCheckin?.createdAt) return `Submitted ${fmtDateTime(latestCheckin.createdAt)} ET`;
-    return "No check-ins yet";
+    if (latestCheckin?.createdAt) return `Updated ${fmtDateTime(latestCheckin.createdAt)} ET`;
+    return "No completions yet";
   }, [latestCheckin?.createdAt]);
 
   const adherenceValue = useMemo(() => {
@@ -64,11 +79,7 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
     return `${latestAvg}%`;
   }, [latestAvg]);
 
-  const aTone = useMemo(() => adherenceTone(latestAvg), [latestAvg]);
-  const adherenceToneNorm = useMemo(() => {
-    if (aTone === "good" || aTone === "bad") return aTone;
-    return "neutral";
-  }, [aTone]);
+  const adherenceCardTone = useMemo(() => toneToCardTone(latestAvg), [latestAvg]);
 
   const adherencePill = useMemo(() => {
     const t = adherencePillTone(latestAvg);
@@ -77,7 +88,7 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
 
   const planSub = useMemo(() => {
     if (plan?.createdAt) return `Updated ${fmtDateTime(plan.createdAt)} ET`;
-    return "Create a plan to start";
+    return "No plan assigned yet";
   }, [plan?.createdAt]);
 
   const planPill = useMemo(() => {
@@ -87,33 +98,54 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
 
   const checkinPill = useMemo(() => {
     const ok = Boolean(latestCheckin?.createdAt);
-    return <StatusPill tone={ok ? "good" : "neutral"} text={ok ? "Submitted" : "None"} />;
+    return <StatusPill tone={ok ? "good" : "neutral"} text={ok ? "Current" : "None"} />;
   }, [latestCheckin?.createdAt]);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-3 font-sans">
       <SummaryCard
-        title="Latest Check-in"
-        value={latestCheckinValue}
+        title="Latest Completion"
+        value={latestWeekText}
         sub={latestCheckinSub}
         tone={latestCheckin?.createdAt ? "good" : "neutral"}
-        right={checkinPill}
+        right={
+          <div className="inline-flex items-center gap-2">
+            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
+              <Calendar className="h-4 w-4 text-gray-700" />
+            </span>
+            {checkinPill}
+          </div>
+        }
       />
 
       <SummaryCard
-        title="Latest Adherence"
+        title="Adherence"
         value={adherenceValue}
         sub={adherenceSubtitle(latestAvg)}
-        tone={adherenceToneNorm}
-        right={adherencePill}
+        tone={adherenceCardTone}
+        right={
+          <div className="inline-flex items-center gap-2">
+            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
+              <Activity className="h-4 w-4 text-gray-700" />
+            </span>
+            {adherencePill}
+          </div>
+        }
       />
 
       <SummaryCard
-        title="Plan Status"
+        title="Plan"
         value={hasPlan ? "Active" : "Missing"}
         sub={planSub}
         tone={hasPlan ? "good" : "bad"}
-        right={planPill}
+        right={
+          <div className="inline-flex items-center gap-2">
+            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
+              <FileText className="h-4 w-4 text-gray-700" />
+            </span>
+            {planPill}
+          </div>
+        }
       />
     </div>
   );

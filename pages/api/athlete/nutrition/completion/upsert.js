@@ -35,6 +35,14 @@ function isISODateOnly(s) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
+/**
+ * Airtable "Date (Date and Time)" field: always store a full ISO string.
+ * Midday UTC avoids timezone rollovers (date shifting).
+ */
+function isoMiddayUTCFromISODateOnly(dateISO) {
+  return `${dateISO}T12:00:00.000Z`;
+}
+
 function makeEmptyCompletion() {
   return {
     breakfast: { mealDone: false, hydrationDone: false },
@@ -73,7 +81,7 @@ const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
 // field names
 const F_ATHLETE_LINK = "Athlete";
-const F_DATE = "Date";
+const F_DATE = "Date"; // Airtable field type: Date & Time
 const F_JSON = "CompletionJson";
 const F_UPDATED_AT = "UpdatedAt";
 
@@ -118,11 +126,8 @@ export default async function handler(req, res) {
   try {
     const method = String(req.method || "").toUpperCase();
 
-    // Date can come from query or body
-    const date =
-      asString(req.query?.date) ||
-      asString(req.body?.date) ||
-      "";
+    // Date can come from query or body (YYYY-MM-DD)
+    const date = asString(req.query?.date) || asString(req.body?.date) || "";
 
     if (!isISODateOnly(date)) {
       return res.status(400).json({ error: "date is required in YYYY-MM-DD format." });
@@ -143,12 +148,13 @@ export default async function handler(req, res) {
     }
 
     // 2) Find existing completion record for (athleteRec.id + date)
+    // IMPORTANT: {Date} is Date+Time. We must match on the date portion.
     const aId = escapeAirtableString(athleteRec.id);
     const d = escapeAirtableString(date);
 
     const filter = `AND(
       FIND('${aId}', ARRAYJOIN({${F_ATHLETE_LINK}}&'')) > 0,
-      {${F_DATE}}='${d}'
+      DATETIME_FORMAT({${F_DATE}}, 'YYYY-MM-DD')='${d}'
     )`;
 
     const existing = await nutritionBase(NUTRITION_COMPLETIONS_TABLE)
@@ -158,10 +164,7 @@ export default async function handler(req, res) {
 
     // GET = read only
     if (method === "GET") {
-      const completion =
-        normalizeCompletion(
-          safeJsonParse(existing?.fields?.[F_JSON]) || null
-        );
+      const completion = normalizeCompletion(safeJsonParse(existing?.fields?.[F_JSON]) || null);
 
       return res.status(200).json({
         ok: true,
@@ -182,7 +185,8 @@ export default async function handler(req, res) {
 
     const fields = {
       [F_ATHLETE_LINK]: [athleteRec.id],
-      [F_DATE]: date,
+      // Store as full ISO datetime because Airtable field is Date+Time
+      [F_DATE]: isoMiddayUTCFromISODateOnly(date),
       [F_JSON]: safeJsonStringify(completion),
       [F_UPDATED_AT]: new Date().toISOString(),
     };

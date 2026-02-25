@@ -391,7 +391,7 @@ export default function HomePage() {
                   a: "Clear plans + how-to guidance + simple check-ins help catch form and compliance issues early - before they turn into missed time, lost progress, and a potential injuries.",
                 },
                 {
-                  q: "How fast can staff answer, ‘Can I take this?’ without digging for hours?",
+                  q: "How fast can staff answer, ‘Can I take this supplement?’ without digging for hours?",
                   a: "Saved scans + flagged ingredients give a quick, consistent starting point - so players and staff can review quickly and athletes don’t need toguess.",
                 },
               ].map((x, i) => (

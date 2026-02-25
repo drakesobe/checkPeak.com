@@ -1,6 +1,6 @@
 // /pages/org/prescriptions.js
-"use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
@@ -22,9 +22,13 @@ import ConfirmDeleteModal from "@/components/org/prescriptions/ConfirmDeleteModa
 import AthleteRoster from "@/components/org/prescriptions/AthleteRoster";
 import SelectedAthleteCard from "@/components/org/prescriptions/SelectedAthleteCard";
 import TemplatesPanel from "@/components/org/prescriptions/TemplatesPanel";
-// ✅ NEW modular plan builder import
-import PlanBuilderForm from "@/components/org/prescriptions/planBuilder/PlanBuilderForm";
 import PlanHistory from "@/components/org/prescriptions/PlanHistory";
+
+// ✅ Disable SSR for builder to prevent hydration mismatch in Pages Router
+const PlanBuilderForm = dynamic(
+  () => import("@/components/org/prescriptions/planBuilder/PlanBuilderForm"),
+  { ssr: false }
+);
 
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
@@ -124,7 +128,7 @@ export default function OrgPrescriptionsPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (role !== "organization") return;
+    if (role !== "organization" && role !== "admin") return;
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, role, orgToken]);

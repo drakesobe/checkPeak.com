@@ -96,13 +96,12 @@ function Section({ title, subtitle, open, onToggle, children, right }) {
  * BillingSection
  *
  * Props:
- * - orgId: string
  * - memberId: string
  * - role: string
  * - onDirtyChange?: (dirty: boolean) => void
  * - onRegisterSave?: (fn: () => Promise<{ok:boolean; skipped?:boolean}>) => void
  */
-export default function BillingSection({ orgId, memberId, role, onDirtyChange, onRegisterSave }) {
+export default function BillingSection({ memberId, role, onDirtyChange, onRegisterSave }) {
   const canEdit = role === "admin" || role === "organization";
 
   const [loading, setLoading] = useState(true);
@@ -111,6 +110,8 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
 
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+
+  const [canStartTrial, setCanStartTrial] = useState(false);
 
   // Expanded editable fields to match your Airtable schema (+ our API get/update)
   const [data, setData] = useState({
@@ -161,8 +162,8 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     stripeCustomerId: "",
     stripeSubscriptionId: "",
     trialEnds: "",
-    currentPeriodEnd: "", // ✅ NEW: Airtable "Current Period End"
-    renewalDate: "", // Airtable "Renewal Date"
+    currentPeriodEnd: "",
+    renewalDate: "",
   });
 
   const [original, setOriginal] = useState(null);
@@ -185,6 +186,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
   const [openPayment, setOpenPayment] = useState(false);
   const [openBank, setOpenBank] = useState(false);
 
+  // ✅ Load billing via session token (no orgId required)
   useEffect(() => {
     let mounted = true;
 
@@ -194,8 +196,6 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
       setMsg("");
 
       try {
-        if (!orgId) throw new Error("Missing orgId for billing.");
-
         const res = await fetch(`/api/org/billing/get`, {
           method: "GET",
           credentials: "include",
@@ -247,7 +247,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
           stripeCustomerId: b?.stripeCustomerId || "",
           stripeSubscriptionId: b?.stripeSubscriptionId || "",
           trialEnds: b?.trialEnds || "",
-          currentPeriodEnd: b?.currentPeriodEnd || "", // ✅ NEW
+          currentPeriodEnd: b?.currentPeriodEnd || "",
           renewalDate: b?.renewalDate || "",
         };
 
@@ -255,6 +255,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
           setData(next);
           setOriginal(next);
           setStripeInfo(nextStripe);
+          setCanStartTrial(Boolean(json?.canStartTrial));
         }
       } catch (e) {
         if (mounted) setErr(e?.message || "Failed to load billing.");
@@ -267,7 +268,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     return () => {
       mounted = false;
     };
-  }, [orgId]);
+  }, []);
 
   const onField = (name, value) => setData((prev) => ({ ...prev, [name]: value }));
 
@@ -295,8 +296,6 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     setMsg("");
 
     try {
-      // IMPORTANT: avoid single-select empty-string issues by omitting empties.
-      // (Your API should ideally also convert "" -> null for selects.)
       const payload = {
         ...data,
         billingPhone: normalizePhone(data.billingPhone),
@@ -309,7 +308,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ orgId, memberId, billing: payload }),
+        body: JSON.stringify({ memberId, billing: payload }),
       });
 
       const json = await safeJson(res);
@@ -324,7 +323,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     } finally {
       setSaving(false);
     }
-  }, [canEdit, saving, hasChanges, orgId, memberId, data]);
+  }, [canEdit, saving, hasChanges, memberId, data]);
 
   // ---- Bridge: tell parent when dirty changes ----
   useEffect(() => {
@@ -352,7 +351,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ orgId }),
+        body: JSON.stringify({}),
       });
 
       const json = await safeJson(res);
@@ -390,7 +389,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ orgId }),
+        body: JSON.stringify({}),
       });
 
       const json = await safeJson(res);
@@ -405,9 +404,9 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     }
   };
 
-  const isSubscribed =
-    String(stripeInfo?.status || "").toLowerCase() === "active" ||
-    String(stripeInfo?.status || "").toLowerCase().includes("trial");
+  // ✅ Canonical: if Stripe Subscription ID exists, trial button is NOT available
+  const hasStripeSub = Boolean(String(stripeInfo?.stripeSubscriptionId || "").trim());
+  const allowStartTrial = Boolean(canStartTrial) && !hasStripeSub;
 
   const statusPill = (() => {
     const s = String(stripeInfo?.status || "").toLowerCase();
@@ -441,7 +440,9 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
               Billing profile: {req.filled}/{req.total}
             </span>
 
-            {stripeInfo?.plan ? <span className={classNames(pill, "bg-gray-50 text-gray-700")}>Plan: {stripeInfo.plan}</span> : null}
+            {stripeInfo?.plan ? (
+              <span className={classNames(pill, "bg-gray-50 text-gray-700")}>Plan: {stripeInfo.plan}</span>
+            ) : null}
           </div>
         </div>
 
@@ -496,7 +497,6 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
               Start your 30-day free trial on the annual plan, or manage payment details in the Stripe portal.
             </p>
 
-            {/* ✅ UPDATED: show Current Period End */}
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="text-[11px] font-semibold text-gray-600">Trial ends</label>
@@ -515,7 +515,9 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
 
               <div>
                 <label className="text-[11px] font-semibold text-gray-600">Stripe customer</label>
-                <div className={classNames(readOnlyBase, "mt-1 font-mono truncate")}>{stripeInfo.stripeCustomerId || "—"}</div>
+                <div className={classNames(readOnlyBase, "mt-1 font-mono truncate")}>
+                  {stripeInfo.stripeCustomerId || "—"}
+                </div>
               </div>
             </div>
 
@@ -528,15 +530,15 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
             <button
               type="button"
               onClick={startTrial}
-              disabled={!canEdit || actionLoading || isSubscribed}
+              disabled={!canEdit || actionLoading || !allowStartTrial}
               className={classNames(
                 "px-4 py-2 rounded-2xl font-semibold transition",
-                !canEdit || actionLoading || isSubscribed
+                !canEdit || actionLoading || !allowStartTrial
                   ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                   : "bg-[#46769B] text-white hover:brightness-110"
               )}
             >
-              {isSubscribed ? "Subscription Started" : actionLoading ? "Loading..." : "Start 30-day Trial"}
+              {hasStripeSub ? "Subscription Started" : actionLoading ? "Loading..." : "Start 30-day Trial"}
             </button>
 
             <button
@@ -954,7 +956,8 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
                 disabled={!canEdit}
               />
               <p className="text-[11px] text-gray-500 mt-2">
-                If you ever plan to support invoicing/wire at scale, this eventually moves to a finance workflow instead of the app.
+                If you ever plan to support invoicing/wire at scale, this eventually moves to a finance workflow instead of
+                the app.
               </p>
             </div>
           </div>

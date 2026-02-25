@@ -1,9 +1,8 @@
 // pages/api/org/billing/get.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import {
-  findBillingRecordByOrgId,
   findBillingRecordByOrgToken,
-  upsertBillingForOrg,
+  upsertBillingForOrgToken,
   F,
   firstLookupValue,
 } from "@/lib/airtableBilling";
@@ -39,29 +38,21 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
-  const sessionOrgId = String(
-    user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
-  ).trim();
-
+  // ✅ Token is canonical now — no orgId fallback
   const sessionToken = String(user?.Token || user?.token || user?.orgToken || "").trim();
 
-  if (!sessionOrgId && !sessionToken) {
-    return res.status(400).json({ error: "Missing orgId/token in session." });
+  if (!sessionToken) {
+    return res.status(400).json({ error: "Missing Token in session." });
   }
 
   try {
-    let rec = sessionOrgId ? await findBillingRecordByOrgId(sessionOrgId) : null;
-
-    if (!rec && sessionToken) {
-      rec = await findBillingRecordByOrgToken(sessionToken);
-    }
+    // ✅ Token-only lookup
+    const rec = await findBillingRecordByOrgToken(sessionToken);
 
     const fields = rec?.fields || {};
 
-    // IMPORTANT:
-    // Only trust the Airtable-linked Organization record id for any writes.
+    // Optional: linked org id if you still link Billing -> Organization in Airtable
     const linkedOrgId = Array.isArray(fields?.[F.Organization]) ? fields[F.Organization]?.[0] : "";
-    const effectiveOrgId = String(linkedOrgId || sessionOrgId || "").trim();
 
     const createdRaw = firstLookupValue(fields?.[F.Created]);
     const createdAt = toDateOrNull(createdRaw);
@@ -88,12 +79,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // ✅ Writeback is now OFF by default.
-    // Enable only when explicitly requested: ?writeback=1
+    // ✅ Writeback is OFF by default. Enable only when requested: ?writeback=1
     const writeback = String(req.query?.writeback ?? "0").trim() === "1";
 
-    // ✅ And even when enabled, only write if we have a real linked Org record id.
-    if (writeback && createdAt && rec?.id && linkedOrgId) {
+    if (writeback && createdAt && rec?.id) {
       const patch = {};
       let shouldWrite = false;
 
@@ -112,24 +101,29 @@ export default async function handler(req, res) {
 
       if (shouldWrite) {
         try {
-          // ✅ FIX: Use the imported upsertBillingForOrg.
-          // We pass linkedOrgId (not effectiveOrgId) to avoid creating dupes.
-          await upsertBillingForOrg(linkedOrgId, patch);
+          // ✅ Canonical: upsert by token (optionally link org if linkedOrgId is valid)
+          await upsertBillingForOrgToken(sessionToken, patch, linkedOrgId);
         } catch (e) {
           console.warn("[billing/get] date writeback failed:", e?.message || e);
         }
       }
     }
 
+    const stripeSubscriptionId = String(fields?.[F.StripeSubscriptionId] || "").trim();
+
+    // ✅ Button rule: if no Stripe Subscription ID, allow starting trial
+    const canStartTrial = !stripeSubscriptionId;
+
     const debugEnabled =
       String(req.query?.debug || "").trim() === "1" || String(req.query?.debug || "").trim() === "true";
 
     return res.status(200).json({
       ok: true,
-      orgId: effectiveOrgId || null,
-      sessionOrgId: sessionOrgId || null,
-      sessionToken: sessionToken || null,
+      token: sessionToken.toUpperCase(),
       billingRecordId: rec?.id || null,
+      orgId: linkedOrgId || null, // optional, from Airtable link only (NOT used for lookup)
+      canStartTrial,
+
       billing: rec
         ? {
             billingName: fields[F.BillingContactName] || "",
@@ -159,7 +153,7 @@ export default async function handler(req, res) {
             currentPeriodEnd: iso(computedCPE) || fields[F.CurrentPeriodEnd] || "",
 
             stripeCustomerId: fields[F.StripeCustomerId] || "",
-            stripeSubscriptionId: fields[F.StripeSubscriptionId] || "",
+            stripeSubscriptionId,
 
             preferredPaymentMethod: fields[F.PreferredPaymentMethod] || "",
             paymentTerms: fields[F.PaymentTerms] || "",
@@ -172,17 +166,18 @@ export default async function handler(req, res) {
             wireInstructions: fields[F.WireInstructions] || "",
 
             created: createdRaw || "",
-            token: firstLookupValue(fields?.[F.Token]) || "",
+            token: String(fields?.[F.Token] || "").trim(),
           }
         : null,
+
       ...(debugEnabled
         ? {
             debug: {
               foundRecord: Boolean(rec?.id),
-              effectiveOrgId,
               linkedOrgId: linkedOrgId || null,
               fieldKeys: Object.keys(fields || {}),
               writebackEnabled: writeback,
+              canStartTrial,
             },
           }
         : {}),

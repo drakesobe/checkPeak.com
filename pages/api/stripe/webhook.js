@@ -1,15 +1,15 @@
 // pages/api/stripe/webhook.js
-import { stripe } from "@/lib/stripe";
+import stripe from "@/lib/stripe";
 import {
   findBillingRecordByStripeCustomerId,
-  upsertBillingForOrg,
+  upsertBillingForOrgToken,
   F,
   isoDateFromUnixSeconds,
 } from "@/lib/airtableBilling";
 
 export const config = {
   api: {
-    bodyParser: false, // REQUIRED for Stripe signature verification
+    bodyParser: false,
   },
 };
 
@@ -21,15 +21,17 @@ async function readRawBody(req) {
 
 function mapSubStatusToBillingStatus(subStatus) {
   const s = String(subStatus || "").toLowerCase();
-
   if (s === "trialing") return "Trial";
   if (s === "active") return "Active";
   if (s === "past_due") return "Past Due";
   if (s === "canceled") return "Canceled";
   if (s === "unpaid") return "Suspended";
-
   if (!s) return "";
   return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function asString(v) {
+  return String(v ?? "").trim();
 }
 
 export default async function handler(req, res) {
@@ -64,10 +66,25 @@ export default async function handler(req, res) {
 
     // Find Billing record by Stripe Customer ID
     const billingRec = await findBillingRecordByStripeCustomerId(customerId);
-    const orgRecordId = billingRec?.fields?.[F.Organization]?.[0]; // linked org record id in Airtable
 
-    // If billing record isn't linked to org, we can't safely upsert by org
-    if (!orgRecordId) return res.json({ received: true });
+    // Token: prefer Airtable Billing.Token; fallback to Stripe metadata
+    const tokenFromBilling = asString(billingRec?.fields?.[F.Token] || "").toUpperCase();
+    const tokenFromStripe =
+      asString(obj?.metadata?.orgToken || "") ||
+      asString(obj?.subscription_data?.metadata?.orgToken || "") ||
+      "";
+
+    const token = (tokenFromBilling || tokenFromStripe).toUpperCase();
+    if (!token) {
+      // If we can’t resolve token, we can’t safely upsert token-canonically.
+      // (We could update the Billing row directly by billingRec.id, but you don't have a helper for that.)
+      return res.json({ received: true });
+    }
+
+    // Optional orgRecordId: link is nice but not required
+    const orgRecordId = Array.isArray(billingRec?.fields?.[F.Organization])
+      ? billingRec.fields[F.Organization]?.[0]
+      : "";
 
     const patch = {};
 
@@ -75,9 +92,8 @@ export default async function handler(req, res) {
     if (type === "checkout.session.completed") {
       const subId = obj?.subscription ? String(obj.subscription) : "";
       if (subId) patch[F.StripeSubscriptionId] = subId;
-
       patch[F.Plan] = "Organization";
-      // Don’t over-assume status here; subscription.updated will correct it.
+      // Don't over-assume status here; subscription.updated will correct it.
     }
 
     // ---- Subscription lifecycle ----
@@ -92,7 +108,6 @@ export default async function handler(req, res) {
       patch[F.BillingStatus] = mapSubStatusToBillingStatus(sub?.status);
       patch[F.Plan] = "Organization";
 
-      // Stripe unix seconds -> ISO
       patch[F.TrialEnds] = isoDateFromUnixSeconds(sub?.trial_end);
       patch[F.RenewalDate] = isoDateFromUnixSeconds(sub?.current_period_end);
       patch[F.CurrentPeriodEnd] = isoDateFromUnixSeconds(sub?.current_period_end);
@@ -104,12 +119,12 @@ export default async function handler(req, res) {
     }
 
     if (type === "invoice.payment_succeeded") {
-      // If trialing, subscription.updated will override back to Trial.
       patch[F.BillingStatus] = "Active";
     }
 
     if (Object.keys(patch).length) {
-      await upsertBillingForOrg(orgRecordId, patch);
+      // ✅ Token-canonical upsert; org link optional
+      await upsertBillingForOrgToken(token, patch, orgRecordId);
     }
 
     return res.json({ received: true });

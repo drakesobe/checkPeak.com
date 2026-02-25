@@ -387,7 +387,7 @@ export default function HomePage() {
                   a: "CheckPeak keeps offseason expectations clear and check-ins consistent - so you spend camp on install, not playing catch-up during for failed conditioning evals.",
                 },
                 {
-                  q: "What does it costing when athletes don’t train - or train wrong - during the offseason?",
+                  q: "What are you losing when athletes don’t train - or train wrong - during the offseason?",
                   a: "Clear plans + how-to guidance + simple check-ins help catch form and compliance issues early - before they turn into missed time, lost progress, and a potential injuries.",
                 },
                 {

@@ -161,7 +161,8 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
     stripeCustomerId: "",
     stripeSubscriptionId: "",
     trialEnds: "",
-    renewalDate: "", // this is your Airtable "Renewal Date"
+    currentPeriodEnd: "", // ✅ NEW: Airtable "Current Period End"
+    renewalDate: "", // Airtable "Renewal Date"
   });
 
   const [original, setOriginal] = useState(null);
@@ -246,6 +247,7 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
           stripeCustomerId: b?.stripeCustomerId || "",
           stripeSubscriptionId: b?.stripeSubscriptionId || "",
           trialEnds: b?.trialEnds || "",
+          currentPeriodEnd: b?.currentPeriodEnd || "", // ✅ NEW
           renewalDate: b?.renewalDate || "",
         };
 
@@ -430,13 +432,16 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={classNames(pill, statusPill.cls)}>{statusPill.text}</span>
 
-            <span className={classNames(pill, isBillingProfileComplete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800")}>
+            <span
+              className={classNames(
+                pill,
+                isBillingProfileComplete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
+              )}
+            >
               Billing profile: {req.filled}/{req.total}
             </span>
 
-            {stripeInfo?.plan ? (
-              <span className={classNames(pill, "bg-gray-50 text-gray-700")}>Plan: {stripeInfo.plan}</span>
-            ) : null}
+            {stripeInfo?.plan ? <span className={classNames(pill, "bg-gray-50 text-gray-700")}>Plan: {stripeInfo.plan}</span> : null}
           </div>
         </div>
 
@@ -491,20 +496,26 @@ export default function BillingSection({ orgId, memberId, role, onDirtyChange, o
               Start your 30-day free trial on the annual plan, or manage payment details in the Stripe portal.
             </p>
 
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* ✅ UPDATED: show Current Period End */}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="text-[11px] font-semibold text-gray-600">Trial ends</label>
                 <div className={classNames(readOnlyBase, "mt-1")}>{fmtDate(stripeInfo.trialEnds)}</div>
               </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-gray-600">Current period end</label>
+                <div className={classNames(readOnlyBase, "mt-1")}>{fmtDate(stripeInfo.currentPeriodEnd)}</div>
+              </div>
+
               <div>
                 <label className="text-[11px] font-semibold text-gray-600">Renewal date</label>
                 <div className={classNames(readOnlyBase, "mt-1")}>{fmtDate(stripeInfo.renewalDate)}</div>
               </div>
+
               <div>
                 <label className="text-[11px] font-semibold text-gray-600">Stripe customer</label>
-                <div className={classNames(readOnlyBase, "mt-1 font-mono truncate")}>
-                  {stripeInfo.stripeCustomerId || "—"}
-                </div>
+                <div className={classNames(readOnlyBase, "mt-1 font-mono truncate")}>{stripeInfo.stripeCustomerId || "—"}</div>
               </div>
             </div>
 

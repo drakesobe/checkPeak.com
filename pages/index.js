@@ -203,7 +203,7 @@ export default function HomePage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7 }}
               >
-                Train with confidence - even off campus.
+                Accountability builds confidence - even off campus.
               </motion.h1>
 
               <motion.p
@@ -633,6 +633,7 @@ export default function HomePage() {
                       <span className="font-semibold">$2,988 / team / year</span> for the first 26 teams onboarded
                     </p>
                   </div>
+
                   <div className="flex items-start gap-2">
                     <span className="mt-1 text-[#46769B]">
                       <FaCheckCircle />
@@ -641,12 +642,22 @@ export default function HomePage() {
                       <span className="font-semibold">30-day pilot included</span> to onboard athletes and set up plans
                     </p>
                   </div>
+
                   <div className="flex items-start gap-2">
                     <span className="mt-1 text-[#46769B]">
                       <FaCheckCircle />
                     </span>
                     <p>
                       <span className="font-semibold">Rate locked for 3 years</span> as long as you renew annually
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <span className="mt-1 text-[#46769B]">
+                      <FaCheckCircle />
+                    </span>
+                    <p>
+                      <span className="font-semibold">Use code</span> Founding26 at signup
                     </p>
                   </div>
                 </div>

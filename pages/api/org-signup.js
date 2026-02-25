@@ -2,6 +2,7 @@
 import Airtable from "airtable";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { upsertBillingForOrgToken, F } from "@/lib/airtableBilling";
 
 function escapeAirtableString(str = "") {
   return String(str).replace(/'/g, "\\'");
@@ -16,6 +17,12 @@ function makeOrgToken() {
   const a = crypto.randomBytes(3).toString("hex").toUpperCase();
   const b = crypto.randomBytes(3).toString("hex").toUpperCase();
   return `ORG-${a}-${b}`;
+}
+
+function addDaysISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
 }
 
 export default async function handler(req, res) {
@@ -65,7 +72,7 @@ export default async function handler(req, res) {
     const emailLower = normalizeEmail(email);
     const safeEmail = escapeAirtableString(emailLower);
 
-    // 1) Prevent duplicate org emails (you confirmed you are using {Email})
+    // 1) Prevent duplicate org emails
     const existing = await orgBase(ORGS_TABLE)
       .select({
         filterByFormula: `LOWER({Email})='${safeEmail}'`,
@@ -97,21 +104,18 @@ export default async function handler(req, res) {
     // 3) Hash password
     const hashedPassword = await bcrypt.hash(String(password), 10);
 
-    /**
-     * IMPORTANT:
-     * Airtable returned:
-     * UNKNOWN_FIELD_NAME: "Contact Email"
-     *
-     * So we DO NOT write "Contact Email" at all.
-     * (If you want it, create a real editable field named exactly "Contact Email" in Airtable.)
-     */
+    const nowISO = new Date().toISOString();
+
     const fields = {
       Name: String(name).trim(),
       Email: emailLower,
       Password: hashedPassword,
       Token: token,
 
-      // Optional columns you listed (write only ones that exist)
+      // ✅ add your real CreatedAt column
+      CreatedAt: nowISO,
+
+      // Optional columns you listed
       Type: String(type || "Organization").trim(),
       "Contact Name": String(contactName || "").trim(),
       "Phone Number": String(phoneNumber || "").trim(),
@@ -128,10 +132,46 @@ export default async function handler(req, res) {
 
     const created = await orgBase(ORGS_TABLE).create(fields);
 
+    // 4) ✅ Create/Upsert Billing row keyed by Token (Token is now writable)
+    const sandboxEndsISO = addDaysISO(14);
+
+    try {
+      await upsertBillingForOrgToken(
+        token,
+        {
+          [F.Token]: token,
+          [F.BillingStatus]: "Sandbox",
+          [F.SandboxEnds]: sandboxEndsISO,
+          ...(F.Plan ? { [F.Plan]: "Organization" } : {}),
+          ...(F.Currency ? { [F.Currency]: "USD" } : {}),
+        },
+        created.id
+      );
+    } catch (e1) {
+      // Retry without BillingStatus if the select option write is ever touchy
+      try {
+        await upsertBillingForOrgToken(
+          token,
+          {
+            [F.Token]: token,
+            [F.SandboxEnds]: sandboxEndsISO,
+            ...(F.Plan ? { [F.Plan]: "Organization" } : {}),
+            ...(F.Currency ? { [F.Currency]: "USD" } : {}),
+          },
+          created.id
+        );
+      } catch (e2) {
+        console.warn("[org-signup] billing upsert failed (non-blocking):", e2?.message || e2);
+      }
+      console.warn("[org-signup] billing upsert primary failed (non-blocking):", e1?.message || e1);
+    }
+
     return res.status(200).json({
       success: true,
       orgId: created.id,
       token,
+      sandboxEnds: sandboxEndsISO,
+      createdAt: nowISO,
     });
   } catch (err) {
     console.error("[org-signup] Airtable error:", err);

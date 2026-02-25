@@ -1,10 +1,9 @@
 // pages/api/org/billing/update.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { upsertBillingForOrg, F } from "@/lib/airtableBilling";
+import { upsertBillingForOrgToken, F } from "@/lib/airtableBilling";
 
 function cleanText(v) {
-  const s = String(v ?? "").trim();
-  return s;
+  return String(v ?? "").trim();
 }
 
 function cleanSelect(v) {
@@ -28,17 +27,23 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
-  // Always trust session orgId (not client input)
+  // ✅ Token is canonical now
+  const token = String(user?.Token || user?.token || user?.orgToken || "").trim().toUpperCase();
+  if (!token) return res.status(400).json({ error: "Missing organization token in session." });
+
+  // Optional: link to org record id if present (rec...)
   const orgId = String(
     user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
   ).trim();
-  if (!orgId) return res.status(400).json({ error: "Missing orgId in session." });
 
   try {
     const { billing = {} } = req.body || {};
     const b = billing || {};
 
     const patch = {
+      // ✅ ensure token is stored (since it's writable now)
+      [F.Token]: token,
+
       // Billing Contact
       [F.BillingContactName]: cleanText(b.billingName),
       [F.BillingEmail]: cleanText(b.billingEmail),
@@ -74,6 +79,10 @@ export default async function handler(req, res) {
       [F.AccountLast4]: cleanLast4(b.accountLast4),
       [F.WireInstructions]: cleanText(b.wireInstructions),
 
+      // Optional notes (if you have these in BillingSection / AirtableBilling.F)
+      // [F.InvoiceNotes]: cleanText(b.invoiceNotes),
+      // [F.Notes]: cleanText(b.notes),
+
       // NOTE:
       // DO NOT accept StripeCustomerId / StripeSubscriptionId from client.
       // Those should be set by Stripe flows/webhooks only.
@@ -84,7 +93,8 @@ export default async function handler(req, res) {
       if (patch[k] === undefined) delete patch[k];
     });
 
-    const updated = await upsertBillingForOrg(orgId, patch);
+    // ✅ Token-keyed upsert (will update existing row instead of creating dupes)
+    const updated = await upsertBillingForOrgToken(token, patch, orgId);
 
     return res.status(200).json({
       ok: true,

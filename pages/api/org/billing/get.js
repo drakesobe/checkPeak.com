@@ -112,9 +112,9 @@ export default async function handler(req, res) {
 
       if (shouldWrite) {
         try {
-          // WARNING: upsert must treat linkedOrgId as the org record id.
+          // ✅ FIX: Use the imported upsertBillingForOrg.
           // We pass linkedOrgId (not effectiveOrgId) to avoid creating dupes.
-          await upsertBillingForOrgSafe(linkedOrgId, patch);
+          await upsertBillingForOrg(linkedOrgId, patch);
         } catch (e) {
           console.warn("[billing/get] date writeback failed:", e?.message || e);
         }

@@ -1,7 +1,11 @@
 // pages/api/stripe/customer-portal.js
-import { stripe } from "@/lib/stripe";
+import stripe from "@/lib/stripe";
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgId, F } from "@/lib/airtableBilling";
+import { findBillingRecordByOrgToken, F } from "@/lib/airtableBilling";
+
+function asString(v) {
+  return String(v ?? "").trim();
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -12,19 +16,14 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
-  const orgId = String(
-    user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
-  ).trim();
-  if (!orgId) return res.status(400).json({ error: "Missing orgId in session." });
+  const token = asString(user?.Token || user?.token || user?.orgToken).toUpperCase();
+  if (!token) return res.status(400).json({ error: "Missing organization token in session." });
 
   try {
-    const origin =
-      req.headers.origin ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000";
+    const origin = req.headers.origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    const rec = await findBillingRecordByOrgId(orgId);
-    const customerId = String(rec?.fields?.[F.StripeCustomerId] || "").trim();
+    const rec = await findBillingRecordByOrgToken(token);
+    const customerId = asString(rec?.fields?.[F.StripeCustomerId] || "");
     if (!customerId) {
       return res.status(400).json({ error: "No Stripe customer found. Start a subscription first." });
     }

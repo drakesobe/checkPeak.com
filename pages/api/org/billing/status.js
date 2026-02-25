@@ -1,6 +1,6 @@
 // pages/api/org/billing/status.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgId, findBillingRecordByOrgToken, F, firstLookupValue } from "@/lib/airtableBilling";
+import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/airtableBilling";
 
 function toDateOrNull(v) {
   if (!v) return null;
@@ -22,16 +22,29 @@ function lower(v) {
   return String(v || "").trim().toLowerCase();
 }
 
-function computeIsPaidOk({ status, trialEnds, currentPeriodEnd }) {
+function computeIsPaidOk({ status, sandboxEnds, trialEnds, currentPeriodEnd }) {
   const s = lower(status);
 
-  if (s.includes("trial")) return true;
-  if (s === "active") return true;
-
+  // Explicit locked states always block
   if (s.includes("past") || s.includes("due")) return false;
   if (s.includes("cancel")) return false;
   if (s.includes("unpaid") || s.includes("suspend")) return false;
+  if (s.includes("not started") || s.includes("not_started")) return false;
 
+  // ✅ Sandbox: allow if Sandbox Ends exists and is in the future
+  const se = toDateOrNull(sandboxEnds);
+  if (se) {
+    const now = Date.now();
+    const end = se.getTime();
+    if (!Number.isNaN(end) && now < end) return true;
+    // If expired, sandbox is not ok (falls through to false)
+  }
+
+  // Stripe states
+  if (s.includes("trial")) return true;
+  if (s === "active") return true;
+
+  // Legacy date fallbacks (if you still want them)
   const te = toDateOrNull(trialEnds);
   if (te) {
     const now = Date.now();
@@ -58,28 +71,32 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
+  // Prefer token (now the canonical stable key)
+  const sessionToken = String(user?.Token || user?.token || user?.orgToken || "").trim().toUpperCase();
+
+  // Keep orgId as optional fallback
   const sessionOrgId = String(
     user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
   ).trim();
 
-  const sessionToken = String(user?.Token || user?.token || user?.orgToken || "").trim();
-
-  if (!sessionOrgId && !sessionToken) {
+  if (!sessionToken && !sessionOrgId) {
     return res.status(400).json({ error: "Missing orgId/token in session." });
   }
 
   try {
-    let rec = sessionOrgId ? await findBillingRecordByOrgId(sessionOrgId) : null;
-    if (!rec && sessionToken) rec = await findBillingRecordByOrgToken(sessionToken);
+    // ✅ token-first (reliable now that Billing.Token is writable)
+    let rec = sessionToken ? await findBillingRecordByOrgToken(sessionToken) : null;
+    if (!rec?.id && sessionOrgId) rec = await findBillingRecordByOrgId(sessionOrgId);
 
     if (!rec?.id) {
-      // No billing record yet -> treat as locked
       return res.status(200).json({
         ok: true,
         billing: {
           isPaidOk: false,
           status: "",
           statusRaw: "",
+          token: sessionToken || "",
+          sandboxEnds: "",
           trialEnds: "",
           currentPeriodEnd: "",
           renewalDate: "",
@@ -96,11 +113,23 @@ export default async function handler(req, res) {
 
     const statusRaw = String(f?.[F.BillingStatus] || "").trim();
 
-    let trialEnds = f?.[F.TrialEnds] || "";
-    const currentPeriodEnd = f?.[F.CurrentPeriodEnd] || "";
-    const renewalDate = f?.[F.RenewalDate] || "";
+    // ✅ Sandbox Ends
+    let sandboxEnds = String(f?.[F.SandboxEnds] || "").trim();
 
-    // Compute trialEnds if missing (READ ONLY — no writeback)
+    // Stripe/webhook-owned fields
+    let trialEnds = String(f?.[F.TrialEnds] || "").trim();
+    const currentPeriodEnd = String(f?.[F.CurrentPeriodEnd] || "").trim();
+    const renewalDate = String(f?.[F.RenewalDate] || "").trim();
+
+    // READ ONLY fallback: if sandboxEnds missing but createdAt exists, infer +14 days
+    // (Optional safeguard; remove if you want ONLY explicit sandboxEnds to count)
+    const SANDBOX_DAYS = 14;
+    const se = toDateOrNull(sandboxEnds);
+    if (!se && createdAt) {
+      sandboxEnds = iso(addDays(createdAt, SANDBOX_DAYS));
+    }
+
+    // READ ONLY fallback: infer trialEnds if missing (Created + 30 days)
     const trialEndsDate = toDateOrNull(trialEnds);
     if (!trialEndsDate && createdAt) {
       trialEnds = iso(addDays(createdAt, 30));
@@ -108,6 +137,7 @@ export default async function handler(req, res) {
 
     const isPaidOk = computeIsPaidOk({
       status: statusRaw,
+      sandboxEnds,
       trialEnds,
       currentPeriodEnd,
     });
@@ -118,12 +148,15 @@ export default async function handler(req, res) {
         isPaidOk,
         status: statusRaw || "",
         statusRaw: statusRaw || "",
+        token: String(f?.[F.Token] || sessionToken || "").trim(),
+        sandboxEnds: sandboxEnds || "",
         trialEnds: trialEnds || "",
         currentPeriodEnd: currentPeriodEnd || "",
         renewalDate: renewalDate || "",
         stripeCustomerId: f?.[F.StripeCustomerId] || "",
         stripeSubscriptionId: f?.[F.StripeSubscriptionId] || "",
         created: createdRaw || "",
+        billingRecordId: rec?.id || "",
       },
     });
   } catch (e) {

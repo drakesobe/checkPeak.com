@@ -18,6 +18,10 @@ function cleanLast4(v) {
   return String(v || "").replace(/\D/g, "").slice(-4);
 }
 
+function isAirtableRecordId(v = "") {
+  return /^rec[a-zA-Z0-9]{14,}$/.test(String(v || "").trim());
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -28,13 +32,15 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // ✅ Token is canonical now
-  const token = String(user?.Token || user?.token || user?.orgToken || "").trim().toUpperCase();
+  const token = String(user?.Token || user?.token || user?.orgToken || "")
+    .trim()
+    .toUpperCase();
+
   if (!token) return res.status(400).json({ error: "Missing organization token in session." });
 
-  // Optional: link to org record id if present (rec...)
-  const orgId = String(
-    user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
-  ).trim();
+  // ✅ Optional: link to org record id ONLY if it's actually a rec...
+  const rawOrgId = String(user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || "").trim();
+  const orgRecordId = isAirtableRecordId(rawOrgId) ? rawOrgId : "";
 
   try {
     const { billing = {} } = req.body || {};
@@ -79,7 +85,7 @@ export default async function handler(req, res) {
       [F.AccountLast4]: cleanLast4(b.accountLast4),
       [F.WireInstructions]: cleanText(b.wireInstructions),
 
-      // Optional notes (if you have these in BillingSection / AirtableBilling.F)
+      // Optional notes (enable only if these fields exist in AirtableBilling.F)
       // [F.InvoiceNotes]: cleanText(b.invoiceNotes),
       // [F.Notes]: cleanText(b.notes),
 
@@ -93,8 +99,8 @@ export default async function handler(req, res) {
       if (patch[k] === undefined) delete patch[k];
     });
 
-    // ✅ Token-keyed upsert (will update existing row instead of creating dupes)
-    const updated = await upsertBillingForOrgToken(token, patch, orgId);
+    // ✅ Token-keyed upsert (canonical). Org link is optional.
+    const updated = await upsertBillingForOrgToken(token, patch, orgRecordId);
 
     return res.status(200).json({
       ok: true,

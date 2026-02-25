@@ -1,4 +1,4 @@
-// pages/org/trainers.js (or pages/org/trainers.jsx)
+// pages/org/trainers.js
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -252,7 +252,9 @@ export default function TrainersPage() {
         />
 
         <div className="sm:hidden">
-          <p className="text-[11px] font-semibold text-gray-500 px-1">Invite teammates and manage access</p>
+          <p className="text-[11px] font-semibold text-gray-500 px-1">
+            Invite teammates and manage access
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-12 gap-4 sm:gap-6">
@@ -296,14 +298,16 @@ export default function TrainersPage() {
           </div>
         </div>
 
+        {/* ✅ Remove modal (fixed permission prop) */}
         <RemoveMemberModal
           open={removeOpen}
           member={removeTarget}
           onClose={closeRemove}
-          disabled={!canManageMembers}
-          onConfirm={async () => {
-            if (!removeTarget?.id) return;
-            await deactivateMember({ memberId: removeTarget.id });
+          canManage={canManageMembers}
+          onConfirm={async (m) => {
+            const id = m?.id || removeTarget?.id;
+            if (!id) return;
+            await deactivateMember({ memberId: id });
             closeRemove();
           }}
         />

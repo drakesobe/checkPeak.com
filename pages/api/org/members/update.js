@@ -65,9 +65,25 @@ function canSetRole(actorRole, desiredRole) {
   return false;
 }
 
-function orgFilterFormula(ORG_FIELD, orgId) {
-  const safeOrg = escapeAirtableString(String(orgId || "").trim());
-  return `FIND('${safeOrg}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0`;
+/**
+ * Robust org membership check.
+ * Works whether {Organization} is:
+ * - a linked record field (array of record ids)
+ * - a lookup (array of strings)
+ * - a single string
+ */
+function isMemberInOrg(rec, ORG_FIELD, orgId) {
+  const v = rec?.fields?.[ORG_FIELD];
+  if (!orgId) return false;
+
+  if (Array.isArray(v)) {
+    return v.map((x) => String(x).trim()).includes(String(orgId).trim());
+  }
+
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+
+  return s === String(orgId).trim() || s.includes(String(orgId).trim());
 }
 
 export default async function handler(req, res) {
@@ -83,7 +99,7 @@ export default async function handler(req, res) {
     const b = base();
     const actorRole = roleOf(user);
 
-    const orgId = String(user.orgId || "").trim();
+    const orgId = String(user?.orgId || user?.OrgId || "").trim();
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
 
     const { memberId, name, email, role, active } = req.body || {};
@@ -98,24 +114,22 @@ export default async function handler(req, res) {
     const ACTIVE_FIELD = F.MEM_ACTIVE || "Active";
 
     // Optional: block self-deactivation
-    if (user.memberId && String(user.memberId) === id && active === false) {
+    const selfMemberId = String(user?.memberId || user?.MemberId || "").trim();
+    if (selfMemberId && selfMemberId === id && active === false) {
       return res.status(409).json({ error: "You can’t deactivate your own account." });
     }
 
-    // Strong org membership check (don’t rely on .find alone)
-    const verify = await b(AT.tables.orgMembers)
-      .select({
-        maxRecords: 1,
-        filterByFormula: `AND(RECORD_ID()='${escapeAirtableString(id)}', ${orgFilterFormula(
-          ORG_FIELD,
-          orgId
-        )})`,
-      })
-      .firstPage();
+    // ✅ Fetch once and validate org in JS (no Airtable formula round trip)
+    const record = await b(AT.tables.orgMembers).find(id);
+    if (!record) return res.status(404).json({ error: "Member not found." });
 
-    if (!verify?.length) return res.status(403).json({ error: "Forbidden." });
+    if (!isMemberInOrg(record, ORG_FIELD, orgId)) {
+      return res.status(403).json({
+        error: "Forbidden.",
+        details: "Target member is not in your organization (orgId mismatch).",
+      });
+    }
 
-    const record = verify[0];
     const targetRole = String(record.fields?.[ROLE_FIELD] || "").trim().toLowerCase();
 
     if (!canManageTarget(actorRole, targetRole)) {
@@ -152,23 +166,27 @@ export default async function handler(req, res) {
 
     // Active
     if (active !== undefined) {
-      // actorRole gate already handled by canManageTarget (trainer never gets here)
       updates[ACTIVE_FIELD] = Boolean(active);
     }
 
     // Email (unique within org)
     if (email !== undefined) {
       const nextEmail = normEmail(email);
-      if (!nextEmail || !nextEmail.includes("@")) return res.status(400).json({ error: "Enter a valid email." });
+      if (!nextEmail || !nextEmail.includes("@")) {
+        return res.status(400).json({ error: "Enter a valid email." });
+      }
 
       const safe = escapeAirtableString(nextEmail);
 
+      // This org filter formula is fine for conflicts because it searches by email within org,
+      // but if your Org field is also linked-record and this ever gets flaky,
+      // we can switch this conflict check to a JS scan too.
       const conflict = await b(AT.tables.orgMembers)
         .select({
           maxRecords: 1,
           filterByFormula: `AND(
             LOWER({${EMAIL_FIELD}})='${safe}',
-            ${orgFilterFormula(ORG_FIELD, orgId)},
+            FIND('${escapeAirtableString(orgId)}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0,
             RECORD_ID()!='${escapeAirtableString(id)}'
           )`,
         })

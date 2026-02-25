@@ -1,6 +1,6 @@
 // pages/api/org/members/remove.js
 import { requireOrgSideUser } from "@/lib/requireUser";
-import { AT, base, F, escapeAirtableString } from "@/lib/airtableOrgWorkoutConfig";
+import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
 
 function pickField(obj, key, fallback) {
   return obj && obj[key] ? obj[key] : fallback;
@@ -27,9 +27,29 @@ function canManage(actorRole, targetRole) {
   return false;
 }
 
-function orgFilterFormula(ORG_FIELD, orgId) {
-  const safeOrg = escapeAirtableString(String(orgId || "").trim());
-  return `FIND('${safeOrg}', ARRAYJOIN({${ORG_FIELD}}&'')) > 0`;
+/**
+ * Robust org membership check.
+ * Works whether {Organization} is:
+ * - a linked record field (array of record ids)
+ * - a lookup (array of strings)
+ * - a single string
+ */
+function isMemberInOrg(rec, ORG_FIELD, orgId) {
+  const v = rec?.fields?.[ORG_FIELD];
+
+  if (!orgId) return false;
+
+  // Linked record field usually comes back as array of record IDs
+  if (Array.isArray(v)) {
+    return v.map((x) => String(x).trim()).includes(String(orgId).trim());
+  }
+
+  // Sometimes it can be a single string (or empty)
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+
+  // If it's a string that contains orgId, treat as match (covers some lookup formats)
+  return s === String(orgId).trim() || s.includes(String(orgId).trim());
 }
 
 export default async function handler(req, res) {
@@ -42,6 +62,8 @@ export default async function handler(req, res) {
 
   try {
     const actorRole = roleOf(user);
+
+    // IMPORTANT: this must match what OrgMembers uses for Organization link (usually org record id)
     const orgId = String(user?.orgId || user?.OrgId || "").trim();
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
 
@@ -61,15 +83,18 @@ export default async function handler(req, res) {
     const ORG_FIELD = pickField(F, "MEM_ORG", "Organization");
     const ROLE_FIELD = pickField(F, "MEM_ROLE", "Role");
 
+    // Fetch target member once (single source of truth)
     const rec = await b(AT.tables.orgMembers).find(memberId);
     if (!rec) return res.status(404).json({ error: "Member not found." });
 
-    // Must be in org (hard check)
-    const inOrgFormula = `AND(RECORD_ID()='${escapeAirtableString(memberId)}', ${orgFilterFormula(ORG_FIELD, orgId)})`;
-    const verify = await b(AT.tables.orgMembers)
-      .select({ filterByFormula: inOrgFormula, maxRecords: 1 })
-      .firstPage();
-    if (!verify?.length) return res.status(403).json({ error: "Forbidden." });
+    // ✅ Hard org check (no Airtable formula round trip)
+    const inOrg = isMemberInOrg(rec, ORG_FIELD, orgId);
+    if (!inOrg) {
+      return res.status(403).json({
+        error: "Forbidden.",
+        details: "Target member is not in your organization (orgId mismatch).",
+      });
+    }
 
     const targetRole = String(rec.fields?.[ROLE_FIELD] || "").toLowerCase();
     if (!canManage(actorRole, targetRole)) {

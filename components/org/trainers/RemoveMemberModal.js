@@ -6,7 +6,21 @@ import Button from "@/components/org/trainers/ui/Button";
 import { Trash2 } from "lucide-react";
 import { normalizeEmail } from "@/components/org/trainers/utils/strings";
 
-export default function RemoveMemberModal({ open, member, canManageMembers, onClose, onConfirm, errorText }) {
+export default function RemoveMemberModal({
+  open,
+  member,
+  canManage = false, // ✅ aligns with TrainersTable prop name
+  onClose,
+  onConfirm,
+  errorText,
+}) {
+  const disabled = !canManage || !member;
+
+  function handleConfirm() {
+    if (!member) return;
+    onConfirm?.(member);
+  }
+
   return (
     <Modal
       open={open}
@@ -19,10 +33,21 @@ export default function RemoveMemberModal({ open, member, canManageMembers, onCl
         </div>
       ) : null}
 
+      {!canManage ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 mb-4">
+          <p className="text-sm text-amber-900 font-semibold">
+            You don’t have permission to remove members.
+          </p>
+        </div>
+      ) : null}
+
       <div className="space-y-4">
         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
           <p className="text-xs text-gray-500">Confirm</p>
-          <p className="text-sm font-extrabold text-gray-900 mt-1">This will deactivate org access for:</p>
+          <p className="text-sm font-extrabold text-gray-900 mt-1">
+            This will deactivate org access for:
+          </p>
+
           <p className="text-[12px] text-gray-700 mt-2">
             <span className="font-semibold">{member?.Name || "Member"}</span>
             {member?.Email ? (
@@ -32,19 +57,23 @@ export default function RemoveMemberModal({ open, member, canManageMembers, onCl
               </>
             ) : null}
           </p>
+
           <p className="text-[11px] text-gray-500 mt-2">
             Deactivated members can be reactivated later via Edit → Active=true.
           </p>
         </div>
 
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} type="button">
             Cancel
           </Button>
+
           <Button
-            onClick={onConfirm}
-            disabled={!canManageMembers}
-            className="bg-red-600 hover:brightness-110"
+            onClick={handleConfirm}
+            disabled={disabled}
+            type="button"
+            className="bg-red-600 hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
+            title={!canManage ? "Only Admin can remove members" : "Deactivate member"}
           >
             <Trash2 className="w-4 h-4" />
             Remove

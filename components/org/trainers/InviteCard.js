@@ -312,7 +312,6 @@ export default function InviteCard({
           <p className="text-sm font-extrabold text-gray-900">Inline edit</p>
           <p className="text-[11px] text-gray-600 mt-1 leading-relaxed break-words">
             Click <span className="font-semibold">Edit</span> on a member to update Name, Email, Role, or Active. Saving
-            calls <span className="font-mono">/api/org/members/update</span>.
           </p>
         </div>
       </div>

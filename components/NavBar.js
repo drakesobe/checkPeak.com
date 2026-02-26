@@ -99,22 +99,26 @@ export default function NavBar() {
     return "Member";
   }, [role]);
 
-  /* =========================
-     NAV TABS
+    /* =========================
+     NAV TABS (MODULAR)
   ========================= */
-  const leftTabs = useMemo(
-    () => [
+  const { DESKTOP_LEFT_TABS, DESKTOP_RIGHT_TABS, MOBILE_TABS } = useMemo(() => {
+    // Keep this inline memo so it’s tree-shakeable & easy to adjust
+    // (Alternatively import helpers directly)
+    const tabs = [
       { name: "Scan", href: "/nutrition-label-scanner" },
       { name: "Search", href: "/search" },
       { name: "Info", href: "/info" },
-    ],
-    []
-  );
+      { name: "NCAA Rules", href: "/compliance/ncaa" },
+      { name: "SmartStack", href: "/smartstack", icon: "mountain" },
+    ];
 
-  const mainTabs = useMemo(
-    () => [...leftTabs, { name: "SmartStack", href: "/smartstack" }],
-    [leftTabs]
-  );
+    return {
+      DESKTOP_LEFT_TABS: tabs.filter((t) => ["Scan", "Search", "Info", "NCAA Rules"].includes(t.name)),
+      DESKTOP_RIGHT_TABS: tabs.filter((t) => ["SmartStack"].includes(t.name)),
+      MOBILE_TABS: tabs,
+    };
+  }, []);
 
   /* =========================
      AUTH MODAL OPENERS
@@ -217,7 +221,7 @@ export default function NavBar() {
 
   const NavItem = ({ tab, onClick }) => {
     const active = isActive(tab.href);
-    const isSmartStack = tab.name === "SmartStack";
+    const isSmartStack = tab.name === "mountain";
 
     return (
       <Link
@@ -317,7 +321,7 @@ export default function NavBar() {
           <div className="h-16 md:h-20 flex items-center justify-between gap-3">
             {/* Desktop left tabs */}
             <div className="hidden md:flex items-center gap-2">
-              {leftTabs.map((tab) => (
+              {DESKTOP_LEFT_TABS.map((tab) => (
                 <NavItem key={tab.href} tab={tab} />
               ))}
             </div>
@@ -339,7 +343,9 @@ export default function NavBar() {
 
             {/* Desktop right */}
             <div className="hidden md:flex items-center gap-2">
-              <NavItem tab={{ name: "SmartStack", href: "/smartstack" }} />
+              {DESKTOP_RIGHT_TABS.map((tab) => (
+                <NavItem key={tab.href} tab={tab} />
+        ))}
 
               {isMounted && (
                 <div className="relative">
@@ -426,7 +432,7 @@ export default function NavBar() {
               className="md:hidden bg-white border-t border-gray-200 text-gray-900"
             >
               <div className="px-4 py-4 space-y-2">
-                {mainTabs.map((tab) => (
+                {MOBILE_TABS.map((tab) => (
                   <Link
                     key={tab.href}
                     href={tab.href}

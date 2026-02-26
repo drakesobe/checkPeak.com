@@ -560,9 +560,9 @@ export default function OCRPage() {
                 />
               </div>
 
-              {/* Gate overlay */}
+              {/* Gate overlay (fixed to viewport) */}
               {!isUnlocked && hasResults && (
-                <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40">
                   <div className="w-full max-w-xl bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-xl p-5 sm:p-6">
                     <div className="flex flex-col gap-2 text-center">
                       <p

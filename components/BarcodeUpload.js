@@ -2,17 +2,22 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import {
-  BrowserMultiFormatReader,
-  BarcodeFormat,
-  DecodeHintType,
-} from "@zxing/library";
+import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Check } from "lucide-react";
 import Cropper from "react-easy-crop";
 import ProgressBar from "./ProgressBar";
 
-// Tiny beep placeholder (you can swap this for a real sound if you want)
+/**
+ * BarcodeUpload (Peak)
+ * - Upload/crop barcode photos, decode using ZXing with multiple rotations + light preprocessing
+ * - Numeric OCR fallback via tesseract.js (safe init pattern)
+ * - Validates GTIN/UPC/EAN using checksum
+ * - Multi-file friendly: sequential crop flow and overall progress
+ * - Privacy: only barcode digits sent to /api/check
+ */
+
+// Tiny beep placeholder (swap if you want)
 const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
@@ -22,6 +27,18 @@ const BEEP_SRC =
 
 const isBlobUrl = (s) => typeof s === "string" && s.startsWith("blob:");
 const normalizeBarcodeDigits = (s) => String(s || "").replace(/\D/g, "");
+const safeStr = (v) => String(v ?? "").trim();
+
+const detectHeic = (file) => {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "").toLowerCase();
+  return (
+    type.includes("heic") ||
+    type.includes("heif") ||
+    name.endsWith(".heic") ||
+    name.endsWith(".heif")
+  );
+};
 
 // Compute check digit for EAN/UPC/GTIN (mod 10)
 // Works for EAN-8, UPC-A (12), EAN-13, GTIN-14 if you pass the body (without check digit)
@@ -53,8 +70,8 @@ function isValidGtin(digits) {
   return expected !== null && check === expected;
 }
 
-// Some scanners return UPC-A as 13 digits with leading 0, or UPC-E expansions vary.
-// We keep it simple: normalize, allow known lengths, and checksum validate when possible.
+// Some scanners return UPC-A as 13 digits with leading 0.
+// Keep it simple: normalize, allow known lengths, validate checksum when possible.
 function normalizeAndValidateBarcode(raw) {
   const digits = normalizeBarcodeDigits(raw);
 
@@ -68,7 +85,6 @@ function normalizeAndValidateBarcode(raw) {
 
   // Standard GTIN validation
   if ([8, 12, 13, 14].includes(digits.length)) {
-    // Checksum validation is very useful; if it fails, we treat as invalid
     if (isValidGtin(digits)) return { ok: true, digits, type: "GTIN" };
     return { ok: false, digits, reason: "checksum" };
   }
@@ -76,65 +92,152 @@ function normalizeAndValidateBarcode(raw) {
   return { ok: false, digits, reason: "length" };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Orientation-aware decode helpers                                           */
+/* -------------------------------------------------------------------------- */
+
+async function decodeBitmapFromFile(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      // Most reliable for EXIF rotation when supported
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return { bitmap: bmp, width: bmp.width, height: bmp.height, close: () => bmp.close?.() };
+    } catch {
+      // fallback below
+    }
+  }
+
+  // Fallback: Image + FileReader
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = dataUrl;
+  });
+
+  return {
+    bitmap: img,
+    width: img.naturalWidth || img.width,
+    height: img.naturalHeight || img.height,
+    close: () => {},
+  };
+}
+
 /**
- * Crop a File based on pixel cropRect and return a new File + dataUrl.
- * `cropRect`: { x, y, width, height } in image pixels.
+ * Crop a File based on pixel cropRect and return a new File.
+ * `cropRect`: { x, y, width, height } in source pixel coordinates.
+ * Returns: { file: File, blobUrl: string }
  */
 async function cropFileToRegion(file, cropRect) {
-  return new Promise((resolve, reject) => {
-    if (!cropRect || cropRect.width <= 0 || cropRect.height <= 0) {
-      return reject(new Error("Invalid crop region"));
-    }
+  if (!cropRect || cropRect.width <= 0 || cropRect.height <= 0) {
+    throw new Error("Invalid crop region");
+  }
 
-    const img = new Image();
-    const reader = new FileReader();
+  const { bitmap, width, height, close } = await decodeBitmapFromFile(file);
 
-    reader.onload = (e) => {
-      img.src = e.target.result;
-    };
-    reader.onerror = (err) => reject(err);
+  const sx = Math.max(0, Math.min(width - 1, Math.round(cropRect.x)));
+  const sy = Math.max(0, Math.min(height - 1, Math.round(cropRect.y)));
+  const sw = Math.max(1, Math.min(width - sx, Math.round(cropRect.width)));
+  const sh = Math.max(1, Math.min(height - sy, Math.round(cropRect.height)));
 
-    img.onload = () => {
-      try {
-        const sx = Math.max(0, Math.floor(cropRect.x));
-        const sy = Math.max(0, Math.floor(cropRect.y));
-        const sw = Math.max(1, Math.floor(cropRect.width));
-        const sh = Math.max(1, Math.floor(cropRect.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-        const canvas = document.createElement("canvas");
-        canvas.width = sw;
-        canvas.height = sh;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
 
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("Crop failed: empty blob"));
-
-            const croppedFile = new File(
-              [blob],
-              file.name.replace(/(\.\w+)?$/, "_barcode_crop.jpg"),
-              { type: "image/jpeg" }
-            );
-
-            // dataURL for preview (fast)
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-            resolve({ file: croppedFile, dataUrl });
-          },
-          "image/jpeg",
-          0.92
-        );
-      } catch (err) {
-        reject(err);
-      }
-    };
-
-    img.onerror = (err) =>
-      reject(err || new Error("Failed to load image for cropping"));
-
-    reader.readAsDataURL(file);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Crop failed: empty blob"))),
+      "image/jpeg",
+      0.92
+    );
   });
+
+  close?.();
+
+  const croppedFile = new File([blob], file.name.replace(/(\.\w+)?$/, "_barcode_crop.jpg"), {
+    type: "image/jpeg",
+  });
+
+  const blobUrl = URL.createObjectURL(croppedFile);
+  return { file: croppedFile, blobUrl };
+}
+
+/* -------------------------------------------------------------------------- */
+/* ZXing preprocessing (grayscale/contrast, invert, threshold)                 */
+/* -------------------------------------------------------------------------- */
+
+function applyGrayscaleContrast(ctx, w, h, contrast = 1.25) {
+  try {
+    const id = ctx.getImageData(0, 0, w, h);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i],
+        g = d[i + 1],
+        b = d[i + 2];
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      let v = (gray - 128) * contrast + 128;
+      v = Math.max(0, Math.min(255, v));
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(id, 0, 0);
+  } catch {
+    // ignore
+  }
+}
+
+function applyInvert(ctx, w, h) {
+  try {
+    const id = ctx.getImageData(0, 0, w, h);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = 255 - d[i];
+      d[i + 1] = 255 - d[i + 1];
+      d[i + 2] = 255 - d[i + 2];
+    }
+    ctx.putImageData(id, 0, 0);
+  } catch {
+    // ignore
+  }
+}
+
+function applyThreshold(ctx, w, h, thresh = 170) {
+  try {
+    const id = ctx.getImageData(0, 0, w, h);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i]; // assume grayscale already
+      const out = v > thresh ? 255 : 0;
+      d[i] = d[i + 1] = d[i + 2] = out;
+    }
+    ctx.putImageData(id, 0, 0);
+  } catch {
+    // ignore
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* OCR (numeric fallback) — safe tesseract init                               */
+/* -------------------------------------------------------------------------- */
+
+function coerceDigitsFromOCR(text) {
+  // Fix common OCR confusions in numeric contexts
+  // Only used in fallback; keep conservative.
+  const s = String(text || "");
+  return s
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/[Ss]/g, "5")
+    .replace(/[Bb]/g, "8");
 }
 
 export default function BarcodeUpload({
@@ -151,6 +254,8 @@ export default function BarcodeUpload({
   const [previewURLs, setPreviewURLs] = useState([]);
   const [athleteNames, setAthleteNames] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Overall progress (0..100) for multi scans
   const [progress, setProgress] = useState(0);
   const [animDots, setAnimDots] = useState("");
   const [error, setError] = useState("");
@@ -161,7 +266,7 @@ export default function BarcodeUpload({
   const [showSuccess, setShowSuccess] = useState(false);
   const [enableChime, setEnableChime] = useState(true);
 
-  // Cropping state (in-component, matches OCRUpload style)
+  // Cropping state
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropIndex, setCropIndex] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -176,13 +281,12 @@ export default function BarcodeUpload({
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
 
-  // Slightly higher to tolerate iPhone photos; decode step downscales anyway
   const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB
 
   // ZXing reader reuse
   const codeReaderRef = useRef(null);
 
-  // OCR worker reuse (numeric fallback)
+  // OCR worker reuse
   const ocrWorkerRef = useRef(null);
   const ocrInitializingRef = useRef(false);
 
@@ -225,17 +329,12 @@ export default function BarcodeUpload({
     [NAME_TO_FORMAT]
   );
 
-  // For CheckPeak, retail barcodes are overwhelmingly UPC/EAN.
+  // Retail barcodes are overwhelmingly UPC/EAN.
   const effectiveFormats = useMemo(() => {
     if (Array.isArray(preferredFormats) && preferredFormats.length) {
       return mapFormats(preferredFormats);
     }
-    return [
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-    ];
+    return [BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8];
   }, [preferredFormats, mapFormats]);
 
   const makeReader = useCallback(() => {
@@ -245,7 +344,6 @@ export default function BarcodeUpload({
         hints.set(DecodeHintType.POSSIBLE_FORMATS, effectiveFormats);
       }
       hints.set(DecodeHintType.TRY_HARDER, true);
-      // second param is timeBetweenScans for continuous decode in some builds (safe here)
       return new BrowserMultiFormatReader(hints, 300);
     } catch (err) {
       console.warn("Failed to create ZXing reader:", err);
@@ -264,10 +362,7 @@ export default function BarcodeUpload({
   // animate dots while loading
   useEffect(() => {
     if (!loading) return;
-    const interval = setInterval(
-      () => setAnimDots((d) => (d.length >= 3 ? "" : d + ".")),
-      450
-    );
+    const interval = setInterval(() => setAnimDots((d) => (d.length >= 3 ? "" : d + ".")), 450);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -310,14 +405,29 @@ export default function BarcodeUpload({
   /* ------------------------------------------------------------------------ */
 
   const validateFile = (file) => {
-    if (!file?.type?.startsWith("image/")) {
+    if (!file) return false;
+
+    // HEIC explicit handling (mobile reliability)
+    if (detectHeic(file)) {
+      setError(
+        "This photo is in HEIC format, which browsers can't reliably scan yet.\n\n" +
+          "On iPhone, either:\n" +
+          "• Take a screenshot of the barcode and upload the screenshot, or\n" +
+          "• Go to Settings → Camera → Formats → select “Most Compatible”, then retake the photo."
+      );
+      return false;
+    }
+
+    if (!String(file?.type || "").startsWith("image/")) {
       setError("Only image files are allowed.");
       return false;
     }
+
     if (file.size > MAX_FILE_SIZE) {
       setError("File too large. Max 8 MB.");
       return false;
     }
+
     setError("");
     return true;
   };
@@ -333,7 +443,6 @@ export default function BarcodeUpload({
     const valid = Array.from(fileList || []).filter(validateFile);
     if (!valid.length) return;
 
-    // Revoke existing blob preview URLs only
     previewURLs.forEach((url) => {
       if (isBlobUrl(url)) URL.revokeObjectURL(url);
     });
@@ -345,7 +454,7 @@ export default function BarcodeUpload({
     setAthleteNames(valid.map(() => ""));
     setCroppedFlags(valid.map(() => false));
 
-    // Auto-open crop modal for the first file to encourage tight barcode capture
+    // Auto-open crop modal for first file; step through if multiple
     resetCropState();
     setCropIndex(0);
     setShowCropModal(true);
@@ -379,9 +488,7 @@ export default function BarcodeUpload({
     try {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   /* ------------------------------------------------------------------------ */
@@ -401,15 +508,29 @@ export default function BarcodeUpload({
 
     try {
       ocrInitializingRef.current = true;
-      const tesseract = await import("tesseract.js");
-      const worker = await tesseract.createWorker();
 
-      await worker.load();
-      await worker.loadLanguage("eng");
-      await worker.initialize("eng");
-      await worker.setParameters({
-        tessedit_char_whitelist: "0123456789",
-      });
+      const mod = await import("tesseract.js");
+      const createWorker = mod.createWorker || mod.default?.createWorker;
+      if (!createWorker) throw new Error("Tesseract createWorker not found.");
+
+      const worker = await createWorker();
+
+      if (typeof worker.load === "function") await worker.load();
+
+      if (typeof worker.reinitialize === "function") {
+        await worker.reinitialize("eng");
+      } else if (typeof worker.initialize === "function") {
+        await worker.initialize("eng");
+      }
+
+      if (typeof worker.setParameters === "function") {
+        await worker.setParameters({
+          tessedit_char_whitelist: "0123456789",
+          preserve_interword_spaces: "1",
+          // a sparse-ish mode sometimes helps on isolated digits
+          tessedit_pageseg_mode: "11",
+        });
+      }
 
       ocrWorkerRef.current = worker;
       ocrInitializingRef.current = false;
@@ -426,10 +547,12 @@ export default function BarcodeUpload({
       const worker = await initOCRWorker();
       if (!worker) return null;
 
-      const { data } = await worker.recognize(canvas);
-      if (!data?.text) return null;
+      const result = await worker.recognize(canvas);
+      const text = coerceDigitsFromOCR(result?.data?.text || "");
+      if (!text) return null;
 
-      const digits = normalizeBarcodeDigits(data.text);
+      const digits = normalizeBarcodeDigits(text);
+      if (!digits) return null;
 
       // Prefer known GTIN lengths
       const candidates = [
@@ -455,35 +578,11 @@ export default function BarcodeUpload({
   /* ------------------------------------------------------------------------ */
 
   async function decodeBarcodeFromFile(file) {
-    // Use createImageBitmap where available
-    let bitmap;
-    try {
-      bitmap = await createImageBitmap(file);
-    } catch {
-      const dataUrl = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(file);
-      });
-
-      bitmap = await new Promise((res, rej) => {
-        const img = new Image();
-        img.onload = () => {
-          const c = document.createElement("canvas");
-          c.width = img.width;
-          c.height = img.height;
-          const ctx = c.getContext("2d");
-          ctx.drawImage(img, 0, 0);
-          createImageBitmap(c).then(res).catch(rej);
-        };
-        img.onerror = rej;
-        img.src = dataUrl;
-      });
-    }
-
     const reader = codeReaderRef.current || makeReader();
     if (!reader) throw new Error("Barcode scanner not available.");
+
+    // Orientation-aware decode
+    const { bitmap, close } = await decodeBitmapFromFile(file);
 
     const MAX_SIDE = 1600;
     const rotations = [0, 90, 180, 270];
@@ -493,76 +592,98 @@ export default function BarcodeUpload({
 
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
 
-    const preprocessCanvas = () => {
-      // light grayscale + contrast bump helps some barcodes
-      try {
-        const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = id.data;
-        const contrast = 1.25;
-        for (let i = 0; i < d.length; i += 4) {
-          const r = d[i],
-            g = d[i + 1],
-            b = d[i + 2];
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-          let v = (gray - 128) * contrast + 128;
-          v = Math.max(0, Math.min(255, v));
-          d[i] = d[i + 1] = d[i + 2] = v;
-        }
-        ctx.putImageData(id, 0, 0);
-      } catch {
-        // ignore
-      }
-    };
+    // We'll try these preprocess passes for each rotation
+    const preprocessPasses = [
+      { name: "none", fn: () => {} },
+      { name: "gray", fn: () => applyGrayscaleContrast(ctx, canvas.width, canvas.height, 1.25) },
+      {
+        name: "gray+thresh",
+        fn: () => {
+          applyGrayscaleContrast(ctx, canvas.width, canvas.height, 1.35);
+          applyThreshold(ctx, canvas.width, canvas.height, 175);
+        },
+      },
+      {
+        name: "invert+gray",
+        fn: () => {
+          applyGrayscaleContrast(ctx, canvas.width, canvas.height, 1.25);
+          applyInvert(ctx, canvas.width, canvas.height);
+        },
+      },
+    ];
 
     let lastErr = null;
 
     try {
       for (const rot of rotations) {
-        try {
-          // rotate into canvas
-          if (rot % 180 === 0) {
-            canvas.width = Math.round(bitmap.width * scale);
-            canvas.height = Math.round(bitmap.height * scale);
-          } else {
-            canvas.width = Math.round(bitmap.height * scale);
-            canvas.height = Math.round(bitmap.width * scale);
+        // rotate into canvas
+        if (rot % 180 === 0) {
+          canvas.width = Math.round(bitmap.width * scale);
+          canvas.height = Math.round(bitmap.height * scale);
+        } else {
+          canvas.width = Math.round(bitmap.height * scale);
+          canvas.height = Math.round(bitmap.width * scale);
+        }
+
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+
+        ctx.drawImage(
+          bitmap,
+          -(bitmap.width * scale) / 2,
+          -(bitmap.height * scale) / 2,
+          bitmap.width * scale,
+          bitmap.height * scale
+        );
+        ctx.restore();
+
+        // Try multiple preprocess options for this rotation
+        for (const pass of preprocessPasses) {
+          try {
+            // Need to redraw base image before each pass except first
+            ctx.save();
+            if (pass.name !== "none") {
+              // Redraw the rotated base again to "reset" before modifying pixels
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.translate(canvas.width / 2, canvas.height / 2);
+              ctx.rotate((rot * Math.PI) / 180);
+              ctx.drawImage(
+                bitmap,
+                -(bitmap.width * scale) / 2,
+                -(bitmap.height * scale) / 2,
+                bitmap.width * scale,
+                bitmap.height * scale
+              );
+              ctx.restore();
+            } else {
+              ctx.restore();
+            }
+
+            // Apply pass
+            pass.fn();
+
+            // Use an Image element (zxing likes it), via JPEG
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+            const tmpImg = new Image();
+
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((res, rej) => {
+              tmpImg.onload = res;
+              tmpImg.onerror = rej;
+              tmpImg.src = dataUrl;
+            });
+
+            // eslint-disable-next-line no-await-in-loop
+            const result = await reader.decodeFromImageElement(tmpImg);
+            const barcodeText = result?.getText?.() || result?.text || "";
+
+            if (barcodeText) return barcodeText;
+          } catch (err) {
+            lastErr = err;
+            // try next pass
           }
-
-          ctx.save();
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.translate(canvas.width / 2, canvas.height / 2);
-          ctx.rotate((rot * Math.PI) / 180);
-
-          ctx.drawImage(
-            bitmap,
-            -(bitmap.width * scale) / 2,
-            -(bitmap.height * scale) / 2,
-            bitmap.width * scale,
-            bitmap.height * scale
-          );
-          ctx.restore();
-
-          preprocessCanvas();
-
-          // Use a JPEG dataURL to reduce memory
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-          const tmpImg = new Image();
-
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((res, rej) => {
-            tmpImg.onload = res;
-            tmpImg.onerror = rej;
-            tmpImg.src = dataUrl;
-          });
-
-          // eslint-disable-next-line no-await-in-loop
-          const result = await reader.decodeFromImageElement(tmpImg);
-          const barcodeText = result?.getText?.() || result?.text || "";
-
-          if (barcodeText) return barcodeText;
-        } catch (err) {
-          lastErr = err;
-          // continue to next rotation
         }
       }
 
@@ -572,7 +693,7 @@ export default function BarcodeUpload({
 
       throw lastErr || new Error("No barcode decoded from image.");
     } finally {
-      // reset once per decode attempt
+      close?.();
       try {
         reader.reset?.();
       } catch {}
@@ -580,15 +701,15 @@ export default function BarcodeUpload({
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Server call: /api/check (barcode only, no image)                           */
+  /* Server call: /api/check (barcode only, no image)                          */
   /* ------------------------------------------------------------------------ */
 
-  async function fetchMatches(barcodeDigits) {
+  async function fetchMatches(barcodeDigits, meta = {}) {
     const resp = await fetch("/api/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Only send the numeric barcode here to avoid body size issues
-      body: JSON.stringify({ barcode: barcodeDigits, isBarcodeFlow: true }),
+      // Only send numeric barcode to avoid body size issues
+      body: JSON.stringify({ barcode: barcodeDigits, isBarcodeFlow: true, ...meta }),
     });
 
     if (!resp.ok) {
@@ -609,38 +730,31 @@ export default function BarcodeUpload({
       } else if (parsed.reason === "length") {
         setError("That scan doesn't look like a standard UPC/EAN barcode.");
       } else if (parsed.reason === "checksum") {
-        setError(
-          "Barcode digits were read, but the checksum is invalid. Try cropping tighter or reducing glare."
-        );
+        setError("Barcode digits were read, but checksum is invalid. Try cropping tighter or reducing glare.");
       } else {
         setError("Could not validate barcode. Try again.");
       }
-      return;
+      return null;
     }
 
     const digits = parsed.digits;
 
-    setLoading(true);
-    setProgress(5);
-
+    // Per-file progress (0..100) is mapped to overall outside
     try {
-      setProgress(25);
-
-      const data = await fetchMatches(digits);
-
-      console.log("[BarcodeUpload] API check response:", data);
-      console.log("[BarcodeUpload] API debug:", data?.debug || null);
-
-      setProgress(90);
+      const meta = { barcodeType: parsed.type || "GTIN" };
+      const data = await fetchMatches(digits, meta);
 
       const result = {
         barcode: digits,
+        barcodeType: parsed.type || "GTIN",
         productName: data?.productName || "Unknown product",
         rawIngredients: data?.ocrText || "",
         matchedBanned: data?.matchedBanned || [],
         matchedIngredients: data?.matchedIngredients || [],
         source: data?.debug?.fetchedFrom || "providers",
         idx,
+        athleteName: idx != null ? athleteNames[idx] || "" : "",
+        cropped: idx != null ? !!croppedFlags[idx] : false,
       };
 
       setShowSuccess(true);
@@ -651,34 +765,43 @@ export default function BarcodeUpload({
         await onResult(result);
       }
 
-      setProgress(100);
       return result;
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to process barcode.");
       throw err;
-    } finally {
-      setTimeout(() => {
-        setLoading(false);
-        setProgress(0);
-      }, 350);
     }
   }
 
   const handleScanAllBarcodes = async () => {
     if (!files.length) return;
+
     setError("");
     setLoading(true);
-    setProgress(10);
+    setProgress(0);
+
+    const total = Math.max(1, files.length);
 
     for (let i = 0; i < files.length; i++) {
+      setCurrentScanIndex(i);
+
+      // Overall progress baseline at start of each file
+      const base = Math.round((i / total) * 100);
+      setProgress(base);
+
       try {
-        setCurrentScanIndex(i);
         const raw = await decodeBarcodeFromFile(files[i]);
         if (!raw) throw new Error("No barcode decoded");
         await handleDecodedBarcodePipeline(raw, i);
+
+        // After success, bump progress to end of this slice
+        const done = Math.round(((i + 1) / total) * 100);
+        setProgress(done);
       } catch (err) {
         console.warn("Scan failed for index", i, err);
+        // still advance overall progress
+        const done = Math.round(((i + 1) / total) * 100);
+        setProgress(done);
       }
     }
 
@@ -708,7 +831,7 @@ export default function BarcodeUpload({
         return;
       }
 
-      const { file, dataUrl } = await cropFileToRegion(originalFile, croppedAreaPixels);
+      const { file, blobUrl } = await cropFileToRegion(originalFile, croppedAreaPixels);
 
       setFiles((prev) => {
         const updated = [...prev];
@@ -718,11 +841,9 @@ export default function BarcodeUpload({
 
       setPreviewURLs((prev) => {
         const updated = [...prev];
-        // revoke only if old is blob url
-        if (isBlobUrl(updated[cropIndex])) {
-          URL.revokeObjectURL(updated[cropIndex]);
-        }
-        updated[cropIndex] = dataUrl; // dataURL preview
+        // revoke old blob URL if applicable
+        if (isBlobUrl(updated[cropIndex])) URL.revokeObjectURL(updated[cropIndex]);
+        updated[cropIndex] = blobUrl; // blob preview for memory safety
         return updated;
       });
 
@@ -731,6 +852,15 @@ export default function BarcodeUpload({
         updated[cropIndex] = true;
         return updated;
       });
+
+      // If multiple, advance crop modal to next file
+      const nextIdx = cropIndex + 1;
+      if (multiple && nextIdx < files.length) {
+        resetCropState();
+        setCropIndex(nextIdx);
+        setShowCropModal(true);
+        return;
+      }
 
       setShowCropModal(false);
     } catch (err) {
@@ -747,13 +877,8 @@ export default function BarcodeUpload({
     setShowCropModal(true);
   };
 
-  // Derived aspect value from mode
-  let aspectValue;
-  if (aspectMode === "barcode") {
-    aspectValue = 5 / 2; // wide strip for barcodes
-  } else {
-    aspectValue = undefined; // free-form
-  }
+  // Derived aspect value
+  const aspectValue = aspectMode === "barcode" ? 5 / 2 : undefined;
 
   /* ------------------------------------------------------------------------ */
   /* Render                                                                    */
@@ -768,9 +893,7 @@ export default function BarcodeUpload({
             Step 1 · Barcode Scan
           </span>
         </div>
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900">
-          Scan a product barcode
-        </h2>
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900">Scan a product barcode</h2>
         <p className="text-xs sm:text-sm text-gray-500">
           Upload a photo and crop tightly around the barcode for maximum accuracy.
         </p>
@@ -783,9 +906,7 @@ export default function BarcodeUpload({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-6 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
-          isDragging
-            ? "border-[#46769B] bg-[#f0f5fa]"
-            : "border-gray-300 bg-[#f7f9fc] hover:bg-[#edf3fb]"
+          isDragging ? "border-[#46769B] bg-[#f0f5fa]" : "border-gray-300 bg-[#f7f9fc] hover:bg-[#edf3fb]"
         }`}
       >
         <span className="text-gray-900 text-center font-semibold text-sm sm:text-base">
@@ -794,8 +915,7 @@ export default function BarcodeUpload({
             : "Tap to upload a barcode photo"}
         </span>
         <span className="text-[11px] sm:text-xs text-gray-500 mt-1 text-center max-w-md">
-          For best results, fill most of the frame with the barcode and its numbers. You
-          can crop to just the barcode stripe before scanning.
+          Fill most of the frame with the barcode and its numbers. Crop to just the barcode stripe for best results.
         </span>
       </div>
 
@@ -809,7 +929,7 @@ export default function BarcodeUpload({
         onChange={handleFileInputChange}
       />
 
-      {/* Choice Modal (now ONLY upload) */}
+      {/* Choice Modal */}
       <AnimatePresence>
         {showChoiceModal && (
           <motion.div
@@ -836,8 +956,8 @@ export default function BarcodeUpload({
               </div>
 
               <p className="text-gray-600 text-sm">
-                Select a barcode photo (or take one). After upload, crop tightly around the
-                barcode stripe and its numbers for best accuracy.
+                Select a barcode photo (or take one). After upload, crop tightly around the barcode stripe and its
+                numbers for best accuracy.
               </p>
 
               <div className="flex flex-col gap-3 mt-2">
@@ -853,26 +973,39 @@ export default function BarcodeUpload({
               </div>
 
               <p className="text-[11px] text-gray-500 mt-1 leading-snug">
-                Tip: Avoid glare, keep the barcode flat, and include the full barcode + the
-                numbers underneath. If ZXing struggles, the system will try a numeric OCR
-                fallback on the cropped image.
+                Tip: Avoid glare, keep the barcode flat, and include the full barcode + the numbers underneath. If ZXing
+                struggles, we’ll try a numeric OCR fallback on the cropped image.
               </p>
+
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-[11px] text-gray-500">Beep on success</span>
+                <button
+                  type="button"
+                  onClick={() => setEnableChime((v) => !v)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold border ${
+                    enableChime ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-gray-300 bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  {enableChime ? "On" : "Off"}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Crop modal (matches OCRUpload style, but tuned for barcodes) */}
+      {/* Crop modal */}
       {showCropModal && cropIndex != null && previewURLs[cropIndex] && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-md bg-neutral-900 rounded-2xl overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
               <div className="flex flex-col">
-                <h2 className="text-sm font-semibold text-white">Crop Barcode Area</h2>
+                <h2 className="text-sm font-semibold text-white">
+                  Crop Barcode Area {multiple ? `(${cropIndex + 1}/${files.length})` : ""}
+                </h2>
                 <p className="text-[11px] text-neutral-400">
-                  Drag the box along the barcode stripe and its numbers. Use the zoom
-                  slider if needed.
+                  Drag the box along the barcode stripe and its numbers. Use zoom if needed.
                 </p>
               </div>
               <button
@@ -900,7 +1033,6 @@ export default function BarcodeUpload({
 
             {/* Controls */}
             <div className="flex flex-col gap-3 px-4 py-3 bg-neutral-900 border-t border-neutral-800">
-              {/* Presets */}
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
@@ -926,7 +1058,6 @@ export default function BarcodeUpload({
                 </button>
               </div>
 
-              {/* Zoom slider */}
               <div className="flex items-center gap-3">
                 <span className="text-[11px] text-neutral-300 w-12">Zoom</span>
                 <input
@@ -939,30 +1070,28 @@ export default function BarcodeUpload({
                   className="flex-1 accent-[#46769B]"
                   aria-label="Crop zoom"
                 />
-                <span className="text-[11px] text-neutral-400 w-10 text-right">
-                  {zoom.toFixed(1)}x
-                </span>
+                <span className="text-[11px] text-neutral-400 w-10 text-right">{zoom.toFixed(1)}x</span>
               </div>
 
               <button
                 onClick={handleConfirmCrop}
                 className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:bg-[#365b7a] transition shadow-sm"
               >
-                Use Crop
+                {multiple && cropIndex + 1 < files.length ? "Use Crop + Next" : "Use Crop"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Preview + per-file controls */}
+      {/* Preview cards */}
       {files.map((file, idx) => (
         <div
           key={idx}
           className="flex flex-col items-start space-y-2 max-w-3xl mx-auto bg-white rounded-2xl border border-gray-200 p-3 shadow-sm"
         >
           <div className="flex items-center justify-between w-full gap-3">
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <span className="font-medium text-gray-800 truncate text-xs sm:text-sm">
                 {file.name || `Barcode photo ${idx + 1}`}
               </span>
@@ -970,21 +1099,28 @@ export default function BarcodeUpload({
                 Barcode {idx + 1} of {files.length}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => openCropForIndex(idx)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              Crop Barcode
-            </button>
+
+            <div className="flex items-center gap-2">
+              {croppedFlags[idx] && (
+                <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  Cropped
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => openCropForIndex(idx)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Crop Barcode
+              </button>
+            </div>
           </div>
 
           <label className="w-full text-[11px] text-gray-600">
             Athlete or Team Name (optional)
             <input
               type="text"
-              placeholder=""
-              value={athleteNames[idx]}
+              value={athleteNames[idx] || ""}
               onChange={(e) => handleNameChange(idx, e.target.value)}
               className="mt-1 w-full px-3 py-2 border rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B] focus:border-transparent"
             />
@@ -999,28 +1135,22 @@ export default function BarcodeUpload({
 
           <div className="flex items-center justify-between w-full mt-1">
             <p className="text-xs text-gray-500 max-w-xs">
-              Make sure only the barcode and its numbers are visible. Use the crop tool
-              to remove extra packaging or labels.
+              Crop tight to the barcode stripe + numbers. Avoid glare and keep the barcode flat.
             </p>
-            {croppedFlags[idx] && (
-              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                Cropped
-              </span>
-            )}
           </div>
         </div>
       ))}
 
-      {/* Info / legal text */}
+      {/* Info */}
       <div className="flex items-center justify-between max-w-3xl mx-auto">
         <div className="text-[11px] sm:text-xs text-gray-500">
-          Photos stay on your device for decoding. Only the barcode digits are sent to our
-          servers to look up products and ingredients.
+          Photos stay on your device for decoding. Only the barcode digits are sent to our servers to look up products
+          and ingredients.
         </div>
       </div>
 
       {error && (
-        <p className="text-red-500 text-center text-sm mt-1 max-w-3xl mx-auto bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+        <p className="whitespace-pre-line text-red-500 text-center text-sm mt-1 max-w-3xl mx-auto bg-red-50 border border-red-100 rounded-xl px-3 py-2">
           {error}
         </p>
       )}
@@ -1043,9 +1173,7 @@ export default function BarcodeUpload({
             onClick={handleScanAllBarcodes}
             disabled={!files.length || loading}
             className={`w-full md:w-auto px-6 py-3 rounded-2xl font-medium text-white shadow-md transition text-sm sm:text-base ${
-              !files.length || loading
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-[#46769B] hover:bg-[#365b7a]"
+              !files.length || loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#46769B] hover:bg-[#365b7a]"
             }`}
           >
             {loading

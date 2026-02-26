@@ -6,10 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 
 /**
- * OCRScanResults
+ * OCRScanResults (Peak)
  *
  * Mobile-first, card-based results:
- *  - Scan summary card
+ *  - Scan summary card (+ scan meta details if provided)
  *  - Collapsible OCR text section (with inline highlights)
  *  - Banned substances as SmartStack-style accordion cards
  *  - Ingredients as SmartStack-style accordion cards
@@ -18,10 +18,14 @@ import { FaChevronDown, FaChevronUp } from "react-icons/fa";
  * Key behavior:
  * ✅ Highlight ONLY terms that were actually matched/detected (matchedTerms),
  *    and only where those terms exist in the OCR text.
+ *
+ * New (optional) props supported:
+ * - scanMethod: "ocr" | "barcode" (default "ocr")
+ * - scanMeta: object from OCRUpload/BarcodeUpload (index, fileName, cropped, psmUsed, preprocess, quality, athleteName, barcodeType, ...)
+ * - scanMetaList: array of { text, meta } for multiple scans (used for optional "Scan details" drawer)
  */
 
-const escapeRegex = (string = "") =>
-  String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (string = "") => String(string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const escapeHtml = (unsafe = "") =>
   String(unsafe)
@@ -36,10 +40,7 @@ const normalizeBanType = (s) => {
   if (!s) return null;
   const val = String(s).trim().toLowerCase();
   if (val === "prohibited") return "Prohibited";
-  if (
-    val === "limited to out of competition" ||
-    val === "limited out of competition"
-  )
+  if (val === "limited to out of competition" || val === "limited out of competition")
     return "Limited to Out of Competition";
   if (val === "particular sports") return "Particular Sports";
   return s;
@@ -85,11 +86,7 @@ const recordAppearsInText = (index, fields = {}) => {
 // Stable fallback ID (prevents accordion state from breaking)
 const stableIdFromFields = (fields = {}, prefix = "rec") => {
   const name =
-    fields["Substance Name"] ||
-    fields["Name"] ||
-    fields["Ingredient Name"] ||
-    fields["title"] ||
-    "";
+    fields["Substance Name"] || fields["Name"] || fields["Ingredient Name"] || fields["title"] || "";
   const banType = fields["Ban Type"] || fields["banType"] || "";
   const raw = `${prefix}:${String(name).trim()}|${String(banType).trim()}`;
   const slug = raw
@@ -109,35 +106,19 @@ const getMatchedTermsForRecord = (rec) => {
   const mt = Array.isArray(rec?.matchedTerms) ? rec.matchedTerms : [];
 
   if (mt.length) {
-    return mt
-      .map((t) => String(t || "").trim())
-      .filter(Boolean);
+    return mt.map((t) => String(t || "").trim()).filter(Boolean);
   }
 
-  const name =
-    fields["Substance Name"] ||
-    fields["Name"] ||
-    fields["Ingredient Name"] ||
-    "";
+  const name = fields["Substance Name"] || fields["Name"] || fields["Ingredient Name"] || "";
 
-  const syn =
-    fields["Synonyms (Extended)"] ||
-    fields["Synonyms"] ||
-    "";
+  const syn = fields["Synonyms (Extended)"] || fields["Synonyms"] || "";
 
-  return [name, ...splitTerms(syn)]
-    .map((t) => String(t || "").trim())
-    .filter(Boolean);
+  return [name, ...splitTerms(syn)].map((t) => String(t || "").trim()).filter(Boolean);
 };
 
 // Produce compact OCR snippet(s) around matched terms
 const getOcrSnippets = (ocrText = "", terms = [], opts = {}) => {
-  const {
-    radius = 90,
-    maxSnippets = 2,
-    maxChars = 260,
-    minTermLength = 3,
-  } = opts;
+  const { radius = 90, maxSnippets = 2, maxChars = 260, minTermLength = 3 } = opts;
 
   const base = String(ocrText || "");
   if (!base.trim()) return [];
@@ -185,24 +166,84 @@ const getOcrSnippets = (ocrText = "", terms = [], opts = {}) => {
   return snippets;
 };
 
+function safeStr(v) {
+  return String(v ?? "").trim();
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function fmtFileLabel(meta) {
+  const n = safeStr(meta?.fileName);
+  if (!n) return "";
+  // truncate nicely for mobile
+  if (n.length <= 30) return n;
+  return n.slice(0, 18) + "…" + n.slice(-9);
+}
+
+function QualityChip({ quality }) {
+  if (!quality) return null;
+
+  const label = safeStr(quality?.label) || "Scan quality";
+  const tone = safeStr(quality?.tone) || "warn";
+
+  const cls =
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "bad"
+      ? "border-red-200 bg-red-50 text-red-900"
+      : "border-amber-200 bg-amber-50 text-amber-900";
+
+  const score = typeof quality?.score === "number" ? clamp(Math.round(quality.score), 0, 100) : null;
+
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>
+      <span>{label}</span>
+      {score != null && <span className="opacity-70 font-medium">{score}</span>}
+    </span>
+  );
+}
+
+function TinyMetaPill({ children, tone = "neutral" }) {
+  const cls =
+    tone === "blue"
+      ? "border-[#46769B]/30 bg-[#46769B]/10 text-[#2f5775]"
+      : tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : tone === "bad"
+      ? "border-red-200 bg-red-50 text-red-900"
+      : "border-gray-200 bg-gray-50 text-gray-800";
+
+  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>{children}</span>;
+}
+
 export default function OCRScanResults({
   ocrText = "",
   detectedSubstances = [],
   detectedIngredients = [],
   showOCR = true,
+
+  // NEW (optional)
+  scanMethod = "ocr", // "ocr" | "barcode"
+  scanMeta = null,
+  scanMetaList = null, // array of { text, meta }
 }) {
   const [ocrOpen, setOcrOpen] = useState(false);
   const [bannedOpen, setBannedOpen] = useState(true);
   const [ingredientsOpen, setIngredientsOpen] = useState(true);
   const [activeBanType, setActiveBanType] = useState(null);
 
+  // Optional scan details drawer (for multiple scans)
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
   // accordion open state for cards
   const [expandedBannedIds, setExpandedBannedIds] = useState({});
   const [expandedIngredientIds, setExpandedIngredientIds] = useState({});
 
-  const toggleBannedCard = (id) =>
-    setExpandedBannedIds((prev) => ({ ...prev, [id]: !prev[id] }));
-
+  const toggleBannedCard = (id) => setExpandedBannedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   const toggleIngredientCard = (id) =>
     setExpandedIngredientIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -234,10 +275,7 @@ export default function OCRScanResults({
       const id =
         r.id ||
         r.recordId ||
-        stableIdFromFields(
-          { ...fields, "Ban Type": banType },
-          isBanned ? "banned" : "ing"
-        );
+        stableIdFromFields({ ...fields, "Ban Type": banType }, isBanned ? "banned" : "ing");
 
       // IMPORTANT: keep matchedTerms at the top level
       const matchedTerms = Array.isArray(r.matchedTerms) ? r.matchedTerms : [];
@@ -254,12 +292,9 @@ export default function OCRScanResults({
     });
 
   // 1) Normalize banned
-  const normalizedBanned = useMemo(
-    () => normalizeRecords(detectedSubstances, true),
-    [detectedSubstances]
-  );
+  const normalizedBanned = useMemo(() => normalizeRecords(detectedSubstances, true), [detectedSubstances]);
 
-  // 2) Keep banned records that actually appear in the OCR text
+  // 2) Keep banned records that actually appear in OCR text
   //    Prefer matchedTerms check; fallback to recordAppearsInText() if matchedTerms missing.
   const bannedRecordsAll = useMemo(() => {
     if (!ocrText) return normalizedBanned; // e.g. barcode path – keep all
@@ -271,20 +306,14 @@ export default function OCRScanResults({
         return terms.some((t) => {
           const lower = String(t || "").toLowerCase();
           const compact = lower.replace(/[^a-z0-9]/g, "");
-          return (
-            (lower && idx.raw.includes(lower)) ||
-            (compact && idx.compact.includes(compact))
-          );
+          return (lower && idx.raw.includes(lower)) || (compact && idx.compact.includes(compact));
         });
       }
       return recordAppearsInText(idx, rec.fields || {});
     });
   }, [normalizedBanned, ocrText]);
 
-  const ingredientRecordsAll = useMemo(
-    () => normalizeRecords(detectedIngredients, false),
-    [detectedIngredients]
-  );
+  const ingredientRecordsAll = useMemo(() => normalizeRecords(detectedIngredients, false), [detectedIngredients]);
 
   // Build counts + filter banned by active ban type
   const { bannedRecords, countsByBanType } = useMemo(() => {
@@ -307,22 +336,22 @@ export default function OCRScanResults({
     return { bannedRecords: records, countsByBanType: counts };
   }, [bannedRecordsAll, banTypeColors, activeBanType]);
 
-  // Filter ingredients so they do not duplicate banned names
+  // Filter ingredients so they do not duplicate banned names (basic; keeps UI cleaner)
   const ingredientRecords = useMemo(() => {
     const bannedNames = new Set(
-      bannedRecordsAll.map(
-        (rec) =>
-          (
-            rec.fields["Substance Name"] ||
-            rec.fields["Name"] ||
-            rec.fields["Ingredient Name"] ||
-            ""
-          )
-            .toString()
-            .trim()
-            .toLowerCase()
+      bannedRecordsAll.map((rec) =>
+        (
+          rec.fields["Substance Name"] ||
+          rec.fields["Name"] ||
+          rec.fields["Ingredient Name"] ||
+          ""
+        )
+          .toString()
+          .trim()
+          .toLowerCase()
       )
     );
+
     return ingredientRecordsAll.filter((rec) => {
       const name =
         rec.fields["Name"] ||
@@ -352,9 +381,9 @@ export default function OCRScanResults({
       : "text-red-600 bg-red-50 border-red-100";
 
   // ---------- Highlight only DETECTED / MATCHED terms ----------
-  const { ocrHTML, ocrMatchCount } = useMemo(() => {
+  const { ocrHTML, ocrMatchCount, ocrUniqueTermCount } = useMemo(() => {
     const base = String(ocrText || "");
-    if (!base) return { ocrHTML: "", ocrMatchCount: 0 };
+    if (!base) return { ocrHTML: "", ocrMatchCount: 0, ocrUniqueTermCount: 0 };
 
     const termMap = new Map();
 
@@ -367,10 +396,7 @@ export default function OCRScanResults({
       const compact = lower.replace(/[^a-z0-9]/g, "");
 
       // Only keep terms that exist in OCR (prevents highlighting noise)
-      const appearsInOCR =
-        (lower && idx.raw.includes(lower)) ||
-        (compact && idx.compact.includes(compact));
-
+      const appearsInOCR = (lower && idx.raw.includes(lower)) || (compact && idx.compact.includes(compact));
       if (!appearsInOCR) return;
 
       const key = lower;
@@ -387,8 +413,7 @@ export default function OCRScanResults({
       const fields = rec.fields || {};
       const banType = fields["Ban Type"];
       const color = banColorMap[banType] || "#111827";
-      const priority =
-        banTypeColors.find((b) => b.label === banType)?.priority ?? 1;
+      const priority = banTypeColors.find((b) => b.label === banType)?.priority ?? 1;
 
       const terms = getMatchedTermsForRecord(rec);
       terms.forEach((t) => upsert(t, color, priority, idx));
@@ -418,9 +443,7 @@ export default function OCRScanResults({
         const safe = escapeRegex(term);
         const shouldUseBoundaries = /^[a-z0-9 ]+$/i.test(term) && term.length >= 4;
 
-        const rx = shouldUseBoundaries
-          ? new RegExp(`\\b${safe}\\b`, "gi")
-          : new RegExp(safe, "gi");
+        const rx = shouldUseBoundaries ? new RegExp(`\\b${safe}\\b`, "gi") : new RegExp(safe, "gi");
 
         working = working.replace(rx, (m) => {
           const placeholder = `@@OCR_${ridx++}@@`;
@@ -440,11 +463,14 @@ export default function OCRScanResults({
       escaped = escaped.split(placeholder).join(span);
     });
 
-    return { ocrHTML: escaped, ocrMatchCount: replacements.length };
+    return {
+      ocrHTML: escaped,
+      ocrMatchCount: replacements.length, // occurrences
+      ocrUniqueTermCount: termMap.size, // unique terms
+    };
   }, [ocrText, bannedRecordsAll, ingredientRecordsAll, banColorMap, banTypeColors]);
 
-  const collapseLabel = (open, name) =>
-    open ? `Collapse ${name}` : `Expand ${name}`;
+  const collapseLabel = (open, name) => (open ? `Collapse ${name}` : `Expand ${name}`);
 
   const handleLegendClick = (label) => {
     setActiveBanType((cur) => (cur === label ? null : label));
@@ -469,21 +495,17 @@ export default function OCRScanResults({
       const lower = term.toLowerCase();
       const compact = lower.replace(/[^a-z0-9]/g, "");
 
-      const appearsInOCR =
-        (lower && idx.raw.includes(lower)) ||
-        (compact && idx.compact.includes(compact));
+      const appearsInOCR = (lower && idx.raw.includes(lower)) || (compact && idx.compact.includes(compact));
       if (!appearsInOCR) return;
 
-      const appearsInBlob = blobLower.includes(lower);
-      if (!appearsInBlob) return;
+      // If the blob doesn't contain the clean lower term, skip to reduce noise
+      if (!blobLower.includes(lower)) return;
 
       try {
         const safe = escapeRegex(term);
         const shouldUseBoundaries = /^[a-z0-9 ]+$/i.test(term) && term.length >= 4;
 
-        const rx = shouldUseBoundaries
-          ? new RegExp(`\\b${safe}\\b`, "gi")
-          : new RegExp(safe, "gi");
+        const rx = shouldUseBoundaries ? new RegExp(`\\b${safe}\\b`, "gi") : new RegExp(safe, "gi");
 
         html = html.replace(
           rx,
@@ -500,14 +522,88 @@ export default function OCRScanResults({
     return html;
   };
 
-  // ---------- CARD COMPONENTS ----------
+  /* ------------------------------------------------------------------------ */
+  /* Scan meta UI                                                              */
+  /* ------------------------------------------------------------------------ */
+
+  const meta = scanMeta || null;
+
+  const scanPills = useMemo(() => {
+    const pills = [];
+
+    const method = safeStr(scanMethod) || "ocr";
+    pills.push(
+      <TinyMetaPill key="method" tone="blue">
+        {method === "barcode" ? "Barcode lookup" : "Label OCR"}
+      </TinyMetaPill>
+    );
+
+    if (meta?.barcodeType) {
+      pills.push(<TinyMetaPill key="barcodeType">Type: {safeStr(meta.barcodeType)}</TinyMetaPill>);
+    }
+
+    if (meta?.cropped === true) {
+      pills.push(<TinyMetaPill key="cropped" tone="good">Cropped</TinyMetaPill>);
+    } else if (meta?.cropped === false && method === "ocr") {
+      pills.push(<TinyMetaPill key="notcropped" tone="warn">Not cropped</TinyMetaPill>);
+    }
+
+    if (meta?.psmUsed != null && method === "ocr") {
+      pills.push(<TinyMetaPill key="psm">PSM {String(meta.psmUsed)}</TinyMetaPill>);
+    }
+
+    if (meta?.preprocess && method === "ocr") {
+      pills.push(<TinyMetaPill key="prep">Pre: {String(meta.preprocess)}</TinyMetaPill>);
+    }
+
+    const fn = fmtFileLabel(meta);
+    if (fn) {
+      pills.push(<TinyMetaPill key="file">File: {fn}</TinyMetaPill>);
+    }
+
+    const athlete = safeStr(meta?.athleteName);
+    if (athlete) {
+      pills.push(<TinyMetaPill key="athlete">Athlete: {athlete}</TinyMetaPill>);
+    }
+
+    if (meta?.index != null && meta?.total != null) {
+      pills.push(
+        <TinyMetaPill key="idx">
+          Label {Number(meta.index) + 1}/{Number(meta.total)}
+        </TinyMetaPill>
+      );
+    }
+
+    return pills;
+  }, [scanMethod, meta]);
+
+  const metaHelpText = useMemo(() => {
+    if (!meta) return "";
+    const method = safeStr(scanMethod) || "ocr";
+
+    // Helpful guidance if quality is low
+    const q = meta?.quality;
+    const tone = safeStr(q?.tone);
+
+    if (method === "ocr" && tone === "bad") {
+      return "Scan looks low clarity. Retake with brighter light, avoid glare, and crop to just the ingredients panel.";
+    }
+    if (method === "ocr" && tone === "warn") {
+      return "Scan is okay. If anything seems missing, try a tighter crop and retake with less glare.";
+    }
+    if (method === "barcode") {
+      return "If barcode lookup didn’t return enough ingredients, try scanning the label for a full ingredient list.";
+    }
+    return "";
+  }, [meta, scanMethod]);
+
+  /* ------------------------------------------------------------------------ */
+  /* Cards                                                                     */
+  /* ------------------------------------------------------------------------ */
+
   const BannedCards = ({ records }) => {
     if (!records || !records.length) {
-      return (
-        <p className="italic text-gray-500 p-3 text-sm">
-          No banned substances match your scan.
-        </p>
-      );
+      return <p className="italic text-gray-500 p-3 text-sm">No banned substances match your scan.</p>;
     }
 
     return (
@@ -522,10 +618,7 @@ export default function OCRScanResults({
           const notes = fields["Notes"] || "";
           const benefits = (fields["Benefits"] || "").toString();
           const weaknesses = (fields["Weaknesses"] || "").toString();
-          const antagonisms =
-            (fields["Nutrient Antagonism"] ||
-              fields["Nutrient Antagonisms"] ||
-              "") + "";
+          const antagonisms = (fields["Nutrient Antagonism"] || fields["Nutrient Antagonisms"] || "") + "";
           const source = fields["Source / Citation"] || "";
           const color = banColorMap[banType] || "#111827";
 
@@ -546,8 +639,7 @@ export default function OCRScanResults({
             minTermLength: 3,
           });
 
-          const snippetHTML = (snippet) =>
-            highlightBlobWithOCR(snippet, terms, color);
+          const snippetHTML = (snippet) => highlightBlobWithOCR(snippet, terms, color);
 
           return (
             <motion.div
@@ -557,10 +649,7 @@ export default function OCRScanResults({
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.16, delay: index * 0.01 }}
               className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
-              style={{
-                borderLeftWidth: 4,
-                borderLeftColor: color,
-              }}
+              style={{ borderLeftWidth: 4, borderLeftColor: color }}
             >
               {/* HEADER */}
               <button
@@ -572,42 +661,32 @@ export default function OCRScanResults({
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{
-                        backgroundColor: `${color}20`,
-                        color,
-                      }}
+                      style={{ backgroundColor: `${color}20`, color }}
                     >
                       {banType}
                     </span>
-                    {bannedBy && (
-                      <span className="text-[11px] sm:text-xs text-gray-600">
-                        Banned by: {bannedBy}
-                      </span>
-                    )}
+
+                    {bannedBy && <span className="text-[11px] sm:text-xs text-gray-600">Banned by: {bannedBy}</span>}
                     {dosageLimit && (
-                      <span className="text-[11px] sm:text-xs text-gray-600">
-                        Dosage: {dosageLimit}
-                      </span>
+                      <span className="text-[11px] sm:text-xs text-gray-600">Dosage: {dosageLimit}</span>
                     )}
                   </div>
 
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
-                    {name}
-                  </h3>
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">{name}</h3>
 
-                  {synonyms && (
-                    <p className="text-xs text-gray-600 line-clamp-2">
-                      Also labeled as: {synonyms}
-                    </p>
+                  {synonyms && <p className="text-xs text-gray-600 line-clamp-2">Also labeled as: {synonyms}</p>}
+
+                  {/* Mini “matched snippet” preview even when collapsed (trust builder) */}
+                  {!expanded && ocrSnippets?.[0] && (
+                    <p
+                      className="mt-1 text-[11px] text-gray-600 line-clamp-2"
+                      dangerouslySetInnerHTML={{ __html: snippetHTML(ocrSnippets[0]) }}
+                    />
                   )}
                 </div>
 
                 <div className="flex items-center pl-2 pt-1">
-                  {expanded ? (
-                    <FaChevronUp className="text-gray-400" />
-                  ) : (
-                    <FaChevronDown className="text-gray-400" />
-                  )}
+                  {expanded ? <FaChevronUp className="text-gray-400" /> : <FaChevronDown className="text-gray-400" />}
                 </div>
               </button>
 
@@ -626,9 +705,7 @@ export default function OCRScanResults({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {whatItDoesText && (
                           <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                              What it does
-                            </p>
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">What it does</p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
                               dangerouslySetInnerHTML={{ __html: whatItDoesHTML }}
@@ -667,9 +744,7 @@ export default function OCRScanResults({
                         <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
                           Where this information comes from
                         </p>
-                        <p className="leading-relaxed break-words text-gray-700 text-[11px] sm:text-xs">
-                          {source}
-                        </p>
+                        <p className="leading-relaxed break-words text-gray-700 text-[11px] sm:text-xs">{source}</p>
                       </div>
                     )}
 
@@ -701,11 +776,7 @@ export default function OCRScanResults({
 
   const IngredientCards = ({ records }) => {
     if (!records || !records.length) {
-      return (
-        <p className="italic text-gray-500 p-3 text-sm">
-          No ingredient-only results found for this scan.
-        </p>
-      );
+      return <p className="italic text-gray-500 p-3 text-sm">No ingredient-only results found for this scan.</p>;
     }
 
     return (
@@ -715,48 +786,33 @@ export default function OCRScanResults({
           const id = rec.id;
 
           const name =
-            fields["Name"] ||
-            fields["Ingredient Name"] ||
-            fields["Substance Name"] ||
-            "Unnamed ingredient";
+            fields["Name"] || fields["Ingredient Name"] || fields["Substance Name"] || "Unnamed ingredient";
 
-          const synonyms =
-            fields["Synonyms (Extended)"] || fields["Synonyms"] || "";
+          const synonyms = fields["Synonyms (Extended)"] || fields["Synonyms"] || "";
 
           const benefits = (fields["Benefits"] || "").toString();
           const weaknesses = (fields["Weaknesses"] || "").toString();
-          const antagonisms =
-            (fields["Nutrient Antagonism"] ||
-              fields["Nutrient Antagonisms"] ||
-              "") + "";
-          const sources =
-            (fields["Sources / References"] || fields["Source"] || "") + "";
+          const antagonisms = (fields["Nutrient Antagonism"] || fields["Nutrient Antagonisms"] || "") + "";
+          const sources = (fields["Sources / References"] || fields["Source"] || "") + "";
 
           // ✅ Use detected terms (matchedTerms preferred)
           const terms = getMatchedTermsForRecord(rec);
 
-          const benefitsHTML = highlightBlobWithOCR(
-            benefits,
-            terms,
-            INGREDIENT_HIGHLIGHT_COLOR
-          );
-          const weaknessesHTML = highlightBlobWithOCR(
-            weaknesses,
-            terms,
-            INGREDIENT_HIGHLIGHT_COLOR
-          );
-          const antagonismsHTML = highlightBlobWithOCR(
-            antagonisms,
-            terms,
-            INGREDIENT_HIGHLIGHT_COLOR
-          );
-          const sourcesHTML = highlightBlobWithOCR(
-            sources,
-            terms,
-            INGREDIENT_HIGHLIGHT_COLOR
-          );
+          const benefitsHTML = highlightBlobWithOCR(benefits, terms, INGREDIENT_HIGHLIGHT_COLOR);
+          const weaknessesHTML = highlightBlobWithOCR(weaknesses, terms, INGREDIENT_HIGHLIGHT_COLOR);
+          const antagonismsHTML = highlightBlobWithOCR(antagonisms, terms, INGREDIENT_HIGHLIGHT_COLOR);
+          const sourcesHTML = highlightBlobWithOCR(sources, terms, INGREDIENT_HIGHLIGHT_COLOR);
 
           const expanded = !!expandedIngredientIds[id];
+
+          const ocrSnippets = getOcrSnippets(ocrText, terms, {
+            radius: 90,
+            maxSnippets: 1,
+            maxChars: 220,
+            minTermLength: 3,
+          });
+
+          const snippetHTML = (snippet) => highlightBlobWithOCR(snippet, terms, INGREDIENT_HIGHLIGHT_COLOR);
 
           return (
             <motion.div
@@ -779,22 +835,21 @@ export default function OCRScanResults({
                       Ingredient
                     </span>
                   </div>
-                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
-                    {name}
-                  </h3>
-                  {synonyms && (
-                    <p className="text-xs text-gray-600 line-clamp-2">
-                      Also listed as: {synonyms}
-                    </p>
+
+                  <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">{name}</h3>
+
+                  {synonyms && <p className="text-xs text-gray-600 line-clamp-2">Also listed as: {synonyms}</p>}
+
+                  {!expanded && ocrSnippets?.[0] && (
+                    <p
+                      className="mt-1 text-[11px] text-gray-600 line-clamp-2"
+                      dangerouslySetInnerHTML={{ __html: snippetHTML(ocrSnippets[0]) }}
+                    />
                   )}
                 </div>
 
                 <div className="flex items-center pl-2 pt-1">
-                  {expanded ? (
-                    <FaChevronUp className="text-gray-400" />
-                  ) : (
-                    <FaChevronDown className="text-gray-400" />
-                  )}
+                  {expanded ? <FaChevronUp className="text-gray-400" /> : <FaChevronDown className="text-gray-400" />}
                 </div>
               </button>
 
@@ -813,9 +868,7 @@ export default function OCRScanResults({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {benefits && (
                           <div className="bg-gray-50 rounded-lg border border-gray-100 px-3 py-2">
-                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">
-                              What it does
-                            </p>
+                            <p className="text-[11px] sm:text-xs font-semibold text-gray-900 mb-1">What it does</p>
                             <p
                               className="text-[11px] sm:text-xs leading-relaxed whitespace-pre-line text-gray-800"
                               dangerouslySetInnerHTML={{ __html: benefitsHTML }}
@@ -870,47 +923,120 @@ export default function OCRScanResults({
     );
   };
 
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <div className="w-full max-w-[2500px] mx-auto px-3 sm:px-4 py-5 sm:py-6 font-sans space-y-7 text-gray-900">
       {/* SCAN SUMMARY CARD */}
       <section>
-        <div className="rounded-2xl bg-white border border-blue-100 shadow-sm px-3 py-3 sm:px-4 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex-1 space-y-1">
-            <p className="text-[11px] uppercase tracking-wide text-[#46769B] font-semibold">
-              Scan summary
-            </p>
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
-              {riskLabel}
-            </h2>
-            <p className="text-xs sm:text-sm text-gray-600 max-w-xl">
-              These results are based on your latest label scan. Use the cards
-              below to review any banned substances and understand how each
-              ingredient behaves in your body.
-            </p>
+        <div className="rounded-2xl bg-white border border-blue-100 shadow-sm px-3 py-3 sm:px-4 sm:py-4 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="flex-1 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-[#46769B] font-semibold">Scan summary</p>
+
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">{riskLabel}</h2>
+
+              <p className="text-xs sm:text-sm text-gray-600 max-w-xl">
+                These results are based on your latest scan. Use the cards below to review any banned substances and
+                understand how each ingredient behaves in your body.
+              </p>
+
+              {/* Scan meta pills */}
+              {(scanPills?.length > 0 || meta?.quality) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {meta?.quality && <QualityChip quality={meta.quality} />}
+                  {scanPills}
+                </div>
+              )}
+
+              {/* Guidance */}
+              {metaHelpText && (
+                <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] sm:text-xs text-gray-700">
+                  {metaHelpText}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2 sm:gap-3">
+              <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
+                <p className="text-[11px] font-medium text-gray-500">Total matches</p>
+                <p className="text-base font-semibold text-gray-900">{totalMatches}</p>
+              </div>
+
+              <div className={`px-3 py-2 rounded-xl border min-w-[90px] ${riskTone}`}>
+                <p className="text-[11px] font-medium">Banned</p>
+                <p className="text-base font-semibold">{bannedCount}</p>
+              </div>
+
+              <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
+                <p className="text-[11px] font-medium text-gray-500">Ingredients</p>
+                <p className="text-base font-semibold text-gray-900">{ingredientCount}</p>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 sm:gap-3">
-            <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
-              <p className="text-[11px] font-medium text-gray-500">
-                Total matches
-              </p>
-              <p className="text-base font-semibold text-gray-900">
-                {totalMatches}
-              </p>
+          {/* Optional multi-scan details */}
+          {Array.isArray(scanMetaList) && scanMetaList.length > 1 && (
+            <div className="pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setDetailsOpen((s) => !s)}
+                className="inline-flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-[#46769B] hover:underline"
+                aria-expanded={detailsOpen}
+              >
+                {detailsOpen ? "Hide scan details" : `Show scan details (${scanMetaList.length})`}
+                <span className="opacity-70">{detailsOpen ? "▾" : "▸"}</span>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {detailsOpen && (
+                  <motion.div
+                    key="scan-details"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"
+                  >
+                    {scanMetaList.map((item, idx) => {
+                      const m = item?.meta || {};
+                      const q = m?.quality || null;
+                      const file = fmtFileLabel(m) || `Label ${idx + 1}`;
+                      const cropped = m?.cropped === true ? "Cropped" : "Not cropped";
+                      const psm = m?.psmUsed != null ? `PSM ${m.psmUsed}` : "";
+                      const prep = m?.preprocess ? `Pre: ${m.preprocess}` : "";
+                      const tone = q?.tone || "warn";
+
+                      const tileCls =
+                        tone === "good"
+                          ? "border-emerald-200 bg-emerald-50"
+                          : tone === "bad"
+                          ? "border-red-200 bg-red-50"
+                          : "border-amber-200 bg-amber-50";
+
+                      return (
+                        <div key={`scan-${idx}`} className={`rounded-xl border px-3 py-2 ${tileCls}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-semibold text-gray-900 truncate">{file}</p>
+                            {q?.label && (
+                              <span className="text-[10px] font-semibold text-gray-800 opacity-80">{q.label}</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-700 mt-1">
+                            {cropped}
+                            {psm ? ` · ${psm}` : ""}
+                            {prep ? ` · ${prep}` : ""}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            <div className={`px-3 py-2 rounded-xl border min-w-[90px] ${riskTone}`}>
-              <p className="text-[11px] font-medium">Banned</p>
-              <p className="text-base font-semibold">{bannedCount}</p>
-            </div>
-            <div className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 min-w-[90px]">
-              <p className="text-[11px] font-medium text-gray-500">
-                Ingredients
-              </p>
-              <p className="text-base font-semibold text-gray-900">
-                {ingredientCount}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       </section>
 
@@ -924,7 +1050,11 @@ export default function OCRScanResults({
             className={`section-toggle-btn ${ocrOpen ? "active" : ""} w-full sm:w-auto`}
           >
             <span className="section-label">Scanned Text (OCR)</span>
-            <span className="badge">{ocrMatchCount}</span>
+
+            {/* show both unique terms and total occurrences */}
+            <span className="badge">{ocrUniqueTermCount}</span>
+            <span className="mini">hi: {ocrMatchCount}</span>
+
             <span className="caret">{ocrOpen ? "▾" : "▸"}</span>
           </button>
 
@@ -942,7 +1072,7 @@ export default function OCRScanResults({
                   <div dangerouslySetInnerHTML={{ __html: ocrHTML }} />
                 ) : (
                   <p className="text-gray-500 italic text-sm">
-                    No OCR text available.
+                    No OCR text available{scanMethod === "barcode" ? " (barcode lookup flow)" : ""}.
                   </p>
                 )}
               </motion.div>
@@ -967,8 +1097,10 @@ export default function OCRScanResults({
             </button>
 
             <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-              These are substances with an active ban classification. Only
-              entries that actually appear in the scanned text are shown here.
+              These are substances with an active ban classification.{" "}
+              {ocrText
+                ? "Only entries that actually appear in the scanned text are shown here."
+                : "OCR text is not available for this scan, so we’re showing all matches returned by the lookup."}{" "}
               Use the chips below to focus on a specific ban type.
             </p>
           </div>
@@ -991,10 +1123,7 @@ export default function OCRScanResults({
                     : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                <span
-                  className="w-3.5 h-3.5 rounded-full"
-                  style={{ backgroundColor: t.color }}
-                />
+                <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: t.color }} />
                 <span className="font-medium">{t.label}</span>
                 <span className="text-gray-500">({count})</span>
               </button>
@@ -1037,9 +1166,8 @@ export default function OCRScanResults({
             </button>
 
             <p className="text-xs sm:text-sm text-gray-600 leading-snug">
-              These are ingredients that are not flagged as banned in your scan.
-              Each card explains what it does, potential drawbacks, and
-              interactions.
+              These are ingredients that are not flagged as banned in your scan. Each card explains what it does,
+              potential drawbacks, and interactions.
             </p>
           </div>
         </div>
@@ -1077,6 +1205,7 @@ export default function OCRScanResults({
           background: rgba(255, 255, 255, 0.9);
           color: #0f172a;
           box-shadow: 0 1px 0 rgba(16, 24, 40, 0.03);
+          user-select: none;
         }
         .section-toggle-btn:hover {
           transform: translateY(-1px);
@@ -1095,6 +1224,12 @@ export default function OCRScanResults({
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          min-width: 22px;
+        }
+        .section-toggle-btn .mini {
+          font-size: 0.75rem;
+          color: #6b7280;
+          font-weight: 600;
         }
         .section-toggle-btn .caret {
           color: #6b7280;
@@ -1114,6 +1249,9 @@ export default function OCRScanResults({
           .section-toggle-btn .badge {
             font-size: 0.78rem;
             padding: 3px 6px;
+          }
+          .section-toggle-btn .mini {
+            font-size: 0.72rem;
           }
         }
       `}</style>

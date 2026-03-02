@@ -521,7 +521,7 @@ export default function HomePage() {
                 {
                   icon: <FaUtensils size={30} className="mx-auto mb-2 text-purple-500" />,
                   title: "Nutrition targets",
-                  desc: "Meal-based macro targets with dining hall vs home guidance - plus hydration goals. Athletes confirm meal + water in seconds (no tedious calorie tracking).",
+                  desc: "Meal-based macro targets that are home or dining hall friendly. Athletes track their meals + hydration in seconds (no tedious calorie tracking).",
                 },
                 {
                   icon: <FaShieldAlt size={30} className="mx-auto mb-2 text-emerald-600" />,
@@ -630,7 +630,7 @@ export default function HomePage() {
                       <FaCheckCircle />
                     </span>
                     <p>
-                      <span className="font-semibold">$2,988 / team / year</span> for the first 26 teams onboarded
+                      <span className="font-semibold">$2,988 / year</span> for the first 26 teams onboarded
                     </p>
                   </div>
 

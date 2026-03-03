@@ -25,15 +25,12 @@ import { getConsent, setConsent } from "@/lib/consent";
  */
 
 const GA_ID = "G-0HXXN1SJ9K";
+const ADS_ID = "AW-17990566633";
 const CLARITY_ID = "u244y5muc2";
 
 function isDoNotTrackEnabled() {
   if (typeof navigator === "undefined") return false;
-  const dnt =
-    navigator.doNotTrack ||
-    window.doNotTrack ||
-    navigator.msDoNotTrack ||
-    "";
+  const dnt = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack || "";
   return String(dnt) === "1" || String(dnt).toLowerCase() === "yes";
 }
 
@@ -88,6 +85,8 @@ export default function MyApp({ Component, pageProps }) {
     if (typeof window.gtag === "function") {
       window.gtag("consent", "update", {
         analytics_storage: analyticsEnabled ? "granted" : "denied",
+        // You can add a separate "marketing" toggle later if desired.
+        // For now, keep ad-related storage denied (privacy-safe).
         ad_storage: "denied",
         ad_user_data: "denied",
         ad_personalization: "denied",
@@ -122,11 +121,8 @@ export default function MyApp({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </Head>
 
-      {/* Google Analytics (Consent Mode default denied) */}
-      <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-        strategy="afterInteractive"
-      />
+      {/* Google tag loader (GA4 + Google Ads share the same gtag.js) */}
+      <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
       <Script id="gtag-init" strategy="afterInteractive">
         {`
           window.dataLayer = window.dataLayer || [];
@@ -146,6 +142,9 @@ export default function MyApp({ Component, pageProps }) {
           // NOTE: We intentionally do NOT send pageviews until consent is granted.
           // (routeChange effect handles pageviews after consent)
           gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: false });
+
+          // ✅ Google Ads base tag (AW) - uses same gtag instance
+          gtag('config', '${ADS_ID}');
         `}
       </Script>
 

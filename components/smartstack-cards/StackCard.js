@@ -29,7 +29,7 @@ const supplementIcons = {
   "Bacopa Monnieri": <FaLeaf />,
   "Rhodiola Rosea": <FaLeaf />,
   "Beta-Alanine": <FaDumbbell />,
-  "L-Citrulline": <FaLeaf />,
+  "L-Citrulline": <FaDumbbell />,
   Electrolytes: <FaBolt />,
   "Vitamin C": <FaAppleAlt />,
   Zinc: <FaCapsules />,
@@ -43,9 +43,9 @@ function normalizeId(v) {
 
 /**
  * Polished auth CTA:
- * - Shows a "toast-like" CTA card inside the StackCard (not a tiny banner)
+ * - Shows a "toast-like" CTA card inside the StackCard
  * - Tries to open your NavBarLoginModal (global hook or window event)
- * - Falls back to redirect with ?login=1 so it *always* works even if wiring isn't done
+ * - Falls back to redirect with ?login=1
  */
 function openLogin(reason = "auth_required") {
   try {
@@ -61,7 +61,6 @@ function openLogin(reason = "auth_required") {
     window.dispatchEvent(new CustomEvent("auth:open", { detail: { reason, tab: "login" } }));
 
     // 3) Fallback: take them to a route that renders your navbar+modal
-    // Adjust the fallback path if needed ("/smartstack" etc.)
     window.location.href = `/?login=1&reason=${encodeURIComponent(reason)}`;
   } catch {
     // ultra-safe fallback
@@ -143,11 +142,7 @@ export default function StackCard({
     window.clearTimeout(openAuthToast._t);
     openAuthToast._t = window.setTimeout(() => setAuthToastOpen(false), 3200);
 
-    // Optional tiny helper message (kept)
     showBanner("Sign in to save stacks.");
-    // Don't auto-open modal here (we keep it user-driven for polish)
-    // But you CAN uncomment this if you want immediate modal:
-    // openLogin(why);
   }, []);
 
   useEffect(() => {
@@ -177,7 +172,6 @@ export default function StackCard({
     e.stopPropagation();
 
     if (!userEmail) {
-      // 🔥 polished: show toast + pulse
       openAuthToast("save_stack");
       return;
     }
@@ -224,7 +218,6 @@ export default function StackCard({
       } else {
         const recordId = savedRecord?.recordId;
         if (!recordId) {
-          // rollback (keep saved)
           optimisticAdd();
           showBanner("Couldn’t unsave (missing record). Refresh and try again.");
           setSaving(false);
@@ -261,7 +254,7 @@ export default function StackCard({
 
   return (
     <motion.div
-      className={`relative overflow-hidden rounded-2xl shadow-lg cursor-pointer flex flex-col transition-transform hover:scale-[1.02] hover:shadow-2xl ${
+      className={`relative overflow-hidden rounded-2xl shadow-md cursor-pointer flex flex-col transition-transform hover:scale-[1.01] hover:shadow-xl ${
         isSelected ? "ring-4 ring-green-500" : ""
       }`}
       initial={{ opacity: 0, y: 10 }}
@@ -292,7 +285,7 @@ export default function StackCard({
           className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
             isSelected ? "bg-green-500 border-green-600" : "bg-gray-900/80 border-gray-600"
           }`}
-          whileHover={{ scale: 1.08 }}
+          whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 420, damping: 30 }}
           title={isSelected ? "Remove from compare" : `Select for compare (max ${maxCompare})`}
@@ -344,7 +337,11 @@ export default function StackCard({
                 : { scale: 1, rotate: 0 }
             }
             // IMPORTANT: keyframes -> use tween (avoids Motion spring limitation)
-            transition={pulse ? { type: "tween", duration: 0.28, ease: "easeOut" } : { type: "spring", stiffness: 520, damping: 18 }}
+            transition={
+              pulse
+                ? { type: "tween", duration: 0.28, ease: "easeOut" }
+                : { type: "spring", stiffness: 520, damping: 18 }
+            }
             title={isSaved ? "Unsave" : "Save"}
             aria-label={isSaved ? "Unsave stack" : "Save stack"}
             type="button"
@@ -355,60 +352,66 @@ export default function StackCard({
         </div>
       </div>
 
-      {/* Image */}
-      <div className="relative z-[1]">
+      {/* Image - soft uniform: fixed aspect ratio across cards */}
+      <div className="relative z-[1] w-full aspect-[4/3] overflow-hidden">
         {stack?.imageUrl ? (
           <>
             <img
               src={stack.imageUrl}
               alt={stack?.name || "Stack image"}
-              className="w-full h-52 md:h-56 lg:h-60 object-cover"
+              className="h-full w-full object-cover"
               loading="lazy"
               onError={(e) => (e.currentTarget.src = "/fallback-image.svg")}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
           </>
         ) : (
-          <div className="w-full h-52 md:h-56 lg:h-60 bg-gray-700 flex items-center justify-center text-gray-300 text-sm">
+          <div className="h-full w-full bg-gray-700 flex items-center justify-center text-gray-300 text-sm">
             No Image Available
           </div>
         )}
       </div>
 
       {/* Content */}
-      <div className="relative z-[1] p-5 flex flex-col flex-1">
-        <h3 className="text-xl md:text-2xl font-bold text-white leading-tight line-clamp-2">
+      <div className="relative z-[1] px-4 py-4 sm:p-5 flex flex-col flex-1">
+        <h3 className="text-lg md:text-xl xl:text-lg font-bold text-white leading-tight line-clamp-2">
           {stack?.name || "Untitled Stack"}
         </h3>
 
+        {/* Pills area - soft uniform: capped height so wrap doesn't explode card heights */}
         {suppPreview.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3">
-            {suppPreview.map((supp) => (
-              <span
-                key={supp}
-                className="flex items-center gap-1 px-3 py-1 bg-white/10 border border-white/10 rounded-full text-xs md:text-sm text-white font-medium shadow-sm"
-                title={supp}
-              >
-                <span className="opacity-90">{supplementIcons[supp] || <FaCapsules />}</span>
-                <span className="truncate max-w-[160px]">{supp}</span>
-              </span>
-            ))}
-            {suppMore > 0 && (
-              <span className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-xs md:text-sm text-white/80 font-semibold">
-                +{suppMore} more
-              </span>
-            )}
+          <div className="mt-2.5 sm:mt-3 max-h-[64px] overflow-hidden">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {suppPreview.map((supp) => (
+                <span
+                  key={supp}
+                  className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-white/10 border border-white/10 rounded-full text-[11px] sm:text-xs md:text-sm text-white font-medium shadow-sm"
+                  title={supp}
+                >
+                  <span className="opacity-90">{supplementIcons[supp] || <FaCapsules />}</span>
+                  <span className="truncate max-w-[120px] sm:max-w-[140px]">{supp}</span>
+                </span>
+              ))}
+              {suppMore > 0 && (
+                <span className="px-2.5 py-1 sm:px-3 sm:py-1 bg-white/5 border border-white/10 rounded-full text-[11px] sm:text-xs md:text-sm text-white/80 font-semibold">
+                  +{suppMore} more
+                </span>
+              )}
+            </div>
           </div>
         )}
 
         {stack?.valueScore != null && !isNaN(stack.valueScore) && (
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
             <ValueBadge valueScore={stack.valueScore} category={stack.category} />
           </div>
         )}
 
+        {/* Notes - soft uniform: clamp to 2 lines so heights stay close */}
         {stack?.notes && (
-          <p className="text-gray-200/90 text-sm md:text-base mt-3 line-clamp-4">{stack.notes}</p>
+          <p className="text-gray-200/90 text-sm md:text-base mt-2.5 sm:mt-3 line-clamp-2">
+            {stack.notes}
+          </p>
         )}
 
         {/* Polished inline "auth toast" CTA */}
@@ -416,7 +419,7 @@ export default function StackCard({
           {authToastOpen ? (
             <motion.div
               key="authToast"
-              className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/45 backdrop-blur px-4 py-3 text-white"
+              className="mt-3 sm:mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/45 backdrop-blur px-4 py-3 text-white"
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -450,15 +453,28 @@ export default function StackCard({
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-2 text-xs font-semibold"
+                      onClick={() => openLogin("save_stack")}
+                    >
+                      <FaSignInAlt />
+                      Sign in
+                    </button>
+
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#46769B] hover:bg-[#375b7a] px-3 py-2 text-xs font-semibold text-white"
+                      onClick={() => openLogin("save_stack")}
+                    >
+                      Create account
+                    </button>
                   </div>
                 </div>
               </div>
 
               {/* subtle progress indicator */}
-              <motion.div
-                className="mt-3 h-1 w-full rounded-full bg-white/10 overflow-hidden"
-                aria-hidden="true"
-              >
+              <motion.div className="mt-3 h-1 w-full rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
                 <motion.div
                   className="h-full rounded-full bg-white/40"
                   initial={{ width: "100%" }}
@@ -470,46 +486,51 @@ export default function StackCard({
           ) : null}
         </AnimatePresence>
 
-        <div className="flex gap-2 mt-auto pt-4 flex-wrap">
-          {stack?.affiliateLink && (
-            <a
-              href={stack.affiliateLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 bg-[#46769B] hover:bg-[#375b7a] rounded-2xl text-white text-sm md:text-base font-semibold shadow-sm transition-colors"
-              onClick={(e) => e.stopPropagation()}
+        {/* Actions - stacked on mobile, inline on desktop */}
+        <div className="mt-auto pt-3 sm:pt-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {stack?.affiliateLink && (
+              <a
+                href={stack.affiliateLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2 bg-[#46769B] hover:bg-[#375b7a] rounded-2xl text-white text-sm md:text-base font-semibold shadow-sm transition-colors text-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                View on Amazon
+              </a>
+            )}
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canOpenModal) setModalStack(stack);
+                else showBanner("No nutrition label available.");
+              }}
+              className={`w-full sm:w-auto px-4 py-2 rounded-2xl text-sm md:text-base font-semibold transition-colors text-center ${
+                canOpenModal
+                  ? "bg-white/10 hover:bg-white/15 text-white"
+                  : "bg-white/5 text-white/60 cursor-not-allowed"
+              }`}
+              type="button"
+              disabled={!canOpenModal}
             >
-              See Price
-            </a>
-          )}
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (canOpenModal) setModalStack(stack);
-              else showBanner("No nutrition label available.");
-            }}
-            className={`px-4 py-2 rounded-2xl text-sm md:text-base font-semibold transition-colors ${
-              canOpenModal ? "bg-white/10 hover:bg-white/15 text-white" : "bg-white/5 text-white/60 cursor-not-allowed"
-            }`}
-            type="button"
-            disabled={!canOpenModal}
-          >
-            View Nutrition
-          </button>
-        </div>
-
-        <p className="mt-2 text-white/65 text-xs md:text-sm">
-          {isSelected
-            ? `Selected for comparison (${selectedCompareStacks.length}/${maxCompare})`
-            : `Click ✓ to select for comparison (up to ${maxCompare})`}
-        </p>
-
-        {banner && (
-          <div className="mt-3 inline-flex w-fit max-w-full items-center rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 text-xs md:text-sm text-white">
-            {banner}
+              View Nutrition
+            </button>
           </div>
-        )}
+
+          <p className="mt-2 text-white/65 text-[11px] sm:text-xs md:text-sm">
+            {isSelected
+              ? `Selected for comparison (${selectedCompareStacks.length}/${maxCompare})`
+              : `Click ✓ to select for comparison (up to ${maxCompare})`}
+          </p>
+
+          {banner && (
+            <div className="mt-2 inline-flex w-fit max-w-full items-center rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 text-[11px] sm:text-xs md:text-sm text-white">
+              {banner}
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
   );

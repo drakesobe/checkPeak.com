@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuthContext } from "../hooks/useAuth";
+import useMediaQuery from "../hooks/useMediaQuery";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FaDumbbell,
@@ -82,9 +83,10 @@ export default function SmartStackPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  // "Load more" pagination
-  const [visibleLimit, setVisibleLimit] = useState(25);
-  const itemsPerChunk = 25;
+  // Responsive chunk sizing to avoid "orphan" last-row cards
+  const isXL = useMediaQuery("(min-width: 1280px)"); // Tailwind xl
+  const itemsPerChunk = isXL ? 25 : 24; // 5x5 on xl, 4x6 on lg
+  const [visibleLimit, setVisibleLimit] = useState(itemsPerChunk);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -198,8 +200,8 @@ export default function SmartStackPage() {
   /* Reset visibleLimit ONLY when filters/search toggle/change                */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    setVisibleLimit(itemsPerChunk);
-  }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly]);
+  setVisibleLimit(itemsPerChunk);
+    }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
 
   /* ------------------------------------------------------------------------ */
   /* Filter UI config                                                          */
@@ -469,7 +471,7 @@ export default function SmartStackPage() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.18 }}
-                    className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                    className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
                   >
                     {pageStacks.map((stack) => (
                       <StackCard
@@ -520,6 +522,11 @@ export default function SmartStackPage() {
                     Load {Math.min(itemsPerChunk, visibleCount - effectiveLimit)}{" "}
                     more stacks
                   </button>
+                  {!canLoadMore && visibleCount > 0 && (
+                <div className="mt-8 text-center text-xs text-gray-600">
+                  End of results — adjust filters to explore more.
+                </div>
+              )}
                 </div>
               )}
             </>

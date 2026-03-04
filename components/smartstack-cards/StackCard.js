@@ -19,25 +19,25 @@ import ValueBadge from "./ValueBadge";
 import { useAuthContext } from "@/hooks/useAuth";
 
 /* -------------------------------------------------------------------------- */
-/* Static data — outside component so it's never recreated                    */
+/* Static data                                                                 */
 /* -------------------------------------------------------------------------- */
 
 const SUPPLEMENT_ICONS = {
-  "Caffeine":              <FaCoffee />,
-  "L-Theanine":            <FaLeaf />,
-  "B-Vitamins":            <FaCapsules />,
-  "Creatine Monohydrate":  <FaDumbbell />,
-  "L-Glutamine":           <FaLeaf />,
-  "BCAAs":                 <FaDumbbell />,
-  "Omega-3":               <FaCapsules />,
-  "Bacopa Monnieri":       <FaLeaf />,
-  "Rhodiola Rosea":        <FaLeaf />,
-  "Beta-Alanine":          <FaDumbbell />,
-  "L-Citrulline":          <FaDumbbell />,
-  "Electrolytes":          <FaBolt />,
-  "Vitamin C":             <FaAppleAlt />,
-  "Zinc":                  <FaCapsules />,
-  "Elderberry":            <FaAppleAlt />,
+  "Caffeine":             <FaCoffee />,
+  "L-Theanine":           <FaLeaf />,
+  "B-Vitamins":           <FaCapsules />,
+  "Creatine Monohydrate": <FaDumbbell />,
+  "L-Glutamine":          <FaLeaf />,
+  "BCAAs":                <FaDumbbell />,
+  "Omega-3":              <FaCapsules />,
+  "Bacopa Monnieri":      <FaLeaf />,
+  "Rhodiola Rosea":       <FaLeaf />,
+  "Beta-Alanine":         <FaDumbbell />,
+  "L-Citrulline":         <FaDumbbell />,
+  "Electrolytes":         <FaBolt />,
+  "Vitamin C":            <FaAppleAlt />,
+  "Zinc":                 <FaCapsules />,
+  "Elderberry":           <FaAppleAlt />,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -49,12 +49,6 @@ function normalizeId(v) {
   return String(v);
 }
 
-/**
- * Opens the login modal via three progressively degraded methods:
- * 1. window.__openLoginModal (app-level registered opener)
- * 2. CustomEvent "auth:open" (navbar listener)
- * 3. Hard redirect fallback
- */
 function openLogin(reason = "auth_required") {
   if (typeof window === "undefined") return;
   try {
@@ -66,7 +60,6 @@ function openLogin(reason = "auth_required") {
       new CustomEvent("auth:open", { detail: { reason, tab: "login" } })
     );
   } catch {
-    // Last-resort fallback — avoids a blank screen if both above fail
     window.location.href = `/?login=1&reason=${encodeURIComponent(reason)}`;
   }
 }
@@ -83,7 +76,7 @@ export default function StackCard({
   setSavedStacks,
   userEmail: userEmailProp,
   maxCompare   = 3,
-  maxSuppPills = 6,
+  maxSuppPills = 5,
 }) {
   const { user } = useAuthContext();
 
@@ -104,8 +97,7 @@ export default function StackCard({
     );
   }, [savedStacks, stackId]);
 
-  const isSaved = Boolean(savedRecord);
-
+  const isSaved   = Boolean(savedRecord);
   const isSelected = useMemo(
     () => selectedCompareStacks.some((s) => normalizeId(s?.id) === stackId),
     [selectedCompareStacks, stackId]
@@ -133,14 +125,11 @@ export default function StackCard({
   const [authToastOpen, setAuthToastOpen] = useState(false);
   const [pulse,         setPulse]         = useState(false);
 
-  /* ── Timer refs — correct pattern instead of properties on functions ──── */
+  const bannerTimerRef     = useRef(null);
+  const authToastTimerRef  = useRef(null);
+  const pulseTimerRef      = useRef(null);
+  const lastAuthToastAtRef = useRef(0);
 
-  const bannerTimerRef        = useRef(null);
-  const authToastTimerRef     = useRef(null);
-  const pulseTimerRef         = useRef(null);
-  const lastAuthToastAtRef    = useRef(0);
-
-  // Clear all timers on unmount to prevent state updates on unmounted component
   useEffect(() => {
     return () => {
       clearTimeout(bannerTimerRef.current);
@@ -149,7 +138,7 @@ export default function StackCard({
     };
   }, []);
 
-  /* ── Banner helper ────────────────────────────────────────────────────── */
+  /* ── Banner ───────────────────────────────────────────────────────────── */
 
   const showBanner = useCallback((msg) => {
     setBanner(msg);
@@ -161,7 +150,6 @@ export default function StackCard({
 
   const openAuthToast = useCallback(() => {
     const now = Date.now();
-    // Debounce rapid clicks
     if (now - lastAuthToastAtRef.current < 900) return;
     lastAuthToastAtRef.current = now;
 
@@ -195,27 +183,19 @@ export default function StackCard({
     [stackId, maxCompare, stack, setSelectedCompareStacks, showBanner]
   );
 
-  /* ── Save / unsave toggle ─────────────────────────────────────────────── */
+  /* ── Save / unsave ────────────────────────────────────────────────────── */
 
   const toggleSave = useCallback(
     async (e) => {
       e.stopPropagation();
-
-      if (!userEmail) {
-        openAuthToast();
-        return;
-      }
-
+      if (!userEmail) { openAuthToast(); return; }
       if (saving) return;
       setSaving(true);
 
-      // Optimistic helpers
       const optimisticAdd = () => {
         setSavedStacks((prev) => {
           const list   = Array.isArray(prev) ? prev : [];
-          const exists = list.some(
-            (s) => normalizeId(s?.StackID || s?.id) === stackId
-          );
+          const exists = list.some((s) => normalizeId(s?.StackID || s?.id) === stackId);
           return exists ? list : [...list, { StackID: stackId, recordId: null }];
         });
       };
@@ -223,9 +203,7 @@ export default function StackCard({
       const optimisticRemove = () => {
         setSavedStacks((prev) => {
           const list = Array.isArray(prev) ? prev : [];
-          return list.filter(
-            (s) => normalizeId(s?.StackID || s?.id) !== stackId
-          );
+          return list.filter((s) => normalizeId(s?.StackID || s?.id) !== stackId);
         });
       };
 
@@ -235,14 +213,12 @@ export default function StackCard({
 
       try {
         if (!wasSaved) {
-          // ── Save ──
           const res = await fetch("/api/saveStack", {
             method:  "POST",
             headers: { "Content-Type": "application/json" },
             body:    JSON.stringify({ UserEmail: userEmail, stack }),
           });
           if (!res.ok) throw new Error("Failed to save stack");
-
           const data = await res.json();
           setSavedStacks(
             (data.savedStacks || []).map((s) => ({
@@ -252,23 +228,19 @@ export default function StackCard({
           );
           showBanner("Saved!");
         } else {
-          // ── Unsave ──
           const recordId = savedRecord?.recordId;
           if (!recordId) {
-            // Can't unsave without a recordId — roll back and inform user
             optimisticAdd();
-            showBanner("Couldn't unsave (missing record). Refresh and try again.");
+            showBanner("Couldn't unsave. Refresh and try again.");
             setSaving(false);
             return;
           }
-
           const res = await fetch("/api/removeSavedStack", {
             method:  "DELETE",
             headers: { "Content-Type": "application/json" },
             body:    JSON.stringify({ UserEmail: userEmail, recordId }),
           });
           if (!res.ok) throw new Error("Failed to remove saved stack");
-
           const data = await res.json();
           setSavedStacks(
             (data.savedStacks || []).map((s) => ({
@@ -280,7 +252,6 @@ export default function StackCard({
         }
       } catch (err) {
         console.error("[StackCard] toggleSave error:", err);
-        // Roll back optimistic update
         if (!wasSaved) optimisticRemove();
         else           optimisticAdd();
         showBanner("Save failed. Try again.");
@@ -288,24 +259,14 @@ export default function StackCard({
         setSaving(false);
       }
     },
-    [
-      userEmail,
-      saving,
-      isSaved,
-      stackId,
-      stack,
-      savedRecord,
-      setSavedStacks,
-      openAuthToast,
-      showBanner,
-    ]
+    [userEmail, saving, isSaved, stackId, stack, savedRecord, setSavedStacks, openAuthToast, showBanner]
   );
 
-  /* ── Card click / keyboard handler ───────────────────────────────────── */
+  /* ── Card activation ──────────────────────────────────────────────────── */
 
   const handleCardActivate = useCallback(() => {
     if (canOpenModal) setModalStack(stack);
-    else showBanner("No nutrition label available for this stack.");
+    else showBanner("No nutrition label available.");
   }, [canOpenModal, stack, setModalStack, showBanner]);
 
   const handleCardKeyDown = useCallback(
@@ -317,8 +278,6 @@ export default function StackCard({
     },
     [handleCardActivate]
   );
-
-  /* ── View Nutrition button handler ───────────────────────────────────── */
 
   const handleViewNutrition = useCallback(
     (e) => {
@@ -334,243 +293,320 @@ export default function StackCard({
   /* ------------------------------------------------------------------------ */
   return (
     <motion.div
-      className={[
-        "relative overflow-hidden rounded-2xl shadow-md cursor-pointer flex flex-col",
-        isSelected ? "ring-4 ring-green-500" : "",
-      ].join(" ")}
+      className="relative overflow-hidden flex flex-col cursor-pointer"
+      style={{
+        background:   "#0D1117",
+        border:       isSelected
+          ? "1px solid rgba(91,158,201,0.55)"
+          : "1px solid rgba(255,255,255,0.07)",
+        borderRadius: "16px",
+        boxShadow:    isSelected
+          ? "0 0 0 3px rgba(91,158,201,0.2), 0 8px 32px rgba(0,0,0,0.4)"
+          : "0 4px 16px rgba(0,0,0,0.3)",
+        fontFamily:   "'Barlow', sans-serif",
+      }}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      // FIX: hover scale moved to whileHover to avoid stacking context issues
-      // that caused absolute-positioned controls to slip behind adjacent cards
-      whileHover={{ scale: 1.01, boxShadow: "0 20px 40px rgba(0,0,0,0.35)" }}
-      transition={{ duration: 0.25 }}
+      whileHover={{
+        scale:     1.015,
+        boxShadow: isSelected
+          ? "0 0 0 3px rgba(91,158,201,0.3), 0 16px 40px rgba(0,0,0,0.5)"
+          : "0 12px 36px rgba(0,0,0,0.5)",
+        borderColor: isSelected
+          ? "rgba(91,158,201,0.7)"
+          : "rgba(255,255,255,0.13)",
+      }}
+      transition={{ duration: 0.22 }}
       onClick={handleCardActivate}
       role="button"
       tabIndex={0}
       onKeyDown={handleCardKeyDown}
       aria-label={`Stack card: ${stack?.name || "Stack"}`}
+      aria-pressed={isSelected}
     >
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700" />
 
-      {/* ── Top controls ── */}
-      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
-
-        {/* Compare toggle */}
-        <motion.button
-          type="button"
-          onClick={toggleCompare}
-          className={[
-            "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
-            isSelected
-              ? "bg-green-500 border-green-600"
-              : "bg-gray-900/80 border-gray-600",
-          ].join(" ")}
-          whileHover={{ scale: 1.06 }}
-          whileTap={{ scale: 0.96 }}
-          transition={{ type: "spring", stiffness: 420, damping: 30 }}
-          title={isSelected ? "Remove from compare" : `Select for compare (max ${maxCompare})`}
-          aria-label={isSelected ? "Remove from compare" : "Select for compare"}
-          aria-pressed={isSelected}
-        >
-          {isSelected && (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-4 h-4 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={3}
-              aria-hidden="true"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </motion.button>
-
-        {/* Save / unsave */}
-        <div className="relative">
-          {/* Shockwave ring */}
-          <AnimatePresence>
-            {pulse && (
-              <motion.div
-                key="shock"
-                aria-hidden="true"
-                className="absolute inset-0 rounded-full border border-white/30"
-                initial={{ scale: 0.7, opacity: 0.7 }}
-                animate={{ scale: 1.9, opacity: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: "tween", duration: 0.55, ease: "easeOut" }}
-              />
-            )}
-          </AnimatePresence>
-
-          <motion.button
-            type="button"
-            onClick={toggleSave}
-            className={[
-              "relative w-9 h-9 rounded-full border flex items-center justify-center",
-              isSaved
-                ? "border-red-500/60 bg-gray-900/70"
-                : "border-gray-600 bg-gray-900/60",
-              saving ? "opacity-60 cursor-not-allowed" : "",
-            ].join(" ")}
-            whileTap={{ scale: 0.92 }}
-            animate={
-              pulse
-                ? { scale: [1, 1.12, 1], rotate: [0, -7, 7, 0] }
-                : { scale: 1, rotate: 0 }
-            }
-            transition={
-              pulse
-                ? { type: "tween", duration: 0.28, ease: "easeOut" }
-                : { type: "spring", stiffness: 520, damping: 18 }
-            }
-            title={isSaved ? "Unsave" : "Save"}
-            aria-label={isSaved ? "Unsave stack" : "Save stack"}
-            aria-pressed={isSaved}
-            disabled={saving}
-          >
-            <FaHeart
-              size={18}
-              className={isSaved ? "text-red-500" : "text-gray-300"}
-            />
-          </motion.button>
-        </div>
-      </div>
-
-      {/* ── Product image ── */}
-      <div className="relative z-[1] w-full aspect-[4/3] overflow-hidden">
+      {/* ── Image ─────────────────────────────────────────────────────────── */}
+      <div className="relative w-full overflow-hidden" style={{ aspectRatio: "4/3" }}>
         {stack?.imageUrl ? (
           <>
             <img
               src={stack.imageUrl}
               alt={stack?.name || "Stack image"}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-500"
+              style={{ transformOrigin: "center" }}
               loading="lazy"
               onError={(e) => { e.currentTarget.src = "/fallback-image.svg"; }}
             />
+            {/* Gradient — lighter than before so the image breathes */}
             <div
               aria-hidden="true"
-              className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent"
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 40%, rgba(13,17,23,0.8) 100%)",
+              }}
             />
           </>
         ) : (
-          <div className="h-full w-full bg-gray-700 flex items-center justify-center text-gray-300 text-sm">
-            No Image Available
+          /* No-image placeholder — consistent with dark aesthetic */
+          <div
+            className="h-full w-full flex flex-col items-center justify-center gap-2"
+            style={{ background: "rgba(255,255,255,0.02)" }}
+          >
+            <FaCapsules size={28} style={{ color: "rgba(255,255,255,0.15)" }} aria-hidden="true" />
+            <p className="text-[11px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.2)" }}>
+              No image
+            </p>
           </div>
         )}
+
+        {/* Category chip — bottom-left of image */}
+        {stack?.category && (
+          <div
+            className="absolute bottom-2.5 left-2.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest"
+            style={{
+              background:     "rgba(13,17,23,0.78)",
+              border:         "1px solid rgba(255,255,255,0.1)",
+              backdropFilter: "blur(6px)",
+              color:          "rgba(255,255,255,0.55)",
+              fontFamily:     "'Barlow Condensed', sans-serif",
+            }}
+            aria-label={`Category: ${stack.category}`}
+          >
+            {stack.category}
+          </div>
+        )}
+
+        {/* ── Overlay controls (top row) ── */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
+
+          {/* Compare toggle */}
+          <motion.button
+            type="button"
+            onClick={toggleCompare}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
+            style={{
+              background:  isSelected ? "#5B9EC9" : "rgba(13,17,23,0.72)",
+              border:      isSelected ? "1px solid rgba(91,158,201,0.6)" : "1px solid rgba(255,255,255,0.15)",
+              backdropFilter: "blur(6px)",
+              boxShadow:   isSelected ? "0 0 12px rgba(91,158,201,0.4)" : "none",
+            }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.94 }}
+            title={isSelected ? "Remove from compare" : `Compare (max ${maxCompare})`}
+            aria-label={isSelected ? "Remove from compare" : "Select for compare"}
+            aria-pressed={isSelected}
+          >
+            {isSelected ? (
+              <svg
+                viewBox="0 0 24 24"
+                className="w-3.5 h-3.5 text-white"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={3}
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              /* Columns icon — represents "compare" */
+              <svg
+                viewBox="0 0 24 24"
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                style={{ color: "rgba(255,255,255,0.55)" }}
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h4M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M9 3v18M15 3v18" />
+              </svg>
+            )}
+          </motion.button>
+
+          {/* Save / unsave */}
+          <div className="relative">
+            {/* Shockwave ring */}
+            <AnimatePresence>
+              {pulse && (
+                <motion.div
+                  key="shock"
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full border border-white/30"
+                  initial={{ scale: 0.7, opacity: 0.7 }}
+                  animate={{ scale: 2.0, opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ type: "tween", duration: 0.55, ease: "easeOut" }}
+                />
+              )}
+            </AnimatePresence>
+
+            <motion.button
+              type="button"
+              onClick={toggleSave}
+              className="relative w-8 h-8 rounded-full flex items-center justify-center"
+              style={{
+                background:     isSaved ? "rgba(239,68,68,0.2)" : "rgba(13,17,23,0.72)",
+                border:         isSaved ? "1px solid rgba(239,68,68,0.45)" : "1px solid rgba(255,255,255,0.15)",
+                backdropFilter: "blur(6px)",
+                opacity:        saving ? 0.5 : 1,
+                cursor:         saving ? "not-allowed" : "pointer",
+              }}
+              whileTap={{ scale: 0.92 }}
+              animate={
+                pulse
+                  ? { scale: [1, 1.12, 1], rotate: [0, -7, 7, 0] }
+                  : { scale: 1, rotate: 0 }
+              }
+              transition={
+                pulse
+                  ? { type: "tween", duration: 0.28, ease: "easeOut" }
+                  : { type: "spring", stiffness: 520, damping: 18 }
+              }
+              aria-label={isSaved ? "Unsave stack" : "Save stack"}
+              aria-pressed={isSaved}
+              disabled={saving}
+            >
+              <FaHeart
+                size={13}
+                style={{ color: isSaved ? "#ef4444" : "rgba(255,255,255,0.5)" }}
+              />
+            </motion.button>
+          </div>
+        </div>
       </div>
 
-      {/* ── Content ── */}
-      <div className="relative z-[1] px-4 py-4 sm:p-5 flex flex-col flex-1">
+      {/* ── Card body ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 px-3.5 pt-3 pb-3.5 gap-2.5">
 
         {/* Product name */}
-        <h3 className="text-lg md:text-xl xl:text-lg font-bold text-white leading-tight line-clamp-2">
+        <h3
+          className="text-base font-bold text-white leading-snug line-clamp-2"
+          style={{
+            fontFamily:    "'Barlow Condensed', sans-serif",
+            letterSpacing: "0.02em",
+            fontSize:      "clamp(0.9rem, 1.5vw, 1.05rem)",
+          }}
+        >
           {stack?.name || "Untitled Stack"}
         </h3>
 
         {/* Supplement pills */}
         {suppPreview.length > 0 && (
-          <div className="mt-2.5 sm:mt-3 max-h-[64px] overflow-hidden">
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              {suppPreview.map((supp) => (
-                <span
-                  key={supp}
-                  className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-white/10 border border-white/10 rounded-full text-[11px] sm:text-xs text-white font-medium shadow-sm"
-                  title={supp}
-                >
-                  <span className="opacity-90" aria-hidden="true">
-                    {SUPPLEMENT_ICONS[supp] ?? <FaCapsules />}
-                  </span>
-                  <span className="truncate max-w-[120px] sm:max-w-[140px]">
-                    {supp}
-                  </span>
+          <div className="flex flex-wrap gap-1">
+            {suppPreview.map((supp) => (
+              <span
+                key={supp}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md"
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  border:     "1px solid rgba(255,255,255,0.08)",
+                  color:      "rgba(255,255,255,0.65)",
+                }}
+                title={supp}
+              >
+                <span className="shrink-0" style={{ fontSize: 9, color: "rgba(255,255,255,0.4)" }} aria-hidden="true">
+                  {SUPPLEMENT_ICONS[supp] ?? <FaCapsules />}
                 </span>
-              ))}
-
-              {suppMore > 0 && (
-                <span className="px-2.5 py-1 sm:px-3 sm:py-1 bg-white/5 border border-white/10 rounded-full text-[11px] sm:text-xs text-white/80 font-semibold">
-                  +{suppMore} more
-                </span>
-              )}
-            </div>
+                <span className="truncate max-w-[90px]">{supp}</span>
+              </span>
+            ))}
+            {suppMore > 0 && (
+              <span
+                className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-md"
+                style={{
+                  background: "rgba(91,158,201,0.08)",
+                  border:     "1px solid rgba(91,158,201,0.18)",
+                  color:      "rgba(91,158,201,0.8)",
+                }}
+              >
+                +{suppMore}
+              </span>
+            )}
           </div>
         )}
 
         {/* Value badge */}
         {stack?.valueScore != null && !isNaN(stack.valueScore) && (
-          <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
+          <div>
             <ValueBadge valueScore={stack.valueScore} category={stack.category} />
           </div>
         )}
 
-        {/* Notes */}
+        {/* Notes — only if present, as a subtle line */}
         {stack?.notes && (
-          <p className="text-gray-200/90 text-sm mt-2.5 sm:mt-3 line-clamp-2">
+          <p
+            className="text-[11px] leading-relaxed line-clamp-2"
+            style={{ color: "rgba(255,255,255,0.45)", fontStyle: "italic" }}
+          >
             {stack.notes}
           </p>
         )}
 
-        {/* Auth toast — inline CTA when unauthenticated user tries to save */}
+        {/* Auth toast */}
         <AnimatePresence>
           {authToastOpen && (
             <motion.div
               key="authToast"
-              className="mt-3 sm:mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/45 backdrop-blur px-4 py-3 text-white"
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              className="overflow-hidden rounded-xl border"
+              style={{
+                background:  "rgba(13,17,23,0.92)",
+                border:      "1px solid rgba(255,255,255,0.1)",
+                backdropFilter: "blur(8px)",
+              }}
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
               role="status"
               aria-live="polite"
             >
-              <div className="flex items-start gap-3">
-                {/* Lock icon */}
+              <div className="px-3 py-2.5 flex items-start gap-2.5">
                 <div
+                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5"
+                  style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)" }}
                   aria-hidden="true"
-                  className="shrink-0 w-9 h-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center"
                 >
-                  <FaLock className="text-white/90" />
+                  <FaLock size={11} style={{ color: "rgba(255,255,255,0.7)" }} />
                 </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-extrabold leading-tight">
+                      <p className="text-xs font-bold text-white leading-tight">
                         Sign in to save stacks
                       </p>
-                      <p className="text-[12px] text-white/80 mt-0.5 leading-snug">
-                        Your favorites sync across devices in SmartStack.
+                      <p className="text-[11px] mt-0.5 leading-snug" style={{ color: "rgba(255,255,255,0.5)" }}>
+                        Your picks sync across devices.
                       </p>
                     </div>
-
                     <button
                       type="button"
-                      className="shrink-0 p-2 -m-2 text-white/70 hover:text-white transition-colors"
                       onClick={() => setAuthToastOpen(false)}
-                      aria-label="Dismiss sign-in prompt"
+                      className="shrink-0 -mt-0.5"
+                      style={{ color: "rgba(255,255,255,0.35)" }}
+                      aria-label="Dismiss"
                     >
-                      <FaTimes />
+                      <FaTimes size={10} />
                     </button>
                   </div>
 
-                  {/* Auth action buttons */}
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 flex gap-1.5">
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-2 text-xs font-semibold transition-colors"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white transition-all"
+                      style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}
                       onClick={() => openLogin("save_stack")}
                     >
-                      <FaSignInAlt aria-hidden="true" />
+                      <FaSignInAlt size={9} aria-hidden="true" />
                       Sign in
                     </button>
-
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-xl bg-[#46769B] hover:bg-[#375b7a] px-3 py-2 text-xs font-semibold text-white transition-colors"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-white transition-all"
+                      style={{ background: "#5B9EC9", border: "1px solid rgba(91,158,201,0.5)" }}
                       onClick={() => openLogin("save_stack")}
                     >
                       Create account
@@ -579,13 +615,15 @@ export default function StackCard({
                 </div>
               </div>
 
-              {/* Auto-dismiss progress bar */}
+              {/* Auto-dismiss bar */}
               <motion.div
                 aria-hidden="true"
-                className="mt-3 h-1 w-full rounded-full bg-white/10 overflow-hidden"
+                className="h-0.5 w-full overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.06)" }}
               >
                 <motion.div
-                  className="h-full rounded-full bg-white/40"
+                  className="h-full"
+                  style={{ background: "#5B9EC9" }}
                   initial={{ width: "100%" }}
                   animate={{ width: "0%" }}
                   transition={{ type: "tween", duration: 3.2, ease: "linear" }}
@@ -596,60 +634,97 @@ export default function StackCard({
         </AnimatePresence>
 
         {/* ── Action buttons ── */}
-        <div className="mt-auto pt-3 sm:pt-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            {stack?.affiliateLink && (
-              <a
-                href={stack.affiliateLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full sm:w-auto px-4 py-2 bg-[#46769B] hover:bg-[#375b7a] rounded-2xl text-white text-sm font-semibold shadow-sm transition-colors text-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                View on Amazon
-              </a>
-            )}
+        <div className="mt-auto pt-1 flex flex-col gap-1.5">
 
-            <button
-              type="button"
-              onClick={handleViewNutrition}
-              disabled={!canOpenModal}
-              className={[
-                "w-full sm:w-auto px-4 py-2 rounded-2xl text-sm font-semibold transition-colors text-center",
-                canOpenModal
-                  ? "bg-white/10 hover:bg-white/15 text-white"
-                  : "bg-white/5 text-white/60 cursor-not-allowed",
-              ].join(" ")}
+          {/* Primary: View Nutrition — full width, always present */}
+          <button
+            type="button"
+            onClick={handleViewNutrition}
+            disabled={!canOpenModal}
+            className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all"
+            style={{
+              background:    canOpenModal ? "rgba(91,158,201,0.15)" : "rgba(255,255,255,0.04)",
+              border:        canOpenModal ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.06)",
+              color:         canOpenModal ? "#5B9EC9" : "rgba(255,255,255,0.25)",
+              cursor:        canOpenModal ? "pointer" : "not-allowed",
+              fontFamily:    "'Barlow Condensed', sans-serif",
+              letterSpacing: "0.08em",
+            }}
+            onMouseEnter={(e) => {
+              if (!canOpenModal) return;
+              e.currentTarget.style.background   = "rgba(91,158,201,0.22)";
+              e.currentTarget.style.borderColor  = "rgba(91,158,201,0.5)";
+            }}
+            onMouseLeave={(e) => {
+              if (!canOpenModal) return;
+              e.currentTarget.style.background  = "rgba(91,158,201,0.15)";
+              e.currentTarget.style.borderColor = "rgba(91,158,201,0.3)";
+            }}
+          >
+            {canOpenModal ? "Scan Label" : "No label available"}
+          </button>
+
+          {/* Secondary: Buy link — only rendered when present */}
+          {stack?.affiliateLink && (
+            <a
+              href={stack.affiliateLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2 rounded-xl text-xs font-semibold text-center transition-all"
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                border:     "1px solid rgba(255,255,255,0.08)",
+                color:      "rgba(255,255,255,0.55)",
+                fontFamily: "'Barlow Condensed', sans-serif",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background  = "rgba(255,255,255,0.07)";
+                e.currentTarget.style.color       = "rgba(255,255,255,0.85)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background  = "rgba(255,255,255,0.04)";
+                e.currentTarget.style.color       = "rgba(255,255,255,0.55)";
+              }}
             >
-              View Nutrition
-            </button>
-          </div>
+              View on Amazon
+            </a>
+          )}
 
-          {/* Compare status hint */}
-          <p className="mt-2 text-white/55 text-[11px] sm:text-xs">
+          {/* Compare status */}
+          <p
+            className="text-[10px] text-center mt-0.5"
+            style={{ color: isSelected ? "rgba(91,158,201,0.7)" : "rgba(255,255,255,0.22)" }}
+          >
             {isSelected
-              ? `Selected for comparison (${selectedCompareStacks.length}/${maxCompare})`
-              : `Click ✓ to compare (up to ${maxCompare})`}
+              ? `In comparison (${selectedCompareStacks.length}/${maxCompare})`
+              : `Add to compare`
+            }
           </p>
-
-          {/* Banner message — aria-live so screen readers announce it */}
-          <AnimatePresence>
-            {banner && (
-              <motion.div
-                key={banner}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="mt-2 inline-flex w-fit max-w-full items-center rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 text-[11px] sm:text-xs text-white"
-                role="status"
-                aria-live="polite"
-              >
-                {banner}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
+
+        {/* Banner */}
+        <AnimatePresence>
+          {banner && (
+            <motion.p
+              key={banner}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="text-[10px] text-center rounded-lg px-2 py-1.5"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border:     "1px solid rgba(255,255,255,0.08)",
+                color:      "rgba(255,255,255,0.6)",
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              {banner}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );

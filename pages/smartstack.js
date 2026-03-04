@@ -1,7 +1,7 @@
 // pages/smartstack.js
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuthContext } from "../hooks/useAuth";
 import useMediaQuery from "../hooks/useMediaQuery";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,7 +20,7 @@ import NutritionModal from "../components/Modal/NutritionModal";
 import CompareModal from "../components/Modal/CompareModal";
 
 /* -------------------------------------------------------------------------- */
-/* Debounce Hook                                                              */
+/* Debounce Hook                                                               */
 /* -------------------------------------------------------------------------- */
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -32,88 +32,135 @@ function useDebounce(value, delay) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Value Score → Label Helper                                                 */
+/* Static data — outside component so they're never recreated on render       */
+/* -------------------------------------------------------------------------- */
+const CATEGORIES = [
+  { name: "All",            icon: null           },
+  { name: "Pre-Workout",    icon: <FaBolt />      },
+  { name: "Protein Powder", icon: <FaDumbbell />  },
+  { name: "Energy Drinks",  icon: <FaCoffee />    },
+  { name: "Protein Bars",   icon: <FaAppleAlt />  },
+  { name: "BCAAs",          icon: <FaLeaf />      },
+  { name: "Creatine",       icon: <FaCapsules />  },
+  { name: "Misc",           icon: <FaCapsules />  },
+];
+
+const VALUE_FILTERS = ["Best Value", "Good Value", "Decent Value"];
+
+// All categories share the same thresholds — no need for a per-category lookup.
+const VALUE_THRESHOLD_GOOD = 0.8;
+const VALUE_THRESHOLD_BEST = 1.5;
+
+/* -------------------------------------------------------------------------- */
+/* Value Score → Label Helper                                                  */
 /* -------------------------------------------------------------------------- */
 function getValueLabel(stack) {
-  if (stack.valueScore == null || isNaN(stack.valueScore)) return "Decent Value";
-
-  const thresholds = {
-    "Pre-Workout": { good: 0.8, best: 1.5 },
-    "Protein Powder": { good: 0.8, best: 1.5 },
-    "Energy Drinks": { good: 0.8, best: 1.5 },
-    "Protein Bars": { good: 0.8, best: 1.5 },
-    BCAAs: { good: 0.8, best: 1.5 },
-    Creatine: { good: 0.8, best: 1.5 },
-    Misc: { good: 0.8, best: 1.5 },
-  };
-
-  const t = thresholds[stack.category] || { good: 0.8, best: 1.5 };
-  if (stack.valueScore >= t.best) return "Best Value";
-  if (stack.valueScore >= t.good) return "Good Value";
+  const score = stack.valueScore;
+  if (score == null || isNaN(score)) return "Decent Value";
+  if (score >= VALUE_THRESHOLD_BEST) return "Best Value";
+  if (score >= VALUE_THRESHOLD_GOOD) return "Good Value";
   return "Decent Value";
 }
 
 /* -------------------------------------------------------------------------- */
-/* SmartStack Page                                                            */
+/* SmartStack Page                                                             */
 /* -------------------------------------------------------------------------- */
 export default function SmartStackPage() {
   const { user } = useAuthContext();
 
-  // ✅ Normalize once
+  // Normalise user email once
   const userEmail = (user?.Email || user?.email || "")
     .toString()
     .trim()
     .toLowerCase();
   const hasUserEmail = userEmail.includes("@");
 
-  // Data
-  const [allStacks, setAllStacks] = useState([]); // all SmartStack records
-  const [filteredStacks, setFilteredStacks] = useState([]);
-  const [savedStacks, setSavedStacks] = useState([]); // raw saved records from SavedStacks table
-  const [savedStackIDs, setSavedStackIDs] = useState([]); // derived list of SmartStack IDs (strings)
+  // ── Data ──────────────────────────────────────────────────────────────────
+  const [allStacks,    setAllStacks]    = useState([]);
+  const [savedStacks,  setSavedStacks]  = useState([]);
+  const [loadError,    setLoadError]    = useState(null); // surface API failures
 
-  // UI state
-  const [modalStack, setModalStack] = useState(null);
-  const [compareModalOpen, setCompareModalOpen] = useState(false);
-  const [selectedCompareStacks, setSelectedCompareStacks] = useState([]);
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [modalStack,             setModalStack]             = useState(null);
+  const [compareModalOpen,       setCompareModalOpen]       = useState(false);
+  const [selectedCompareStacks,  setSelectedCompareStacks]  = useState([]);
 
-  const [loading, setLoading] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [loading,            setLoading]            = useState(false);
+  const [activeCategory,     setActiveCategory]     = useState("All");
   const [activeValueFilters, setActiveValueFilters] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [searchQuery,        setSearchQuery]        = useState("");
+  const [showSavedOnly,      setShowSavedOnly]      = useState(false);
 
-  // Responsive chunk sizing to avoid "orphan" last-row cards
-  const isXL = useMediaQuery("(min-width: 1280px)"); // Tailwind xl
-  const itemsPerChunk = isXL ? 25 : 24; // 5x5 on xl, 4x6 on lg
+  // Responsive chunk sizing — avoids orphan cards on last row
+  const isXL         = useMediaQuery("(min-width: 1280px)");
+  const itemsPerChunk = isXL ? 25 : 24;
   const [visibleLimit, setVisibleLimit] = useState(itemsPerChunk);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
+  // ── Derived: savedStackIDs ─────────────────────────────────────────────────
+  // Memoised so downstream filters only recompute when savedStacks changes.
+  const savedStackIDs = useMemo(
+    () =>
+      (savedStacks || []).flatMap((s) => {
+        const raw = s?.StackID;
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+        return [String(raw)];
+      }),
+    [savedStacks]
+  );
+
+  // ── Derived: compare guard ─────────────────────────────────────────────────
+  const compareCount = selectedCompareStacks.length;
+  const canCompare   = compareCount >= 2 && compareCount <= 3;
+
+  // ── Derived: AnimatePresence key ──────────────────────────────────────────
+  // A single stable key built from all active filter state. Adding a new
+  // filter here is the only change needed — no fragile string concatenation.
+  const gridKey = useMemo(
+    () =>
+      JSON.stringify({
+        cat:   activeCategory,
+        val:   [...activeValueFilters].sort(), // sort for stability
+        q:     debouncedSearchQuery.toLowerCase(),
+        saved: showSavedOnly,
+        limit: visibleLimit,
+      }),
+    [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, visibleLimit]
+  );
+
   /* ------------------------------------------------------------------------ */
-  /* Load all SmartStack records                                              */
+  /* Load all SmartStack records                                               */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
+    let cancelled = false;
+
     async function loadStacks() {
       setLoading(true);
+      setLoadError(null);
       try {
         const res = await fetch("/api/smartstack");
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
         const data = await res.json();
-        const records = data.records || [];
-        setAllStacks(records);
-        setFilteredStacks(records);
+        if (!cancelled) {
+          const records = data.records || [];
+          setAllStacks(records);
+        }
       } catch (err) {
         console.error("[SmartStack] Failed to load SmartStack data:", err);
+        if (!cancelled) setLoadError("Failed to load stacks. Please refresh and try again.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     loadStacks();
+    return () => { cancelled = true; };
   }, []);
 
   /* ------------------------------------------------------------------------ */
-  /* Load saved stacks for the current user                                   */
+  /* Load saved stacks for current user                                        */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
     if (!hasUserEmail) {
@@ -121,128 +168,89 @@ export default function SmartStackPage() {
       return;
     }
 
+    let cancelled = false;
+
     async function loadSaved() {
       try {
-        const resSaved = await fetch(
+        const res = await fetch(
           `/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}&t=${Date.now()}`
         );
-        const savedData = resSaved.ok
-          ? await resSaved.json()
-          : { savedStacks: [] };
-
-        setSavedStacks(savedData.savedStacks || []);
+        const data = res.ok ? await res.json() : { savedStacks: [] };
+        if (!cancelled) setSavedStacks(data.savedStacks || []);
       } catch (err) {
         console.error("[SmartStack] Error loading saved stacks:", err);
-        setSavedStacks([]);
+        if (!cancelled) setSavedStacks([]);
       }
     }
 
     loadSaved();
+    return () => { cancelled = true; };
   }, [hasUserEmail, userEmail]);
 
   /* ------------------------------------------------------------------------ */
-  /* Derive savedStackIDs from savedStacks                                    */
+  /* Reset visible limit when filters change                                   */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    const ids = (savedStacks || []).flatMap((s) => {
-      const raw = s?.StackID;
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw.filter(Boolean).map((id) => String(id));
-      return [String(raw)];
-    });
-
-    setSavedStackIDs(ids);
-  }, [savedStacks]);
+    setVisibleLimit(itemsPerChunk);
+  }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
 
   /* ------------------------------------------------------------------------ */
-  /* Filtering                                                                */
+  /* Filtered stacks — memoised, no separate useEffect needed                 */
   /* ------------------------------------------------------------------------ */
-  useEffect(() => {
+  const filteredStacks = useMemo(() => {
     let result = allStacks;
 
-    // Category filter
     if (activeCategory !== "All") {
-      result = result.filter((stack) => stack.category === activeCategory);
+      result = result.filter((s) => s.category === activeCategory);
     }
 
-    // Value filters
     if (activeValueFilters.length > 0) {
-      result = result.filter((stack) =>
-        activeValueFilters.includes(getValueLabel(stack))
-      );
+      result = result.filter((s) => activeValueFilters.includes(getValueLabel(s)));
     }
 
-    // Saved-only filter (fixed: if none saved, show none)
     if (showSavedOnly) {
-      if (savedStackIDs.length === 0) result = [];
-      else result = result.filter((stack) => savedStackIDs.includes(String(stack.id)));
+      result = savedStackIDs.length === 0
+        ? []
+        : result.filter((s) => savedStackIDs.includes(String(s.id)));
     }
 
-    // Search filter
     if (debouncedSearchQuery) {
       const q = debouncedSearchQuery.toLowerCase();
-      result = result.filter((stack) =>
-        stack.name?.toLowerCase().includes(q)
-      );
+      result = result.filter((s) => s.name?.toLowerCase().includes(q));
     }
 
-    setFilteredStacks(result);
-  }, [
-    allStacks,
-    activeCategory,
-    activeValueFilters,
-    debouncedSearchQuery,
-    showSavedOnly,
-    savedStackIDs,
-  ]);
+    return result;
+  }, [allStacks, activeCategory, activeValueFilters, showSavedOnly, savedStackIDs, debouncedSearchQuery]);
 
   /* ------------------------------------------------------------------------ */
-  /* Reset visibleLimit ONLY when filters/search toggle/change                */
+  /* Pagination derivation                                                     */
   /* ------------------------------------------------------------------------ */
-  useEffect(() => {
-  setVisibleLimit(itemsPerChunk);
-    }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
+  const totalCount   = allStacks.length;
+  const visibleCount = filteredStacks.length;
+
+  const effectiveLimit = visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
+  const pageStacks     = filteredStacks.slice(0, effectiveLimit);
+  const canLoadMore    = effectiveLimit < visibleCount;
+
+  const humanStart = visibleCount === 0 ? 0 : 1;
+  const humanEnd   = effectiveLimit;
+
+  const handleLoadMore = () => setVisibleLimit((prev) => prev + itemsPerChunk);
 
   /* ------------------------------------------------------------------------ */
-  /* Filter UI config                                                          */
+  /* Filter helpers                                                            */
   /* ------------------------------------------------------------------------ */
-  const categories = [
-    { name: "All", icon: null },
-    { name: "Pre-Workout", icon: <FaBolt /> },
-    { name: "Protein Powder", icon: <FaDumbbell /> },
-    { name: "Energy Drinks", icon: <FaCoffee /> },
-    { name: "Protein Bars", icon: <FaAppleAlt /> },
-    { name: "BCAAs", icon: <FaLeaf /> },
-    { name: "Creatine", icon: <FaCapsules /> },
-    { name: "Misc", icon: <FaCapsules /> },
-  ];
-
-  const valueFilters = ["Best Value", "Good Value", "Decent Value"];
-
   const toggleValueFilter = (label) => {
     setActiveValueFilters((prev) =>
-      prev.includes(label)
-        ? prev.filter((l) => l !== label)
-        : [...prev, label]
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
     );
   };
 
-  const totalCount = allStacks.length;
-  const visibleCount = filteredStacks.length;
-
-  /* ------------------------------------------------------------------------ */
-  /* "Load more" pagination derivation                                         */
-  /* ------------------------------------------------------------------------ */
-  const effectiveLimit =
-    visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
-  const pageStacks = filteredStacks.slice(0, effectiveLimit);
-  const canLoadMore = effectiveLimit < visibleCount;
-
-  const humanStart = visibleCount === 0 ? 0 : 1;
-  const humanEnd = effectiveLimit;
-
-  const handleLoadMore = () => {
-    setVisibleLimit((prev) => prev + itemsPerChunk);
+  const clearAllFilters = () => {
+    setActiveCategory("All");
+    setActiveValueFilters([]);
+    setShowSavedOnly(false);
+    setSearchQuery("");
   };
 
   /* ------------------------------------------------------------------------ */
@@ -251,7 +259,8 @@ export default function SmartStackPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
       <main className="mx-auto max-w-7xl px-4 pt-10 pb-20 space-y-10">
-        {/* Header */}
+
+        {/* ── Header ── */}
         <section className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-300 font-medium">
@@ -259,7 +268,7 @@ export default function SmartStackPage() {
             </span>
 
             <h1 className="mt-3 text-3xl font-semibold text-white tracking-tight">
-              Discover better supplement stacks — built on value & transparency.
+              Discover better supplement stacks — built on value &amp; transparency.
             </h1>
 
             <p className="mt-2 max-w-xl text-sm text-gray-400 leading-relaxed">
@@ -270,49 +279,43 @@ export default function SmartStackPage() {
             </p>
           </div>
 
-          <div className="text-[11px] text-gray-500 text-right">
+          {/* Meta counts */}
+          <div className="text-[11px] text-gray-500 text-right shrink-0">
             {totalCount > 0 && (
               <>
                 <p>
                   Loaded from catalog:{" "}
-                  <span className="font-semibold text-emerald-300">
-                    {totalCount}
-                  </span>{" "}
-                  stacks
+                  <span className="font-semibold text-emerald-300">{totalCount}</span> stacks
                 </p>
                 {visibleCount > 0 && (
                   <p className="mt-1">
                     Matching current filters:{" "}
-                    <span className="font-semibold text-gray-300">
-                      {visibleCount}
-                    </span>
+                    <span className="font-semibold text-gray-300">{visibleCount}</span>
                   </p>
                 )}
                 {hasUserEmail && (
-                  <p className="mt-1">
-                    Viewing as{" "}
-                    <span className="font-semibold text-gray-300">
-                      {userEmail}
-                    </span>
-                  </p>
-                )}
-                {hasUserEmail && (
-                  <p className="mt-1 text-gray-600">
-                    Saved stacks linked:{" "}
-                    <span className="font-semibold">
-                      {savedStackIDs.length}
-                    </span>
-                  </p>
+                  <>
+                    <p className="mt-1">
+                      Viewing as{" "}
+                      <span className="font-semibold text-gray-300">{userEmail}</span>
+                    </p>
+                    <p className="mt-1 text-gray-600">
+                      Saved stacks linked:{" "}
+                      <span className="font-semibold">{savedStackIDs.length}</span>
+                    </p>
+                  </>
                 )}
               </>
             )}
           </div>
         </section>
 
-        {/* Filters Panel */}
+        {/* ── Filters Panel ── */}
         <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 space-y-6">
+
           {/* Search + Saved Toggle */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
             {/* Search */}
             <div className="w-full sm:max-w-md">
               <label
@@ -352,11 +355,10 @@ export default function SmartStackPage() {
                     : "border-gray-700 bg-gray-900 text-gray-300 hover:border-emerald-400/70 hover:text-emerald-200"
                 }`}
               >
-                {showSavedOnly ? (
-                  <FaStar className="text-emerald-300" size={12} />
-                ) : (
-                  <FaRegStar className="text-gray-400" size={12} />
-                )}
+                {showSavedOnly
+                  ? <FaStar    className="text-emerald-300" size={12} />
+                  : <FaRegStar className="text-gray-400"    size={12} />
+                }
                 {showSavedOnly ? "Showing saved" : "Show saved only"}
               </button>
             </div>
@@ -368,7 +370,7 @@ export default function SmartStackPage() {
               Categories
             </p>
             <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => {
+              {CATEGORIES.map((cat) => {
                 const active = activeCategory === cat.name;
                 return (
                   <motion.button
@@ -383,9 +385,7 @@ export default function SmartStackPage() {
                         : "border-gray-700 bg-gray-950 text-gray-300 hover:border-emerald-400/60 hover:text-emerald-200"
                     }`}
                   >
-                    {cat.icon && (
-                      <span className="text-[13px]">{cat.icon}</span>
-                    )}
+                    {cat.icon && <span className="text-[13px]">{cat.icon}</span>}
                     <span>{cat.name}</span>
                   </motion.button>
                 );
@@ -399,10 +399,10 @@ export default function SmartStackPage() {
               Value signal
             </p>
             <div className="flex flex-wrap gap-2">
-              {valueFilters.map((filter) => {
+              {VALUE_FILTERS.map((filter) => {
                 const active = activeValueFilters.includes(filter);
 
-                const activeStyles =
+                const activeClass =
                   filter === "Best Value"
                     ? "bg-gradient-to-r from-emerald-500 to-emerald-400 text-white shadow-md"
                     : filter === "Good Value"
@@ -418,7 +418,7 @@ export default function SmartStackPage() {
                     whileTap={{ scale: 0.96 }}
                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                       active
-                        ? activeStyles
+                        ? activeClass
                         : "border border-gray-700 bg-gray-950 text-gray-300 hover:border-emerald-400/60 hover:text-emerald-200"
                     }`}
                   >
@@ -428,45 +428,41 @@ export default function SmartStackPage() {
               })}
             </div>
           </div>
+
         </section>
 
-        {/* Results Grid + Range Summary + Load More */}
+        {/* ── Results ── */}
         <section>
+          {/* API error state */}
+          {loadError && !loading && (
+            <div className="mb-6 rounded-xl border border-red-800/50 bg-red-950/40 px-5 py-4 text-sm text-red-300">
+              {loadError}
+            </div>
+          )}
+
           {loading ? (
             <div className="py-16 text-center text-sm text-gray-300">
               Loading SmartStack…
             </div>
           ) : (
             <>
-              {/* Summary above grid */}
+              {/* Range summary */}
               {visibleCount > 0 && (
                 <div className="mb-3 text-xs text-gray-500">
                   Showing{" "}
-                  <span className="font-semibold text-gray-200">
-                    {humanStart}
-                  </span>{" "}
-                  –{" "}
-                  <span className="font-semibold text-gray-200">
-                    {humanEnd}
-                  </span>{" "}
-                  of{" "}
-                  <span className="font-semibold text-gray-200">
-                    {visibleCount}
-                  </span>{" "}
-                  matching stacks
+                  <span className="font-semibold text-gray-200">{humanStart}</span>
+                  {" "}–{" "}
+                  <span className="font-semibold text-gray-200">{humanEnd}</span>
+                  {" "}of{" "}
+                  <span className="font-semibold text-gray-200">{visibleCount}</span>
+                  {" "}matching stacks
                 </div>
               )}
 
               <AnimatePresence mode="wait">
                 {pageStacks.length > 0 ? (
                   <motion.div
-                    key={
-                      activeCategory +
-                      activeValueFilters.join(",") +
-                      debouncedSearchQuery.toLowerCase() +
-                      showSavedOnly +
-                      `-limit-${effectiveLimit}`
-                    }
+                    key={gridKey}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
@@ -487,27 +483,25 @@ export default function SmartStackPage() {
                     ))}
                   </motion.div>
                 ) : (
-                  <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/70 px-5 py-8 text-center text-sm text-gray-400">
-                    <p className="font-medium text-gray-200 mb-1">
-                      No stacks match your filters.
-                    </p>
-                    <p className="mb-3">
-                      Try clearing filters, searching by a broader term, or
-                      turning off the saved-only toggle.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveCategory("All");
-                        setActiveValueFilters([]);
-                        setShowSavedOnly(false);
-                        setSearchQuery("");
-                      }}
-                      className="inline-flex items-center rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
-                    >
-                      Clear all filters
-                    </button>
-                  </div>
+                  // Empty state — only shown when not loading and no API error
+                  !loadError && (
+                    <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/70 px-5 py-8 text-center text-sm text-gray-400">
+                      <p className="font-medium text-gray-200 mb-1">
+                        No stacks match your filters.
+                      </p>
+                      <p className="mb-3">
+                        Try clearing filters, searching by a broader term, or
+                        turning off the saved-only toggle.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="inline-flex items-center rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
+                      >
+                        Clear all filters
+                      </button>
+                    </div>
+                  )
                 )}
               </AnimatePresence>
 
@@ -519,43 +513,45 @@ export default function SmartStackPage() {
                     onClick={handleLoadMore}
                     className="rounded-full border border-gray-700 bg-gray-900 px-4 py-2 text-xs font-semibold text-gray-100 hover:border-emerald-400 hover:text-emerald-200"
                   >
-                    Load {Math.min(itemsPerChunk, visibleCount - effectiveLimit)}{" "}
-                    more stacks
+                    Load {Math.min(itemsPerChunk, visibleCount - effectiveLimit)} more stacks
                   </button>
-                  {!canLoadMore && visibleCount > 0 && (
-                <div className="mt-8 text-center text-xs text-gray-600">
-                  End of results — adjust filters to explore more.
                 </div>
               )}
+
+              {/* End of results — sibling to "load more", not nested inside it */}
+              {!canLoadMore && visibleCount > 0 && (
+                <div className="mt-8 text-center text-xs text-gray-600">
+                  End of results — adjust filters to explore more.
                 </div>
               )}
             </>
           )}
         </section>
+
       </main>
 
-      {/* Compare Bar */}
-      {selectedCompareStacks.length > 0 && (
+      {/* ── Compare Bar ── */}
+      {compareCount > 0 && (
         <>
           {/* Mobile full-width button */}
-          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-950/97 px-4 py-3 md:hidden shadow-[0_-4px_16px_rgba(0,0,0,0.6)]">
+          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-950/95 px-4 py-3 md:hidden shadow-[0_-4px_16px_rgba(0,0,0,0.6)]">
             <button
-              disabled={selectedCompareStacks.length < 2}
+              type="button"
+              disabled={!canCompare}
               onClick={() => setCompareModalOpen(true)}
               className={`w-full rounded-xl py-3 text-sm font-semibold text-white ${
-                selectedCompareStacks.length < 2
-                  ? "cursor-not-allowed bg-gray-700 opacity-60"
-                  : "bg-emerald-600 hover:bg-emerald-500 shadow-lg"
+                canCompare
+                  ? "bg-emerald-600 hover:bg-emerald-500 shadow-lg"
+                  : "cursor-not-allowed bg-gray-700 opacity-60"
               }`}
             >
-              Compare {selectedCompareStacks.length} Stack
-              {selectedCompareStacks.length > 1 ? "s" : ""}
+              Compare {compareCount} Stack{compareCount > 1 ? "s" : ""}
             </button>
           </div>
 
           {/* Desktop chip bar */}
           <motion.div
-            className="fixed bottom-4 left-1/2 z-50 hidden -translate-x-1/2 transform items-center gap-3 rounded-2xl border border-gray-800 bg-gray-950/95 px-4 py-2 shadow-lg backdrop-blur-sm sm:flex"
+            className="fixed bottom-4 left-1/2 z-50 hidden -translate-x-1/2 items-center gap-3 rounded-2xl border border-gray-800 bg-gray-950/95 px-4 py-2 shadow-lg backdrop-blur-sm sm:flex"
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
@@ -563,40 +559,36 @@ export default function SmartStackPage() {
             <span className="text-xs font-medium text-gray-300">
               Selected for compare:
             </span>
+
             {selectedCompareStacks.map((stack) => (
               <div
                 key={stack.id}
                 className="flex items-center gap-2 rounded-full bg-gray-900 px-3 py-1 text-xs"
               >
-                <span className="max-w-[140px] truncate font-medium">
-                  {stack.name}
-                </span>
+                <span className="max-w-[140px] truncate font-medium">{stack.name}</span>
                 <button
                   type="button"
-                  className="text-gray-400 hover:text-red-400"
+                  className="text-gray-400 hover:text-red-400 transition-colors"
                   onClick={() =>
                     setSelectedCompareStacks((prev) =>
                       prev.filter((s) => s.id !== stack.id)
                     )
                   }
-                  title="Remove from compare"
+                  aria-label={`Remove ${stack.name} from compare`}
                 >
                   ✕
                 </button>
               </div>
             ))}
+
             <button
               type="button"
-              disabled={
-                selectedCompareStacks.length < 2 ||
-                selectedCompareStacks.length > 3
-              }
+              disabled={!canCompare}
               onClick={() => setCompareModalOpen(true)}
-              className={`rounded-xl px-4 py-1.5 text-xs font-semibold text-white ${
-                selectedCompareStacks.length >= 2 &&
-                selectedCompareStacks.length <= 3
+              className={`rounded-xl px-4 py-1.5 text-xs font-semibold text-white transition ${
+                canCompare
                   ? "bg-emerald-600 hover:bg-emerald-500"
-                  : "bg-gray-700 cursor-not-allowed"
+                  : "bg-gray-700 cursor-not-allowed opacity-60"
               }`}
             >
               Compare now
@@ -605,7 +597,7 @@ export default function SmartStackPage() {
         </>
       )}
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       {modalStack && (
         <NutritionModal
           key={modalStack.id}
@@ -614,17 +606,15 @@ export default function SmartStackPage() {
         />
       )}
 
-      {compareModalOpen &&
-        selectedCompareStacks.length >= 2 &&
-        selectedCompareStacks.length <= 3 && (
-          <CompareModal
-            stacks={selectedCompareStacks}
-            onClose={() => {
-              setCompareModalOpen(false);
-              setSelectedCompareStacks([]);
-            }}
-          />
-        )}
+      {compareModalOpen && canCompare && (
+        <CompareModal
+          stacks={selectedCompareStacks}
+          onClose={() => {
+            setCompareModalOpen(false);
+            setSelectedCompareStacks([]);
+          }}
+        />
+      )}
     </div>
   );
 }

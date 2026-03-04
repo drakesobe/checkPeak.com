@@ -1,3 +1,4 @@
+// components/NavBar.jsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -8,166 +9,260 @@ import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
 
-function classNames(...xs) {
+/* -------------------------------------------------------------------------- */
+/* Utilities                                                                   */
+/* -------------------------------------------------------------------------- */
+
+// Consistent className helper — used throughout instead of ad-hoc .join(" ")
+function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+/* -------------------------------------------------------------------------- */
+/* Static data — outside component so they're never recreated on render       */
+/* -------------------------------------------------------------------------- */
+
+const ALL_TABS = [
+  { name: "Scan",       href: "/nutrition-label-scanner" },
+  { name: "Search",     href: "/search"                  },
+  { name: "Info",       href: "/info"                    },
+  { name: "NCAA Rules", href: "/compliance/ncaa"         },
+  { name: "SmartStack", href: "/smartstack", icon: "mountain" },
+];
+
+const DESKTOP_LEFT_TABS  = ALL_TABS.filter((t) => ["Scan", "Search", "Info", "NCAA Rules"].includes(t.name));
+const DESKTOP_RIGHT_TABS = ALL_TABS.filter((t) => ["SmartStack"].includes(t.name));
+const MOBILE_TABS        = ALL_TABS;
+
+// Mountain SVG fallback — inline so it never depends on a network request
+const MountainIconFallback = (
+  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+    <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
+  </svg>
+);
+
+/* -------------------------------------------------------------------------- */
+/* NavItem — extracted from component so React doesn't remount on each render */
+/* -------------------------------------------------------------------------- */
+function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) {
+  const active         = isActive(tab.href);
+  const isMountainTab  = tab.icon === "mountain"; // FIX: was checking tab.name === "mountain"
+
+  return (
+    <Link
+      href={tab.href}
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cx(
+        "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
+        active
+          ? "text-[#46769B] bg-blue-50"
+          : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50"
+      )}
+    >
+      {isMountainTab && (
+        !stackIconBroken ? (
+          <img
+            src="/mountain.svg"
+            alt=""
+            className="h-4 w-4"
+            onError={onStackIconError}
+            draggable={false}
+          />
+        ) : (
+          MountainIconFallback
+        )
+      )}
+      <span>{tab.name}</span>
+    </Link>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* RoleLinks — extracted from component, receives everything it needs as props */
+/* -------------------------------------------------------------------------- */
+function RoleLinks({ isOrgSide, isAthlete, isAdmin, role, isActive, compact, onNavigate }) {
+  const L = useCallback(
+    ({ href, children }) => {
+      const active = isActive(href);
+      return (
+        <Link
+          href={href}
+          onClick={() => onNavigate?.()}
+          className={cx(
+            "block transition rounded-xl",
+            compact ? "px-3 py-2 text-sm" : "px-4 py-3 text-sm",
+            active
+              ? "bg-blue-50 text-[#46769B] font-semibold"
+              : "text-gray-700 hover:bg-gray-50"
+          )}
+        >
+          {children}
+        </Link>
+      );
+    },
+    [isActive, compact, onNavigate]
+  );
+
+  if (isOrgSide) {
+    return (
+      <>
+        <L href="/org/dashboard">Dashboard</L>
+        <L href="/org/review-queue">Review Queue</L>
+        <L href="/org/workouts-calendar">Workouts Calendar</L>
+        <L href="/org/nutrition">Nutrition</L>
+        {(isAdmin || role === "organization") && (
+          <>
+            <L href="/org/athletes">Athletes</L>
+            <L href="/org/trainers">Trainers</L>
+          </>
+        )}
+        <L href="/account">Account</L>
+      </>
+    );
+  }
+
+  if (isAthlete) {
+    return (
+      <>
+        <L href="/dashboard">Athlete Dashboard</L>
+        <L href="/athlete/today">Today</L>
+        <L href="/scans">My Scans</L>
+        <L href="/account">Account</L>
+      </>
+    );
+  }
+
+  return <L href="/account">Account</L>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* NavBar                                                                      */
+/* -------------------------------------------------------------------------- */
 export default function NavBar() {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const { user, logout } = useAuthContext();
 
-  const [isMounted, setIsMounted] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [defaultAuthTab, setDefaultAuthTab] = useState("login");
-  const [stackIconBroken, setStackIconBroken] = useState(false);
+  const [isMounted,        setIsMounted]        = useState(false);
+  const [menuOpen,         setMenuOpen]          = useState(false);
+  const [profileOpen,      setProfileOpen]       = useState(false);
+  const [loginModalOpen,   setLoginModalOpen]    = useState(false);
+  const [defaultAuthTab,   setDefaultAuthTab]    = useState("login");
+  const [stackIconBroken,  setStackIconBroken]   = useState(false);
 
   const navRef = useRef(null);
 
+  // Mark mounted so SSR/hydration never diverges on auth-dependent UI
   useEffect(() => setIsMounted(true), []);
 
-  /**
-   * ✅ Nav height -> CSS variable
-   * Sets: --app-header-h on <html>
-   *
-   * Why:
-   * - Your drawer/modals can respect the sticky NavBar without hardcoding 64/80.
-   * - Responsive (h-16 vs h-20), font changes, etc.
-   */
+  /* ── Nav height → CSS variable ────────────────────────────────────────────
+     Sets --app-header-h on <html> so drawers/modals can offset correctly
+     without hardcoding 64px/80px.
+  ──────────────────────────────────────────────────────────────────────────── */
   useEffect(() => {
-    if (!isMounted) return;
-    if (!navRef.current) return;
+    if (!isMounted || !navRef.current) return;
 
     const setVar = () => {
-      const h = navRef.current?.getBoundingClientRect?.().height || 0;
-      // Put it on <html> so it is globally available
+      const h = navRef.current?.getBoundingClientRect?.().height ?? 0;
       document.documentElement.style.setProperty("--app-header-h", `${Math.round(h)}px`);
     };
 
-    // Initial set
     setVar();
-
-    // Keep correct on resize / breakpoint changes
     window.addEventListener("resize", setVar);
 
-    // Keep correct if nav changes size due to content/font load
     let ro;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => setVar());
+      ro = new ResizeObserver(setVar);
       ro.observe(navRef.current);
     }
 
     return () => {
       window.removeEventListener("resize", setVar);
-      if (ro) ro.disconnect();
+      ro?.disconnect();
     };
   }, [isMounted]);
 
-  const loggedIn = !!user;
-
-  /* =========================
-     ROLE NORMALIZATION
-  ========================= */
+  /* ── Role normalisation ───────────────────────────────────────────────────*/
   const role = useMemo(() => {
     const raw = (user?.role || user?.Role || "").toString().trim().toLowerCase();
     if (!raw) return "";
-
-    if (raw === "organization") return "organization";
-    if (raw === "athlete") return "athlete";
-    if (raw === "trainer") return "trainer";
-    if (raw === "admin") return "admin";
-
-    if (raw.includes("org")) return "organization";
-    if (raw.includes("ath")) return "athlete";
-    if (raw.includes("train")) return "trainer";
-    if (raw.includes("admin")) return "admin";
-
+    if (raw === "organization" || raw.includes("org"))   return "organization";
+    if (raw === "athlete"      || raw.includes("ath"))   return "athlete";
+    if (raw === "trainer"      || raw.includes("train")) return "trainer";
+    if (raw === "admin"        || raw.includes("admin")) return "admin";
     return raw;
   }, [user]);
 
   const isAthlete = role === "athlete";
   const isOrgSide = role === "organization" || role === "trainer" || role === "admin";
-  const isAdmin = role === "admin";
+  const isAdmin   = role === "admin";
 
   const roleLabel = useMemo(() => {
-    if (role === "organization") return "Organization";
-    if (role === "admin") return "Admin";
-    if (role === "trainer") return "Trainer";
-    if (role === "athlete") return "Athlete";
-    return "Member";
+    const MAP = {
+      organization: "Organization",
+      admin:        "Admin",
+      trainer:      "Trainer",
+      athlete:      "Athlete",
+    };
+    return MAP[role] ?? "Member";
   }, [role]);
 
-    /* =========================
-     NAV TABS (MODULAR)
-  ========================= */
-  const { DESKTOP_LEFT_TABS, DESKTOP_RIGHT_TABS, MOBILE_TABS } = useMemo(() => {
-    // Keep this inline memo so it’s tree-shakeable & easy to adjust
-    // (Alternatively import helpers directly)
-    const tabs = [
-      { name: "Scan", href: "/nutrition-label-scanner" },
-      { name: "Search", href: "/search" },
-      { name: "Info", href: "/info" },
-      { name: "NCAA Rules", href: "/compliance/ncaa" },
-      { name: "SmartStack", href: "/smartstack", icon: "mountain" },
-    ];
+  const loggedIn = !!user;
 
-    return {
-      DESKTOP_LEFT_TABS: tabs.filter((t) => ["Scan", "Search", "Info", "NCAA Rules"].includes(t.name)),
-      DESKTOP_RIGHT_TABS: tabs.filter((t) => ["SmartStack"].includes(t.name)),
-      MOBILE_TABS: tabs,
-    };
-  }, []);
+  /* ── isActive helper ──────────────────────────────────────────────────────*/
+  const isActive = useCallback(
+    (href) => {
+      if (href === "/") return pathname === "/";
+      return pathname === href || pathname?.startsWith(`${href}/`);
+    },
+    [pathname]
+  );
 
-  /* =========================
-     AUTH MODAL OPENERS
-     - Supports BOTH:
-       1) cp:open-auth-modal (older pattern)
-       2) NavBarLoginModal's auth:open -> onRequestOpen bridge (newer pattern)
-  ========================= */
-
-  // Backwards compatible open event (your existing pattern)
-  useEffect(() => {
-    const handler = (e) => {
-      const detail = e?.detail || {};
-      const tab = detail.defaultTab || "login";
-      const email = detail.email ? String(detail.email).trim() : "";
-
-      try {
-        if (typeof window !== "undefined" && email) {
-          window.localStorage.setItem("cp_prefill_login_email", email);
-        }
-      } catch {}
-
-      setDefaultAuthTab(tab);
-      setLoginModalOpen(true);
-    };
-
-    window.addEventListener("cp:open-auth-modal", handler);
-    return () => window.removeEventListener("cp:open-auth-modal", handler);
-  }, []);
-
-  // ✅ required for NavBarLoginModal's global "auth:open" triggers
-  const onRequestOpen = useCallback((detail = {}) => {
-    const tab = detail?.tab === "signup" ? "signup" : "login";
-    setDefaultAuthTab(tab);
-    setLoginModalOpen(true);
-  }, []);
+  /* ── Auth modal openers ───────────────────────────────────────────────────*/
 
   const openAuthModal = useCallback((tab = "login") => {
     setDefaultAuthTab(tab);
     setLoginModalOpen(true);
   }, []);
 
-  /* =========================
-     CLOSE MENUS ON NAV
-  ========================= */
+  // Bridge for NavBarLoginModal's global "auth:open" CustomEvent
+  const onRequestOpen = useCallback((detail = {}) => {
+    openAuthModal(detail?.tab === "signup" ? "signup" : "login");
+  }, [openAuthModal]);
+
+  // Legacy "cp:open-auth-modal" event — kept for backwards compatibility
+  useEffect(() => {
+    const handler = (e) => {
+      const detail = e?.detail ?? {};
+      const tab    = detail.defaultTab ?? "login";
+      const email  = detail.email ? String(detail.email).trim() : "";
+
+      if (email) {
+        try {
+          window.localStorage.setItem("cp_prefill_login_email", email);
+        } catch (err) {
+          // localStorage may be unavailable (private browsing, storage full, etc.)
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[NavBar] Could not write to localStorage:", err);
+          }
+        }
+      }
+
+      openAuthModal(tab);
+    };
+
+    window.addEventListener("cp:open-auth-modal", handler);
+    return () => window.removeEventListener("cp:open-auth-modal", handler);
+  }, [openAuthModal]);
+
+  /* ── Close menus on route change ─────────────────────────────────────────*/
   useEffect(() => {
     setMenuOpen(false);
     setProfileOpen(false);
   }, [pathname]);
 
+  /* ── Close menus on Escape ───────────────────────────────────────────────*/
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -179,34 +274,25 @@ export default function NavBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /* ── Close profile dropdown on outside click ─────────────────────────────*/
   useEffect(() => {
     if (!profileOpen) return;
     const onDown = (e) => {
-      if (!navRef.current) return;
-      if (!navRef.current.contains(e.target)) setProfileOpen(false);
+      if (navRef.current && !navRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [profileOpen]);
 
-  /* =========================
-     ✅ REMOVE LOCK FEATURE
-     No body overflow/position locking here.
-     (So background can scroll even while menu is open.)
-  ========================= */
-
+  /* ── Handlers ─────────────────────────────────────────────────────────────*/
   const handleProfileClick = useCallback(() => {
     if (!loggedIn) return openAuthModal("login");
     setProfileOpen((p) => !p);
   }, [loggedIn, openAuthModal]);
 
-  const isActive = useCallback(
-    (href) => {
-      if (href === "/") return pathname === "/";
-      return pathname === href || pathname?.startsWith(`${href}/`);
-    },
-    [pathname]
-  );
+  const handleStackIconError = useCallback(() => setStackIconBroken(true), []);
 
   const logoutAndClose = useCallback(async () => {
     try {
@@ -214,144 +300,84 @@ export default function NavBar() {
     } finally {
       setProfileOpen(false);
       setMenuOpen(false);
+      // router.refresh() omitted — push to /login is sufficient and avoids
+      // a visible flash on Next.js app router.
       router.push("/login");
-      router.refresh();
     }
   }, [logout, router]);
 
-  const NavItem = ({ tab, onClick }) => {
-    const active = isActive(tab.href);
-    const isSmartStack = tab.name === "mountain";
-
-    return (
-      <Link
-        href={tab.href}
-        onClick={onClick}
-        aria-current={active ? "page" : undefined}
-        className={[
-          "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
-          active
-            ? "text-[#46769B] bg-blue-50"
-            : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50",
-        ].join(" ")}
-      >
-        {isSmartStack ? (
-          !stackIconBroken ? (
-            <img
-              src="/mountain.svg"
-              alt=""
-              className="h-4 w-4"
-              onError={() => setStackIconBroken(true)}
-              draggable={false}
-            />
-          ) : (
-            <svg viewBox="0 0 24 24" className="h-4 w-4">
-              <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
-            </svg>
-          )
-        ) : null}
-        <span>{tab.name}</span>
-      </Link>
-    );
+  /* ── Shared props for NavItem ─────────────────────────────────────────────*/
+  const navItemSharedProps = {
+    isActive,
+    stackIconBroken,
+    onStackIconError: handleStackIconError,
   };
 
-  const RoleLinks = ({ compact = false, onNavigate }) => {
-    const L = ({ href, children }) => {
-      const active = isActive(href);
-      return (
-        <Link
-          href={href}
-          onClick={() => onNavigate?.()}
-          className={[
-            "block transition rounded-xl",
-            compact ? "px-3 py-2 text-sm" : "px-4 py-3 text-sm",
-            active
-              ? "bg-blue-50 text-[#46769B] font-semibold"
-              : "text-gray-700 hover:bg-gray-50",
-          ].join(" ")}
-        >
-          {children}
-        </Link>
-      );
-    };
-
-    if (isOrgSide) {
-      return (
-        <>
-          <L href="/org/dashboard">Dashboard</L>
-          <L href="/org/review-queue">Review Queue</L>
-          <L href="/org/workouts-calendar">Workouts Calendar</L>
-          {/* ✅ Prescriptions → Nutrition */}
-          <L href="/org/nutrition">Nutrition</L>
-
-          {(isAdmin || role === "organization") && (
-            <>
-              <L href="/org/athletes">Athletes</L>
-              <L href="/org/trainers">Trainers</L>
-            </>
-          )}
-
-          <L href="/account">Account</L>
-        </>
-      );
-    }
-
-    if (isAthlete) {
-      return (
-        <>
-          <L href="/dashboard">Athlete Dashboard</L>
-          <L href="/athlete/today">Today</L>
-          <L href="/scans">My Scans</L>
-          <L href="/account">Account</L>
-        </>
-      );
-    }
-
-    return <L href="/account">Account</L>;
+  /* ── Shared props for RoleLinks ───────────────────────────────────────────*/
+  const roleLinksSharedProps = {
+    isOrgSide,
+    isAthlete,
+    isAdmin,
+    role,
+    isActive,
   };
 
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
   return (
     <>
       <nav
         ref={navRef}
         className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
+        aria-label="Main navigation"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          {/* TOP BAR */}
-          <div className="h-16 md:h-20 flex items-center justify-between gap-3">
+
+          {/* ── Top bar ──
+               Logo is position:absolute centered on the nav so it always
+               sits at true horizontal center regardless of how many items
+               are on the left or right. Left/right groups use flex-1 each
+               so they each consume equal space and never crowd the logo.
+          ── */}
+          <div className="relative h-16 md:h-20 flex items-center justify-between">
+
             {/* Desktop left tabs */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2 flex-1">
               {DESKTOP_LEFT_TABS.map((tab) => (
-                <NavItem key={tab.href} tab={tab} />
+                <NavItem key={tab.href} tab={tab} {...navItemSharedProps} />
               ))}
             </div>
 
-            {/* Mobile spacer (logo centering) */}
-            <div className="md:hidden h-10 w-10" aria-hidden />
+            {/* Mobile spacer — mirrors hamburger width to balance logo */}
+            <div className="md:hidden h-10 w-10" aria-hidden="true" />
 
-            {/* Center logo */}
-            <div className="flex-1 flex justify-center">
-              <Link href="/" aria-label="PEAK Home" className="inline-flex items-center">
-                <div className="block md:hidden">
+            {/* Logo — absolutely centered in the nav bar, never shifts */}
+            <div className="absolute left-1/2 -translate-x-1/2">
+              <Link href="/" aria-label="CheckPeak Home" className="inline-flex items-center">
+                <span className="block md:hidden">
                   <Logo size="medium" />
-                </div>
-                <div className="hidden md:block">
+                </span>
+                <span className="hidden md:block">
                   <Logo size="large" />
-                </div>
+                </span>
               </Link>
             </div>
 
             {/* Desktop right */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2 flex-1 justify-end">
               {DESKTOP_RIGHT_TABS.map((tab) => (
-                <NavItem key={tab.href} tab={tab} />
-        ))}
+                <NavItem key={tab.href} tab={tab} {...navItemSharedProps} />
+              ))}
 
+              {/* Profile / Login button — only rendered after hydration */}
               {isMounted && (
                 <div className="relative">
                   <button
                     type="button"
                     onClick={handleProfileClick}
+                    aria-expanded={loggedIn ? profileOpen : undefined}
+                    aria-haspopup={loggedIn ? "true" : undefined}
                     className="rounded-2xl border border-gray-200 text-gray-900 px-3 py-2 text-sm font-medium hover:text-[#46769B] hover:border-[#46769B] hover:bg-gray-50 transition"
                   >
                     {loggedIn ? (user?.Name || user?.name || "Profile") : "Login"}
@@ -363,23 +389,36 @@ export default function NavBar() {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
                         className="absolute right-0 mt-2 w-64 rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden"
+                        role="menu"
+                        aria-label="Profile menu"
                       >
-                        <div className="px-4 py-3 border-b">
-                          <p className="text-xs font-semibold truncate">{user?.Name || user?.name}</p>
-                          <p className="text-[11px] text-gray-500 truncate">{user?.Email || user?.email}</p>
-                          <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                        {/* User identity */}
+                        <div className="px-4 py-3 border-b border-gray-100">
+                          <p className="text-xs font-semibold truncate">
+                            {user?.Name || user?.name}
+                          </p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {user?.Email || user?.email}
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-1">{roleLabel}</p>
                         </div>
 
-                        {/* Slightly tighter, scrollable area */}
+                        {/* Role-specific links */}
                         <div className="max-h-[300px] overflow-auto p-2">
-                          <RoleLinks compact />
+                          <RoleLinks
+                            {...roleLinksSharedProps}
+                            compact
+                            onNavigate={() => setProfileOpen(false)}
+                          />
                         </div>
 
-                        <div className="p-2 border-t">
+                        {/* Logout */}
+                        <div className="p-2 border-t border-gray-100">
                           <button
-                            onClick={logoutAndClose}
                             type="button"
+                            onClick={logoutAndClose}
                             className="w-full flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
                           >
                             Logout
@@ -395,26 +434,32 @@ export default function NavBar() {
             {/* Mobile hamburger */}
             <div className="md:hidden">
               <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900 grid place-items-center"
-                aria-label="Open menu"
                 type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-expanded={menuOpen}
+                aria-controls="mobile-menu"
+                aria-label={menuOpen ? "Close menu" : "Open menu"}
+                className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900 grid place-items-center"
               >
-                <div className="flex flex-col">
+                {/* Animated hamburger → X */}
+                <div className="flex flex-col gap-[5px]" aria-hidden="true">
                   <span
-                    className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${
-                      menuOpen ? "rotate-45 translate-y-1.5" : ""
-                    }`}
+                    className={cx(
+                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
+                      menuOpen ? "rotate-45 translate-y-[7px]" : ""
+                    )}
                   />
                   <span
-                    className={`w-5 h-0.5 bg-gray-700 mb-1 transition ${
-                      menuOpen ? "opacity-0" : ""
-                    }`}
+                    className={cx(
+                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
+                      menuOpen ? "opacity-0 scale-x-0" : ""
+                    )}
                   />
                   <span
-                    className={`w-5 h-0.5 bg-gray-700 transition ${
-                      menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-                    }`}
+                    className={cx(
+                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
+                      menuOpen ? "-rotate-45 -translate-y-[7px]" : ""
+                    )}
                   />
                 </div>
               </button>
@@ -422,47 +467,59 @@ export default function NavBar() {
           </div>
         </div>
 
-        {/* MOBILE MENU */}
+        {/* ── Mobile menu ── */}
         <AnimatePresence>
           {menuOpen && (
             <motion.div
+              id="mobile-menu"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="md:hidden bg-white border-t border-gray-200 text-gray-900"
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="md:hidden bg-white border-t border-gray-200 text-gray-900 overflow-hidden"
             >
               <div className="px-4 py-4 space-y-2">
+
+                {/* Nav links */}
                 {MOBILE_TABS.map((tab) => (
                   <Link
                     key={tab.href}
                     href={tab.href}
                     onClick={() => setMenuOpen(false)}
-                    className={[
-                      "block rounded-xl px-4 py-3 text-sm font-medium",
+                    aria-current={isActive(tab.href) ? "page" : undefined}
+                    className={cx(
+                      "block rounded-xl px-4 py-3 text-sm font-medium transition",
                       isActive(tab.href)
                         ? "bg-blue-50 text-[#46769B]"
-                        : "hover:bg-gray-50",
-                    ].join(" ")}
+                        : "text-gray-700 hover:bg-gray-50"
+                    )}
                   >
                     {tab.name}
                   </Link>
                 ))}
 
-                <div className="border-t pt-3" />
+                <div className="border-t border-gray-100 pt-3" />
 
+                {/* Auth / profile section */}
                 {!loggedIn ? (
                   <div className="grid gap-2">
                     <button
-                      onClick={() => openAuthModal("login")}
-                      className="rounded-xl bg-[#46769B] text-white py-3 font-semibold"
                       type="button"
+                      onClick={() => {
+                        openAuthModal("login");
+                        setMenuOpen(false);
+                      }}
+                      className="rounded-xl bg-[#46769B] text-white py-3 text-sm font-semibold transition hover:brightness-110"
                     >
                       Log in
                     </button>
                     <button
-                      onClick={() => openAuthModal("signup")}
-                      className="rounded-xl border py-3 font-semibold"
                       type="button"
+                      onClick={() => {
+                        openAuthModal("signup");
+                        setMenuOpen(false);
+                      }}
+                      className="rounded-xl border border-gray-200 py-3 text-sm font-semibold transition hover:bg-gray-50"
                     >
                       Sign up
                     </button>
@@ -477,17 +534,21 @@ export default function NavBar() {
                       <p className="text-xs text-gray-500 truncate">
                         {user?.Email || user?.email}
                       </p>
-                      <p className="text-[11px] text-gray-400 mt-1 truncate">{roleLabel}</p>
+                      <p className="text-[11px] text-gray-400 mt-1">{roleLabel}</p>
                     </div>
 
-                    {/* Mobile-friendly role nav */}
+                    {/* Role-specific nav */}
                     <div className="rounded-2xl border border-gray-200 bg-white p-2">
-                      <RoleLinks onNavigate={() => setMenuOpen(false)} compact />
+                      <RoleLinks
+                        {...roleLinksSharedProps}
+                        compact
+                        onNavigate={() => setMenuOpen(false)}
+                      />
                     </div>
 
                     <button
-                      onClick={logoutAndClose}
                       type="button"
+                      onClick={logoutAndClose}
                       className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 active:bg-red-200 transition"
                     >
                       Logout
@@ -504,7 +565,7 @@ export default function NavBar() {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         defaultTab={defaultAuthTab}
-        onRequestOpen={onRequestOpen} // ✅ required for your modal's global open hook
+        onRequestOpen={onRequestOpen}
       />
     </>
   );

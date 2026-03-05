@@ -1,22 +1,28 @@
-// components/TodayNutritionCard.jsx
+// /components/dashboard/TodayNutritionCard.jsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { Utensils, ChevronRight } from "lucide-react";
 
-/* ---------------- small helpers ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Tokens                                                                      */
+/* -------------------------------------------------------------------------- */
 
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+const BRAND     = "#5B9EC9";
+const FONT_COND = "'Barlow Condensed', sans-serif";
+const FONT_BODY = "'Barlow', sans-serif";
+
+/* -------------------------------------------------------------------------- */
+/* Pure helpers — unchanged from original                                     */
+/* -------------------------------------------------------------------------- */
 
 function nyDateISO() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
-    year: "numeric",
+    year:  "numeric",
     month: "2-digit",
-    day: "2-digit",
+    day:   "2-digit",
   }).formatToParts(new Date());
 
   const y = parts.find((p) => p.type === "year")?.value;
@@ -37,43 +43,102 @@ function fmtNum(v) {
 }
 
 function computeNutritionCountsFromCompletion(completion) {
-  const keys = ["breakfast", "lunch", "afternoon", "dinner"];
-  const total = keys.length * 2; // meal + hydration per meal
-
-  let done = 0;
+  const keys  = ["breakfast", "lunch", "afternoon", "dinner"];
+  const total = keys.length * 2;
+  let done    = 0;
   for (const k of keys) {
     const row = completion?.[k] || {};
-    if (row?.mealDone) done += 1;
+    if (row?.mealDone)      done += 1;
     if (row?.hydrationDone) done += 1;
   }
-
   const pct = total ? clampPct(Math.round((done / total) * 100)) : 0;
   return { done, total, pct };
 }
 
-function ProgressBar({ pctValue }) {
-  const w = clampPct(pctValue);
+/* -------------------------------------------------------------------------- */
+/* ProgressBar                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function ProgressBar({ pct }) {
+  const w = clampPct(pct);
   return (
-    <div className="h-2 w-full rounded-full bg-gray-100 border border-gray-200 overflow-hidden">
+    <div
+      className="h-1.5 w-full rounded-full overflow-hidden"
+      style={{ background: "#e2e8f0" }}
+      role="progressbar"
+      aria-valuenow={w}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div
-        className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all"
-        style={{ width: `${w}%` }}
+        className="h-full rounded-full transition-all duration-500"
+        style={{
+          width:      `${w}%`,
+          background: w === 100 ? BRAND : `linear-gradient(90deg, ${BRAND}, #93c5e8)`,
+        }}
       />
     </div>
   );
 }
 
-/* ---------------- main ---------------- */
+/* -------------------------------------------------------------------------- */
+/* StatusBadge                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function StatusBadge({ children, tone = "neutral" }) {
+  const styles = {
+    neutral:    { background: "#f8fafc",                    border: "1px solid #e2e8f0",              color: "#64748b" },
+    inProgress: { background: "rgba(245,158,11,0.08)",      border: "1px solid rgba(245,158,11,0.25)", color: "#b45309" },
+    done:       { background: "rgba(91,158,201,0.08)",      border: "1px solid rgba(91,158,201,0.25)", color: "#1e6fa3" },
+  };
+  const s = styles[tone] ?? styles.neutral;
+  return (
+    <span
+      className="ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+      style={{ fontFamily: FONT_COND, letterSpacing: "0.05em", ...s }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* MacroChip                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function MacroChip({ label, value, unit }) {
+  if (value == null) return null;
+  return (
+    <div
+      className="flex flex-col items-center px-2.5 py-1.5 rounded-lg"
+      style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
+    >
+      <span
+        className="text-sm font-black leading-none"
+        style={{ color: "#0f172a", fontFamily: FONT_COND }}
+      >
+        {value}
+        <span className="text-[10px] font-semibold" style={{ color: "#64748b" }}>{unit}</span>
+      </span>
+      <span
+        className="text-[10px] font-bold uppercase tracking-widest mt-0.5"
+        style={{ color: "#64748b", fontFamily: FONT_COND }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* TodayNutritionCard                                                          */
+/* -------------------------------------------------------------------------- */
 
 export default function TodayNutritionCard({ className = "" }) {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
-
-  // plan/macros payload
-  const [planPayload, setPlanPayload] = useState(null);
-
-  // completion payload
+  const [loading,           setLoading]           = useState(true);
+  const [planPayload,       setPlanPayload]       = useState(null);
   const [completionPayload, setCompletionPayload] = useState(null);
 
   const date = useMemo(() => nyDateISO(), []);
@@ -83,23 +148,23 @@ export default function TodayNutritionCard({ className = "" }) {
     try {
       const [planRes, completionRes] = await Promise.all([
         fetch(`/api/athlete/nutrition/today?date=${encodeURIComponent(date)}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
+          method:      "GET",
+          headers:     { "Content-Type": "application/json" },
+          cache:       "no-store",
           credentials: "include",
         }),
         fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(date)}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
+          method:      "GET",
+          headers:     { "Content-Type": "application/json" },
+          cache:       "no-store",
           credentials: "include",
         }),
       ]);
 
-      const planJson = await planRes.json().catch(() => ({}));
+      const planJson       = await planRes.json().catch(() => ({}));
       const completionJson = await completionRes.json().catch(() => ({}));
 
-      setPlanPayload(planRes.ok ? planJson : null);
+      setPlanPayload(planRes.ok           ? planJson       : null);
       setCompletionPayload(completionRes.ok ? completionJson : null);
     } catch {
       setPlanPayload(null);
@@ -109,27 +174,22 @@ export default function TodayNutritionCard({ className = "" }) {
     }
   }, [date]);
 
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // ---- macros from plan endpoint ----
-  // Your /api/athlete/nutrition/today returns { latestPlan: { daily: { calories, protein, carbs, fat }, planJson } }
+  /* ── Derived values — unchanged logic ── */
   const daily = useMemo(() => {
     const lp = planPayload?.latestPlan || null;
-    const d = lp?.planJson?.daily || lp?.daily || null;
+    const d  = lp?.planJson?.daily || lp?.daily || null;
     return d || null;
   }, [planPayload]);
 
   const calories = fmtNum(daily?.calories);
-  const protein = fmtNum(daily?.protein);
-  const carbs = fmtNum(daily?.carbs);
-  const fat = fmtNum(daily?.fat);
+  const protein  = fmtNum(daily?.protein);
+  const carbs    = fmtNum(daily?.carbs);
+  const fat      = fmtNum(daily?.fat);
 
-  const hasAnyTargets = calories != null || protein != null || carbs != null || fat != null;
-
-  // ---- completion from completion endpoint ----
-  const completion = completionPayload?.completion || null;
+  const hasAnyTargets  = calories != null || protein != null || carbs != null || fat != null;
+  const completion     = completionPayload?.completion || null;
 
   const counts = useMemo(() => {
     if (completion && typeof completion === "object") {
@@ -139,103 +199,151 @@ export default function TodayNutritionCard({ className = "" }) {
   }, [completion]);
 
   const hasNutritionPlan = !!planPayload?.latestPlan;
-  const hasNutrition = hasNutritionPlan || counts.total > 0 || hasAnyTargets;
-
-  // This is the key: completed means pct=100 AND total>0
-  const isComplete = counts.total > 0 && counts.done >= counts.total;
+  const hasNutrition     = hasNutritionPlan || counts.total > 0 || hasAnyTargets;
+  const isComplete       = counts.total > 0 && counts.done >= counts.total;
 
   const goToToday = () => {
     router.push(`/athlete/today?date=${encodeURIComponent(date)}#nutrition`);
   };
 
+  /* ── Status badge tone ── */
+  const badgeTone = loading
+    ? "neutral"
+    : !hasNutrition
+    ? "neutral"
+    : isComplete
+    ? "done"
+    : "inProgress";
+
+  const badgeLabel = loading
+    ? "Loading"
+    : !hasNutrition
+    ? "None"
+    : isComplete
+    ? "Complete"
+    : "In progress";
+
   return (
-    <section className={cx("bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5", className)}>
+    <section
+      className={`rounded-2xl p-4 sm:p-5 ${className}`}
+      style={{
+        background: "#fff",
+        border:     "1px solid #e2e8f0",
+        boxShadow:  "0 1px 4px rgba(0,0,0,0.06)",
+        fontFamily: FONT_BODY,
+      }}
+    >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          {/* Header */}
-          <div className="flex items-center gap-2 mb-1">
-            <Utensils className="w-4 h-4 text-blue-700" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+        <div className="min-w-0 flex-1">
+
+          {/* ── Header row ── */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <Utensils
+              className="w-4 h-4 shrink-0"
+              style={{ color: BRAND }}
+              aria-hidden="true"
+            />
+            <p
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: "#64748b", fontFamily: FONT_COND }}
+            >
               Nutrition
             </p>
-
-            {loading ? (
-              <span className="ml-1 inline-flex items-center rounded-full bg-gray-50 border border-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
-                Loading
-              </span>
-            ) : hasNutrition ? (
-              <span
-                className={cx(
-                  "ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                  isComplete
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-amber-50 border-amber-200 text-amber-800"
-                )}
-              >
-                {isComplete ? "Completed" : "In progress"}
-              </span>
-            ) : (
-              <span className="ml-1 inline-flex items-center rounded-full bg-gray-50 border border-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
-                None
-              </span>
-            )}
+            <StatusBadge tone={badgeTone}>{badgeLabel}</StatusBadge>
           </div>
 
-          <h2 className="text-base sm:text-lg font-semibold text-gray-900">
-            Today targets
+          {/* ── Title ── */}
+          <h2
+            className="text-base sm:text-lg font-black leading-tight"
+            style={{ color: "#0f172a", fontFamily: FONT_COND }}
+          >
+            Today's targets
           </h2>
 
-          {/* Body */}
+          {/* ── Body ── */}
           {loading ? (
-            <p className="mt-1 text-sm text-gray-600">Loading nutrition…</p>
+            <p className="mt-1.5 text-sm" style={{ color: "#64748b" }}>
+              Loading nutrition…
+            </p>
           ) : !hasNutrition ? (
-            <p className="mt-1 text-sm text-gray-600">No plan assigned yet.</p>
+            <p className="mt-1.5 text-sm" style={{ color: "#64748b" }}>
+              No plan assigned yet.
+            </p>
           ) : (
-            <div className="mt-2 space-y-2">
-              {/* Completion */}
-              {counts.total > 0 ? (
-                <div>
-                  <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
-                    <span>
-                      {counts.done}/{counts.total} checks
+            <div className="mt-2 space-y-3">
+
+              {/* Completion progress */}
+              {counts.total > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px]" style={{ color: "#64748b" }}>
+                      <span className="font-bold" style={{ color: "#334155" }}>{counts.done}</span>
+                      /{counts.total} checks
                     </span>
-                    <span>{Math.round(counts.pct)}%</span>
+                    <span
+                      className="text-[11px] font-bold tabular-nums"
+                      style={{ color: isComplete ? BRAND : "#64748b" }}
+                    >
+                      {Math.round(counts.pct)}%
+                    </span>
                   </div>
-                  <ProgressBar pctValue={counts.pct} />
+                  <ProgressBar pct={counts.pct} />
+                  <p className="text-[10px]" style={{ color: "#64748b", fontFamily: FONT_COND, letterSpacing: "0.04em" }}>
+                    4 MEALS × MEAL + HYDRATION
+                  </p>
                 </div>
-              ) : (
-                <p className="text-[12px] text-gray-600">
+              )}
+
+              {counts.total === 0 && (
+                <p className="text-xs" style={{ color: "#64748b" }}>
                   Open Today to check off meals.
                 </p>
               )}
 
-              {/* Macro one-liner */}
-              {hasAnyTargets ? (
-                <p className="text-[12px] text-gray-700">
-                  {calories != null ? <span className="font-semibold">{calories}</span> : "—"} kcal •{" "}
-                  {protein != null ? <span className="font-semibold">{protein}g</span> : "—"} protein •{" "}
-                  {carbs != null ? <span className="font-semibold">{carbs}g</span> : "—"} carbs •{" "}
-                  {fat != null ? <span className="font-semibold">{fat}g</span> : "—"} fat
-                </p>
-              ) : (
-                <p className="text-[12px] text-gray-600">
+              {/* Macro chips — replaces the plain text one-liner */}
+              {hasAnyTargets && (
+                <div className="flex flex-wrap gap-1.5">
+                  <MacroChip label="Kcal"    value={calories} unit=""  />
+                  <MacroChip label="Protein" value={protein}  unit="g" />
+                  <MacroChip label="Carbs"   value={carbs}    unit="g" />
+                  <MacroChip label="Fat"     value={fat}      unit="g" />
+                </div>
+              )}
+
+              {!hasAnyTargets && (
+                <p className="text-xs" style={{ color: "#64748b" }}>
                   Targets loaded. Open Today to view details.
                 </p>
               )}
-
-              <p className="text-[11px] text-gray-400">4 meals × (meal + hydration)</p>
             </div>
           )}
         </div>
 
-        {/* CTA */}
+        {/* ── CTA ── */}
         <button
           type="button"
           onClick={goToToday}
-          className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-[#46769B] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 transition"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl text-sm font-bold transition-all"
+          style={{
+            background:    BRAND,
+            color:         "#fff",
+            padding:       "8px 14px",
+            fontFamily:    FONT_COND,
+            letterSpacing: "0.05em",
+            boxShadow:     "0 2px 8px rgba(91,158,201,0.28)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#4a8ab5";
+            e.currentTarget.style.boxShadow  = "0 4px 12px rgba(91,158,201,0.38)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = BRAND;
+            e.currentTarget.style.boxShadow  = "0 2px 8px rgba(91,158,201,0.28)";
+          }}
+          aria-label="Open today's nutrition plan"
         >
           Open
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </section>

@@ -487,7 +487,7 @@ export default function HeroSection() {
             >
               {[
                 { label: "Off-campus weeks covered", n: 52,  suffix: ""  },
-                { label: "Banned substances flagged", n: 300, suffix: "+" },
+                { label: "Banned substances flagged", n: 900, suffix: "+" },
                 { label: "Check-in time (seconds)",   n: 30,  suffix: "s" },
               ].map(({ label, n, suffix }, i) => (
                 <motion.div

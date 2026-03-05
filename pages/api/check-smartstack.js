@@ -5,93 +5,25 @@
  *  - Banned Substances base
  *  - Ingredients base
  *
+ * Banned + ingredient records loaded from static JSON at build time —
+ * zero Airtable calls per request. Run `npm run sync-db` after updating
+ * either Airtable table to regenerate the JSON and redeploy.
+ *
  * Response:
  *  {
  *    bannedSubstances: Array<{ id, fields, matchedTerms }>,
  *    ingredients: Array<{ id, fields, matchedTerms }>,
  *    debug?: { sampleText, totalBannedMatches, totalIngredientMatches }
  *  }
- *
- * Key behaviors:
- *  - Noise-token filtering + phrase-first matching to reduce false positives
- *  - Strong-match guard:
- *      ✅ phrase match OR
- *      ✅ 2+ meaningful tokens OR
- *      ✅ 1 distinctive token (len >= 10)
- *  - In-memory caching to reduce Airtable calls
- *  - Cache-Control: no-store
  */
 
-import Airtable from "airtable";
+import bannedRecordsRaw     from "../../data/banned.json"      assert { type: "json" };
+import ingredientRecordsRaw from "../../data/ingredients.json" assert { type: "json" };
 
-/* -------------------------------------------------------------------------- */
-/* Airtable env                                                               */
-/* -------------------------------------------------------------------------- */
-
-const BANNED_API_KEY = process.env.BANNED_API_KEY;
-const BANNED_BASE_ID = process.env.BANNED_BASE_ID;
-const BANNED_TABLE_NAME = process.env.BANNED_TABLE_NAME;
-
-const INGREDIENT_API_KEY = process.env.INGREDIENT_API_KEY;
-const INGREDIENT_BASE_ID = process.env.INGREDIENT_BASE_ID;
-const INGREDIENT_TABLE_NAME = process.env.INGREDIENT_TABLE_NAME;
-
-// Log warnings early if env vars are missing
-if (!BANNED_API_KEY || !BANNED_BASE_ID || !BANNED_TABLE_NAME) {
-  console.warn(
-    "[check-smartstack] Missing BANNED env vars. Check BANNED_API_KEY / BANNED_BASE_ID / BANNED_TABLE_NAME."
-  );
-}
-if (!INGREDIENT_API_KEY || !INGREDIENT_BASE_ID || !INGREDIENT_TABLE_NAME) {
-  console.warn(
-    "[check-smartstack] Missing INGREDIENT env vars. Check INGREDIENT_API_KEY / INGREDIENT_BASE_ID / INGREDIENT_TABLE_NAME."
-  );
-}
-
-const bannedBase =
-  BANNED_API_KEY && BANNED_BASE_ID
-    ? new Airtable({ apiKey: BANNED_API_KEY }).base(BANNED_BASE_ID)
-    : null;
-
-const ingredientsBase =
-  INGREDIENT_API_KEY && INGREDIENT_BASE_ID
-    ? new Airtable({ apiKey: INGREDIENT_API_KEY }).base(INGREDIENT_BASE_ID)
-    : null;
-
-/* -------------------------------------------------------------------------- */
-/* In-memory caching                                                          */
-/* -------------------------------------------------------------------------- */
-
-const CACHE_TTL_MS = 1000 * 60 * 10; // 10 minutes
-
-let bannedCache = { ts: 0, data: null };
-let ingredientCache = { ts: 0, data: null };
-
-function isCacheFresh(cacheObj) {
-  return cacheObj?.ts && Date.now() - cacheObj.ts < CACHE_TTL_MS;
-}
-
-async function getBannedRecords() {
-  if (isCacheFresh(bannedCache) && Array.isArray(bannedCache.data)) {
-    return bannedCache.data;
-  }
-  if (!bannedBase || !BANNED_TABLE_NAME) return [];
-
-  const all = await bannedBase(BANNED_TABLE_NAME).select({}).all();
-  bannedCache = { ts: Date.now(), data: all };
-  return all;
-}
-
-async function getIngredientRecords() {
-  if (isCacheFresh(ingredientCache) && Array.isArray(ingredientCache.data)) {
-    return ingredientCache.data;
-  }
-  if (!ingredientsBase || !INGREDIENT_TABLE_NAME) return [];
-
-  const all = await ingredientsBase(INGREDIENT_TABLE_NAME).select({}).all();
-  ingredientCache = { ts: Date.now(), data: all };
-  return all;
-}
+// Static records — shape: [{ id, fields }]
+// Loaded once at module init, never fetched at runtime.
+const BANNED_RECORDS     = bannedRecordsRaw;
+const INGREDIENT_RECORDS = ingredientRecordsRaw;
 
 /* -------------------------------------------------------------------------- */
 /* Text helpers                                                               */
@@ -104,8 +36,8 @@ function escapeRegex(string = "") {
 function normalizeText(text) {
   return String(text || "")
     .toLowerCase()
-    .replace(/[\u2010-\u2015]/g, "-") // normalize unicode hyphens
-    .replace(/[’']/g, "'")
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/['']/g, "'")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -114,11 +46,8 @@ function splitNormalizedTextToTerms(text) {
   if (!text) return [];
   const lowered = normalizeText(text);
   const cleaned = lowered.replace(/[\n\r\t]+/g, " ");
-  const rawTerms = cleaned.split(
-    /[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•\s]+/
-  );
-
-  return rawTerms
+  return cleaned
+    .split(/[.,;:\/\\\[\]\(\)\{\}"""''<>|@#\$%\^&\*_+=~`·•\s]+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 1 && !/^\s*$/.test(t));
 }
@@ -128,57 +57,21 @@ function splitNormalizedTextToTerms(text) {
 /* -------------------------------------------------------------------------- */
 
 const NOISE_TOKENS = new Set([
-  // Chemistry fragments that create false positives
-  "methyl",
-  "ethyl",
-  "propyl",
-  "butyl",
-  "acetyl",
-  "beta",
-  "alpha",
-  "gamma",
-  "delta",
-  // Generic label words / forms
-  "acid",
-  "acids",
-  "salt",
-  "salts",
-  "sodium",
-  "potassium",
-  "calcium",
-  "magnesium",
-  "chloride",
-  "citrate",
-  "phosphate",
-  "sulfate",
-  "oxide",
-  "hydroxide",
-  "extract",
-  "blend",
-  "complex",
-  // Units
-  "mg",
-  "mcg",
-  "g",
-  "iu",
+  "methyl", "ethyl", "propyl", "butyl", "acetyl",
+  "beta", "alpha", "gamma", "delta",
+  "acid", "acids", "salt", "salts",
+  "sodium", "potassium", "calcium", "magnesium",
+  "chloride", "citrate", "phosphate", "sulfate",
+  "oxide", "hydroxide", "extract", "blend", "complex",
+  "mg", "mcg", "g", "iu",
 ]);
 
 function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
-  if (!s) return true;
-
-  // common noisy words
-  if (NOISE_TOKENS.has(s)) return true;
-
-  // too short is usually meaningless
+  if (!s || NOISE_TOKENS.has(s)) return true;
   if (s.length < 3) return true;
-
-  // pure numeric
   if (/^\d+$/.test(s)) return true;
-
-  // mostly numeric patterns like "7a", "19", etc.
   if (/^\d+[a-z]?$/.test(s)) return true;
-
   return false;
 }
 
@@ -191,17 +84,10 @@ function normalizeForPhraseMatch(str = "") {
     .trim();
 }
 
-/**
- * Phrase-first matching:
- * We normalize both phrase + OCR text similarly and use includes().
- * This is stronger than token-by-token for multiword names.
- */
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhraseMatch(phrase);
   if (!p || p.length < 6) return false;
-
-  const n = normalizeForPhraseMatch(normalizedText);
-  return n.includes(p);
+  return normalizeForPhraseMatch(normalizedText).includes(p);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -210,27 +96,14 @@ function phraseInText(phrase = "", normalizedText = "") {
 
 function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
   const terms = new Set();
-
   for (const key of primaryFields) {
     const v = fields?.[key];
-    if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    if (v) splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
   }
-
-  const synonymCols = [
-    "Synonyms",
-    "Other Names",
-    "Alt Names",
-    "Alternate Names",
-    "Synonym",
-  ];
-
-  for (const col of synonymCols) {
+  for (const col of ["Synonyms", "Other Names", "Alt Names", "Alternate Names", "Synonym"]) {
     const v = fields?.[col];
-    if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    if (v) splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
   }
-
   return Array.from(terms);
 }
 
@@ -240,125 +113,88 @@ function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
 
 function termInText(term, normalized) {
   if (!term || !normalized) return false;
-
   const t = String(term).toLowerCase().trim();
   if (!t || t.length < 2) return false;
-
   try {
-    // word boundary match prevents partial hits
-    const rx = new RegExp(`\\b${escapeRegex(t)}\\b`, "i");
-    return rx.test(normalized);
+    return new RegExp(`\\b${escapeRegex(t)}\\b`, "i").test(normalized);
   } catch {
-    // fallback
     return normalized.includes(t);
   }
 }
 
-/**
- * Strong match guard:
- * - phraseHit: immediate pass
- * - else: require >=2 meaningful tokens OR 1 distinctive token len>=10
- */
 function hasStrongMatch(matchedTerms = [], phraseHit = false) {
   if (phraseHit) return true;
-  if (!matchedTerms || matchedTerms.length === 0) return false;
-
+  if (!matchedTerms?.length) return false;
   const meaningful = matchedTerms.filter((t) => !isNoiseToken(t));
-  if (meaningful.length === 0) return false;
-
-  const veryDistinctive = meaningful.filter((t) => String(t).length >= 10);
-  if (veryDistinctive.length > 0) return true;
-
+  if (!meaningful.length) return false;
+  if (meaningful.some((t) => String(t).length >= 10)) return true;
   return meaningful.length >= 2;
 }
 
-async function matchAgainstBannedRecords(ingredientsText) {
-  const tokens = splitNormalizedTextToTerms(ingredientsText);
-  const normalized = tokens.join(" ");
+/* -------------------------------------------------------------------------- */
+/* Matching functions — synchronous, no network calls                        */
+/* -------------------------------------------------------------------------- */
 
-  const rawRecords = await getBannedRecords();
-  const matches = [];
+function matchAgainstBannedRecords(ingredientsText) {
+  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
 
-  for (const rec of rawRecords) {
-    const fields = rec.fields || {};
+  return BANNED_RECORDS.reduce((matches, rec) => {
+    const fields      = rec.fields || {};
+    const phraseHit   = phraseInText(fields["Substance Name"] || "", normalized);
+    const matchedTerms = recordTerms(fields, ["Substance Name"])
+      .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    const substanceName = fields["Substance Name"] || "";
-    const phraseHit = phraseInText(substanceName, normalized);
-
-    const candidates = recordTerms(fields, ["Substance Name"]);
-    const matchedTerms = [];
-
-    for (const t of candidates) {
-      if (isNoiseToken(t)) continue;
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
-
-    if (!hasStrongMatch(matchedTerms, phraseHit)) continue;
+    if (!hasStrongMatch(matchedTerms, phraseHit)) return matches;
 
     matches.push({
       id: rec.id,
       fields: {
-        "Substance Name": fields["Substance Name"] || "",
-        Synonyms: fields["Synonyms"] || "",
-        Category: fields["Category"] || "",
-        "Ban Type": fields["Ban Type"] || fields["Banned Status"] || "",
-        Notes: fields["Notes"] || "",
-        Source: fields["Source"] || "",
-        Link: fields["Link"] || "",
-        Benefits: fields["Benefits"] || "",
-        Weaknesses: fields["Weaknesses"] || "",
-        "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
+        "Substance Name":      fields["Substance Name"]      || "",
+        Synonyms:              fields["Synonyms"]             || "",
+        Category:              fields["Category"]             || "",
+        "Ban Type":            fields["Ban Type"]             || fields["Banned Status"] || "",
+        Notes:                 fields["Notes"]                || "",
+        Source:                fields["Source"]               || "",
+        Link:                  fields["Link"]                 || "",
+        Benefits:              fields["Benefits"]             || "",
+        Weaknesses:            fields["Weaknesses"]           || "",
+        "Nutrient Antagonism": fields["Nutrient Antagonism"]  || "",
       },
       matchedTerms,
     });
-  }
-
-  console.log(`[check-smartstack] Banned Matches Found: ${matches.length}`);
-  return matches;
+    return matches;
+  }, []);
 }
 
-async function matchAgainstIngredientRecords(ingredientsText) {
-  const tokens = splitNormalizedTextToTerms(ingredientsText);
-  const normalized = tokens.join(" ");
+function matchAgainstIngredientRecords(ingredientsText) {
+  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
 
-  const raw = await getIngredientRecords();
-  const matches = [];
-
-  for (const rec of raw) {
-    const fields = rec.fields || {};
-
+  return INGREDIENT_RECORDS.reduce((matches, rec) => {
+    const fields      = rec.fields || {};
     const primaryName = fields["Name"] || fields["Ingredient Name"] || "";
-    const phraseHit = phraseInText(primaryName, normalized);
+    const phraseHit   = phraseInText(primaryName, normalized);
+    const matchedTerms = recordTerms(fields, ["Name", "Ingredient Name"])
+      .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    const candidates = recordTerms(fields, ["Name", "Ingredient Name"]);
-    const matchedTerms = [];
-
-    for (const t of candidates) {
-      if (isNoiseToken(t)) continue;
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
-
-    if (!hasStrongMatch(matchedTerms, phraseHit)) continue;
+    if (!hasStrongMatch(matchedTerms, phraseHit)) return matches;
 
     matches.push({
       id: rec.id,
       fields: {
-        Name: fields["Name"] || "",
-        "Ingredient Name": fields["Ingredient Name"] || "",
-        Synonyms: fields["Synonyms"] || "",
-        Benefits: fields["Benefits"] || "",
-        Weaknesses: fields["Weaknesses"] || "",
-        "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
-        Notes: fields["Notes"] || "",
-        Source: fields["Source"] || "",
-        Link: fields["Link"] || "",
+        Name:                  fields["Name"]                 || "",
+        "Ingredient Name":     fields["Ingredient Name"]      || "",
+        Synonyms:              fields["Synonyms"]             || "",
+        Benefits:              fields["Benefits"]             || "",
+        Weaknesses:            fields["Weaknesses"]           || "",
+        "Nutrient Antagonism": fields["Nutrient Antagonism"]  || "",
+        Notes:                 fields["Notes"]                || "",
+        Source:                fields["Source"]               || "",
+        Link:                  fields["Link"]                 || "",
       },
       matchedTerms,
     });
-  }
-
-  console.log(`[check-smartstack] Ingredient Matches Found: ${matches.length}`);
-  return matches;
+    return matches;
+  }, []);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -368,45 +204,34 @@ async function matchAgainstIngredientRecords(ingredientsText) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
-  if (req.method !== "POST") {
+  if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed. Use POST." });
-  }
 
   try {
     const { ingredientsText = "", debug: wantDebug = false } = req.body || {};
 
     const text = String(ingredientsText || "").trim();
-    if (!text || text.length < 2) {
+    if (!text || text.length < 2)
       return res.status(400).json({ error: "Missing ingredientsText" });
-    }
 
-    // Optional: fail loudly if Airtable is not configured
-    if (!bannedBase || !ingredientsBase) {
-      return res.status(500).json({
-        error:
-          "Airtable is not configured on the server. Check env vars for BANNED_* and INGREDIENT_*.",
-      });
-    }
+    const bannedSubstances = matchAgainstBannedRecords(text);
+    const ingredients      = matchAgainstIngredientRecords(text);
 
-    const bannedSubstances = await matchAgainstBannedRecords(text);
-    const ingredients = await matchAgainstIngredientRecords(text);
+    console.log(`[check-smartstack] Banned: ${bannedSubstances.length} | Ingredients: ${ingredients.length}`);
 
     return res.status(200).json({
       bannedSubstances,
       ingredients,
-      debug: wantDebug
-        ? {
-            sampleText: text.slice(0, 300),
-            totalBannedMatches: bannedSubstances.length,
-            totalIngredientMatches: ingredients.length,
-          }
-        : undefined,
+      ...(wantDebug && {
+        debug: {
+          sampleText:              text.slice(0, 300),
+          totalBannedMatches:      bannedSubstances.length,
+          totalIngredientMatches:  ingredients.length,
+        },
+      }),
     });
   } catch (err) {
     console.error("[check-smartstack] Unexpected error:", err);
-    return res.status(500).json({
-      error: "Internal server error",
-      details: String(err?.message || err),
-    });
+    return res.status(500).json({ error: "Internal server error", details: String(err?.message || err) });
   }
 }

@@ -106,14 +106,14 @@ async function fetchTable(config) {
     .select({
       view:     "Grid view",
       pageSize: 100,
-      fields,                 // only pull the fields we actually use
+      // No fields filter — pull everything so exact column names don't matter.
+      // check.js accesses fields by name with fallbacks so unknown fields are harmless.
     })
     .eachPage((page, next) => {
       for (const rec of page) {
         // Only include fields that have values — keeps JSON lean
         const cleanFields = {};
-        for (const field of fields) {
-          const v = rec.fields[field];
+        for (const [field, v] of Object.entries(rec.fields)) {
           if (v !== undefined && v !== null && v !== "") {
             cleanFields[field] = v;
           }

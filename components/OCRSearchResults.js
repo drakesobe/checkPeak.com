@@ -20,37 +20,10 @@
 
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { DS } from "./scanResultsTokens";
 
-// ---------------------------------------------------------------------------
-// Design tokens — single source of truth for all colors / type
-// ---------------------------------------------------------------------------
-
-const DS = {
-  brand:    "#1E3A5F",
-  banned:   "#C8102E",
-  safe:     "#00873E",
-  caution:  "#E87722",
-  // Derived tints (used for backgrounds / borders)
-  bannedBg:   "#FFF0F0",
-  bannedBorder: "#FFC8C8",
-  safeBg:     "#F0FBF4",
-  safeBorder: "#A8E6BC",
-  cautionBg:  "#FFFBF0",
-  cautionBorder: "#FFE0A8",
-  brandBg:    "#EEF3F9",
-  brandBorder:"#C0D0E0",
-  // Neutrals
-  cardBg:       "#FFFFFF",
-  pageBg:       "#F7F9FC",
-  border:       "#E8ECF0",
-  labelText:    "#6B7A8D",
-  bodyText:     "#2D3748",
-  dimText:      "#9BA8B4",
-  hoverBg:      "#EDF1F7",
-  cautionText:  "#7A4A0A",
-};
-
-// Google Fonts injected once — Syne for display, DM Sans for body
+// Component-scoped font classes (cp- prefix avoids collisions with sr- / sp-)
+// DS colors are now imported from scanResultsTokens — single source of truth.
 const FONT_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
   .cp-display { font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.03em; }

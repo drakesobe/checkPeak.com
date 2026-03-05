@@ -1,24 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import SearchBar from "../components/SearchBar";
-import OCRSearchResults from "../components/OCRSearchResults";
+import { useState }      from "react";
+import SearchBar         from "../components/SearchBar";
+import OCRSearchResults  from "../components/OCRSearchResults";
+import { DS }            from "../components/scanResultsTokens";
 
-// ---------------------------------------------------------------------------
-// Design tokens — must stay in sync with OCRSearchResults DS object
-// ---------------------------------------------------------------------------
-const DS = {
-  brand:       "#1E3A5F",
-  brandBg:     "#EEF3F9",
-  brandBorder: "#C0D0E0",
-  cardBg:      "#FFFFFF",
-  pageBg:      "#F7F9FC",
-  border:      "#E8ECF0",
-  labelText:   "#6B7A8D",
-  bodyText:    "#2D3748",
-  dimText:     "#9BA8B4",
-};
-
+// DS colors now come from scanResultsTokens — single source of truth.
+// Component-scoped font classes (sp- prefix avoids collisions with sr- / cp-)
 const PAGE_FONTS = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
   .sp-display { font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.03em; }

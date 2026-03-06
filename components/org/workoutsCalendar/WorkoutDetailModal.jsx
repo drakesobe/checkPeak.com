@@ -1,72 +1,45 @@
 // components/org/workoutsCalendar/WorkoutDetailModal.jsx
-// Opens when a coach clicks any WorkoutCard — shows details, allows status change + delete
+//
+// VIEW-ONLY detail modal.
+// Clicking "Edit Full" closes this modal and opens CreateWorkoutModal
+// in edit mode with all fields pre-populated.
+//
+// Props:
+//   open        boolean
+//   onClose     () => void
+//   workout     { id, Title, Date, Status, Sport, athleteCount, itemCount }
+//   onRefresh   () => void   — called after delete
+//   onEditFull  (editWorkout) => void  — parent opens CreateWorkoutModal with this data
 "use client";
 
 import { useState, useEffect } from "react";
 import {
-  X, CheckCircle2, Trash2, CalendarDays, Users, Dumbbell,
-  Tag as TagIcon, AlertTriangle, ChevronDown, RotateCcw, Edit2,
+  X, Trash2, AlertTriangle, Edit2, Loader2, UserCheck, Dumbbell,
+  CalendarDays, CheckCircle2, Clock,
 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
-import { isoToDate } from "@/lib/org/workoutsCalendar/date";
 import { titleSport } from "@/lib/org/workoutsCalendar/sports";
 
-async function safeJson(res) { try { return await res.json(); } catch { return {}; } }
+// ── tiny helpers ───────────────────────────────────────────────────────────────
+async function safeJson(r) { try { return await r.json(); } catch { return {}; } }
 
-/* ── Tiny primitives ── */
-function SmBtn({ children, onClick, variant = "secondary", disabled = false, danger = false }) {
-  const baseStyle = {
-    display:       "inline-flex",
-    alignItems:    "center",
-    justifyContent:"center",
-    gap:           "5px",
-    padding:       "8px 16px",
-    fontSize:      "11px",
-    fontWeight:    900,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    cursor:        disabled ? "not-allowed" : "pointer",
-    opacity:       disabled ? 0.45 : 1,
-    transition:    "background-color 0.12s, border-color 0.12s, color 0.12s",
-    border:        danger
-      ? `1px solid ${DS.bannedBorder}`
-      : variant === "primary"
-        ? `1px solid ${DS.brand}`
-        : `1px solid ${DS.border}`,
-    backgroundColor: danger
-      ? DS.bannedBg
-      : variant === "primary"
-        ? DS.brand
-        : DS.cardBg,
-    color: danger ? DS.banned : variant === "primary" ? "#fff" : DS.labelText,
-  };
-  const enter = (e) => {
-    if (disabled) return;
-    if (danger) { e.currentTarget.style.backgroundColor = DS.banned; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = DS.banned; }
-    else if (variant === "primary") { e.currentTarget.style.backgroundColor = DS.brandLight; }
-    else { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }
-  };
-  const leave = (e) => {
-    if (disabled) return;
-    e.currentTarget.style.backgroundColor = danger ? DS.bannedBg : variant === "primary" ? DS.brand : DS.cardBg;
-    e.currentTarget.style.borderColor     = danger ? DS.bannedBorder : variant === "primary" ? DS.brand : DS.border;
-    e.currentTarget.style.color           = danger ? DS.banned : variant === "primary" ? "#fff" : DS.labelText;
-  };
-  return (
-    <button type="button" style={baseStyle} disabled={disabled} onClick={onClick}
-      onMouseEnter={enter} onMouseLeave={leave}>
-      {children}
-    </button>
-  );
+function formatDate(iso) {
+  if (!iso) return "—";
+  try {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleString(undefined, {
+      weekday: "long", month: "long", day: "numeric", year: "numeric",
+    });
+  } catch { return iso; }
 }
 
+// ── StatusBadge ────────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const v = String(status || "").toLowerCase();
   let bg = DS.pageBg, border = DS.border, color = DS.dimText;
-  if (v.includes("complete"))       { bg = DS.safeBg;    border = DS.safeBorder;    color = DS.safe;    }
+  if (v.includes("complete"))                              { bg = DS.safeBg;    border = DS.safeBorder;    color = DS.safe;    }
   else if (v.includes("assign") || v.includes("pending")) { bg = DS.cautionBg; border = DS.cautionBorder; color = DS.caution; }
-  else if (v.includes("reject") || v.includes("archive")) { bg = DS.bannedBg; border = DS.bannedBorder; color = DS.banned; }
-  else if (v === "draft")           { bg = DS.pageBg;    border = DS.border;        color = DS.dimText; }
+  else if (v.includes("archive") || v.includes("reject")) { bg = DS.bannedBg;  border = DS.bannedBorder;  color = DS.banned;  }
   return (
     <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em", backgroundColor: bg, border: `1px solid ${border}`, color }}>
       {status || "—"}
@@ -74,297 +47,277 @@ function StatusBadge({ status }) {
   );
 }
 
-function InfoRow({ icon: Icon, label, value }) {
+// ── Stat chip ──────────────────────────────────────────────────────────────────
+function Chip({ icon: Icon, label, value }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 0", borderBottom: `1px solid ${DS.border}` }}>
-      <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: DS.brand }} />
-      <span style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText, minWidth: "80px" }}>{label}</span>
-      <span style={{ fontSize: "13px", fontWeight: 700, color: DS.bodyText }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 14px", backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+      <Icon style={{ width: 16, height: 16, color: DS.brand, flexShrink: 0 }} />
+      <div>
+        <p style={{ fontSize: "9px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.dimText }}>{label}</p>
+        <p style={{ fontSize: "13px", fontWeight: 700, color: DS.bodyText, marginTop: "2px" }}>{value}</p>
+      </div>
     </div>
   );
 }
 
-/* ── STATUS OPTIONS ── */
-const STATUS_OPTIONS = [
-  { value: "assigned",  label: "Assigned",  hint: "Scheduled for athletes" },
-  { value: "complete",  label: "Complete",  hint: "Mark as done" },
-  { value: "draft",     label: "Draft",     hint: "Not yet published" },
-  { value: "archived",  label: "Archived",  hint: "Hidden from athletes" },
-];
-
-export default function WorkoutDetailModal({
-  open, onClose,
-  workout,           // the workout object from WorkoutsByDate
-  onRefresh,         // () => void — called after any mutation
-}) {
-  const [busy,          setBusy]          = useState(false);
+// ── Main ───────────────────────────────────────────────────────────────────────
+export default function WorkoutDetailModal({ open, onClose, workout, onRefresh, onEditFull }) {
+  const [loading,       setLoading]       = useState(false);
+  const [detail,        setDetail]        = useState(null);   // full data from /detail
   const [err,           setErr]           = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
-  const [localStatus,   setLocalStatus]   = useState("");
+  const [deleting,      setDeleting]      = useState(false);
 
-  // Sync local status when workout changes
+  // ── fetch on open ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (workout) setLocalStatus(String(workout?.Status || workout?.status || "assigned"));
-    setErr(""); setConfirmDelete(false); setStatusPickerOpen(false);
-  }, [workout, open]);
+    if (!open || !workout?.id) return;
+    setErr(""); setConfirmDelete(false); setDetail(null);
+    setLoading(true);
+    fetch(`/api/org/workouts/detail?id=${encodeURIComponent(workout.id)}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => {
+        if (data?.error) { setErr(data.error); return; }
+        if (!data?.workout) { setErr("No workout data returned."); return; }
+        setDetail(data); // { workout, siblings }
+      })
+      .catch(e => setErr(e?.message || "Failed to load workout"))
+      .finally(() => setLoading(false));
+  }, [open, workout?.id]);
 
-  // ESC + scroll lock
+  // ── ESC + scroll lock ────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e) => { if (e.key === "Escape") { if (confirmDelete) setConfirmDelete(false); else onClose?.(); } };
+    const onKey = e => {
+      if (e.key === "Escape") {
+        if (confirmDelete) { setConfirmDelete(false); return; }
+        if (!deleting) onClose?.();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-  }, [open, onClose, confirmDelete]);
+  }, [open, onClose, confirmDelete, deleting]);
 
   if (!open || !workout) return null;
 
-  /* ── Derived fields ── */
-  const id      = String(workout?.id || workout?.Id || "").trim();
-  const title   = workout?.Title || workout?.title || "Workout";
-  const status  = localStatus || workout?.Status || workout?.status || "assigned";
-  const sport   = titleSport(workout?.Sport || workout?.sport || "");
-  const dateISO = String(workout?.Date || workout?.date || "").slice(0, 10);
-  const athletes = Number(workout?.athleteCount || 0);
-  const items    = Number(workout?.itemCount    || 0);
+  const w        = detail?.workout;
+  const siblings = detail?.siblings || [];
+  const title    = w?.Title || workout?.Title || workout?.title || "Workout";
+  const sport    = titleSport(w?.Sport || workout?.Sport || workout?.sport || "");
+  const dateISO  = w?.Date  || workout?.Date  || workout?.date  || "";
+  const status   = w?.Status || workout?.Status || workout?.status || "assigned";
+  const items    = Array.isArray(w?.items) ? w.items.filter(it => String(it?.ExerciseName || "").trim()) : [];
 
-  const dateLabel = (() => {
-    if (!dateISO) return "—";
+  // ── delete all sibling records ───────────────────────────────────────────
+  const handleDelete = async () => {
+    setDeleting(true); setErr("");
+    const ids = siblings.length ? siblings.map(s => s.id) : [workout.id];
     try {
-      const [y, m, d] = dateISO.split("-").map(Number);
-      return new Date(y, m - 1, d).toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    } catch { return dateISO; }
-  })();
-
-  /* ── API helpers ── */
-  const updateStatus = async (newStatus) => {
-    if (!id) { setErr("No workout ID — cannot update."); return; }
-    setErr(""); setBusy(true);
-    try {
-      const res  = await fetch("/api/org/workouts/update-status", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: newStatus }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to update status");
-      setLocalStatus(newStatus);
-      setStatusPickerOpen(false);
-      onRefresh?.();
-    } catch (e) { setErr(e?.message || "Failed to update status"); }
-    finally     { setBusy(false); }
-  };
-
-  const deleteWorkout = async () => {
-    if (!id) { setErr("No workout ID — cannot delete."); return; }
-    setErr(""); setBusy(true);
-    try {
-      const res  = await fetch("/api/org/workouts/delete", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to delete workout");
+      await Promise.all(
+        ids.map(sid =>
+          fetch("/api/org/workouts/delete", {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: sid }),
+          })
+        )
+      );
       onRefresh?.();
       onClose?.();
-    } catch (e) { setErr(e?.message || "Failed to delete workout"); setBusy(false); }
+    } catch (e) {
+      setErr(e?.message || "Failed to delete");
+      setDeleting(false);
+    }
   };
 
-  const isComplete = String(status).toLowerCase().includes("complete");
+  // ── hand off to CreateWorkoutModal in edit mode ──────────────────────────
+  const handleEditFull = () => {
+    onEditFull?.({
+      id:         workout.id,
+      title,
+      dateISO,
+      sport:      w?.Sport || workout?.Sport || workout?.sport || "",
+      status,
+      items,
+      athleteIds: siblings.map(s => s.athleteToken).filter(Boolean),
+    });
+    onClose?.();
+  };
 
   return (
-    <div className="fixed inset-0" style={{ zIndex: 10002 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 10002 }}>
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50"
-        onClick={() => { if (!busy) onClose?.(); }}
+        style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.5)" }}
+        onClick={() => { if (!deleting) onClose?.(); }}
       />
 
       {/* Panel */}
-      <div className="absolute inset-0 flex items-center justify-center px-3 py-4 sm:px-6 sm:py-8">
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
         <div
-          className="w-full flex flex-col"
+          role="dialog" aria-modal="true"
+          onClick={e => e.stopPropagation()}
           style={{
-            maxWidth:        "600px",
+            width: "100%", maxWidth: "560px",
+            display: "flex", flexDirection: "column",
             backgroundColor: DS.cardBg,
-            border:          `1px solid ${DS.border}`,
-            borderTop:       `3px solid ${isComplete ? DS.safe : DS.brand}`,
-            maxHeight:       "calc(100dvh - 32px)",
-            overflow:        "hidden",
-          }}
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div
-            className="px-5 py-4 flex items-start justify-between gap-4 shrink-0"
-            style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
-          >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-black uppercase tracking-wide truncate" style={{ color: DS.bodyText }}>
-                  {title}
-                </p>
+            border: `1px solid ${DS.border}`,
+            borderTop: `3px solid ${String(status).toLowerCase().includes("complete") ? DS.safe : DS.brand}`,
+            maxHeight: "calc(100dvh - 32px)",
+            overflow: "hidden",
+          }}>
+
+          {/* ── Header ── */}
+          <div style={{ padding: "16px 20px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px", borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg, flexShrink: 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <p style={{ fontSize: "15px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.04em", color: DS.bodyText }}>{title}</p>
                 <StatusBadge status={status} />
               </div>
-              {sport && (
-                <p className="text-xs font-bold mt-1" style={{ color: DS.dimText }}>{sport}</p>
-              )}
+              {sport && <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "4px" }}>{sport}</p>}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{ padding: "7px", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, cursor: "pointer", flexShrink: 0 }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
-            >
-              <X className="w-4 h-4" style={{ color: DS.dimText }} />
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+              {/* Edit Full — opens CreateWorkoutModal pre-populated */}
+              <button type="button" onClick={handleEditFull} disabled={loading || deleting}
+                style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 14px", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", cursor: (loading || deleting) ? "not-allowed" : "pointer", opacity: (loading || deleting) ? 0.45 : 1, border: `1px solid ${DS.brand}`, backgroundColor: DS.brand, color: "#fff" }}
+                onMouseEnter={e => { if (!loading && !deleting) e.currentTarget.style.backgroundColor = DS.brandLight; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = DS.brand; }}>
+                <Edit2 style={{ width: 12, height: 12 }} />
+                Edit
+              </button>
+              <button type="button" onClick={onClose} disabled={deleting}
+                style={{ padding: "7px", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, cursor: "pointer" }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = DS.cardBg; }}>
+                <X style={{ width: 16, height: 16, color: DS.dimText }} />
+              </button>
+            </div>
           </div>
 
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto overscroll-contain p-5 space-y-4">
+          {/* ── Body ── */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
 
-            {/* Error banner */}
+            {/* Error */}
             {err && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "10px 14px", backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, borderLeft: `3px solid ${DS.banned}` }}>
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: DS.banned }} />
+                <AlertTriangle style={{ width: 16, height: 16, color: DS.banned, flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: "12px", fontWeight: 700, color: DS.banned }}>{err}</p>
               </div>
             )}
 
-            {/* Details card */}
-            <div style={{ border: `1px solid ${DS.border}`, padding: "0 16px", backgroundColor: DS.cardBg }}>
-              <InfoRow icon={CalendarDays} label="Date"     value={dateLabel} />
-              <InfoRow icon={TagIcon}      label="Sport"    value={sport || "—"} />
-              <InfoRow icon={Users}        label="Athletes" value={athletes > 0 ? `${athletes} assigned` : "—"} />
-              <InfoRow icon={Dumbbell}     label="Items"    value={items > 0 ? `${items} exercises` : "None"} />
-            </div>
+            {/* Loading */}
+            {loading && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", padding: "32px 0" }}>
+                <Loader2 style={{ width: 20, height: 20, color: DS.brand }} />
+                <p style={{ fontSize: "13px", color: DS.dimText }}>Loading…</p>
+              </div>
+            )}
 
-            {/* Status picker */}
-            <div style={{ border: `1px solid ${DS.border}` }}>
-              <button
-                type="button"
-                className="w-full flex items-center justify-between gap-3"
-                style={{ padding: "12px 16px", backgroundColor: DS.pageBg, cursor: "pointer" }}
-                onClick={() => setStatusPickerOpen((v) => !v)}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
-              >
-                <div className="flex items-center gap-2">
-                  <span style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.bodyText }}>
-                    Change Status
-                  </span>
-                  <StatusBadge status={status} />
+            {!loading && (
+              <>
+                {/* Stat chips */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                  <Chip icon={CalendarDays} label="Date"     value={formatDate(dateISO)} />
+                  <Chip icon={UserCheck}    label="Athletes" value={siblings.length || workout?.athleteCount || "—"} />
+                  <Chip icon={Dumbbell}     label="Items"    value={items.length > 0 ? items.length : (workout?.itemCount || 0)} />
                 </div>
-                <ChevronDown className="w-4 h-4" style={{ color: DS.dimText, transform: statusPickerOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-              </button>
 
-              {statusPickerOpen && (
-                <div style={{ borderTop: `1px solid ${DS.border}`, padding: "12px", backgroundColor: DS.cardBg, display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {STATUS_OPTIONS.map(({ value, label, hint }) => {
-                    const isCurrent = String(status).toLowerCase() === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        disabled={isCurrent || busy}
-                        onClick={() => updateStatus(value)}
-                        title={hint}
-                        style={{
-                          display: "flex", flexDirection: "column", alignItems: "flex-start",
-                          padding: "8px 14px", cursor: isCurrent || busy ? "default" : "pointer",
-                          border: isCurrent ? `1px solid ${DS.brand}` : `1px solid ${DS.border}`,
-                          backgroundColor: isCurrent ? DS.brandBg : DS.cardBg,
-                          opacity: busy ? 0.5 : 1,
-                          minWidth: "110px",
-                          transition: "background-color 0.12s, border-color 0.12s",
-                        }}
-                        onMouseEnter={(e) => { if (!isCurrent && !busy) { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; } }}
-                        onMouseLeave={(e) => { if (!isCurrent && !busy) { e.currentTarget.style.backgroundColor = DS.cardBg; e.currentTarget.style.borderColor = DS.border; } }}
-                      >
-                        <span style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: isCurrent ? DS.brand : DS.bodyText }}>
-                          {label}
-                        </span>
-                        <span style={{ fontSize: "10px", color: DS.dimText, marginTop: "2px" }}>{hint}</span>
+                {/* Athletes */}
+                {siblings.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText, marginBottom: "8px" }}>Athletes</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {siblings.map(s => (
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", backgroundColor: s.isSelf ? DS.brandBg : DS.pageBg, border: `1px solid ${s.isSelf ? DS.brandBorder : DS.border}` }}>
+                          <UserCheck style={{ width: 13, height: 13, color: s.isSelf ? DS.brand : DS.dimText, flexShrink: 0 }} />
+                          <p style={{ fontSize: "12px", fontWeight: 700, color: DS.bodyText }}>
+                            {s.athleteName || s.athleteToken || "—"}
+                            {s.isSelf && <span style={{ fontSize: "10px", color: DS.brand, marginLeft: "6px" }}>this record</span>}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Workout items */}
+                {items.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText, marginBottom: "8px" }}>Exercises</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {items.map((it, i) => (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", gap: "10px", alignItems: "center", padding: "9px 12px", backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+                          <span style={{ fontSize: "10px", fontWeight: 900, color: DS.dimText, textAlign: "center" }}>{it.Order ?? i + 1}</span>
+                          <div>
+                            <p style={{ fontSize: "13px", fontWeight: 700, color: DS.bodyText }}>{it.ExerciseName}</p>
+                            {(it.Instructions) && (
+                              <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "2px" }}>{it.Instructions}</p>
+                            )}
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            {[it.Sets && `${it.Sets} sets`, it.Reps && `${it.Reps} reps`, it.Weight, it.Rest && `rest ${it.Rest}`].filter(Boolean).map((tag, ti) => (
+                              <span key={ti} style={{ display: "inline-block", marginLeft: "4px", marginBottom: "2px", padding: "2px 7px", fontSize: "10px", fontWeight: 700, backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* No items yet */}
+                {items.length === 0 && !loading && (
+                  <div style={{ padding: "16px", backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, textAlign: "center" }}>
+                    <p style={{ fontSize: "12px", color: DS.dimText }}>No exercises added yet. Click <strong>Edit</strong> to add some.</p>
+                  </div>
+                )}
+
+                {/* ── Delete ── */}
+                {!confirmDelete ? (
+                  <button type="button" disabled={deleting} onClick={() => setConfirmDelete(true)}
+                    style={{ alignSelf: "flex-start", background: "none", border: "none", cursor: deleting ? "not-allowed" : "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: "5px", opacity: deleting ? 0.45 : 1, marginTop: "4px" }}>
+                    <Trash2 style={{ width: 13, height: 13, color: DS.dimText }} />
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: DS.dimText, textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                      Delete workout{siblings.length > 1 ? ` (${siblings.length} records)` : ""}
+                    </span>
+                  </button>
+                ) : (
+                  <div style={{ padding: "14px 16px", backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, borderLeft: `3px solid ${DS.banned}` }}>
+                    <p style={{ fontSize: "13px", fontWeight: 900, color: DS.banned, marginBottom: "6px" }}>
+                      Delete "{title}"?
+                    </p>
+                    <p style={{ fontSize: "12px", color: DS.banned, marginBottom: "14px", opacity: 0.85 }}>
+                      Permanently removes <strong>all {siblings.length || 1} record{(siblings.length || 1) !== 1 ? "s" : ""}</strong>. Cannot be undone.
+                    </p>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button type="button" disabled={deleting} onClick={handleDelete}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 14px", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.55 : 1, border: `1px solid ${DS.banned}`, backgroundColor: DS.banned, color: "#fff" }}>
+                        <Trash2 style={{ width: 13, height: 13 }} />
+                        {deleting ? "Deleting…" : "Yes, delete all"}
                       </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Quick-action shortcuts */}
-            {!isComplete && (
-              <div style={{ display: "flex", gap: "8px" }}>
-                <SmBtn
-                  variant="primary"
-                  disabled={busy}
-                  onClick={() => updateStatus("complete")}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {busy ? "Saving…" : "Mark complete"}
-                </SmBtn>
-              </div>
-            )}
-            {isComplete && (
-              <div style={{ display: "flex", gap: "8px" }}>
-                <SmBtn
-                  disabled={busy}
-                  onClick={() => updateStatus("assigned")}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  {busy ? "Saving…" : "Reopen"}
-                </SmBtn>
-              </div>
-            )}
-
-            {/* Delete section */}
-            {!confirmDelete ? (
-              <div style={{ paddingTop: "8px" }}>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setConfirmDelete(true)}
-                  style={{ background: "none", border: "none", cursor: busy ? "not-allowed" : "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: "5px" }}
-                >
-                  <Trash2 className="w-3.5 h-3.5" style={{ color: DS.dimText }} />
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: DS.dimText, textDecoration: "underline", textDecorationStyle: "dotted" }}>
-                    Delete workout
-                  </span>
-                </button>
-              </div>
-            ) : (
-              <div style={{ padding: "14px 16px", backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, borderLeft: `3px solid ${DS.banned}` }}>
-                <p style={{ fontSize: "13px", fontWeight: 900, color: DS.banned, marginBottom: "10px" }}>
-                  Delete "{title}"?
-                </p>
-                <p style={{ fontSize: "12px", color: DS.banned, marginBottom: "14px", opacity: 0.85 }}>
-                  This removes the workout and all athlete assignments. This cannot be undone.
-                </p>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <SmBtn danger disabled={busy} onClick={deleteWorkout}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {busy ? "Deleting…" : "Yes, delete"}
-                  </SmBtn>
-                  <SmBtn disabled={busy} onClick={() => setConfirmDelete(false)}>
-                    Cancel
-                  </SmBtn>
-                </div>
-              </div>
+                      <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)}
+                        style={{ display: "inline-flex", alignItems: "center", padding: "7px 14px", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", cursor: "pointer", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {/* Footer */}
-          <div
-            className="px-5 py-3 flex justify-end"
-            style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
-          >
-            <SmBtn onClick={onClose} disabled={busy}>Close</SmBtn>
+          {/* ── Footer ── */}
+          <div style={{ padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg, flexShrink: 0 }}>
+            <p style={{ fontSize: "10px", color: DS.dimText }}>ID: {workout.id}</p>
+            <button type="button" onClick={onClose} disabled={deleting}
+              style={{ display: "inline-flex", alignItems: "center", padding: "7px 14px", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", cursor: "pointer", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = DS.cardBg; }}>
+              Close
+            </button>
           </div>
         </div>
       </div>

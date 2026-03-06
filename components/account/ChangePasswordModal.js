@@ -1,17 +1,104 @@
+// components/account/ChangePasswordModal.jsx
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
+const DS = {
+  brand:        "#1E3A5F",
+  brandBg:      "#EEF3F9",
+  brandBorder:  "#C0D0E0",
+  banned:       "#C8102E",
+  bannedBg:     "#FFF0F0",
+  bannedBorder: "#FFC8C8",
+  border:       "#E8ECF0",
+  bodyText:     "#2D3748",
+  labelText:    "#6B7A8D",
+  dimText:      "#9BA8B4",
+};
+
+// Strength color progresses light→strong
+const STRENGTH_COLORS = ["#E8ECF0", "#E87722", "#E8C022", "#4A7FA5", "#1E3A5F"];
+
+function StrengthBar({ score }) {
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs" style={{ color: DS.labelText }}>Strength</span>
+        <span className="text-xs font-bold" style={{ color: DS.bodyText }}>
+          {["", "Weak", "Okay", "Good", "Strong", "Very strong"][score] || ""}
+        </span>
+      </div>
+      <div
+        className="h-1.5 w-full overflow-hidden"
+        style={{ backgroundColor: DS.border }}
+      >
+        <div
+          className="h-full transition-all duration-300"
+          style={{
+            width: `${(score / 5) * 100}%`,
+            backgroundColor: STRENGTH_COLORS[Math.max(0, score - 1)] || DS.border,
+          }}
+        />
+      </div>
+      <p className="mt-1.5 text-xs" style={{ color: DS.dimText }}>
+        Use 12+ characters with letters, numbers, and symbols.
+      </p>
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, placeholder, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label
+        className="block text-sm font-bold mb-1.5"
+        style={{ color: DS.bodyText }}
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          className="w-full text-sm px-3 py-2.5 pr-16 transition-all outline-none"
+          style={{
+            border: `1px solid ${DS.brandBorder}`,
+            backgroundColor: DS.brandBg,
+            color: DS.bodyText,
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = DS.brand;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${DS.brand}18`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = DS.brandBorder;
+            e.currentTarget.style.boxShadow = "none";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          className="absolute inset-y-0 right-3 text-xs font-bold transition-colors"
+          style={{ color: DS.labelText }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = DS.brand)}
+          onMouseLeave={(e) => (e.currentTarget.style.color = DS.labelText)}
+        >
+          {show ? "Hide" : "Show"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function ChangePasswordModal({
   open,
   onClose,
-  inputBase,
+  inputBase, // accepted but unused — styling is self-contained
   passwordData,
   onField,
   pwScore,
@@ -21,9 +108,14 @@ export default function ChangePasswordModal({
   message,
   onSave,
 }) {
-  const [showPw1, setShowPw1] = useState(false);
-  const [showPw2, setShowPw2] = useState(false);
-  const [showPw3, setShowPw3] = useState(false);
+  const confirmMismatch =
+    passwordData.confirmPassword.length > 0 &&
+    passwordData.newPassword !== passwordData.confirmPassword;
+
+  const confirmMatch =
+    passwordData.confirmPassword.length > 0 &&
+    passwordData.newPassword === passwordData.confirmPassword &&
+    passwordData.newPassword.length >= 8;
 
   return (
     <AnimatePresence>
@@ -32,42 +124,81 @@ export default function ChangePasswordModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            initial={{ opacity: 0, y: 14, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0,  scale: 1 }}
+            exit={{ opacity: 0,    y: 14, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            className="bg-white rounded-3xl p-6 w-full max-w-md relative border border-blue-100 shadow-xl"
+            className="bg-white w-full max-w-md relative"
+            style={{
+              border: `1px solid ${DS.border}`,
+              borderTop: `4px solid ${DS.brand}`,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
+            {/* Header */}
+            <div
+              className="flex items-start justify-between gap-4 px-6 py-5"
+              style={{ borderBottom: `1px solid ${DS.border}` }}
+            >
               <div>
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">SECURITY</p>
-                <h2 className="text-lg font-extrabold text-gray-900 mt-1">Change Password</h2>
-                <p className="text-[12px] text-gray-600 mt-1">Use a strong password you don’t reuse elsewhere.</p>
+                <p
+                  className="text-xs font-black uppercase tracking-wider mb-1"
+                  style={{ color: DS.brand }}
+                >
+                  Security
+                </p>
+                <h2
+                  className="text-base font-black uppercase"
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    color: DS.bodyText,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Change Password
+                </h2>
+                <p className="text-xs mt-1" style={{ color: DS.labelText }}>
+                  Use a strong password you don't reuse elsewhere.
+                </p>
               </div>
-
               <button
                 onClick={onClose}
-                className="h-9 w-9 rounded-2xl border border-gray-200 grid place-items-center text-gray-600 hover:bg-gray-50 transition"
-                aria-label="Close"
                 type="button"
+                aria-label="Close"
+                className="shrink-0 flex items-center justify-center w-8 h-8 transition-colors"
+                style={{
+                  border: `1px solid ${DS.border}`,
+                  color: DS.labelText,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
               >
                 ✕
               </button>
             </div>
 
-            <div className="mt-4 space-y-3">
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+
+              {/* Inline feedback */}
               <AnimatePresence>
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, y: -8 }}
+                    initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="p-3 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm"
+                    exit={{ opacity: 0, y: -6 }}
+                    className="px-4 py-3 text-sm font-medium"
+                    style={{
+                      backgroundColor: DS.bannedBg,
+                      borderLeft: `4px solid ${DS.banned}`,
+                      color: "#7A1A1A",
+                    }}
                   >
                     {error}
                   </motion.div>
@@ -77,136 +208,107 @@ export default function ChangePasswordModal({
               <AnimatePresence>
                 {message && (
                   <motion.div
-                    initial={{ opacity: 0, y: -8 }}
+                    initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="p-3 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm"
+                    exit={{ opacity: 0, y: -6 }}
+                    className="px-4 py-3 text-sm font-medium"
+                    style={{
+                      backgroundColor: "#F0FBF4",
+                      borderLeft: "4px solid #00873E",
+                      color: "#1A5C33",
+                    }}
                   >
                     {message}
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Current password */}
+              <PasswordField
+                label="Current password"
+                value={passwordData.currentPassword}
+                onChange={(v) => onField("currentPassword", v)}
+                placeholder="Enter current password"
+                autoComplete="current-password"
+              />
+
               <div>
-                <label className="block text-gray-800 font-medium mb-1">Current password</label>
-                <div className="relative">
-                  <input
-                    type={showPw1 ? "text" : "password"}
-                    placeholder="Enter current password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) => onField("currentPassword", e.target.value)}
-                    className={`${inputBase} pr-14`}
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw1((v) => !v)}
-                    className="absolute inset-y-0 right-3 text-sm font-semibold text-gray-500 hover:text-gray-700"
-                  >
-                    {showPw1 ? "Hide" : "Show"}
-                  </button>
-                </div>
+                <PasswordField
+                  label="New password"
+                  value={passwordData.newPassword}
+                  onChange={(v) => onField("newPassword", v)}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                />
+                <StrengthBar score={pwScore} />
               </div>
 
-              {/* New password */}
               <div>
-                <label className="block text-gray-800 font-medium mb-1">New password</label>
-                <div className="relative">
-                  <input
-                    type={showPw2 ? "text" : "password"}
-                    placeholder="At least 8 characters"
-                    value={passwordData.newPassword}
-                    onChange={(e) => onField("newPassword", e.target.value)}
-                    className={`${inputBase} pr-14`}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw2((v) => !v)}
-                    className="absolute inset-y-0 right-3 text-sm font-semibold text-gray-500 hover:text-gray-700"
-                  >
-                    {showPw2 ? "Hide" : "Show"}
-                  </button>
-                </div>
-
-                <div className="mt-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Strength</span>
-                    <span className="font-semibold text-gray-700">{pwLabel}</span>
-                  </div>
-                  <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#46769B] transition-all"
-                      style={{ width: `${(pwScore / 5) * 100}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-[11px] text-gray-500">Tip: Use 12+ characters and mix letters, numbers, and symbols.</p>
-                </div>
-              </div>
-
-              {/* Confirm password */}
-              <div>
-                <label className="block text-gray-800 font-medium mb-1">Confirm new password</label>
-                <div className="relative">
-                  <input
-                    type={showPw3 ? "text" : "password"}
-                    placeholder="Re-enter new password"
-                    value={passwordData.confirmPassword}
-                    onChange={(e) => onField("confirmPassword", e.target.value)}
-                    className={`${inputBase} pr-14`}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw3((v) => !v)}
-                    className="absolute inset-y-0 right-3 text-sm font-semibold text-gray-500 hover:text-gray-700"
-                  >
-                    {showPw3 ? "Hide" : "Show"}
-                  </button>
-                </div>
-
-                {passwordData.confirmPassword.length > 0 && passwordData.newPassword !== passwordData.confirmPassword ? (
-                  <p className="mt-2 text-xs text-red-600">Passwords don’t match yet.</p>
-                ) : null}
-
-                {passwordData.confirmPassword.length > 0 &&
-                passwordData.newPassword === passwordData.confirmPassword &&
-                passwordData.newPassword.length >= 8 ? (
-                  <p className="mt-2 text-xs text-emerald-700">Passwords match ✅</p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-2xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition"
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={onSave}
-                disabled={saving}
-                className={classNames(
-                  "px-4 py-2 rounded-2xl text-white font-semibold shadow-sm transition",
-                  saving ? "bg-gray-300 cursor-not-allowed" : "bg-[#46769B] hover:brightness-110"
+                <PasswordField
+                  label="Confirm new password"
+                  value={passwordData.confirmPassword}
+                  onChange={(v) => onField("confirmPassword", v)}
+                  placeholder="Re-enter new password"
+                  autoComplete="new-password"
+                />
+                {confirmMismatch && (
+                  <p className="mt-1.5 text-xs font-semibold" style={{ color: DS.banned }}>
+                    Passwords don't match yet.
+                  </p>
                 )}
-                type="button"
-              >
-                {saving ? "Saving..." : "Save"}
-              </button>
+                {confirmMatch && (
+                  <p className="mt-1.5 text-xs font-semibold" style={{ color: "#00873E" }}>
+                    Passwords match ✓
+                  </p>
+                )}
+              </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between text-xs">
-              <Link href="/" className="text-gray-500 hover:underline" onClick={onClose}>
-                Back to home
-              </Link>
-              <Link href="/forgot-password" className="text-[#46769B] font-semibold hover:underline" onClick={onClose}>
+            {/* Footer */}
+            <div
+              className="flex items-center justify-between gap-3 px-6 py-4"
+              style={{ borderTop: `1px solid ${DS.border}` }}
+            >
+              {/* Forgot password — relevant here since user is trying to set one */}
+              <a
+                href="/forgot-password"
+                className="text-xs font-bold hover:underline"
+                style={{ color: DS.labelText }}
+              >
                 Forgot password?
-              </Link>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-bold transition-all"
+                  style={{
+                    color: DS.labelText,
+                    border: `1px solid ${DS.border}`,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving}
+                  className="px-4 py-2 text-sm font-bold transition-all"
+                  style={
+                    saving
+                      ? { backgroundColor: DS.border, color: DS.dimText, cursor: "not-allowed" }
+                      : { backgroundColor: DS.brand, color: "#fff" }
+                  }
+                  onMouseEnter={(e) => { if (!saving) e.currentTarget.style.filter = "brightness(1.12)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
+                >
+                  {saving ? "Saving…" : "Update Password"}
+                </button>
+              </div>
             </div>
+
           </motion.div>
         </motion.div>
       )}

@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
 import AccountShell from "@/components/account/AccountShell";
@@ -142,7 +142,8 @@ function AccountInner({ user }) {
   });
 
   const [originalData, setOriginalData] = useState({});
-  const hasProfileChanges = useRef(false);
+  // useState instead of ref so the Save button re-renders immediately when dirty state changes
+  const [profileDirty, setProfileDirty] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -154,6 +155,10 @@ function AccountInner({ user }) {
   const [orgConnectLoading, setOrgConnectLoading] = useState(false);
   const [orgConnectError, setOrgConnectError] = useState("");
   const [orgConnectOk, setOrgConnectOk] = useState("");
+
+  // Athlete org hydrate — tracks background fetch so UI can show loading/error
+  const [orgHydrating, setOrgHydrating] = useState(false);
+  const [orgHydrateError, setOrgHydrateError] = useState("");
 
   // Change password modal
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -205,11 +210,11 @@ function AccountInner({ user }) {
       phone: validatePhone(initial.phone),
     });
 
-    hasProfileChanges.current = false;
+    setProfileDirty(false);
   }, [user, isOrgPrimary, roleLabel, orgNameFromSession, orgIdFromSession]);
 
   /**
-   * ✅ Athlete org hydrate (fix "Not connected" when Airtable has org but session doesn't)
+   * Athlete org hydrate (fix "Not connected" when Airtable has org but session doesn't)
    * Requires API: GET /api/athlete/account/org
    */
   useEffect(() => {
@@ -221,6 +226,9 @@ function AccountInner({ user }) {
 
     let cancelled = false;
 
+    setOrgHydrating(true);
+    setOrgHydrateError("");
+
     (async () => {
       try {
         const res = await fetch("/api/athlete/account/org", {
@@ -228,13 +236,17 @@ function AccountInner({ user }) {
           credentials: "include",
         });
         const data = await safeJson(res);
-        if (!res.ok) return;
-
-        const newName = String(data?.org?.name || "").trim();
-        const newId = String(data?.org?.id || "").trim();
-        const newToken = String(data?.org?.token || "").trim();
 
         if (cancelled) return;
+
+        if (!res.ok) {
+          setOrgHydrateError("Could not load organization info.");
+          return;
+        }
+
+        const newName = String(data?.org?.name || "").trim();
+        const newId   = String(data?.org?.id   || "").trim();
+        const newToken = String(data?.org?.token || "").trim();
 
         if (newName || newId) {
           setFormData((prev) => ({
@@ -252,21 +264,25 @@ function AccountInner({ user }) {
           try {
             const nextUser = {
               ...user,
-              OrgName: newName || user?.OrgName,
-              OrganizationName: newName || user?.OrganizationName,
-              organizationName: newName || user?.organizationName,
-              OrganizationDisplay: newName || user?.OrganizationDisplay,
-              organizationDisplay: newName || user?.organizationDisplay,
-              ...(newId ? { organizationId: newId, OrganizationId: newId } : {}),
-              ...(newToken ? { Token: newToken } : {}),
+              OrgName:              newName || user?.OrgName,
+              OrganizationName:     newName || user?.OrganizationName,
+              organizationName:     newName || user?.organizationName,
+              OrganizationDisplay:  newName || user?.OrganizationDisplay,
+              organizationDisplay:  newName || user?.organizationDisplay,
+              ...(newId    ? { organizationId: newId,       OrganizationId: newId }   : {}),
+              ...(newToken ? { Token: newToken }                                        : {}),
             };
             setUser?.(nextUser);
             if (typeof window !== "undefined") localStorage.setItem("user", JSON.stringify(nextUser));
           } catch {}
         }
       } catch (e) {
-        // silent
-        console.warn("[account] org hydrate failed:", e);
+        if (!cancelled) {
+          console.warn("[account] org hydrate failed:", e);
+          setOrgHydrateError("Could not load organization info.");
+        }
+      } finally {
+        if (!cancelled) setOrgHydrating(false);
       }
     })();
 
@@ -295,10 +311,10 @@ function AccountInner({ user }) {
     if (name === "email") setValidation((prev) => ({ ...prev, email: validateEmail(value) }));
     if (name === "phone") setValidation((prev) => ({ ...prev, phone: validatePhone(value) }));
 
-    hasProfileChanges.current = recomputeHasChanges(next);
+    setProfileDirty(recomputeHasChanges(next));
   };
 
-  const canSaveProfile = !saving && hasProfileChanges.current && validation.email && validation.phone;
+  const canSaveProfile = !saving && profileDirty && validation.email && validation.phone;
 
   const handleSaveProfile = useCallback(async () => {
     if (!canSaveProfile) return { ok: false, skipped: true };
@@ -349,7 +365,7 @@ function AccountInner({ user }) {
       email: formData.email,
       phone: formData.phone,
     }));
-    hasProfileChanges.current = false;
+    setProfileDirty(false);
 
     // sync AuthContext/localStorage
     try {
@@ -366,6 +382,7 @@ function AccountInner({ user }) {
     return { ok: true };
   }, [
     canSaveProfile,
+    profileDirty,
     formData,
     isAthlete,
     isOrgMember,
@@ -377,7 +394,7 @@ function AccountInner({ user }) {
 
   // Save all (Profile + Billing)
   const canSaveAll = (() => {
-    const canSaveBilling = Boolean(billingSaveRef.current) && billingDirty; // billing section decides validity
+    const canSaveBilling = Boolean(billingSaveRef.current) && billingDirty;
     const canSaveSomething = canSaveProfile || canSaveBilling;
     return !saving && canSaveSomething && validation.email && validation.phone;
   })();
@@ -411,6 +428,8 @@ function AccountInner({ user }) {
         setMessage("Saved successfully!");
         setTimeout(() => setMessage(""), 2500);
       } else {
+        // canSaveAll should prevent reaching here — both save functions returned skipped.
+        // Could happen if billing save ref was set but billing wasn't actually dirty.
         setMessage("No changes to save.");
         setTimeout(() => setMessage(""), 1500);
       }
@@ -613,6 +632,8 @@ function AccountInner({ user }) {
           orgConnectError={orgConnectError}
           orgConnectOk={orgConnectOk}
           onConnectOrganization={connectOrganization}
+          orgHydrating={orgHydrating}
+          orgHydrateError={orgHydrateError}
         />
 
         {canSeeBilling ? (
@@ -650,7 +671,7 @@ function AccountInner({ user }) {
       <ChangePasswordModal
         open={showPasswordModal}
         onClose={() => setShowPasswordModal(false)}
-        inputBase="w-full border border-gray-200 rounded-2xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30 transition text-gray-900 placeholder:text-gray-400"
+        inputBase="w-full border border-gray-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/25 transition text-gray-900 placeholder:text-gray-400"
         passwordData={passwordData}
         onField={onPasswordField}
         pwScore={pwScore}

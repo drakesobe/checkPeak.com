@@ -298,7 +298,7 @@ export default function DashboardHeader({ user, stats, routes, onNavigate }) {
             {/* Org context */}
             {user?.Organization && (
               <p className="mt-1.5 text-[11px]" style={{ color: "#94a3b8" }}>
-                Organisation:{" "}
+                Organization:{" "}
                 <span className="font-semibold" style={{ color: "#64748b" }}>
                   {user.Organization}
                 </span>

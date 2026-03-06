@@ -4,9 +4,7 @@ import { requireAthlete } from "@/lib/requireAthlete";
 
 /* ---------------- helpers ---------------- */
 
-function asString(v) {
-  return String(v ?? "").trim();
-}
+function asString(v) { return String(v ?? "").trim(); }
 
 function safeNum(v) {
   const n = Number(String(v ?? "").trim());
@@ -25,85 +23,73 @@ function escapeAirtableString(str = "") {
 
 function getTable(apiKey, baseId, tableNameOrId) {
   if (!apiKey || !baseId || !tableNameOrId) return null;
-  const base = new Airtable({ apiKey }).base(baseId);
-  return base(tableNameOrId);
+  return new Airtable({ apiKey }).base(baseId)(tableNameOrId);
 }
 
-// Monday-start week in America/New_York, returned as YYYY-MM-DD
 function nyWeekStartISO(d = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(d);
 
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
+  const y   = parts.find((p) => p.type === "year")?.value;
+  const m   = parts.find((p) => p.type === "month")?.value;
   const day = parts.find((p) => p.type === "day")?.value;
 
   const nyMid = new Date(`${y}-${m}-${day}T12:00:00`);
-  const dow = nyMid.getDay(); // 0=Sun..6=Sat
-  const diffToMon = (dow + 6) % 7; // Mon->0 ... Sun->6
+  const diffToMon = (nyMid.getDay() + 6) % 7;
   nyMid.setDate(nyMid.getDate() - diffToMon);
 
-  const parts2 = new Intl.DateTimeFormat("en-CA", {
+  const p2  = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(nyMid);
 
-  const y2 = parts2.find((p) => p.type === "year")?.value;
-  const m2 = parts2.find((p) => p.type === "month")?.value;
-  const d2 = parts2.find((p) => p.type === "day")?.value;
-
-  return `${y2}-${m2}-${d2}`;
+  return `${p2.find((p) => p.type === "year")?.value}-${p2.find((p) => p.type === "month")?.value}-${p2.find((p) => p.type === "day")?.value}`;
 }
 
 /* ---------------- env ---------------- */
 
-// NutritionCheckins table (target)
 const NUTRITIONCHECKINS_API_KEY = process.env.NUTRITIONCHECKINS_API_KEY;
 const NUTRITIONCHECKINS_BASE_ID = process.env.NUTRITIONCHECKINS_BASE_ID;
-const NUTRITIONCHECKINS_TABLE =
-  process.env.NUTRITIONCHECKINS_TABLE ||
+const NUTRITIONCHECKINS_TABLE   =
+  process.env.NUTRITIONCHECKINS_TABLE      ||
   process.env.NUTRITIONCHECKINS_TABLE_NAME ||
-  process.env.NUTRITIONCHECKINS_TABLE_ID ||
+  process.env.NUTRITIONCHECKINS_TABLE_ID   ||
   "NutritionCheckins";
 
-// AthleteScans base/table (to resolve athlete record id + org link)
-const ATHLETE_API_KEY = process.env.ATHLETE_API_KEY;
-const ATHLETE_BASE_ID = process.env.ATHLETE_BASE_ID;
-const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME; // must point to AthleteScans table
+const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
+const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
+const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
-// Optional: NutritionPlans base/table (if you want to link the latest plan)
 const NUTRITIONPLANS_API_KEY = process.env.NUTRITIONPLANS_API_KEY;
 const NUTRITIONPLANS_BASE_ID = process.env.NUTRITIONPLANS_BASE_ID;
-const NUTRITIONPLANS_TABLE =
-  process.env.NUTRITIONPLANS_TABLE ||
+const NUTRITIONPLANS_TABLE   =
+  process.env.NUTRITIONPLANS_TABLE      ||
   process.env.NUTRITIONPLANS_TABLE_NAME ||
-  process.env.NUTRITIONPLANS_TABLE_ID ||
-  "";
+  process.env.NUTRITIONPLANS_TABLE_ID   || "";
 
-/* ---------------- Airtable field names (match your columns) ---------------- */
+/* ---------------- field names ---------------- */
 
-// NutritionCheckins fields
-const CHK_CREATED_AT = "CreatedAt";
-const CHK_ATHLETE_LINK = "AthleteName";      // LINK to AthleteScans ✅
-const CHK_ORG_LINK = "Organization";         // LINK to Organizations ✅
-const CHK_PLANS_LINK = "NutritonPlans";      // LINK to NutritionPlans ✅ (spelling matches your column)
-const CHK_WEEK = "WeekStartISO";
+const CHK_CREATED_AT   = "CreatedAt";
+const CHK_ATHLETE_LINK = "AthleteName";
+const CHK_ORG_LINK     = "Organization";
+const CHK_PLANS_LINK   = "NutritonPlans"; // typo matches Airtable column
+const CHK_WEEK         = "WeekStartISO";
+const CHK_CAL          = "CaloriesAdherencePct";
+const CHK_PRO          = "ProteinAdherencePct";
+const CHK_CARBS        = "CarbsAdherencePct";
+const CHK_HYD          = "HydrationAdherencePct";
+const CHK_NOTES        = "Notes";
 
-const CHK_CAL = "CaloriesAdherencePct";
-const CHK_PRO = "ProteinAdherencePct";
-const CHK_CARBS = "CarbsAdherencePct";
-const CHK_HYD = "HydrationAdherencePct";
-const CHK_NOTES = "Notes";
+const ATH_TOKEN_FIELD   = "AthleteToken";
+const ATH_ORG_LINK_FIELD = "Organization";
 
-// AthleteScans fields (these must match your AthleteScans table)
-const ATH_TOKEN_FIELD = "AthleteToken";      // token field in AthleteScans
-const ATH_ORG_LINK_FIELD = "Organization";   // link field on AthleteScans to Organizations (common pattern)
+// NutritionPlans — Athlete is a LINKED RECORD field, not a text field.
+// Must use FIND+ARRAYJOIN to match, NOT exact equality.
+const PLAN_ATH_LINK  = "Athlete";
+const PLAN_STATUS    = "Status";
+const PLAN_CREATED_AT = "CreatedAt";
 
 /* ---------------- handler ---------------- */
 
@@ -124,103 +110,65 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "AthleteToken missing from session." });
   }
 
-  const checkinsTable = getTable(
-    NUTRITIONCHECKINS_API_KEY,
-    NUTRITIONCHECKINS_BASE_ID,
-    NUTRITIONCHECKINS_TABLE
-  );
+  const checkinsTable = getTable(NUTRITIONCHECKINS_API_KEY, NUTRITIONCHECKINS_BASE_ID, NUTRITIONCHECKINS_TABLE);
+  const athleteTable  = getTable(ATHLETE_API_KEY,           ATHLETE_BASE_ID,           ATHLETE_TABLE_NAME);
+  const plansTable    = NUTRITIONPLANS_API_KEY && NUTRITIONPLANS_BASE_ID && NUTRITIONPLANS_TABLE
+    ? getTable(NUTRITIONPLANS_API_KEY, NUTRITIONPLANS_BASE_ID, NUTRITIONPLANS_TABLE)
+    : null;
 
-  if (!checkinsTable) {
-    return res.status(500).json({
-      error: "NutritionCheckins Airtable not configured.",
-      missing: {
-        NUTRITIONCHECKINS_API_KEY: !NUTRITIONCHECKINS_API_KEY,
-        NUTRITIONCHECKINS_BASE_ID: !NUTRITIONCHECKINS_BASE_ID,
-        NUTRITIONCHECKINS_TABLE: !NUTRITIONCHECKINS_TABLE,
-      },
-    });
-  }
-
-  const athleteTable = getTable(ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME);
-  if (!athleteTable) {
-    return res.status(500).json({
-      error: "Athlete Airtable not configured (needed to link AthleteName).",
-      missing: {
-        ATHLETE_API_KEY: !ATHLETE_API_KEY,
-        ATHLETE_BASE_ID: !ATHLETE_BASE_ID,
-        ATHLETE_TABLE_NAME: !ATHLETE_TABLE_NAME,
-      },
-    });
-  }
-
-  const plansTable =
-    NUTRITIONPLANS_API_KEY && NUTRITIONPLANS_BASE_ID && NUTRITIONPLANS_TABLE
-      ? getTable(NUTRITIONPLANS_API_KEY, NUTRITIONPLANS_BASE_ID, NUTRITIONPLANS_TABLE)
-      : null;
+  if (!checkinsTable) return res.status(500).json({ error: "NutritionCheckins Airtable not configured." });
+  if (!athleteTable)  return res.status(500).json({ error: "Athlete Airtable not configured." });
 
   try {
-    const body = req.body || {};
-    const weekStartISO = nyWeekStartISO(new Date());
+    const body          = req.body || {};
+    const weekStartISO  = nyWeekStartISO(new Date());
 
-    // Store as 0..100 integers
-    const caloriesPct = clampInt(safeNum(body.caloriesPct ?? body.calories) ?? 0, 0, 100);
-    const proteinPct = clampInt(safeNum(body.proteinPct ?? body.protein) ?? 0, 0, 100);
-    const carbsPct = clampInt(safeNum(body.carbsPct ?? body.carbs) ?? 0, 0, 100);
+    const caloriesPct  = clampInt(safeNum(body.caloriesPct ?? body.calories)  ?? 0, 0, 100);
+    const proteinPct   = clampInt(safeNum(body.proteinPct  ?? body.protein)   ?? 0, 0, 100);
+    const carbsPct     = clampInt(safeNum(body.carbsPct    ?? body.carbs)     ?? 0, 0, 100);
     const hydrationPct = clampInt(safeNum(body.hydrationPct ?? body.hydration) ?? 0, 0, 100);
-    const notes = asString(body.notes);
+    const notes        = asString(body.notes);
 
-    // 1) Resolve AthleteScans record by AthleteToken
-    const safeTok = escapeAirtableString(athleteToken);
+    /* 1) Resolve athlete record */
+    const safeTok  = escapeAirtableString(athleteToken);
     const athleteRec = await athleteTable
-      .select({
-        filterByFormula: `{${ATH_TOKEN_FIELD}}='${safeTok}'`,
-        maxRecords: 1,
-      })
+      .select({ filterByFormula: `{${ATH_TOKEN_FIELD}}='${safeTok}'`, maxRecords: 1 })
       .firstPage()
-      .then((xs) => (xs?.length ? xs[0] : null));
+      .then((xs) => xs?.[0] || null);
 
     if (!athleteRec?.id) {
-      return res.status(404).json({
-        error: "AthleteScans record not found for this AthleteToken.",
-        athleteToken,
-      });
+      return res.status(404).json({ error: "AthleteScans record not found for this AthleteToken.", athleteToken });
     }
 
-    // 2) Organization link should come from AthleteScans record (preferred)
+    /* 2) Org links — soft-fail: warn but don't block the check-in */
     const orgLinks = Array.isArray(athleteRec.fields?.[ATH_ORG_LINK_FIELD])
       ? athleteRec.fields[ATH_ORG_LINK_FIELD]
       : [];
 
-    if (!orgLinks.length) {
-      return res.status(400).json({
-        error:
-          "Athlete record is missing Organization link. Link AthleteScans → Organizations so check-ins can inherit org.",
-        athleteToken,
-      });
-    }
+    const orgWarning = orgLinks.length === 0
+      ? "Athlete record missing Organization link — check-in saved without org."
+      : null;
 
-    // 3) Optionally resolve latest NutritionPlan record id to link
-    // If you don’t want this yet, it’s fine — the field will just be omitted.
+    /* 3) Resolve latest plan by linked record ID (ARRAYJOIN, not exact match)
+       FIX: was using {AthleteToken}='...' which fails on LOOKUP fields.
+       Now uses FIND+ARRAYJOIN on the Athlete linked record field. */
     let planLinkIds = [];
     if (plansTable) {
-      // Common patterns: plan has AthleteToken, or an Athlete link
-      // We'll try AthleteToken first.
+      const planFilter = `AND(
+        FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&'')),
+        LOWER({${PLAN_STATUS}}&'')='active'
+      )`;
       const plan = await plansTable
-        .select({
-          filterByFormula: `{AthleteToken}='${safeTok}'`,
-          sort: [{ field: "CreatedAt", direction: "desc" }],
-          maxRecords: 1,
-        })
+        .select({ filterByFormula: planFilter, sort: [{ field: PLAN_CREATED_AT, direction: "desc" }], maxRecords: 1 })
         .firstPage()
-        .then((xs) => (xs?.length ? xs[0] : null));
+        .then((xs) => xs?.[0] || null);
 
       if (plan?.id) planLinkIds = [plan.id];
     }
 
-    // 4) Upsert by (AthleteName link + WeekStartISO)
-    const aId = escapeAirtableString(athleteRec.id);
-    const w = escapeAirtableString(weekStartISO);
-
+    /* 4) Upsert by (AthleteName link + WeekStartISO) */
+    const aId   = escapeAirtableString(athleteRec.id);
+    const w     = escapeAirtableString(weekStartISO);
     const filterByFormula = `AND(
       FIND('${aId}', ARRAYJOIN({${CHK_ATHLETE_LINK}}&'')) > 0,
       {${CHK_WEEK}}='${w}'
@@ -229,48 +177,36 @@ export default async function handler(req, res) {
     const existing = await checkinsTable
       .select({ filterByFormula, maxRecords: 1 })
       .firstPage()
-      .then((xs) => (xs?.length ? xs[0] : null));
+      .then((xs) => xs?.[0] || null);
 
-    // fields we always write
     const fields = {
-      [CHK_ATHLETE_LINK]: [athleteRec.id], // ✅ link AthleteName
-      [CHK_ORG_LINK]: orgLinks,            // ✅ link Organization
-      [CHK_WEEK]: weekStartISO,
-      [CHK_CAL]: caloriesPct,
-      [CHK_PRO]: proteinPct,
+      [CHK_ATHLETE_LINK]: [athleteRec.id],
+      ...(orgLinks.length ? { [CHK_ORG_LINK]: orgLinks } : {}),
+      [CHK_WEEK]:  weekStartISO,
+      [CHK_CAL]:   caloriesPct,
+      [CHK_PRO]:   proteinPct,
       [CHK_CARBS]: carbsPct,
-      [CHK_HYD]: hydrationPct,
+      [CHK_HYD]:   hydrationPct,
       [CHK_NOTES]: notes,
+      ...(planLinkIds.length ? { [CHK_PLANS_LINK]: planLinkIds } : {}),
     };
 
-    // link plan if found
-    if (planLinkIds.length) {
-      fields[CHK_PLANS_LINK] = planLinkIds;
-    }
-
-    // CreatedAt only on create (keeps history honest)
     const nowISO = new Date().toISOString();
-    let record = null;
-
-    if (existing?.id) {
-      record = await checkinsTable.update(existing.id, fields);
-    } else {
-      record = await checkinsTable.create({
-        ...fields,
-        [CHK_CREATED_AT]: nowISO,
-      });
-    }
+    const record = existing?.id
+      ? await checkinsTable.update(existing.id, fields)
+      : await checkinsTable.create({ ...fields, [CHK_CREATED_AT]: nowISO });
 
     return res.status(200).json({
       ok: true,
       weekStartISO,
+      ...(orgWarning ? { warning: orgWarning } : {}),
       checkin: {
-        id: record.id,
+        id:            record.id,
         athleteToken,
-        athleteRecId: athleteRec.id,
-        orgRecIds: orgLinks,
-        planRecIds: planLinkIds,
-        createdAt: existing?.id ? asString(existing.fields?.[CHK_CREATED_AT]) : nowISO,
+        athleteRecId:  athleteRec.id,
+        orgRecIds:     orgLinks,
+        planRecIds:    planLinkIds,
+        createdAt:     existing?.id ? asString(existing.fields?.[CHK_CREATED_AT]) : nowISO,
         caloriesPct,
         proteinPct,
         carbsPct,
@@ -278,15 +214,9 @@ export default async function handler(req, res) {
         notes,
       },
     });
+
   } catch (e) {
     console.error("[athlete/nutrition/checkins/create] error:", e);
-    return res.status(500).json({
-      error: e?.message || "Failed to submit check-in.",
-      airtable: {
-        statusCode: e?.statusCode,
-        message: e?.message,
-        error: e?.error,
-      },
-    });
+    return res.status(500).json({ error: e?.message || "Failed to submit check-in.", airtable: { statusCode: e?.statusCode } });
   }
 }

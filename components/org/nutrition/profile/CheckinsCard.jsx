@@ -1,46 +1,32 @@
+// components/org/nutrition/profile/CheckinsCard.jsx
 "use client";
 
 import { useMemo } from "react";
 import {
-  Calendar,
-  ChevronDown,
-  ChevronUp,
-  TrendingUp,
-  ListChecks,
-  ArrowDownWideNarrow,
-  Expand,
+  Calendar, ChevronDown, ChevronUp,
+  TrendingUp, ListChecks,
+  ArrowDownWideNarrow, Expand,
 } from "lucide-react";
-import { avgAdherence, badgeForAdherence, fmtDateTime, safeArr, cx } from "./utils";
-import { Metric, EmptyState, StatusPill } from "./ui";
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
+import { avgAdherence, badgeForAdherence, fmtDateTime, safeArr } from "./utils";
+import { Metric, EmptyState, StatusPill, DS } from "./ui";
 
 function weekLabel(weekStartISO) {
   const iso = String(weekStartISO || "").trim();
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-
   try {
-    const nice = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-    }).format(d);
-    return `Week of ${nice}`;
-  } catch {
-    return `Week of ${iso}`;
-  }
+    return `Week of ${new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York", month: "short", day: "2-digit", year: "numeric",
+    }).format(d)}`;
+  } catch { return `Week of ${iso}`; }
 }
 
 function toneFromPct(pct) {
   if (pct == null) return "neutral";
-  if (pct >= 75) return "good";
-  if (pct >= 60) return "warn";
-  return "bad";
+  if (pct >= 75)   return "good";
+  if (pct >= 60)   return "warn";
+  return                  "bad";
 }
 
 function numOrNull(v) {
@@ -48,242 +34,220 @@ function numOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/* -------------------------------------------------------------------------- */
-/* UI atoms                                                                    */
-/* -------------------------------------------------------------------------- */
-
-function IconBadge({ children }) {
-  return (
-    <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center shrink-0">
-      {children}
-    </span>
-  );
-}
-
-function ActionButton({ onClick, children, icon: Icon, title }) {
+function GhostBtn({ onClick, icon: Icon, children, title }) {
   return (
     <button
       onClick={onClick}
       type="button"
       title={title}
-      className={cx(
-        "inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2",
-        "text-sm font-semibold text-gray-900 hover:bg-gray-50 transition",
-        "focus:outline-none focus:ring-2 focus:ring-gray-200"
-      )}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+      style={{
+        border: `1px solid ${DS.border}`,
+        backgroundColor: DS.cardBg,
+        color: DS.labelText,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = DS.brandBorder;
+        e.currentTarget.style.color = DS.brand;
+        e.currentTarget.style.backgroundColor = DS.brandBg;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = DS.border;
+        e.currentTarget.style.color = DS.labelText;
+        e.currentTarget.style.backgroundColor = DS.cardBg;
+      }}
     >
-      {Icon ? <Icon className="h-4 w-4 text-gray-700" /> : null}
+      {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
       {children}
     </button>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Component                                                                  */
-/* -------------------------------------------------------------------------- */
-
 export function CheckinsCard({ checkins, openIds, onToggle, onExpandAll, onLatestOnly }) {
-  const list = useMemo(() => safeArr(checkins), [checkins]);
+  const list  = useMemo(() => safeArr(checkins), [checkins]);
   const total = list.length;
 
   const overall = useMemo(() => {
     if (!total) return null;
-
     const pcts = list
       .map((c) => avgAdherence(c))
       .filter((v) => typeof v === "number" && !Number.isNaN(v));
-
     if (!pcts.length) return null;
-
     const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
-
-    // Optional: show a quick “spread” to help coaches see consistency variability
-    const min = Math.round(Math.min(...pcts));
-    const max = Math.round(Math.max(...pcts));
-
-    return { avg, min, max };
+    return { avg, min: Math.round(Math.min(...pcts)), max: Math.round(Math.max(...pcts)) };
   }, [list, total]);
 
   return (
-    <section
-      className={cx(
-        "rounded-3xl border border-blue-100/70 bg-white/80 backdrop-blur-xl",
-        "shadow-[0_10px_30px_-18px_rgba(30,58,138,0.35)]"
-      )}
-    >
+    <section style={{ border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}`, backgroundColor: DS.cardBg }}>
       <div className="p-5">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <IconBadge>
-                <ListChecks className="h-4 w-4 text-gray-700" />
-              </IconBadge>
-
+              <span
+                className="hidden sm:inline-flex h-9 w-9 items-center justify-center shrink-0"
+                style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+              >
+                <ListChecks className="h-4 w-4" style={{ color: DS.labelText }} />
+              </span>
               <div className="min-w-0">
-                <h2 className="text-lg font-extrabold text-gray-900">Completions</h2>
-
+                <h2 className="text-base font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+                  Completions
+                </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <p className="text-sm text-gray-600">{total} total</p>
-
+                  <span className="text-xs" style={{ color: DS.labelText }}>{total} total</span>
                   {overall?.avg != null ? (
                     <>
                       <StatusPill tone={toneFromPct(overall.avg)} text={`Overall avg ${overall.avg}%`} />
-                      <span className="text-[11px] text-gray-500 hidden sm:inline">
+                      <span className="text-xs hidden sm:inline" style={{ color: DS.dimText }}>
                         Range {overall.min}%–{overall.max}%
                       </span>
                     </>
                   ) : (
-                    <span className="text-[11px] text-gray-500">No adherence data yet</span>
+                    <span className="text-xs" style={{ color: DS.dimText }}>No adherence data yet</span>
                   )}
                 </div>
               </div>
             </div>
-
-            <p className="mt-2 text-[11px] text-gray-500">
-              Each item below is derived from daily swipes. Open a row to see macro + hydration completion.
+            <p className="mt-1.5 text-xs" style={{ color: DS.dimText }}>
+              Each row is derived from daily swipes. Open a row to see macro + hydration breakdown.
             </p>
           </div>
 
-          {/* Controls */}
-          {total > 0 ? (
+          {total > 0 && (
             <div className="flex flex-wrap gap-2">
-              <ActionButton onClick={onLatestOnly} icon={ArrowDownWideNarrow} title="Open the newest only">
+              <GhostBtn onClick={onLatestOnly} icon={ArrowDownWideNarrow} title="Open the newest only">
                 Latest only
-              </ActionButton>
-              <ActionButton onClick={onExpandAll} icon={Expand} title="Open all rows">
+              </GhostBtn>
+              <GhostBtn onClick={onExpandAll} icon={Expand} title="Open all rows">
                 Expand all
-              </ActionButton>
+              </GhostBtn>
             </div>
-          ) : null}
+          )}
         </div>
 
-        {/* Empty */}
+        {/* Body */}
         {total === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              title="No completions yet"
-              body="Once the athlete starts swiping meals + hydration, you’ll see trends and notes here."
-            />
-          </div>
+          <EmptyState
+            title="No completions yet"
+            body="Once the athlete starts swiping meals + hydration, you'll see trends and notes here."
+          />
         ) : (
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-2">
             {list.map((c, idx) => {
-              const pct = avgAdherence(c);
-              const badge = badgeForAdherence(pct);
+              const pct     = avgAdherence(c);
+              const badge   = badgeForAdherence(pct);
+              const isOpen  = Boolean(openIds?.[c.id]) || (!openIds && idx === 0);
 
-              // open behavior: allow parent-controlled openIds; otherwise keep latest open by default
-              const isOpen = Boolean(openIds?.[c.id]) || (!openIds && idx === 0);
-
-              const headerId = `checkin-${c.id}-header`;
-              const panelId = `checkin-${c.id}-panel`;
-
-              const caloriesPct = numOrNull(c.caloriesPct);
-              const proteinPct = numOrNull(c.proteinPct);
-              const carbsPct = numOrNull(c.carbsPct);
+              const caloriesPct  = numOrNull(c.caloriesPct);
+              const proteinPct   = numOrNull(c.proteinPct);
+              const carbsPct     = numOrNull(c.carbsPct);
               const hydrationPct = numOrNull(c.hydrationPct);
 
-              const submittedLine = c.createdAt
-                ? `Updated ${fmtDateTime(c.createdAt)} ET`
-                : "Update time unavailable";
+              const adherenceColor =
+                typeof pct === "number"
+                  ? pct >= 80 ? DS.safe : pct >= 60 ? DS.caution : DS.banned
+                  : DS.dimText;
+
+              const adherenceBg =
+                typeof pct === "number"
+                  ? pct >= 80 ? DS.safeBg : pct >= 60 ? DS.cautionBg : DS.bannedBg
+                  : DS.pageBg;
+
+              const adherenceBorder =
+                typeof pct === "number"
+                  ? pct >= 80 ? DS.safeBorder : pct >= 60 ? DS.cautionBorder : DS.bannedBorder
+                  : DS.border;
 
               return (
                 <div
                   key={c.id}
-                  className={cx(
-                    "rounded-2xl border overflow-hidden bg-white",
-                    isOpen ? "border-gray-200" : "border-gray-200"
-                  )}
+                  style={{ border: `1px solid ${isOpen ? adherenceBorder : DS.border}`, backgroundColor: DS.cardBg }}
                 >
                   {/* Row header */}
                   <button
-                    id={headerId}
                     type="button"
                     onClick={() => onToggle?.(c.id)}
-                    className={cx(
-                      "w-full text-left p-4",
-                      "transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#46769B]/25"
-                    )}
+                    className="w-full text-left p-4 transition-colors"
+                    style={{ backgroundColor: "transparent" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     aria-expanded={isOpen}
-                    aria-controls={panelId}
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-gray-500" />
-                          <p className="text-sm font-extrabold text-gray-900 truncate">
+                          <Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: DS.dimText }} />
+                          <p className="text-sm font-bold truncate" style={{ color: DS.bodyText }}>
                             {weekLabel(c.weekStartISO)}
                           </p>
                         </div>
-                        <p className="text-[11px] text-gray-500 mt-1">{submittedLine}</p>
+                        <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+                          {c.createdAt ? `Updated ${fmtDateTime(c.createdAt)} ET` : "Update time unavailable"}
+                        </p>
                       </div>
 
-                      <div className="flex items-center gap-2 sm:justify-end">
-                        <span className={cx("px-2 py-1 rounded-lg text-xs font-semibold border", badge.cls)}>
-                          {badge.t}
-                          {typeof pct === "number" ? ` • ${pct}%` : ""}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="px-2 py-0.5 text-xs font-bold rounded-sm"
+                          style={{ backgroundColor: adherenceBg, color: adherenceColor, border: `1px solid ${adherenceBorder}` }}
+                        >
+                          {badge.t}{typeof pct === "number" ? ` · ${pct}%` : ""}
                         </span>
-
-                        <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-                          {isOpen ? (
-                            <>
-                              <ChevronUp className="h-4 w-4" />
-                              <span className="hidden sm:inline">Hide</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="h-4 w-4" />
-                              <span className="hidden sm:inline">View</span>
-                            </>
-                          )}
+                        <span className="inline-flex items-center gap-1 text-xs" style={{ color: DS.dimText }}>
+                          {isOpen
+                            ? <><ChevronUp className="h-4 w-4" /><span className="hidden sm:inline">Hide</span></>
+                            : <><ChevronDown className="h-4 w-4" /><span className="hidden sm:inline">View</span></>
+                          }
                         </span>
                       </div>
                     </div>
 
-                    {/* Mini summary line (helps scanning without opening) */}
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
+                    {/* Mini summary */}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: DS.labelText }}>
                       <span className="inline-flex items-center gap-1">
-                        <TrendingUp className="h-3.5 w-3.5 text-gray-500" />
+                        <TrendingUp className="h-3 w-3" style={{ color: DS.dimText }} />
                         {typeof pct === "number" ? `${pct}% avg` : "No avg yet"}
                       </span>
-                      <span className="text-gray-300">•</span>
-                      <span className="text-gray-500">
+                      <span style={{ color: DS.border }}>·</span>
+                      <span style={{ color: DS.dimText }}>
                         Calories {caloriesPct ?? "—"}% · Protein {proteinPct ?? "—"}% · Hydration {hydrationPct ?? "—"}%
                       </span>
                     </div>
                   </button>
 
-                  {/* Panel */}
-                  {isOpen ? (
-                    <div id={panelId} role="region" aria-labelledby={headerId} className="px-4 pb-4">
-                      <div className="grid gap-3 sm:grid-cols-4">
-                        <Metric label="Calories" value={caloriesPct} />
-                        <Metric label="Protein" value={proteinPct} />
-                        {/* Carbs is optional, show when present; otherwise still show a placeholder */}
-                        <Metric label="Carbs" value={carbsPct} />
+                  {/* Expanded panel */}
+                  {isOpen && (
+                    <div className="px-4 pb-4" style={{ borderTop: `1px solid ${DS.border}` }}>
+                      <div className="grid gap-2 sm:grid-cols-4 mt-3">
+                        <Metric label="Calories"  value={caloriesPct}  />
+                        <Metric label="Protein"   value={proteinPct}   />
+                        <Metric label="Carbs"     value={carbsPct}     />
                         <Metric label="Hydration" value={hydrationPct} />
                       </div>
-
                       <div className="mt-3">
                         {c.notes ? (
-                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                            <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                          <div
+                            className="p-3"
+                            style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+                          >
+                            <p className="text-sm whitespace-pre-wrap break-words" style={{ color: DS.bodyText }}>
                               {String(c.notes)}
                             </p>
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-500">No notes provided.</p>
+                          <p className="text-xs" style={{ color: DS.dimText }}>No notes provided.</p>
                         )}
                       </div>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               );
             })}
           </div>
         )}
 
-        <div className="mt-5 h-px w-full bg-gradient-to-r from-transparent via-blue-100 to-transparent" />
+        <div className="mt-4 h-px w-full" style={{ backgroundColor: DS.border }} />
       </div>
     </section>
   );

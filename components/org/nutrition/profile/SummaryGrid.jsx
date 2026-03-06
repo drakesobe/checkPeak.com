@@ -1,67 +1,61 @@
+// components/org/nutrition/profile/SummaryGrid.jsx
 "use client";
 
 import { useMemo } from "react";
 import { Calendar, Activity, FileText } from "lucide-react";
 import { fmtDateTime, adherenceTone } from "./utils";
-import { SummaryCard, StatusPill } from "./ui";
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
+import { SummaryCard, StatusPill, DS } from "./ui";
 
 function weekLabel(weekStartISO) {
   const iso = String(weekStartISO || "").trim();
   if (!iso) return "—";
-
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-
   try {
-    const nice = new Intl.DateTimeFormat("en-US", {
+    return `Week of ${new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York",
       month: "short",
       day: "2-digit",
       year: "numeric",
-    }).format(d);
-
-    return `Week of ${nice}`;
+    }).format(d)}`;
   } catch {
-    return iso;
+    return `Week of ${iso}`;
   }
 }
 
 function adherenceSubtitle(avg) {
-  if (avg == null) return "Waiting for first completion";
-  if (avg >= 85) return "Excellent consistency";
-  if (avg >= 75) return "On track";
-  if (avg >= 60) return "Needs attention";
-  return "Adjustments needed";
+  if (avg == null)  return "Waiting for first completion";
+  if (avg >= 85)    return "Excellent consistency";
+  if (avg >= 75)    return "On track";
+  if (avg >= 60)    return "Needs attention";
+  return                   "Adjustments needed";
 }
 
 function adherencePillTone(avg) {
   if (avg == null) return "neutral";
-  if (avg >= 75) return "good";
-  if (avg >= 60) return "warn";
-  return "bad";
+  if (avg >= 75)   return "good";
+  if (avg >= 60)   return "warn";
+  return                  "bad";
 }
 
 function adherencePillText(avg) {
   if (avg == null) return "No data";
-  if (avg >= 85) return "Excellent";
-  if (avg >= 75) return "On track";
-  if (avg >= 60) return "Watch";
-  return "Critical";
+  if (avg >= 85)   return "Excellent";
+  if (avg >= 75)   return "On track";
+  if (avg >= 60)   return "Watch";
+  return                  "Critical";
 }
 
-function toneToCardTone(avg) {
-  const t = adherenceTone(avg);
-  if (t === "good" || t === "bad") return t;
-  return "neutral";
+function Icon({ children }) {
+  return (
+    <span
+      className="hidden sm:inline-flex h-9 w-9 items-center justify-center shrink-0"
+      style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+    >
+      {children}
+    </span>
+  );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Component                                                                  */
-/* -------------------------------------------------------------------------- */
 
 export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
   const latestWeekText = useMemo(
@@ -69,51 +63,44 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
     [latestCheckin?.weekStartISO]
   );
 
-  const latestCheckinSub = useMemo(() => {
-    if (latestCheckin?.createdAt) return `Updated ${fmtDateTime(latestCheckin.createdAt)} ET`;
-    return "No completions yet";
-  }, [latestCheckin?.createdAt]);
+  const checkinSub = useMemo(
+    () => latestCheckin?.createdAt
+      ? `Updated ${fmtDateTime(latestCheckin.createdAt)} ET`
+      : "No completions yet",
+    [latestCheckin?.createdAt]
+  );
 
-  const adherenceValue = useMemo(() => {
-    if (latestAvg == null) return "—";
-    return `${latestAvg}%`;
+  const adherenceValue = useMemo(
+    () => latestAvg == null ? "—" : `${latestAvg}%`,
+    [latestAvg]
+  );
+
+  const adherenceCardTone = useMemo(() => {
+    const t = adherenceTone(latestAvg);
+    return (t === "good" || t === "bad") ? t : "neutral";
   }, [latestAvg]);
 
-  const adherenceCardTone = useMemo(() => toneToCardTone(latestAvg), [latestAvg]);
-
-  const adherencePill = useMemo(() => {
-    const t = adherencePillTone(latestAvg);
-    return <StatusPill tone={t} text={adherencePillText(latestAvg)} />;
-  }, [latestAvg]);
-
-  const planSub = useMemo(() => {
-    if (plan?.createdAt) return `Updated ${fmtDateTime(plan.createdAt)} ET`;
-    return "No plan assigned yet";
-  }, [plan?.createdAt]);
-
-  const planPill = useMemo(() => {
-    const t = hasPlan ? "good" : "bad";
-    return <StatusPill tone={t} text={hasPlan ? "Active" : "Missing"} />;
-  }, [hasPlan]);
-
-  const checkinPill = useMemo(() => {
-    const ok = Boolean(latestCheckin?.createdAt);
-    return <StatusPill tone={ok ? "good" : "neutral"} text={ok ? "Current" : "None"} />;
-  }, [latestCheckin?.createdAt]);
+  const planSub = useMemo(
+    () => plan?.createdAt
+      ? `Updated ${fmtDateTime(plan.createdAt)} ET`
+      : "No plan assigned yet",
+    [plan?.createdAt]
+  );
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3 font-sans">
+    <div className="grid gap-3 sm:grid-cols-3">
       <SummaryCard
         title="Latest Completion"
         value={latestWeekText}
-        sub={latestCheckinSub}
+        sub={checkinSub}
         tone={latestCheckin?.createdAt ? "good" : "neutral"}
         right={
           <div className="inline-flex items-center gap-2">
-            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
-              <Calendar className="h-4 w-4 text-gray-700" />
-            </span>
-            {checkinPill}
+            <Icon><Calendar className="h-4 w-4" style={{ color: DS.labelText }} /></Icon>
+            <StatusPill
+              tone={latestCheckin?.createdAt ? "good" : "neutral"}
+              text={latestCheckin?.createdAt ? "Current" : "None"}
+            />
           </div>
         }
       />
@@ -125,10 +112,8 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
         tone={adherenceCardTone}
         right={
           <div className="inline-flex items-center gap-2">
-            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
-              <Activity className="h-4 w-4 text-gray-700" />
-            </span>
-            {adherencePill}
+            <Icon><Activity className="h-4 w-4" style={{ color: DS.labelText }} /></Icon>
+            <StatusPill tone={adherencePillTone(latestAvg)} text={adherencePillText(latestAvg)} />
           </div>
         }
       />
@@ -140,10 +125,8 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
         tone={hasPlan ? "good" : "bad"}
         right={
           <div className="inline-flex items-center gap-2">
-            <span className="hidden sm:inline-flex h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 items-center justify-center">
-              <FileText className="h-4 w-4 text-gray-700" />
-            </span>
-            {planPill}
+            <Icon><FileText className="h-4 w-4" style={{ color: DS.labelText }} /></Icon>
+            <StatusPill tone={hasPlan ? "good" : "bad"} text={hasPlan ? "Active" : "Missing"} />
           </div>
         }
       />

@@ -1,89 +1,73 @@
+// components/org/nutrition/profile/ui.jsx
 "use client";
 
-import { cx, clampPct } from "./utils";
+const DS = {
+  brand:         "#1E3A5F",
+  brandLight:    "#2A4F7C",
+  brandBg:       "#EEF3F9",
+  brandBorder:   "#C0D0E0",
+  banned:        "#C8102E",
+  bannedBg:      "#FFF0F0",
+  bannedBorder:  "#FFC8C8",
+  caution:       "#B86000",
+  cautionBg:     "#FFFBF0",
+  cautionBorder: "#FFD580",
+  safe:          "#00873E",
+  safeBg:        "#F0FBF4",
+  safeBorder:    "#A8DFB8",
+  border:        "#E8ECF0",
+  pageBg:        "#F4F7FB",
+  cardBg:        "#FFFFFF",
+  bodyText:      "#1A2535",
+  labelText:     "#5A6A7D",
+  dimText:       "#9BA8B4",
+};
+
+export { DS };
 
 /* ---------------- SummaryCard ---------------- */
 
-export function SummaryCard({
-  title,
-  value,
-  sub,
-  tone = "neutral",
-  right,
-}) {
-  const toneBorder =
-    tone === "good"
-      ? "border-emerald-200/80"
-      : tone === "bad"
-      ? "border-red-200/80"
-      : tone === "warn"
-      ? "border-amber-200/80"
-      : "border-blue-100/80";
+export function SummaryCard({ title, value, sub, tone = "neutral", right }) {
+  const accentColor =
+    tone === "good" ? DS.safe
+    : tone === "bad"  ? DS.banned
+    : tone === "warn" ? DS.caution
+    : DS.brand;
 
-  const toneAccent =
-    tone === "good"
-      ? "bg-emerald-500"
-      : tone === "bad"
-      ? "bg-red-500"
-      : tone === "warn"
-      ? "bg-amber-500"
-      : "bg-[#46769B]";
-
-  const toneWash =
-    tone === "good"
-      ? "from-emerald-50/70"
-      : tone === "bad"
-      ? "from-red-50/70"
-      : tone === "warn"
-      ? "from-amber-50/70"
-      : "from-blue-50/70";
-
-  const toneRing =
-    tone === "good"
-      ? "hover:ring-2 hover:ring-emerald-200/50"
-      : tone === "bad"
-      ? "hover:ring-2 hover:ring-red-200/50"
-      : tone === "warn"
-      ? "hover:ring-2 hover:ring-amber-200/55"
-      : "hover:ring-2 hover:ring-blue-200/50";
+  const borderColor =
+    tone === "good" ? DS.safeBorder
+    : tone === "bad"  ? DS.bannedBorder
+    : tone === "warn" ? DS.cautionBorder
+    : DS.brandBorder;
 
   return (
     <div
-      className={cx(
-        "relative rounded-3xl border bg-white/80 backdrop-blur-xl overflow-hidden",
-        "shadow-[0_10px_30px_-18px_rgba(30,58,138,0.35)]",
-        "transition-all duration-150 hover:-translate-y-[1px]",
-        toneRing,
-        toneBorder
-      )}
+      style={{
+        backgroundColor: DS.cardBg,
+        border: `1px solid ${borderColor}`,
+        borderTop: `3px solid ${accentColor}`,
+        position: "relative",
+      }}
+      className="p-5"
     >
-      {/* soft wash */}
-      <div className={cx("pointer-events-none absolute inset-0 bg-gradient-to-b to-transparent", toneWash)} />
-      {/* top accent */}
-      <div className={cx("pointer-events-none absolute left-0 top-0 h-1 w-full", toneAccent)} />
-      {/* subtle inner ring */}
-      <div className="pointer-events-none absolute inset-0 ring-1 ring-black/5" />
-
-      <div className="relative p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-extrabold uppercase tracking-wide text-gray-500">{title}</p>
-
-            <p className="mt-2 text-2xl font-extrabold tracking-tight text-gray-900 break-words leading-tight">
-              {value}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.labelText }}>
+            {title}
+          </p>
+          <p
+            className="mt-2 text-2xl font-black tracking-tight leading-tight break-words tabular-nums"
+            style={{ fontFamily: "'Barlow Condensed', sans-serif", color: DS.bodyText }}
+          >
+            {value}
+          </p>
+          {sub ? (
+            <p className="mt-1.5 text-xs leading-relaxed" style={{ color: DS.labelText }}>
+              {sub}
             </p>
-
-            {sub ? (
-              <p className="mt-2 text-[12px] text-gray-600 leading-relaxed break-words">
-                {sub}
-              </p>
-            ) : null}
-          </div>
-
-          {right ? (
-            <div className="shrink-0 flex items-start pt-0.5">{right}</div>
           ) : null}
         </div>
+        {right ? <div className="shrink-0 flex items-start pt-0.5">{right}</div> : null}
       </div>
     </div>
   );
@@ -92,48 +76,50 @@ export function SummaryCard({
 /* ---------------- StatusPill ---------------- */
 
 export function StatusPill({ tone = "neutral", text }) {
-  const cls =
+  const style =
     tone === "good"
-      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-      : tone === "warn"
-      ? "bg-amber-50 text-amber-900 border-amber-200"
-      : tone === "bad"
-      ? "bg-red-50 text-red-900 border-red-200"
-      : "bg-gray-50 text-gray-800 border-gray-200";
+      ? { backgroundColor: DS.safeBg,    color: DS.safe,    border: `1px solid ${DS.safeBorder}`    }
+    : tone === "warn"
+      ? { backgroundColor: DS.cautionBg, color: DS.caution, border: `1px solid ${DS.cautionBorder}` }
+    : tone === "bad"
+      ? { backgroundColor: DS.bannedBg,  color: DS.banned,  border: `1px solid ${DS.bannedBorder}`  }
+    : { backgroundColor: DS.brandBg,   color: DS.labelText, border: `1px solid ${DS.brandBorder}`  };
 
   return (
     <span
-      className={cx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1",
-        "text-[11px] font-semibold leading-none whitespace-nowrap",
-        "shadow-[0_1px_0_rgba(0,0,0,0.03)]",
-        cls
-      )}
+      className="inline-flex items-center px-2 py-0.5 text-xs font-bold whitespace-nowrap rounded-sm"
+      style={style}
     >
       {text}
     </span>
   );
 }
 
-/* ---------------- Metric ---------------- */
+/* ---------------- Metric (progress bar) ---------------- */
 
 export function Metric({ label, value }) {
-  const v = clampPct(value);
+  const v = (() => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  })();
 
-  const barTone = v >= 80 ? "bg-emerald-500" : v >= 60 ? "bg-amber-500" : "bg-red-500";
-  const trackTone = v >= 80 ? "bg-emerald-50" : v >= 60 ? "bg-amber-50" : "bg-red-50";
-  const ringTone =
-    v >= 80 ? "ring-emerald-200/50" : v >= 60 ? "ring-amber-200/50" : "ring-red-200/50";
+  const barColor  = v >= 80 ? DS.safe    : v >= 60 ? DS.caution  : DS.banned;
+  const trackBg   = v >= 80 ? DS.safeBg  : v >= 60 ? DS.cautionBg : DS.bannedBg;
+  const borderCol = v >= 80 ? DS.safeBorder : v >= 60 ? DS.cautionBorder : DS.bannedBorder;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white/80 backdrop-blur p-3 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold text-gray-700 min-w-0 truncate">{label}</p>
-        <p className="text-xs font-extrabold text-gray-900 tabular-nums">{v}%</p>
+    <div
+      className="p-3"
+      style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-bold truncate" style={{ color: DS.labelText }}>{label}</p>
+        <p className="text-xs font-black tabular-nums" style={{ color: DS.bodyText }}>{v}%</p>
       </div>
-
       <div
-        className={cx("mt-2 h-2.5 w-full rounded-full overflow-hidden ring-1", trackTone, ringTone)}
+        className="mt-2 h-2 w-full overflow-hidden rounded-full"
+        style={{ backgroundColor: trackBg, border: `1px solid ${borderCol}` }}
         role="progressbar"
         aria-label={label}
         aria-valuenow={v}
@@ -141,8 +127,8 @@ export function Metric({ label, value }) {
         aria-valuemax={100}
       >
         <div
-          className={cx("h-full rounded-full transition-[width] duration-500 ease-out", barTone)}
-          style={{ width: `${v}%` }}
+          className="h-full rounded-full transition-[width] duration-500 ease-out"
+          style={{ width: `${v}%`, backgroundColor: barColor }}
         />
       </div>
     </div>
@@ -151,122 +137,62 @@ export function Metric({ label, value }) {
 
 /* ---------------- EmptyState ---------------- */
 
-export function EmptyState({ title, body, cta, onCta, icon }) {
+export function EmptyState({ title, body, cta, onCta }) {
   return (
-    <div className="mt-4 rounded-3xl border border-gray-200 bg-gray-50 p-4">
-      <div className="flex items-start gap-3">
-        {icon ? (
-          <div className="shrink-0 w-10 h-10 rounded-2xl bg-white border border-gray-200 flex items-center justify-center shadow-sm">
-            {icon}
-          </div>
-        ) : null}
-
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900">{title}</p>
-          <p className="text-sm text-gray-700 mt-1 leading-relaxed">{body}</p>
-
-          {cta && onCta ? (
-            <button
-              onClick={onCta}
-              className={cx(
-                "mt-3 inline-flex items-center justify-center rounded-xl bg-[#46769B] px-4 py-2.5",
-                "text-sm font-semibold text-white hover:brightness-110 transition",
-                "focus:outline-none focus:ring-2 focus:ring-[#46769B]/35"
-              )}
-              type="button"
-            >
-              {cta}
-            </button>
-          ) : null}
-        </div>
-      </div>
+    <div
+      className="p-5 mt-4"
+      style={{ border: `1px solid ${DS.border}`, borderLeft: `4px solid ${DS.brand}`, backgroundColor: DS.brandBg }}
+    >
+      <p className="text-sm font-black" style={{ color: DS.bodyText }}>{title}</p>
+      <p className="text-sm mt-1 leading-relaxed" style={{ color: DS.labelText }}>{body}</p>
+      {cta && onCta ? (
+        <button
+          onClick={onCta}
+          type="button"
+          className="mt-3 inline-flex items-center px-4 py-2 text-xs font-black uppercase tracking-wide transition-all rounded-sm"
+          style={{ backgroundColor: DS.brand, color: "#fff" }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandLight; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brand; }}
+        >
+          {cta}
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/* ---------------- Skeletons ---------------- */
+/* ---------------- SkeletonProfile ---------------- */
 
 export function SkeletonProfile() {
   return (
-    <div className="space-y-5">
-      <div className="grid sm:grid-cols-3 gap-4">
+    <div className="space-y-4">
+      <div className="grid sm:grid-cols-3 gap-3">
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
       </div>
-
-      <div className="bg-white/80 backdrop-blur rounded-3xl shadow-[0_10px_30px_-18px_rgba(30,58,138,0.35)] border border-blue-100/80 p-5">
-        <div className="h-4 w-40 bg-gray-100 rounded shimmer" />
-        <div className="mt-3 h-3 w-72 bg-gray-100 rounded shimmer" />
-        <div className="mt-4 h-24 w-full bg-gray-100 rounded-2xl shimmer" />
+      <div className="p-5 animate-pulse" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+        <div className="h-4 w-40 rounded-sm" style={{ backgroundColor: DS.border }} />
+        <div className="mt-3 h-3 w-72 rounded-sm" style={{ backgroundColor: DS.border }} />
+        <div className="mt-4 h-24 w-full rounded-sm" style={{ backgroundColor: DS.border }} />
       </div>
-
-      <div className="bg-white/80 backdrop-blur rounded-3xl shadow-[0_10px_30px_-18px_rgba(30,58,138,0.35)] border border-blue-100/80 p-5">
-        <div className="h-4 w-44 bg-gray-100 rounded shimmer" />
+      <div className="p-5 animate-pulse" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+        <div className="h-4 w-44 rounded-sm" style={{ backgroundColor: DS.border }} />
         <div className="mt-4 space-y-3">
-          <div className="h-16 w-full bg-gray-100 rounded-2xl shimmer" />
-          <div className="h-16 w-full bg-gray-100 rounded-2xl shimmer" />
+          <div className="h-16 w-full rounded-sm" style={{ backgroundColor: DS.border }} />
+          <div className="h-16 w-full rounded-sm" style={{ backgroundColor: DS.border }} />
         </div>
       </div>
-
-      <style jsx>{`
-        .shimmer {
-          position: relative;
-          overflow: hidden;
-        }
-        .shimmer:before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          transform: translateX(-100%);
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.55) 50%,
-            rgba(255, 255, 255, 0) 100%
-          );
-          animation: shimmer 1.2s infinite;
-        }
-        @keyframes shimmer {
-          100% {
-            transform: translateX(100%);
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 function SkeletonCard() {
   return (
-    <div className="bg-white/80 backdrop-blur rounded-3xl shadow-[0_10px_30px_-18px_rgba(30,58,138,0.35)] border border-blue-100/80 p-5">
-      <div className="h-3 w-28 bg-gray-100 rounded shimmer" />
-      <div className="mt-2 h-8 w-24 bg-gray-100 rounded shimmer" />
-      <div className="mt-3 h-3 w-44 bg-gray-100 rounded shimmer" />
-      <style jsx>{`
-        .shimmer {
-          position: relative;
-          overflow: hidden;
-        }
-        .shimmer:before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          transform: translateX(-100%);
-          background: linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.55) 50%,
-            rgba(255, 255, 255, 0) 100%
-          );
-          animation: shimmer 1.2s infinite;
-        }
-        @keyframes shimmer {
-          100% {
-            transform: translateX(100%);
-          }
-        }
-      `}</style>
+    <div className="p-5 animate-pulse" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+      <div className="h-3 w-28 rounded-sm" style={{ backgroundColor: DS.border }} />
+      <div className="mt-2 h-8 w-24 rounded-sm" style={{ backgroundColor: DS.border }} />
+      <div className="mt-3 h-3 w-44 rounded-sm" style={{ backgroundColor: DS.border }} />
     </div>
   );
 }

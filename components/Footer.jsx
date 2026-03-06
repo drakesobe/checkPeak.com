@@ -168,8 +168,8 @@ export default function Footer() {
 
             {/* Right: trust stats — concrete proof, not just claims */}
             <div className="flex flex-wrap gap-2.5 lg:shrink-0">
-              <StatPill value="1,200+"  label="Ingredients tracked"     />
-              <StatPill value="80+"     label="Banned substances"       />
+              <StatPill value="1,000+"  label="Ingredients tracked"     />
+              <StatPill value="900+"     label="Banned substances"       />
               <StatPill value="10,000+" label="Scans completed"         />
               <StatPill value="0"       label="Brand affiliations"      />
             </div>

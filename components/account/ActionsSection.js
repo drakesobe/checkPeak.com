@@ -1,24 +1,34 @@
+// components/account/ActionsSection.jsx
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
+// No local feedback banner here — feedback is handled by FeedbackBanner in account.js.
+// message/error props are accepted but ignored to avoid a breaking change if callers
+// still pass them; display is intentionally delegated upward.
 
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+const DS = {
+  brand:       "#1E3A5F",
+  brandBg:     "#EEF3F9",
+  brandBorder: "#C0D0E0",
+  banned:      "#C8102E",
+  bannedBg:    "#FFF0F0",
+  bannedBorder:"#FFC8C8",
+  border:      "#E8ECF0",
+  labelText:   "#6B7A8D",
+  dimText:     "#9BA8B4",
+};
 
 /**
  * ActionsSection
  *
  * Props:
- * - canSave: boolean
- * - saving: boolean
- * - onSaveAll: () => Promise<void>   // NEW: saves profile + billing
- * - onOpenPassword: () => void
- * - onLogout: () => void
- * - saveLabel?: string              // NEW: dynamic label (e.g. "Save Profile + Billing")
- * - message?: string
- * - error?: string
+ * - canSave        boolean
+ * - saving         boolean
+ * - onSaveAll      () => Promise<void>
+ * - onOpenPassword () => void
+ * - onLogout       () => void
+ * - saveLabel?     string   e.g. "Save Profile + Billing"
+ * - message?       string   (accepted but not displayed — see FeedbackBanner)
+ * - error?         string   (accepted but not displayed — see FeedbackBanner)
  */
 export default function ActionsSection({
   canSave,
@@ -27,67 +37,67 @@ export default function ActionsSection({
   onOpenPassword,
   onLogout,
   saveLabel = "Save Changes",
-  message = "",
-  error = "",
 }) {
   return (
-    <div className="mt-6 space-y-4">
-      <AnimatePresence>
-        {(message || error) && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className={classNames(
-              "text-center text-sm font-medium py-3 px-4 rounded-2xl border",
-              message
-                ? "bg-emerald-50 text-emerald-800 border-emerald-100"
-                : "bg-red-50 text-red-700 border-red-100"
-            )}
-          >
-            {message || error}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="mt-2 space-y-3">
 
+      {/* ── Primary: Save ──────────────────────────────────────────── */}
       <button
         type="button"
         onClick={onSaveAll}
-        disabled={!canSave}
-        className={classNames(
-          "w-full py-3 rounded-2xl text-white font-semibold shadow-md transition",
-          canSave
-            ? "bg-[#46769B] hover:brightness-110"
-            : "bg-gray-200 text-gray-500 cursor-not-allowed shadow-none"
-        )}
+        disabled={!canSave || saving}
+        style={
+          canSave && !saving
+            ? { backgroundColor: DS.brand, color: "#fff", border: `1px solid ${DS.brand}` }
+            : { backgroundColor: DS.border, color: DS.dimText, border: `1px solid ${DS.border}`, cursor: "not-allowed" }
+        }
+        className="w-full py-3 text-sm font-bold transition-all rounded-sm"
+        onMouseEnter={(e) => { if (canSave && !saving) e.currentTarget.style.filter = "brightness(1.12)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
       >
-        {saving ? "Saving..." : saveLabel}
+        {saving ? "Saving…" : saveLabel}
       </button>
 
+      {/* ── Secondary: Change Password ─────────────────────────────── */}
       <button
         type="button"
         onClick={onOpenPassword}
-        className="w-full py-3 rounded-2xl bg-blue-50 border border-blue-100 text-[#46769B] font-semibold hover:bg-blue-100 transition"
+        style={{
+          backgroundColor: DS.brandBg,
+          color: DS.brand,
+          border: `1px solid ${DS.brandBorder}`,
+        }}
+        className="w-full py-2.5 text-sm font-bold transition-all rounded-sm"
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#D8E6F3"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
       >
         Change Password
       </button>
 
+      {/* ── Divider — separates navigation from form actions ──────── */}
+      <div
+        className="flex items-center gap-3 py-1"
+        style={{ borderTop: `1px solid ${DS.border}`, paddingTop: "0.75rem", marginTop: "0.25rem" }}
+      >
+        <span className="flex-1" style={{ borderTop: `1px solid ${DS.border}` }} />
+      </div>
+
+      {/* ── Destructive: Log Out ────────────────────────────────────── */}
       <button
         type="button"
         onClick={onLogout}
-        className="w-full py-3 rounded-2xl bg-red-50 border border-red-100 text-red-700 font-semibold hover:bg-red-100 transition"
+        style={{
+          backgroundColor: "transparent",
+          color: DS.banned,
+          border: `1px solid ${DS.bannedBorder}`,
+        }}
+        className="w-full py-2.5 text-sm font-bold transition-all rounded-sm"
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.bannedBg; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
       >
         Log Out
       </button>
 
-      <div className="flex items-center justify-between text-xs pt-1">
-        <Link href="/" className="text-gray-500 hover:underline">
-          Back to home
-        </Link>
-        <Link href="/forgot-password" className="text-[#46769B] font-semibold hover:underline">
-          Forgot password?
-        </Link>
-      </div>
     </div>
   );
 }

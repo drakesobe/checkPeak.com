@@ -1,11 +1,9 @@
+// components/org/workoutsCalendar/Modal.jsx
 "use client";
 
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
-
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+import { DS } from "@/components/org/dashboard/DashboardUI";
 
 export default function Modal({
   open,
@@ -13,32 +11,30 @@ export default function Modal({
   children,
   onClose,
   subtitle,
-  maxWidth = "max-w-3xl",
+  maxWidth = "560px",   // accepts px string or Tailwind class — we default to px for DS consistency
 }) {
   const panelRef = useRef(null);
 
-  // Prevent background scroll + add Escape key close
   useEffect(() => {
     if (!open) return;
-
-    const prevOverflow = document.documentElement.style.overflow;
+    const prev = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
-
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onKeyDown);
-
-    // Focus the modal for better UX
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKey);
     setTimeout(() => panelRef.current?.focus?.(), 0);
-
     return () => {
-      document.documentElement.style.overflow = prevOverflow || "";
-      window.removeEventListener("keydown", onKeyDown);
+      document.documentElement.style.overflow = prev || "";
+      window.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
 
   if (!open) return null;
+
+  // Resolve maxWidth — accept either a raw px/rem value or a legacy Tailwind class string
+  // e.g. "max-w-3xl" → we just pass it as className; a pixel value → inline style
+  const isTailwind = typeof maxWidth === "string" && maxWidth.startsWith("max-w-");
+  const widthStyle = isTailwind ? {} : { maxWidth };
+  const widthClass = isTailwind ? maxWidth : "";
 
   return (
     <div
@@ -55,43 +51,76 @@ export default function Modal({
         onClick={onClose}
       />
 
-      {/* Centering + safe spacing */}
+      {/* Centering */}
       <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4">
+
         {/* Panel */}
         <div
           ref={panelRef}
           tabIndex={-1}
-          className={classNames(
-            "w-full bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden outline-none",
-            maxWidth,
-            // ✅ fixes “stuck near bottom” + supports tall content
-            "max-h-[92vh] flex flex-col"
-          )}
+          className={`w-full flex flex-col outline-none ${widthClass}`}
+          style={{
+            backgroundColor: DS.cardBg,
+            border:          `1px solid ${DS.border}`,
+            borderTop:       `3px solid ${DS.brand}`,
+            maxHeight:       "92dvh",
+            overflow:        "hidden",
+            ...widthStyle,
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header (sticky-ish because body scrolls, header stays) */}
-          <div className="p-5 border-b flex items-start justify-between gap-4 bg-white">
+          {/* Header */}
+          <div
+            className="flex items-start justify-between gap-4 shrink-0"
+            style={{
+              padding:         "16px 20px",
+              borderBottom:    `1px solid ${DS.border}`,
+              backgroundColor: DS.pageBg,
+            }}
+          >
             <div className="min-w-0">
-              <p className="text-lg font-extrabold text-gray-900 truncate">
+              <p
+                className="truncate"
+                style={{
+                  fontSize:      "13px",
+                  fontWeight:    900,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color:         DS.bodyText,
+                }}
+              >
                 {title}
               </p>
-              {subtitle ? (
-                <p className="text-[12px] text-gray-500 mt-1">{subtitle}</p>
-              ) : null}
+              {subtitle && (
+                <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "4px" }}>
+                  {subtitle}
+                </p>
+              )}
             </div>
 
             <button
-              className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 shrink-0"
-              onClick={onClose}
               type="button"
+              onClick={onClose}
               aria-label="Close"
+              style={{
+                padding:         "6px",
+                border:          `1px solid ${DS.border}`,
+                backgroundColor: DS.cardBg,
+                cursor:          "pointer",
+                flexShrink:      0,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" style={{ color: DS.dimText }} />
             </button>
           </div>
 
-          {/* Body scroll (prevents modal from pushing down/off-screen) */}
-          <div className="p-5 overflow-y-auto flex-1">
+          {/* Body — scrollable */}
+          <div
+            className="overflow-y-auto flex-1"
+            style={{ padding: "20px" }}
+          >
             {children}
           </div>
         </div>

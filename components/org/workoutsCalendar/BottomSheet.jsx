@@ -1,11 +1,11 @@
+// components/org/workoutsCalendar/BottomSheet.jsx
+// Note: "BottomSheet" is now a centered dialog on all breakpoints — the name
+// is retained for import compatibility but the layout matches the DS panel pattern.
 "use client";
 
 import { useEffect } from "react";
 import { X } from "lucide-react";
-
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+import { DS } from "@/components/org/dashboard/DashboardUI";
 
 export default function BottomSheet({
   open,
@@ -13,95 +13,103 @@ export default function BottomSheet({
   children,
   onClose,
   subtitle,
-  topOffsetPx, // optional override
+  topOffsetPx,   // kept for API compat — not used in centered layout
 }) {
-  // lock background scroll while open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
-
-  // escape closes
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   if (!open) return null;
 
-  // respects your NavBar height if you set --nav-h on the app shell
-  const topOffset = typeof topOffsetPx === "number" ? `${topOffsetPx}px` : "var(--nav-h, 0px)";
-
   return (
     <div className="fixed inset-0 z-[9999]">
-      {/* Overlay region begins below navbar */}
-      <div className="absolute inset-x-0 bottom-0" style={{ top: topOffset }}>
-        {/* Backdrop (only below navbar) */}
-        <div
-          className="absolute inset-0 bg-black/40"
-          onClick={onClose}
-          role="button"
-          tabIndex={0}
-          aria-label="Close sheet"
-        />
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        role="button"
+        tabIndex={0}
+        aria-label="Close sheet"
+      />
 
-        {/* ✅ Centered on ALL breakpoints */}
+      {/* Centered panel — same DS panel system as Modal / DaySheet */}
+      <div className="absolute inset-0 flex items-center justify-center px-3 py-4 sm:px-6 sm:py-8">
         <div
-          className={cx(
-            "absolute inset-0",
-            "flex items-center justify-center",
-            // padding so it doesn't touch edges; safe-area helps iPhone
-            "px-3 sm:px-6",
-            "py-3 sm:py-6",
-            "pb-[calc(env(safe-area-inset-bottom,0px)+12px)]"
-          )}
+          className="w-full flex flex-col"
+          style={{
+            maxWidth:        "680px",
+            backgroundColor: DS.cardBg,
+            border:          `1px solid ${DS.border}`,
+            borderTop:       `3px solid ${DS.brand}`,
+            maxHeight:       "calc(100dvh - 32px)",
+            overflow:        "hidden",
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title || "Sheet"}
         >
+          {/* Header */}
           <div
-            className={cx(
-              "w-full max-w-3xl",
-              "bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden",
-              // ✅ Use dvh so mobile browser chrome doesn't cause weird sizing
-              "max-h-[calc(100dvh-var(--nav-h,0px)-24px)]",
-              "sm:max-h-[calc(100vh-var(--nav-h,0px)-48px)]"
-            )}
-            role="dialog"
-            aria-modal="true"
-            aria-label={title || "Bottom sheet"}
+            className="flex items-start justify-between gap-4 shrink-0"
+            style={{
+              padding:         "16px 20px",
+              borderBottom:    `1px solid ${DS.border}`,
+              backgroundColor: DS.pageBg,
+            }}
           >
-            {/* Header */}
-            <div className="px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-b">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-base sm:text-lg font-extrabold text-gray-900 truncate">{title}</p>
-                  <p className="text-[11px] sm:text-xs text-gray-500 mt-1 leading-snug">
-                    {subtitle || "Tap a workout to manage it."}
-                  </p>
-                </div>
-
-                <button
-                  className="p-2.5 sm:p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 active:scale-[0.99] transition"
-                  onClick={onClose}
-                  type="button"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+            <div className="min-w-0">
+              <p
+                className="truncate"
+                style={{
+                  fontSize:      "13px",
+                  fontWeight:    900,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color:         DS.bodyText,
+                }}
+              >
+                {title}
+              </p>
+              {subtitle && (
+                <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "4px", lineHeight: 1.4 }}>
+                  {subtitle}
+                </p>
+              )}
             </div>
 
-            {/* Content (scroll inside) */}
-            <div className="px-4 py-4 sm:px-6 sm:py-5 overflow-y-auto overscroll-contain">
-              {children}
-              <div className="h-1 sm:h-2" />
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{
+                padding:         "6px",
+                border:          `1px solid ${DS.border}`,
+                backgroundColor: DS.cardBg,
+                cursor:          "pointer",
+                flexShrink:      0,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
+            >
+              <X className="w-4 h-4" style={{ color: DS.dimText }} />
+            </button>
+          </div>
+
+          {/* Body — scrollable */}
+          <div
+            className="overflow-y-auto overscroll-contain flex-1"
+            style={{ padding: "20px" }}
+          >
+            {children}
+            <div style={{ height: "8px" }} />
           </div>
         </div>
       </div>

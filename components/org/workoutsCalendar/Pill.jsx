@@ -1,74 +1,95 @@
-// /components/org/dashboard/Pill.jsx
+// components/org/workoutsCalendar/Pill.jsx
 "use client";
 
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+import { DS } from "@/components/org/dashboard/DashboardUI";
 
+// DS-aligned tone map — matches the exact token values used across
+// queue, prescriptions, dashboard, and workouts calendar
 const TONES = {
   neutral: {
-    soft: "bg-gray-100 text-gray-700 border-gray-200",
-    solid: "bg-gray-900 text-white border-gray-900",
-    outline: "bg-transparent text-gray-800 border-gray-300",
+    soft:    { bg: DS.pageBg,    border: DS.border,        text: DS.labelText },
+    solid:   { bg: DS.bodyText,  border: DS.bodyText,      text: "#fff"       },
+    outline: { bg: "transparent",border: DS.border,        text: DS.labelText },
   },
   good: {
-    soft: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    solid: "bg-emerald-600 text-white border-emerald-600",
-    outline: "bg-transparent text-emerald-800 border-emerald-300",
+    soft:    { bg: DS.safeBg,    border: DS.safeBorder,    text: DS.safe      },
+    solid:   { bg: DS.safe,      border: DS.safe,          text: "#fff"       },
+    outline: { bg: "transparent",border: DS.safeBorder,    text: DS.safe      },
   },
   warn: {
-    soft: "bg-amber-50 text-amber-800 border-amber-200",
-    solid: "bg-amber-600 text-white border-amber-600",
-    outline: "bg-transparent text-amber-800 border-amber-300",
+    soft:    { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution   },
+    solid:   { bg: DS.caution,   border: DS.caution,       text: "#fff"       },
+    outline: { bg: "transparent",border: DS.cautionBorder, text: DS.caution   },
   },
   bad: {
-    soft: "bg-red-50 text-red-800 border-red-200",
-    solid: "bg-red-600 text-white border-red-600",
-    outline: "bg-transparent text-red-800 border-red-300",
+    soft:    { bg: DS.bannedBg,  border: DS.bannedBorder,  text: DS.banned    },
+    solid:   { bg: DS.banned,    border: DS.banned,         text: "#fff"       },
+    outline: { bg: "transparent",border: DS.bannedBorder,  text: DS.banned    },
   },
+  // "brand" maps old callers who passed tone="info" or want the brand accent
+  brand: {
+    soft:    { bg: DS.brandBg,   border: DS.brandBorder,   text: DS.brand     },
+    solid:   { bg: DS.brand,     border: DS.brand,          text: "#fff"       },
+    outline: { bg: "transparent",border: DS.brandBorder,   text: DS.brand     },
+  },
+  // keep "info" as alias for brand so existing callers don't break
   info: {
-    soft: "bg-blue-50 text-blue-800 border-blue-200",
-    solid: "bg-blue-600 text-white border-blue-600",
-    outline: "bg-transparent text-blue-800 border-blue-300",
+    soft:    { bg: DS.brandBg,   border: DS.brandBorder,   text: DS.brand     },
+    solid:   { bg: DS.brand,     border: DS.brand,          text: "#fff"       },
+    outline: { bg: "transparent",border: DS.brandBorder,   text: DS.brand     },
   },
   dark: {
-    soft: "bg-gray-900 text-white border-gray-900",
-    solid: "bg-black text-white border-black",
-    outline: "bg-transparent text-gray-900 border-gray-900",
+    soft:    { bg: DS.bodyText,  border: DS.bodyText,      text: "#fff"       },
+    solid:   { bg: "#000",       border: "#000",            text: "#fff"       },
+    outline: { bg: "transparent",border: DS.bodyText,      text: DS.bodyText  },
   },
 };
 
 const SIZES = {
-  xs: "px-2 py-0.5 text-[10px]",
-  sm: "px-2.5 py-1 text-[11px]",
-  md: "px-3 py-1.5 text-[12px]",
+  xs: { padding: "2px 7px",  fontSize: "10px" },
+  sm: { padding: "3px 8px",  fontSize: "11px" },
+  md: { padding: "4px 10px", fontSize: "12px" },
 };
 
 export default function Pill({
   children,
-  tone = "neutral",
-  variant = "soft", // soft | solid | outline
-  size = "sm", // xs | sm | md
+  tone     = "neutral",
+  variant  = "soft",     // soft | solid | outline
+  size     = "sm",       // xs | sm | md
   truncate = false,
   className = "",
   as: Comp = "span",
-  title, // optional tooltip title
+  title,
+  style = {},
 }) {
-  const toneKey = TONES[tone] ? tone : "neutral";
-  const variantKey = TONES[toneKey][variant] ? variant : "soft";
-  const sizeKey = SIZES[size] ? size : "sm";
+  const toneKey   = TONES[tone]            ? tone    : "neutral";
+  const variantKey= TONES[toneKey][variant]? variant : "soft";
+  const sizeKey   = SIZES[size]            ? size    : "sm";
+
+  const c = TONES[toneKey][variantKey];
+  const s = SIZES[sizeKey];
 
   return (
     <Comp
       title={title}
-      className={classNames(
-        "inline-flex items-center gap-1.5 rounded-full border font-semibold align-middle",
-        "max-w-full",
-        SIZES[sizeKey] || SIZES.sm,
-        TONES[toneKey][variantKey],
-        truncate ? "min-w-0 truncate" : "",
-        className
-      )}
+      className={className}
+      style={{
+        display:        "inline-flex",
+        alignItems:     "center",
+        gap:            "4px",
+        fontWeight:     700,
+        lineHeight:     1,
+        letterSpacing:  "0.03em",
+        whiteSpace:     "nowrap",
+        maxWidth:       "100%",
+        overflow:       truncate ? "hidden" : undefined,
+        textOverflow:   truncate ? "ellipsis" : undefined,
+        backgroundColor: c.bg,
+        border:         `1px solid ${c.border}`,
+        color:          c.text,
+        ...s,
+        ...style,
+      }}
     >
       {children}
     </Comp>

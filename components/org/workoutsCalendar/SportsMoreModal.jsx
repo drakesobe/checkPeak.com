@@ -1,26 +1,17 @@
-// /components/org/workouts-calendar/SportsMoreModal.jsx
+// components/org/workoutsCalendar/SportsMoreModal.jsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Search, X } from "lucide-react";
-import Modal from "./Modal";
-import Button from "./Button";
-import Pill from "./Pill";
+import { DS } from "@/components/org/dashboard/DashboardUI";
 import { normalizeSport, titleSport } from "@/lib/org/workoutsCalendar/sports";
 
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
-
 function uniqNorm(list) {
-  const out = [];
-  const seen = new Set();
+  const out = []; const seen = new Set();
   (Array.isArray(list) ? list : []).forEach((v) => {
     const k = normalizeSport(v);
-    if (!k) return;
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(k);
+    if (!k || seen.has(k)) return;
+    seen.add(k); out.push(k);
   });
   return out;
 }
@@ -33,226 +24,296 @@ function scoreMatch(label, query) {
   return 2;
 }
 
+function SmBtn({ children, onClick, disabled, variant = "secondary", fullWidth }) {
+  const isPrimary = variant === "primary";
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide transition-colors"
+      style={{
+        padding:         "7px 14px",
+        border:          `1px solid ${isPrimary ? DS.brand : DS.border}`,
+        backgroundColor: isPrimary ? DS.brand : DS.cardBg,
+        color:           isPrimary ? "#fff" : DS.labelText,
+        opacity:         disabled ? 0.4 : 1,
+        cursor:          disabled ? "not-allowed" : "pointer",
+        width:           fullWidth ? "100%" : "auto",
+        justifyContent:  fullWidth ? "center" : undefined,
+      }}
+      onMouseEnter={(e) => {
+        if (disabled) return;
+        if (isPrimary) { e.currentTarget.style.backgroundColor = DS.brandLight; }
+        else { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }
+      }}
+      onMouseLeave={(e) => {
+        if (disabled) return;
+        e.currentTarget.style.backgroundColor = isPrimary ? DS.brand : DS.cardBg;
+        e.currentTarget.style.borderColor      = isPrimary ? DS.brand : DS.border;
+        e.currentTarget.style.color            = isPrimary ? "#fff"   : DS.labelText;
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function SportsMoreModal({
-  open,
-  onClose,
-  sportsAll,
-  selectedSports,
-  setSelectedSports,
-  maxSelected = 6, // ✅ cap selection to 6 by default
+  open, onClose, sportsAll, selectedSports, setSelectedSports, maxSelected = 6,
 }) {
   const [q, setQ] = useState("");
 
-  // Normalize the incoming list once
   const all = useMemo(() => {
     const src = Array.isArray(sportsAll) ? sportsAll : [];
-    const map = new Map(); // k -> { k, label }
-    src.forEach((s) => {
-      const k = normalizeSport(s);
-      if (!k) return;
-      if (!map.has(k)) {
-        map.set(k, { k, label: titleSport(s) });
-      }
-    });
-
-    // Keep deterministic order (alpha by label)
+    const map = new Map();
+    src.forEach((s) => { const k = normalizeSport(s); if (k && !map.has(k)) map.set(k, { k, label: titleSport(s) }); });
     const out = Array.from(map.values());
     out.sort((a, b) => String(a.label).localeCompare(String(b.label)));
     return out;
   }, [sportsAll]);
 
-  // ✅ staging state (draft) so clicks don't immediately mutate the calendar
   const selected = useMemo(() => uniqNorm(selectedSports), [selectedSports]);
   const [draft, setDraft] = useState([]);
 
-  // Reset draft each time modal opens
   useEffect(() => {
-    if (open) {
-      setQ("");
-      setDraft(selected);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) { setQ(""); setDraft(selected); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // ESC + scroll lock
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") cancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const isDirty = useMemo(() => {
-    const a = selected.slice().sort().join("|");
-    const b = uniqNorm(draft).slice().sort().join("|");
-    return a !== b;
+    return selected.slice().sort().join("|") !== uniqNorm(draft).slice().sort().join("|");
   }, [selected, draft]);
 
   const limitReached = draft.length >= maxSelected;
 
-  const toggleDraft = useCallback(
-    (sportOrKey) => {
-      const k = normalizeSport(sportOrKey);
-      if (!k) return;
+  const toggleDraft = useCallback((sportOrKey) => {
+    const k = normalizeSport(sportOrKey);
+    if (!k) return;
+    setDraft((prev) => {
+      const cur = uniqNorm(prev);
+      if (cur.includes(k)) return cur.filter((x) => x !== k);
+      if (cur.length >= maxSelected) return cur;
+      return [...cur, k];
+    });
+  }, [maxSelected]);
 
-      setDraft((prev) => {
-        const cur = uniqNorm(prev);
-        const has = cur.includes(k);
+  const selectAll  = useCallback(() => setDraft(all.map((x) => x.k).slice(0, maxSelected)), [all, maxSelected]);
+  const clearDraft = useCallback(() => setDraft([]), []);
 
-        if (has) return cur.filter((x) => x !== k);
-        if (cur.length >= maxSelected) return cur; // deny add beyond cap
-
-        return [...cur, k];
-      });
-    },
-    [maxSelected]
-  );
-
-  const selectAll = useCallback(() => {
-    // Respect cap
-    const keys = all.map((x) => x.k).slice(0, maxSelected);
-    setDraft(keys);
-  }, [all, maxSelected]);
-
-  const clearAll = useCallback(() => setDraft([]), []);
-
-  const apply = useCallback(() => {
-    setSelectedSports(uniqNorm(draft));
-    onClose?.();
-  }, [draft, setSelectedSports, onClose]);
-
-  const cancel = useCallback(() => {
-    setDraft(selected);
-    onClose?.();
-  }, [selected, onClose]);
+  const apply  = useCallback(() => { setSelectedSports(uniqNorm(draft)); onClose?.(); }, [draft, setSelectedSports, onClose]);
+  const cancel = useCallback(() => { setDraft(selected); onClose?.(); }, [selected, onClose]);
 
   const filtered = useMemo(() => {
     const query = String(q || "").trim().toLowerCase();
     if (!query) return all;
-
-    const out = all
+    return all
       .filter((x) => String(x.label || "").toLowerCase().includes(query))
-      .slice();
-
-    out.sort((a, b) => {
-      const sa = scoreMatch(a.label, query);
-      const sb = scoreMatch(b.label, query);
-      if (sa !== sb) return sa - sb;
-      return String(a.label).localeCompare(String(b.label));
-    });
-
-    return out;
+      .sort((a, b) => {
+        const sa = scoreMatch(a.label, query), sb = scoreMatch(b.label, query);
+        return sa !== sb ? sa - sb : String(a.label).localeCompare(String(b.label));
+      });
   }, [q, all]);
 
-  // If not searching, pin selected to the top (nice UX when list is long)
   const list = useMemo(() => {
-    const query = String(q || "").trim();
-    if (query) return filtered;
-
-    const selectedSet = new Set(draft);
-    const selectedFirst = all.filter((x) => selectedSet.has(x.k));
-    const rest = all.filter((x) => !selectedSet.has(x.k));
-    return [...selectedFirst, ...rest];
+    if (String(q || "").trim()) return filtered;
+    const set = new Set(draft);
+    return [...all.filter((x) => set.has(x.k)), ...all.filter((x) => !set.has(x.k))];
   }, [q, filtered, all, draft]);
 
-  const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
+  if (!open) return null;
 
   return (
-    <Modal
-      open={open}
-      onClose={cancel}
-      title="Sports filter"
-      subtitle={`Select up to ${maxSelected} sports to combine them in the calendar.`}
-    >
-      <div className="space-y-4">
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            className={classNames(inputBase, "pl-10")}
-            placeholder="Search sports…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
+    <div className="fixed inset-0 z-[10001]">
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute inset-0 bg-black/40"
+        onClick={cancel}
+      />
 
-        {/* Controls */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <Button
-            variant="secondary"
-            onClick={draft.length ? clearAll : selectAll}
-            className="px-3 py-2 text-xs"
+      {/* Panel */}
+      <div className="absolute inset-0 flex items-center justify-center px-3 py-4 sm:px-6 sm:py-8">
+        <div
+          className="w-full flex flex-col"
+          style={{
+            maxWidth:        "560px",
+            maxHeight:       "calc(100dvh - 48px)",
+            backgroundColor: DS.cardBg,
+            border:          `1px solid ${DS.border}`,
+            borderTop:       `3px solid ${DS.brand}`,
+            overflow:        "hidden",
+          }}
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div
+            className="px-5 py-4 flex items-start justify-between gap-4 shrink-0"
+            style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
           >
-            {draft.length ? "Clear all" : `Select top ${Math.min(maxSelected, all.length)}`}
-          </Button>
-
-          <Button
-            variant="secondary"
-            onClick={() => setDraft(selected)}
-            className="px-3 py-2 text-xs"
-            disabled={!isDirty}
-          >
-            Reset
-          </Button>
-
-          <Pill>{draft.length || 0} selected</Pill>
-          {limitReached ? <Pill tone="warn">Max {maxSelected} sports</Pill> : null}
-        </div>
-
-        {/* Selected chips (quick remove) */}
-        {draft.length ? (
-          <div className="flex flex-wrap gap-2">
-            {draft.map((k) => {
-              const item = all.find((x) => x.k === k);
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => toggleDraft(k)}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-gray-100 border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50"
-                  title="Remove"
-                >
-                  {item?.label || titleSport(k)}
-                  <X className="w-3.5 h-3.5 opacity-70" />
-                </button>
-              );
-            })}
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+                Sports Filter
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+                Select up to {maxSelected} sports to combine in the calendar view.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={cancel}
+              style={{ padding: "6px", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, cursor: "pointer" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
+            >
+              <X className="w-4 h-4" style={{ color: DS.dimText }} />
+            </button>
           </div>
-        ) : null}
 
-        {/* Sports grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {list.map((it) => {
-            const active = draft.includes(it.k);
-            const disabled = !active && limitReached;
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
-            return (
-              <button
-                key={it.k}
-                type="button"
-                aria-pressed={active}
-                aria-disabled={disabled}
-                disabled={disabled}
-                className={classNames(
-                  "px-3 py-2 rounded-2xl border text-sm font-semibold transition",
-                  disabled
-                    ? "opacity-50 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200"
-                    : active
-                    ? "bg-[#46769B] text-white border-[#46769B]"
-                    : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
-                )}
-                onClick={() => toggleDraft(it.k)}
-                title={disabled ? `Max ${maxSelected} selected` : "Toggle"}
+            {/* Search */}
+            <div className="relative">
+              <Search
+                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2"
+                style={{ color: DS.dimText }}
+              />
+              <input
+                className="w-full pl-9 pr-4 py-2.5 text-sm"
+                style={{
+                  border:          `1px solid ${DS.border}`,
+                  backgroundColor: DS.cardBg,
+                  color:           DS.bodyText,
+                  outline:         "none",
+                }}
+                placeholder="Search sports…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onFocus={(e)  => { e.currentTarget.style.borderColor = DS.brand; }}
+                onBlur={(e)   => { e.currentTarget.style.borderColor = DS.border; }}
+              />
+            </div>
+
+            {/* Controls row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <SmBtn onClick={draft.length ? clearDraft : selectAll}>
+                {draft.length ? "Clear all" : `Select top ${Math.min(maxSelected, all.length)}`}
+              </SmBtn>
+              <SmBtn onClick={() => setDraft(selected)} disabled={!isDirty}>Reset</SmBtn>
+
+              {/* Count badge */}
+              <span
+                className="px-2.5 py-1 text-xs font-bold"
+                style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}
               >
-                {it.label}
-              </button>
-            );
-          })}
-        </div>
+                {draft.length} / {maxSelected}
+              </span>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={cancel}>
-            Cancel
-          </Button>
-          <Button onClick={apply} disabled={!isDirty}>
-            Apply
-          </Button>
+              {limitReached && (
+                <span
+                  className="px-2.5 py-1 text-xs font-bold"
+                  style={{ backgroundColor: DS.cautionBg, color: DS.caution, border: `1px solid ${DS.cautionBorder}` }}
+                >
+                  Max reached
+                </span>
+              )}
+            </div>
+
+            {/* Selected chips (quick-remove) */}
+            {draft.length > 0 && (
+              <div className="flex flex-wrap gap-2 p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+                {draft.map((k) => {
+                  const item = all.find((x) => x.k === k);
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => toggleDraft(k)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold transition-colors"
+                      style={{
+                        backgroundColor: DS.brandBg,
+                        color:           DS.brand,
+                        border:          `1px solid ${DS.brandBorder}`,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brand; e.currentTarget.style.color = "#fff"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.color = DS.brand; }}
+                    >
+                      {item?.label || titleSport(k)}
+                      <X className="w-3 h-3" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Sport grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-px" style={{ backgroundColor: DS.border }}>
+              {list.map((it) => {
+                const active   = draft.includes(it.k);
+                const disabled = !active && limitReached;
+
+                return (
+                  <button
+                    key={it.k}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => toggleDraft(it.k)}
+                    className="px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-left transition-colors"
+                    style={{
+                      backgroundColor: active   ? DS.brand   : DS.cardBg,
+                      color:           active   ? "#fff"     : disabled ? DS.dimText : DS.bodyText,
+                      cursor:          disabled ? "not-allowed" : "pointer",
+                      opacity:         disabled ? 0.4 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (disabled || active) return;
+                      e.currentTarget.style.backgroundColor = DS.brandBg;
+                      e.currentTarget.style.color = DS.brand;
+                    }}
+                    onMouseLeave={(e) => {
+                      if (disabled || active) return;
+                      e.currentTarget.style.backgroundColor = DS.cardBg;
+                      e.currentTarget.style.color = DS.bodyText;
+                    }}
+                    title={disabled ? `Max ${maxSelected} selected` : active ? "Remove" : "Add"}
+                  >
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div
+            className="px-5 py-3 flex items-center justify-between gap-3 shrink-0"
+            style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+          >
+            <p className="text-xs" style={{ color: DS.dimText }}>
+              {isDirty ? "Unsaved changes" : "No changes"}
+            </p>
+            <div className="flex gap-2">
+              <SmBtn onClick={cancel}>Cancel</SmBtn>
+              <SmBtn onClick={apply} disabled={!isDirty} variant="primary">Apply filter</SmBtn>
+            </div>
+          </div>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }

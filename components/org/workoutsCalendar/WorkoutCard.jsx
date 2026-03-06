@@ -1,71 +1,82 @@
+// components/org/workoutsCalendar/WorkoutCard.jsx
 "use client";
 
-import { ArrowRight, Dumbbell, Users } from "lucide-react";
-import Pill from "./Pill";
+import { ArrowRight, Users, Dumbbell } from "lucide-react";
+import { DS } from "@/components/org/dashboard/DashboardUI";
 import { titleSport } from "@/lib/org/workoutsCalendar/sports";
 
-function classNames(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
-
-function toneForStatus(s) {
-  const status = String(s || "").toLowerCase();
-  if (status.includes("complete")) return "good";
-  if (status.includes("pending")) return "warn";
-  if (status.includes("assign")) return "warn";
-  if (status.includes("draft")) return "neutral";
-  if (status.includes("arch")) return "neutral";
-  return "neutral";
+function statusTone(s) {
+  const v = String(s || "").toLowerCase();
+  if (v.includes("complete"))  return { bg: DS.safeBg,    border: DS.safeBorder,    text: DS.safe    };
+  if (v.includes("assign"))    return { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution };
+  if (v.includes("pending"))   return { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution };
+  if (v.includes("reject"))    return { bg: DS.bannedBg,  border: DS.bannedBorder,  text: DS.banned  };
+  return { bg: DS.pageBg, border: DS.border, text: DS.dimText };
 }
 
 export default function WorkoutCard({ w, onOpen, compact = false }) {
-  const title = w?.Title || "Workout";
-  const status = w?.Status || "assigned";
-  const sport = titleSport(w?.Sport || "");
+  const title    = w?.Title || "Workout";
+  const status   = w?.Status || "assigned";
+  const sport    = titleSport(w?.Sport || "");
   const athletes = Number(w?.athleteCount || 0);
-  const items = Number(w?.itemCount || 0);
+  const items    = Number(w?.itemCount    || 0);
+  const tone     = statusTone(status);
 
   return (
     <button
       type="button"
       onClick={() => onOpen?.(w)}
-      className={classNames(
-        "w-full text-left rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 transition",
-        "overflow-hidden",
-        compact ? "p-2" : "p-3"
-      )}
+      className="w-full text-left transition-colors"
+      style={{
+        backgroundColor: DS.cardBg,
+        border:          `1px solid ${DS.border}`,
+        borderLeft:      `3px solid ${tone.text}`,
+        padding:         compact ? "7px 10px" : "10px 12px",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
       title="Open workout"
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className={classNames("font-extrabold text-gray-900 truncate", compact ? "text-[12px]" : "text-sm")}>
+          {/* Title */}
+          <p
+            className="font-bold truncate"
+            style={{ color: DS.bodyText, fontSize: compact ? "11px" : "12px" }}
+          >
             {title}
           </p>
 
-          <div className="mt-2 flex flex-wrap gap-2 min-w-0">
-            <Pill tone={toneForStatus(status)} className={compact ? "text-[10px]" : ""}>
-              <span className="truncate max-w-[140px] inline-block">{status}</span>
-            </Pill>
+          {/* Meta row */}
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            {/* Status pill */}
+            <span
+              className="px-1.5 py-0.5 font-bold uppercase tracking-wide"
+              style={{ backgroundColor: tone.bg, color: tone.text, border: `1px solid ${tone.border}`, fontSize: "10px" }}
+            >
+              {status}
+            </span>
 
-            {sport ? (
-              <Pill className={compact ? "text-[10px]" : ""}>
-                <span className="truncate max-w-[140px] inline-block">{sport}</span>
-              </Pill>
-            ) : null}
+            {sport && (
+              <span className="text-xs font-bold" style={{ color: DS.dimText }}>{sport}</span>
+            )}
 
-            <Pill className={compact ? "text-[10px]" : ""}>
-              <Users className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
+            <span className="inline-flex items-center gap-1 text-xs" style={{ color: DS.dimText }}>
+              <Users className="w-3 h-3" />
               {athletes}
-            </Pill>
+            </span>
 
-            <Pill className={compact ? "text-[10px]" : ""}>
-              <Dumbbell className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
+            <span className="inline-flex items-center gap-1 text-xs" style={{ color: DS.dimText }}>
+              <Dumbbell className="w-3 h-3" />
               {items}
-            </Pill>
+            </span>
           </div>
         </div>
 
-        <ArrowRight className={classNames("text-gray-400 shrink-0", compact ? "w-4 h-4" : "w-5 h-5")} />
+        <ArrowRight
+          className="shrink-0 mt-0.5"
+          style={{ width: compact ? "12px" : "14px", height: compact ? "12px" : "14px", color: DS.dimText }}
+        />
       </div>
     </button>
   );

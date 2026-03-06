@@ -1,170 +1,149 @@
+// components/org/workoutsCalendar/WeekView.jsx
 "use client";
 
 import { useMemo } from "react";
-import {
-  ArrowRight,
-  CheckCircle2,
-  ClipboardList,
-  Dumbbell,
-  Plus,
-  Users,
-} from "lucide-react";
-
-import Button from "./Button";
-import Pill from "./Pill";
+import { ArrowRight, Plus, CheckCircle2 } from "lucide-react";
+import { DS } from "@/components/org/dashboard/DashboardUI";
 import WorkoutCard from "./WorkoutCard";
 import { isSameISO, isoToDate } from "@/lib/org/workoutsCalendar/date";
 
-function sumCountsForDay(list) {
-  const workouts = Array.isArray(list) ? list : [];
-  let workoutsCount = workouts.length;
-  let athleteCount = 0;
-  let itemCount = 0;
-
-  for (const w of workouts) {
-    athleteCount += Number(w?.athleteCount || 0);
-    itemCount += Number(w?.itemCount || 0);
-  }
-
-  return { workoutsCount, athleteCount, itemCount };
+function sumCounts(list) {
+  const ws = Array.isArray(list) ? list : [];
+  let wc = ws.length, ac = 0, ic = 0;
+  ws.forEach((w) => { ac += Number(w?.athleteCount || 0); ic += Number(w?.itemCount || 0); });
+  return { workoutsCount: wc, athleteCount: ac, itemCount: ic };
 }
 
-function safeDateLabels(iso) {
-  const d = isoToDate(iso);
+function safeLabels(iso) {
+  const d  = isoToDate(iso);
   const ok = d instanceof Date && !Number.isNaN(d.getTime());
-  const date = ok ? d : new Date();
-
+  const dt = ok ? d : new Date();
   return {
-    labelLong: date.toLocaleString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }),
-    labelWeekday: date.toLocaleString(undefined, { weekday: "short" }),
-    labelMonthDay: date.toLocaleString(undefined, { month: "short", day: "numeric" }),
+    labelLong:    dt.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+    labelWeekday: dt.toLocaleString(undefined, { weekday: "short" }),
+    labelDate:    dt.toLocaleString(undefined, { month: "short", day: "numeric" }),
   };
 }
 
-export default function WeekView({
-  weekDays = [],
-  todayISO = "",
-  loading = false,
-  workoutsByDate = {},
-  onOpenDay,
-  onOpenWorkout,
-  onCreateForDay,
-}) {
-  const DESKTOP_MAX = 6;
+function SmBtn({ children, onClick, disabled, variant = "secondary", style = {} }) {
+  const base = {
+    display:       "inline-flex",
+    alignItems:    "center",
+    gap:           "4px",
+    padding:       "5px 10px",
+    fontSize:      "11px",
+    fontWeight:    900,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    cursor:        disabled ? "not-allowed" : "pointer",
+    opacity:       disabled ? 0.4 : 1,
+    transition:    "background-color 0.12s",
+    border:        `1px solid ${variant === "primary" ? DS.brand : DS.border}`,
+    backgroundColor: variant === "primary" ? DS.brand : DS.cardBg,
+    color:         variant === "primary" ? "#fff" : DS.labelText,
+    ...style,
+  };
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={base}
+      onMouseEnter={(e) => {
+        if (disabled) return;
+        if (variant === "primary") { e.currentTarget.style.backgroundColor = DS.brandLight; }
+        else { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }
+      }}
+      onMouseLeave={(e) => {
+        if (disabled) return;
+        e.currentTarget.style.backgroundColor = variant === "primary" ? DS.brand : DS.cardBg;
+        e.currentTarget.style.borderColor      = variant === "primary" ? DS.brand : DS.border;
+        e.currentTarget.style.color            = variant === "primary" ? "#fff" : DS.labelText;
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
-  // Precompute per-day derived data once (date labels + list)
+export default function WeekView({ weekDays = [], todayISO = "", loading = false, workoutsByDate = {}, onOpenDay, onCreateForDay }) {
+  const DESKTOP_MAX = 5;
+
   const days = useMemo(() => {
     const byDate = workoutsByDate && typeof workoutsByDate === "object" ? workoutsByDate : {};
-    const isos = Array.isArray(weekDays) ? weekDays : [];
-
-    return isos.map((iso) => {
-      const list = Array.isArray(byDate?.[iso]) ? byDate[iso] : [];
-      const labels = safeDateLabels(iso);
-
-      return {
-        iso,
-        list,
-        isToday: isSameISO(iso, todayISO),
-        ...labels,
-      };
-    });
+    return (Array.isArray(weekDays) ? weekDays : []).map((iso) => ({
+      iso,
+      list:    Array.isArray(byDate?.[iso]) ? byDate[iso] : [],
+      isToday: isSameISO(iso, todayISO),
+      ...safeLabels(iso),
+    }));
   }, [weekDays, workoutsByDate, todayISO]);
 
-  const handleCreate = (iso) => {
-    if (loading) return;
-    onCreateForDay?.(iso);
-  };
-
-  // Mobile list
+  /* ── Mobile ── */
   const renderMobile = () => (
     <div className="lg:hidden space-y-3">
       {days.map(({ iso, list, isToday, labelLong }) => {
-        const counts = sumCountsForDay(list);
-
+        const counts = sumCounts(list);
         return (
-          <div key={iso} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-extrabold text-gray-900">{labelLong}</p>
-                  {isToday ? (
-                    <Pill tone="good">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                      Today
-                    </Pill>
-                  ) : null}
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Pill>
-                    <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                    {counts.workoutsCount} workouts
-                  </Pill>
-                  <Pill>
-                    <Users className="w-3.5 h-3.5 mr-1.5" />
-                    {counts.athleteCount} athletes
-                  </Pill>
-                  <Pill>
-                    <Dumbbell className="w-3.5 h-3.5 mr-1.5" />
-                    {counts.itemCount} items
-                  </Pill>
-                </div>
+          <div
+            key={iso}
+            style={{
+              backgroundColor: DS.cardBg,
+              border:          `1px solid ${isToday ? DS.safe : DS.border}`,
+              borderLeft:      `3px solid ${isToday ? DS.safe : DS.border}`,
+            }}
+          >
+            {/* Day header */}
+            <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-sm font-black truncate" style={{ color: DS.bodyText }}>{labelLong}</p>
+                {isToday && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold" style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}>
+                    <CheckCircle2 className="w-3 h-3" /> Today
+                  </span>
+                )}
               </div>
-
-              <div className="flex flex-col gap-2 shrink-0">
-                <Button
-                  variant="secondary"
-                  className="px-3 py-2 text-xs"
-                  onClick={() => onOpenDay?.(iso)}
-                  disabled={loading}
-                >
-                  Open <ArrowRight className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  className="px-3 py-2 text-xs"
-                  onClick={() => handleCreate(iso)}
-                  disabled={loading}
-                >
-                  <Plus className="w-4 h-4" />
-                  Create
-                </Button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-bold tabular-nums px-1.5 py-0.5" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
+                  {counts.workoutsCount}
+                </span>
+                <SmBtn onClick={() => onOpenDay?.(iso)} disabled={loading}>
+                  Open <ArrowRight className="w-3 h-3" />
+                </SmBtn>
+                <SmBtn onClick={() => !loading && onCreateForDay?.(iso)} disabled={loading} variant="primary">
+                  <Plus className="w-3 h-3" />
+                </SmBtn>
               </div>
             </div>
 
-            <div className="mt-3 space-y-2">
+            {/* Workout list */}
+            <div className="p-3 space-y-2">
               {loading ? (
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
-                  <p className="text-sm text-gray-800 font-semibold">Loading…</p>
-                </div>
+                <p className="text-xs py-2" style={{ color: DS.dimText }}>Loading…</p>
               ) : list.length === 0 ? (
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                  <p className="text-[12px] text-gray-600">No workouts scheduled.</p>
+                <div className="flex items-center justify-between py-2 px-1">
+                  <p className="text-xs" style={{ color: DS.dimText }}>No workouts scheduled.</p>
+                  <button
+                    type="button"
+                    className="text-xs font-black uppercase tracking-wide hover:underline"
+                    style={{ color: DS.brand }}
+                    onClick={() => onCreateForDay?.(iso)}
+                  >
+                    + Create
+                  </button>
                 </div>
               ) : (
-                list.slice(0, 4).map((w, idx) => (
-                  <WorkoutCard
-                    key={w?.id || `${iso}-${w?.Title || "workout"}-${idx}`}
-                    w={w}
-                    onOpen={onOpenWorkout}
-                    compact
-                  />
-                ))
+                <>
+                  {list.slice(0, 4).map((w, idx) => (
+                    <WorkoutCard key={w?.id || `${iso}-${idx}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
+                  ))}
+                  {list.length > 4 && (
+                    <button type="button" className="text-xs font-bold hover:underline" style={{ color: DS.brand }} onClick={() => onOpenDay?.(iso)}>
+                      View all ({list.length}) →
+                    </button>
+                  )}
+                </>
               )}
-
-              {!loading && list.length > 4 ? (
-                <button
-                  type="button"
-                  className="text-[11px] font-semibold text-[#46769B] hover:underline"
-                  onClick={() => onOpenDay?.(iso)}
-                >
-                  View all ({list.length}) →
-                </button>
-              ) : null}
             </div>
           </div>
         );
@@ -172,106 +151,83 @@ export default function WeekView({
     </div>
   );
 
-  // Desktop week grid
+  /* ── Desktop ── */
   const renderDesktop = () => (
     <div className="hidden lg:block">
-      <div className="grid grid-cols-7 gap-3">
-        {days.map(({ iso, list, isToday, labelWeekday, labelMonthDay }) => {
+      <div className="grid grid-cols-7 gap-px" style={{ backgroundColor: DS.border }}>
+        {days.map(({ iso, list, isToday, labelWeekday, labelDate }) => {
+          const counts     = sumCounts(list);
           const desktopList = list.slice(0, DESKTOP_MAX);
-          const hasMore = list.length > DESKTOP_MAX;
+          const hasMore    = list.length > DESKTOP_MAX;
 
           return (
             <div
               key={iso}
-              className={[
-                "rounded-2xl border bg-white overflow-hidden flex flex-col h-[300px]",
-                isToday ? "border-emerald-200" : "border-gray-200",
-              ].join(" ")}
+              className="flex flex-col"
+              style={{
+                backgroundColor: DS.cardBg,
+                minHeight:       "300px",
+                borderTop:       isToday ? `2px solid ${DS.safe}` : "none",
+              }}
             >
-              <div
-                className={[
-                  "p-3 pb-4 border-b",
-                  isToday ? "bg-emerald-50 border-emerald-200" : "bg-gray-50 border-gray-200",
-                ].join(" ")}
+              {/* Column header */}
+              <button
+                type="button"
+                onClick={() => onOpenDay?.(iso)}
+                disabled={loading}
+                className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors"
+                style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: isToday ? DS.safeBg : DS.pageBg }}
+                onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = isToday ? DS.safeBg : DS.brandBg; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isToday ? DS.safeBg : DS.pageBg; }}
               >
-                {/* Header clickable */}
-                <button
-                  type="button"
-                  onClick={() => onOpenDay?.(iso)}
-                  disabled={loading}
-                  className={["text-left w-full", loading ? "opacity-80 cursor-not-allowed" : ""].join(" ")}
-                  title="Open day"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-extrabold text-gray-900 truncate">
-                        {labelWeekday}
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">{labelMonthDay}</p>
-                    </div>
-                    {isToday ? <Pill tone="good">Today</Pill> : null}
-                  </div>
-                </button>
-
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    className="px-3 py-2 text-xs w-full"
-                    onClick={() => onOpenDay?.(iso)}
-                    disabled={loading}
-                  >
-                    Open <ArrowRight className="w-4 h-4" />
-                  </Button>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide" style={{ color: isToday ? DS.safe : DS.bodyText }}>
+                    {labelWeekday}
+                  </p>
+                  <p className="text-xs" style={{ color: DS.dimText }}>{labelDate}</p>
                 </div>
-              </div>
+                <div className="flex items-center gap-1">
+                  {isToday && <CheckCircle2 className="w-3 h-3" style={{ color: DS.safe }} />}
+                  {counts.workoutsCount > 0 && (
+                    <span className="text-xs font-bold tabular-nums px-1.5" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
+                      {counts.workoutsCount}
+                    </span>
+                  )}
+                </div>
+              </button>
 
-              <div className="p-3 space-y-2 flex-1 overflow-y-auto">
+              {/* Workout cards */}
+              <div className="p-2.5 space-y-2 flex-1 overflow-y-auto">
                 {loading ? (
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
-                    <p className="text-sm text-gray-800 font-semibold">Loading…</p>
-                  </div>
+                  <p className="text-xs py-2 px-1" style={{ color: DS.dimText }}>Loading…</p>
                 ) : list.length === 0 ? (
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[12px] text-gray-600">No workouts.</p>
-                  </div>
+                  <p className="text-xs py-2 px-1" style={{ color: DS.dimText }}>No workouts.</p>
                 ) : (
                   <>
                     {desktopList.map((w, idx) => (
-                      <WorkoutCard
-                        key={w?.id || `${iso}-${w?.Title || "workout"}-${idx}`}
-                        w={w}
-                        onOpen={onOpenWorkout}
-                        compact
-                      />
+                      <WorkoutCard key={w?.id || `${iso}-${idx}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
                     ))}
-
-                    {hasMore ? (
-                      <button
-                        type="button"
-                        className="text-[11px] font-semibold text-[#46769B] hover:underline"
-                        onClick={() => onOpenDay?.(iso)}
-                      >
-                        View all ({list.length}) →
+                    {hasMore && (
+                      <button type="button" className="text-xs font-bold hover:underline px-1" style={{ color: DS.brand }} onClick={() => onOpenDay?.(iso)}>
+                        +{list.length - DESKTOP_MAX} more
                       </button>
-                    ) : null}
+                    )}
                   </>
                 )}
               </div>
 
-              <div className="p-3 border-t border-gray-200 bg-white flex items-center justify-between">
-                <p className="text-[11px] text-gray-500">
-                  {list.length ? `${list.length} workout(s)` : " "}
-                </p>
-
+              {/* Column footer — only Create; the entire header is already the Open target */}
+              <div
+                className="px-3 py-2 flex justify-end"
+                style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+              >
                 <button
                   type="button"
-                  className={[
-                    "text-[11px] font-semibold hover:underline",
-                    loading ? "text-gray-400 cursor-not-allowed" : "text-[#46769B]",
-                  ].join(" ")}
-                  onClick={() => handleCreate(iso)}
+                  className="text-xs font-black uppercase tracking-wide hover:underline"
+                  style={{ color: loading ? DS.dimText : DS.brand }}
+                  onClick={() => !loading && onCreateForDay?.(iso)}
                   disabled={loading}
-                  title={loading ? "Loading…" : "Create workout"}
+                  title="Create workout for this day"
                 >
                   + Create
                 </button>

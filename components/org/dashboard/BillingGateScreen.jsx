@@ -2,72 +2,71 @@
 "use client";
 
 import { ArrowRight, LogOut, Lock } from "lucide-react";
-import { Button } from "@/components/org/dashboard/DashboardUI";
+import { DS, Button } from "@/components/org/dashboard/DashboardUI";
 import { fmtDate } from "./format";
 
 export default function BillingGateScreen({ role, billing, error, onLogout, onGoAccount }) {
-  const canManageBilling = role === "admin" || role === "organization";
+  const canManage = role === "admin" || role === "organization";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-3xl mx-auto px-4 py-10">
-        <div className="bg-white rounded-3xl shadow-md border border-blue-100 p-7">
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-              <Lock className="w-5 h-5 text-[#46769B]" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">CHECKPEAK</p>
-              <h1 className="text-2xl font-extrabold text-gray-900 mt-1">Subscription required</h1>
-              <p className="text-sm text-gray-600 mt-2">
-                Your organization’s access is currently locked. Start a subscription to continue using the org dashboard.
-              </p>
-            </div>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: DS.pageBg }}>
+      <div className="w-full max-w-md" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
+        {/* Header */}
+        <div className="px-5 py-4 flex items-start gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+          <div className="w-8 h-8 flex items-center justify-center shrink-0" style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}>
+            <Lock className="w-4 h-4" style={{ color: DS.brand }} />
           </div>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-widest" style={{ color: DS.brand }}>CheckPeak</p>
+            <h1 className="text-lg font-black mt-0.5" style={{ color: DS.bodyText }}>Subscription required</h1>
+            <p className="text-xs mt-1" style={{ color: DS.labelText }}>
+              Your organization's access is locked. Start a subscription to continue.
+            </p>
+          </div>
+        </div>
 
+        <div className="p-5">
           {error ? (
-            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-semibold text-red-700">{error}</p>
+            <div className="p-3 text-xs font-bold mb-4" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}>
+              {error}
             </div>
           ) : (
-            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-xs font-semibold text-gray-600">Status</div>
-                <div className="text-sm font-semibold text-gray-900 mt-1">
+            <div className="grid grid-cols-2 gap-px mb-5" style={{ backgroundColor: DS.border }}>
+              <div className="p-3" style={{ backgroundColor: DS.pageBg }}>
+                <p className="text-xs uppercase tracking-wider font-black" style={{ color: DS.dimText }}>Status</p>
+                <p className="text-sm font-black mt-1" style={{ color: DS.bodyText }}>
                   {billing?.statusRaw || billing?.status || "—"}
-                </div>
+                </p>
               </div>
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                <div className="text-xs font-semibold text-gray-600">Trial ends</div>
-                <div className="text-sm font-semibold text-gray-900 mt-1">{fmtDate(billing?.trialEnds)}</div>
+              <div className="p-3" style={{ backgroundColor: DS.pageBg }}>
+                <p className="text-xs uppercase tracking-wider font-black" style={{ color: DS.dimText }}>Trial ends</p>
+                <p className="text-sm font-black mt-1" style={{ color: DS.bodyText }}>
+                  {fmtDate(billing?.trialEnds)}
+                </p>
               </div>
             </div>
           )}
 
-          <div className="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-end">
-            {canManageBilling ? (
-              <Button variant="dark" onClick={onGoAccount} className="w-full sm:w-auto">
-                Manage Billing
-                <ArrowRight className="w-4 h-4" />
+          <div className="flex flex-col gap-2">
+            {canManage ? (
+              <Button onClick={onGoAccount} className="w-full justify-center">
+                Manage Billing <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             ) : (
-              <div className="text-sm text-gray-600 py-2">
-                Ask your Org Owner/Admin to update billing in <span className="font-semibold">Account → Billing</span>.
-              </div>
+              <p className="text-xs p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
+                Ask your Org Owner or Admin to update billing in <strong>Account → Billing</strong>.
+              </p>
             )}
-
-            <Button variant="secondary" onClick={onLogout} className="w-full sm:w-auto">
-              <LogOut className="w-4 h-4" />
-              Log out
+            <Button variant="secondary" onClick={onLogout} className="w-full justify-center">
+              <LogOut className="w-3.5 h-3.5" /> Log out
             </Button>
           </div>
 
-          <div className="mt-4 text-[11px] text-gray-500">
-            Note: Billing IDs (Stripe Customer/Subscription) should never be manually entered by users. They’re set by
-            Stripe checkout + webhooks.
-          </div>
+          <p className="text-xs mt-4" style={{ color: DS.dimText }}>
+            Billing IDs are set by Stripe checkout + webhooks — never enter them manually.
+          </p>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

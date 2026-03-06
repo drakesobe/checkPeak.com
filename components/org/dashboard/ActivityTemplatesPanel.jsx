@@ -2,51 +2,45 @@
 "use client";
 
 import { useMemo } from "react";
-import { RefreshCcw, ArrowRight } from "lucide-react";
-import { Button, Pill } from "@/components/org/dashboard/DashboardUI";
+import { RefreshCcw, ArrowRight, Clock, Layers } from "lucide-react";
+import { DS, Button } from "@/components/org/dashboard/DashboardUI";
 import { fmtDate } from "@/lib/org/dashboard-utils";
 
-function ActivityItem({ it, onViewHistory }) {
+function ActivityRow({ it, onViewHistory }) {
   const email = String(it?.athleteEmail || "").trim().toLowerCase();
-
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-      <p className="text-sm font-extrabold text-gray-900 break-words">{it?.title || "Plan"}</p>
-      <p className="text-[12px] text-gray-700 mt-1 break-all">
-        <span className="font-semibold">{email || "—"}</span>
-      </p>
-      <p className="text-[11px] text-gray-500 mt-2">
-        {it?.createdAt ? `Created: ${fmtDate(it.createdAt)}` : "—"}
-        {it?.createdBy ? ` • By: ${it.createdBy}` : ""}
-      </p>
-
-      <div className="mt-3">
-        <Button
-          variant="secondary"
-          className="px-3 py-2 text-xs w-full sm:w-auto"
-          onClick={() => onViewHistory?.(email)}
-          disabled={!email}
-        >
-          View History
-          <ArrowRight className="w-4 h-4" />
-        </Button>
+    <div
+      className="flex items-start justify-between gap-3 px-3 py-2.5"
+      style={{ borderBottom: `1px solid ${DS.border}` }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{it?.title || "Plan"}</p>
+        <p className="text-xs mt-0.5 truncate" style={{ color: DS.labelText }}>{email || "—"}</p>
+        <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+          {it?.createdAt ? fmtDate(it.createdAt) : "—"}
+          {it?.createdBy ? ` · ${it.createdBy}` : ""}
+        </p>
       </div>
+      <Button variant="secondary" onClick={() => onViewHistory?.(email)} disabled={!email}>
+        History <ArrowRight className="w-3 h-3" />
+      </Button>
     </div>
   );
 }
 
-function TemplateItem({ t, onUseTemplate }) {
+function TemplateRow({ t, onUseTemplate }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-      <p className="text-sm font-extrabold text-gray-900 break-words">{t?.name || "Template"}</p>
-      {t?.desc ? <p className="text-[12px] text-gray-600 mt-1 break-words">{t.desc}</p> : null}
-
-      <div className="mt-3">
-        <Button className="px-3 py-2 text-xs w-full sm:w-auto" onClick={() => onUseTemplate?.(t.id)} disabled={!t?.id}>
-          Use template
-          <ArrowRight className="w-4 h-4" />
-        </Button>
+    <div
+      className="flex items-start justify-between gap-3 px-3 py-2.5"
+      style={{ borderBottom: `1px solid ${DS.border}` }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{t?.name || "Template"}</p>
+        {t?.desc && <p className="text-xs mt-0.5 truncate" style={{ color: DS.dimText }}>{t.desc}</p>}
       </div>
+      <Button onClick={() => onUseTemplate?.(t.id)} disabled={!t?.id}>
+        Use <ArrowRight className="w-3 h-3" />
+      </Button>
     </div>
   );
 }
@@ -62,99 +56,84 @@ export default function ActivityTemplatesPanel({
   activityLimit = 6,
   templateLimit = 6,
 }) {
-  const activity = useMemo(
-    () => (Array.isArray(recentActivity) ? recentActivity.slice(0, activityLimit) : []),
+  const activity = useMemo(() =>
+    (Array.isArray(recentActivity) ? recentActivity : []).slice(0, activityLimit),
     [recentActivity, activityLimit]
   );
-
-  const templ = useMemo(
-    () => (Array.isArray(templates) ? templates.slice(0, templateLimit) : []),
+  const templ = useMemo(() =>
+    (Array.isArray(templates) ? templates : []).slice(0, templateLimit),
     [templates, templateLimit]
   );
 
   return (
-    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-4 sm:p-6">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-extrabold">Activity & Templates</h2>
-          <p className="text-sm text-gray-600 mt-1">Reference what happened recently, then build faster with templates.</p>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Pill>{Array.isArray(recentActivity) ? recentActivity.length : 0} activity</Pill>
-            <Pill>{Array.isArray(templates) ? templates.length : 0} templates</Pill>
+      {/* Recent Activity */}
+      <section style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
+        <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0" style={{ color: DS.brand }} />
+            <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
+              Recent Activity
+            </span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
+              {recentActivity.length}
+            </span>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:flex lg:justify-end">
-          <Button
-            variant="secondary"
-            className="w-full px-3 py-2 text-xs"
-            onClick={onRefreshActivity}
-            disabled={loading}
-            title="Refresh recent activity"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Refresh activity
-          </Button>
-
-          <Button
-            variant="secondary"
-            className="w-full px-3 py-2 text-xs"
-            onClick={onRefreshTemplates}
-            disabled={loading}
-            title="Refresh templates"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Refresh templates
+          <Button variant="secondary" onClick={onRefreshActivity} disabled={loading}>
+            <RefreshCcw className="w-3.5 h-3.5" /> Refresh
           </Button>
         </div>
-      </div>
 
-      <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Recent Activity */}
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-extrabold text-gray-900">Recent Activity</p>
-            <p className="text-[11px] text-gray-500">Top {activityLimit}</p>
-          </div>
+        <div>
+          {activity.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <p className="text-xs font-bold" style={{ color: DS.dimText }}>No activity yet</p>
+              <p className="text-xs mt-1" style={{ color: DS.dimText }}>Create a plan to start tracking events here.</p>
+            </div>
+          ) : (
+            activity.map((it, idx) => (
+              <ActivityRow
+                key={`${it?.athleteEmail || "a"}-${it?.createdAt || idx}-${idx}`}
+                it={it}
+                onViewHistory={onViewHistory}
+              />
+            ))
+          )}
+        </div>
+      </section>
 
-          <div className="mt-3 space-y-3">
-            {activity.length === 0 ? (
-              <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-sm font-extrabold text-gray-900">No activity yet</p>
-                <p className="text-[11px] text-gray-500 mt-1">Create a plan to start tracking events here.</p>
-              </div>
-            ) : (
-              activity.map((it, idx) => (
-                <ActivityItem
-                  key={`${it?.athleteEmail || "athlete"}-${it?.createdAt || idx}-${idx}`}
-                  it={it}
-                  onViewHistory={onViewHistory}
-                />
-              ))
-            )}
+      {/* Templates */}
+      <section style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
+        <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 shrink-0" style={{ color: DS.brand }} />
+            <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
+              Templates
+            </span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
+              {templates.length}
+            </span>
           </div>
+          <Button variant="secondary" onClick={onRefreshTemplates} disabled={loading}>
+            <RefreshCcw className="w-3.5 h-3.5" /> Refresh
+          </Button>
         </div>
 
-        {/* Templates */}
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-extrabold text-gray-900">Templates</p>
-            <p className="text-[11px] text-gray-500">Top {templateLimit}</p>
-          </div>
-
-          <div className="mt-3 space-y-3">
-            {templ.length === 0 ? (
-              <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-sm font-extrabold text-gray-900">No templates yet</p>
-                <p className="text-[11px] text-gray-500 mt-1">Create templates to speed up plan building.</p>
-              </div>
-            ) : (
-              templ.map((t) => <TemplateItem key={t.id || t.name} t={t} onUseTemplate={onUseTemplate} />)
-            )}
-          </div>
+        <div>
+          {templ.length === 0 ? (
+            <div className="px-4 py-6 text-center">
+              <p className="text-xs font-bold" style={{ color: DS.dimText }}>No templates yet</p>
+              <p className="text-xs mt-1" style={{ color: DS.dimText }}>Build a plan and save it as a template to speed up future prescriptions.</p>
+            </div>
+          ) : (
+            templ.map((t) => (
+              <TemplateRow key={t.id || t.name} t={t} onUseTemplate={onUseTemplate} />
+            ))
+          )}
         </div>
-      </div>
-    </section>
+      </section>
+
+    </div>
   );
 }

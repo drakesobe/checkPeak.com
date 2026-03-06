@@ -3,120 +3,99 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-
-/**
- * DashboardSection
- * - Consistent “section card” wrapper for dashboard blocks
- * - Optional collapsible behavior (with localStorage persistence)
- *
- * Props:
- *  - title: string (required)
- *  - subtitle: string (optional)
- *  - right: ReactNode (optional)           -> renders top-right actions
- *  - children: ReactNode
- *  - className: string (optional)         -> outer card
- *  - contentClassName: string (optional)  -> inner content wrapper
- *  - collapsible: boolean (default false)
- *  - defaultCollapsed: boolean (default false)
- *  - storageKey: string (optional)        -> persists collapsed state in localStorage
- */
-
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+import { DS } from "@/components/org/dashboard/DashboardUI";
 
 function readBoolLS(key, fallback) {
   if (typeof window === "undefined") return fallback;
   try {
     const v = localStorage.getItem(key);
-    if (v == null) return fallback;
-    return String(v) === "true";
-  } catch {
-    return fallback;
-  }
+    return v == null ? fallback : String(v) === "true";
+  } catch { return fallback; }
 }
 
 function writeBoolLS(key, val) {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(key, val ? "true" : "false");
-  } catch {
-    // ignore
-  }
+  try { localStorage.setItem(key, val ? "true" : "false"); } catch {}
 }
 
+/**
+ * DashboardSection — card wrapper with DS tokens.
+ * Use for content that is NOT itself a standalone card (e.g. StatsGrid).
+ * For standalone panels (TodayWorkouts, Roster etc.) render them directly.
+ */
 export default function DashboardSection({
   title,
   subtitle = "",
   right = null,
   children,
-  className = "",
-  contentClassName = "",
   collapsible = false,
   defaultCollapsed = false,
   storageKey = "",
+  accentTop = true,
 }) {
   const initialCollapsed = useMemo(() => {
     if (!collapsible) return false;
-    if (!storageKey) return Boolean(defaultCollapsed);
+    if (!storageKey)  return Boolean(defaultCollapsed);
     return readBoolLS(storageKey, Boolean(defaultCollapsed));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsible, storageKey, defaultCollapsed]);
 
   const [collapsed, setCollapsed] = useState(initialCollapsed);
 
-  const setCollapsedSafe = useCallback(
-    (next) => {
-      setCollapsed((prev) => {
-        const v = typeof next === "function" ? next(prev) : next;
-        if (collapsible && storageKey) writeBoolLS(storageKey, v);
-        return v;
-      });
-    },
-    [collapsible, storageKey]
-  );
-
-  const ToggleIcon = collapsed ? ChevronDown : ChevronUp;
+  const toggle = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (collapsible && storageKey) writeBoolLS(storageKey, next);
+      return next;
+    });
+  }, [collapsible, storageKey]);
 
   return (
-    <section className={cx("bg-white rounded-2xl shadow-md border border-blue-100", className)}>
+    <section
+      style={{
+        backgroundColor: DS.cardBg,
+        border:          `1px solid ${DS.border}`,
+        borderTop:       accentTop ? `3px solid ${DS.brand}` : `1px solid ${DS.border}`,
+      }}
+    >
       {/* Header */}
-      <div className="p-5 sm:p-6 border-b border-gray-100">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-extrabold text-gray-900">{title}</h2>
-
-              {collapsible ? (
-                <button
-                  type="button"
-                  onClick={() => setCollapsedSafe((v) => !v)}
-                  className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 px-2 py-1 text-[11px] font-semibold"
-                  aria-label={collapsed ? "Expand section" : "Collapse section"}
-                >
-                  <ToggleIcon className="w-4 h-4" />
-                </button>
-              ) : null}
-            </div>
-
-            {subtitle ? <p className="text-sm text-gray-600 mt-1 leading-relaxed">{subtitle}</p> : null}
+      <div
+        className="px-5 py-4 flex items-start justify-between gap-4"
+        style={{ borderBottom: collapsed ? "none" : `1px solid ${DS.border}` }}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
+              {title}
+            </h2>
+            {collapsible && (
+              <button
+                type="button"
+                onClick={toggle}
+                className="inline-flex items-center justify-center w-5 h-5 rounded-sm transition-all"
+                style={{ border: `1px solid ${DS.border}`, color: DS.dimText }}
+                aria-label={collapsed ? "Expand" : "Collapse"}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.color = DS.brand; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.dimText; }}
+              >
+                {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+              </button>
+            )}
           </div>
-
-          {right ? <div className="shrink-0">{right}</div> : null}
+          {subtitle && (
+            <p className="text-xs mt-0.5 leading-relaxed" style={{ color: DS.dimText }}>
+              {subtitle}
+            </p>
+          )}
         </div>
+        {right && <div className="shrink-0">{right}</div>}
       </div>
 
       {/* Content */}
       {!collapsed ? (
-        <div className={cx("p-5 sm:p-6", contentClassName)}>{children}</div>
+        <div className="p-5">{children}</div>
       ) : (
-        <div className="p-5 sm:p-6">
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-            <p className="text-sm font-semibold text-gray-800">Section collapsed</p>
-            <p className="text-[12px] text-gray-600 mt-1">
-              Expand when you’re ready—this dashboard updates live as athletes complete work.
-            </p>
-          </div>
+        <div className="px-5 py-3">
+          <p className="text-xs" style={{ color: DS.dimText }}>Section collapsed — click to expand.</p>
         </div>
       )}
     </section>

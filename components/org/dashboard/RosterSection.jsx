@@ -3,541 +3,408 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Search,
-  Filter,
-  ChevronRight,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight as ChevronRightIcon,
-  Mail,
-  Pencil,
-  ArrowRight,
+  Search, Filter, ChevronRight, ChevronDown,
+  ChevronLeft, Mail, Pencil, ArrowRight, Users,
 } from "lucide-react";
+import { normalizeEmail, safeDate, fmtDate } from "@/lib/org/dashboard-utils";
+import { DS, Button, Pill, TagChip, PlanChip } from "@/components/org/dashboard/DashboardUI";
 
-import { normalizeEmail, safeDate, fmtDate, classNames } from "@/lib/org/dashboard-utils";
-import { Button, Pill, TagChip, PlanChip } from "@/components/org/dashboard/DashboardUI";
-
+/* ── Mobile athlete card ─────────────────────────────────────────────────── */
 function AthleteCard({ athlete, templates, isExpanded, onToggle, onEdit, onHistory, onBuild }) {
-  const email = normalizeEmail(athlete?.email);
+  const email  = normalizeEmail(athlete?.email);
   const status = String(athlete?.status || "Active");
-  const tags = Array.isArray(athlete?.tags) ? athlete.tags : [];
+  const tags   = Array.isArray(athlete?.tags) ? athlete.tags : [];
+
+  const needsPlan = !!athlete?.needsPlan;
+  const accent = needsPlan ? DS.banned : athlete?.stale ? DS.caution : DS.safe;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <button type="button" onClick={() => onToggle(email)} className="w-full text-left" title="Expand">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+    <div style={{ border: `1px solid ${DS.border}`, borderLeft: `3px solid ${accent}`, backgroundColor: DS.cardBg }}>
+      <button type="button" onClick={() => onToggle(email)} className="w-full text-left px-3 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
-              )}
-              <p className="font-extrabold text-gray-900 truncate">{athlete?.name || "Athlete"}</p>
+              {isExpanded
+                ? <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: DS.dimText }} />
+                : <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: DS.dimText }} />
+              }
+              <p className="text-sm font-black truncate" style={{ color: DS.bodyText }}>{athlete?.name || "Athlete"}</p>
             </div>
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              <PlanChip needsPlan={!!athlete?.needsPlan} stale={!!athlete?.stale} />
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <PlanChip needsPlan={needsPlan} stale={!!athlete?.stale} />
               <Pill>{status}</Pill>
               <Pill>{athlete?.plansCount || 0} plans</Pill>
             </div>
-
-            <p className="mt-2 text-[12px] text-gray-700 break-all">{email || "—"}</p>
-
-            {email ? (
-              <a
-                href={`mailto:${email}`}
-                className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                Email
+            <p className="mt-1.5 text-xs break-all" style={{ color: DS.labelText }}>{email || "—"}</p>
+            {email && (
+              <a href={`mailto:${email}`} className="inline-flex items-center gap-1 text-xs font-bold mt-1 hover:underline" style={{ color: DS.brand }}>
+                <Mail className="w-3 h-3" /> Email
               </a>
-            ) : null}
-
-            <div className="mt-3">
-              <p className="text-[11px] text-gray-500">Last plan</p>
-              <p className="text-[12px] text-gray-800 font-semibold">
+            )}
+            <div className="mt-2">
+              <p className="text-xs" style={{ color: DS.dimText }}>Last plan</p>
+              <p className="text-xs font-bold" style={{ color: DS.bodyText }}>
                 {athlete?.lastPlanAt ? fmtDate(athlete.lastPlanAt) : "—"}
               </p>
-              {athlete?.lastPlanTitle ? (
-                <p className="text-[11px] text-gray-500 mt-0.5 break-words">{athlete.lastPlanTitle}</p>
-              ) : (
-                <p className="text-[11px] text-gray-400 mt-0.5">No plans yet</p>
-              )}
+              {athlete?.lastPlanTitle
+                ? <p className="text-xs mt-0.5 break-words" style={{ color: DS.dimText }}>{athlete.lastPlanTitle}</p>
+                : <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>No plans yet</p>
+              }
             </div>
           </div>
         </div>
       </button>
 
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <Button
-          variant="secondary"
-          className="px-3 py-2 text-xs w-full"
-          onClick={() => onEdit(athlete)}
-          disabled={!email}
-        >
-          <Pencil className="w-4 h-4" />
-          Edit
+      <div className="px-3 pb-3 grid grid-cols-3 gap-1.5">
+        <Button variant="secondary" className="w-full" onClick={() => onEdit(athlete)} disabled={!email}>
+          <Pencil className="w-3.5 h-3.5" /> Edit
         </Button>
-
-        <Button
-          variant="secondary"
-          className="px-3 py-2 text-xs w-full"
-          onClick={() => onHistory(email)}
-          disabled={!email}
-        >
+        <Button variant="secondary" className="w-full" onClick={() => onHistory(email)} disabled={!email}>
           History
         </Button>
-
-        <Button className="px-3 py-2 text-xs w-full" onClick={() => onBuild(email)} disabled={!email}>
-          Build
-          <ArrowRight className="w-4 h-4" />
+        <Button className="w-full" onClick={() => onBuild(email)} disabled={!email}>
+          Build <ArrowRight className="w-3.5 h-3.5" />
         </Button>
       </div>
 
-      {isExpanded ? (
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-gray-200 bg-white p-4">
-              <p className="text-xs text-gray-500">Plan status</p>
-              <p className="text-sm font-extrabold text-gray-900 mt-1">
-                {athlete?.needsPlan ? "Needs first plan" : athlete?.stale ? "Needs update" : "Current"}
+      {isExpanded && (
+        <div className="px-3 pb-3" style={{ borderTop: `1px solid ${DS.border}`, paddingTop: "12px" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+            {/* Plan status */}
+            <div className="p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+              <p className="text-xs" style={{ color: DS.dimText }}>Plan status</p>
+              <p className="text-xs font-black mt-1" style={{ color: DS.bodyText }}>
+                {needsPlan ? "Needs first plan" : athlete?.stale ? "Needs update" : "Current"}
               </p>
-              <p className="text-[11px] text-gray-500 mt-2">Handle needs-plan first, then stale.</p>
             </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4">
-              <p className="text-xs text-gray-500">Quick templates</p>
-              <div className="mt-3 flex flex-wrap gap-2">
+            {/* Quick templates */}
+            <div className="p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+              <p className="text-xs mb-2" style={{ color: DS.dimText }}>Quick templates</p>
+              <div className="flex flex-wrap gap-1">
                 {(templates || []).slice(0, 3).map((t) => (
-                  <Button
-                    key={t.id}
-                    variant="secondary"
-                    className="px-3 py-2 text-xs"
-                    onClick={() => onBuild(email, t.id)}
-                    disabled={!email}
-                    title="Open builder with template"
-                  >
-                    {t.name}
-                    <ArrowRight className="w-4 h-4" />
+                  <Button key={t.id} variant="secondary" onClick={() => onBuild(email, t.id)} disabled={!email}>
+                    {t.name} <ArrowRight className="w-3 h-3" />
                   </Button>
                 ))}
+                {!(templates?.length) && <span className="text-xs" style={{ color: DS.dimText }}>None yet</span>}
               </div>
-              <p className="text-[11px] text-gray-500 mt-3">Opens builder pre-filled.</p>
             </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4">
-              <p className="text-xs text-gray-500">Tags</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {tags.length ? (
-                  tags.map((t) => <TagChip key={t} text={t} />)
-                ) : (
-                  <span className="text-[11px] text-gray-400">—</span>
-                )}
+            {/* Tags */}
+            <div className="p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
+              <p className="text-xs mb-2" style={{ color: DS.dimText }}>Tags</p>
+              <div className="flex flex-wrap gap-1">
+                {tags.length
+                  ? tags.map((t) => <TagChip key={t} text={t} />)
+                  : <span className="text-xs" style={{ color: DS.dimText }}>—</span>
+                }
               </div>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
+/* ── Main component ──────────────────────────────────────────────────────── */
 export default function RosterSection({
-  athletes = [],
-  templates = [],
-  expanded = {},
-  setExpanded,
-  search,
-  setSearch,
-  filterMode,
-  setFilterMode,
-  sortMode,
-  setSortMode,
-  onEdit,
-  onHistory,
-  onBuild,
-  pageSize = 25,
+  athletes = [], templates = [], expanded = {}, setExpanded,
+  search, setSearch, filterMode, setFilterMode, sortMode, setSortMode,
+  onEdit, onHistory, onBuild, pageSize = 25,
 }) {
   const [page, setPage] = useState(1);
 
   const toggleExpanded = (email) => {
-    const e = normalizeEmail(email);
-    if (!e) return;
+    const e = normalizeEmail(email); if (!e) return;
     setExpanded((prev) => ({ ...prev, [e]: !prev[e] }));
   };
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, filterMode, sortMode]);
+  useEffect(() => { setPage(1); }, [search, filterMode, sortMode]);
 
   const counts = useMemo(() => {
     const list = Array.isArray(athletes) ? athletes : [];
-    const needsPlan = list.filter((a) => !!a?.needsPlan).length;
-    const stale = list.filter((a) => !!a?.stale && !a?.needsPlan).length;
-    const current = list.filter((a) => !a?.stale && !a?.needsPlan).length;
-    return { needsPlan, stale, current, total: list.length };
+    return {
+      needsPlan: list.filter((a) => !!a?.needsPlan).length,
+      stale:     list.filter((a) => !!a?.stale && !a?.needsPlan).length,
+      current:   list.filter((a) => !a?.stale && !a?.needsPlan).length,
+      total:     list.length,
+    };
   }, [athletes]);
 
   const filteredAthletes = useMemo(() => {
-    const q = String(search || "").trim().toLowerCase();
-    let list = Array.isArray(athletes) ? [...athletes] : [];
+    const q    = String(search || "").trim().toLowerCase();
+    let   list = Array.isArray(athletes) ? [...athletes] : [];
 
-    if (q) {
-      list = list.filter((a) => {
-        const name = String(a?.name || "").toLowerCase();
-        const email = String(a?.email || "").toLowerCase();
-        return name.includes(q) || email.includes(q);
-      });
-    }
+    if (q) list = list.filter((a) =>
+      String(a?.name  || "").toLowerCase().includes(q) ||
+      String(a?.email || "").toLowerCase().includes(q)
+    );
 
     if (filterMode === "needsPlan") list = list.filter((a) => !!a?.needsPlan);
-    if (filterMode === "stale") list = list.filter((a) => !!a?.stale && !a?.needsPlan);
-    if (filterMode === "current") list = list.filter((a) => !a?.stale && !a?.needsPlan);
+    if (filterMode === "stale")     list = list.filter((a) => !!a?.stale && !a?.needsPlan);
+    if (filterMode === "current")   list = list.filter((a) => !a?.stale && !a?.needsPlan);
 
-    const byLastPlanDesc = (a, b) => {
-      const ad = safeDate(a?.lastPlanAt)?.getTime?.() || 0;
-      const bd = safeDate(b?.lastPlanAt)?.getTime?.() || 0;
-      return bd - ad;
-    };
-
-    const byNameAsc = (a, b) => {
-      const an = String(a?.name || "").toLowerCase();
-      const bn = String(b?.name || "").toLowerCase();
-      return an.localeCompare(bn);
-    };
-
+    const byDate = (a, b) =>
+      (safeDate(b?.lastPlanAt)?.getTime?.() || 0) - (safeDate(a?.lastPlanAt)?.getTime?.() || 0);
+    const byName = (a, b) =>
+      String(a?.name || "").toLowerCase().localeCompare(String(b?.name || "").toLowerCase());
     const byPriority = (a, b) => {
-      const ap = a?.needsPlan ? 1 : 0;
-      const bp = b?.needsPlan ? 1 : 0;
-      if (bp !== ap) return bp - ap;
-
-      const as = a?.stale ? 1 : 0;
-      const bs = b?.stale ? 1 : 0;
-      if (bs !== as) return bs - as;
-
-      return byLastPlanDesc(a, b);
+      const pd = (b?.needsPlan ? 2 : b?.stale ? 1 : 0) - (a?.needsPlan ? 2 : a?.stale ? 1 : 0);
+      return pd !== 0 ? pd : byDate(a, b);
     };
 
-    if (sortMode === "name") list.sort(byNameAsc);
-    else if (sortMode === "lastPlan") list.sort(byLastPlanDesc);
+    if (sortMode === "name")     list.sort(byName);
+    else if (sortMode === "lastPlan") list.sort(byDate);
     else list.sort(byPriority);
 
     return list;
   }, [athletes, search, filterMode, sortMode]);
 
-  const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(filteredAthletes.length / pageSize)),
-    [filteredAthletes.length, pageSize]
-  );
+  const totalPages = useMemo(() =>
+    Math.max(1, Math.ceil(filteredAthletes.length / pageSize)), [filteredAthletes.length, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
-    if (page < 1) setPage(1);
+    if (page < 1)          setPage(1);
   }, [page, totalPages]);
 
-  const pageItems = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredAthletes.slice(start, start + pageSize);
-  }, [filteredAthletes, page, pageSize]);
+  const pageItems = useMemo(() =>
+    filteredAthletes.slice((page - 1) * pageSize, page * pageSize), [filteredAthletes, page, pageSize]);
 
   const canPrev = page > 1;
   const canNext = page < totalPages;
 
-  const inputBase =
-    "w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]";
+  const filterBtns = [
+    { key: "all",       label: "All"          },
+    { key: "needsPlan", label: "Needs Plan"   },
+    { key: "stale",     label: "Needs Update" },
+    { key: "current",   label: "Current"      },
+  ];
+  const sortBtns = [
+    { key: "priority", label: "Priority" },
+    { key: "lastPlan", label: "Last Plan" },
+    { key: "name",     label: "Name"     },
+  ];
 
   return (
-    // Tighten outer padding slightly; parent section already creates breathing room.
-    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-4 sm:p-5">
-      {/* Top controls (no repeated “Roster” title) */}
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm text-gray-600">
-            Search, filter, and take action fast.
-          </p>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Pill tone="bad">Needs plan: {counts.needsPlan}</Pill>
-            <Pill tone="warn">Needs update: {counts.stale}</Pill>
-            <Pill tone="good">Current: {counts.current}</Pill>
-          </div>
+    <section style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
+      {/* Section header */}
+      <div className="px-5 py-4 flex items-start justify-between gap-4" style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4" style={{ color: DS.brand }} />
+          <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>Roster</span>
+          <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
+            {counts.total}
+          </span>
         </div>
-
-        <div className="w-full lg:w-[520px] space-y-2">
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              className={classNames(inputBase, "pl-10")}
-              placeholder="Search by name or email…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={filterMode === "all" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setFilterMode("all")}
-            >
-              <Filter className="w-4 h-4" />
-              All
-            </Button>
-            <Button
-              variant={filterMode === "needsPlan" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setFilterMode("needsPlan")}
-            >
-              Needs Plan
-            </Button>
-            <Button
-              variant={filterMode === "stale" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setFilterMode("stale")}
-            >
-              Needs Update
-            </Button>
-            <Button
-              variant={filterMode === "current" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setFilterMode("current")}
-            >
-              Current
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={sortMode === "priority" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setSortMode("priority")}
-            >
-              Priority
-            </Button>
-            <Button
-              variant={sortMode === "lastPlan" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setSortMode("lastPlan")}
-            >
-              Last Plan
-            </Button>
-            <Button
-              variant={sortMode === "name" ? "primary" : "secondary"}
-              className="px-3 py-2 text-xs"
-              onClick={() => setSortMode("name")}
-            >
-              Name
-            </Button>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-sm" style={{ backgroundColor: DS.bannedBg, color: DS.banned, border: `1px solid ${DS.bannedBorder}` }}>
+            {counts.needsPlan} need plan
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-sm" style={{ backgroundColor: DS.cautionBg, color: DS.caution, border: `1px solid ${DS.cautionBorder}` }}>
+            {counts.stale} stale
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-sm" style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}>
+            {counts.current} current
+          </span>
         </div>
       </div>
 
-      {/* Pager (tightened) */}
-      <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Pill>
-            {filteredAthletes.length} athlete{filteredAthletes.length === 1 ? "" : "s"}
-          </Pill>
-          <Pill>
-            Page {page} / {totalPages}
-          </Pill>
+      {/* Controls */}
+      <div className="px-5 py-3 flex flex-col lg:flex-row lg:items-start gap-3" style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+        {/* Search */}
+        <div className="relative flex-1 min-w-0 lg:max-w-xs">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: DS.dimText }} />
+          <input
+            className="w-full pl-9 pr-3 py-2 text-xs font-medium transition-all"
+            style={{
+              backgroundColor: DS.cardBg,
+              border: `1px solid ${DS.border}`,
+              color: DS.bodyText,
+              outline: "none",
+            }}
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onFocus={(e)  => { e.target.style.borderColor = DS.brand; }}
+            onBlur={(e)   => { e.target.style.borderColor = DS.border; }}
+          />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            className="px-3 py-2 text-xs"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={!canPrev}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Prev
-          </Button>
+        <div className="flex flex-wrap gap-1.5">
+          {filterBtns.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilterMode(key)}
+              className="px-2.5 py-1.5 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+              style={{
+                backgroundColor: filterMode === key ? DS.brand    : DS.cardBg,
+                color:           filterMode === key ? "#fff"      : DS.labelText,
+                border:          `1px solid ${filterMode === key ? DS.brand : DS.border}`,
+              }}
+            >
+              {key === "all" && <Filter className="w-3 h-3 inline mr-1" />}
+              {label}
+            </button>
+          ))}
+          <span className="w-px self-stretch" style={{ backgroundColor: DS.border }} />
+          {sortBtns.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSortMode(key)}
+              className="px-2.5 py-1.5 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+              style={{
+                backgroundColor: sortMode === key ? DS.brandBg    : "transparent",
+                color:           sortMode === key ? DS.brand      : DS.dimText,
+                border:          `1px solid ${sortMode === key ? DS.brandBorder : "transparent"}`,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          <Button
-            variant="secondary"
-            className="px-3 py-2 text-xs"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={!canNext}
-          >
-            Next
-            <ChevronRightIcon className="w-4 h-4" />
+      {/* Pager bar */}
+      <div className="px-5 py-2 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold" style={{ color: DS.labelText }}>
+            {filteredAthletes.length} athlete{filteredAthletes.length !== 1 ? "s" : ""}
+          </span>
+          <span className="text-xs" style={{ color: DS.dimText }}>
+            · pg {page}/{totalPages}
+          </span>
+        </div>
+        <div className="flex gap-1.5">
+          <Button variant="secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={!canPrev}>
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
+          </Button>
+          <Button variant="secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={!canNext}>
+            Next <ChevronRight className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>
 
-      {/* MOBILE cards */}
-      <div className="mt-5 space-y-3 lg:hidden">
-        {pageItems.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-center text-gray-500">
-            No athletes found.
-          </div>
-        ) : (
-          pageItems.map((a) => {
-            const email = normalizeEmail(a?.email);
-            const isExpanded = !!expanded[email];
-            return (
-              <AthleteCard
-                key={a.id || email}
-                athlete={a}
-                templates={templates}
-                isExpanded={isExpanded}
-                onToggle={toggleExpanded}
-                onEdit={onEdit}
-                onHistory={onHistory}
-                onBuild={onBuild}
-              />
-            );
-          })
-        )}
+      {/* Mobile cards */}
+      <div className="lg:hidden p-4 space-y-2">
+        {pageItems.length === 0
+          ? <p className="text-xs py-6 text-center" style={{ color: DS.dimText }}>No athletes match.</p>
+          : pageItems.map((a) => {
+              const email = normalizeEmail(a?.email);
+              return (
+                <AthleteCard
+                  key={a.id || email}
+                  athlete={a}
+                  templates={templates}
+                  isExpanded={!!expanded[email]}
+                  onToggle={toggleExpanded}
+                  onEdit={onEdit}
+                  onHistory={onHistory}
+                  onBuild={onBuild}
+                />
+              );
+            })
+        }
       </div>
 
-      {/* DESKTOP table (tightened + contained) */}
-      <div className="mt-5 hidden lg:block">
-        <div className="rounded-2xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm table-fixed">
-              <thead className="bg-gray-50">
-                <tr className="text-left text-[11px] text-gray-500 border-b">
-                  <th className="py-2.5 px-3 w-[220px]">Athlete</th>
-                  <th className="py-2.5 px-3 w-[260px]">Email</th>
-                  <th className="py-2.5 px-3 w-[110px]">Status</th>
-                  <th className="py-2.5 px-3 w-[170px]">Tags</th>
-                  <th className="py-2.5 px-3 w-[90px]">Plans</th>
-                  <th className="py-2.5 px-3 w-[230px]">Last Plan</th>
-                  <th className="py-2.5 px-3 w-[220px] text-right">Actions</th>
+      {/* Desktop table */}
+      <div className="hidden lg:block">
+        <div className="overflow-x-auto">
+          <table className="min-w-[960px] w-full text-xs table-fixed">
+            <thead>
+              <tr style={{ backgroundColor: DS.pageBg, borderBottom: `1px solid ${DS.border}` }}>
+                {["Athlete","Email","Status","Tags","Plans","Last Plan",""].map((h, i) => (
+                  <th
+                    key={i}
+                    className={`py-2.5 px-3 font-black uppercase tracking-wider text-left ${i === 6 ? "text-right" : ""}`}
+                    style={{ color: DS.dimText, width: ["200px","240px","100px","160px","70px","200px","200px"][i] }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-10 text-center text-xs" style={{ color: DS.dimText }}>
+                    No athletes match.
+                  </td>
                 </tr>
-              </thead>
+              ) : pageItems.map((a) => {
+                const email  = normalizeEmail(a?.email);
+                const status = String(a?.status || "Active");
+                const tags   = Array.isArray(a?.tags) ? a.tags : [];
+                const needsPlan = !!a?.needsPlan;
+                const accent = needsPlan ? DS.banned : a?.stale ? DS.caution : DS.safe;
 
-              <tbody className="bg-white">
-                {pageItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-gray-500">
-                      No athletes found.
+                return (
+                  <tr
+                    key={a.id || email}
+                    style={{ borderBottom: `1px solid ${DS.border}`, borderLeft: `3px solid ${accent}` }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                  >
+                    <td className="py-2.5 px-3 align-top">
+                      <div className="font-bold truncate" style={{ color: DS.bodyText }}>{a?.name || "Athlete"}</div>
+                      <div className="mt-1"><PlanChip needsPlan={needsPlan} stale={!!a?.stale} /></div>
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <div className="break-all line-clamp-2" style={{ color: DS.labelText }}>{email || "—"}</div>
+                      {email && (
+                        <a href={`mailto:${email}`} className="inline-flex items-center gap-1 mt-0.5 font-bold hover:underline" style={{ color: DS.brand }}>
+                          <Mail className="w-3 h-3" /> Email
+                        </a>
+                      )}
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <Pill>{status}</Pill>
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <div className="flex flex-wrap gap-1">
+                        {tags.length
+                          ? <>{tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)}{tags.length > 3 && <span style={{ color: DS.dimText }}>+{tags.length - 3}</span>}</>
+                          : <span style={{ color: DS.dimText }}>—</span>
+                        }
+                      </div>
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <Pill>{a?.plansCount || 0}</Pill>
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <div className="font-bold" style={{ color: DS.bodyText }}>{a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}</div>
+                      {a?.lastPlanTitle
+                        ? <div className="truncate mt-0.5" style={{ color: DS.dimText }}>{a.lastPlanTitle}</div>
+                        : <div className="mt-0.5" style={{ color: DS.dimText }}>No plans yet</div>
+                      }
+                    </td>
+
+                    <td className="py-2.5 px-3 align-top">
+                      <div className="flex justify-end gap-1.5">
+                        <Button variant="secondary" onClick={() => onEdit(a)} disabled={!email}>
+                          <Pencil className="w-3.5 h-3.5" /> Edit
+                        </Button>
+                        <Button variant="secondary" onClick={() => onHistory(email)} disabled={!email}>
+                          History
+                        </Button>
+                        <Button onClick={() => onBuild(email)} disabled={!email}>
+                          Build <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
-                ) : null}
-
-                {pageItems.map((a) => {
-                  const email = normalizeEmail(a?.email);
-                  const status = String(a?.status || "Active");
-                  const tags = Array.isArray(a?.tags) ? a.tags : [];
-
-                  return (
-                    <tr
-                      key={a.id || email}
-                      className="border-b last:border-b-0 hover:bg-gray-50/60"
-                    >
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-gray-900 truncate">
-                            {a?.name || "Athlete"}
-                          </div>
-                          <div className="mt-1">
-                            <PlanChip needsPlan={!!a?.needsPlan} stale={!!a?.stale} />
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="text-gray-700 font-medium break-all line-clamp-2">
-                          {email || "—"}
-                        </div>
-                        {email ? (
-                          <a
-                            href={`mailto:${email}`}
-                            className="inline-flex items-center gap-1 text-[11px] text-[#46769B] font-semibold hover:underline mt-1"
-                          >
-                            <Mail className="w-3.5 h-3.5" />
-                            Email
-                          </a>
-                        ) : null}
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <Pill>{status}</Pill>
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="flex flex-wrap gap-1.5">
-                          {tags.length ? (
-                            <>
-                              {tags.slice(0, 3).map((t) => (
-                                <TagChip key={t} text={t} />
-                              ))}
-                              {tags.length > 3 ? (
-                                <span className="text-[11px] text-gray-400">
-                                  +{tags.length - 3}
-                                </span>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span className="text-[11px] text-gray-400">—</span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <Pill>{a?.plansCount || 0}</Pill>
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="text-gray-700 font-medium">
-                          {a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}
-                        </div>
-                        {a?.lastPlanTitle ? (
-                          <div className="text-[11px] text-gray-500 mt-0.5 truncate">
-                            {a.lastPlanTitle}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-gray-400 mt-0.5">No plans yet</div>
-                        )}
-                      </td>
-
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="secondary"
-                            className="px-3 py-2 text-xs"
-                            onClick={() => onEdit(a)}
-                            disabled={!email}
-                          >
-                            <Pencil className="w-4 h-4" />
-                            Edit
-                          </Button>
-
-                          <Button
-                            variant="secondary"
-                            className="px-3 py-2 text-xs"
-                            onClick={() => onHistory(email)}
-                            disabled={!email}
-                          >
-                            History
-                          </Button>
-
-                          <Button
-                            className="px-3 py-2 text-xs"
-                            onClick={() => onBuild(email)}
-                            disabled={!email}
-                          >
-                            Build
-                            <ArrowRight className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-
-        {/* tiny helper for wide tables */}
-        <p className="mt-2 text-[11px] text-gray-500">
-          Tip: scroll horizontally if your screen is narrow.
-        </p>
       </div>
     </section>
   );

@@ -24,27 +24,48 @@ import SelectedAthleteCard from "@/components/org/prescriptions/SelectedAthleteC
 import TemplatesPanel from "@/components/org/prescriptions/TemplatesPanel";
 import PlanHistory from "@/components/org/prescriptions/PlanHistory";
 
-// ✅ Disable SSR for builder to prevent hydration mismatch in Pages Router
 const PlanBuilderForm = dynamic(
   () => import("@/components/org/prescriptions/planBuilder/PlanBuilderForm"),
   { ssr: false }
 );
 
+const GroupBlastPanel = dynamic(
+  () => import("@/components/org/prescriptions/GroupBlastPanel"),
+  { ssr: false }
+);
+
+// ─── DS tokens (inline — page-level only) ────────────────────────────────────
+const DS = {
+  brand:       "#1E3A5F",
+  brandLight:  "#2A4F7C",
+  brandBg:     "#EEF3F9",
+  brandBorder: "#C0D0E0",
+  border:      "#E8ECF0",
+  pageBg:      "#F4F7FB",
+  cardBg:      "#FFFFFF",
+  bodyText:    "#1A2535",
+  labelText:   "#5A6A7D",
+  dimText:     "#9BA8B4",
+  banned:      "#C8102E",
+  bannedBg:    "#FFF0F0",
+  bannedBorder:"#FFC8C8",
+};
+
 export default function OrgPrescriptionsPage() {
   const router = useRouter();
   const { user } = useAuthContext();
 
-  // auth + org headers + guard
   const { role, orgName, orgToken, orgAuthHeaders } = useOrgPrescriptionsPageAuth({ user, router });
 
-  /* ---------------- UI state ---------------- */
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("builder"); // builder | history
-  const [title, setTitle] = useState("Nutrition + Supplements Plan");
-  const [error, setError] = useState("");
+  /* ── UI state ── */
+  const [loading,    setLoading]    = useState(true);
+  const [view,       setView]       = useState("builder");  // builder | history
+  const [mode,       setMode]       = useState("individual"); // individual | group
+  const [title,      setTitle]      = useState("Nutrition + Supplements Plan");
+  const [error,      setError]      = useState("");
 
   const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
-  const onChange = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
+  const onChange   = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
   const resetBuilder = () => {
     setTitle("Nutrition + Supplements Plan");
     setStructured({ ...DEFAULT_STRUCTURED });
@@ -53,38 +74,23 @@ export default function OrgPrescriptionsPage() {
   const OPTIONS = useMemo(() => buildOptions(), []);
 
   const {
-    athletes,
-    templates,
-    activeTemplates,
-
-    loadingAthletes,
-    templatesLoading,
-
-    templatesError,
-    setTemplatesError,
-
-    fetchAthletes,
-    fetchTemplates,
+    athletes, templates, activeTemplates,
+    loadingAthletes, templatesLoading,
+    templatesError, setTemplatesError,
+    fetchAthletes, fetchTemplates,
   } = useOrgPrescriptionsData({ orgAuthHeaders, orgToken });
 
-  // athlete selection + url preselect + search filtering
   const {
-    athleteSearch,
-    setAthleteSearch,
-    selectedAthleteEmail,
-    setSelectedAthleteEmail,
-    selectedAthlete,
-    selectedAthleteToken,
+    athleteSearch, setAthleteSearch,
+    selectedAthleteEmail, setSelectedAthleteEmail,
+    selectedAthlete, selectedAthleteToken,
     filteredAthletes,
-    historyResetNonce,
-    resetHistoryState,
+    historyResetNonce, resetHistoryState,
   } = useAthleteSelection({ router, athletes });
 
-  // roster speed mode
   const { completedEmails: completedFromSpeedMode, markDone, goToNextAthlete, advanceSafely } = useRosterSpeedMode({
     filteredAthletes,
     selectedAthleteEmail,
-    // ✅ supports both string and functional updater
     setSelectedAthleteEmail: (updater) => {
       setSelectedAthleteEmail(updater);
       resetHistoryState();
@@ -92,13 +98,9 @@ export default function OrgPrescriptionsPage() {
     router,
   });
 
-  // plan-status “Done” set
-  const { doneEmailsFromPlans, statusLoading, refreshRosterPlanStatus, markDoneFromPlanStatus } = useRosterPlanStatus({
-    athletes,
-    orgAuthHeaders,
-  });
+  const { doneEmailsFromPlans, doneTokens, statusLoading, refreshRosterPlanStatus, markDoneFromPlanStatus } =
+    useRosterPlanStatus({ athletes, orgAuthHeaders });
 
-  // merged completed emails
   const completedEmails = useMemo(() => {
     const merged = new Set();
     for (const e of doneEmailsFromPlans) merged.add(e);
@@ -106,20 +108,17 @@ export default function OrgPrescriptionsPage() {
     return merged;
   }, [doneEmailsFromPlans, completedFromSpeedMode]);
 
-  /* ---------------- Initial load ---------------- */
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const list = await fetchAthletes();
       await fetchTemplates();
-
       if (!selectedAthleteEmail) {
         const first = (list || []).find((a) => a?.email);
         if (first?.email) setSelectedAthleteEmail(String(first.email).toLowerCase());
       }
     } catch (err) {
-      console.error("[org/prescriptions] refreshAll error:", err);
       setError(err?.message || "Failed to load data.");
     } finally {
       setLoading(false);
@@ -133,225 +132,242 @@ export default function OrgPrescriptionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, role, orgToken]);
 
-  // templates actions + delete modal
   const tpl = useTemplateActions({
-    templates,
-    fetchTemplates,
-    orgAuthHeaders,
-    user,
-    structured,
-    title,
-    setTitle,
-    setStructured,
-    setView,
-    setError,
-    setTemplatesError,
+    templates, fetchTemplates, orgAuthHeaders, user,
+    structured, title, setTitle, setStructured,
+    setView, setError, setTemplatesError,
   });
 
-  // history paging
-  const hist = usePlanHistory({
-    selectedAthleteToken,
-    orgAuthHeaders,
-    setError,
-    historyResetNonce,
-  });
+  const hist = usePlanHistory({ selectedAthleteToken, orgAuthHeaders, setError, historyResetNonce });
 
-  // validation stays simple in page (it touches selectedAthlete + structured)
   const validateBuilder = useCallback(() => {
     const athleteEmail = String(selectedAthleteEmail || "").trim().toLowerCase();
-    if (!athleteEmail) return "Select an athlete first.";
-    if (!selectedAthleteToken)
-      return "Selected athlete is missing AthleteToken (lookup). Please fix the athlete record.";
-
+    if (!athleteEmail)          return "Select an athlete first.";
+    if (!selectedAthleteToken)  return "Selected athlete is missing AthleteToken. Please fix the athlete record.";
     const hasAny =
-      structured.proteinRecommendation ||
-      structured.creatineRecommendation ||
-      structured.bcaaRecommendation ||
-      structured.electrolytesRecommendation ||
-      structured.notesSupplements ||
-      structured.calories ||
-      structured.proteinGrams ||
-      structured.carbsGrams ||
-      structured.fatsGrams ||
-      structured.hydrationOz ||
-      structured.notesMacros ||
-      structured.freeformNotes?.trim();
-
+      structured.proteinRecommendation || structured.creatineRecommendation ||
+      structured.bcaaRecommendation    || structured.electrolytesRecommendation ||
+      structured.notesSupplements      || structured.calories ||
+      structured.proteinGrams          || structured.carbsGrams ||
+      structured.fatsGrams             || structured.hydrationOz ||
+      structured.notesMacros           || structured.freeformNotes?.trim();
     if (!hasAny) return "Add at least one recommendation (supplements, macros, or notes).";
     return "";
   }, [selectedAthleteEmail, selectedAthleteToken, structured]);
 
-  // plan creator
   const { createLoading, createPlan } = usePlanCreator({
-    orgAuthHeaders,
-    user,
-    selectedAthleteEmail,
-    selectedAthleteToken,
-    structured,
-    validateBuilder,
-    markDone,
-    markDoneFromPlanStatus,
-    view,
-    searchHistory: hist.searchHistory,
+    orgAuthHeaders, user,
+    selectedAthleteEmail, selectedAthleteToken,
+    structured, validateBuilder,
+    markDone, markDoneFromPlanStatus,
+    view, searchHistory: hist.searchHistory,
     setHistoryOffset: hist.setHistoryOffset,
-    setView,
-    setError,
-    advanceSafely,
-    goToNextAthlete,
+    setView, setError, advanceSafely, goToNextAthlete,
   });
 
   const isBusy = loading || loadingAthletes || templatesLoading;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
+      <main className="max-w-6xl mx-auto px-4 py-8 space-y-5">
+
+        {/* ── Page header ── */}
+        <div
+          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-5 py-4"
+          style={{ backgroundColor: DS.cardBg, borderTop: `3px solid ${DS.brand}`, border: `1px solid ${DS.border}` }}
+        >
           <div>
-            <h1 className="text-2xl font-bold">Organization Prescriptions</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Build supplement + macro plans fast. Save templates. Save & Next through the roster.
+            <h1 className="text-xl font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+              Prescriptions
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+              Logged in as <span className="font-bold" style={{ color: DS.labelText }}>{orgName}</span>
+              {statusLoading && <span className="ml-2">· checking plan status…</span>}
             </p>
-            <p className="text-[11px] text-gray-500 mt-2">
-              Logged in as <span className="font-semibold">{orgName}</span>
-            </p>
-            {statusLoading ? <p className="text-[11px] text-gray-500 mt-1">Checking plan status…</p> : null}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Mode toggle */}
+            <div
+              className="flex rounded-sm overflow-hidden"
+              style={{ border: `1px solid ${DS.border}` }}
+            >
+              {[
+                { key: "individual", label: "Individual" },
+                { key: "group",      label: "Group Blast" },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMode(key)}
+                  className="px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-all"
+                  style={{
+                    backgroundColor: mode === key ? DS.brand : DS.cardBg,
+                    color:           mode === key ? "#fff"   : DS.labelText,
+                  }}
+                  onMouseEnter={(e) => { if (mode !== key) { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.color = DS.brand; } }}
+                  onMouseLeave={(e) => { if (mode !== key) { e.currentTarget.style.backgroundColor = DS.cardBg; e.currentTarget.style.color = DS.labelText; } }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <button
-              onClick={() => router.push("/org/dashboard")}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
               type="button"
+              onClick={() => router.push("/org/dashboard")}
+              className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
             >
               Dashboard
             </button>
             <button
-              onClick={() => router.push("/org/athletes")}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
               type="button"
+              onClick={() => router.push("/org/athletes")}
+              className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
             >
               Athletes
             </button>
             <button
-              onClick={async () => {
-                await refreshAll();
-                await refreshRosterPlanStatus();
-              }}
-              className="px-4 py-2 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110"
               type="button"
+              onClick={async () => { await refreshAll(); await refreshRosterPlanStatus(); }}
+              className="px-3 py-1.5 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+              style={{ backgroundColor: DS.brand, color: "#fff" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandLight; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brand; }}
             >
               Refresh
             </button>
           </div>
         </div>
 
-        {/* Status */}
+        {/* ── Status banners ── */}
         {isBusy && (
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-4">
-            <p className="text-sm text-gray-600">Loading…</p>
+          <div className="px-4 py-3 text-xs" style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.labelText }}>
+            Loading…
           </div>
         )}
-
         {error && (
-          <div className="bg-white rounded-2xl shadow-md border border-red-200 p-4">
-            <p className="text-sm text-red-600 font-medium">{error}</p>
+          <div className="px-4 py-3 text-xs font-bold" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}>
+            {error}
           </div>
         )}
 
-        <div className="grid lg:grid-cols-12 gap-6">
-          <AthleteRoster
-            athletes={athletes}
-            filteredAthletes={filteredAthletes}
-            athleteSearch={athleteSearch}
-            setAthleteSearch={setAthleteSearch}
-            selectedAthleteEmail={selectedAthleteEmail}
-            setSelectedAthleteEmail={(email) => {
-              setSelectedAthleteEmail(email);
-              resetHistoryState();
-            }}
-            completedEmails={completedEmails}
-            router={router}
-            inputBase={inputBase}
-            selectedAthleteToken={selectedAthleteToken}
-          />
+        {/* ── Group Blast mode ── full-width, no roster ── */}
+        {mode === "group" && (
+          <div>
+            <div className="mb-3 px-1">
+              <p className="text-xs" style={{ color: DS.dimText }}>
+                Assign one plan to multiple athletes at once. Individual overrides live on each athlete's profile page.
+              </p>
+            </div>
+            <GroupBlastPanel athletes={athletes} />
+          </div>
+        )}
 
-          <section className="lg:col-span-8 space-y-6">
-            <SelectedAthleteCard
-              selectedAthlete={selectedAthlete}
-              selectedAthleteToken={selectedAthleteToken}
-              view={view}
-              setView={(v) => {
-                setView(v);
-                if (v === "history" && !hist.historyRequested) {
-                  hist.searchHistory({ reset: true });
-                }
-              }}
-            />
+        {/* ── Individual mode ── roster + builder/history ── */}
+        {mode === "individual" && (
+          <div className="grid grid-cols-12 gap-5">
 
-            {view === "builder" && (
-              <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-6">
-                <div>
-                  <h3 className="text-lg font-bold">Create Plan</h3>
-                  <p className="text-sm text-gray-600 mt-1">Saves to NutritionPlans (PlanJson + Prescription).</p>
-                </div>
-
-                <TemplatesPanel
-                  inputBase={inputBase}
-                  subtleHint={subtleHint}
-                  templatesLoading={templatesLoading}
-                  templatesError={templatesError}
-                  activeTemplates={activeTemplates}
-                  templateId={tpl.templateId}
-                  setTemplateId={tpl.setTemplateId}
-                  templateName={tpl.templateName}
-                  setTemplateName={tpl.setTemplateName}
-                  templateNotes={tpl.templateNotes}
-                  setTemplateNotes={tpl.setTemplateNotes}
-                  onRefreshTemplates={fetchTemplates}
-                  onApplyTemplate={tpl.applyTemplateToBuilder}
-                  onOpenDeleteConfirm={tpl.openDeleteTemplateConfirm}
-                  onSaveAsTemplate={tpl.saveAsTemplate}
-                />
-
-                <PlanBuilderForm
-                  inputBase={inputBase}
-                  subtleHint={subtleHint}
-                  title={title}
-                  setTitle={setTitle}
-                  structured={structured}
-                  onChange={(k, v) => onChange(k, v)}
-                  OPTIONS={OPTIONS}
-                  createLoading={createLoading}
-                  selectedAthleteEmail={selectedAthleteEmail}
-                  onReset={resetBuilder}
-                  onSave={(e) => createPlan(e, { advance: false })}
-                  onSaveNext={(e) => createPlan(e, { advance: true })}
-                />
-              </div>
-            )}
-
-            {view === "history" && (
-              <PlanHistory
-                prescriptions={hist.historyRequested ? hist.historyItems : []}
-                selectedAthleteToken={selectedAthleteToken}
+            {/* Roster */}
+            <div className="col-span-12 lg:col-span-4">
+              <AthleteRoster
+                athletes={athletes}
+                filteredAthletes={filteredAthletes}
+                athleteSearch={athleteSearch}
+                setAthleteSearch={setAthleteSearch}
                 selectedAthleteEmail={selectedAthleteEmail}
-                selectedAthleteName={selectedAthlete?.name || ""}
-                historyRequested={hist.historyRequested}
-                loading={hist.historyLoading}
-                hasMore={hist.historyHasMore}
-                onSearch={() => hist.searchHistory({ reset: true })}
-                onLoadMore={hist.loadMoreHistory}
-                subtleHint={subtleHint}
-                onCopyNotesToBuilder={(p) => {
-                  setTitle(p.title || "Nutrition + Supplements Plan");
-                  setStructured((prev) => ({ ...prev, freeformNotes: p.prescription || "" }));
-                  setView("builder");
+                setSelectedAthleteEmail={(email) => {
+                  setSelectedAthleteEmail(email);
+                  resetHistoryState();
+                }}
+                selectedAthleteToken={selectedAthleteToken}
+                completedEmails={completedEmails}
+                doneTokens={doneTokens}
+                doneTokensLoading={statusLoading}
+                router={router}
+                inputBase={inputBase}
+              />
+            </div>
+
+            {/* Main panel */}
+            <section className="col-span-12 lg:col-span-8 space-y-5 min-w-0">
+              <SelectedAthleteCard
+                selectedAthlete={selectedAthlete}
+                selectedAthleteToken={selectedAthleteToken}
+                view={view}
+                setView={(v) => {
+                  setView(v);
+                  if (v === "history" && !hist.historyRequested) {
+                    hist.searchHistory({ reset: true });
+                  }
                 }}
               />
-            )}
-          </section>
-        </div>
+
+              {view === "builder" && (
+                <div className="space-y-4">
+                  <TemplatesPanel
+                    inputBase={inputBase}
+                    subtleHint={subtleHint}
+                    templatesLoading={templatesLoading}
+                    templatesError={templatesError}
+                    activeTemplates={activeTemplates}
+                    templateId={tpl.templateId}
+                    setTemplateId={tpl.setTemplateId}
+                    templateName={tpl.templateName}
+                    setTemplateName={tpl.setTemplateName}
+                    templateNotes={tpl.templateNotes}
+                    setTemplateNotes={tpl.setTemplateNotes}
+                    onRefreshTemplates={fetchTemplates}
+                    onApplyTemplate={tpl.applyTemplateToBuilder}
+                    onOpenDeleteConfirm={tpl.openDeleteTemplateConfirm}
+                    onSaveAsTemplate={tpl.saveAsTemplate}
+                  />
+
+                  <PlanBuilderForm
+                    inputBase={inputBase}
+                    subtleHint={subtleHint}
+                    title={title}
+                    setTitle={setTitle}
+                    structured={structured}
+                    onChange={(k, v) => onChange(k, v)}
+                    OPTIONS={OPTIONS}
+                    createLoading={createLoading}
+                    selectedAthleteEmail={selectedAthleteEmail}
+                    onReset={resetBuilder}
+                    onSave={(e) => createPlan(e, { advance: false })}
+                    onSaveNext={(e) => createPlan(e, { advance: true })}
+                  />
+                </div>
+              )}
+
+              {view === "history" && (
+                <PlanHistory
+                  prescriptions={hist.historyRequested ? hist.historyItems : []}
+                  selectedAthleteToken={selectedAthleteToken}
+                  selectedAthleteEmail={selectedAthleteEmail}
+                  selectedAthleteName={selectedAthlete?.name || ""}
+                  historyRequested={hist.historyRequested}
+                  loading={hist.historyLoading}
+                  hasMore={hist.historyHasMore}
+                  onSearch={() => hist.searchHistory({ reset: true })}
+                  onLoadMore={hist.loadMoreHistory}
+                  subtleHint={subtleHint}
+                  onCopyNotesToBuilder={(p) => {
+                    setTitle(p.title || "Nutrition + Supplements Plan");
+                    setStructured((prev) => ({ ...prev, freeformNotes: p.prescription || "" }));
+                    setView("builder");
+                  }}
+                />
+              )}
+            </section>
+          </div>
+        )}
       </main>
 
       <ConfirmDeleteModal
@@ -359,7 +375,7 @@ export default function OrgPrescriptionsPage() {
         title="Delete Template"
         description={
           tpl.templateById
-            ? `Are you sure you want to delete “${tpl.templateById.name}”? This cannot be undone.`
+            ? `Are you sure you want to delete "${tpl.templateById.name}"? This cannot be undone.`
             : "Are you sure you want to delete this template? This cannot be undone."
         }
         confirmText="Delete Template"

@@ -5,33 +5,33 @@ import { useMemo, useState, useCallback } from "react";
 import { formatDateTime } from "@/lib/org/prescriptions/prescriptions-utils";
 import { RefreshCcw, ChevronDown, Copy, Check, Search, FileText, User } from "lucide-react";
 
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+const DS = {
+  brand: "#1E3A5F", brandLight: "#2A4F7C", brandBg: "#EEF3F9", brandBorder: "#C0D0E0",
+  safe: "#00873E", safeBg: "#F0FBF4", safeBorder: "#A8DFB8",
+  caution: "#B86000", cautionBg: "#FFFBF0", cautionBorder: "#FFD580",
+  border: "#E8ECF0", pageBg: "#F4F7FB", cardBg: "#FFFFFF",
+  bodyText: "#1A2535", labelText: "#5A6A7D", dimText: "#9BA8B4",
+};
 
-function safeText(v) {
-  return String(v ?? "").trim();
-}
+function safeText(v) { return String(v ?? "").trim(); }
 
 function truncateMiddle(str, left = 6, right = 4) {
   const s = safeText(str);
-  if (!s) return "";
-  if (s.length <= left + right + 3) return s;
+  if (!s || s.length <= left + right + 3) return s;
   return `${s.slice(0, left)}…${s.slice(-right)}`;
+}
+
+function snippet(text, max = 220) {
+  const s = safeText(text).replace(/\s+/g, " ");
+  if (!s) return "";
+  return s.length <= max ? s : s.slice(0, max).trim() + "…";
 }
 
 function extractTitleHint(p) {
   const t = safeText(p?.title);
   if (t) return t;
   const created = safeText(p?.createdAt) ? formatDateTime(p.createdAt) : "";
-  return created ? `Plan • ${created}` : "Plan";
-}
-
-function snippet(text, max = 220) {
-  const s = safeText(text).replace(/\s+/g, " ");
-  if (!s) return "";
-  if (s.length <= max) return s;
-  return s.slice(0, max).trim() + "…";
+  return created ? `Plan · ${created}` : "Plan";
 }
 
 export default function PlanHistory({
@@ -39,54 +39,41 @@ export default function PlanHistory({
   selectedAthleteToken,
   selectedAthleteEmail,
   selectedAthleteName,
-
-  // actions
   onSearch,
   onLoadMore,
-
-  // paging
   hasMore = false,
-
-  subtleHint,
   onCopyNotesToBuilder,
-
   loading = false,
 }) {
-  const token = safeText(selectedAthleteToken);
+  const token     = safeText(selectedAthleteToken);
   const canSearch = Boolean(token) && typeof onSearch === "function";
-  const canLoadMore = Boolean(token) && Boolean(hasMore) && typeof onLoadMore === "function";
 
-  // UI state
-  const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState(() => new Set()); // planId set
+  const [query,    setQuery]    = useState("");
+  const [expanded, setExpanded] = useState(() => new Set());
   const [copiedId, setCopiedId] = useState("");
 
-  const athleteLine = useMemo(() => {
-    const name = safeText(selectedAthleteName);
-    const email = safeText(selectedAthleteEmail);
-    const tok = safeText(token);
-    return { name, email, tok };
-  }, [selectedAthleteName, selectedAthleteEmail, token]);
+  const athleteLine = useMemo(() => ({
+    name:  safeText(selectedAthleteName),
+    email: safeText(selectedAthleteEmail),
+    tok:   safeText(token),
+  }), [selectedAthleteName, selectedAthleteEmail, token]);
 
   const rows = useMemo(() => {
     const list = Array.isArray(prescriptions) ? prescriptions : [];
     const q = safeText(query).toLowerCase();
     if (!q) return list;
-
-    return list.filter((p) => {
-      const title = safeText(p?.title).toLowerCase();
-      const by = safeText(p?.createdBy).toLowerCase();
-      const body = safeText(p?.prescription).toLowerCase();
-      return title.includes(q) || by.includes(q) || body.includes(q);
-    });
+    return list.filter((p) =>
+      safeText(p?.title).toLowerCase().includes(q) ||
+      safeText(p?.createdBy).toLowerCase().includes(q) ||
+      safeText(p?.prescription).toLowerCase().includes(q)
+    );
   }, [prescriptions, query]);
 
   const toggleExpanded = useCallback((id) => {
     if (!id) return;
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   }, []);
@@ -94,240 +81,219 @@ export default function PlanHistory({
   const copyText = useCallback(async (text) => {
     const v = safeText(text);
     if (!v) return false;
-
-    try {
-      await navigator.clipboard.writeText(v);
-      return true;
-    } catch {
-      // fallback
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = v;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        const ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-        return ok;
-      } catch {
-        return false;
-      }
-    }
+    try { await navigator.clipboard.writeText(v); return true; }
+    catch { return false; }
   }, []);
 
-  const onCopyNotes = useCallback(
-    async (p) => {
-      if (typeof onCopyNotesToBuilder === "function") {
-        onCopyNotesToBuilder(p);
-      }
-      // Also copy to clipboard (nice QoL)
-      const ok = await copyText(p?.prescription || "");
-      if (ok) {
-        const id = safeText(p?.id) || `${safeText(p?.createdAt)}-${safeText(p?.title)}`;
-        setCopiedId(id);
-        setTimeout(() => setCopiedId(""), 1400);
-      }
-    },
-    [onCopyNotesToBuilder, copyText]
-  );
+  const onCopyNotes = useCallback(async (p) => {
+    if (typeof onCopyNotesToBuilder === "function") onCopyNotesToBuilder(p);
+    const ok = await copyText(p?.prescription || "");
+    if (ok) {
+      const id = safeText(p?.id) || `${safeText(p?.createdAt)}-${safeText(p?.title)}`;
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(""), 1400);
+    }
+  }, [onCopyNotesToBuilder, copyText]);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-4">
+    <div style={{ border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}`, backgroundColor: DS.cardBg }}>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+      <div
+        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 py-3"
+        style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+      >
         <div className="min-w-0">
-          <h3 className="text-lg font-bold flex items-center gap-2">
-            <FileText className="w-5 h-5 text-gray-400" />
-            Plan History
-          </h3>
-          <p className="text-sm text-gray-600 mt-1">View past nutrition plans for this athlete.</p>
-
-          {athleteLine.name || athleteLine.email || athleteLine.tok ? (
-            <p className="text-[11px] text-gray-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {athleteLine.name ? (
-                <span className="font-semibold inline-flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-gray-400" />
-                  {athleteLine.name}
-                </span>
-              ) : null}
-
-              {athleteLine.email ? <span>{athleteLine.email}</span> : null}
-
-              {athleteLine.tok ? (
-                <span className="text-gray-400">• {truncateMiddle(athleteLine.tok, 8, 6)}</span>
-              ) : null}
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4" style={{ color: DS.labelText }} />
+            <p className="text-sm font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+              Plan History
             </p>
-          ) : null}
+          </div>
+
+          {(athleteLine.name || athleteLine.email || athleteLine.tok) && (
+            <p className="text-xs mt-1 flex flex-wrap items-center gap-x-2" style={{ color: DS.dimText }}>
+              {athleteLine.name && (
+                <span className="inline-flex items-center gap-1 font-bold" style={{ color: DS.labelText }}>
+                  <User className="h-3 w-3" />{athleteLine.name}
+                </span>
+              )}
+              {athleteLine.email && <span>{athleteLine.email}</span>}
+              {athleteLine.tok   && <span>· {truncateMiddle(athleteLine.tok, 8, 6)}</span>}
+            </p>
+          )}
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => onSearch?.()}
-            className={cx(
-              "px-4 py-2 rounded-xl text-sm font-semibold border inline-flex items-center gap-2",
-              canSearch && !loading
-                ? "border-gray-200 bg-white hover:bg-gray-50"
-                : "border-gray-200 bg-white text-gray-400 cursor-not-allowed"
-            )}
             disabled={!canSearch || loading}
-            title={!token ? "Missing AthleteToken for this athlete" : "Refresh the latest plans"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+            style={{
+              border: `1px solid ${DS.border}`,
+              backgroundColor: DS.cardBg,
+              color: canSearch && !loading ? DS.labelText : DS.dimText,
+              cursor: canSearch && !loading ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (canSearch && !loading) { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = canSearch && !loading ? DS.labelText : DS.dimText; }}
           >
-            <RefreshCcw className={cx("w-4 h-4", loading ? "animate-spin" : "")} />
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Refreshing…" : "Refresh"}
           </button>
 
           <button
             type="button"
             onClick={() => onLoadMore?.()}
-            className={cx(
-              "px-4 py-2 rounded-xl text-sm font-semibold border inline-flex items-center gap-2",
-              canLoadMore && !loading
-                ? "border-gray-200 bg-white hover:bg-gray-50"
-                : "border-gray-200 bg-white text-gray-400 cursor-not-allowed"
-            )}
-            disabled={!canLoadMore || loading}
-            title={!hasMore ? "No more plans" : "Load older plans"}
+            disabled={!hasMore || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+            style={{
+              border: `1px solid ${DS.border}`,
+              backgroundColor: DS.cardBg,
+              color: hasMore && !loading ? DS.labelText : DS.dimText,
+              cursor: hasMore && !loading ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (hasMore && !loading) { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = hasMore && !loading ? DS.labelText : DS.dimText; }}
           >
-            <ChevronDown className="w-4 h-4" />
-            {loading ? "…" : "Load more"}
+            <ChevronDown className="h-3.5 w-3.5" />
+            Load more
           </button>
         </div>
       </div>
 
       {/* Token missing */}
       {!token && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm text-amber-800 font-semibold">Missing athlete token</p>
-          <p className="text-xs text-amber-700 mt-1">
-            This athlete is missing AthleteToken. Fix the roster record to load token-based history.
-          </p>
+        <div
+          className="mx-4 mt-4 px-3 py-2.5 text-xs"
+          style={{ backgroundColor: DS.cautionBg, borderLeft: `3px solid ${DS.caution}`, color: DS.caution }}
+        >
+          <span className="font-bold">Missing athlete token</span> — fix the roster record to load history.
         </div>
       )}
 
-      {/* Search bar */}
-      {token ? (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+      {/* Search */}
+      {token && (
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: DS.dimText }} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, coach, or plan notes…"
-              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/20"
+              placeholder="Search title, coach, or notes…"
               disabled={loading}
+              className="w-full pl-8 pr-3 py-2 text-sm outline-none rounded-sm"
+              style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.bodyText }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+              onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
             />
           </div>
-
-          <div className="text-[11px] text-gray-500 shrink-0">
-            {rows.length}/{(Array.isArray(prescriptions) ? prescriptions.length : 0)} shown
-          </div>
-        </div>
-      ) : null}
-
-      {/* Empty */}
-      {token && !loading && (Array.isArray(prescriptions) ? prescriptions.length : 0) === 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm text-gray-700 font-medium">No plans found for this athlete yet.</p>
-          <p className="text-[11px] text-gray-500 mt-1">
-            Click “Refresh” to re-check the latest plans from NutritionPlans.
-          </p>
+          <span className="text-xs shrink-0" style={{ color: DS.dimText }}>
+            {rows.length}/{(Array.isArray(prescriptions) ? prescriptions.length : 0)}
+          </span>
         </div>
       )}
 
-      {/* List */}
-      <div className="space-y-3">
-        {(rows || []).map((p) => {
-          const id = safeText(p?.id) || `${safeText(p?.createdAt)}-${safeText(p?.title)}`;
-          const isOpen = expanded.has(id);
+      {/* Empty state */}
+      {token && !loading && (Array.isArray(prescriptions) ? prescriptions.length : 0) === 0 && (
+        <div className="mx-4 my-3 px-3 py-2.5" style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+          <p className="text-sm font-bold" style={{ color: DS.bodyText }}>No plans yet</p>
+          <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>Click Refresh to re-check NutritionPlans.</p>
+        </div>
+      )}
 
-          const created = p?.createdAt ? formatDateTime(p.createdAt) : "—";
-          const by = safeText(p?.createdBy);
-          const text = safeText(p?.prescription);
+      {/* Plan list */}
+      <div className="px-4 pb-4 mt-2 space-y-2">
+        {rows.map((p) => {
+          const id     = safeText(p?.id) || `${safeText(p?.createdAt)}-${safeText(p?.title)}`;
+          const isOpen = expanded.has(id);
+          const text   = safeText(p?.prescription);
+          const by     = safeText(p?.createdBy);
 
           return (
             <div
               key={id}
-              className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-300 transition"
+              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg }}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-3 p-3">
                 <button
                   type="button"
                   onClick={() => toggleExpanded(id)}
-                  className="min-w-0 text-left"
-                  title={isOpen ? "Collapse" : "Expand"}
+                  className="min-w-0 text-left flex-1"
                 >
-                  <p className="text-sm font-bold text-gray-900 truncate">{extractTitleHint(p)}</p>
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Created: {created}
-                    {by ? ` • By: ${by}` : ""}
-                    {text ? ` • ${isOpen ? "Full notes" : "Preview"}` : ""}
+                  <p className="text-sm font-bold truncate" style={{ color: DS.bodyText }}>
+                    {extractTitleHint(p)}
                   </p>
-
-                  {!isOpen && text ? (
-                    <p className="mt-2 text-[12px] text-gray-700">
-                      {snippet(text, 220)}
+                  <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+                    {p?.createdAt ? formatDateTime(p.createdAt) : "—"}
+                    {by && ` · ${by}`}
+                  </p>
+                  {!isOpen && text && (
+                    <p className="mt-1.5 text-xs leading-relaxed" style={{ color: DS.labelText }}>
+                      {snippet(text, 180)}
                     </p>
-                  ) : null}
+                  )}
                 </button>
 
-                <div className="shrink-0 flex flex-col sm:flex-row gap-2">
+                <div className="shrink-0 flex gap-1.5">
                   <button
                     type="button"
                     onClick={() => onCopyNotes(p)}
-                    className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50 inline-flex items-center gap-2"
-                    title="Copy notes to builder + clipboard"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-sm transition-all"
+                    style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.safeBorder; e.currentTarget.style.color = DS.safe; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
                   >
-                    {copiedId === id ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-600" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        Copy to Builder
-                      </>
-                    )}
+                    {copiedId === id
+                      ? <><Check className="h-3.5 w-3.5" style={{ color: DS.safe }} />Copied</>
+                      : <><Copy className="h-3.5 w-3.5" />Copy</>
+                    }
                   </button>
 
                   <button
                     type="button"
                     onClick={() => toggleExpanded(id)}
-                    className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50 inline-flex items-center gap-2"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-sm transition-all"
+                    style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
                   >
-                    <ChevronDown className={cx("w-4 h-4 transition", isOpen ? "rotate-180" : "")} />
+                    <ChevronDown
+                      className="h-3.5 w-3.5 transition-transform"
+                      style={{ transform: isOpen ? "rotate(180deg)" : "none" }}
+                    />
                     {isOpen ? "Hide" : "View"}
                   </button>
                 </div>
               </div>
 
-              {isOpen ? (
-                <div className="mt-3">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-xl p-3 max-h-[420px] overflow-auto">
+              {isOpen && (
+                <div className="px-3 pb-3" style={{ borderTop: `1px solid ${DS.border}` }}>
+                  <pre
+                    className="mt-3 whitespace-pre-wrap text-sm leading-relaxed overflow-auto"
+                    style={{
+                      backgroundColor: DS.pageBg,
+                      border: `1px solid ${DS.border}`,
+                      padding: "0.75rem",
+                      maxHeight: 360,
+                      color: DS.bodyText,
+                    }}
+                  >
                     {text || ""}
                   </pre>
                 </div>
-              ) : null}
-
-              {subtleHint ? (
-                <p className={subtleHint}>
-                  Tip: Copy a past plan’s notes into the builder, then adjust macros/supps.
-                </p>
-              ) : null}
+              )}
             </div>
           );
         })}
       </div>
 
-      {token && (Array.isArray(prescriptions) ? prescriptions.length : 0) > 0 ? (
-        <div className="text-[11px] text-gray-500">
-          {hasMore ? "Showing latest plans. Click “Load more” for older ones." : "End of history."}
+      {token && (Array.isArray(prescriptions) ? prescriptions.length : 0) > 0 && (
+        <div className="px-4 pb-3 text-xs" style={{ color: DS.dimText }}>
+          {hasMore ? "Showing latest plans — Load more for older ones." : "End of history."}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

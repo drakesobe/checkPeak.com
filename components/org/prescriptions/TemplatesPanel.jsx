@@ -1,121 +1,158 @@
 // components/org/prescriptions/TemplatesPanel.jsx
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Trash2, RefreshCw } from "lucide-react";
+
+const DS = {
+  brand: "#1E3A5F", brandLight: "#2A4F7C", brandBg: "#EEF3F9", brandBorder: "#C0D0E0",
+  banned: "#C8102E", bannedBg: "#FFF0F0", bannedBorder: "#FFC8C8",
+  border: "#E8ECF0", pageBg: "#F4F7FB", cardBg: "#FFFFFF",
+  bodyText: "#1A2535", labelText: "#5A6A7D", dimText: "#9BA8B4",
+};
+
+function Label({ children }) {
+  return (
+    <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.dimText }}>
+      {children}
+    </p>
+  );
+}
 
 export default function TemplatesPanel({
-  inputBase,
-  subtleHint,
-
-  templatesLoading,
-  templatesError,
-  activeTemplates,
-
-  templateId,
-  setTemplateId,
-  templateName,
-  setTemplateName,
-  templateNotes,
-  setTemplateNotes,
-
-  onRefreshTemplates,
-  onApplyTemplate,
-  onOpenDeleteConfirm,
-  onSaveAsTemplate,
+  templatesLoading, templatesError, activeTemplates,
+  templateId, setTemplateId, templateName, setTemplateName,
+  templateNotes, setTemplateNotes,
+  onRefreshTemplates, onApplyTemplate, onOpenDeleteConfirm, onSaveAsTemplate,
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-      <div className="flex items-start justify-between gap-3">
+    <div
+      style={{ border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}`, backgroundColor: DS.cardBg }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+      >
         <div>
-          <p className="text-sm font-semibold text-gray-900">Plan Templates</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Templates are saved presets of the builder fields scoped to your org token.
+          <p className="text-sm font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+            Plan Templates
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+            Saved presets scoped to your org token.
           </p>
         </div>
-
         <button
           type="button"
           onClick={onRefreshTemplates}
-          className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
           disabled={templatesLoading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+          style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
         >
-          {templatesLoading ? "Refreshing…" : "Refresh Templates"}
+          <RefreshCw className={`h-3.5 w-3.5 ${templatesLoading ? "animate-spin" : ""}`} />
+          {templatesLoading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      {templatesError ? (
-        <div className="rounded-xl bg-white border border-red-200 p-3">
-          <p className="text-sm text-red-600 font-medium">{templatesError}</p>
+      <div className="px-4 py-4 space-y-3">
+        {templatesError && (
+          <div
+            className="px-3 py-2 text-xs"
+            style={{ backgroundColor: DS.bannedBg, borderLeft: `3px solid ${DS.banned}`, color: DS.banned }}
+          >
+            {templatesError}
+          </div>
+        )}
+
+        {/* Apply / Delete row */}
+        <div className="flex gap-2">
+          <select
+            className="flex-1 text-sm px-3 py-2 outline-none rounded-sm"
+            style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.bodyText }}
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+          >
+            <option value="">Select a template…</option>
+            {activeTemplates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name || "Template"}</option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => onApplyTemplate(templateId)}
+            disabled={!templateId}
+            className="px-3 py-2 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+            style={{
+              backgroundColor: templateId ? DS.brand : DS.pageBg,
+              color:           templateId ? "#fff"   : DS.dimText,
+              cursor:          templateId ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (templateId) e.currentTarget.style.backgroundColor = DS.brandLight; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = templateId ? DS.brand : DS.pageBg; }}
+          >
+            Apply
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenDeleteConfirm}
+            disabled={!templateId}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-sm transition-all"
+            style={{
+              border: `1px solid ${templateId ? DS.bannedBorder : DS.border}`,
+              backgroundColor: DS.cardBg,
+              color: templateId ? DS.banned : DS.dimText,
+              cursor: templateId ? "pointer" : "not-allowed",
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </button>
         </div>
-      ) : null}
 
-      <div className="grid sm:grid-cols-4 gap-3">
-        <select
-          className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30 sm:col-span-2"
-          value={templateId}
-          onChange={(e) => setTemplateId(e.target.value)}
-        >
-          <option value="">Select a template…</option>
-          {activeTemplates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name || "Template"}
-            </option>
-          ))}
-        </select>
+        {/* Save new template */}
+        <div className="flex gap-2">
+          <input
+            className="flex-1 text-sm px-3 py-2 outline-none rounded-sm"
+            style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+            placeholder="Template name (e.g. Offseason Bulk)"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+            onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
+          />
+          <input
+            className="flex-1 text-sm px-3 py-2 outline-none rounded-sm hidden sm:block"
+            style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+            placeholder="Notes (optional)"
+            value={templateNotes}
+            onChange={(e) => setTemplateNotes(e.target.value)}
+            onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+            onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
+          />
+          <button
+            type="button"
+            onClick={onSaveAsTemplate}
+            disabled={templatesLoading || !templateName.trim()}
+            className="px-3 py-2 text-xs font-black uppercase tracking-wide rounded-sm transition-all whitespace-nowrap"
+            style={{
+              backgroundColor: templateName.trim() ? DS.brand : DS.pageBg,
+              color:           templateName.trim() ? "#fff"   : DS.dimText,
+              cursor:          templateName.trim() ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (templateName.trim()) e.currentTarget.style.backgroundColor = DS.brandLight; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = templateName.trim() ? DS.brand : DS.pageBg; }}
+          >
+            {templatesLoading ? "Saving…" : "Save Template"}
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => onApplyTemplate(templateId)}
-          className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50"
-          disabled={!templateId}
-        >
-          Apply
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenDeleteConfirm}
-          className={`px-4 py-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 ${
-            templateId
-              ? "bg-white border-red-200 text-red-700 hover:bg-red-50"
-              : "bg-white border-gray-200 text-gray-400 cursor-not-allowed"
-          }`}
-          disabled={!templateId}
-          title={!templateId ? "Select a template first" : "Delete selected template"}
-        >
-          <Trash2 size={16} />
-          Delete
-        </button>
+        <p className="text-xs" style={{ color: DS.dimText }}>
+          Pro: apply a template once, then Save & Next through the roster without resetting the builder.
+        </p>
       </div>
-
-      <div className="grid sm:grid-cols-3 gap-3">
-        <input
-          className={inputBase}
-          placeholder="Template name (e.g., Offseason Bulk)"
-          value={templateName}
-          onChange={(e) => setTemplateName(e.target.value)}
-        />
-
-        <input
-          className={inputBase}
-          placeholder="Template notes (optional)"
-          value={templateNotes}
-          onChange={(e) => setTemplateNotes(e.target.value)}
-        />
-
-        <button
-          type="button"
-          onClick={onSaveAsTemplate}
-          className="px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
-          disabled={templatesLoading || !templateName.trim()}
-        >
-          {templatesLoading ? "Saving…" : "Save as Template"}
-        </button>
-      </div>
-
-      <p className={subtleHint}>
-        Pro move: apply a template once, then don’t reset the builder — just Save & Next through the roster.
-      </p>
     </div>
   );
 }

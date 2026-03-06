@@ -1,70 +1,116 @@
 // components/org/prescriptions/planBuilder/PlanBuilderForm.jsx
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import SearchSelect from "@/components/SearchSelect";
 import MealBlockEditor from "./mealBlocks/MealBlockEditor";
+import {
+  ChevronDown, ChevronUp, Zap, Save, ArrowRight, RotateCcw,
+} from "lucide-react";
 
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+const DS = {
+  brand:         "#1E3A5F",
+  brandLight:    "#2A4F7C",
+  brandBg:       "#EEF3F9",
+  brandBorder:   "#C0D0E0",
+  safe:          "#00873E",
+  safeBg:        "#F0FBF4",
+  safeBorder:    "#A8DFB8",
+  caution:       "#B86000",
+  cautionBg:     "#FFFBF0",
+  cautionBorder: "#FFD580",
+  banned:        "#C8102E",
+  bannedBg:      "#FFF0F0",
+  bannedBorder:  "#FFC8C8",
+  border:        "#E8ECF0",
+  pageBg:        "#F4F7FB",
+  cardBg:        "#FFFFFF",
+  bodyText:      "#1A2535",
+  labelText:     "#5A6A7D",
+  dimText:       "#9BA8B4",
+};
 
-function StepCard({
-  step,
-  title,
-  subtitle,
-  isOpen,
-  isComplete,
-  onToggle,
-  children,
-  rightSlot,
-}) {
+// ─── D2 football presets ──────────────────────────────────────────────────────
+const PRESETS = [
+  { label: "Bulk",     cal: 4200, pro: 225, carbs: 480, fat: 110, phase: "Surplus",  desc: "Linemen / heavy skill" },
+  { label: "Maintain", cal: 3200, pro: 185, carbs: 360, fat: 95,  phase: "Maintain", desc: "Standard in-season"    },
+  { label: "Cut",      cal: 2700, pro: 210, carbs: 270, fat: 75,  phase: "Cut",      desc: "Weight management"     },
+  { label: "Skill",    cal: 3600, pro: 195, carbs: 420, fat: 90,  phase: "Maintain", desc: "Speed / skill spots"   },
+];
+
+// ─── Tiny primitives ──────────────────────────────────────────────────────────
+
+function Label({ children }) {
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-blue-100 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cx(
-          "w-full text-left px-4 sm:px-6 py-4 flex items-start justify-between gap-3",
-          "hover:bg-gray-50 transition"
-        )}
-      >
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={cx(
-                "inline-flex items-center justify-center h-8 w-8 rounded-full text-sm font-extrabold",
-                isComplete ? "bg-emerald-100 text-emerald-800" : "bg-blue-50 text-[#46769B]"
-              )}
-            >
-              {step}
-            </span>
-            <h3 className="text-base sm:text-lg font-extrabold text-gray-900">{title}</h3>
-            {isComplete ? (
-              <span className="ml-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                Ready
-              </span>
-            ) : (
-              <span className="ml-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                Incomplete
-              </span>
-            )}
-          </div>
-          {subtitle ? (
-            <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">{subtitle}</p>
-          ) : null}
-        </div>
-
-        <div className="shrink-0 flex items-center gap-2">
-          {rightSlot ? <div className="hidden sm:block">{rightSlot}</div> : null}
-          <span className="text-xs font-semibold text-gray-500">{isOpen ? "Hide" : "Show"}</span>
-        </div>
-      </button>
-
-      {isOpen ? <div className="px-4 sm:px-6 pb-6">{children}</div> : null}
-    </div>
+    <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.dimText }}>
+      {children}
+    </p>
   );
 }
+
+function DSInput({ value, onChange, placeholder, type = "text" }) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className="w-full text-sm px-3 py-2 outline-none rounded-sm"
+      style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.boxShadow = `0 0 0 2px ${DS.brand}18`; }}
+      onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.boxShadow = "none"; }}
+    />
+  );
+}
+
+function DSSelect({ value, onChange, children }) {
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      className="w-full text-sm px-3 py-2 outline-none rounded-sm"
+      style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.bodyText }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+      onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
+    >
+      {children}
+    </select>
+  );
+}
+
+function SectionToggle({ label, sub, open, onToggle, badge }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full flex items-center justify-between px-4 py-3 transition-colors text-left"
+      style={{ backgroundColor: open ? DS.brandBg : DS.cardBg, borderBottom: `1px solid ${DS.border}` }}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = open ? DS.brandBg : DS.cardBg; }}
+    >
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
+          {label}
+        </span>
+        {badge && (
+          <span
+            className="text-xs font-bold px-2 py-0.5 rounded-sm"
+            style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}
+          >
+            {badge}
+          </span>
+        )}
+        {sub && <span className="text-xs hidden sm:inline" style={{ color: DS.dimText }}>{sub}</span>}
+      </div>
+      {open
+        ? <ChevronUp   className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
+        : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
+      }
+    </button>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function PlanBuilderForm({
   inputBase,
@@ -85,147 +131,280 @@ export default function PlanBuilderForm({
   onSave,
   onSaveNext,
 }) {
-  const [openStep, setOpenStep] = useState(1);
-
-  const step1Ref = useRef(null);
-  const step2Ref = useRef(null);
-  const step3Ref = useRef(null);
-
-  const dailyReady = useMemo(() => {
-    // ✅ “Ready” if they've set calories OR any macro OR hydration
-    const has =
-      String(structured?.calories || "").trim() ||
-      String(structured?.proteinGrams || "").trim() ||
-      String(structured?.carbsGrams || "").trim() ||
-      String(structured?.fatsGrams || "").trim() ||
-      String(structured?.hydrationOz || "").trim(); // ✅ add hydration
-    return Boolean(has);
-  }, [structured]);
-
-  const mealBlocksReady = useMemo(() => {
-    const mb = structured?.mealBlocks;
-    if (!mb || typeof mb !== "object") return false;
-    const keys = ["breakfast", "lunch", "afternoon", "dinner"];
-    for (const k of keys) {
-      const t = mb?.[k]?.targets || {};
-      const any =
-        String(t.calories || "").trim() ||
-        String(t.protein || "").trim() ||
-        String(t.carbs || "").trim() ||
-        String(t.fat || "").trim() ||
-        String(t.hydrationOz || "").trim(); // ✅ include water per meal
-      if (any) return true;
-    }
-    return false;
-  }, [structured]);
-
-  const notesReady = useMemo(() => {
-    return Boolean(
-      String(structured?.notesMacros || "").trim() ||
-        String(structured?.notesSupplements || "").trim() ||
-        String(structured?.freeformNotes || "").trim()
-    );
-  }, [structured]);
-
-  const scrollTo = (ref) => {
-    const el = ref?.current;
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const [activePreset,    setActivePreset]    = useState(null);
+  const [showMeals,       setShowMeals]       = useState(false);
+  const [showSupplements, setShowSupplements] = useState(false);
+  const [showNotes,       setShowNotes]       = useState(false);
+  const [showMeta,        setShowMeta]        = useState(false);
 
   const canSave = Boolean(selectedAthleteEmail) && !createLoading;
 
+  const hasTargets = useMemo(() => Boolean(
+    String(structured?.calories  || "").trim() ||
+    String(structured?.proteinGrams || "").trim() ||
+    String(structured?.carbsGrams   || "").trim() ||
+    String(structured?.fatsGrams    || "").trim()
+  ), [structured]);
+
+  const hasMealBlocks = useMemo(() => {
+    const mb = structured?.mealBlocks;
+    if (!mb || typeof mb !== "object") return false;
+    return ["breakfast", "lunch", "afternoon", "dinner"].some((k) => {
+      const t = mb[k]?.targets || {};
+      return String(t.calories || "").trim() || String(t.protein || "").trim();
+    });
+  }, [structured]);
+
+  function applyPreset(p) {
+    setActivePreset(p.label);
+    onChange("calories",     String(p.cal));
+    onChange("proteinGrams", String(p.pro));
+    onChange("carbsGrams",   String(p.carbs));
+    onChange("fatsGrams",    String(p.fat));
+    onChange("phase",        p.phase);
+  }
+
+  function handleReset() {
+    setActivePreset(null);
+    onReset?.();
+  }
+
   return (
-    <form onSubmit={(e) => onSave(e)} className="space-y-6">
-      {/* Quick header / progress */}
-      <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="text-sm font-extrabold text-gray-900">Plan Builder</p>
-            <p className="text-xs text-gray-600 mt-1">
-              Simple workflow: <span className="font-semibold">Daily targets</span> →{" "}
-              <span className="font-semibold">Meal plan</span> →{" "}
-              <span className="font-semibold">Notes & Save</span>
-            </p>
-          </div>
+    <div style={{ border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}`, backgroundColor: DS.cardBg }}>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onReset}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-            >
-              Reset
-            </button>
+      {/* ── Presets ── */}
+      <div className="px-4 pt-4 pb-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <div className="flex items-center gap-2 mb-3">
+          <Zap className="h-3.5 w-3.5" style={{ color: DS.brand }} />
+          <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
+            Quick Presets
+          </p>
+          <span className="text-xs" style={{ color: DS.dimText }}>
+            — click to fill targets instantly
+          </span>
+        </div>
 
-            <button
-              type="button"
-              onClick={(e) => onSave(e)}
-              disabled={!canSave}
-              className={cx(
-                "px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50",
-                !canSave ? "opacity-70 cursor-not-allowed" : ""
-              )}
-            >
-              {createLoading ? "Saving…" : "Save"}
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => onSaveNext(e)}
-              disabled={!canSave}
-              className={cx(
-                "px-4 py-2 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition",
-                !canSave ? "opacity-70 cursor-not-allowed" : ""
-              )}
-            >
-              {createLoading ? "Saving…" : "Save & Next"}
-            </button>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {PRESETS.map((p) => {
+            const active = activePreset === p.label;
+            return (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className="text-left p-3 rounded-sm transition-all"
+                style={{
+                  border:           `1px solid ${active ? DS.brand : DS.brandBorder}`,
+                  backgroundColor:  active ? DS.brand    : DS.brandBg,
+                  color:            active ? "#fff"      : DS.bodyText,
+                }}
+                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.backgroundColor = DS.brandBg; } }}
+                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.backgroundColor = DS.brandBg; } }}
+              >
+                <p
+                  className="font-black text-sm"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  {p.label}
+                </p>
+                <p
+                  className="font-black tabular-nums"
+                  style={{ fontSize: "1.1rem", color: active ? "rgba(255,255,255,0.85)" : DS.brand, fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  {p.cal.toLocaleString()} cal
+                </p>
+                <p
+                  className="text-xs mt-0.5"
+                  style={{ color: active ? "rgba(255,255,255,0.55)" : DS.dimText }}
+                >
+                  {p.desc}
+                </p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* STEP 1 */}
-      <div ref={step1Ref}>
-        <StepCard
-          step={1}
-          title="Daily Targets"
-          subtitle="Set phase + daily macros + daily water (oz). This unlocks quick auto-split for meals."
-          isOpen={openStep === 1}
-          isComplete={dailyReady}
-          onToggle={() => setOpenStep(openStep === 1 ? 0 : 1)}
-          rightSlot={
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(2);
-                setTimeout(() => scrollTo(step2Ref), 50);
-              }}
-              className={cx(
-                "px-3 py-2 rounded-xl text-[12px] font-semibold border",
-                dailyReady
-                  ? "bg-[#46769B] text-white border-[#46769B] hover:brightness-110"
-                  : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-              )}
-              disabled={!dailyReady}
-              title={dailyReady ? "Continue to Step 2" : "Set at least calories, a macro, or hydration first"}
+      {/* ── Daily Targets ── always visible ── */}
+      <div className="px-4 py-4" style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.bodyText }}>
+            Daily Targets
+          </p>
+          {hasTargets && (
+            <span
+              className="text-xs font-bold px-2 py-0.5 rounded-sm"
+              style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}
             >
-              Continue →
-            </button>
-          }
-        >
-          {/* Title + Meta */}
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <p className="text-xs text-gray-500 mb-2">Plan Title</p>
+              ✓ Set
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* Phase */}
+          <div className="sm:col-span-1">
+            <Label>Phase</Label>
+            <DSSelect value={structured.phase || ""} onChange={(e) => onChange("phase", e.target.value)}>
+              <option value="">Phase…</option>
+              <option value="Surplus">Surplus</option>
+              <option value="Maintain">Maintain</option>
+              <option value="Cut">Cut</option>
+              <option value="Game Week">Game Week</option>
+              <option value="Bye Week">Bye Week</option>
+            </DSSelect>
+          </div>
+
+          {[
+            { label: "Calories",   key: "calories",     placeholder: "e.g. 3200" },
+            { label: "Protein g",  key: "proteinGrams", placeholder: "e.g. 185"  },
+            { label: "Carbs g",    key: "carbsGrams",   placeholder: "e.g. 360"  },
+            { label: "Fat g",      key: "fatsGrams",    placeholder: "e.g. 95"   },
+            { label: "Water oz",   key: "hydrationOz",  placeholder: "e.g. 96"   },
+          ].map(({ label, key, placeholder }) => (
+            <div key={key}>
+              <Label>{label}</Label>
               <input
-                className={inputBase}
-                value={title}
+                type="number"
+                inputMode="numeric"
+                min="0"
+                step="1"
+                value={structured[key] ?? ""}
+                onChange={(e) => { onChange(key, e.target.value); setActivePreset(null); }}
+                placeholder={placeholder}
+                className="w-full text-sm px-3 py-2 outline-none rounded-sm tabular-nums"
+                style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Macro notes — inline, compact */}
+        {structured.notesMacros != null && (
+          <div className="mt-2">
+            <Label>Macro Notes</Label>
+            <DSInput
+              value={structured.notesMacros ?? ""}
+              onChange={(e) => onChange("notesMacros", e.target.value)}
+              placeholder="e.g. increase carbs on practice days"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ── Meal Plan (collapsible) ── */}
+      <div style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <SectionToggle
+          label="Meal Plan"
+          sub="Auto-split fills meals from daily targets"
+          open={showMeals}
+          onToggle={() => setShowMeals((v) => !v)}
+          badge={hasMealBlocks ? "Configured" : null}
+        />
+        {showMeals && (
+          <div className="px-4 py-4">
+            <MealBlockEditor
+              subtleHint={subtleHint}
+              structured={structured}
+              onChange={onChange}
+              ui="guided"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ── Supplements (collapsible) ── */}
+      <div style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <SectionToggle
+          label="Supplements"
+          sub="Optional"
+          open={showSupplements}
+          onToggle={() => setShowSupplements((v) => !v)}
+        />
+        {showSupplements && (
+          <div className="px-4 py-4 grid sm:grid-cols-2 gap-3">
+            {[
+              { label: "Protein",      key: "proteinRecommendation",      opts: OPTIONS.proteinRecommendation      },
+              { label: "Creatine",     key: "creatineRecommendation",     opts: OPTIONS.creatineRecommendation     },
+              { label: "BCAA / EAA",   key: "bcaaRecommendation",         opts: OPTIONS.bcaaRecommendation         },
+              { label: "Electrolytes", key: "electrolytesRecommendation", opts: OPTIONS.electrolytesRecommendation },
+            ].map(({ label, key, opts }) => (
+              <SearchSelect
+                key={key}
+                label={label}
+                options={opts}
+                value={structured[key]}
+                onChange={(v) => onChange(key, v)}
+                onCommit={(v) => onChange(key, v)}
+                allowCustom
+                placeholder={`Search ${label.toLowerCase()}…`}
+              />
+            ))}
+            <div className="sm:col-span-2">
+              <SearchSelect
+                label="Notes (Supplements)"
+                options={OPTIONS.notesSupplements}
+                value={structured.notesSupplements}
+                onChange={(v) => onChange("notesSupplements", v)}
+                onCommit={(v) => onChange("notesSupplements", v)}
+                allowCustom
+                placeholder="Search or type notes…"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Coach Notes (collapsible) ── */}
+      <div style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <SectionToggle
+          label="Coach Notes"
+          sub="Optional"
+          open={showNotes}
+          onToggle={() => setShowNotes((v) => !v)}
+        />
+        {showNotes && (
+          <div className="px-4 py-4">
+            <textarea
+              className="w-full min-h-[100px] resize-y text-sm px-3 py-2 outline-none rounded-sm"
+              style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+              value={structured.freeformNotes ?? ""}
+              onChange={(e) => onChange("freeformNotes", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave(e); return; }
+                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); onSaveNext(e); }
+              }}
+              placeholder="e.g. lactose sensitive, increase carbs on heavy practice days… (Enter = Save & Next)"
+              onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+              onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
+            />
+            <p className="text-xs mt-1" style={{ color: DS.dimText }}>
+              Shift+Enter for new lines · Enter = Save & Next · Ctrl/Cmd+Enter = Save
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Plan meta (collapsible, rarely needed) ── */}
+      <div style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <SectionToggle
+          label="Plan Meta"
+          sub="Title, status, effective date"
+          open={showMeta}
+          onToggle={() => setShowMeta((v) => !v)}
+        />
+        {showMeta && (
+          <div className="px-4 py-4 grid sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Plan Title</Label>
+              <DSInput
+                value={title ?? ""}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. In-season maintenance plan"
               />
             </div>
-
             <div>
               <SearchSelect
                 label="Meta Status"
@@ -237,325 +416,83 @@ export default function PlanBuilderForm({
                 placeholder="Search status…"
               />
             </div>
-
-            <div className="md:col-span-3">
-              <p className="text-xs text-gray-500 mb-2">Meta Effective Date</p>
+            <div>
+              <Label>Effective Date</Label>
               <input
                 type="date"
-                className={inputBase}
-                value={structured.metaEffectiveDate}
+                value={structured.metaEffectiveDate ?? ""}
                 onChange={(e) => onChange("metaEffectiveDate", e.target.value)}
+                className="w-full text-sm px-3 py-2 outline-none rounded-sm"
+                style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
               />
-              <p className={subtleHint}>If blank, the API can default to “now”.</p>
+              <p className="text-xs mt-1" style={{ color: DS.dimText }}>Blank defaults to now.</p>
             </div>
           </div>
-
-          {/* Macros + Phase */}
-          <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-            <div>
-              <h4 className="font-semibold">Daily Targets</h4>
-              <p className="text-xs text-gray-500 mt-1">
-                Keep it simple: phase + daily macros + daily water. You can tweak meals in Step 2.
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-4">
-              <SearchSelect
-                label="Phase"
-                options={OPTIONS.phases}
-                value={structured.phase}
-                onChange={(v) => onChange("phase", v)}
-                onCommit={(v) => onChange("phase", v)}
-                allowCustom={false}
-                placeholder="Select phase…"
-              />
-
-              <SearchSelect
-                label="Calories (Daily)"
-                options={OPTIONS.calories}
-                value={structured.calories}
-                onChange={(v) => onChange("calories", v)}
-                onCommit={(v) => onChange("calories", v)}
-                allowCustom
-                placeholder="Type or search…"
-              />
-
-              <SearchSelect
-                label="Protein (g, Daily)"
-                options={OPTIONS.grams}
-                value={structured.proteinGrams}
-                onChange={(v) => onChange("proteinGrams", v)}
-                onCommit={(v) => onChange("proteinGrams", v)}
-                allowCustom
-                placeholder="Type or search…"
-              />
-
-              <SearchSelect
-                label="Carbs (g, Daily)"
-                options={OPTIONS.grams}
-                value={structured.carbsGrams}
-                onChange={(v) => onChange("carbsGrams", v)}
-                onCommit={(v) => onChange("carbsGrams", v)}
-                allowCustom
-                placeholder="Type or search…"
-              />
-
-              <SearchSelect
-                label="Fat (g, Daily)"
-                options={OPTIONS.grams}
-                value={structured.fatsGrams}
-                onChange={(v) => onChange("fatsGrams", v)}
-                onCommit={(v) => onChange("fatsGrams", v)}
-                allowCustom
-                placeholder="Type or search…"
-              />
-
-              {/* ✅ Daily Hydration used by MealBlockEditor to split into per-meal water */}
-              <SearchSelect
-                label="Daily Hydration (oz)"
-                options={OPTIONS.hydration}
-                value={structured.hydrationOz}
-                onChange={(v) => onChange("hydrationOz", v)}
-                onCommit={(v) => onChange("hydrationOz", v)}
-                allowCustom
-                placeholder="Type or search…"
-              />
-
-              <div className="md:col-span-3">
-                <SearchSelect
-                  label="Notes (Macros)"
-                  options={OPTIONS.notesMacros}
-                  value={structured.notesMacros}
-                  onChange={(v) => onChange("notesMacros", v)}
-                  onCommit={(v) => onChange("notesMacros", v)}
-                  allowCustom
-                  placeholder="Search or type notes…"
-                />
-              </div>
-
-              <p className={cx("md:col-span-3", subtleHint)}>
-                Trainer-friendly flow: set daily targets once → auto-split meals (including water) → tweak only what you need.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(2);
-                setTimeout(() => scrollTo(step2Ref), 50);
-              }}
-              disabled={!dailyReady}
-              className={cx(
-                "px-4 py-3 rounded-xl text-sm font-semibold transition",
-                dailyReady ? "bg-[#46769B] text-white hover:brightness-110" : "bg-gray-100 text-gray-400 cursor-not-allowed"
-              )}
-            >
-              Continue to Step 2 →
-            </button>
-            {!dailyReady ? (
-              <p className="text-xs text-gray-500 flex items-center">
-                Set calories, a macro, or hydration to continue.
-              </p>
-            ) : null}
-          </div>
-        </StepCard>
+        )}
       </div>
 
-      {/* STEP 2 */}
-      <div ref={step2Ref}>
-        <StepCard
-          step={2}
-          title="Meal Plan"
-          subtitle="Auto-split into meals. Expand a meal only if you need to adjust it (macros + water)."
-          isOpen={openStep === 2}
-          isComplete={mealBlocksReady}
-          onToggle={() => setOpenStep(openStep === 2 ? 0 : 2)}
-          rightSlot={
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(3);
-                setTimeout(() => scrollTo(step3Ref), 50);
-              }}
-              className={cx("px-3 py-2 rounded-xl text-[12px] font-semibold border", "bg-white border-gray-200 hover:bg-gray-50")}
-              title="Continue to Step 3"
-            >
-              Continue →
-            </button>
-          }
+      {/* ── Action bar ── sticky at bottom of form ── */}
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-3"
+        style={{ backgroundColor: DS.pageBg, borderTop: `1px solid ${DS.border}` }}
+      >
+        <button
+          type="button"
+          onClick={handleReset}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-sm transition-all"
+          style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
         >
-          <MealBlockEditor subtleHint={subtleHint} structured={structured} onChange={onChange} ui="guided" />
+          <RotateCcw className="h-3 w-3" />
+          Reset
+        </button>
 
-          <div className="mt-4 flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(3);
-                setTimeout(() => scrollTo(step3Ref), 50);
-              }}
-              className="px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition"
-            >
-              Continue to Step 3 →
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(1);
-                setTimeout(() => scrollTo(step1Ref), 50);
-              }}
-              className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-            >
-              ← Back to Step 1
-            </button>
-          </div>
-        </StepCard>
+        {!selectedAthleteEmail && (
+          <p className="text-xs flex-1 text-center" style={{ color: DS.caution }}>
+            ← Select an athlete to save
+          </p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => onSave(e)}
+            disabled={!canSave}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+            style={{
+              border: `1px solid ${canSave ? DS.border : DS.border}`,
+              backgroundColor: canSave ? DS.cardBg : DS.pageBg,
+              color: canSave ? DS.bodyText : DS.dimText,
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (canSave) { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.backgroundColor = DS.brandBg; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.backgroundColor = canSave ? DS.cardBg : DS.pageBg; }}
+          >
+            <Save className="h-3.5 w-3.5" />
+            {createLoading ? "Saving…" : "Save"}
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => onSaveNext(e)}
+            disabled={!canSave}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
+            style={{
+              backgroundColor: canSave ? DS.brand : DS.pageBg,
+              color: canSave ? "#fff" : DS.dimText,
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => { if (canSave) e.currentTarget.style.backgroundColor = DS.brandLight; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = canSave ? DS.brand : DS.pageBg; }}
+          >
+            <ArrowRight className="h-3.5 w-3.5" />
+            {createLoading ? "Saving…" : "Save & Next"}
+          </button>
+        </div>
       </div>
-
-      {/* STEP 3 */}
-      <div ref={step3Ref}>
-        <StepCard
-          step={3}
-          title="Supplements, Notes & Save"
-          subtitle="Optional details + coach notes. Then save or Save & Next."
-          isOpen={openStep === 3}
-          isComplete={notesReady}
-          onToggle={() => setOpenStep(openStep === 3 ? 0 : 3)}
-        >
-          {/* Supplements */}
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
-            <div>
-              <h4 className="font-semibold">Supplements</h4>
-              <p className="text-xs text-gray-500 mt-1">
-                Keep it simple — pick a recommendation. You can add more detail later.
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <SearchSelect
-                label="Protein Recommendation"
-                options={OPTIONS.proteinRecommendation}
-                value={structured.proteinRecommendation}
-                onChange={(v) => onChange("proteinRecommendation", v)}
-                onCommit={(v) => onChange("proteinRecommendation", v)}
-                allowCustom
-                placeholder="Search protein…"
-              />
-
-              <SearchSelect
-                label="Creatine Recommendation"
-                options={OPTIONS.creatineRecommendation}
-                value={structured.creatineRecommendation}
-                onChange={(v) => onChange("creatineRecommendation", v)}
-                onCommit={(v) => onChange("creatineRecommendation", v)}
-                allowCustom
-                placeholder="Search creatine…"
-              />
-
-              <SearchSelect
-                label="BCAA/EAA Recommendation"
-                options={OPTIONS.bcaaRecommendation}
-                value={structured.bcaaRecommendation}
-                onChange={(v) => onChange("bcaaRecommendation", v)}
-                onCommit={(v) => onChange("bcaaRecommendation", v)}
-                allowCustom
-                placeholder="Search BCAA/EAA…"
-              />
-
-              <SearchSelect
-                label="Electrolytes Recommendation"
-                options={OPTIONS.electrolytesRecommendation}
-                value={structured.electrolytesRecommendation}
-                onChange={(v) => onChange("electrolytesRecommendation", v)}
-                onCommit={(v) => onChange("electrolytesRecommendation", v)}
-                allowCustom
-                placeholder="Search electrolytes…"
-              />
-
-              <div className="md:col-span-2">
-                <SearchSelect
-                  label="Notes (Supplements)"
-                  options={OPTIONS.notesSupplements}
-                  value={structured.notesSupplements}
-                  onChange={(v) => onChange("notesSupplements", v)}
-                  onCommit={(v) => onChange("notesSupplements", v)}
-                  allowCustom
-                  placeholder="Search or type notes…"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Freeform notes */}
-          <div className="mt-5">
-            <p className="text-xs text-gray-500 mb-2">Coach Notes (optional)</p>
-            <textarea
-              className="w-full min-h-[140px] resize-y px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
-              value={structured.freeformNotes}
-              onChange={(e) => onChange("freeformNotes", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  onSave(e);
-                  return;
-                }
-                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                  e.preventDefault();
-                  onSaveNext(e);
-                }
-              }}
-              placeholder="Examples: lactose sensitive, practice days increase carbs… (Enter = Save & Next)"
-            />
-            <p className={subtleHint}>
-              Tip: <span className="font-semibold">Shift+Enter</span> for new lines.{" "}
-              <span className="font-semibold">Enter</span> = Save & Next.
-            </p>
-          </div>
-
-          {/* Actions */}
-          <div className="mt-5 grid sm:grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setOpenStep(2);
-                setTimeout(() => scrollTo(step2Ref), 50);
-              }}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-            >
-              ← Back
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => onSave(e)}
-              disabled={!canSave}
-              className={cx(
-                "w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50",
-                !canSave ? "opacity-70 cursor-not-allowed" : ""
-              )}
-            >
-              {createLoading ? "Saving…" : "Save"}
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => onSaveNext(e)}
-              disabled={!canSave}
-              className={cx(
-                "w-full px-4 py-3 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition",
-                !canSave ? "opacity-70 cursor-not-allowed" : ""
-              )}
-            >
-              {createLoading ? "Saving…" : "Save & Next"}
-            </button>
-          </div>
-
-          <div className={cx("mt-4", subtleHint)}>
-            Simple flow wins: most trainers should only touch Step 1 + Auto-split in Step 2.
-          </div>
-        </StepCard>
-      </div>
-    </form>
+    </div>
   );
 }

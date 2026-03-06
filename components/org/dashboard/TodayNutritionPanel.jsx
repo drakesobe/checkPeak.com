@@ -2,8 +2,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Droplets, Utensils, RefreshCcw, ArrowRight, AlertTriangle, ExternalLink } from "lucide-react";
-import { DS, Button, Pill } from "@/components/org/dashboard/DashboardUI";
+import { Droplets, Utensils, RefreshCcw, ArrowRight, AlertTriangle, ExternalLink, CheckCircle2 } from "lucide-react";
+import { DS, Button } from "@/components/org/dashboard/DashboardUI";
 import { safeJson } from "@/lib/org/dashboard-utils";
 
 function pct(n, d) {
@@ -28,55 +28,51 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
       setNeedsList(Array.isArray(json?.needsList) ? json.needsList : []);
     } catch (e) {
       setErr(e?.message || "Failed to load nutrition summary.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const total            = Number(summary?.totalAthletes   || 0);
-  const withPlan         = Number(summary?.withPlan        || 0);
-  const missingPlan      = Number(summary?.missingPlan     || 0);
+  const total             = Number(summary?.totalAthletes    || 0);
+  const withPlan          = Number(summary?.withPlan         || 0);
+  const missingPlan       = Number(summary?.missingPlan      || 0);
   const hydrationSetCount = Number(summary?.hydrationSetCount || 0);
 
-  const coveragePct   = useMemo(() => pct(withPlan, total),           [withPlan, total]);
-  const hydrationPct  = useMemo(() => pct(hydrationSetCount, withPlan), [hydrationSetCount, withPlan]);
+  const coveragePct  = useMemo(() => pct(withPlan, total),            [withPlan, total]);
+  const hydrationPct = useMemo(() => pct(hydrationSetCount, withPlan), [hydrationSetCount, withPlan]);
 
   const MAX_PREVIEW = 4;
   const preview   = useMemo(() => needsList.slice(0, MAX_PREVIEW), [needsList]);
   const remaining = Math.max(0, needsList.length - MAX_PREVIEW);
 
+  const allGood = !loading && !err && missingPlan === 0 && total > 0;
+
   return (
     <section style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
       {/* Header */}
-      <div className="px-4 py-3 flex items-start justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
-        <div className="min-w-0 flex items-center gap-2">
+      <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
+        <div className="flex items-center gap-2">
           <Utensils className="w-4 h-4 shrink-0" style={{ color: DS.brand }} />
-          <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
-            Nutrition
-          </span>
-          {/* Status pill */}
-          {!loading && (
+          <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>Nutrition</span>
+          {!loading && !err && (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold rounded-sm"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold"
               style={{
-                backgroundColor: missingPlan > 0 ? DS.cautionBg  : DS.safeBg,
-                color:           missingPlan > 0 ? DS.caution    : DS.safe,
+                backgroundColor: missingPlan > 0 ? DS.cautionBg : DS.safeBg,
+                color:           missingPlan > 0 ? DS.caution   : DS.safe,
                 border:          `1px solid ${missingPlan > 0 ? DS.cautionBorder : DS.safeBorder}`,
               }}
             >
               {missingPlan > 0
                 ? <><AlertTriangle className="w-3 h-3" /> {missingPlan} need plans</>
-                : "All covered"
+                : <><CheckCircle2  className="w-3 h-3" /> All covered</>
               }
             </span>
           )}
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-1.5 shrink-0">
           <Button variant="secondary" onClick={refresh} disabled={loading}>
-            <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
           {onGoNutrition && (
             <Button variant="secondary" onClick={onGoNutrition}>
@@ -87,7 +83,7 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
       </div>
 
       <div className="p-4">
-        {/* Stat tiles */}
+        {/* Metric tiles */}
         <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: DS.border }}>
           <div className="p-3" style={{ backgroundColor: DS.pageBg }}>
             <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.dimText }}>Coverage</p>
@@ -108,25 +104,42 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
           </div>
         </div>
 
-        {/* Loading / error */}
+        {/* States */}
         {loading && (
           <div className="mt-3 p-3 text-xs" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
             Loading nutrition summary…
           </div>
         )}
+
         {err && (
           <div className="mt-3 p-3 text-xs font-bold" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}>
             {err}
           </div>
         )}
 
+        {/* All good state */}
+        {allGood && (
+          <div
+            className="mt-3 flex items-center gap-2 px-3 py-3"
+            style={{ backgroundColor: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderLeft: `3px solid ${DS.safe}` }}
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: DS.safe }} />
+            <div>
+              <p className="text-xs font-black" style={{ color: DS.safe }}>Everyone has an active plan.</p>
+              <p className="text-xs mt-0.5" style={{ color: DS.safe, opacity: 0.8 }}>
+                Open Nutrition to review check-ins and compliance.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Needs list */}
-        {!loading && !err && (
+        {!loading && !err && needsList.length > 0 && (
           <div className="mt-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <p className="text-xs font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
                 Needs a Plan
-                <span className="ml-1.5 font-bold" style={{ color: DS.dimText }}>({needsList.length})</span>
+                <span className="ml-1.5 font-bold normal-case" style={{ color: DS.dimText }}>({needsList.length})</span>
               </p>
               {remaining > 0 && onGoNutrition && (
                 <Button variant="secondary" onClick={onGoNutrition}>
@@ -134,39 +147,32 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
                 </Button>
               )}
             </div>
-
-            {needsList.length === 0 ? (
-              <div className="p-3 text-xs font-bold" style={{ backgroundColor: DS.safeBg, border: `1px solid ${DS.safeBorder}`, color: DS.safe }}>
-                Everyone has an active plan — check Nutrition for compliance.
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {preview.map((a) => (
-                  <div
-                    key={a.token || a.email}
-                    className="flex items-center justify-between gap-3 px-3 py-2"
-                    style={{ border: `1px solid ${DS.border}`, borderLeft: `3px solid ${DS.caution}` }}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold truncate" style={{ color: DS.bodyText }}>{a.name || "Athlete"}</p>
-                      <p className="text-xs truncate" style={{ color: DS.dimText }}>{a.email || a.token || ""}</p>
-                    </div>
-                    <div className="flex gap-1.5 shrink-0">
-                      {onViewAthleteNutrition && (
-                        <Button variant="secondary" onClick={() => onViewAthleteNutrition(a.token)}>
-                          View <ArrowRight className="w-3 h-3" />
-                        </Button>
-                      )}
-                      {onBuildNutritionPlan && (
-                        <Button onClick={() => onBuildNutritionPlan(a.token)}>
-                          Build <ArrowRight className="w-3 h-3" />
-                        </Button>
-                      )}
-                    </div>
+            <div className="space-y-1">
+              {preview.map((a) => (
+                <div
+                  key={a.token || a.email}
+                  className="flex items-center justify-between gap-3 px-3 py-2"
+                  style={{ border: `1px solid ${DS.border}`, borderLeft: `3px solid ${DS.caution}` }}
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate" style={{ color: DS.bodyText }}>{a.name || "Athlete"}</p>
+                    <p className="text-xs truncate" style={{ color: DS.dimText }}>{a.email || a.token || ""}</p>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="flex gap-1.5 shrink-0">
+                    {onViewAthleteNutrition && (
+                      <Button variant="secondary" onClick={() => onViewAthleteNutrition(a.token)}>
+                        View <ArrowRight className="w-3 h-3" />
+                      </Button>
+                    )}
+                    {onBuildNutritionPlan && (
+                      <Button onClick={() => onBuildNutritionPlan(a.token)}>
+                        Build <ArrowRight className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -11,27 +11,27 @@ import { useBillingStatus }  from "@/hooks/org/useBillingStatus";
 import { useOrgOverview }    from "@/hooks/org/useOrgOverview";
 import { usePlanTemplates }  from "@/hooks/org/usePlanTemplates";
 
-import BillingGateScreen    from "@/components/org/dashboard/BillingGateScreen";
-import DashboardHeader      from "@/components/org/dashboard/DashboardHeader";
-import DashboardSection     from "@/components/org/dashboard/DashboardSection";
-import DashboardStatsGrid   from "@/components/org/dashboard/DashboardStatsGrid";
+import BillingGateScreen     from "@/components/org/dashboard/BillingGateScreen";
+import DashboardHeader       from "@/components/org/dashboard/DashboardHeader";
+import DashboardSection      from "@/components/org/dashboard/DashboardSection";
+import DashboardStatsGrid    from "@/components/org/dashboard/DashboardStatsGrid";
 
-import TodayWorkoutsPanel   from "@/components/org/dashboard/TodayWorkoutsPanel";
-import TodayNutritionPanel  from "@/components/org/dashboard/TodayNutritionPanel";
+import TodayWorkoutsPanel    from "@/components/org/dashboard/TodayWorkoutsPanel";
+import TodayNutritionPanel   from "@/components/org/dashboard/TodayNutritionPanel";
 
-import RosterSection        from "@/components/org/dashboard/RosterSection";
+import RosterSection         from "@/components/org/dashboard/RosterSection";
 import ActivityTemplatesPanel from "@/components/org/dashboard/ActivityTemplatesPanel";
 
-import EditAthleteModal     from "@/components/org/dashboard/EditAthleteModal";
+import EditAthleteModal      from "@/components/org/dashboard/EditAthleteModal";
 
-import { DS }               from "@/components/org/dashboard/DashboardUI";
+import { DS }                from "@/components/org/dashboard/DashboardUI";
 import { normalizeRole, getOrgName } from "@/components/org/dashboard/format";
 
 export default function OrgDashboard() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
-  /* ── role + org identity ── */
+  /* ── identity ── */
   const role      = useMemo(() => normalizeRole(user?.role || user?.Role), [user]);
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
 
@@ -41,28 +41,17 @@ export default function OrgDashboard() {
     String(user?.Token || user?.token || user?.["Organization Token"] || "").trim(), [user]);
   const orgId    = useMemo(() => String(user?.orgId || user?.OrgId || "").trim(), [user]);
 
-  const origin = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return window.location.origin;
-  }, []);
-
-  const inviteLink = useMemo(() => {
-    if (!origin || !orgToken) return "";
-    return `${origin}/signup?role=athlete&token=${encodeURIComponent(orgToken)}`;
-  }, [origin, orgToken]);
-
-  /* ── route gating ── */
+  /* ── route gate ── */
   useEffect(() => {
-    if (!user)                            { router.push("/");          return; }
-    if (role && !isOrgSide)               { router.push("/dashboard"); return; }
+    if (!user)              { router.push("/");          return; }
+    if (role && !isOrgSide) { router.push("/dashboard"); return; }
   }, [user, role, isOrgSide, router]);
 
-  /* ── billing gate ── */
-  const { loading: billingLoading, error: billingErr, billing, isPaidOk } = useBillingStatus({
-    user, role, isOrgSide, enabled: Boolean(user && isOrgSide),
-  });
+  /* ── billing ── */
+  const { loading: billingLoading, error: billingErr, billing, isPaidOk } =
+    useBillingStatus({ user, role, isOrgSide, enabled: Boolean(user && isOrgSide) });
 
-  /* ── data hooks ── */
+  /* ── data ── */
   const {
     loading, error, stats, athletes, setAthletes,
     recentActivity, refresh: refreshOverview, abort: abortOverview,
@@ -71,7 +60,6 @@ export default function OrgDashboard() {
   const { templates, refresh: refreshTemplates, abort: abortTemplates } = usePlanTemplates();
 
   const didInitialLoadRef = useRef(false);
-
   useEffect(() => {
     if (!user || !isOrgSide || billingLoading || !isPaidOk) return;
     if (didInitialLoadRef.current) return;
@@ -81,19 +69,19 @@ export default function OrgDashboard() {
     return () => { abortOverview(); abortTemplates(); };
   }, [user, isOrgSide, billingLoading, isPaidOk, refreshOverview, refreshTemplates, abortOverview, abortTemplates]);
 
-  /* ── roster UI state ── */
+  /* ── roster UI ── */
   const [search,     setSearch]     = useState("");
   const [filterMode, setFilterMode] = useState("all");
   const [sortMode,   setSortMode]   = useState("priority");
   const [expanded,   setExpanded]   = useState({});
 
-  /* ── edit modal state ── */
+  /* ── edit modal ── */
   const [editOpen,    setEditOpen]    = useState(false);
   const [editSaving,  setEditSaving]  = useState(false);
   const [editErr,     setEditErr]     = useState("");
   const [editAthlete, setEditAthlete] = useState(null);
 
-  /* ── navigation helpers ── */
+  /* ── nav ── */
   const goBuildPlan = useCallback((athleteEmail, templateId = "") => {
     const e  = normalizeEmail(athleteEmail);
     const qs = new URLSearchParams();
@@ -102,13 +90,13 @@ export default function OrgDashboard() {
     router.push(`/org/prescriptions${qs.toString() ? `?${qs.toString()}` : ""}`);
   }, [router]);
 
-  const goHistory = useCallback((athleteEmail) => {
-    const e = normalizeEmail(athleteEmail);
-    if (!e) return;
+  const goHistory           = useCallback((email) => {
+    const e = normalizeEmail(email); if (!e) return;
     router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(e)}`);
   }, [router]);
 
   const openWorkoutsCalendar = useCallback(() => router.push("/org/workouts-calendar"), [router]);
+  const goAccount            = useCallback(() => router.push("/account"),               [router]);
 
   /* ── actions ── */
   const onLogout = useCallback(async () => {
@@ -117,15 +105,15 @@ export default function OrgDashboard() {
 
   const exportCSV = useCallback(() => {
     const rows = [[
-      "Athlete Name", "Athlete Email", "Status", "Tags",
-      "Plans Count", "Last Plan At", "Last Plan Title", "Needs Plan", "Needs Update (Stale)",
+      "Athlete Name","Athlete Email","Status","Tags",
+      "Plans Count","Last Plan At","Last Plan Title","Needs Plan","Needs Update (Stale)",
     ]];
     (Array.isArray(athletes) ? athletes : []).forEach((a) => {
       rows.push([
-        a?.name || "", a?.email || "", a?.status || "",
+        a?.name || "",a?.email || "",a?.status || "",
         Array.isArray(a?.tags) ? a.tags.join(" | ") : "",
-        a?.plansCount || 0, a?.lastPlanAt || "", a?.lastPlanTitle || "",
-        a?.needsPlan ? "YES" : "NO", a?.stale ? "YES" : "NO",
+        a?.plansCount || 0,a?.lastPlanAt || "",a?.lastPlanTitle || "",
+        a?.needsPlan ? "YES" : "NO",a?.stale ? "YES" : "NO",
       ]);
     });
     downloadTextFile(
@@ -134,7 +122,7 @@ export default function OrgDashboard() {
     );
   }, [athletes, orgName]);
 
-  /* ── edit modal handlers ── */
+  /* ── edit handlers ── */
   const openEdit = useCallback((athlete) => {
     setEditErr("");
     setEditAthlete({
@@ -183,68 +171,59 @@ export default function OrgDashboard() {
     }
   }, [editAthlete, setAthletes, closeEdit]);
 
-  /* ── billing gate render ── */
+  /* ── billing gate ── */
   if (billingLoading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: DS.pageBg }}>
-        <main className="max-w-3xl mx-auto px-4 py-10">
-          <div className="px-5 py-4" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
-            <p className="text-xs font-bold" style={{ color: DS.labelText }}>Loading billing status…</p>
-          </div>
-        </main>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: DS.pageBg }}>
+        <p className="text-xs font-bold" style={{ color: DS.dimText }}>Loading…</p>
       </div>
     );
   }
 
   if (billingErr || !isPaidOk) {
-    return <BillingGateScreen role={role} billing={billing} error={billingErr} onLogout={onLogout} onGoAccount={() => router.push("/account")} />;
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
   }
 
   /* ── page ── */
   return (
     <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-5">
 
-        {/* Header */}
-        <DashboardHeader
-          orgName={orgName}
-          orgEmail={orgEmail}
-          orgToken={orgToken}
-          orgId={orgId}
-          inviteLink={inviteLink}
-          loading={loading}
-          error={error}
-          onRefresh={refreshOverview}
-          onOpenCalendar={openWorkoutsCalendar}
-          onExportCSV={exportCSV}
-          disableExport={!athletes?.length}
-          onLogout={onLogout}
-        />
+      {/* Slim nav header */}
+      <DashboardHeader
+        orgName={orgName}
+        orgEmail={orgEmail}
+        orgToken={orgToken}
+        orgId={orgId}
+        loading={loading}
+        error={error}
+        onRefresh={refreshOverview}
+        onOpenCalendar={openWorkoutsCalendar}
+        onExportCSV={exportCSV}
+        disableExport={!athletes?.length}
+        onLogout={onLogout}
+        onGoInvite={goAccount}
+      />
 
-        {/* Program Pulse */}
+      <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
+
+        {/* 1. Program Pulse — stats + urgency directive */}
         <DashboardSection
           title="Program Pulse"
-          subtitle="Coverage and today's activity at a glance."
+          subtitle="Coverage and today's activity. The directive line tells you what to do first."
         >
           <DashboardStatsGrid stats={stats} />
         </DashboardSection>
 
-        {/* Today Command Center — grid, no DashboardSection wrapper to avoid double cards */}
-        <div>
-          <p className="text-xs font-black uppercase tracking-wider mb-3 px-1" style={{ color: DS.brand }}>
-            Today Command Center
-          </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <TodayWorkoutsPanel  onOpenCalendar={openWorkoutsCalendar} isOrgSide={isOrgSide} />
-            <TodayNutritionPanel
-              onGoNutrition={() => router.push("/org/nutrition")}
-              onViewAthleteNutrition={(t) => router.push(`/org/nutrition/athlete/${encodeURIComponent(t || "")}`)}
-              onBuildNutritionPlan={(t)   => router.push(`/org/nutrition/athlete/${encodeURIComponent(t || "")}`)}
-            />
-          </div>
-        </div>
-
-        {/* Roster — standalone card with its own header */}
+        {/*
+          2. Roster — the main working surface.
+          Coaches come here to find athletes, assign plans, take action.
+          Sits above the today panels so it's the first thing after the stats.
+        */}
         <RosterSection
           athletes={athletes}
           templates={templates}
@@ -262,7 +241,36 @@ export default function OrgDashboard() {
           pageSize={25}
         />
 
-        {/* Activity + Templates — standalone */}
+        {/*
+          3. Today — workouts + nutrition side by side.
+          Useful for a daily check-in but not the primary action surface.
+          Below roster intentionally.
+        */}
+        <div>
+          <p
+            className="text-xs font-black uppercase tracking-wider mb-3"
+            style={{ color: DS.labelText }}
+          >
+            Today
+          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <TodayWorkoutsPanel
+              onOpenCalendar={openWorkoutsCalendar}
+              isOrgSide={isOrgSide}
+            />
+            <TodayNutritionPanel
+              onGoNutrition={() => router.push("/org/nutrition")}
+              onViewAthleteNutrition={(t) => router.push(`/org/nutrition/athlete/${encodeURIComponent(t || "")}`)}
+              onBuildNutritionPlan={(t)   => router.push(`/org/nutrition/athlete/${encodeURIComponent(t || "")}`)}
+            />
+          </div>
+        </div>
+
+        {/*
+          4. Activity + Templates — collapsed by default.
+          Audit trail and template shortcuts. Low urgency.
+          Coach expands it when they need it.
+        */}
         <ActivityTemplatesPanel
           loading={loading}
           recentActivity={recentActivity}
@@ -271,8 +279,9 @@ export default function OrgDashboard() {
           onRefreshTemplates={refreshTemplates}
           onViewHistory={goHistory}
           onUseTemplate={(id) => goBuildPlan("", id)}
-          activityLimit={6}
+          activityLimit={8}
           templateLimit={6}
+          defaultCollapsed={true}
         />
 
       </main>

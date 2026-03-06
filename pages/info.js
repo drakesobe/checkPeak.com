@@ -418,7 +418,7 @@ export default function InfoPage() {
         {/* ══════════════════════════════════════════════════════════════════
             2. RISK CALLOUT — full red band, emotional hook
            ══════════════════════════════════════════════════════════════════ */}
-        <section style={{ backgroundColor: "#8B0000" }}>
+        <section style={{ backgroundColor: "#0F1E30" }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
             <motion.div
               className="grid md:grid-cols-12 gap-6 items-center"
@@ -439,8 +439,8 @@ export default function InfoPage() {
                   }}
                 >
                   One substance.{" "}
-                  <span style={{ color: "rgba(255,255,255,0.55)" }}>One test.</span>{" "}
-                  Career over.
+                  One test.{" "}
+                  <span style={{ color: "#C8102E" }}>Career over.</span>
                 </h2>
                 <p
                   className="bw text-sm sm:text-base leading-relaxed mt-4 max-w-2xl"
@@ -457,7 +457,7 @@ export default function InfoPage() {
                 <Link href="/nutrition-label-scanner" legacyBehavior>
                   <a
                     className="bw inline-flex items-center gap-2 px-6 py-3.5 font-bold text-sm rounded-sm transition-all"
-                    style={{ backgroundColor: "#fff", color: "#8B0000" }}
+                    style={{ backgroundColor: "#fff", color: "#0F1E30" }}
                     onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(0.96)")}
                     onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
                   >
@@ -565,7 +565,7 @@ export default function InfoPage() {
                 { value: "900+",  label: "Substances tracked" },
                 { value: "1000+",  label: "Ingredients mapped" },
                 { value: "4",     label: "Data providers" },
-                { value: "APEX",    label: "Program focus" },
+                { value: "D2",    label: "Program focus" },
               ].map((s, i) => (
                 <div
                   key={s.label}
@@ -585,7 +585,7 @@ export default function InfoPage() {
               className="bw text-xs text-center mt-5 uppercase tracking-wide"
               style={{ color: "rgba(255,255,255,0.35)" }}
             >
-              Data synced at build time · Updated quarterly
+              Data synced from Airtable at build time · Updated quarterly
             </p>
           </div>
         </section>

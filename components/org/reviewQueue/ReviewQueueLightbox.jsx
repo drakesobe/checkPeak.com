@@ -4,42 +4,28 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
-
 export default function ReviewQueueLightbox({ url, onClose }) {
   const closeBtnRef = useRef(null);
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [loaded,  setLoaded]  = useState(false);
+  const [failed,  setFailed]  = useState(false);
 
-  // Reset load state when url changes
   useEffect(() => {
     if (!url) return;
     setLoaded(false);
     setFailed(false);
   }, [url]);
 
-  // ESC to close + lock background scroll while open
   useEffect(() => {
     if (!url) return;
-
-    const prevOverflow = document.body.style.overflow;
+    const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-
-    // Focus the close button for accessibility + keyboard flow
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKey);
     const t = setTimeout(() => closeBtnRef.current?.focus?.(), 0);
-
     return () => {
       clearTimeout(t);
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
     };
   }, [url, onClose]);
 
@@ -48,82 +34,66 @@ export default function ReviewQueueLightbox({ url, onClose }) {
   return (
     <div
       className="fixed inset-0 z-[10000]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Upload preview"
+      role="dialog" aria-modal="true" aria-label="Upload preview"
     >
       {/* Overlay */}
       <button
-        type="button"
-        className="absolute inset-0 bg-black/70"
-        onClick={onClose}
-        aria-label="Close preview"
+        type="button" onClick={onClose} aria-label="Close"
+        className="absolute inset-0"
+        style={{ backgroundColor: "rgba(0,0,0,0.88)" }}
       />
 
-      {/* Centered container */}
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-        {/* Panel */}
-        <div
-          className="w-full max-w-5xl"
-          onClick={(e) => e.stopPropagation()}
-          role="presentation"
-        >
-          {/* Top bar */}
-          <div className="flex items-center justify-end mb-2">
+      {/* Content */}
+      <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+          {/* Close button */}
+          <div className="flex justify-end mb-3">
             <button
               ref={closeBtnRef}
-              type="button"
-              onClick={onClose}
-              className={cx(
-                "inline-flex items-center justify-center",
-                "w-10 h-10 rounded-2xl",
-                "bg-white/95 border border-white/40",
-                "hover:bg-white transition",
-                "focus:outline-none focus:ring-2 focus:ring-white/60"
-              )}
-              aria-label="Close"
-              title="Close"
+              type="button" onClick={onClose}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition focus:outline-none focus:ring-2"
+              style={{ backgroundColor: "rgba(255,255,255,0.12)", color: "#fff" }}
+              aria-label="Close" title="Close"
             >
-              <X className="w-5 h-5 text-gray-900" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Image frame */}
-          <div className="relative rounded-2xl overflow-hidden border border-white/20 bg-black/20">
-            {!loaded && !failed ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-xs font-semibold text-white/80 bg-black/40 border border-white/20 rounded-2xl px-3 py-2">
-                  Loading image…
-                </div>
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(255,255,255,0.12)", backgroundColor: "rgba(0,0,0,0.3)" }}
+          >
+            {!loaded && !failed && (
+              <div className="flex items-center justify-center py-20">
+                <span
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                  style={{ backgroundColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.7)" }}
+                >
+                  Loading…
+                </span>
               </div>
-            ) : null}
-
+            )}
             {failed ? (
-              <div className="p-6 text-center">
-                <div className="text-sm font-semibold text-white">Couldn’t load this image.</div>
-                <div className="text-xs text-white/80 mt-1">Try closing and reopening.</div>
+              <div className="py-16 text-center">
+                <p className="text-sm font-semibold text-white">Couldn't load this image.</p>
+                <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>Try closing and reopening.</p>
               </div>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={url}
-                alt="Upload"
-                className={cx(
-                  "w-full object-contain",
-                  "max-h-[78vh] sm:max-h-[82vh]",
-                  loaded ? "opacity-100" : "opacity-0",
-                  "transition-opacity duration-200"
-                )}
+                src={url} alt="Upload"
+                className="w-full object-contain transition-opacity duration-200"
+                style={{ maxHeight: "80vh", opacity: loaded ? 1 : 0 }}
                 onLoad={() => setLoaded(true)}
                 onError={() => setFailed(true)}
               />
             )}
           </div>
 
-          {/* Tiny hint row (optional, subtle) */}
-          <div className="mt-2 text-[11px] text-white/70">
-            Press <span className="font-semibold text-white/80">Esc</span> to close.
-          </div>
+          <p className="mt-2 text-[11px] text-center" style={{ color: "rgba(255,255,255,0.4)" }}>
+            Press <span style={{ color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>Esc</span> to close
+          </p>
         </div>
       </div>
     </div>

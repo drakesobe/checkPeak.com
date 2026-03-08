@@ -42,8 +42,6 @@ function envMissing() {
     DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
     DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
     DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
-
-    // AthleteScans (optional)
     ATHLETE_API_KEY: !process.env.ATHLETE_API_KEY,
     ATHLETE_BASE_ID: !process.env.ATHLETE_BASE_ID,
     ATHLETE_TABLE_NAME: !process.env.ATHLETE_TABLE_NAME,
@@ -63,7 +61,6 @@ function buildOrgCandidates(user) {
       ""
   ).trim();
 
-  // Most likely to match linked primary = orgName
   const candidates = [orgName, orgToken, orgId].filter(Boolean);
   return { orgId, orgToken, orgName, candidates };
 }
@@ -79,6 +76,14 @@ function uniqCI(list) {
     seen.add(k);
     out.push(s);
   });
+  return out;
+}
+
+function chunk(arr, n = 10) {
+  const out = [];
+  for (let i = 0; i < (arr || []).length; i += n) {
+    out.push(arr.slice(i, i + n));
+  }
   return out;
 }
 
@@ -124,7 +129,7 @@ export default async function handler(req, res) {
       missing.ATHLETE_TABLE_NAME
     ),
     formulas: {},
-    counts: { workoutsAll: 0, workouts: 0, athletes: 0 },
+    counts: { workoutsAll: 0, workouts: 0, athletes: 0, workoutItems: 0 },
   };
 
   if (!candidates.length) {
@@ -138,12 +143,9 @@ export default async function handler(req, res) {
   const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
     process.env.DAILYWORKOUTS_BASE_ID
   );
+
   const DailyWorkouts = base(process.env.DAILYWORKOUTS_TABLE_ID);
 
-  // --------------------------------------------------------------------------
-  // 1) Workouts for org + day (NO sport filter here)
-  //    We filter by sport in Node so we can compute availableSports reliably.
-  // --------------------------------------------------------------------------
   let workoutsAll = [];
   try {
     const parts = [];
@@ -170,6 +172,8 @@ export default async function handler(req, res) {
 
     workoutsAll = (rows || []).map((rec) => {
       const f = rec.fields || {};
+      const itemIds = safeArray(f.WorkoutItems).filter(Boolean);
+
       return {
         id: rec.id,
         Title: f.Title || "Workout",
@@ -177,7 +181,8 @@ export default async function handler(req, res) {
         Status: f.Status || "assigned",
         Sport: f.Sport || "",
         athleteCount: safeArray(f.Athlete).length,
-        itemCount: safeArray(f.WorkoutItems).length,
+        itemCount: itemIds.length,
+        itemIds,
         _orgLink: f.Organization,
       };
     });
@@ -192,14 +197,12 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ availableSports derived from all workouts today (NOT just selected sport)
   const availableSports = uniqCI(
     workoutsAll
       .map((w) => String(w?.Sport || "").trim())
       .filter(Boolean)
   ).sort((a, b) => a.localeCompare(b));
 
-  // Filter down to selected sport (if provided)
   const workouts = sportQ
     ? workoutsAll.filter((w) => String(w?.Sport || "").trim().toLowerCase() === sportQ)
     : workoutsAll;
@@ -207,8 +210,74 @@ export default async function handler(req, res) {
   debug.counts.workouts = workouts.length;
 
   // --------------------------------------------------------------------------
-  // 2) Athletes roster (AthleteScans) for org (+ optional sport)
-  //    This is optional; it should NEVER break the endpoint.
+  // 1b) Hydrate workout items for the workouts we are actually returning
+  // --------------------------------------------------------------------------
+  const itemsByWorkoutId = {};
+  const completionByItemId = {};
+
+  try {
+    const workoutIds = workouts.map((w) => String(w.id || "")).filter(Boolean);
+    const itemIds = uniqCI(workouts.flatMap((w) => safeArray(w.itemIds || [])));
+
+    workoutIds.forEach((wid) => {
+      itemsByWorkoutId[wid] = [];
+    });
+
+    if (itemIds.length > 0) {
+      // Adjust this table name if your actual table differs.
+      const WorkoutItems = base(process.env.DAILYWORKOUT_ITEMS_TABLE_ID || "WorkoutItems");
+
+      for (const batch of chunk(itemIds, 10)) {
+        const rows = await WorkoutItems.select({
+          filterByFormula: `OR(${batch.map((id) => `RECORD_ID()="${escFormulaString(id)}"`).join(",")})`,
+          maxRecords: 50,
+        }).firstPage();
+
+        (rows || []).forEach((rec) => {
+          const f = rec.fields || {};
+          const linkedWorkoutId =
+            safeArray(f.DailyWorkout)[0] ||
+            safeArray(f["Daily Workouts"])[0] ||
+            safeArray(f["Workout"])[0] ||
+            "";
+
+          const status =
+            String(
+              f.Status ||
+              f["Completion Status"] ||
+              f["Review Status"] ||
+              ""
+            ).trim();
+
+          const item = {
+            id: rec.id,
+            Status: status,
+            Order: f.Order ?? null,
+            ExerciseName: f.ExerciseName || f.Name || "",
+          };
+
+          if (linkedWorkoutId) {
+            if (!Array.isArray(itemsByWorkoutId[linkedWorkoutId])) {
+              itemsByWorkoutId[linkedWorkoutId] = [];
+            }
+            itemsByWorkoutId[linkedWorkoutId].push(item);
+          }
+
+          if (status) {
+            completionByItemId[rec.id] = { Status: status };
+          }
+        });
+      }
+
+      debug.counts.workoutItems = itemIds.length;
+    }
+  } catch (e) {
+    console.error("[api/org/workouts/day] workout items query error:", e);
+    debug.workoutItemsError = { message: e?.message || String(e) };
+  }
+
+  // --------------------------------------------------------------------------
+  // 2) Athletes roster (optional)
   // --------------------------------------------------------------------------
   let athletes = [];
   if (
@@ -224,7 +293,6 @@ export default async function handler(req, res) {
 
       const athleteOrgJoin = `ARRAYJOIN({Organization}&"")`;
 
-      // org candidates against linked primary values
       const orgClause =
         candidates.length === 1
           ? `FIND("${escFormulaString(candidates[0])}", ${athleteOrgJoin})`
@@ -232,13 +300,9 @@ export default async function handler(req, res) {
               .map((c) => `FIND("${escFormulaString(c)}", ${athleteOrgJoin})`)
               .join(",")})`;
 
-      // Sport clause (optional) — assume field is {sport} like your previous code.
-      // If your field is actually {Sport}, switch this line to {Sport}.
       let athleteFormula = orgClause;
       if (sportQ) {
-        athleteFormula = `AND(${orgClause}, LOWER({sport}&"")="${escFormulaString(
-          sportQ
-        )}")`;
+        athleteFormula = `AND(${orgClause}, LOWER({sport}&"")="${escFormulaString(sportQ)}")`;
       }
 
       debug.formulas.athletes = athleteFormula;
@@ -293,9 +357,9 @@ export default async function handler(req, res) {
   return res.status(200).json({
     workouts,
     athletes,
-    itemsByWorkoutId: {},
-    completionByItemId: {},
-    availableSports, // ✅ NEW
+    itemsByWorkoutId,
+    completionByItemId,
+    availableSports,
     debug,
   });
 }

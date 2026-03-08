@@ -19,7 +19,6 @@ import DashboardStatsGrid    from "@/components/org/dashboard/DashboardStatsGrid
 import TodayWorkoutsPanel    from "@/components/org/dashboard/TodayWorkoutsPanel";
 import TodayNutritionPanel   from "@/components/org/dashboard/TodayNutritionPanel";
 
-import RosterSection         from "@/components/org/dashboard/RosterSection";
 import ActivityTemplatesPanel from "@/components/org/dashboard/ActivityTemplatesPanel";
 
 import EditAthleteModal      from "@/components/org/dashboard/EditAthleteModal";
@@ -220,28 +219,6 @@ export default function OrgDashboard() {
         </DashboardSection>
 
         {/*
-          2. Roster — the main working surface.
-          Coaches come here to find athletes, assign plans, take action.
-          Sits above the today panels so it's the first thing after the stats.
-        */}
-        <RosterSection
-          athletes={athletes}
-          templates={templates}
-          expanded={expanded}
-          setExpanded={setExpanded}
-          search={search}
-          setSearch={setSearch}
-          filterMode={filterMode}
-          setFilterMode={setFilterMode}
-          sortMode={sortMode}
-          setSortMode={setSortMode}
-          onEdit={openEdit}
-          onHistory={goHistory}
-          onBuild={goBuildPlan}
-          pageSize={25}
-        />
-
-        {/*
           3. Today — workouts + nutrition side by side.
           Useful for a daily check-in but not the primary action surface.
           Below roster intentionally.
@@ -267,7 +244,7 @@ export default function OrgDashboard() {
         </div>
 
         {/*
-          4. Activity + Templates — collapsed by default.
+          4. Activity + Templates — open by default.
           Audit trail and template shortcuts. Low urgency.
           Coach expands it when they need it.
         */}
@@ -281,7 +258,7 @@ export default function OrgDashboard() {
           onUseTemplate={(id) => goBuildPlan("", id)}
           activityLimit={8}
           templateLimit={6}
-          defaultCollapsed={true}
+          defaultCollapsed={false}
         />
 
       </main>

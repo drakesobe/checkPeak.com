@@ -41,7 +41,7 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
   const coveragePct  = useMemo(() => pct(withPlan, total),            [withPlan, total]);
   const hydrationPct = useMemo(() => pct(hydrationSetCount, withPlan), [hydrationSetCount, withPlan]);
 
-  const MAX_PREVIEW = 4;
+  const MAX_PREVIEW = 1;
   const preview   = useMemo(() => needsList.slice(0, MAX_PREVIEW), [needsList]);
   const remaining = Math.max(0, needsList.length - MAX_PREVIEW);
 
@@ -143,7 +143,7 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
               </p>
               {remaining > 0 && onGoNutrition && (
                 <Button variant="secondary" onClick={onGoNutrition}>
-                  +{remaining} more <ExternalLink className="w-3 h-3" />
+                  View all {remaining}<ExternalLink className="w-3 h-3" />
                 </Button>
               )}
             </div>

@@ -210,7 +210,7 @@ function UploadZone({ hasFiles, fileCount, onCamera, onLibrary, isDragging, onDr
           <p className="up-body text-xs mt-1" style={{ color: DS.labelText }}>
             {hasFiles
               ? "You can add more or change the photo below."
-              : "Hold your phone 6–8 inches from the label until the text is sharp."}
+              : "Hold your phone 6–8 inches from the label until the text is sharp, then crop down to the exact Nutrition Label for best results."}
           </p>
         </div>
 

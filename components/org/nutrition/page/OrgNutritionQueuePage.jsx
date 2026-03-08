@@ -8,7 +8,7 @@ import { useNutritionQueue } from "@/hooks/org/useNutritionQueue";
 import {
   Search, X, ChevronDown, ChevronUp,
   ExternalLink, Bell, ClipboardList, RefreshCw,
-  AlertTriangle, CheckCircle, Zap,
+  AlertTriangle, CheckCircle, Zap, Target, ShieldCheck, BarChart3,
 } from "lucide-react";
 
 import NutritionHeader from "@/components/org/nutrition/NutritionHeader";
@@ -38,7 +38,6 @@ const DS = {
 };
 
 // ─── D2 football plan presets ─────────────────────────────────────────────────
-// Realistic targets for college football. Protein stays high even in cut.
 const PLAN_PRESETS = [
   { label: "Bulk",     calories: 4200, protein: 225, carbs: 480, fat: 110, phase: "Surplus",  desc: "Linemen, heavy skill"   },
   { label: "Maintain", calories: 3200, protein: 185, carbs: 360, fat: 95,  phase: "Maintain", desc: "Standard in-season"     },
@@ -64,19 +63,20 @@ function assignGroup(row) {
 function applyFilters(rows, { search, sport, team }) {
   let out = Array.isArray(rows) ? rows : [];
   const q = String(search || "").trim().toLowerCase();
+
   if (q) {
     out = out.filter((r) => {
-      // Cover both field name conventions: athleteName (queue.js) and name (table.js)
       const name     = String(r?.athleteName || r?.name || "").toLowerCase();
       const email    = String(r?.athleteEmail || r?.email || "").toLowerCase();
       const token    = String(r?.athleteToken || "").toLowerCase();
-      const team     = String(r?.team || "").toLowerCase();
-      const sport    = String(r?.sport || "").toLowerCase();
+      const teamVal  = String(r?.team || "").toLowerCase();
+      const sportVal = String(r?.sport || "").toLowerCase();
       const position = String(r?.position || r?.pos || "").toLowerCase();
       return name.includes(q) || email.includes(q) || token.includes(q)
-          || team.includes(q) || sport.includes(q) || position.includes(q);
+        || teamVal.includes(q) || sportVal.includes(q) || position.includes(q);
     });
   }
+
   if (sport && sport !== "all") out = out.filter((r) => String(r.sport || "") === sport);
   if (team  && team  !== "all") out = out.filter((r) => String(r.team  || "") === team);
   return out;
@@ -92,6 +92,23 @@ function avgAdherence(rows) {
   const valid = rows.map((r) => Number(r.adherenceAvg)).filter((n) => Number.isFinite(n) && n > 0);
   if (!valid.length) return null;
   return Math.round(valid.reduce((s, n) => s + n, 0) / valid.length);
+}
+
+function deriveProgramStats(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const total = list.length;
+  const withPlan = list.filter((r) => !!r?.hasPlan).length;
+  const checkedIn = list.filter((r) => r?.hasPlan && !r?.missingCheckin).length;
+  const adherence = avgAdherence(list);
+
+  return {
+    total,
+    withPlan,
+    checkedIn,
+    adherence,
+    planPct: total ? Math.round((withPlan / total) * 100) : 0,
+    checkinPct: total ? Math.round((checkedIn / total) * 100) : 0,
+  };
 }
 
 // ─── Shared input primitives ──────────────────────────────────────────────────
@@ -129,6 +146,129 @@ function DSSelect({ value, onChange, disabled, children }) {
     >
       {children}
     </select>
+  );
+}
+
+// ─── Intro / framing card ─────────────────────────────────────────────────────
+function QueueIntroCard({ weekLabel, stats }) {
+  const accountabilityText =
+    stats.total === 0
+      ? "No athletes are in the queue yet."
+      : stats.checkedIn === stats.total
+      ? "Everyone is accounted for this week."
+      : `${stats.total - stats.checkedIn} athlete${stats.total - stats.checkedIn !== 1 ? "s" : ""} still need accountability attention.`;
+
+  return (
+    <div
+      className="px-4 py-4"
+      style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <p
+            className="text-sm font-black uppercase tracking-wide"
+            style={{ color: DS.brand, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em" }}
+          >
+            Weekly Nutrition Queue
+          </p>
+          <h1
+            className="mt-1 text-xl sm:text-2xl font-black"
+            style={{ color: DS.bodyText, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}
+          >
+          </h1>
+          <p className="mt-2 text-sm max-w-2xl" style={{ color: DS.labelText }}>
+            Use this page as your weekly nutrition accountability board - assign plans, prompt missed check-ins, and quickly open athlete profiles for follow-up.
+          </p>
+        </div>
+
+        {weekLabel && (
+          <div
+            className="px-3 py-2 text-xs font-black uppercase tracking-wide rounded-sm shrink-0"
+            style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}
+          >
+            {weekLabel}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 text-sm font-bold" style={{ color: stats.checkedIn === stats.total && stats.total > 0 ? DS.safe : DS.bodyText }}>
+        {accountabilityText}
+      </div>
+    </div>
+  );
+}
+
+// ─── Compact program health strip ─────────────────────────────────────────────
+function ProgramHealthStrip({ stats }) {
+  if (!stats.total) return null;
+
+  const items = [
+    {
+      label: "Athletes with a Nutrition plan",
+      value: `${stats.withPlan}/${stats.total}`,
+      sub: `${stats.planPct}% covered`,
+      icon: ClipboardList,
+      tone: stats.planPct >= 90 ? "safe" : stats.planPct >= 70 ? "caution" : "brand",
+    },
+    {
+      label: "Athletes checked in this week",
+      value: `${stats.checkedIn}/${stats.total}`,
+      sub: `${stats.checkinPct}% complete`,
+      icon: ShieldCheck,
+      tone: stats.checkinPct >= 80 ? "safe" : stats.checkinPct >= 60 ? "caution" : "banned",
+    },
+    {
+      label: "Average adherence to Nutrition plan",
+      value: stats.adherence != null ? `${stats.adherence}%` : "—",
+      sub: "among active check-ins",
+      icon: BarChart3,
+      tone: stats.adherence == null ? "brand" : stats.adherence >= 80 ? "safe" : stats.adherence >= 65 ? "caution" : "banned",
+    },
+  ];
+
+  const toneMap = {
+    safe:    { bg: DS.safeBg,    border: DS.safeBorder,    text: DS.safe },
+    caution: { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution },
+    banned:  { bg: DS.bannedBg,  border: DS.bannedBorder,  text: DS.banned },
+    brand:   { bg: DS.brandBg,   border: DS.brandBorder,   text: DS.brand },
+  };
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {items.map(({ label, value, sub, icon: Icon, tone }) => {
+        const c = toneMap[tone];
+        return (
+          <div
+            key={label}
+            className="px-4 py-3"
+            style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide" style={{ color: DS.labelText }}>
+                  {label}
+                </p>
+                <p
+                  className="mt-1 text-xl font-black tabular-nums"
+                  style={{ color: DS.bodyText, fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  {value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+                  {sub}
+                </p>
+              </div>
+              <div
+                className="w-8 h-8 rounded-sm flex items-center justify-center shrink-0"
+                style={{ backgroundColor: c.bg, border: `1px solid ${c.border}` }}
+              >
+                <Icon className="h-4 w-4" style={{ color: c.text }} />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -185,8 +325,6 @@ function AssignPlanPanel({ row, onClose, onSaved }) {
 
   return (
     <div style={{ backgroundColor: DS.brandBg, borderTop: `2px solid ${DS.brand}` }}>
-
-      {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-2.5"
         style={{ borderBottom: `1px solid ${DS.brandBorder}` }}
@@ -204,7 +342,6 @@ function AssignPlanPanel({ row, onClose, onSaved }) {
         </button>
       </div>
 
-      {/* Quick presets */}
       <div className="px-4 pt-3 pb-2">
         <p className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: DS.labelText }}>
           Quick Fill
@@ -217,8 +354,8 @@ function AssignPlanPanel({ row, onClose, onSaved }) {
               onClick={() => applyPreset(p)}
               className="text-xs font-bold px-3 py-1.5 rounded-sm transition-all"
               style={{
-                backgroundColor: preset === p.label ? DS.brand    : DS.cardBg,
-                color:           preset === p.label ? "#fff"      : DS.bodyText,
+                backgroundColor: preset === p.label ? DS.brand : DS.cardBg,
+                color:           preset === p.label ? "#fff" : DS.bodyText,
                 border:          `1px solid ${preset === p.label ? DS.brand : DS.brandBorder}`,
               }}
               title={p.desc}
@@ -235,7 +372,6 @@ function AssignPlanPanel({ row, onClose, onSaved }) {
         </div>
       </div>
 
-      {/* Fields */}
       <div className="px-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
           { label: "Calories / day *", value: calories, set: setCalories, placeholder: "e.g. 3200" },
@@ -316,7 +452,7 @@ function AssignPlanPanel({ row, onClose, onSaved }) {
   );
 }
 
-// ─── Secondary ghost button — labeled, always subordinate to primary CTA ─────
+// ─── Secondary ghost button ───────────────────────────────────────────────────
 function SecBtn({ icon: Icon, label, onClick, disabled: dis }) {
   return (
     <button
@@ -354,13 +490,13 @@ function SecBtn({ icon: Icon, label, onClick, disabled: dis }) {
 function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
   const [assignOpen,   setAssignOpen]   = useState(false);
   const [reminding,    setReminding]    = useState(false);
-  const [doneState,    setDoneState]    = useState(null); // null | "plan" | "remind"
+  const [doneState,    setDoneState]    = useState(null);
 
-  const athleteName  = row?.athleteName || row?.name  || "Athlete";
-  const athleteTeam  = row?.team        || "";
-  const athletePos   = row?.position    || row?.pos   || "";
-  const subGroup = getSubGroup(row);
-  const hasToken = Boolean(String(row?.athleteToken || "").trim());
+  const athleteName = row?.athleteName || row?.name || "Athlete";
+  const athleteTeam = row?.team || "";
+  const athletePos  = row?.position || row?.pos || "";
+  const subGroup    = getSubGroup(row);
+  const hasToken    = Boolean(String(row?.athleteToken || "").trim());
 
   const adherence = row.adherenceAvg != null
     ? Math.max(0, Math.min(100, Math.round(Number(row.adherenceAvg))))
@@ -395,8 +531,11 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
       const json = await res.json().catch(() => ({}));
       if (json?.mailto) window.open(json.mailto, "_blank");
       setDoneState("remind");
-    } catch { /* non-fatal */ }
-    finally { setReminding(false); }
+    } catch {
+      // non-fatal
+    } finally {
+      setReminding(false);
+    }
   }
 
   function handlePlanSaved() {
@@ -405,7 +544,6 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
     setTimeout(() => onPlanSaved?.(), 1800);
   }
 
-  // Confirmed success state — shows briefly then list refreshes
   if (doneState) {
     return (
       <div
@@ -426,14 +564,11 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
   return (
     <div style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.cardBg }}>
       <div className="flex items-center gap-3 px-4 py-3.5">
-
-        {/* Situation color bar */}
         <div
           className="shrink-0 self-stretch rounded-full"
           style={{ width: 3, backgroundColor: situationColor, minHeight: 40 }}
         />
 
-        {/* Identity */}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-bold text-sm" style={{ color: DS.bodyText }}>
@@ -470,18 +605,10 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
           </div>
         </div>
 
-        {/* ── Actions ──────────────────────────────────────────────────────────
-            Layout: [Primary CTA]  |  [Secondary]  [Secondary]
-            Primary = one bold labeled button matching the situation.
-            Secondary = small labeled ghost buttons for the other available actions.
-            Divider makes the hierarchy obvious at a glance.
-        ──────────────────────────────────────────────────────────────────── */}
         <div
           className="shrink-0 flex items-center gap-3"
           onClick={(e) => e.stopPropagation()}
         >
-
-          {/* ── Primary CTA ── */}
           {subGroup === "noPlan" && (
             <button
               type="button"
@@ -532,7 +659,7 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black uppercase tracking-wide rounded-sm whitespace-nowrap transition-all"
               style={{
                 backgroundColor: subGroup === "lowAdherence" ? DS.cautionBg : DS.safeBg,
-                color:           subGroup === "lowAdherence" ? DS.caution   : DS.safe,
+                color:           subGroup === "lowAdherence" ? DS.caution : DS.safe,
                 border:          `1px solid ${subGroup === "lowAdherence" ? DS.cautionBorder : DS.safeBorder}`,
                 opacity: hasToken ? 1 : 0.4,
                 minWidth: 110,
@@ -546,13 +673,8 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
             </button>
           )}
 
-          {/* ── Divider ── */}
           <div className="shrink-0" style={{ width: 1, height: 28, backgroundColor: DS.border }} />
 
-          {/* ── Secondary actions — labeled ghost buttons ──
-              These are always visible so the coach knows they exist.
-              Labels are short but unambiguous: Edit Plan / Remind / Profile.
-          ── */}
           <div className="flex items-center gap-1.5">
             {subGroup !== "noPlan" && (
               <SecBtn
@@ -593,27 +715,28 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
   );
 }
 
-// ─── Act Now section ──────────────────────────────────────────────────────────
-// The most important structural decision: split "No Plan" from "Not Checked In".
-// These require different immediate actions — mixing them makes the coach read every row.
+// ─── Needs Immediate Action section ───────────────────────────────────────────
 function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
   const [open, setOpen] = useState(true);
 
-  const noPlan    = useMemo(() =>
-    rows.filter((r) => !r.hasPlan)
-        .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
-    [rows]);
+  const noPlan = useMemo(
+    () => rows
+      .filter((r) => !r.hasPlan)
+      .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
+    [rows]
+  );
 
-  const noCheckin = useMemo(() =>
-    rows.filter((r) => r.hasPlan && r.missingCheckin)
-        .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
-    [rows]);
+  const noCheckin = useMemo(
+    () => rows
+      .filter((r) => r.hasPlan && r.missingCheckin)
+      .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
+    [rows]
+  );
 
   if (!rows.length) return null;
 
   return (
     <div ref={sectionRef} style={{ border: `1px solid ${DS.bannedBorder}`, borderTop: `3px solid ${DS.banned}` }}>
-
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -632,7 +755,7 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
           <div className="text-left">
             <div className="flex items-center gap-2">
               <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.banned }}>
-                Act Now
+                Needs Immediate Action
               </span>
               <span
                 className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-sm"
@@ -643,22 +766,20 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
               </span>
             </div>
             <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              {noPlan.length > 0    && `${noPlan.length} need a plan`}
+              {noPlan.length > 0 && `${noPlan.length} need a plan`}
               {noPlan.length > 0 && noCheckin.length > 0 && " · "}
-              {noCheckin.length > 0 && `${noCheckin.length} haven't checked in`}
+              {noCheckin.length > 0 && `${noCheckin.length} missed a check-in`}
             </div>
           </div>
         </div>
         {open
-          ? <ChevronUp   className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
+          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
         }
       </button>
 
       {open && (
         <div style={{ borderTop: `1px solid ${DS.bannedBorder}` }}>
-
-          {/* Sub-group: No Plan */}
           {noPlan.length > 0 && (
             <>
               <div
@@ -676,7 +797,7 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
                     No Plan Assigned
                   </span>
                   <span className="text-xs ml-2" style={{ color: DS.dimText }}>
-                    Athletes can't check in without a plan — assign first
+                    Athletes cannot check in until they have a plan
                   </span>
                 </div>
               </div>
@@ -691,14 +812,13 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
             </>
           )}
 
-          {/* Sub-group: Not Checked In */}
           {noCheckin.length > 0 && (
             <>
               <div
                 className="flex items-center gap-2.5 px-4 py-2"
                 style={{
                   backgroundColor: "#FFFBF0",
-                  borderTop:    noPlan.length > 0 ? `2px solid ${DS.border}` : "none",
+                  borderTop: noPlan.length > 0 ? `2px solid ${DS.border}` : "none",
                   borderBottom: `1px solid ${DS.cautionBorder}`,
                 }}
               >
@@ -710,10 +830,10 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
                 </span>
                 <div>
                   <span className="text-xs font-black uppercase tracking-wide" style={{ color: DS.caution }}>
-                    Not Checked In
+                    Missing Weekly Check-In
                   </span>
                   <span className="text-xs ml-2" style={{ color: DS.dimText }}>
-                    Has a plan — just needs a reminder to log this week
+                    These athletes have a plan but have not logged this week
                   </span>
                 </div>
               </div>
@@ -733,8 +853,7 @@ function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
   );
 }
 
-// ─── Follow Up section ────────────────────────────────────────────────────────
-// Sorted by lowest adherence first — worst cases at the top.
+// ─── Needs Follow-Up section ──────────────────────────────────────────────────
 function FollowUpSection({ rows, onOpenAthlete, onPlanSaved, defaultOpen, sectionRef }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -766,16 +885,16 @@ function FollowUpSection({ rows, onOpenAthlete, onPlanSaved, defaultOpen, sectio
           </span>
           <div className="text-left">
             <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.caution }}>
-              Follow Up
+              Needs Follow-Up
             </span>
             <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              Has a plan but adherence is low
+              Has a plan and check-in, but adherence is below target
               {avg != null && ` · avg ${avg}% this week`}
             </div>
           </div>
         </div>
         {open
-          ? <ChevronUp   className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
+          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
         }
       </button>
@@ -786,7 +905,7 @@ function FollowUpSection({ rows, onOpenAthlete, onPlanSaved, defaultOpen, sectio
             className="px-4 py-2 text-xs"
             style={{ backgroundColor: "#FFFBF0", borderBottom: `1px solid ${DS.cautionBorder}`, color: DS.labelText }}
           >
-            Sorted by lowest adherence first. Open an athlete's detail page to adjust targets, leave a note, or reassign their plan.
+            Lowest adherence appears first. Open an athlete profile to adjust targets, leave a note, or coach the next step.
           </div>
           {sorted.map((row, i) => (
             <AthleteRow
@@ -803,12 +922,14 @@ function FollowUpSection({ rows, onOpenAthlete, onPlanSaved, defaultOpen, sectio
 }
 
 // ─── On Track section ─────────────────────────────────────────────────────────
-// Always starts collapsed. Shows avg adherence in the header — no need to expand
-// unless you want to find a specific name.
-function OnTrackSection({ rows, onOpenAthlete, sectionRef }) {
-  const [open, setOpen] = useState(false);
+function OnTrackSection({ rows, onOpenAthlete, sectionRef, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
 
-  const avg    = avgAdherence(rows);
+  useEffect(() => {
+    setOpen(defaultOpen);
+  }, [defaultOpen]);
+
+  const avg = avgAdherence(rows);
   const sorted = useMemo(
     () => [...rows].sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
     [rows]
@@ -848,12 +969,12 @@ function OnTrackSection({ rows, onOpenAthlete, sectionRef }) {
               )}
             </div>
             <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              Plan + check-in complete · {open ? "collapse" : "expand to view names"}
+              Plan and weekly check-in completed
             </div>
           </div>
         </div>
         {open
-          ? <ChevronUp   className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
+          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
         }
       </button>
@@ -874,105 +995,14 @@ function OnTrackSection({ rows, onOpenAthlete, sectionRef }) {
   );
 }
 
-// ─── Weekly progress bar ──────────────────────────────────────────────────────
-// Proportional bar + tap-to-scroll. Replaces old snapshot chips.
-function WeekProgressBar({ groups, total, onJump }) {
-  if (!total) return null;
-
-  const actCount      = groups.act.length;
-  const followupCount = groups.followup.length;
-  const goodCount     = groups.good.length;
-
-  const actPct      = Math.round((actCount      / total) * 100);
-  const followupPct = Math.round((followupCount / total) * 100);
-  const goodPct     = 100 - actPct - followupPct;
-  const onTrackPct  = Math.round((goodCount / total) * 100);
-
-  const segments = [
-    { key: "act",      pct: actPct,      color: DS.banned,  label: `${actCount} Act Now`        },
-    { key: "followup", pct: followupPct, color: DS.caution, label: `${followupCount} Follow Up` },
-    { key: "good",     pct: goodPct,     color: DS.safe,    label: `${goodCount} On Track`      },
-  ].filter((s) => s.pct > 0);
-
-  return (
-    <div
-      className="px-4 py-3"
-      style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
-    >
-      <div className="flex items-baseline justify-between mb-2">
-        <div>
-          {actCount > 0 ? (
-            <span className="text-sm font-black" style={{ color: DS.banned }}>
-              {actCount} athlete{actCount !== 1 ? "s" : ""} need action
-            </span>
-          ) : (
-            <span className="text-sm font-black" style={{ color: DS.safe }}>
-              All athletes accounted for this week
-            </span>
-          )}
-          {followupCount > 0 && (
-            <span className="text-sm ml-2" style={{ color: DS.labelText }}>
-              · {followupCount} to follow up
-            </span>
-          )}
-        </div>
-        <span
-          className="text-xs font-black tabular-nums"
-          style={{ color: onTrackPct >= 80 ? DS.safe : onTrackPct >= 50 ? DS.caution : DS.banned }}
-        >
-          {onTrackPct}% on track
-        </span>
-      </div>
-
-      {/* Proportional bar — tap to jump */}
-      <div className="flex h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: DS.border, gap: 2 }}>
-        {segments.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => onJump(s.key)}
-            title={`Jump to ${s.label}`}
-            className="h-full transition-all"
-            style={{
-              width: `${s.pct}%`,
-              backgroundColor: s.color,
-              minWidth: s.pct > 0 ? 6 : 0,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.filter = "brightness(1.15)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
-          />
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-2">
-        {segments.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => onJump(s.key)}
-            className="inline-flex items-center gap-1.5 text-xs transition-all"
-            style={{ color: DS.labelText }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = s.color; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = DS.labelText; }}
-          >
-            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: s.color }} />
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Nav bar ──────────────────────────────────────────────────────────────────
 function NavBar({ weekLabel, loading, onRefresh, onGoDashboard, onGoPlans }) {
   const dayCtx = useMemo(() => {
-    const day      = new Date().getDay();
+    const day = new Date().getDay();
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const daysLeft = day === 0 ? 0 : 7 - day;
     return daysLeft <= 1
-      ? { text: `${dayNames[day]} · last chance this week`, color: "#FFB3B3" }
+      ? { text: `${dayNames[day]} · final push this week`, color: "#FFB3B3" }
       : daysLeft <= 3
       ? { text: `${dayNames[day]} · ${daysLeft} days left in week`, color: "#FFD580" }
       : { text: dayNames[day], color: "rgba(255,255,255,0.4)" };
@@ -985,7 +1015,7 @@ function NavBar({ weekLabel, loading, onRefresh, onGoDashboard, onGoPlans }) {
     >
       <div className="flex items-center gap-3 min-w-0 overflow-hidden">
         <span className="font-black uppercase tracking-wider text-xs shrink-0" style={{ color: "rgba(255,255,255,0.55)" }}>
-          Nutrition Queue
+          Weekly Nutrition Queue
         </span>
         {weekLabel && (
           <span className="text-xs truncate" style={{ color: "rgba(255,255,255,0.3)" }}>
@@ -1000,7 +1030,7 @@ function NavBar({ weekLabel, loading, onRefresh, onGoDashboard, onGoPlans }) {
       <div className="flex items-center gap-1.5 shrink-0">
         {[
           { label: "Dashboard", onClick: onGoDashboard },
-          { label: "Plans",     onClick: onGoPlans     },
+          { label: "Plans",     onClick: onGoPlans },
         ].map(({ label, onClick }) => (
           <button
             key={label}
@@ -1047,8 +1077,6 @@ export default function OrgNutritionQueuePage() {
   }, [authReady, user, isOrgSide, router]);
 
   const { loading, error, rows, counts, meta, lastUpdatedLabel, refresh } = useNutritionQueue({
-    // Wait for auth to fully resolve before enabling — prevents the race where
-    // user populates before the session is confirmed, causing a 401 on first fetch.
     enabled: Boolean(authReady && user && isOrgSide),
   });
 
@@ -1065,8 +1093,8 @@ export default function OrgNutritionQueuePage() {
   );
 
   const groups = useMemo(() => groupRows(filtered), [filtered]);
+  const programStats = useMemo(() => deriveProgramStats(filtered), [filtered]);
 
-  // Refs for scroll-to from progress bar
   const actRef      = useRef(null);
   const followupRef = useRef(null);
   const goodRef     = useRef(null);
@@ -1091,15 +1119,17 @@ export default function OrgNutritionQueuePage() {
     try {
       const d = new Date(String(meta.weekStartISO).slice(0, 10) + "T12:00:00Z");
       if (Number.isNaN(d.getTime())) return "";
-      const e = new Date(d); e.setDate(e.getDate() + 6);
+      const e = new Date(d);
+      e.setDate(e.getDate() + 6);
       const fmt = (x) => x.toLocaleDateString(undefined, { month: "short", day: "numeric" });
       return `${fmt(d)} – ${fmt(e)}`;
-    } catch { return ""; }
+    } catch {
+      return "";
+    }
   }, [meta?.weekStartISO]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: DS.pageBg }}>
-
       <NavBar
         weekLabel={weekLabel}
         loading={loading}
@@ -1109,8 +1139,12 @@ export default function OrgNutritionQueuePage() {
       />
 
       <main className="max-w-4xl mx-auto px-4 py-4 space-y-3">
+        <QueueIntroCard weekLabel={weekLabel} stats={deriveProgramStats(rows)} />
 
-        {/* Error */}
+        {!loading && hasResults && (
+          <ProgramHealthStrip stats={programStats} />
+        )}
+
         {error && (
           <div
             className="flex items-start gap-3 px-4 py-3 text-sm"
@@ -1124,12 +1158,6 @@ export default function OrgNutritionQueuePage() {
           </div>
         )}
 
-        {/* Progress bar */}
-        {!loading && hasResults && (
-          <WeekProgressBar groups={groups} total={filtered.length} onJump={jumpToSection} />
-        )}
-
-        {/* Filter strip */}
         <div
           className="flex flex-col sm:flex-row gap-2 px-3 py-2.5"
           style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
@@ -1139,7 +1167,7 @@ export default function OrgNutritionQueuePage() {
             <input
               className="w-full pl-8 pr-7 text-sm py-2 outline-none rounded-sm"
               style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.bodyText }}
-              placeholder="Search by name, team, position…"
+              placeholder="Search by athlete, team, position…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.boxShadow = `0 0 0 3px ${DS.brand}15`; }}
@@ -1182,7 +1210,6 @@ export default function OrgNutritionQueuePage() {
           </div>
         </div>
 
-        {/* Loading skeletons */}
         {loading && !hasAnyRows && (
           <div className="space-y-2">
             <div className="animate-pulse h-14 rounded-sm" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}` }} />
@@ -1196,7 +1223,6 @@ export default function OrgNutritionQueuePage() {
           </div>
         )}
 
-        {/* Empty org */}
         {!loading && !hasAnyRows && (
           <div
             className="p-6"
@@ -1206,10 +1232,10 @@ export default function OrgNutritionQueuePage() {
               className="font-black uppercase mb-1"
               style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.15rem", color: DS.bodyText, letterSpacing: "0.04em" }}
             >
-              No athletes yet
+              No athletes in the queue yet
             </p>
             <p className="text-sm mb-4" style={{ color: DS.labelText }}>
-              Once athletes join your org they'll appear here, sorted by who needs attention first.
+              Once athletes join your org, this page becomes your weekly nutrition accountability board.
             </p>
             <button
               type="button"
@@ -1222,13 +1248,14 @@ export default function OrgNutritionQueuePage() {
           </div>
         )}
 
-        {/* No filter match */}
         {!loading && hasAnyRows && !hasResults && (
           <div
             className="px-4 py-3"
             style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderLeft: `4px solid ${DS.brand}` }}
           >
-            <p className="text-sm font-bold mb-1" style={{ color: DS.bodyText }}>No athletes match your filters.</p>
+            <p className="text-sm font-bold mb-1" style={{ color: DS.bodyText }}>
+              No athletes match your filters.
+            </p>
             <button
               type="button"
               onClick={() => { setSearch(""); setSport("all"); setTeam("all"); }}
@@ -1240,7 +1267,6 @@ export default function OrgNutritionQueuePage() {
           </div>
         )}
 
-        {/* The work */}
         {!loading && hasResults && (
           <div className="space-y-3">
             <ActNowSection
@@ -1269,7 +1295,6 @@ export default function OrgNutritionQueuePage() {
             Updated {lastUpdatedLabel}
           </p>
         )}
-
       </main>
     </div>
   );

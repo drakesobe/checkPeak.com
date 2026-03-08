@@ -1,4 +1,3 @@
-// pages/api/smartstack.js
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
@@ -17,13 +16,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Missing AFFILIATE_TABLE_NAME env var" });
   }
 
-  // Airtable REST API returns max 100 records per page. Must paginate using `offset`.
   const buildUrl = (offset) => {
     const params = new URLSearchParams();
     if (VIEW_ID) params.set("view", VIEW_ID);
-    // optional: enforce page size (max 100)
     params.set("pageSize", "100");
     if (offset) params.set("offset", offset);
+
     return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(
       TABLE_ID
     )}?${params.toString()}`;
@@ -56,22 +54,28 @@ export default async function handler(req, res) {
       allRecords = allRecords.concat(pageRecords);
 
       offset = data.offset;
-      if (!offset) break; // no more pages
+      if (!offset) break;
     }
 
     const stacks = allRecords.map((record) => {
       const f = record.fields || {};
 
       let supplements = [];
-      if (Array.isArray(f["Supplements"])) supplements = f["Supplements"];
-      else if (typeof f["Supplements"] === "string")
+      if (Array.isArray(f["Supplements"])) {
+        supplements = f["Supplements"];
+      } else if (typeof f["Supplements"] === "string") {
         supplements = f["Supplements"]
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
+      }
 
-      const priceNumber = parseFloat(f["Price"] || 0);
-      const servings = f["Servings"] || "";
+      const priceNumber = Number(f["Price"]);
+      const servingsNumber = Number(f["Servings"]);
+
+      const price = Number.isFinite(priceNumber) ? priceNumber : null;
+      const servings = Number.isFinite(servingsNumber) ? servingsNumber : null;
+
       const nutritionLabel = f["Nutrition Label URL"] || "";
       const affiliateLink =
         f["Lo. Amazon/Stripe Link"] ||
@@ -79,12 +83,15 @@ export default async function handler(req, res) {
         f["AffiliateLink"] ||
         "";
       const imageUrl = f["Image URL"] || "";
-      const rating = parseFloat(f["Rating"]) || null;
+      const rating = Number.isFinite(Number(f["Rating"])) ? Number(f["Rating"]) : null;
 
-      let valueScore = parseFloat(f["Value Rating"]) || null;
-      if (!valueScore && priceNumber && servings) {
-        const servingsNumber = parseFloat(servings) || 1;
-        valueScore = (servingsNumber / priceNumber) * 10;
+      // Keep legacy score for fallback / compatibility
+      let valueScore = Number.isFinite(Number(f["Value Rating"]))
+        ? Number(f["Value Rating"])
+        : null;
+
+      if (valueScore == null && price && servings) {
+        valueScore = (servings / price) * 10;
       }
 
       return {
@@ -92,12 +99,23 @@ export default async function handler(req, res) {
         name: f["Product Name"] || "No Name",
         category: f["Category"] || "Misc",
         supplements,
-        notes: `Servings: ${servings || "N/A"} • Price: $${Number.isFinite(priceNumber) ? priceNumber.toFixed(2) : "0.00"}`,
+        notes: `Servings: ${servings ?? "N/A"} • Price: $${
+          price != null ? price.toFixed(2) : "0.00"
+        }`,
         affiliateLink,
         imageUrl,
         nutritionLabel,
         rating,
+
+        // IMPORTANT: expose these so the client can calculate category-bucket value
+        Price: price,
+        Servings: servings,
+        pricePerServing:
+          price != null && servings != null && servings > 0 ? price / servings : null,
+
+        // Legacy / fallback field
         valueScore,
+
         rawFields: f,
       };
     });

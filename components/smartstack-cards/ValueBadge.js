@@ -2,40 +2,69 @@
 
 import Tooltip from "./Tooltip";
 
-const defaultThresholds = { good: 0.8, best: 1.5 };
-
-const categoryThresholds = {
-  "Pre-Workout": { good: 0.8, best: 1.5 },
-  "Protein Powder": { good: 0.8, best: 1.5 },
-  "Energy Drinks": { good: 0.8, best: 1.5 },
-  "Protein Bars": { good: 0.8, best: 1.5 },
-  BCAAs: { good: 0.8, best: 1.5 },
-  Creatine: { good: 0.8, best: 1.5 },
-  Misc: { good: 0.8, best: 1.5 },
+const STYLE_MAP = {
+  "Best Value": {
+    bg: "rgba(34,197,94,0.14)",
+    border: "rgba(34,197,94,0.32)",
+    text: "#86efac",
+    score: "rgba(134,239,172,0.78)",
+  },
+  "Good Value": {
+    bg: "rgba(91,158,201,0.16)",
+    border: "rgba(91,158,201,0.34)",
+    text: "#7cc6f3",
+    score: "rgba(124,198,243,0.78)",
+  },
+  "Decent Value": {
+    bg: "rgba(251,191,36,0.14)",
+    border: "rgba(251,191,36,0.30)",
+    text: "#fcd34d",
+    score: "rgba(252,211,77,0.76)",
+  },
+  "Value N/A": {
+    bg: "rgba(148,163,184,0.12)",
+    border: "rgba(148,163,184,0.24)",
+    text: "rgba(226,232,240,0.78)",
+    score: "rgba(226,232,240,0.55)",
+  },
 };
 
-export default function ValueBadge({ valueScore, category }) {
-  if (valueScore == null || isNaN(valueScore)) return null;
-
-  const thresholds = categoryThresholds[category] || defaultThresholds;
-
-  let label = "Decent Value";
-  let color = "bg-yellow-500"; // Decent Value = yellow (matches page filter)
-
-  if (valueScore >= thresholds.best) {
-    label = "Best Value";
-    color = "bg-green-500"; // Best Value = green
-  } else if (valueScore >= thresholds.good) {
-    label = "Good Value";
-    color = "bg-blue-500"; // Good Value = blue
-  }
+export default function ValueBadge({ valueScore, valueLabel }) {
+  const label = valueLabel || "Value N/A";
+  const theme = STYLE_MAP[label] || STYLE_MAP["Value N/A"];
+  const hasScore = valueScore != null && !isNaN(valueScore);
 
   return (
-    <Tooltip content="A value based on servings-to-price ratio.">
+    <Tooltip content="Value is compared against similar products in the same category.">
       <span
-        className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold text-white ${color}`}
+        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+        style={{
+          background: theme.bg,
+          border: `1px solid ${theme.border}`,
+          color: theme.text,
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+        }}
       >
-        {label} ({valueScore.toFixed(2)})
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ background: theme.text }}
+          aria-hidden="true"
+        />
+        <span>{label}</span>
+        {hasScore && (
+          <span
+            className="font-bold"
+            style={{
+              color: theme.score,
+              fontFamily: "'Barlow Condensed', sans-serif",
+              letterSpacing: "0.03em",
+            }}
+          >
+            {valueScore.toFixed(2)}
+          </span>
+        )}
       </span>
     </Tooltip>
   );

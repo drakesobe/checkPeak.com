@@ -528,11 +528,12 @@ export default function StackCard({
         )}
 
         {/* Value badge */}
-        {stack?.valueScore != null && !isNaN(stack.valueScore) && (
-          <div>
-            <ValueBadge valueScore={stack.valueScore} category={stack.category} />
-          </div>
-        )}
+        <div className="pt-0.5">
+  <ValueBadge
+    valueScore={stack?.valueScore}
+    valueLabel={stack?.valueLabel}
+  />
+</div>
 
         {/* Notes — only if present, as a subtle line */}
         {stack?.notes && (

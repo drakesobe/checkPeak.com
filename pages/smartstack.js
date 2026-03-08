@@ -1,7 +1,7 @@
 // pages/smartstack.js
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuthContext } from "../hooks/useAuth";
 import useMediaQuery from "../hooks/useMediaQuery";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,7 +23,7 @@ import NutritionModal from "../components/Modal/NutritionModal";
 import CompareModal from "../components/Modal/CompareModal";
 
 /* -------------------------------------------------------------------------- */
-/* Shimmer keyframe — injected once, used by LoadingGrid                       */
+/* Shimmer keyframe — injected once, used by LoadingGrid                      */
 /* -------------------------------------------------------------------------- */
 const SHIMMER_STYLE = `
   @keyframes ss-shimmer {
@@ -43,7 +43,7 @@ const SHIMMER_STYLE = `
 `;
 
 /* -------------------------------------------------------------------------- */
-/* Debounce hook                                                               */
+/* Debounce hook                                                              */
 /* -------------------------------------------------------------------------- */
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -55,37 +55,173 @@ function useDebounce(value, delay) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Static data                                                                 */
+/* Static data                                                                */
 /* -------------------------------------------------------------------------- */
 const CATEGORIES = [
   { name: "All",            icon: null           },
-  { name: "Pre-Workout",    icon: <FaBolt />      },
-  { name: "Protein Powder", icon: <FaDumbbell />  },
-  { name: "Energy Drinks",  icon: <FaCoffee />    },
-  { name: "Protein Bars",   icon: <FaAppleAlt />  },
-  { name: "BCAAs",          icon: <FaLeaf />      },
-  { name: "Creatine",       icon: <FaCapsules />  },
-  { name: "Misc",           icon: <FaCapsules />  },
+  { name: "Pre-Workout",    icon: <FaBolt />     },
+  { name: "Protein Powder", icon: <FaDumbbell /> },
+  { name: "Energy Drinks",  icon: <FaCoffee />   },
+  { name: "Protein Bars",   icon: <FaAppleAlt /> },
+  { name: "BCAAs",          icon: <FaLeaf />     },
+  { name: "Vitamins",       icon: <FaCapsules /> },
+  { name: "Berberine",      icon: <FaCapsules /> },
+  { name: "Ashwagandha",    icon: <FaLeaf />     },
+  { name: "Creatine",       icon: <FaCapsules /> },
+  { name: "Misc",           icon: <FaCapsules /> },
 ];
 
-const VALUE_FILTERS = ["Best Value", "Good Value", "Decent Value"];
+const VITAMIN_SUBCATEGORIES = [
+  "All Vitamins",
+  "Vitamin A",
+  "Vitamin B",
+  "Vitamin C",
+  "Vitamin D",
+];
 
-const VALUE_THRESHOLD_GOOD = 0.8;
-const VALUE_THRESHOLD_BEST = 1.5;
+const VALUE_FILTERS = ["Best Value", "Good Value", "Decent Value", "Value N/A"];
 
-// Semantic colour per value tier — used in filter buttons and active pills
+// Thresholds now apply within the product's exact comparison bucket
+const VALUE_THRESHOLD_GOOD = 0.9;
+const VALUE_THRESHOLD_BEST = 1.15;
+const VALUE_MIN_BUCKET_SIZE = 3;
+
 const VALUE_COLOR = {
-  "Best Value":   { bg: "rgba(34,197,94,0.12)",  border: "rgba(34,197,94,0.35)",  text: "#4ade80" },
-  "Good Value":   { bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.35)", text: "#38bdf8" },
+  "Best Value": { bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.35)", text: "#4ade80" },
+  "Good Value": { bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.35)", text: "#38bdf8" },
   "Decent Value": { bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.35)", text: "#fbbf24" },
+  "Value N/A": { bg: "rgba(148,163,184,0.12)", border: "rgba(148,163,184,0.3)", text: "#cbd5e1" },
 };
 
 /* -------------------------------------------------------------------------- */
-/* Helpers                                                                     */
+/* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
-function getValueLabel(stack) {
-  const score = stack.valueScore;
-  if (score == null || isNaN(score)) return "Decent Value";
+function toNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeBucket(v) {
+  return String(v || "").trim();
+}
+
+function getComparisonBucket(stack) {
+  return normalizeBucket(stack?.category);
+}
+
+function getPricePerServing(stack) {
+  const directCandidates = [
+    stack?.pricePerServing,
+    stack?.PricePerServing,
+    stack?.costPerServing,
+    stack?.CostPerServing,
+    stack?.valueBasis,
+    stack?.ValueBasis,
+  ];
+
+  for (const candidate of directCandidates) {
+    const n = toNum(candidate);
+    if (n != null && n > 0) return n;
+  }
+
+  const totalPriceCandidates = [
+    stack?.price,
+    stack?.Price,
+    stack?.salePrice,
+    stack?.SalePrice,
+    stack?.retailPrice,
+    stack?.RetailPrice,
+    stack?.currentPrice,
+    stack?.CurrentPrice,
+    stack?.amazonPrice,
+    stack?.AmazonPrice,
+  ];
+
+  const servingsCandidates = [
+    stack?.servings,
+    stack?.Servings,
+    stack?.servingsPerContainer,
+    stack?.ServingsPerContainer,
+    stack?.ServingCount,
+    stack?.servingCount,
+  ];
+
+  let totalPrice = null;
+  let servings = null;
+
+  for (const candidate of totalPriceCandidates) {
+    const n = toNum(candidate);
+    if (n != null && n > 0) {
+      totalPrice = n;
+      break;
+    }
+  }
+
+  for (const candidate of servingsCandidates) {
+    const n = toNum(candidate);
+    if (n != null && n > 0) {
+      servings = n;
+      break;
+    }
+  }
+
+  if (totalPrice != null && servings != null && servings > 0) {
+    return totalPrice / servings;
+  }
+
+  return null;
+}
+
+function getMedian(values) {
+  const nums = (Array.isArray(values) ? values : [])
+    .map((v) => toNum(v))
+    .filter((v) => v != null && v > 0)
+    .sort((a, b) => a - b);
+
+  if (!nums.length) return null;
+
+  const mid = Math.floor(nums.length / 2);
+  if (nums.length % 2 === 1) return nums[mid];
+  return (nums[mid - 1] + nums[mid]) / 2;
+}
+
+function buildBucketStats(stacks) {
+  const grouped = new Map();
+
+  (Array.isArray(stacks) ? stacks : []).forEach((stack) => {
+    const bucket = getComparisonBucket(stack);
+    const pps = getPricePerServing(stack);
+    if (!bucket || pps == null || pps <= 0) return;
+
+    if (!grouped.has(bucket)) grouped.set(bucket, []);
+    grouped.get(bucket).push(pps);
+  });
+
+  const stats = {};
+  grouped.forEach((prices, bucket) => {
+    stats[bucket] = {
+      count: prices.length,
+      medianPricePerServing: getMedian(prices),
+    };
+  });
+
+  return stats;
+}
+
+function getValueScore(stack, bucketStats) {
+  const bucket = getComparisonBucket(stack);
+  const pps = getPricePerServing(stack);
+  const bucketInfo = bucketStats?.[bucket];
+
+  if (!bucket || pps == null || pps <= 0) return null;
+  if (!bucketInfo?.medianPricePerServing || bucketInfo.count < VALUE_MIN_BUCKET_SIZE) return null;
+
+  return bucketInfo.medianPricePerServing / pps;
+}
+
+function getValueLabel(stack, bucketStats) {
+  const score = getValueScore(stack, bucketStats);
+  if (score == null || Number.isNaN(score)) return "Value N/A";
   if (score >= VALUE_THRESHOLD_BEST) return "Best Value";
   if (score >= VALUE_THRESHOLD_GOOD) return "Good Value";
   return "Decent Value";
@@ -98,7 +234,9 @@ function FilterDrawer({
   open,
   onClose,
   activeCategory,
-  setActiveCategory,
+  activeVitaminCategory,
+  setActiveVitaminCategory,
+  handleCategoryChange,
   activeValueFilters,
   toggleValueFilter,
   showSavedOnly,
@@ -110,7 +248,9 @@ function FilterDrawer({
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [open]);
 
   return (
@@ -129,17 +269,16 @@ function FilterDrawer({
           <motion.div
             className="fixed left-0 top-0 bottom-0 z-50 w-80 max-w-[90vw] flex flex-col"
             style={{
-              background:  "#0D1117",
+              background: "#0D1117",
               borderRight: "1px solid rgba(255,255,255,0.07)",
-              boxShadow:   "8px 0 32px rgba(0,0,0,0.5)",
-              fontFamily:  "'Barlow', sans-serif",
+              boxShadow: "8px 0 32px rgba(0,0,0,0.5)",
+              fontFamily: "'Barlow', sans-serif",
             }}
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
           >
-            {/* Header */}
             <div
               className="flex items-center justify-between px-5 py-4 border-b shrink-0"
               style={{ borderColor: "rgba(255,255,255,0.06)" }}
@@ -148,7 +287,7 @@ function FilterDrawer({
                 <p
                   className="text-[10px] font-semibold uppercase tracking-widest"
                   style={{
-                    color:      "rgba(255,255,255,0.35)",
+                    color: "rgba(255,255,255,0.35)",
                     fontFamily: "'Barlow Condensed', sans-serif",
                   }}
                 >
@@ -172,10 +311,7 @@ function FilterDrawer({
               </button>
             </div>
 
-            {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-
-              {/* Categories */}
               <div>
                 <p
                   className="text-[10px] font-semibold uppercase tracking-widest mb-3"
@@ -190,12 +326,12 @@ function FilterDrawer({
                       <button
                         key={cat.name}
                         type="button"
-                        onClick={() => { setActiveCategory(cat.name); onClose(); }}
+                        onClick={() => handleCategoryChange(cat.name)}
                         className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left"
                         style={{
                           background: active ? "rgba(91,158,201,0.12)" : "transparent",
-                          border:     active ? "1px solid rgba(91,158,201,0.3)" : "1px solid transparent",
-                          color:      active ? "#5B9EC9" : "rgba(255,255,255,0.72)",
+                          border: active ? "1px solid rgba(91,158,201,0.3)" : "1px solid transparent",
+                          color: active ? "#5B9EC9" : "rgba(255,255,255,0.72)",
                         }}
                       >
                         {cat.icon && (
@@ -204,16 +340,45 @@ function FilterDrawer({
                           </span>
                         )}
                         {cat.name}
-                        {active && (
-                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#5B9EC9] inline-block" />
-                        )}
+                        {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#5B9EC9] inline-block" />}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Value signal */}
+              {activeCategory === "Vitamins" && (
+                <div>
+                  <p
+                    className="text-[10px] font-semibold uppercase tracking-widest mb-3"
+                    style={{ color: "rgba(255,255,255,0.35)" }}
+                  >
+                    Vitamin type
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {VITAMIN_SUBCATEGORIES.map((subcat) => {
+                      const active = activeVitaminCategory === subcat;
+                      return (
+                        <button
+                          key={subcat}
+                          type="button"
+                          onClick={() => setActiveVitaminCategory(subcat)}
+                          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left"
+                          style={{
+                            background: active ? "rgba(91,158,201,0.12)" : "transparent",
+                            border: active ? "1px solid rgba(91,158,201,0.3)" : "1px solid transparent",
+                            color: active ? "#5B9EC9" : "rgba(255,255,255,0.72)",
+                          }}
+                        >
+                          {subcat}
+                          {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#5B9EC9] inline-block" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <p
                   className="text-[10px] font-semibold uppercase tracking-widest mb-3"
@@ -232,9 +397,9 @@ function FilterDrawer({
                         onClick={() => toggleValueFilter(filter)}
                         className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left"
                         style={{
-                          background: active ? colors.bg   : "rgba(255,255,255,0.03)",
-                          border:     active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)",
-                          color:      active ? colors.text : "rgba(255,255,255,0.72)",
+                          background: active ? colors.bg : "rgba(255,255,255,0.03)",
+                          border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)",
+                          color: active ? colors.text : "rgba(255,255,255,0.72)",
                         }}
                       >
                         <span
@@ -249,7 +414,6 @@ function FilterDrawer({
                 </div>
               </div>
 
-              {/* Saved only */}
               <div>
                 <p
                   className="text-[10px] font-semibold uppercase tracking-widest mb-3"
@@ -263,20 +427,20 @@ function FilterDrawer({
                   className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left"
                   style={{
                     background: showSavedOnly ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.03)",
-                    border:     showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.07)",
-                    color:      showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.72)",
+                    border: showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.07)",
+                    color: showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.72)",
                   }}
                 >
-                  {showSavedOnly
-                    ? <FaStar    size={12} style={{ color: "#5B9EC9" }} />
-                    : <FaRegStar size={12} style={{ color: "rgba(255,255,255,0.4)" }} />
-                  }
+                  {showSavedOnly ? (
+                    <FaStar size={12} style={{ color: "#5B9EC9" }} />
+                  ) : (
+                    <FaRegStar size={12} style={{ color: "rgba(255,255,255,0.4)" }} />
+                  )}
                   {showSavedOnly ? "Showing saved only" : "Show saved only"}
                 </button>
               </div>
             </div>
 
-            {/* Footer — clear all */}
             {hasActiveFilters && (
               <div
                 className="shrink-0 px-5 py-4 border-t"
@@ -284,15 +448,22 @@ function FilterDrawer({
               >
                 <button
                   type="button"
-                  onClick={() => { onClearAll(); onClose(); }}
+                  onClick={() => {
+                    onClearAll();
+                    onClose();
+                  }}
                   className="w-full py-2.5 rounded-xl text-xs font-semibold transition-colors"
                   style={{
                     background: "rgba(255,255,255,0.04)",
-                    border:     "1px solid rgba(255,255,255,0.08)",
-                    color:      "rgba(255,255,255,0.65)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.65)",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "#fff";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.65)";
+                  }}
                 >
                   Clear all filters
                 </button>
@@ -306,11 +477,13 @@ function FilterDrawer({
 }
 
 /* -------------------------------------------------------------------------- */
-/* ActiveFilterPills                                                           */
+/* ActiveFilterPills                                                          */
 /* -------------------------------------------------------------------------- */
 function ActiveFilterPills({
   activeCategory,
   setActiveCategory,
+  activeVitaminCategory,
+  setActiveVitaminCategory,
   activeValueFilters,
   toggleValueFilter,
   showSavedOnly,
@@ -320,29 +493,38 @@ function ActiveFilterPills({
 
   if (activeCategory !== "All") {
     pills.push({
-      key:      `cat-${activeCategory}`,
-      label:    activeCategory,
+      key: `cat-${activeCategory}`,
+      label: activeCategory,
       onRemove: () => setActiveCategory("All"),
-      color:    { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" },
+      color: { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" },
+    });
+  }
+
+  if (activeCategory === "Vitamins" && activeVitaminCategory !== "All Vitamins") {
+    pills.push({
+      key: `vit-${activeVitaminCategory}`,
+      label: activeVitaminCategory,
+      onRemove: () => setActiveVitaminCategory("All Vitamins"),
+      color: { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" },
     });
   }
 
   activeValueFilters.forEach((f) => {
     const c = VALUE_COLOR[f];
     pills.push({
-      key:      `val-${f}`,
-      label:    f,
+      key: `val-${f}`,
+      label: f,
       onRemove: () => toggleValueFilter(f),
-      color:    { text: c.text, border: c.border, bg: c.bg },
+      color: { text: c.text, border: c.border, bg: c.bg },
     });
   });
 
   if (showSavedOnly) {
     pills.push({
-      key:      "saved",
-      label:    "Saved only",
+      key: "saved",
+      label: "Saved only",
       onRemove: () => setShowSavedOnly(false),
-      color:    { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" },
+      color: { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" },
     });
   }
 
@@ -370,8 +552,8 @@ function ActiveFilterPills({
           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
           style={{
             background: pill.color.bg,
-            border:     `1px solid ${pill.color.border}`,
-            color:      pill.color.text,
+            border: `1px solid ${pill.color.border}`,
+            color: pill.color.text,
           }}
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
@@ -386,7 +568,7 @@ function ActiveFilterPills({
 }
 
 /* -------------------------------------------------------------------------- */
-/* LoadingGrid — shimmer skeleton cards while data fetches                    */
+/* LoadingGrid                                                                */
 /* -------------------------------------------------------------------------- */
 function LoadingGrid() {
   return (
@@ -398,22 +580,20 @@ function LoadingGrid() {
             key={i}
             className="overflow-hidden flex flex-col"
             style={{
-              background:   "#0D1117",
-              border:       "1px solid rgba(255,255,255,0.06)",
+              background: "#0D1117",
+              border: "1px solid rgba(255,255,255,0.06)",
               borderRadius: "16px",
             }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: i * 0.04 }}
           >
-            {/* Image — matches aspect-[4/3] with overlay button ghosts */}
             <div className="relative w-full ss-shimmer" style={{ aspectRatio: "4/3" }}>
               <div className="absolute top-2.5 left-2.5 w-8 h-8 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
               <div className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
               <div className="absolute bottom-2.5 left-2.5 h-4 w-16 rounded-md" style={{ background: "rgba(255,255,255,0.04)" }} />
             </div>
 
-            {/* Body — mirrors px-3.5 pt-3 pb-3.5 gap-2.5 */}
             <div className="flex flex-col flex-1 px-3.5 pt-3 pb-3.5 gap-2.5">
               <div className="space-y-1.5">
                 <div className="h-4 rounded ss-shimmer" style={{ width: "85%" }} />
@@ -438,7 +618,7 @@ function LoadingGrid() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* EmptyState                                                                  */
+/* EmptyState                                                                 */
 /* -------------------------------------------------------------------------- */
 function EmptyState({ onClearAll }) {
   return (
@@ -448,7 +628,6 @@ function EmptyState({ onClearAll }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Icon with subtle glow ring */}
       <div className="relative mb-6">
         <div
           className="absolute inset-0 rounded-2xl blur-xl opacity-20"
@@ -459,7 +638,7 @@ function EmptyState({ onClearAll }) {
           className="relative w-16 h-16 rounded-2xl flex items-center justify-center"
           style={{
             background: "rgba(91,158,201,0.08)",
-            border:     "1px solid rgba(91,158,201,0.2)",
+            border: "1px solid rgba(91,158,201,0.2)",
           }}
         >
           <FaCapsules size={24} style={{ color: "rgba(91,158,201,0.7)" }} />
@@ -484,10 +663,14 @@ function EmptyState({ onClearAll }) {
         className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-white transition-all"
         style={{
           background: "rgba(91,158,201,0.12)",
-          border:     "1px solid rgba(91,158,201,0.3)",
+          border: "1px solid rgba(91,158,201,0.3)",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(91,158,201,0.2)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(91,158,201,0.12)"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(91,158,201,0.2)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "rgba(91,158,201,0.12)";
+        }}
       >
         <FaTimes size={10} />
         Clear all filters
@@ -497,39 +680,35 @@ function EmptyState({ onClearAll }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* SmartStackPage                                                              */
+/* SmartStackPage                                                             */
 /* -------------------------------------------------------------------------- */
 export default function SmartStackPage() {
   const { user } = useAuthContext();
 
-  const userEmail = (user?.Email || user?.email || "")
-    .toString().trim().toLowerCase();
+  const userEmail = (user?.Email || user?.email || "").toString().trim().toLowerCase();
   const hasUserEmail = userEmail.includes("@");
 
-  /* ── Data ───────────────────────────────────────────────────────────────── */
-  const [allStacks,   setAllStacks]   = useState([]);
+  const [allStacks, setAllStacks] = useState([]);
   const [savedStacks, setSavedStacks] = useState([]);
-  const [loadError,   setLoadError]   = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
-  /* ── UI state ───────────────────────────────────────────────────────────── */
-  const [modalStack,            setModalStack]            = useState(null);
-  const [compareModalOpen,      setCompareModalOpen]      = useState(false);
+  const [modalStack, setModalStack] = useState(null);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
   const [selectedCompareStacks, setSelectedCompareStacks] = useState([]);
-  const [filterDrawerOpen,      setFilterDrawerOpen]      = useState(false);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
-  const [loading,            setLoading]            = useState(false);
-  const [activeCategory,     setActiveCategory]     = useState("All");
+  const [loading, setLoading] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeVitaminCategory, setActiveVitaminCategory] = useState("All Vitamins");
   const [activeValueFilters, setActiveValueFilters] = useState([]);
-  const [searchQuery,        setSearchQuery]        = useState("");
-  const [showSavedOnly,      setShowSavedOnly]      = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  const isXL          = useMediaQuery("(min-width: 1280px)");
+  const isXL = useMediaQuery("(min-width: 1280px)");
   const itemsPerChunk = isXL ? 25 : 24;
   const [visibleLimit, setVisibleLimit] = useState(itemsPerChunk);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
-
-  /* ── Derived ────────────────────────────────────────────────────────────── */
 
   const savedStackIDs = useMemo(
     () =>
@@ -542,34 +721,36 @@ export default function SmartStackPage() {
     [savedStacks]
   );
 
+  const bucketStats = useMemo(() => buildBucketStats(allStacks), [allStacks]);
+
   const compareCount = selectedCompareStacks.length;
-  const canCompare   = compareCount >= 2 && compareCount <= 3;
+  const canCompare = compareCount >= 2 && compareCount <= 3;
 
   const hasActiveFilters =
     activeCategory !== "All" ||
+    (activeCategory === "Vitamins" && activeVitaminCategory !== "All Vitamins") ||
     activeValueFilters.length > 0 ||
     showSavedOnly ||
     debouncedSearchQuery.length > 0;
 
-  // Count of active non-search filters (used on the mobile Filters button badge)
   const activeFilterCount =
     (activeCategory !== "All" ? 1 : 0) +
+    (activeCategory === "Vitamins" && activeVitaminCategory !== "All Vitamins" ? 1 : 0) +
     activeValueFilters.length +
     (showSavedOnly ? 1 : 0);
 
   const gridKey = useMemo(
     () =>
       JSON.stringify({
-        cat:   activeCategory,
-        val:   [...activeValueFilters].sort(),
-        q:     debouncedSearchQuery.toLowerCase(),
+        cat: activeCategory,
+        vitamin: activeVitaminCategory,
+        val: [...activeValueFilters].sort(),
+        q: debouncedSearchQuery.toLowerCase(),
         saved: showSavedOnly,
         limit: visibleLimit,
       }),
-    [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, visibleLimit]
+    [activeCategory, activeVitaminCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, visibleLimit]
   );
-
-  /* ── Data loading ───────────────────────────────────────────────────────── */
 
   useEffect(() => {
     let cancelled = false;
@@ -589,17 +770,20 @@ export default function SmartStackPage() {
       }
     }
     loadStacks();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!hasUserEmail) { setSavedStacks([]); return; }
+    if (!hasUserEmail) {
+      setSavedStacks([]);
+      return;
+    }
     let cancelled = false;
     async function loadSaved() {
       try {
-        const res = await fetch(
-          `/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}&t=${Date.now()}`
-        );
+        const res = await fetch(`/api/getSavedStacks?UserEmail=${encodeURIComponent(userEmail)}&t=${Date.now()}`);
         const data = res.ok ? await res.json() : { savedStacks: [] };
         if (!cancelled) setSavedStacks(data.savedStacks || []);
       } catch (err) {
@@ -608,81 +792,106 @@ export default function SmartStackPage() {
       }
     }
     loadSaved();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [hasUserEmail, userEmail]);
-
-  /* ── Reset limit when filters change ───────────────────────────────────── */
 
   useEffect(() => {
     setVisibleLimit(itemsPerChunk);
-  }, [activeCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
-
-  /* ── Filtered stacks ────────────────────────────────────────────────────── */
+  }, [activeCategory, activeVitaminCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
 
   const filteredStacks = useMemo(() => {
     let result = allStacks;
 
     if (activeCategory !== "All") {
-      result = result.filter((s) => s.category === activeCategory);
+      if (activeCategory === "Vitamins") {
+        const vitaminCategories = ["Vitamin A", "Vitamin B", "Vitamin C", "Vitamin D"];
+
+        result = result.filter((s) => vitaminCategories.includes(String(s.category || "").trim()));
+
+        if (activeVitaminCategory !== "All Vitamins") {
+          result = result.filter((s) => String(s.category || "").trim() === activeVitaminCategory);
+        }
+      } else {
+        result = result.filter((s) => String(s.category || "").trim() === activeCategory);
+      }
     }
+
     if (activeValueFilters.length > 0) {
-      result = result.filter((s) => activeValueFilters.includes(getValueLabel(s)));
+      result = result.filter((s) => activeValueFilters.includes(getValueLabel(s, bucketStats)));
     }
+
     if (showSavedOnly) {
-      result = savedStackIDs.length === 0
-        ? []
-        : result.filter((s) => savedStackIDs.includes(String(s.id)));
+      result = savedStackIDs.length === 0 ? [] : result.filter((s) => savedStackIDs.includes(String(s.id)));
     }
+
     if (debouncedSearchQuery) {
       const q = debouncedSearchQuery.toLowerCase();
       result = result.filter((s) => s.name?.toLowerCase().includes(q));
     }
 
     return result;
-  }, [allStacks, activeCategory, activeValueFilters, showSavedOnly, savedStackIDs, debouncedSearchQuery]);
+  }, [
+    allStacks,
+    activeCategory,
+    activeVitaminCategory,
+    activeValueFilters,
+    bucketStats,
+    showSavedOnly,
+    savedStackIDs,
+    debouncedSearchQuery,
+  ]);
 
-  /* ── Pagination ─────────────────────────────────────────────────────────── */
-
-  const totalCount     = allStacks.length;
-  const visibleCount   = filteredStacks.length;
+  const totalCount = allStacks.length;
+  const visibleCount = filteredStacks.length;
   const effectiveLimit = visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
-  const pageStacks     = filteredStacks.slice(0, effectiveLimit);
-  const canLoadMore    = effectiveLimit < visibleCount;
+  const pageStacks = filteredStacks.map((stack) => ({
+    ...stack,
+    valueScore: getValueScore(stack, bucketStats),
+    valueLabel: getValueLabel(stack, bucketStats),
+    comparisonBucket: getComparisonBucket(stack),
+  })).slice(0, effectiveLimit);
+  const canLoadMore = effectiveLimit < visibleCount;
 
-  const handleLoadMore = useCallback(
-    () => setVisibleLimit((prev) => prev + itemsPerChunk),
-    [itemsPerChunk]
-  );
-
-  /* ── Filter helpers ─────────────────────────────────────────────────────── */
+  const handleLoadMore = useCallback(() => setVisibleLimit((prev) => prev + itemsPerChunk), [itemsPerChunk]);
 
   const toggleValueFilter = useCallback((label) => {
-    setActiveValueFilters((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
-    );
+    setActiveValueFilters((prev) => (prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]));
+  }, []);
+
+  const handleCategoryChange = useCallback((category) => {
+    setActiveCategory(category);
+    if (category === "Vitamins") {
+      setActiveVitaminCategory((prev) => prev || "All Vitamins");
+    } else {
+      setActiveVitaminCategory("All Vitamins");
+    }
   }, []);
 
   const clearAllFilters = useCallback(() => {
     setActiveCategory("All");
+    setActiveVitaminCategory("All Vitamins");
     setActiveValueFilters([]);
     setShowSavedOnly(false);
     setSearchQuery("");
   }, []);
 
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                    */
-  /* ------------------------------------------------------------------------ */
   return (
     <div
       className="min-h-screen text-white"
       style={{ background: "#0A0C10", fontFamily: "'Barlow', sans-serif" }}
     >
-      {/* Mobile filter drawer */}
       <FilterDrawer
         open={filterDrawerOpen}
         onClose={() => setFilterDrawerOpen(false)}
         activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
+        activeVitaminCategory={activeVitaminCategory}
+        setActiveVitaminCategory={setActiveVitaminCategory}
+        handleCategoryChange={(cat) => {
+          handleCategoryChange(cat);
+          if (cat !== "Vitamins") setFilterDrawerOpen(false);
+        }}
         activeValueFilters={activeValueFilters}
         toggleValueFilter={toggleValueFilter}
         showSavedOnly={showSavedOnly}
@@ -692,20 +901,16 @@ export default function SmartStackPage() {
       />
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 pb-24 space-y-6">
-
-        {/* ── Page header ─────────────────────────────────────────────────── */}
         <section>
           <div className="flex items-start gap-4">
             <div className="flex-1 min-w-0">
-
-              {/* Badge + count */}
               <div className="flex items-center gap-3 mb-3">
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest shrink-0"
                   style={{
                     background: "rgba(91,158,201,0.1)",
-                    border:     "1px solid rgba(91,158,201,0.25)",
-                    color:      "#5B9EC9",
+                    border: "1px solid rgba(91,158,201,0.25)",
+                    color: "#5B9EC9",
                     fontFamily: "'Barlow Condensed', sans-serif",
                   }}
                 >
@@ -716,17 +921,11 @@ export default function SmartStackPage() {
                   SmartStack
                 </span>
 
-                {/* Catalog count — shown once data loads */}
                 {totalCount > 0 && !loading && (
-                  <span
-                    className="text-[11px]"
-                    style={{ color: "rgba(255,255,255,0.45)" }}
-                  >
+                  <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
                     {totalCount} stacks in catalog
                     {visibleCount !== totalCount && (
-                      <span style={{ color: "rgba(255,255,255,0.55)" }}>
-                        {" "}· {visibleCount} matching
-                      </span>
+                      <span style={{ color: "rgba(255,255,255,0.55)" }}> · {visibleCount} matching</span>
                     )}
                   </span>
                 )}
@@ -735,47 +934,27 @@ export default function SmartStackPage() {
               <h1
                 className="text-3xl sm:text-4xl font-black text-white leading-tight"
                 style={{
-                  fontFamily:    "'Barlow Condensed', sans-serif",
+                  fontFamily: "'Barlow Condensed', sans-serif",
                   letterSpacing: "0.02em",
                 }}
               >
                 Discover better stacks.
               </h1>
-              <p
-                className="mt-2 text-sm max-w-lg leading-relaxed"
-                style={{ color: "rgba(255,255,255,0.65)" }}
-              >
-                Browse formulations, compare products side by side, and filter by
-                category or value signal.
+              <p className="mt-2 text-sm max-w-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+                Browse formulations, compare products side by side, and filter by category or value signal.
               </p>
             </div>
           </div>
         </section>
 
-        {/* ── Sticky filter bar ───────────────────────────────────────────── */}
-        {/*
-          Two-row layout:
-            Row 1 — search + filter controls
-            Row 2 — active filter pills (only rendered when filters are on,
-                     lives INSIDE the bar so pills are clearly owned by it
-                     and don't float ambiguously over the card grid)
-
-          Category filters and value filters are visually separated:
-            Categories — rounded-lg pills with icons, labelled "Category"
-            Value       — rounded-full pills with a colored dot prefix,
-                          labelled "Value", separated by a vertical rule
-          This makes it immediately clear that the two groups filter
-          different dimensions of the data.
-        */}
         <div
           className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6"
           style={{
-            background:     "rgba(10,12,16,0.96)",
+            background: "rgba(10,12,16,0.96)",
             backdropFilter: "blur(14px)",
-            borderBottom:   "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          {/* ── Row 1: search (full width) ── */}
           <div className="max-w-7xl mx-auto pt-3 pb-2">
             <div className="relative">
               <input
@@ -786,14 +965,14 @@ export default function SmartStackPage() {
                 className="w-full rounded-xl py-2.5 pl-9 pr-8 text-sm text-white placeholder-white/30 transition-all outline-none"
                 style={{
                   background: "rgba(255,255,255,0.05)",
-                  border:     "1px solid rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.08)",
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.border     = "1px solid rgba(91,158,201,0.4)";
+                  e.currentTarget.style.border = "1px solid rgba(91,158,201,0.4)";
                   e.currentTarget.style.background = "rgba(91,158,201,0.05)";
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.border     = "1px solid rgba(255,255,255,0.08)";
+                  e.currentTarget.style.border = "1px solid rgba(255,255,255,0.08)";
                   e.currentTarget.style.background = "rgba(255,255,255,0.05)";
                 }}
                 aria-label="Search stacks"
@@ -816,8 +995,12 @@ export default function SmartStackPage() {
                   onClick={() => setSearchQuery("")}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full transition-colors"
                   style={{ color: "rgba(255,255,255,0.4)" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "#fff";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+                  }}
                   aria-label="Clear search"
                 >
                   <FaTimes size={10} />
@@ -826,12 +1009,10 @@ export default function SmartStackPage() {
             </div>
           </div>
 
-          {/* ── Row 2: Category + mobile Filters button ── */}
           <div
             className="max-w-7xl mx-auto flex items-center gap-2.5 py-1.5"
             style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
           >
-            {/* lg:+ — category pills */}
             <div className="hidden lg:flex items-center gap-1.5 flex-1 min-w-0">
               <span
                 className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none"
@@ -845,34 +1026,31 @@ export default function SmartStackPage() {
                   <motion.button
                     key={cat.name}
                     type="button"
-                    onClick={() => setActiveCategory(cat.name)}
+                    onClick={() => handleCategoryChange(cat.name)}
                     whileHover={{ scale: 1.04 }}
                     whileTap={{ scale: 0.96 }}
                     className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all shrink-0"
                     style={{
                       background: active ? "rgba(91,158,201,0.15)" : "rgba(255,255,255,0.04)",
-                      border:     active ? "1px solid rgba(91,158,201,0.35)" : "1px solid rgba(255,255,255,0.07)",
-                      color:      active ? "#5B9EC9" : "rgba(255,255,255,0.6)",
+                      border: active ? "1px solid rgba(91,158,201,0.35)" : "1px solid rgba(255,255,255,0.07)",
+                      color: active ? "#5B9EC9" : "rgba(255,255,255,0.6)",
                     }}
                   >
-                    {cat.icon && (
-                      <span style={{ fontSize: 10 }} aria-hidden="true">{cat.icon}</span>
-                    )}
+                    {cat.icon && <span style={{ fontSize: 10 }}>{cat.icon}</span>}
                     {cat.name}
                   </motion.button>
                 );
               })}
             </div>
 
-            {/* < lg: Filter button */}
             <button
               type="button"
               onClick={() => setFilterDrawerOpen(true)}
               className="lg:hidden flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all shrink-0"
               style={{
                 background: activeFilterCount > 0 ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.05)",
-                border:     activeFilterCount > 0 ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.08)",
-                color:      activeFilterCount > 0 ? "#5B9EC9" : "rgba(255,255,255,0.65)",
+                border: activeFilterCount > 0 ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                color: activeFilterCount > 0 ? "#5B9EC9" : "rgba(255,255,255,0.65)",
               }}
               aria-label="Open filters"
             >
@@ -890,7 +1068,41 @@ export default function SmartStackPage() {
             </button>
           </div>
 
-          {/* ── Row 3: Value + Saved (lg:+ only) ── */}
+          {activeCategory === "Vitamins" && (
+            <div
+              className="hidden lg:flex max-w-7xl mx-auto items-center gap-2.5 py-1.5"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+            >
+              <span
+                className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none"
+                style={{ color: "rgba(255,255,255,0.25)" }}
+              >
+                Vitamin
+              </span>
+
+              {VITAMIN_SUBCATEGORIES.map((subcat) => {
+                const active = activeVitaminCategory === subcat;
+                return (
+                  <motion.button
+                    key={subcat}
+                    type="button"
+                    onClick={() => setActiveVitaminCategory(subcat)}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
+                    style={{
+                      background: active ? "rgba(91,158,201,0.15)" : "rgba(255,255,255,0.04)",
+                      border: active ? "1px solid rgba(91,158,201,0.35)" : "1px solid rgba(255,255,255,0.07)",
+                      color: active ? "#5B9EC9" : "rgba(255,255,255,0.6)",
+                    }}
+                  >
+                    {subcat}
+                  </motion.button>
+                );
+              })}
+            </div>
+          )}
+
           <div
             className="hidden lg:flex max-w-7xl mx-auto items-center gap-2.5 py-1.5 pb-3"
             style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
@@ -913,9 +1125,9 @@ export default function SmartStackPage() {
                   whileTap={{ scale: 0.96 }}
                   className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
                   style={{
-                    background: active ? colors.bg   : "rgba(255,255,255,0.04)",
-                    border:     active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)",
-                    color:      active ? colors.text : "rgba(255,255,255,0.6)",
+                    background: active ? colors.bg : "rgba(255,255,255,0.04)",
+                    border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)",
+                    color: active ? colors.text : "rgba(255,255,255,0.6)",
                   }}
                 >
                   <span
@@ -928,7 +1140,6 @@ export default function SmartStackPage() {
               );
             })}
 
-            {/* Saved — lives here since it's a secondary dimension like value */}
             <div
               aria-hidden="true"
               className="w-px self-stretch ml-1"
@@ -942,20 +1153,16 @@ export default function SmartStackPage() {
               className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
               style={{
                 background: showSavedOnly ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.04)",
-                border:     showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.07)",
-                color:      showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.6)",
+                border: showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.07)",
+                color: showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.6)",
               }}
               aria-pressed={showSavedOnly}
             >
-              {showSavedOnly
-                ? <FaStar    size={11} style={{ color: "#5B9EC9" }} />
-                : <FaRegStar size={11} />
-              }
+              {showSavedOnly ? <FaStar size={11} style={{ color: "#5B9EC9" }} /> : <FaRegStar size={11} />}
               Saved
             </motion.button>
           </div>
 
-          {/* ── Row 3: active filter pills — inside the bar, clearly owned by it ── */}
           <AnimatePresence>
             {hasActiveFilters && (
               <motion.div
@@ -966,15 +1173,12 @@ export default function SmartStackPage() {
                 transition={{ duration: 0.18 }}
                 style={{ overflow: "hidden" }}
               >
-                {/* Top rule to separate row 1 from row 2 */}
-                <div
-                  aria-hidden="true"
-                  className="mb-2.5"
-                  style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
-                />
+                <div aria-hidden="true" className="mb-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} />
                 <ActiveFilterPills
                   activeCategory={activeCategory}
                   setActiveCategory={setActiveCategory}
+                  activeVitaminCategory={activeVitaminCategory}
+                  setActiveVitaminCategory={setActiveVitaminCategory}
                   activeValueFilters={activeValueFilters}
                   toggleValueFilter={toggleValueFilter}
                   showSavedOnly={showSavedOnly}
@@ -985,7 +1189,6 @@ export default function SmartStackPage() {
           </AnimatePresence>
         </div>
 
-        {/* ── Error banner ─────────────────────────────────────────────────── */}
         <AnimatePresence>
           {loadError && !loading && (
             <motion.div
@@ -995,8 +1198,8 @@ export default function SmartStackPage() {
               className="rounded-xl px-5 py-4 text-sm"
               style={{
                 background: "rgba(232,58,47,0.08)",
-                border:     "1px solid rgba(232,58,47,0.25)",
-                color:      "#E83A2F",
+                border: "1px solid rgba(232,58,47,0.25)",
+                color: "#E83A2F",
               }}
               role="alert"
             >
@@ -1005,21 +1208,14 @@ export default function SmartStackPage() {
           )}
         </AnimatePresence>
 
-        {/* ── Results ──────────────────────────────────────────────────────── */}
         <section>
           {loading ? (
             <LoadingGrid />
           ) : (
             <>
-              {/* Result count — readable but not dominant */}
               {visibleCount > 0 && (
-                <p
-                  className="mb-4 text-[11px]"
-                  style={{ color: "rgba(255,255,255,0.45)" }}
-                >
-                  Showing{" "}
-                  <span style={{ color: "rgba(255,255,255,0.8)" }}>{effectiveLimit}</span>
-                  {" "}of{" "}
+                <p className="mb-4 text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  Showing <span style={{ color: "rgba(255,255,255,0.8)" }}>{effectiveLimit}</span> of{" "}
                   <span style={{ color: "rgba(255,255,255,0.8)" }}>{visibleCount}</span>
                   {visibleCount !== totalCount && " matching stacks"}
                 </p>
@@ -1053,7 +1249,6 @@ export default function SmartStackPage() {
                 )}
               </AnimatePresence>
 
-              {/* Load more */}
               {canLoadMore && (
                 <div className="mt-10 flex justify-center">
                   <motion.button
@@ -1064,7 +1259,7 @@ export default function SmartStackPage() {
                     className="flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold text-white transition-all"
                     style={{
                       background: "rgba(255,255,255,0.04)",
-                      border:     "1px solid rgba(255,255,255,0.1)",
+                      border: "1px solid rgba(255,255,255,0.1)",
                     }}
                   >
                     <FaChevronDown size={10} style={{ color: "rgba(255,255,255,0.4)" }} />
@@ -1073,45 +1268,32 @@ export default function SmartStackPage() {
                 </div>
               )}
 
-              {/* End of results */}
               {!canLoadMore && visibleCount > 0 && (
-                <p
-                  className="mt-10 text-center text-[11px]"
-                  style={{ color: "rgba(255,255,255,0.28)" }}
-                >
+                <p className="mt-10 text-center text-[11px]" style={{ color: "rgba(255,255,255,0.28)" }}>
                   All {visibleCount} stacks shown — adjust filters to explore more.
                 </p>
               )}
             </>
           )}
         </section>
-
       </main>
 
-      {/* ── Compare bar ──────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {compareCount > 0 && (
           <>
-            {/*
-              Mobile compare bar
-              FIX: now shows stack name chips above the button so users
-              know exactly which stacks are selected without having to
-              remember or scroll back up to check the cards.
-            */}
             <motion.div
               className="fixed bottom-0 left-0 right-0 z-50 px-4 pt-3 pb-safe md:hidden"
               style={{
-                background:     "rgba(10,12,16,0.97)",
+                background: "rgba(10,12,16,0.97)",
                 backdropFilter: "blur(12px)",
-                borderTop:      "1px solid rgba(255,255,255,0.07)",
-                paddingBottom:  "max(12px, env(safe-area-inset-bottom))",
+                borderTop: "1px solid rgba(255,255,255,0.07)",
+                paddingBottom: "max(12px, env(safe-area-inset-bottom))",
               }}
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
             >
-              {/* Stack name chips */}
               <div className="flex items-center gap-2 mb-2.5 overflow-x-auto scrollbar-none">
                 <span
                   className="text-[10px] font-semibold uppercase tracking-widest shrink-0"
@@ -1125,17 +1307,15 @@ export default function SmartStackPage() {
                     className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium shrink-0"
                     style={{
                       background: "rgba(255,255,255,0.06)",
-                      border:     "1px solid rgba(255,255,255,0.1)",
-                      color:      "rgba(255,255,255,0.8)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.8)",
                     }}
                   >
                     <span className="max-w-[100px] truncate">{stack.name}</span>
                     <button
                       type="button"
                       onClick={() =>
-                        setSelectedCompareStacks((prev) =>
-                          prev.filter((s) => s.id !== stack.id)
-                        )
+                        setSelectedCompareStacks((prev) => prev.filter((s) => s.id !== stack.id))
                       }
                       style={{ color: "rgba(255,255,255,0.35)" }}
                       aria-label={`Remove ${stack.name} from compare`}
@@ -1146,44 +1326,36 @@ export default function SmartStackPage() {
                 ))}
               </div>
 
-              {/* Action button */}
               <button
                 type="button"
                 disabled={!canCompare}
                 onClick={() => setCompareModalOpen(true)}
                 className="w-full rounded-xl py-3 text-sm font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
-                  background:    canCompare ? "#5B9EC9" : "rgba(255,255,255,0.1)",
-                  fontFamily:    "'Barlow Condensed', sans-serif",
+                  background: canCompare ? "#5B9EC9" : "rgba(255,255,255,0.1)",
+                  fontFamily: "'Barlow Condensed', sans-serif",
                   letterSpacing: "0.05em",
                 }}
               >
-                {canCompare
-                  ? `Compare ${compareCount} Stacks`
-                  : `Select ${2 - compareCount} more to compare`
-                }
+                {canCompare ? `Compare ${compareCount} Stacks` : `Select ${2 - compareCount} more to compare`}
               </button>
             </motion.div>
 
-            {/* Desktop chip bar */}
             <motion.div
               className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 hidden md:flex items-center gap-2 rounded-2xl px-4 py-2.5"
               style={{
-                background:     "rgba(13,17,23,0.96)",
-                border:         "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(13,17,23,0.96)",
+                border: "1px solid rgba(255,255,255,0.08)",
                 backdropFilter: "blur(12px)",
-                boxShadow:      "0 8px 32px rgba(0,0,0,0.5)",
-                fontFamily:     "'Barlow', sans-serif",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                fontFamily: "'Barlow', sans-serif",
               }}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
               transition={{ type: "spring", stiffness: 300, damping: 28 }}
             >
-              <span
-                className="text-[10px] font-semibold uppercase tracking-widest shrink-0"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              >
+              <span className="text-[10px] font-semibold uppercase tracking-widest shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>
                 Comparing
               </span>
 
@@ -1193,8 +1365,8 @@ export default function SmartStackPage() {
                   className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
                   style={{
                     background: "rgba(255,255,255,0.06)",
-                    border:     "1px solid rgba(255,255,255,0.1)",
-                    color:      "rgba(255,255,255,0.85)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.85)",
                   }}
                   initial={{ opacity: 0, scale: 0.85 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -1204,14 +1376,16 @@ export default function SmartStackPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedCompareStacks((prev) =>
-                        prev.filter((s) => s.id !== stack.id)
-                      )
+                      setSelectedCompareStacks((prev) => prev.filter((s) => s.id !== stack.id))
                     }
                     className="transition-colors"
                     style={{ color: "rgba(255,255,255,0.3)" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "#E83A2F"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "#E83A2F";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "rgba(255,255,255,0.3)";
+                    }}
                     aria-label={`Remove ${stack.name} from compare`}
                   >
                     <FaTimes size={8} />
@@ -1220,10 +1394,7 @@ export default function SmartStackPage() {
               ))}
 
               {!canCompare && (
-                <span
-                  className="text-[10px]"
-                  style={{ color: "rgba(255,255,255,0.4)" }}
-                >
+                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
                   {2 - compareCount} more needed
                 </span>
               )}
@@ -1234,8 +1405,8 @@ export default function SmartStackPage() {
                 onClick={() => setCompareModalOpen(true)}
                 className="rounded-full px-4 py-1.5 text-xs font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 style={{
-                  background:    canCompare ? "#5B9EC9" : "rgba(255,255,255,0.08)",
-                  fontFamily:    "'Barlow Condensed', sans-serif",
+                  background: canCompare ? "#5B9EC9" : "rgba(255,255,255,0.08)",
+                  fontFamily: "'Barlow Condensed', sans-serif",
                   letterSpacing: "0.05em",
                 }}
               >
@@ -1246,7 +1417,6 @@ export default function SmartStackPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {modalStack && (
         <NutritionModal
           key={modalStack.id}

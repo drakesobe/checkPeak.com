@@ -3,37 +3,20 @@
 
 import Head from "next/head";
 import HeroSection from "@/components/HeroSection";
-import { useMemo, useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import {
-  FaBolt,
-  FaCheckCircle,
-  FaHistory,
-  FaShieldAlt,
-  FaDumbbell,
-  FaUtensils,
-  FaClipboardList,
-  FaUsers,
-  FaChartLine,
-  FaUniversity,
-} from "react-icons/fa";
+import { motion, useInView, useScroll, useTransform } from "framer-motion";
+import { ArrowRight, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// Pulled outside the component — no dependencies on props/state, so there's
-// no reason to recreate this function on every render.
 function track(action, params = {}) {
   if (typeof window !== "undefined" && typeof window.gtag === "function") {
     window.gtag("event", action, params);
   }
 }
 
-// Centralise the auth-modal open logic so it isn't copy-pasted six times.
-// Accepts an optional { tab, role } config.
 function openAuthModal({ tab = "signup", role = "organization" } = {}) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("auth:open", { detail: { tab, role } }));
@@ -43,708 +26,943 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Static data (outside component — avoids re-creation on every render)
+// Color system — two-world palette: Dark Power / White Clarity
 // ---------------------------------------------------------------------------
-
-const PARTICLES = [
-  { cx: 120, cy: 140, r: 2.2, dur: 12, delay: 0.1 },
-  { cx: 380, cy: 220, r: 2.0, dur: 14, delay: 0.4 },
-  { cx: 680, cy: 180, r: 2.5, dur: 11, delay: 0.2 },
-  { cx: 220, cy: 420, r: 1.9, dur: 15, delay: 0.6 },
-  { cx: 610, cy: 520, r: 2.2, dur: 13, delay: 0.7 },
-  { cx: 980, cy: 240, r: 2.1, dur: 16, delay: 0.5 },
-  { cx: 880, cy: 520, r: 2.0, dur: 12, delay: 0.3 },
-  { cx: 520, cy: 320, r: 2.3, dur: 14, delay: 0.8 },
-];
-
-const VALUE_BULLETS = [
-  {
-    icon: <FaDumbbell className="text-white/90" />,
-    title: "Workout check-ins",
-    desc: "Athletes complete workouts and check in quickly. Evidence (photo/video/notes) can be optional or required. YOUR program sets the rules.",
-  },
-  {
-    icon: <FaUtensils className="text-white/90" />,
-    title: "Nutrition plans that stick",
-    desc: "Meal-based targets, not tedious tracking. Coaches set macros by meal with dining hall vs at home tips. Athletes mark their meal or hydration complete in seconds.",
-  },
-  {
-    icon: <FaShieldAlt className="text-white/90" />,
-    title: "Supplement screening",
-    desc: "At-home label scanning to flag banned/high-risk compounds and common aliases. Save scans to cut repeat research and reduce the risk of accidental positives.",
-  },
-];
-
-const PROOF_STRIPS = [
-  {
-    icon: <FaClipboardList className="text-[#46769B]" />,
-    title: "Replace texts + spreadsheets",
-    desc: "Check-ins land in one place with clear status, timestamps, and next steps — so nobody loses context.",
-  },
-  {
-    icon: <FaUsers className="text-[#46769B]" />,
-    title: "Less guessing, more support",
-    desc: "Athletes get clear expectations, how-to video links, and actionable feedback to reduce form mistakes, under-fueling, and confusion. Coaches and trainers get visibility to step in early — before issues pile up.",
-  },
-  {
-    icon: <FaChartLine className="text-[#46769B]" />,
-    title: "Weekly summaries you can act on",
-    desc: "A simple weekly view by athlete and team — so follow-ups are quick and fair.",
-  },
-];
-
-const WHY_PROBLEMS = [
-  {
-    q: "How much time and scholarship money gets burned when athletes return unready?",
-    a: "CheckPeak keeps offseason expectations clear and check-ins consistent — so you spend camp on install, not playing catch-up on failed conditioning evals.",
-  },
-  {
-    q: "What are you losing when athletes don't train — or train wrong — during the offseason?",
-    a: "Clear plans + how-to guidance + simple check-ins help catch form and compliance issues early — before they turn into missed time, lost progress, and potential injuries.",
-  },
-  {
-    q: "How fast can staff answer, 'Can I take this supplement?' without digging for hours?",
-    a: "Saved scans + flagged ingredients give a quick, consistent starting point — so players and staff can review quickly and athletes don't need to guess.",
-  },
-];
-
-const WORKFLOW_STEPS = [
-  {
-    step: "STEP 1",
-    title: "Set plans",
-    desc: "Create workout templates and nutrition plans for offseason, in-season, rehab, or return-to-play.",
-    icon: <FaClipboardList className="text-[#46769B]" />,
-  },
-  {
-    step: "STEP 2",
-    title: "Athletes check in",
-    desc: "Athletes submit one check-in per workout with notes and optional evidence. You choose when proof is required and when a simple confirmation is enough.",
-    icon: <FaDumbbell className="text-[#46769B]" />,
-  },
-  {
-    step: "STEP 3",
-    title: "Staff reviews",
-    desc: "Review in a queue: approve, request info, or leave feedback. Keep it consistent and fair across athletes.",
-    icon: <FaCheckCircle className="text-[#46769B]" />,
-  },
-  {
-    step: "STEP 4",
-    title: "Weekly overview",
-    desc: "See weekly progress by athlete/team so follow-ups are quick — and expectations stay clear.",
-    icon: <FaChartLine className="text-[#46769B]" />,
-  },
-];
-
-const MODULES = [
-  {
-    icon: <FaDumbbell size={30} className="mx-auto mb-2 text-[#46769B]" />,
-    title: "Workout accountability",
-    desc: "Assign workout templates, collect quick photo check-ins, and review in a clean queue. Keep athletes on track to minimise injuries and potential regression.",
-  },
-  {
-    icon: <FaUtensils size={30} className="mx-auto mb-2 text-purple-500" />,
-    title: "Nutrition targets",
-    desc: "Meal-based macro targets that are home or dining-hall friendly. Athletes track their meals + hydration in seconds — no tedious calorie counting.",
-  },
-  {
-    icon: <FaShieldAlt size={30} className="mx-auto mb-2 text-emerald-600" />,
-    title: "Supplement label screening",
-    desc: "At-home label scanning to flag banned/high-risk compounds and common aliases. Save scans for quick reference so staff and athletes aren't guessing.",
-  },
-];
-
-const COACH_CHECKLIST = [
-  "Review queue with consistent outcomes (approved / needs info / follow-up)",
-  "Set when proof is optional or required with photo evidence based on the workout",
-  "Weekly visibility by athlete + team to catch offseason drift before camp",
-  "Feedback stays attached to each check-in (timestamps + context) so follow-ups are clean",
-];
-
-const ATHLETE_CHECKLIST = [
-  "One place to see workouts, instructions, and how-to links",
-  "Meal-based macro targets + hydration, built for dining halls and real life — no tedious calorie tracking",
-  "Simple check-ins with notes — photo/video evidence only when your program requires it",
-  "Free label scans that flag high-risk ingredients and aliases, plus saved scan history",
-];
-
-const FOUNDING_FEATURES = [
-  {
-    title: "Workout accountability",
-    desc: "Check-ins keep routines steady during breaks and the offseason.",
-  },
-  {
-    title: "Nutrition targets",
-    desc: "Meal-based macro targets with dining hall vs home guidance — plus hydration goals.",
-  },
-  {
-    title: "Supplement label screening",
-    desc: "At-home label scanning to flag banned/high-risk compounds and their common aliases.",
-  },
-];
-
-const PILOT_COLUMNS = [
-  {
-    title: "Onboarding & setup",
-    items: [
-      "Configure staff roles + permissions (Admin / Trainer / Coach)",
-      "Invite athletes and connect them to your organisation (tokens supported)",
-      "Create workout templates + nutrition meal targets — and choose when evidence is optional vs required",
-    ],
-  },
-  {
-    title: "Weekly rhythm",
-    items: [
-      "Athletes complete workouts and submit quick check-ins (notes + photo/video only when required)",
-      "Staff reviews in a queue with consistent outcomes (approved / needs info / follow-up) + attached feedback",
-      "Weekly snapshot by athlete + team to catch drift early",
-    ],
-  },
-  {
-    title: "Expected results",
-    items: [
-      "Clearer execution: athletes know exactly what to do and how to do it",
-      "Competitive offseason: see who's staying competitive — and who isn't",
-      "Less regression: catch form/fuelling gaps early to reduce avoidable setbacks",
-    ],
-  },
-];
-
-const SCAN_LINKS = [
-  { href: "/nutrition-label-scanner", label: "Nutrition Label", target: "nutrition-label-scanner" },
-  { href: "/supplement-label-scanner", label: "Supplement Label", target: "supplement-label-scanner" },
-  { href: "/banned-substance-checker", label: "Banned Substance", target: "banned-substance-checker" },
-  { href: "/pre-workout-label-scanner", label: "Pre-Workout", target: "pre-workout-label-scanner" },
-  { href: "/protein-powder-label-scanner", label: "Protein Powder", target: "protein-powder-label-scanner" },
-];
+const DARK = {
+  bg:       "#080E1A",       // near-black with blue undertone
+  surface:  "#0F1824",       // card surface on dark
+  border:   "rgba(255,255,255,0.08)",
+  text:     "#FFFFFF",
+  body:     "rgba(255,255,255,0.82)",
+  dim:      "rgba(255,255,255,0.45)",
+  accent:   "#4FABFF",       // electric blue — brighter than brand
+  accentDim:"rgba(79,171,255,0.15)",
+};
+const LIGHT = {
+  bg:       "#F2F6FB",
+  surface:  "#FFFFFF",
+  border:   "#D4DDE8",
+  text:     "#060D18",
+  body:     "#334155",
+  dim:      "#7A90A8",
+  accent:   "#1A3A5C",
+  good:     "#00873E",
+};
 
 // ---------------------------------------------------------------------------
-// Reusable sub-components
+// Animated counter
 // ---------------------------------------------------------------------------
+function Counter({ to, suffix = "", prefix = "" }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true });
+  const [val, setVal] = useState(0);
 
-// Checklist row used in both the Coaches and Athletes panels.
-function CheckItem({ text }) {
+  useEffect(() => {
+    if (!inView) return;
+    let start = 0;
+    const step = Math.ceil(to / 50);
+    const id = setInterval(() => {
+      start += step;
+      if (start >= to) { setVal(to); clearInterval(id); }
+      else setVal(start);
+    }, 24);
+    return () => clearInterval(id);
+  }, [inView, to]);
+
+  return <span ref={ref}>{prefix}{val}{suffix}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Scroll-triggered reveal
+// ---------------------------------------------------------------------------
+function Reveal({ children, delay = 0, y = 24, className = "" }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-80px" });
   return (
-    <li className="flex gap-2">
-      <span className="mt-0.5 shrink-0 text-emerald-600">
-        <FaCheckCircle />
-      </span>
-      <span>{text}</span>
-    </li>
+    <motion.div
+      ref={ref}
+      className={className}
+      initial={{ opacity: 0, y }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.65, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
   );
 }
 
-// The repeated "open auth modal" CTA button used in several sections.
-function AuthCTAButton({ source, className, children, ...rest }) {
-  const handleClick = useCallback(() => {
-    track("cta_auth_open", { source, tab: "signup", role: "organization" });
-    openAuthModal();
-  }, [source]);
-
+// ---------------------------------------------------------------------------
+// Primary CTA — athletic hover effect
+// ---------------------------------------------------------------------------
+function Cta({ source, children, dark = false, size = "md", roleOverride, onClick, className = "" }) {
+  const lg = size === "lg";
   return (
-    <button type="button" onClick={handleClick} className={className} {...rest}>
-      {children}
+    <button
+      type="button"
+      onClick={() => {
+        track("cta_auth_open", { source });
+        openAuthModal({ role: roleOverride || "organization" });
+        onClick?.();
+      }}
+      className={[
+        "group relative inline-flex items-center justify-center gap-3 font-black uppercase tracking-widest overflow-hidden transition-all duration-300",
+        lg ? "px-10 py-5 text-base" : "px-7 py-4 text-sm",
+        dark
+          ? "bg-[#4FABFF] text-[#080E1A] hover:bg-white"
+          : "bg-[#060D18] text-white hover:bg-[#1A3A5C]",
+        className,
+      ].join(" ")}
+    >
+      {/* Slide-in sheen on hover */}
+      <span className="absolute inset-0 translate-x-[-101%] group-hover:translate-x-0 transition-transform duration-500 ease-out"
+        style={{ background: dark ? "rgba(255,255,255,0.15)" : "rgba(79,171,255,0.1)" }}
+      />
+      <span className="relative flex items-center gap-3">{children}</span>
     </button>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Page component
+// Section eyebrow
 // ---------------------------------------------------------------------------
+function Eyebrow({ children, dark = false }) {
+  return (
+    <p className="text-xs font-black uppercase tracking-[0.3em] mb-5"
+      style={{
+        color: dark ? DARK.accent : LIGHT.dim,
+        fontFamily: "'Barlow Condensed', sans-serif",
+        letterSpacing: "0.3em",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
 
+// ---------------------------------------------------------------------------
+// Diagonal section divider via clip-path
+// ---------------------------------------------------------------------------
+function DiagDivider({ fromDark = true }) {
+  return (
+    <div
+      className="h-16 -mt-1"
+      style={{
+        backgroundColor: fromDark ? LIGHT.bg : DARK.bg,
+        clipPath: fromDark ? "polygon(0 100%, 100% 0, 100% 100%)" : "polygon(0 0, 100% 100%, 0 100%)",
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checkmark list item
+// ---------------------------------------------------------------------------
+function Check({ children, dark = false }) {
+  return (
+    <li className="flex items-start gap-3 text-base leading-relaxed"
+      style={{ color: dark ? DARK.body : LIGHT.body }}
+    >
+      <CheckCircle className="w-5 h-5 shrink-0 mt-0.5"
+        style={{ color: dark ? DARK.accent : LIGHT.good }}
+      />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page data
+// ---------------------------------------------------------------------------
+const STATS = [
+  { n: 52,   suffix: "",  label: "WEEKS OF COVERAGE",     sub: "Offseason. In-season. Rehab." },
+  { n: 900,  suffix: "+", label: "SUBSTANCES FLAGGED",    sub: "Banned compounds + aliases."  },
+  { n: 30,   suffix: "s", label: "TO CHECK IN",           sub: "One tap. Done."               },
+];
+
+const STEPS = [
+  {
+    n: "01", title: "SET THE PLAN",
+    body: "Build workout templates and nutrition targets with how-to video links, macro targets by meal, and your own rules for when photo proof is required.",
+  },
+  {
+    n: "02", title: "ATHLETES CHECK IN",
+    body: "One tap to log a workout or meal. Photo evidence only when your program demands it. No calorie counting. No excuses.",
+  },
+  {
+    n: "03", title: "STAFF REVIEWS",
+    body: "A clean queue: approve, request info, or leave notes. Consistent outcomes with attached timestamps — follow-ups always have context.",
+  },
+  {
+    n: "04", title: "WEEKLY VISIBILITY",
+    body: "A weekly snapshot by athlete and team. Catch drift before camp. Identify who's staying competitive and who needs early intervention.",
+  },
+];
+
+const MODULES = [
+  {
+    label: "ACCOUNTABILITY",
+    title: "WORKOUT\nCHECK-INS",
+    body: "Assign templates. Collect photo check-ins. Review in a clean queue. Stop offseason regression and start getting consistent progression.",
+    points: ["Templates with video links and clear expectations", "Photo proof only when you require it", "Weekly view — catch who's drifting before camp opens"],
+  },
+  {
+    label: "NUTRITION",
+    title: "MEAL-BASED\nTARGETS",
+    body: "Macro targets by meal, built for dining halls. Hydration goals. Athletes log in seconds - no food journals, no weighing chicken.",
+    points: ["Targets by meal, not just daily totals", "Dining hall and real-world guidance", "Hydration tracking alongside food - in one place"],
+  },
+  {
+    label: "SCREENING",
+    title: "SUPPLEMENT\nSCANNING",
+    body: "One bad supplement ends careers. Scan labels at home, flag banned compounds and their aliases before anything gets taken.",
+    points: ["Catches banned compounds and known aliases", "Saved scan history - no second-guessing", "Free to use, no account required"],
+  },
+];
+
+const SCAN_LINKS = [
+  { href: "/nutrition-label-scanner",      label: "Nutrition Label"   },
+  { href: "/supplement-label-scanner",     label: "Supplement Label"  },
+  { href: "/banned-substance-checker",     label: "Banned Substance"  },
+  { href: "/pre-workout-label-scanner",    label: "Pre-Workout"       },
+  { href: "/protein-powder-label-scanner", label: "Protein Powder"    },
+];
+
+// ---------------------------------------------------------------------------
+// PAGE
+// ---------------------------------------------------------------------------
 export default function HomePage() {
-  const ogText = "CheckPeak — Athlete Tools + Team Workflows";
-
-  // Derive the canonical URL from the environment so it works across
-  // staging / production without hardcoding.
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
+  const ogText  = "CheckPeak — No Excuses. No Drift. No Guessing.";
 
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
-
-  // Email-capture form state
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("Coach / Staff");
-  const [org, setOrg] = useState("");
+  const [email,   setEmail]   = useState("");
+  const [role,    setRole]    = useState("Coach / Staff");
+  const [org,     setOrg]     = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [ok, setOk] = useState(false);
+  const [err,     setErr]     = useState("");
+  const [ok,      setOk]      = useState(false);
 
-  const handleSubmit = useCallback(
-    async (e) => {
-      e.preventDefault();
-      setErr("");
-      setOk(false);
-
-      const clean = email.trim();
-      if (!clean || !clean.includes("@")) {
-        setErr("Please enter a valid email.");
-        return;
-      }
-
-      setLoading(true);
-      try {
-        track("email_capture_submit", { source: "home", role });
-
-        const res = await fetch("/api/waitlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: clean,
-            role,
-            organization: org || null,
-            source: "home_founding_teams",
-          }),
-        });
-
-        if (!res.ok) throw new Error("Unable to save. Please try again.");
-
-        setOk(true);
-        setEmail("");
-        setOrg("");
-        setRole("Coach / Staff");
-      } catch (error) {
-        console.error(error);
-        setErr(error?.message || "Something went wrong. Please try again shortly.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [email, role, org]
-  );
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    setErr(""); setOk(false);
+    const clean = email.trim();
+    if (!clean || !clean.includes("@")) { setErr("Please enter a valid email."); return; }
+    setLoading(true);
+    try {
+      track("email_capture_submit", { source: "home", role });
+      const res = await fetch("/api/waitlist", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: clean, role, organization: org || null, source: "home_founding_teams" }),
+      });
+      if (!res.ok) throw new Error("Unable to save. Please try again.");
+      setOk(true); setEmail(""); setOrg(""); setRole("Coach / Staff");
+    } catch (error) {
+      setErr(error?.message || "Something went wrong.");
+    } finally { setLoading(false); }
+  }, [email, role, org]);
 
   return (
     <>
       <Head>
-        <title>CheckPeak — Workouts + Nutrition Plans + Supplement Screening</title>
-        <meta
-          name="description"
-          content="CheckPeak keeps athletes and staff aligned away from campus: workout check-ins with optional evidence, full-form nutrition plans, and supplement label scanning to flag banned/high-risk ingredients."
-        />
-
-        {/* Open Graph */}
-        <meta property="og:title" content="CheckPeak — Athlete + Team Workflow" />
-        <meta
-          property="og:description"
-          content="Away-from-campus made simple: workouts + nutrition plans + supplement screening. Athlete-friendly check-ins, staff review queues, and weekly summaries."
-        />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content={siteUrl} />
-        <meta
-          property="og:image"
-          content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`}
-        />
-
-        {/* Twitter */}
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:site" content="@checkPeak_" />
-        <meta name="twitter:title" content="CheckPeak — Athlete + Team Workflow" />
-        <meta
-          name="twitter:description"
-          content="Workouts + nutrition + supplement screening. Athlete-friendly check-ins, staff review queues, and weekly summaries — built for programs."
-        />
-        <meta
-          name="twitter:image"
-          content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`}
-        />
+        <title>CheckPeak — Workouts + Nutrition + Supplement Screening</title>
+        <meta name="description" content="CheckPeak keeps athletes accountable away from campus. Workout check-ins, nutrition targets, supplement screening. Built for programs." />
+        <meta property="og:title"       content="CheckPeak — No Excuses. No Drift. No Guessing." />
+        <meta property="og:description" content="The platform that keeps athletes sharp wherever they are." />
+        <meta property="og:type"        content="website" />
+        <meta property="og:url"         content={siteUrl} />
+        <meta property="og:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`} />
+        <meta name="twitter:card"       content="summary_large_image" />
+        <meta name="twitter:site"       content="@checkPeak_" />
+        <meta name="twitter:title"      content="CheckPeak — No Excuses. No Drift. No Guessing." />
+        <meta name="twitter:image"      content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`} />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans flex flex-col">
+      <div className="min-h-screen" style={{ backgroundColor: DARK.bg, color: DARK.text }}>
 
-        {/* ================================================================
-            HERO
-        ================================================================ */}
+        {/* ═══════════════════════════════════════════════════════
+            HERO  — untouched
+        ═══════════════════════════════════════════════════════ */}
         <HeroSection />
 
-        {/* ================================================================
-            WHY / PROBLEMS
-        ================================================================ */}
-        <section id="why" className="py-14 bg-white">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="text-center max-w-3xl mx-auto">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">WHY TEAMS USE CHECKPEAK</p>
-              <h2 className="text-2xl md:text-3xl font-bold mt-2">Away-from-campus is where plans drift.</h2>
-              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                Offseason, breaks, travel, and rehab are where routines get messy. CheckPeak keeps it simple:
-                athletes check in, staff responds with quick feedback, and everyone stays aligned.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-6 lg:grid-cols-3 text-sm">
-              {WHY_PROBLEMS.map((x) => (
-                <div key={x.q} className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                  <p className="text-xs font-semibold text-[#46769B] mb-1">COMMON PROBLEM</p>
-                  <h3 className="font-semibold mb-2 leading-snug">{x.q}</h3>
-                  <p className="text-gray-600 leading-relaxed">{x.a}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-6">
-              <p className="text-sm text-gray-700 leading-relaxed">
-                One workflow instead of ten workarounds. CheckPeak replaces scattered texts and spreadsheets
-                with a simple rhythm: clear expectations, quick check-ins, and consistent follow-ups —
-                without needing extra staff.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ================================================================
-            HOW IT WORKS
-        ================================================================ */}
-        <section className="py-14 bg-gray-50">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="text-center max-w-3xl mx-auto">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">THE WORKFLOW</p>
-              <h2 className="text-2xl md:text-3xl font-bold mt-2">Simple check-ins. Clear feedback.</h2>
-              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                Easy for athletes to use, quick for staff to review. Everything stays organised by team, date, and athlete.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-              {WORKFLOW_STEPS.map((x) => (
-                <div
-                  key={x.step}
-                  className="p-6 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-[#46769B]">{x.step}</p>
-                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-blue-50 border border-blue-100">
-                      {x.icon}
-                    </span>
+        {/* ═══════════════════════════════════════════════════════
+            STAT STRIP  — dark, full-bleed, three weapons
+        ═══════════════════════════════════════════════════════ */}
+        <section style={{ backgroundColor: DARK.bg }}>
+          <div className="max-w-7xl mx-auto px-6 sm:px-12">
+            <div className="grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x"
+              style={{ borderTop: `1px solid ${DARK.border}`, borderBottom: `1px solid ${DARK.border}`, borderColor: DARK.border }}
+            >
+              {STATS.map(({ n, suffix, label, sub }, i) => (
+                <Reveal key={label} delay={i * 0.1}>
+                  <div className="px-6 py-10 sm:px-8 sm:py-14 text-center sm:text-left">
+                    <div
+                      className="font-black leading-none mb-3"
+                      style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontSize: "clamp(3.25rem, 8vw, 6.5rem)",
+                        color: DARK.accent,
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      <Counter to={n} suffix={suffix} />
+                    </div>
+                    <p className="text-sm font-black tracking-widest mb-1.5"
+                      style={{ color: DARK.text, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.15em" }}
+                    >
+                      {label}
+                    </p>
+                    <p className="text-base" style={{ color: DARK.dim }}>{sub}</p>
                   </div>
-                  <h3 className="font-semibold mt-3">{x.title}</h3>
-                  <p className="text-gray-600 mt-2 text-sm leading-relaxed">{x.desc}</p>
-                </div>
+                </Reveal>
               ))}
-            </div>
-
-            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  track("internal_link", { source: "workflow", target: "auth_modal_org" });
-                  openAuthModal();
-                }}
-                className="text-sm font-semibold text-[#46769B] hover:underline underline-offset-4"
-              >
-                Explore the team dashboard →
-              </button>
-
-              <Link
-                href="/nutrition-label-scanner"
-                onClick={() => track("internal_link", { source: "workflow", target: "nutrition-label-scanner" })}
-                className="text-sm font-semibold text-[#46769B] hover:underline underline-offset-4"
-              >
-                Run a supplement scan →
-              </Link>
             </div>
           </div>
         </section>
 
-        {/* ================================================================
-            MODULES / WHAT YOU GET
-        ================================================================ */}
-        <section className="py-14 bg-white">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="text-center max-w-3xl mx-auto">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">WHAT YOU GET</p>
-              <h2 className="text-2xl md:text-3xl font-bold mt-2">Three tools. One place.</h2>
-              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                Athletes shouldn't need five apps. Staff shouldn't chase ten different channels.
-                CheckPeak keeps it all in one place: workout templates, nutrition meal targets + hydration
-                check-ins, review queues with clear outcomes, weekly summaries, saved scan history, and
-                verified label scanning.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-7 md:grid-cols-3 text-center">
-              {MODULES.map((f) => (
-                <div
-                  key={f.title}
-                  className="p-7 bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition"
+        {/* ═══════════════════════════════════════════════════════
+            MANIFESTO STATEMENT  — full-bleed dark, massive type
+        ═══════════════════════════════════════════════════════ */}
+        <section
+          className="py-16 sm:py-28 overflow-hidden"
+          style={{ backgroundColor: "#060D18" }}
+        >
+          <Reveal y={32}>
+            <div className="max-w-7xl mx-auto px-6 sm:px-12">
+              {/* Ghost watermark number */}
+              <div className="relative">
+                <p
+                  className="absolute -top-6 -left-4 font-black select-none pointer-events-none"
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: "clamp(8rem, 25vw, 22rem)",
+                    color: "rgba(255,255,255,0.02)",
+                    lineHeight: 1,
+                    letterSpacing: "-0.04em",
+                  }}
                 >
-                  {f.icon}
-                  <h3 className="text-xl font-semibold mb-2">{f.title}</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">{f.desc}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Coaches + Athletes panels */}
-            <div className="mt-10 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 text-left">
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">FOR COACHES & STAFF</p>
-                <h3 className="text-lg font-bold mt-2">Less chasing. Cleaner communication.</h3>
-                <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                  {COACH_CHECKLIST.map((item) => (
-                    <CheckItem key={item} text={item} />
-                  ))}
-                </ul>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 text-left">
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">FOR ATHLETES</p>
-                <h3 className="text-lg font-bold mt-2">Clear plans. Easy check-ins.</h3>
-                <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                  {ATHLETE_CHECKLIST.map((item) => (
-                    <CheckItem key={item} text={item} />
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ================================================================
-            FOUNDING TEAMS / PRICING TEASER
-        ================================================================ */}
-        <section className="py-14 bg-gray-50 border-t border-gray-100">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="grid gap-8 lg:grid-cols-2 items-start">
-
-              {/* Left — copy */}
-              <div>
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">PROGRAMS</p>
-                <h2 className="text-2xl md:text-3xl font-bold mt-2">Founding 26 Teams</h2>
-                <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                  A simple, team-friendly way to roll out check-ins this year. Start with one team, build your
-                  templates, and expand to more teams as you go. Built to work for programs of any size —
-                  without adding admin overhead.
+                  OFF
                 </p>
-
-                <div className="mt-5 space-y-2 text-sm text-gray-700">
-                  {[
-                    { bold: "$2,988 / year", rest: "for the first 26 teams onboarded" },
-                    { bold: "30-day pilot included", rest: "to onboard athletes and set up plans" },
-                    { bold: "Rate locked for 3 years", rest: "as long as you renew annually" },
-                    { bold: "Use code", rest: "Founding26 at signup" },
-                  ].map(({ bold, rest }) => (
-                    <div key={bold} className="flex items-start gap-2">
-                      <span className="mt-1 text-[#46769B] shrink-0">
-                        <FaCheckCircle />
-                      </span>
-                      <p>
-                        <span className="font-semibold">{bold}</span> {rest}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 flex flex-row flex-wrap items-center justify-start gap-x-4 gap-y-2">
-                  <a
-                    href="#pilot"
-                    onClick={() => track("learn_more", { source: "founding_26" })}
-                    className="text-sm font-semibold text-[#46769B] hover:underline underline-offset-4 whitespace-nowrap"
-                  >
-                    What's included in the pilot →
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      track("cta_auth_open", { source: "founding_26", tab: "signup", role: "organization" });
-                      openAuthModal();
-                    }}
-                    className="text-sm font-semibold text-[#46769B] hover:underline underline-offset-4 whitespace-nowrap"
-                  >
-                    Start with your team →
-                  </button>
-                </div>
-
-                <p className="mt-4 text-[11px] text-gray-500">
-                  All-inclusive team pricing — no hidden per-athlete add-ons or multi-team upcharges.
-                </p>
-              </div>
-
-              {/* Right — value card */}
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">WHY IT'S WORTH IT</p>
-                <h3 className="text-lg font-bold mt-2">Reduce the "return unready" scramble.</h3>
-                <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                  When athletes return behind, progress regresses and camp turns into catch-up. CheckPeak
-                  keeps the rhythm steady — clear plans, quick check-ins, and early visibility — so you catch
-                  issues before they become setbacks.
-                </p>
-
-                <div className="mt-5 grid gap-3">
-                  {FOUNDING_FEATURES.map((x) => (
-                    <div key={x.title} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <p className="font-semibold text-sm">{x.title}</p>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">{x.desc}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6">
-                  {/*
-                    FIX: Removed the wrapping <Link href="#lead"> — nesting an interactive
-                    element inside another is invalid HTML and breaks screen readers.
-                    The button itself handles the action; no anchor is needed here.
-                  */}
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      track("cta_auth_open", { source: "roi_card", tab: "signup", role: "organization" });
-                      openAuthModal();
-                    }}
-                    className="w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl bg-[#46769B] text-white font-semibold text-sm shadow-sm hover:brightness-110 transition"
-                    type="button"
-                    aria-label="Get started"
-                  >
-                    Get started <span className="font-extrabold">→</span>
-                  </motion.button>
-
-                  <p className="mt-3 text-[10px] text-gray-500 text-center">
-                    30 days free to get athletes onboarded and your templates dialled in.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ================================================================
-            PILOT DETAILS
-        ================================================================ */}
-        <section id="pilot" className="py-14 bg-white border-t border-gray-100">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="text-center max-w-3xl mx-auto">
-              <p className="text-xs font-semibold tracking-wide text-[#46769B]">30-DAY PILOT</p>
-              <h2 className="text-2xl md:text-3xl font-bold mt-2">Start with one team. Make it easy.</h2>
-              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
-                The goal is simple: get athletes onboard, build your templates, and establish a weekly rhythm
-                that feels fair and low-friction. You'll finish with clear adoption and a repeatable process.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-6 lg:grid-cols-3">
-              {PILOT_COLUMNS.map((c) => (
-                <div key={c.title} className="p-6 rounded-2xl border border-gray-200 bg-gray-50">
-                  <h3 className="font-semibold text-lg">{c.title}</h3>
-                  <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                    {c.items.map((it) => (
-                      <CheckItem key={it} text={it} />
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-10 flex justify-center">
-              {/*
-                FIX: Removed wrapping <Link href="#lead"> around a button — same
-                invalid nesting issue as the ROI card above.
-              */}
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  track("cta_auth_open", { source: "pilot_section", tab: "signup", role: "organization" });
-                  openAuthModal();
-                }}
-                className="px-8 py-3.5 rounded-2xl bg-[#1D2433] text-white font-extrabold shadow-sm hover:brightness-110 transition"
-                type="button"
-                aria-label="Get started from pilot section"
-              >
-                Let's get started →
-              </motion.button>
-            </div>
-          </div>
-        </section>
-
-        {/* ================================================================
-            SCAN BY CATEGORY
-        ================================================================ */}
-        <section className="bg-white py-12 border-t border-gray-100">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold tracking-wide text-[#46769B]">SUPPLEMENT TOOL</p>
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Scan by category</h2>
-                <p className="mt-2 text-sm text-gray-600 max-w-2xl">
-                  Use the CheckPeak scan engine to screen labels and ingredients for banned/high-risk compounds
-                  and aliases. Always verify final decisions with your governing body and certified professionals.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 md:justify-end">
-                {SCAN_LINKS.map((x) => (
-                  <a
-                    key={x.href}
-                    href={x.href}
-                    onClick={() => track("internal_link", { source: "scan_by_category", target: x.target })}
-                    className="px-3 py-2 rounded-full text-xs font-semibold border border-gray-200 bg-gray-50 hover:bg-white hover:shadow-sm transition"
-                  >
-                    {x.label}
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
-              <p className="text-sm text-gray-700 leading-relaxed">
-                Not sure which one to use? Start with{" "}
-                <a
-                  href="/nutrition-label-scanner"
-                  onClick={() =>
-                    track("internal_link", {
-                      source: "scan_by_category_helper",
-                      target: "nutrition-label-scanner",
-                    })
-                  }
-                  className="font-semibold text-[#46769B] hover:underline underline-offset-4"
+                <p
+                  className="text-xs font-black uppercase tracking-[0.3em] mb-8"
+                  style={{ color: DARK.accent }}
                 >
-                  Nutrition Label Scanner
-                </a>{" "}
-                — it covers most supplement facts panels and ingredient lists.
-              </p>
+                  The reality
+                </p>
+                <h2
+                  className="font-black leading-[0.9] relative z-10"
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: "clamp(2.5rem, 9vw, 8rem)",
+                    letterSpacing: "-0.02em",
+                    maxWidth: "14ch",
+                  }}
+                >
+                  OFFSEASON IS WHERE{" "}
+                  <span style={{ color: DARK.accent }}>CHAMPIONSHIPS</span>{" "}
+                  ARE WON OR LOST.
+                </h2>
+                {/* Three-line typographic statement — poster logic, not prose */}
+                <div className="mt-10 sm:mt-16 space-y-3">
+                  <Reveal delay={0.1} y={16}>
+                    <p
+                      className="font-black leading-none"
+                      style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontSize: "clamp(1.25rem, 3.5vw, 2.75rem)",
+                        color: "rgba(255,255,255,0.35)",
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      Most programs run on guesswork
+                    </p>
+                  </Reveal>
+                  <Reveal delay={0.18} y={16}>
+                    <p
+                      className="font-black leading-none"
+                      style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontSize: "clamp(2rem, 6vw, 5rem)",
+                        color: DARK.text,
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      and prayers.
+                    </p>
+                  </Reveal>
+                  <Reveal delay={0.28} y={16}>
+                    <div className="pt-3 sm:pt-4 flex flex-col sm:flex-row sm:gap-6 gap-1">
+                      {["Stop guessing.", "Start knowing.", "Zero excuses."].map((phrase, i) => (
+                        <p
+                          key={phrase}
+                          className="font-black leading-none"
+                          style={{
+                            fontFamily: "'Barlow Condensed', sans-serif",
+                            fontSize: "clamp(1.1rem, 2.5vw, 2rem)",
+                            color: i === 0 ? DARK.accent : DARK.dim,
+                            letterSpacing: "0em",
+                          }}
+                        >
+                          {phrase}
+                        </p>
+                      ))}
+                    </div>
+                  </Reveal>
+                </div>
+                <div className="mt-10">
+                  <Cta source="manifesto" dark size="lg">
+                    Start your pilot <ArrowRight className="w-5 h-5" />
+                  </Cta>
+                </div>
+              </div>
             </div>
+          </Reveal>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════
+            HOW IT WORKS  — light section, editorial numbered list
+        ═══════════════════════════════════════════════════════ */}
+        <section id="how-it-works" style={{ backgroundColor: LIGHT.bg }}>
+          {/* Diagonal top edge */}
+          <div className="h-10 sm:h-20 -mt-1" style={{
+            backgroundColor: LIGHT.bg,
+            clipPath: "polygon(0 100%, 100% 0, 100% 100%, 0 100%)",
+            marginTop: "-1px",
+          }} />
+
+          <div className="max-w-7xl mx-auto px-6 sm:px-12 pb-16 sm:pb-28">
+            <Reveal>
+              <Eyebrow>The system</Eyebrow>
+              <h2
+                className="font-black leading-none mb-10 sm:mb-20"
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: "clamp(2.5rem, 7vw, 6rem)",
+                  color: LIGHT.text,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                FOUR STEPS.<br />
+                <span style={{ color: LIGHT.accent }}>ONE SYSTEM.</span>
+              </h2>
+            </Reveal>
+
+            {/* Full-width alternating strips — Nike editorial logic */}
+            <div>
+              {STEPS.map(({ n, title, body }, i) => {
+                const flip = i % 2 !== 0;
+                return (
+                  <Reveal key={n} delay={i * 0.06} y={20}>
+                    <div
+                      className="group border-t"
+                      style={{ borderColor: LIGHT.border }}
+                    >
+                      {/* ── Mobile: number left, title+body right ── */}
+                      <div className="flex sm:hidden items-start gap-5 py-7 px-1">
+                        <span
+                          className="font-black leading-none shrink-0 pt-1"
+                          style={{
+                            fontFamily: "'Barlow Condensed', sans-serif",
+                            fontSize: "2rem",
+                            color: LIGHT.border,
+                            letterSpacing: "-0.04em",
+                            minWidth: "2.5rem",
+                          }}
+                        >
+                          {n}
+                        </span>
+                        <div>
+                          <h3
+                            className="font-black leading-none mb-3"
+                            style={{
+                              fontFamily: "'Barlow Condensed', sans-serif",
+                              fontSize: "clamp(1.5rem, 5vw, 2rem)",
+                              color: LIGHT.text,
+                              letterSpacing: "-0.02em",
+                            }}
+                          >
+                            {title}
+                          </h3>
+                          <p className="text-base leading-relaxed" style={{ color: LIGHT.body }}>
+                            {body}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* ── Desktop: alternating full-width strips ── */}
+                      <div
+                        className={[
+                          "hidden sm:flex sm:items-center gap-0",
+                          flip ? "sm:flex-row-reverse" : "",
+                        ].join(" ")}
+                      >
+                        {/* Step number column */}
+                        <div
+                          className={[
+                            "flex-shrink-0 flex items-center justify-center",
+                            "w-48 min-h-[180px]",
+                            flip ? "border-l" : "border-r",
+                          ].join(" ")}
+                          style={{ borderColor: LIGHT.border }}
+                        >
+                          <span
+                            className="font-black leading-none transition-colors duration-500 group-hover:text-[#1A3A5C]"
+                            style={{
+                              fontFamily: "'Barlow Condensed', sans-serif",
+                              fontSize: "clamp(4rem, 6vw, 6.5rem)",
+                              color: LIGHT.border,
+                              letterSpacing: "-0.04em",
+                            }}
+                          >
+                            {n}
+                          </span>
+                        </div>
+
+                        {/* Title + body */}
+                        <div className="flex-1 flex items-center gap-12 px-12 min-h-[180px]">
+                          <h3
+                            className="font-black leading-none flex-shrink-0"
+                            style={{
+                              fontFamily: "'Barlow Condensed', sans-serif",
+                              fontSize: "clamp(1.75rem, 3vw, 3rem)",
+                              color: LIGHT.text,
+                              letterSpacing: "-0.02em",
+                              width: "220px",
+                            }}
+                          >
+                            {title}
+                          </h3>
+                          <p
+                            className="text-base lg:text-lg leading-relaxed"
+                            style={{ color: LIGHT.body, maxWidth: "38ch" }}
+                          >
+                            {body}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </Reveal>
+                );
+              })}
+              <div className="border-t" style={{ borderColor: LIGHT.border }} />
+            </div>
+
+            <Reveal delay={0.2}>
+              <div className="mt-16 flex justify-start">
+                <Cta source="how_it_works" size="lg">
+                  Get started free <ArrowRight className="w-5 h-5" />
+                </Cta>
+              </div>
+            </Reveal>
           </div>
         </section>
 
-        {/* ================================================================
-            DISCLAIMER (collapsible)
-        ================================================================ */}
-        <section className="py-12">
-          <div className="max-w-3xl mx-auto px-4">
-            <div className="bg-yellow-50 border-l-4 border-yellow-300 rounded-lg shadow-sm text-left text-yellow-800">
-              <button
-                type="button"
-                onClick={() => setDisclaimerOpen((v) => !v)}
-                className="w-full p-6 flex items-start justify-between gap-4 text-left"
-                aria-expanded={disclaimerOpen}
-                aria-controls="disclaimer-body"
-              >
-                <div>
-                  <p className="font-semibold mb-1 text-xs md:text-sm">Important Notice</p>
-                  <p className="text-[11px] md:text-xs text-yellow-800/80">
-                    {disclaimerOpen ? "Tap to hide details" : "Tap to view details"}
-                  </p>
-                </div>
-                <span className="mt-1 shrink-0 text-yellow-800/80" aria-hidden="true">
-                  {disclaimerOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                </span>
-              </button>
+        {/* ═══════════════════════════════════════════════════════
+            THREE MODULES  — alternating dark/light strips
+        ═══════════════════════════════════════════════════════ */}
+        {MODULES.map(({ label, title, body, points }, i) => {
+          const isDark = i % 2 === 0;
+          const bg     = isDark ? DARK.bg     : LIGHT.bg;
+          const surf   = isDark ? DARK.surface : LIGHT.surface;
+          const h2col  = isDark ? DARK.text    : LIGHT.text;
+          const accent = isDark ? DARK.accent  : LIGHT.accent;
+          const bodCol = isDark ? DARK.body    : LIGHT.body;
+          const border = isDark ? DARK.border  : LIGHT.border;
 
-              {disclaimerOpen && (
-                <div id="disclaimer-body" className="px-6 pb-6 -mt-2">
-                  <p className="leading-relaxed text-xs md:text-sm">
-                    CheckPeak provides workflow tools for workouts and nutrition plans, plus screening guidance
-                    for potentially banned or high-risk substances using databases and label analysis. It is{" "}
-                    <strong>not 100% comprehensive</strong>, and results do not replace official rulings or
-                    medical advice. Always verify with your governing body, certified authority, athletic
-                    trainer, or medical professional before consuming any product.
-                  </p>
-                  <p className="mt-3 text-[11px] text-yellow-900/70">
-                    Tip: Use saved scans as a starting point — final decisions should follow your program's
-                    compliance process.
-                  </p>
-                </div>
+          return (
+            <section key={label} style={{ backgroundColor: bg }}>
+              {/* Top diagonal */}
+              {i === 0 && (
+                <div className="h-10 sm:h-20 -mt-1" style={{
+                  backgroundColor: bg,
+                  clipPath: "polygon(0 0, 100% 100%, 0 100%)",
+                  marginTop: "-1px",
+                }} />
               )}
+
+              <div className="max-w-7xl mx-auto px-6 sm:px-12 py-16 sm:py-28">
+                <Reveal>
+                  <div className="grid lg:grid-cols-2 gap-10 lg:gap-20 items-center">
+
+                    {/* Left — headline */}
+                    <div className={i % 2 !== 0 ? "lg:order-2" : ""}>
+                      <p className="text-xs font-black tracking-[0.3em] mb-6"
+                        style={{ color: accent, fontFamily: "'Barlow Condensed', sans-serif" }}
+                      >
+                        {label}
+                      </p>
+                      <h2
+                        className="font-black leading-none mb-8 whitespace-pre-line"
+                        style={{
+                          fontFamily: "'Barlow Condensed', sans-serif",
+                          fontSize: "clamp(2.25rem, 6vw, 5.5rem)",
+                          color: h2col,
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        {title}
+                      </h2>
+                      <p className="text-base sm:text-xl leading-relaxed mb-8 sm:mb-10" style={{ color: bodCol }}>
+                        {body}
+                      </p>
+                      <Cta source={`module_${i}`} dark={isDark} size="md">
+                        Learn more <ArrowRight className="w-4 h-4" />
+                      </Cta>
+                    </div>
+
+                    {/* Right — feature card */}
+                    <div className={i % 2 !== 0 ? "lg:order-1" : ""}>
+                      <div
+                        className="rounded-sm p-8 sm:p-10"
+                        style={{
+                          backgroundColor: surf,
+                          border: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : LIGHT.border}`,
+                          boxShadow: isDark
+                            ? "none"
+                            : "0 2px 24px rgba(6,13,24,0.07), 0 1px 4px rgba(6,13,24,0.04)",
+                        }}
+                      >
+                        {/* Module number watermark */}
+                        <div className="flex items-start justify-between mb-8">
+                          <p
+                            className="font-black leading-none"
+                            style={{
+                              fontFamily: "'Barlow Condensed', sans-serif",
+                              fontSize: "5rem",
+                              color: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+                              letterSpacing: "-0.04em",
+                              lineHeight: 1,
+                            }}
+                          >
+                            0{i + 1}
+                          </p>
+                          <div
+                            className="w-12 h-12 rounded-sm flex items-center justify-center text-2xl font-black"
+                            style={{
+                              backgroundColor: accent + (isDark ? "18" : "10"),
+                              border: `1px solid ${accent + (isDark ? "30" : "25")}`,
+                              color: accent,
+                              fontFamily: "'Barlow Condensed', sans-serif",
+                            }}
+                          >
+                            {["✓", "◎", "⬡"][i]}
+                          </div>
+                        </div>
+
+                        <p
+                          className="text-xs font-black uppercase tracking-widest mb-5"
+                          style={{ color: isDark ? DARK.dim : LIGHT.dim }}
+                        >
+                          What it does
+                        </p>
+                        <ul className="space-y-4">
+                          {points.map(pt => (
+                            <Check key={pt} dark={isDark}>{pt}</Check>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                  </div>
+                </Reveal>
+              </div>
+            </section>
+          );
+        })}
+
+        {/* ═══════════════════════════════════════════════════════
+            PRICING  — dark, bold, no-nonsense
+        ═══════════════════════════════════════════════════════ */}
+        <section id="pricing" style={{ backgroundColor: "#060D18" }}>
+          <div className="max-w-7xl mx-auto px-6 sm:px-12 py-16 sm:py-28">
+            <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
+
+              {/* Left — the offer */}
+              <Reveal>
+                <Eyebrow dark>Founding 26 teams</Eyebrow>
+                <h2
+                  className="font-black leading-none mb-8"
+                  style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: "clamp(2.25rem, 6vw, 5.5rem)",
+                    color: DARK.text,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  LOCK IN<br />
+                  <span style={{ color: DARK.accent }}>BEFORE CAMP.</span>
+                </h2>
+                <p className="text-base sm:text-xl leading-relaxed mb-10 sm:mb-12" style={{ color: DARK.body }}>
+                  Start with one team. Expand as you go. Flat all-in pricing — no per-athlete add-ons, no surprise upcharges.
+                </p>
+
+                {/* Price block */}
+                <div
+                  className="inline-flex flex-col p-8 rounded-sm mb-10"
+                  style={{ border: `1px solid ${DARK.border}`, backgroundColor: DARK.surface }}
+                >
+                  <div className="flex items-end gap-3 mb-2">
+                    <span
+                      className="font-black leading-none"
+                      style={{
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontSize: "clamp(3rem, 8vw, 6rem)",
+                        color: DARK.accent,
+                        letterSpacing: "-0.03em",
+                      }}
+                    >
+                      $2,988
+                    </span>
+                    <span className="text-xl mb-3" style={{ color: DARK.dim }}>/year</span>
+                  </div>
+                  <p className="text-base" style={{ color: DARK.dim }}>
+                    Rate locked 3 years · Code:{" "}
+                    <span className="font-black" style={{ color: DARK.text }}>Founding26</span>
+                  </p>
+                </div>
+
+                <ul className="space-y-4 mb-12">
+                  {[
+                    "30-day pilot - onboard athletes and dial in your templates",
+                    "Unlimited athletes at one flat rate",
+                    "Staff roles: Admin / Trainer / Coach",
+                    "No hidden per-athlete or per-team upcharges",
+                  ].map(item => <Check key={item} dark>{item}</Check>)}
+                </ul>
+
+                <div className="flex flex-wrap gap-4">
+                  <Cta source="pricing_main" dark size="lg">
+                    Start your 30-day pilot <ArrowRight className="w-5 h-5" />
+                  </Cta>
+                </div>
+                <p className="mt-4 text-base" style={{ color: DARK.dim }}>
+                  *No credit card required to start.
+                </p>
+              </Reveal>
+
+              {/* Right — 30-day timeline */}
+              <Reveal delay={0.15}>
+                <p className="text-xs font-black uppercase tracking-[0.3em] mb-8"
+                  style={{ color: DARK.dim, fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  Your first 30 days
+                </p>
+                <div className="space-y-0">
+                  {[
+                    {
+                      week: "01", title: "SETUP",
+                      items: ["Invite athletes, connect to your org", "Configure staff roles and permissions", "Build your first workout template"],
+                    },
+                    {
+                      week: "02–03", title: "RHYTHM",
+                      items: ["Athletes submit first check-ins", "Staff reviews in the queue with feedback", "Nutrition targets go live"],
+                    },
+                    {
+                      week: "04", title: "RESULTS",
+                      items: ["Weekly snapshot by athlete and team", "Identify who's staying sharp", "Repeatable process locked in for the season"],
+                    },
+                  ].map(({ week, title, items }, i) => (
+                    <div
+                      key={week}
+                      className="py-8 border-t"
+                      style={{ borderColor: DARK.border }}
+                    >
+                      <div className="flex items-baseline gap-5 mb-5">
+                        <span
+                          className="font-black leading-none"
+                          style={{
+                            fontFamily: "'Barlow Condensed', sans-serif",
+                            fontSize: "2.5rem",
+                            color: "rgba(79,171,255,0.2)",
+                            letterSpacing: "-0.02em",
+                            minWidth: "2.5rem",
+                          }}
+                        >
+                          {week}
+                        </span>
+                        <span
+                          className="font-black text-2xl"
+                          style={{ fontFamily: "'Barlow Condensed', sans-serif", color: DARK.text }}
+                        >
+                          {title}
+                        </span>
+                      </div>
+                      <ul className="space-y-3 pl-1">
+                        {items.map(it => <Check key={it} dark>{it}</Check>)}
+                      </ul>
+                    </div>
+                  ))}
+                  <div className="border-t" style={{ borderColor: DARK.border }} />
+                </div>
+              </Reveal>
             </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════
+            SCAN STRIP  — light, horizontal
+        ═══════════════════════════════════════════════════════ */}
+        <section style={{ backgroundColor: LIGHT.bg }}>
+          <div className="h-16" style={{
+            backgroundColor: LIGHT.bg,
+            clipPath: "polygon(0 100%, 100% 0, 100% 100%, 0 100%)",
+            marginTop: "-1px",
+          }} />
+          <div className="max-w-7xl mx-auto px-6 sm:px-12 py-14 sm:py-20">
+            <Reveal>
+              <div className="flex flex-col lg:flex-row lg:items-end gap-12">
+                <div className="flex-1">
+                  <Eyebrow>Free supplement tool</Eyebrow>
+                  <h2
+                    className="font-black leading-none"
+                    style={{
+                      fontFamily: "'Barlow Condensed', sans-serif",
+                      fontSize: "clamp(2.5rem, 5vw, 4.5rem)",
+                      color: LIGHT.text,
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    SCAN A LABEL.<br />
+                    <span style={{ color: LIGHT.accent }}>RIGHT NOW.</span>
+                  </h2>
+                  <p className="text-lg mt-5 leading-relaxed max-w-md" style={{ color: LIGHT.body }}>
+                    Flag banned compounds before they become a career problem. No account needed.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {SCAN_LINKS.map(({ href, label }) => (
+                    <Link
+                      key={href}
+                      href={href}
+                      onClick={() => track("internal_link", { source: "scan_strip", target: href })}
+                      className="inline-flex items-center gap-2 px-5 py-3.5 text-sm font-bold transition hover:shadow-md"
+                      style={{
+                        backgroundColor: LIGHT.surface,
+                        border: `1px solid ${LIGHT.border}`,
+                        color: LIGHT.body,
+                      }}
+                    >
+                      {label} <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════
+            FINAL CTA  — full-bleed dark, electric
+        ═══════════════════════════════════════════════════════ */}
+        <section
+          className="relative overflow-hidden"
+          style={{ backgroundColor: DARK.bg }}
+        >
+          {/* Top diagonal */}
+          <div className="h-20" style={{
+            backgroundColor: DARK.bg,
+            clipPath: "polygon(0 0, 100% 100%, 0 100%)",
+            marginTop: "-1px",
+          }} />
+
+          {/* Background accent glow */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `radial-gradient(ellipse 70% 60% at 50% 100%, rgba(79,171,255,0.08) 0%, transparent 70%)`,
+            }}
+          />
+
+          {/* Ghost text watermark */}
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden select-none"
+            aria-hidden
+          >
+            <p
+              className="font-black text-center leading-none"
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: "clamp(12rem, 35vw, 30rem)",
+                color: "rgba(255,255,255,0.02)",
+                letterSpacing: "-0.05em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              WIN
+            </p>
+          </div>
+
+          <Reveal>
+            <div className="relative z-10 max-w-4xl mx-auto px-6 sm:px-12 py-20 sm:py-32 text-center">
+              <p className="text-xs font-black uppercase tracking-[0.3em] mb-6 sm:mb-8"
+                style={{ color: DARK.accent, fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                Join the program
+              </p>
+              <h2
+                className="font-black leading-[0.9] mb-8 sm:mb-10"
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: "clamp(3.5rem, 12vw, 10rem)",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                STOP<br />
+                <span style={{ color: DARK.accent }}>CHASING.</span><br />
+                START<br />
+                TRACKING.
+              </h2>
+              <p
+                className="text-base sm:text-xl leading-relaxed mb-10 sm:mb-12 max-w-md mx-auto"
+                style={{ color: DARK.body }}
+              >
+                30 days free. Onboard your athletes and dial in your templates. No card required.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <Cta source="final_cta" dark size="lg" className="w-full sm:w-auto justify-center">
+                  Get started free <ArrowRight className="w-5 h-5" />
+                </Cta>
+                <button
+                  type="button"
+                  onClick={() => {
+                    track("cta_auth_open", { source: "final_cta_athlete", role: "athlete" });
+                    openAuthModal({ role: "athlete" });
+                  }}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-10 py-5 text-base font-black uppercase tracking-widest border transition hover:border-white"
+                  style={{ borderColor: DARK.border, color: "rgba(255,255,255,0.65)" }}
+                >
+                  I&apos;m an athlete
+                </button>
+              </div>
+            </div>
+          </Reveal>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════
+            DISCLAIMER  — minimal dark footer strip
+        ═══════════════════════════════════════════════════════ */}
+        <section style={{ backgroundColor: "#040912", borderTop: `1px solid ${DARK.border}` }}>
+          <div className="max-w-4xl mx-auto px-6 sm:px-12 py-8">
+            <button
+              type="button"
+              onClick={() => setDisclaimerOpen(v => !v)}
+              className="w-full flex items-center justify-between gap-4 text-left py-2 group"
+              aria-expanded={disclaimerOpen}
+            >
+              <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
+                ⚠ Supplement screening limitations — important notice
+              </span>
+              {disclaimerOpen
+                ? <ChevronUp   className="w-4 h-4 shrink-0 opacity-40" />
+                : <ChevronDown className="w-4 h-4 shrink-0 opacity-40" />
+              }
+            </button>
+            {disclaimerOpen && (
+              <p className="text-base leading-relaxed pb-6 mt-3" style={{ color: "rgba(255,255,255,0.45)" }}>
+                CheckPeak provides screening guidance for potentially banned or high-risk substances using databases and label analysis. It is{" "}
+                <strong style={{ color: "rgba(255,255,255,0.7)" }}>not 100% comprehensive</strong>{" "}
+                and results do not replace official rulings or medical advice. Always verify with your governing body, certified authority, athletic trainer, or medical professional before consuming any product. Use saved scans as a starting point — final decisions should follow your program&apos;s compliance process.
+              </p>
+            )}
           </div>
         </section>
 

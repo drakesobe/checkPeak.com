@@ -35,7 +35,7 @@ const DARK = {
   text:     "#FFFFFF",
   body:     "rgba(255,255,255,0.82)",
   dim:      "rgba(255,255,255,0.45)",
-  accent:   "#4FABFF",       // electric blue — brighter than brand
+  accent:   "#5B9EC9",       
   accentDim:"rgba(79,171,255,0.15)",
 };
 const LIGHT = {

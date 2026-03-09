@@ -6,312 +6,253 @@ import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 
 import OrgTrainersHeader from "@/components/org/trainers/OrgTrainersHeader";
-import InviteCard from "@/components/org/trainers/InviteCard";
-import TeamTableCard from "@/components/org/trainers/TeamTableCard";
+import TrainersTable     from "@/components/org/trainers/TrainersTable";
+import InviteModal       from "@/components/org/trainers/InviteModal";
+import EditMemberPanel   from "@/components/org/trainers/EditMemberPanel";
 import RemoveMemberModal from "@/components/org/trainers/RemoveMemberModal";
 
 async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return {};
-  }
+  try { return await res.json(); } catch { return {}; }
+}
+
+// Normalize the role string coming from various Airtable field shapes
+function parseRole(user) {
+  const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+  if (!r) return "";
+  if (r === "organization" || r.includes("org"))   return "organization";
+  if (r === "admin"        || r.includes("admin")) return "admin";
+  if (r === "trainer"      || r.includes("train")) return "trainer";
+  if (r === "athlete"      || r.includes("ath"))   return "athlete";
+  return r;
 }
 
 export default function TrainersPage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
 
-  // Role normalization for gating + perms
-  const role = useMemo(() => {
-    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
-    if (!r) return "";
-    if (r === "organization" || r.includes("org")) return "organization";
-    if (r === "admin" || r.includes("admin")) return "admin";
-    if (r === "trainer" || r.includes("train")) return "trainer";
-    if (r === "athlete" || r.includes("ath")) return "athlete";
-    return r;
-  }, [user]);
-
-  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  /* ── Auth + role ── */
+  const role            = useMemo(() => parseRole(user), [user]);
+  const isOrgSide       = role === "organization" || role === "admin" || role === "trainer";
   const canManageMembers = role === "organization" || role === "admin";
 
-  // Session display props
-  const orgName = useMemo(() => {
-    const guess =
-      user?.OrgName ||
-      user?.["Organization Name"] ||
-      user?.OrganizationName ||
-      user?.organizationName ||
-      user?.Organization ||
-      (role === "organization" ? user?.Name || user?.name : "") ||
-      "Organization";
-    return String(guess || "Organization");
-  }, [user, role]);
-
-  const orgEmail = useMemo(() => String(user?.Email || user?.email || ""), [user]);
-  const orgToken = useMemo(() => String(user?.Token || user?.token || "").trim(), [user]);
-  const orgId = useMemo(() => String(user?.orgId || user?.OrgId || "").trim(), [user]);
-
-  const inviterName = useMemo(() => {
-    return String(user?.Name || user?.name || orgName || "Team").trim();
-  }, [user, orgName]);
-
-  /* ----------------------------- */
-  /* Guards                        */
-  /* ----------------------------- */
-
   useEffect(() => {
-    if (!user) {
-      router.push("/");
-      return;
-    }
-    if (!isOrgSide) {
-      router.push("/dashboard");
-      return;
-    }
+    if (!user)       { router.push("/");          return; }
+    if (!isOrgSide)  { router.push("/dashboard"); return; }
   }, [user, isOrgSide, router]);
 
-  /* ----------------------------- */
-  /* Data + UI state               */
-  /* ----------------------------- */
+  /* ── Session display ── */
+  const orgName = useMemo(() => {
+    const v = user?.OrgName || user?.["Organization Name"] || user?.OrganizationName ||
+              user?.organizationName || user?.Organization ||
+              (role === "organization" ? user?.Name || user?.name : "") || "Organization";
+    return String(v || "Organization");
+  }, [user, role]);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const orgEmail    = useMemo(() => String(user?.Email || user?.email || ""), [user]);
+  const orgToken    = useMemo(() => String(user?.Token || user?.token || "").trim(), [user]);
+  const inviterName = useMemo(() => String(user?.Name  || user?.name || orgName || "Team").trim(), [user, orgName]);
 
+  /* ── Data ── */
+  const [loading,  setLoading]  = useState(true);
   const [trainers, setTrainers] = useState([]);
 
-  // header banner messages (shared across page + InviteCard)
+  /* ── Banners ── */
   const [inviteErr, setInviteErr] = useState("");
-  const [inviteOk, setInviteOk] = useState("");
-  const [saveErr, setSaveErr] = useState("");
-  const [saveOk, setSaveOk] = useState("");
+  const [inviteOk,  setInviteOk]  = useState("");
+  const [saveErr,   setSaveErr]   = useState("");
+  const [saveOk,    setSaveOk]    = useState("");
 
-  // Remove modal state
-  const [removeOpen, setRemoveOpen] = useState(false);
+  /* ── Filter + search (owned by page, passed to header) ── */
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  /* ── Panel state ── */
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [removeOpen,   setRemoveOpen]   = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
 
-  const openRemove = useCallback((member) => {
-    setRemoveTarget(member || null);
-    setRemoveOpen(true);
-  }, []);
-
-  const closeRemove = useCallback(() => {
-    setRemoveOpen(false);
-    setRemoveTarget(null);
-  }, []);
-
+  /* ── Refresh ── */
   const refresh = useCallback(async () => {
     setLoading(true);
-    setError("");
-
     try {
-      const res = await fetch("/api/org/members/list", {
-        method: "GET",
-        credentials: "include",
-      });
-
+      const res  = await fetch("/api/org/members/list", { method: "GET", credentials: "include" });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || "Failed to load members.");
 
       const raw = Array.isArray(data?.trainers) ? data.trainers : [];
-
-      const normalized = raw.map((t) => ({
+      setTrainers(raw.map((t) => ({
         ...t,
-        id: t?.id,
-        Name: t?.Name ?? t?.name ?? "",
-        Email: t?.Email ?? t?.email ?? "",
-        Role: t?.Role ?? t?.role ?? "trainer",
-        Active:
-          typeof t?.Active === "boolean"
-            ? t.Active
-            : typeof t?.active === "boolean"
-            ? t.active
-            : false,
+        id:        t?.id,
+        Name:      t?.Name    ?? t?.name  ?? "",
+        Email:     t?.Email   ?? t?.email ?? "",
+        Role:      t?.Role    ?? t?.role  ?? "trainer",
+        Active:    typeof t?.Active === "boolean" ? t.Active
+                 : typeof t?.active === "boolean" ? t.active : false,
         createdAt: t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "",
-      }));
-
-      setTrainers(normalized);
+      })));
     } catch (e) {
       setTrainers([]);
-      setError(e?.message || "Failed to load members.");
-    } finally {
-      setLoading(false);
-    }
+      setSaveErr(e?.message || "Failed to load members.");
+      setTimeout(() => setSaveErr(""), 4000);
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    if (!user || !isOrgSide) return;
-    refresh();
-  }, [user, isOrgSide, refresh]);
+  useEffect(() => { if (user && isOrgSide) refresh(); }, [user, isOrgSide, refresh]);
 
-  /* ----------------------------- */
-  /* Actions                       */
-  /* ----------------------------- */
-
-  const onLogout = useCallback(async () => {
-    try {
-      await logout?.();
-    } finally {
-      router.push("/");
-    }
-  }, [logout, router]);
-
-  const updateMember = useCallback(
-    async ({ memberId, name, email, role: nextRole, active }) => {
-      setSaveErr("");
-      setSaveOk("");
-      setInviteErr("");
-      setInviteOk("");
-
-      if (!canManageMembers) throw new Error("Only Organization/Admin can update members.");
-
-      const res = await fetch("/api/org/members/update", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberId, name, email, role: nextRole, active }),
-      });
-
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to update member.");
-
-      setSaveOk("Saved.");
-      setTimeout(() => setSaveOk(""), 2500);
-
-      await refresh();
-      return data;
-    },
-    [canManageMembers, refresh]
-  );
-
-  const deactivateMember = useCallback(
-    async ({ memberId }) => {
-      setSaveErr("");
-      setSaveOk("");
-      setInviteErr("");
-      setInviteOk("");
-
-      if (!canManageMembers) throw new Error("Only Organization/Admin can remove members.");
-
-      const res = await fetch("/api/org/members/remove", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberId }),
-      });
-
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || "Failed to remove member.");
-
-      setSaveOk("Member deactivated.");
-      setTimeout(() => setSaveOk(""), 2500);
-
-      await refresh();
-      return data;
-    },
-    [canManageMembers, refresh]
-  );
-
-  /* ----------------------------- */
-  /* Derived counts                */
-  /* ----------------------------- */
-
+  /* ── Counts for filter chips ── */
   const counts = useMemo(() => {
     const list = Array.isArray(trainers) ? trainers : [];
-    const admins = list.filter((t) => String(t?.Role || "").toLowerCase() === "admin").length;
-    const coaches = list.filter((t) => String(t?.Role || "").toLowerCase() === "trainer").length;
-    const inactive = list.filter((t) => !t?.Active).length;
-    const total = list.length;
-    return { total, admins, coaches, inactive };
+    return {
+      total:    list.length,
+      admins:   list.filter(t => String(t?.Role || "").toLowerCase() === "admin").length,
+      coaches:  list.filter(t => String(t?.Role || "").toLowerCase() === "trainer").length,
+      inactive: list.filter(t => !t?.Active).length,
+    };
   }, [trainers]);
 
-  /* ----------------------------------------------------- */
-  /* Render                                                */
-  /* ----------------------------------------------------- */
+  /* ── Filtered + searched rows ── */
+  const visibleRows = useMemo(() => {
+    let list = Array.isArray(trainers) ? trainers : [];
 
+    // Filter chip
+    if (filter === "admin")    list = list.filter(t => String(t?.Role || "").toLowerCase() === "admin");
+    if (filter === "trainer")  list = list.filter(t => String(t?.Role || "").toLowerCase() === "trainer");
+    if (filter === "inactive") list = list.filter(t => !t?.Active);
+
+    // Search
+    const q = search.trim().toLowerCase();
+    if (q) list = list.filter(t => {
+      const hay = [t?.Name, t?.Email, t?.Role, t?.Active ? "active" : "inactive"]
+        .filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+
+    return list;
+  }, [trainers, filter, search]);
+
+  /* ── Actions ── */
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
+
+  const updateMember = useCallback(async (payload) => {
+    setSaveErr(""); setSaveOk("");
+    if (!canManageMembers) throw new Error("Only Organization/Admin can update members.");
+    const res  = await fetch("/api/org/members/update", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data?.error || "Failed to update member.");
+    setSaveOk("Changes saved."); setTimeout(() => setSaveOk(""), 2500);
+    await refresh();
+  }, [canManageMembers, refresh]);
+
+  const deactivateMember = useCallback(async ({ memberId }) => {
+    setSaveErr(""); setSaveOk("");
+    if (!canManageMembers) throw new Error("Only Organization/Admin can remove members.");
+    const res  = await fetch("/api/org/members/remove", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memberId }),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) throw new Error(data?.error || "Failed to remove member.");
+    setSaveOk("Member deactivated."); setTimeout(() => setSaveOk(""), 2500);
+    await refresh();
+  }, [canManageMembers, refresh]);
+
+  const bulkDeactivate = useCallback(async (ids) => {
+    setSaveErr(""); setSaveOk("");
+    if (!canManageMembers) return;
+    try {
+      await Promise.all(ids.map(id => deactivateMember({ memberId: id })));
+      setSaveOk(`${ids.length} member${ids.length !== 1 ? "s" : ""} deactivated.`);
+      setTimeout(() => setSaveOk(""), 3000);
+    } catch (e) {
+      setSaveErr(e?.message || "Bulk deactivate failed.");
+      setTimeout(() => setSaveErr(""), 4000);
+    }
+  }, [canManageMembers, deactivateMember]);
+
+  /* ─────────────────────────────────────────────────────────
+     Render
+  ───────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-7xl mx-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] sm:py-8 space-y-5 sm:space-y-6 overflow-x-hidden">
+    <div className="min-h-screen" style={{ backgroundColor: "#F4F7FB" }}>
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 pb-12 space-y-5">
+
+        {/* Header: title, filter chips, search, actions */}
         <OrgTrainersHeader
           orgName={orgName}
           orgEmail={orgEmail}
           orgToken={orgToken}
-          orgId={orgId}
           counts={counts}
           canManageMembers={canManageMembers}
           loading={loading}
-          error={error}
+          filter={filter}
+          onFilterChange={setFilter}
+          search={search}
+          onSearchChange={setSearch}
+          onBack={() => router.push("/org/dashboard")}
+          onRefresh={refresh}
+          onLogout={onLogout}
+          onInvite={() => setInviteOpen(true)}
           inviteErr={inviteErr}
           saveErr={saveErr}
           inviteOk={inviteOk}
           saveOk={saveOk}
-          onRefresh={refresh}
-          onLogout={onLogout}
-          onBack={() => router.push("/org/dashboard")}
         />
 
-        <div className="sm:hidden">
-          <p className="text-[11px] font-semibold text-gray-500 px-1">
-            Invite teammates and manage access
-          </p>
-        </div>
-
-        <div className="grid lg:grid-cols-12 gap-4 sm:gap-6">
-          <div className="lg:col-span-4">
-            <div className="space-y-3">
-              <div className="sm:hidden">
-                <p className="text-xs font-semibold text-gray-700 px-1">Invite</p>
-              </div>
-
-              <InviteCard
-                canManageMembers={canManageMembers}
-                orgName={orgName}
-                inviterName={inviterName}
-                onInviteCreated={refresh}
-                setInviteOk={setInviteOk}
-                setInviteErr={setInviteErr}
-              />
-            </div>
-          </div>
-
-          <div className="lg:col-span-8">
-            <div className="space-y-3">
-              <div className="sm:hidden">
-                <p className="text-xs font-semibold text-gray-700 px-1">Team</p>
-                <p className="text-[11px] text-gray-500 px-1 mt-0.5">
-                  Admins and trainers who can access org tools.
-                </p>
-              </div>
-
-              <TeamTableCard
-                title="Team"
-                subtitle="Admins and trainers who can access org tools."
-                hint="Tip: inactive members stay listed and can be reactivated via Edit."
-                rows={trainers}
-                loading={loading}
-                canManage={canManageMembers}
-                onEditSave={updateMember}
-                onRemoveClick={openRemove}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ✅ Remove modal (fixed permission prop) */}
-        <RemoveMemberModal
-          open={removeOpen}
-          member={removeTarget}
-          onClose={closeRemove}
+        {/* Full-width team table */}
+        <TrainersTable
+          rows={visibleRows}
+          loading={loading}
           canManage={canManageMembers}
-          onConfirm={async (m) => {
-            const id = m?.id || removeTarget?.id;
-            if (!id) return;
-            await deactivateMember({ memberId: id });
-            closeRemove();
-          }}
+          hasSearch={search.length > 0 || filter !== "all"}
+          onEdit={(member) => setEditTarget(member)}
+          onRemove={(member) => { setRemoveTarget(member); setRemoveOpen(true); }}
+          onInvite={() => setInviteOpen(true)}
+          onBulkDeactivate={bulkDeactivate}
         />
+
       </main>
+
+      {/* ── Panels + modals ── */}
+
+      <InviteModal
+        open={inviteOpen}
+        orgName={orgName}
+        inviterName={inviterName}
+        onInviteCreated={() => { refresh(); setInviteOk("Member invited."); setTimeout(() => setInviteOk(""), 2500); }}
+        onClose={() => setInviteOpen(false)}
+      />
+
+      <EditMemberPanel
+        open={Boolean(editTarget)}
+        member={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSave={async (payload) => {
+          await updateMember(payload);
+          setEditTarget(null);
+        }}
+      />
+
+      <RemoveMemberModal
+        open={removeOpen}
+        member={removeTarget}
+        canManage={canManageMembers}
+        onClose={() => { setRemoveOpen(false); setRemoveTarget(null); }}
+        onConfirm={async (m) => {
+          const id = m?.id || removeTarget?.id;
+          if (!id) return;
+          await deactivateMember({ memberId: id });
+          setRemoveOpen(false);
+          setRemoveTarget(null);
+        }}
+      />
     </div>
   );
 }

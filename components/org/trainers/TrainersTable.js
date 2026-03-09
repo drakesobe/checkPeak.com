@@ -1,467 +1,427 @@
+// components/org/trainers/TrainersTable.js
 "use client";
 
 import { useMemo, useState } from "react";
-import { Edit3, Save, Ban, Trash2, Mail, User, Shield, Calendar } from "lucide-react";
-
-import Pill from "@/components/org/trainers/ui/Pill";
-import Button from "@/components/org/trainers/ui/Button";
-
-import { formatET } from "@/components/org/trainers/utils/time";
+import { Edit3, Trash2, UserPlus, ChevronDown, ChevronUp } from "lucide-react";
+import { DS, FONT_CONDENSED } from "./ds.js";
+import { RolePill, StatusPill, Btn } from "./ui.js";
 import { normalizeEmail } from "@/components/org/trainers/utils/strings";
+import { formatET } from "@/components/org/trainers/utils/time";
 
-function fmtDateET(value) {
-  if (!value) return "—";
-  return `${formatET(value)} ET`;
+function fmtDate(v) {
+  if (!v) return "—";
+  try { return `${formatET(v)} ET`; } catch { return "—"; }
 }
 
-function inputCls() {
-  return "w-full max-w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#46769B]/25";
+/* ── Column config for desktop ── */
+const COLS = [
+  { key: "name",    label: "Member",  width: "w-[220px]" },
+  { key: "email",   label: "Email",   width: "flex-1"    },
+  { key: "role",    label: "Role",    width: "w-[110px]" },
+  { key: "status",  label: "Status",  width: "w-[110px]" },
+  { key: "added",   label: "Added",   width: "w-[160px]" },
+  { key: "actions", label: "",        width: "w-[140px]" },
+];
+
+/* ─────────────────────────────────────────────────────────
+   Bulk action bar — appears above table when rows selected
+───────────────────────────────────────────────────────── */
+function BulkBar({ count, onDeactivate, onClear }) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 px-6 py-3"
+      style={{ backgroundColor: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}` }}
+    >
+      <p className="text-sm font-bold" style={{ color: DS.brand }}>
+        {count} member{count !== 1 ? "s" : ""} selected
+      </p>
+      <div className="flex items-center gap-2">
+        <Btn variant="ghost" onClick={onClear} style={{ fontSize: "0.7rem" }}>
+          Clear
+        </Btn>
+        <Btn
+          variant="danger"
+          onClick={onDeactivate}
+          style={{ fontSize: "0.7rem" }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Deactivate selected
+        </Btn>
+      </div>
+    </div>
+  );
 }
 
+/* ─────────────────────────────────────────────────────────
+   Empty state
+───────────────────────────────────────────────────────── */
+function EmptyState({ hasSearch, onInvite, canManage }) {
+  if (hasSearch) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-sm font-bold" style={{ color: DS.bodyText }}>No members match your search.</p>
+        <p className="text-xs mt-1" style={{ color: DS.dimText }}>Try a different name, email, or role.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="py-20 flex flex-col items-center gap-4">
+      <div
+        className="w-14 h-14 flex items-center justify-center"
+        style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}
+      >
+        <UserPlus className="w-6 h-6" style={{ color: DS.brand }} />
+      </div>
+      <div className="text-center">
+        <p className="text-sm font-bold" style={{ color: DS.bodyText }}>No staff members yet.</p>
+        <p className="text-xs mt-1" style={{ color: DS.dimText }}>
+          Invite your first trainer or admin to get started.
+        </p>
+      </div>
+      {canManage && (
+        <Btn variant="primary" onClick={onInvite}>
+          <UserPlus className="w-3.5 h-3.5" />
+          Invite member
+        </Btn>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   Sort button
+───────────────────────────────────────────────────────── */
+function SortBtn({ colKey, label, sortKey, sortDir, onSort }) {
+  const active = sortKey === colKey;
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest transition-colors"
+      style={{ color: active ? DS.brand : DS.dimText }}
+      onClick={() => onSort(colKey)}
+    >
+      {label}
+      {active
+        ? sortDir === "asc"
+          ? <ChevronUp   className="w-3 h-3" />
+          : <ChevronDown className="w-3 h-3" />
+        : <ChevronDown className="w-3 h-3 opacity-30" />
+      }
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   Main component
+───────────────────────────────────────────────────────── */
 export default function TrainersTable({
-  trainers = [],
+  rows = [],
   loading = false,
   canManage = false,
-  onEditSave,
-  onRemoveClick,
+  hasSearch = false,
+  onEdit,
+  onRemove,
+  onInvite,
+  onBulkDeactivate,
 }) {
-  const rows = useMemo(() => (Array.isArray(trainers) ? trainers : []), [trainers]);
+  const [selected, setSelected] = useState(new Set());
+  const [sortKey,  setSortKey]  = useState("name");
+  const [sortDir,  setSortDir]  = useState("asc");
 
-  // Inline edit state (single-row edit at a time)
-  const [editRow, setEditRow] = useState(null); // { id, name, email, role, active }
-  const [savingId, setSavingId] = useState("");
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+    setSelected(new Set());
+  };
 
-  const startEdit = (t) => {
-    if (!canManage) return;
-    setEditRow({
-      id: t?.id,
-      name: String(t?.Name || ""),
-      email: String(t?.Email || ""),
-      role: String(t?.Role || "trainer").toLowerCase(),
-      active: Boolean(t?.Active),
+  const sorted = useMemo(() => {
+    const list = [...(Array.isArray(rows) ? rows : [])];
+    list.sort((a, b) => {
+      let av = "", bv = "";
+      if (sortKey === "name")   { av = String(a?.Name  || ""); bv = String(b?.Name  || ""); }
+      if (sortKey === "email")  { av = String(a?.Email || ""); bv = String(b?.Email || ""); }
+      if (sortKey === "role")   { av = String(a?.Role  || ""); bv = String(b?.Role  || ""); }
+      if (sortKey === "status") { av = a?.Active ? "1" : "0";  bv = b?.Active ? "1" : "0"; }
+      if (sortKey === "added")  { av = String(a?.createdAt || ""); bv = String(b?.createdAt || ""); }
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    return list;
+  }, [rows, sortKey, sortDir]);
+
+  const allIds      = sorted.map(r => r?.id).filter(Boolean);
+  const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id));
+
+  const toggleAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(allIds));
+  };
+
+  const toggleOne = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
     });
   };
 
-  const cancelEdit = () => {
-    setEditRow(null);
-    setSavingId("");
+  const handleBulkDeactivate = () => {
+    onBulkDeactivate?.(Array.from(selected));
+    setSelected(new Set());
   };
 
-  const saveEdit = async () => {
-    if (!editRow?.id) return;
-    if (typeof onEditSave !== "function") return;
-
-    const payload = {
-      memberId: editRow.id,
-      name: String(editRow.name || "").trim(),
-      email: normalizeEmail(editRow.email),
-      role: String(editRow.role || "trainer").toLowerCase(),
-      active: Boolean(editRow.active),
-    };
-
-    if (!payload.email || !payload.email.includes("@")) return;
-    if (!["trainer", "admin"].includes(payload.role)) return;
-
-    setSavingId(editRow.id);
-    try {
-      await onEditSave(payload);
-      cancelEdit();
-    } finally {
-      setSavingId("");
-    }
-  };
-
-  const isEditing = (id) => editRow?.id && String(editRow.id) === String(id);
-
-  /* ----------------------------- */
-  /* Mobile Card Renderer (< sm)   */
-  /* ----------------------------- */
-
-  const MobileCards = () => {
-    if (!loading && rows.length === 0) {
-      return (
-        <div className="py-10 text-center text-gray-500 text-sm">
-          No trainers found.
-        </div>
-      );
-    }
-
-    if (loading) {
-      return (
-        <div className="py-10 text-center text-gray-500 text-sm">
-          Loading trainers…
-        </div>
-      );
-    }
-
+  /* ── Loading skeleton ── */
+  if (loading) {
     return (
-      <div className="space-y-3">
-        {rows.map((t) => {
-          const id = t?.id;
-          const editing = isEditing(id);
-
-          const email = normalizeEmail(t?.Email);
-          const role = String(t?.Role || "trainer").toLowerCase();
-          const active = Boolean(t?.Active);
-          const createdAt = t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "";
-
-          return (
-            <div
-              key={id || email}
-              className="rounded-2xl border border-gray-200 bg-white p-4 overflow-hidden"
-            >
-              {/* Header line */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  {editing ? (
-                    <div className="space-y-2">
-                      <label className="text-[11px] font-semibold text-gray-600">Name</label>
-                      <input
-                        className={inputCls()}
-                        value={editRow.name}
-                        onChange={(e) => setEditRow((p) => ({ ...p, name: e.target.value }))}
-                        placeholder="Name"
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm font-extrabold text-gray-900 truncate flex items-center gap-2">
-                        <User className="w-4 h-4 text-gray-400" />
-                        {t?.Name || "Member"}
-                      </p>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        {role === "admin" ? "Admin access" : "Trainer access"}
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                <div className="shrink-0 flex flex-col items-end gap-2">
-                  <Pill tone={role === "admin" ? "good" : "neutral"}>{role}</Pill>
-                  <Pill tone={active ? "good" : "warn"}>{active ? "Active" : "Inactive"}</Pill>
-                </div>
-              </div>
-
-              {/* Email + Created */}
-              <div className="mt-3 space-y-3">
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                  {editing ? (
-                    <div className="space-y-2">
-                      <label className="text-[11px] font-semibold text-gray-600">Email</label>
-                      <input
-                        className={inputCls()}
-                        value={editRow.email}
-                        onChange={(e) => setEditRow((p) => ({ ...p, email: e.target.value }))}
-                        placeholder="email@domain.com"
-                        inputMode="email"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                      />
-                      <p className="text-[11px] text-gray-500">Login email</p>
-                    </div>
-                  ) : (
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-gray-500 flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-gray-400" />
-                        Email
-                      </p>
-                      <p className="text-sm font-semibold text-gray-800 break-all mt-1">
-                        {email || "—"}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-gray-500 flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-400" />
-                      Added
-                    </p>
-                    <p className="text-sm font-semibold text-gray-800 mt-1">
-                      {fmtDateET(createdAt)}
-                    </p>
-                  </div>
-
-                  {editing ? (
-                    <div className="shrink-0">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={!!editRow.active}
-                          onChange={(e) => setEditRow((p) => ({ ...p, active: e.target.checked }))}
-                        />
-                        <span className="text-sm font-semibold">
-                          {editRow.active ? "Active" : "Inactive"}
-                        </span>
-                      </label>
-                      <p className="text-[11px] text-gray-500 mt-1 text-right">
-                        Controls org access
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="shrink-0 flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-gray-400" />
-                      <span className="text-[11px] text-gray-500">
-                        {canManage ? "Manageable" : "View only"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {editing ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      className="px-3 py-2 text-xs w-full justify-center"
-                      onClick={cancelEdit}
-                      disabled={savingId === id}
-                      title="Cancel"
-                    >
-                      <Ban className="w-4 h-4" />
-                      Cancel
-                    </Button>
-
-                    <Button
-                      className="px-3 py-2 text-xs w-full justify-center"
-                      onClick={saveEdit}
-                      disabled={savingId === id}
-                      title="Save"
-                    >
-                      <Save className="w-4 h-4" />
-                      {savingId === id ? "Saving..." : "Save"}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="secondary"
-                      className="px-3 py-2 text-xs w-full justify-center"
-                      onClick={() => startEdit(t)}
-                      disabled={!canManage || !id}
-                      title={!canManage ? "Only Admin/Org can edit" : "Edit member"}
-                    >
-                      <Edit3 className="w-4 h-4" />
-                      Edit
-                    </Button>
-
-                    <Button
-                      variant="secondary"
-                      className="px-3 py-2 text-xs w-full justify-center"
-                      onClick={() => onRemoveClick?.(t)}
-                      disabled={!canManage || !id}
-                      title={!canManage ? "Only Admin/Org can remove" : "Deactivate member"}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Remove
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="bg-white" style={{ border: `1px solid ${DS.border}` }}>
+        <div className="px-6 py-12 space-y-3">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="h-12 animate-pulse" style={{ backgroundColor: DS.pageBg }} />
+          ))}
+        </div>
       </div>
     );
-  };
-
-  /* ----------------------------- */
-  /* Desktop Table Renderer (sm+)  */
-  /* ----------------------------- */
-
-  const DesktopTable = () => (
-    <table className="min-w-full text-sm">
-      <thead>
-        <tr className="text-left text-xs text-gray-500 border-b">
-          <th className="py-3 pr-4">Member</th>
-          <th className="py-3 pr-4">Email</th>
-          <th className="py-3 pr-4">Role</th>
-          <th className="py-3 pr-4">Status</th>
-          <th className="py-3 pr-4">Added (ET)</th>
-          <th className="py-3 pr-2 text-right">Actions</th>
-        </tr>
-      </thead>
-
-      <tbody className="divide-y divide-gray-100">
-        {!loading && rows.length === 0 ? (
-          <tr>
-            <td colSpan={6} className="py-10 text-center text-gray-500">
-              No trainers found.
-            </td>
-          </tr>
-        ) : null}
-
-        {loading ? (
-          <tr>
-            <td colSpan={6} className="py-10 text-center text-gray-500">
-              Loading trainers…
-            </td>
-          </tr>
-        ) : null}
-
-        {!loading &&
-          rows.map((t) => {
-            const id = t?.id;
-            const editing = isEditing(id);
-
-            const email = normalizeEmail(t?.Email);
-            const role = String(t?.Role || "trainer").toLowerCase();
-            const active = Boolean(t?.Active);
-            const createdAt = t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "";
-
-            return (
-              <tr key={id || email} className="align-top">
-                <td className="py-3 pr-4">
-                  {editing ? (
-                    <div className="space-y-2">
-                      <input
-                        className={inputCls()}
-                        value={editRow.name}
-                        onChange={(e) => setEditRow((p) => ({ ...p, name: e.target.value }))}
-                        placeholder="Name"
-                      />
-                      <div className="text-[11px] text-gray-500">Member name</div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="font-semibold text-gray-900">{t?.Name || "Member"}</div>
-                      <div className="text-[11px] text-gray-500">
-                        {role === "admin" ? "Admin access" : "Trainer access"}
-                      </div>
-                    </>
-                  )}
-                </td>
-
-                <td className="py-3 pr-4">
-                  {editing ? (
-                    <div className="space-y-2">
-                      <input
-                        className={inputCls()}
-                        value={editRow.email}
-                        onChange={(e) => setEditRow((p) => ({ ...p, email: e.target.value }))}
-                        placeholder="email@domain.com"
-                      />
-                      <div className="text-[11px] text-gray-500">Login email</div>
-                    </div>
-                  ) : (
-                    <div className="text-gray-700 font-medium break-all">{email || "—"}</div>
-                  )}
-                </td>
-
-                <td className="py-3 pr-4">
-                  {editing ? (
-                    <select
-                      className="w-full max-w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm"
-                      value={editRow.role}
-                      onChange={(e) => setEditRow((p) => ({ ...p, role: e.target.value }))}
-                    >
-                      <option value="trainer">Trainer</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  ) : (
-                    <Pill tone={role === "admin" ? "good" : "neutral"}>{role}</Pill>
-                  )}
-                </td>
-
-                <td className="py-3 pr-4">
-                  {editing ? (
-                    <div className="space-y-2">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={!!editRow.active}
-                          onChange={(e) => setEditRow((p) => ({ ...p, active: e.target.checked }))}
-                        />
-                        <span>{editRow.active ? "Active" : "Inactive"}</span>
-                      </label>
-                      <div className="text-[11px] text-gray-500">Controls org access</div>
-                    </div>
-                  ) : (
-                    <Pill tone={active ? "good" : "warn"}>{active ? "Active" : "Inactive"}</Pill>
-                  )}
-                </td>
-
-                <td className="py-3 pr-4">
-                  <div className="text-gray-700 font-medium">{fmtDateET(createdAt)}</div>
-                </td>
-
-                <td className="py-3 pr-2">
-                  <div className="flex justify-end gap-2">
-                    {editing ? (
-                      <>
-                        <Button
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
-                          onClick={cancelEdit}
-                          disabled={savingId === id}
-                          title="Cancel"
-                          nowrap
-                        >
-                          <Ban className="w-4 h-4" />
-                          Cancel
-                        </Button>
-
-                        <Button
-                          className="px-3 py-2 text-xs"
-                          onClick={saveEdit}
-                          disabled={savingId === id}
-                          title="Save"
-                          nowrap
-                        >
-                          <Save className="w-4 h-4" />
-                          {savingId === id ? "Saving..." : "Save"}
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
-                          onClick={() => startEdit(t)}
-                          disabled={!canManage || !id}
-                          title={!canManage ? "Only Admin/Org can edit" : "Edit member"}
-                          nowrap
-                        >
-                          <Edit3 className="w-4 h-4" />
-                          Edit
-                        </Button>
-
-                        <Button
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
-                          onClick={() => onRemoveClick?.(t)}
-                          disabled={!canManage || !id}
-                          title={!canManage ? "Only Admin/Org can remove" : "Deactivate member"}
-                          nowrap
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Remove
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-      </tbody>
-    </table>
-  );
+  }
 
   return (
-    <div className="w-full">
-      {/* ✅ Mobile: card list (no horizontal scroll) */}
-      <div className="sm:hidden">
-        <MobileCards />
-      </div>
+    <div className="bg-white" style={{ border: `1px solid ${DS.border}` }}>
 
-      {/* ✅ Desktop: table */}
-      <div className="hidden sm:block">
-        <DesktopTable />
-      </div>
+      {/* Bulk bar */}
+      {selected.size > 0 && (
+        <BulkBar
+          count={selected.size}
+          onDeactivate={handleBulkDeactivate}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
+
+      {/* ── Empty state ── */}
+      {!loading && sorted.length === 0 && (
+        <EmptyState hasSearch={hasSearch} onInvite={onInvite} canManage={canManage} />
+      )}
+
+      {/* ── Desktop table ── */}
+      {sorted.length > 0 && (
+        <>
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+                  {/* Checkbox */}
+                  <th className="pl-5 pr-3 py-3 w-10">
+                    {canManage && (
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        className="cursor-pointer"
+                        title="Select all"
+                      />
+                    )}
+                  </th>
+                  {COLS.map(({ key, label, width }) => (
+                    <th key={key} className={`px-3 py-3 text-left ${width}`}>
+                      {label && ["name","email","role","status","added"].includes(key) ? (
+                        <SortBtn
+                          colKey={key} label={label}
+                          sortKey={sortKey} sortDir={sortDir}
+                          onSort={handleSort}
+                        />
+                      ) : (
+                        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: DS.dimText }}>
+                          {label}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((t) => {
+                  const id      = t?.id;
+                  const email   = normalizeEmail(t?.Email);
+                  const role    = String(t?.Role || "trainer").toLowerCase();
+                  const active  = Boolean(t?.Active);
+                  const created = t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "";
+                  const isSel   = selected.has(id);
+
+                  return (
+                    <tr
+                      key={id || email}
+                      style={{
+                        borderBottom:    `1px solid ${DS.border}`,
+                        backgroundColor: isSel ? DS.brandBg : undefined,
+                        transition:      "background-color 0.1s",
+                      }}
+                      onMouseEnter={e => { if (!isSel) e.currentTarget.style.backgroundColor = DS.cardHover; }}
+                      onMouseLeave={e => { if (!isSel) e.currentTarget.style.backgroundColor = ""; }}
+                    >
+                      {/* Checkbox */}
+                      <td className="pl-5 pr-3 py-3">
+                        {canManage && id && (
+                          <input
+                            type="checkbox"
+                            checked={isSel}
+                            onChange={() => toggleOne(id)}
+                            className="cursor-pointer"
+                          />
+                        )}
+                      </td>
+
+                      {/* Member */}
+                      <td className="px-3 py-3">
+                        <p className="text-sm font-semibold" style={{ color: DS.bodyText }}>
+                          {t?.Name || "Member"}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+                          {role === "admin" ? "Admin access" : "Trainer access"}
+                        </p>
+                      </td>
+
+                      {/* Email */}
+                      <td className="px-3 py-3">
+                        <span className="text-sm break-all" style={{ color: DS.labelText }}>
+                          {email || "—"}
+                        </span>
+                      </td>
+
+                      {/* Role */}
+                      <td className="px-3 py-3"><RolePill role={role} /></td>
+
+                      {/* Status */}
+                      <td className="px-3 py-3"><StatusPill active={active} /></td>
+
+                      {/* Added */}
+                      <td className="px-3 py-3">
+                        <span className="text-xs" style={{ color: DS.dimText }}>{fmtDate(created)}</span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <Btn
+                            variant="ghost"
+                            onClick={() => onEdit?.(t)}
+                            disabled={!canManage || !id}
+                            title={!canManage ? "View only" : "Edit member"}
+                            style={{ padding: "0.375rem 0.75rem", fontSize: "0.7rem" }}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Edit
+                          </Btn>
+                          <Btn
+                            variant="ghost"
+                            onClick={() => onRemove?.(t)}
+                            disabled={!canManage || !id}
+                            title={!canManage ? "View only" : "Remove member"}
+                            style={{ padding: "0.375rem 0.75rem", fontSize: "0.7rem", borderColor: DS.badBorder, color: DS.bad }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </Btn>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ── Mobile cards ── */}
+          <div className="sm:hidden divide-y" style={{ borderColor: DS.border }}>
+            {sorted.map((t) => {
+              const id      = t?.id;
+              const email   = normalizeEmail(t?.Email);
+              const role    = String(t?.Role || "trainer").toLowerCase();
+              const active  = Boolean(t?.Active);
+              const created = t?.createdAt || t?.CreatedAt || t?.createdTime || t?._createdTime || "";
+              const isSel   = selected.has(id);
+
+              return (
+                <div
+                  key={id || email}
+                  className="px-5 py-4"
+                  style={{ backgroundColor: isSel ? DS.brandBg : DS.cardBg }}
+                >
+                  {/* Top row */}
+                  <div className="flex items-start gap-3">
+                    {canManage && id && (
+                      <input
+                        type="checkbox"
+                        checked={isSel}
+                        onChange={() => toggleOne(id)}
+                        className="mt-1 cursor-pointer shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold truncate" style={{ color: DS.bodyText }}>
+                            {t?.Name || "Member"}
+                          </p>
+                          <p className="text-xs mt-0.5 break-all" style={{ color: DS.dimText }}>{email || "—"}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <RolePill role={role} />
+                          <StatusPill active={active} />
+                        </div>
+                      </div>
+                      <p className="text-xs mt-2" style={{ color: DS.dimText }}>
+                        Added {fmtDate(created)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 mt-3">
+                    <Btn
+                      variant="ghost"
+                      onClick={() => onEdit?.(t)}
+                      disabled={!canManage || !id}
+                      className="flex-1 justify-center"
+                      style={{ fontSize: "0.7rem" }}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      Edit
+                    </Btn>
+                    <Btn
+                      variant="ghost"
+                      onClick={() => onRemove?.(t)}
+                      disabled={!canManage || !id}
+                      className="flex-1 justify-center"
+                      style={{ fontSize: "0.7rem", borderColor: DS.badBorder, color: DS.bad }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remove
+                    </Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer count */}
+          <div
+            className="px-6 py-3 flex items-center justify-between"
+            style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
+          >
+            <p className="text-xs" style={{ color: DS.dimText }}>
+              {sorted.length} member{sorted.length !== 1 ? "s" : ""}
+              {selected.size > 0 && ` · ${selected.size} selected`}
+            </p>
+            {selected.size > 0 && (
+              <button
+                type="button"
+                className="text-xs font-bold transition-opacity hover:opacity-60"
+                style={{ color: DS.brand }}
+                onClick={() => setSelected(new Set())}
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

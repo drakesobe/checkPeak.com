@@ -26,7 +26,7 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Color system — two-world palette: Dark Power / White Clarity
+// Color system - two-world palette: Dark Power / White Clarity
 // ---------------------------------------------------------------------------
 const DARK = {
   bg:       "#080E1A",       // near-black with blue undertone
@@ -35,7 +35,7 @@ const DARK = {
   text:     "#FFFFFF",
   body:     "rgba(255,255,255,0.82)",
   dim:      "rgba(255,255,255,0.45)",
-  accent:   "#5B9EC9",       
+  accent:   "#4FABFF",       // electric blue - brighter than brand
   accentDim:"rgba(79,171,255,0.15)",
 };
 const LIGHT = {
@@ -92,7 +92,7 @@ function Reveal({ children, delay = 0, y = 24, className = "" }) {
 }
 
 // ---------------------------------------------------------------------------
-// Primary CTA — athletic hover effect
+// Primary CTA - athletic hover effect
 // ---------------------------------------------------------------------------
 function Cta({ source, children, dark = false, size = "md", roleOverride, onClick, className = "" }) {
   const lg = size === "lg";
@@ -190,7 +190,7 @@ const STEPS = [
   },
   {
     n: "03", title: "STAFF REVIEWS",
-    body: "A clean queue: approve, request info, or leave notes. Consistent outcomes with attached timestamps — follow-ups always have context.",
+    body: "A clean queue: approve, request info, or leave notes. Consistent outcomes with attached timestamps - follow-ups always have context.",
   },
   {
     n: "04", title: "WEEKLY VISIBILITY",
@@ -203,13 +203,13 @@ const MODULES = [
     label: "ACCOUNTABILITY",
     title: "WORKOUT\nCHECK-INS",
     body: "Assign templates. Collect photo check-ins. Review in a clean queue. Stop offseason regression and start getting consistent progression.",
-    points: ["Templates with video links and clear expectations", "Photo proof only when you require it", "Weekly view — catch who's drifting before camp opens"],
+    points: ["Templates with video links and clear expectations", "Photo proof only when you require it", "Weekly view - catch who's drifting before camp opens"],
   },
   {
     label: "NUTRITION",
     title: "MEAL-BASED\nTARGETS",
     body: "Macro targets by meal, built for dining halls. Hydration goals. Athletes log in seconds - no food journals, no weighing chicken.",
-    points: ["Targets by meal, not just daily totals", "Dining hall and real-world guidance", "Hydration tracking alongside food - in one place"],
+    points: ["Targets by meal, not just daily totals", "Dining hall and real-world guidance", "Hydration tracking alongside food - one place"],
   },
   {
     label: "SCREENING",
@@ -232,7 +232,7 @@ const SCAN_LINKS = [
 // ---------------------------------------------------------------------------
 export default function HomePage() {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
-  const ogText  = "CheckPeak — No Excuses. No Drift. No Guessing.";
+  const ogText  = "CheckPeak - No Excuses. No Drift. No Guessing.";
 
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [email,   setEmail]   = useState("");
@@ -264,28 +264,28 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>CheckPeak — Workouts + Nutrition + Supplement Screening</title>
+        <title>CheckPeak - Workouts + Nutrition + Supplement Screening</title>
         <meta name="description" content="CheckPeak keeps athletes accountable away from campus. Workout check-ins, nutrition targets, supplement screening. Built for programs." />
-        <meta property="og:title"       content="CheckPeak — No Excuses. No Drift. No Guessing." />
+        <meta property="og:title"       content="CheckPeak - No Excuses. No Drift. No Guessing." />
         <meta property="og:description" content="The platform that keeps athletes sharp wherever they are." />
         <meta property="og:type"        content="website" />
         <meta property="og:url"         content={siteUrl} />
         <meta property="og:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`} />
         <meta name="twitter:card"       content="summary_large_image" />
         <meta name="twitter:site"       content="@checkPeak_" />
-        <meta name="twitter:title"      content="CheckPeak — No Excuses. No Drift. No Guessing." />
+        <meta name="twitter:title"      content="CheckPeak - No Excuses. No Drift. No Guessing." />
         <meta name="twitter:image"      content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogText)}`} />
       </Head>
 
       <div className="min-h-screen" style={{ backgroundColor: DARK.bg, color: DARK.text }}>
 
         {/* ═══════════════════════════════════════════════════════
-            HERO  — untouched
+            HERO  - untouched
         ═══════════════════════════════════════════════════════ */}
         <HeroSection />
 
         {/* ═══════════════════════════════════════════════════════
-            STAT STRIP  — dark, full-bleed, three weapons
+            STAT STRIP  - dark, full-bleed, three weapons
         ═══════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: DARK.bg }}>
           <div className="max-w-7xl mx-auto px-6 sm:px-12">
@@ -320,7 +320,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            MANIFESTO STATEMENT  — full-bleed dark, massive type
+            MANIFESTO STATEMENT  - full-bleed dark, massive type
         ═══════════════════════════════════════════════════════ */}
         <section
           className="py-16 sm:py-28 overflow-hidden"
@@ -357,11 +357,10 @@ export default function HomePage() {
                     maxWidth: "14ch",
                   }}
                 >
-                  OFFSEASON IS WHERE{" "}
-                  <span style={{ color: DARK.accent }}>CHAMPIONSHIPS</span>{" "}
-                  ARE WON OR LOST.
+                  THE OFFSEASON{" "}
+                  <span style={{ color: DARK.accent }}>DOESN'T LIE.</span>
                 </h2>
-                {/* Three-line typographic statement — poster logic, not prose */}
+                {/* Three-line typographic statement - poster logic, not prose */}
                 <div className="mt-10 sm:mt-16 space-y-3">
                   <Reveal delay={0.1} y={16}>
                     <p
@@ -373,7 +372,7 @@ export default function HomePage() {
                         letterSpacing: "-0.01em",
                       }}
                     >
-                      Most programs run on guesswork
+                      Most programs run on spreadsheets
                     </p>
                   </Reveal>
                   <Reveal delay={0.18} y={16}>
@@ -391,7 +390,7 @@ export default function HomePage() {
                   </Reveal>
                   <Reveal delay={0.28} y={16}>
                     <div className="pt-3 sm:pt-4 flex flex-col sm:flex-row sm:gap-6 gap-1">
-                      {["Stop guessing.", "Start knowing.", "Zero excuses."].map((phrase, i) => (
+                      {["Stop guessing.", "Start knowing.", "No excuses."].map((phrase, i) => (
                         <p
                           key={phrase}
                           className="font-black leading-none"
@@ -419,7 +418,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            HOW IT WORKS  — light section, editorial numbered list
+            HOW IT WORKS  - light section, editorial numbered list
         ═══════════════════════════════════════════════════════ */}
         <section id="how-it-works" style={{ backgroundColor: LIGHT.bg }}>
           {/* Diagonal top edge */}
@@ -446,7 +445,7 @@ export default function HomePage() {
               </h2>
             </Reveal>
 
-            {/* Full-width alternating strips — Nike editorial logic */}
+            {/* Full-width alternating strips - Nike editorial logic */}
             <div>
               {STEPS.map(({ n, title, body }, i) => {
                 const flip = i % 2 !== 0;
@@ -549,7 +548,7 @@ export default function HomePage() {
             <Reveal delay={0.2}>
               <div className="mt-16 flex justify-start">
                 <Cta source="how_it_works" size="lg">
-                  Get started free <ArrowRight className="w-5 h-5" />
+                  Get started for free <ArrowRight className="w-5 h-5" />
                 </Cta>
               </div>
             </Reveal>
@@ -557,7 +556,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            THREE MODULES  — alternating dark/light strips
+            THREE MODULES  - alternating dark/light strips
         ═══════════════════════════════════════════════════════ */}
         {MODULES.map(({ label, title, body, points }, i) => {
           const isDark = i % 2 === 0;
@@ -583,7 +582,7 @@ export default function HomePage() {
                 <Reveal>
                   <div className="grid lg:grid-cols-2 gap-10 lg:gap-20 items-center">
 
-                    {/* Left — headline */}
+                    {/* Left - headline */}
                     <div className={i % 2 !== 0 ? "lg:order-2" : ""}>
                       <p className="text-xs font-black tracking-[0.3em] mb-6"
                         style={{ color: accent, fontFamily: "'Barlow Condensed', sans-serif" }}
@@ -609,7 +608,7 @@ export default function HomePage() {
                       </Cta>
                     </div>
 
-                    {/* Right — feature card */}
+                    {/* Right - feature card */}
                     <div className={i % 2 !== 0 ? "lg:order-1" : ""}>
                       <div
                         className="rounded-sm p-8 sm:p-10"
@@ -670,13 +669,13 @@ export default function HomePage() {
         })}
 
         {/* ═══════════════════════════════════════════════════════
-            PRICING  — dark, bold, no-nonsense
+            PRICING  - dark, bold, no-nonsense
         ═══════════════════════════════════════════════════════ */}
         <section id="pricing" style={{ backgroundColor: "#060D18" }}>
           <div className="max-w-7xl mx-auto px-6 sm:px-12 py-16 sm:py-28">
             <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
 
-              {/* Left — the offer */}
+              {/* Left - the offer */}
               <Reveal>
                 <Eyebrow dark>Founding 26 teams</Eyebrow>
                 <h2
@@ -692,7 +691,7 @@ export default function HomePage() {
                   <span style={{ color: DARK.accent }}>BEFORE CAMP.</span>
                 </h2>
                 <p className="text-base sm:text-xl leading-relaxed mb-10 sm:mb-12" style={{ color: DARK.body }}>
-                  Start with one team. Expand as you go. Flat all-in pricing — no per-athlete add-ons, no surprise upcharges.
+                  Start with one team. Expand as you go. Flat all-in pricing - no per-athlete add-ons, no surprise upcharges.
                 </p>
 
                 {/* Price block */}
@@ -735,11 +734,11 @@ export default function HomePage() {
                   </Cta>
                 </div>
                 <p className="mt-4 text-base" style={{ color: DARK.dim }}>
-                  *No credit card required to start.
+                  No credit card required to start.
                 </p>
               </Reveal>
 
-              {/* Right — 30-day timeline */}
+              {/* Right - 30-day timeline */}
               <Reveal delay={0.15}>
                 <p className="text-xs font-black uppercase tracking-[0.3em] mb-8"
                   style={{ color: DARK.dim, fontFamily: "'Barlow Condensed', sans-serif" }}
@@ -799,7 +798,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            SCAN STRIP  — light, horizontal
+            SCAN STRIP  - light, horizontal
         ═══════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: LIGHT.bg }}>
           <div className="h-16" style={{
@@ -851,7 +850,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            FINAL CTA  — full-bleed dark, electric
+            FINAL CTA  - full-bleed dark, electric
         ═══════════════════════════════════════════════════════ */}
         <section
           className="relative overflow-hidden"
@@ -919,7 +918,7 @@ export default function HomePage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                 <Cta source="final_cta" dark size="lg" className="w-full sm:w-auto justify-center">
-                  Get started free <ArrowRight className="w-5 h-5" />
+                  Get started for free <ArrowRight className="w-5 h-5" />
                 </Cta>
                 <button
                   type="button"
@@ -938,7 +937,7 @@ export default function HomePage() {
         </section>
 
         {/* ═══════════════════════════════════════════════════════
-            DISCLAIMER  — minimal dark footer strip
+            DISCLAIMER  - minimal dark footer strip
         ═══════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: "#040912", borderTop: `1px solid ${DARK.border}` }}>
           <div className="max-w-4xl mx-auto px-6 sm:px-12 py-8">
@@ -949,7 +948,7 @@ export default function HomePage() {
               aria-expanded={disclaimerOpen}
             >
               <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>
-                ⚠ Supplement screening limitations — important notice
+                ⚠ Supplement screening limitations - important notice
               </span>
               {disclaimerOpen
                 ? <ChevronUp   className="w-4 h-4 shrink-0 opacity-40" />
@@ -960,7 +959,7 @@ export default function HomePage() {
               <p className="text-base leading-relaxed pb-6 mt-3" style={{ color: "rgba(255,255,255,0.45)" }}>
                 CheckPeak provides screening guidance for potentially banned or high-risk substances using databases and label analysis. It is{" "}
                 <strong style={{ color: "rgba(255,255,255,0.7)" }}>not 100% comprehensive</strong>{" "}
-                and results do not replace official rulings or medical advice. Always verify with your governing body, certified authority, athletic trainer, or medical professional before consuming any product. Use saved scans as a starting point — final decisions should follow your program&apos;s compliance process.
+                and results do not replace official rulings or medical advice. Always verify with your governing body, certified authority, athletic trainer, or medical professional before consuming any product. Use saved scans as a starting point - final decisions should follow your program&apos;s compliance process.
               </p>
             )}
           </div>

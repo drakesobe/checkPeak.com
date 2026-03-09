@@ -462,7 +462,7 @@ export default function HomePage() {
                           style={{
                             fontFamily: "'Barlow Condensed', sans-serif",
                             fontSize: "2rem",
-                            color: LIGHT.border,
+                            color: DARK.dim,
                             letterSpacing: "-0.04em",
                             minWidth: "2.5rem",
                           }}
@@ -627,8 +627,8 @@ export default function HomePage() {
                             style={{
                               fontFamily: "'Barlow Condensed', sans-serif",
                               fontSize: "5rem",
-                              color: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
-                              letterSpacing: "-0.04em",
+                              color: isDark ? "rgba(255,255,255,0.60)" : "rgba(0,0,0,0.35)",
+                              letterSpacing: "-0.02em",
                               lineHeight: 1,
                             }}
                           >

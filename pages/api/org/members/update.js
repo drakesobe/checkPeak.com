@@ -37,52 +37,34 @@ function isValidRole(r) {
  */
 function canManageTarget(actorRole, targetRole) {
   const t = String(targetRole || "").trim().toLowerCase();
-
-  // never allow editing org owner role via this endpoint
   if (t === "organization" || t === "org") return false;
-
-  // org owner can manage anyone (admin/trainer/pending)
   if (isOrg(actorRole)) return true;
-
-  // admin can manage trainers + pending invites
   if (isAdmin(actorRole) && !isOrg(actorRole)) {
     return t === "" || t === "trainer";
   }
-
   return false;
 }
 
 function canSetRole(actorRole, desiredRole) {
   const d = String(desiredRole || "").trim().toLowerCase();
   if (d === "organization" || d === "org") return false;
-
-  // admin can only set trainer
   if (isAdmin(actorRole) && !isOrg(actorRole)) return d === "trainer";
-
-  // org can set admin or trainer
   if (isOrg(actorRole)) return d === "admin" || d === "trainer";
-
   return false;
 }
 
 /**
  * Robust org membership check.
- * Works whether {Organization} is:
- * - a linked record field (array of record ids)
- * - a lookup (array of strings)
- * - a single string
+ * Works whether {Organization} is a linked record (array), lookup, or string.
  */
 function isMemberInOrg(rec, ORG_FIELD, orgId) {
   const v = rec?.fields?.[ORG_FIELD];
   if (!orgId) return false;
-
   if (Array.isArray(v)) {
     return v.map((x) => String(x).trim()).includes(String(orgId).trim());
   }
-
   const s = String(v ?? "").trim();
   if (!s) return false;
-
   return s === String(orgId).trim() || s.includes(String(orgId).trim());
 }
 
@@ -106,26 +88,25 @@ export default async function handler(req, res) {
     const id = String(memberId || "").trim();
     if (!id) return res.status(400).json({ error: "Missing memberId." });
 
-    // ✅ Field names with safe fallbacks (critical)
-    const ORG_FIELD = F.MEM_ORG || "Organization";
-    const ROLE_FIELD = F.MEM_ROLE || "Role";
-    const NAME_FIELD = F.MEM_NAME || "Name";
-    const EMAIL_FIELD = F.MEM_EMAIL || "Email";
+    const ORG_FIELD    = F.MEM_ORG    || "Organization";
+    const ROLE_FIELD   = F.MEM_ROLE   || "Role";
+    const NAME_FIELD   = F.MEM_NAME   || "Name";
+    const EMAIL_FIELD  = F.MEM_EMAIL  || "Email";
     const ACTIVE_FIELD = F.MEM_ACTIVE || "Active";
 
-    // Optional: block self-deactivation
+    // Block self-deactivation
     const selfMemberId = String(user?.memberId || user?.MemberId || "").trim();
     if (selfMemberId && selfMemberId === id && active === false) {
-      return res.status(409).json({ error: "You can’t deactivate your own account." });
+      return res.status(409).json({ error: "You can't deactivate your own account." });
     }
 
-    // ✅ Fetch once and validate org in JS (no Airtable formula round trip)
+    // Fetch once — single source of truth, no formula round trip
     const record = await b(AT.tables.orgMembers).find(id);
     if (!record) return res.status(404).json({ error: "Member not found." });
 
     if (!isMemberInOrg(record, ORG_FIELD, orgId)) {
       return res.status(403).json({
-        error: "Forbidden.",
+        error:   "Forbidden.",
         details: "Target member is not in your organization (orgId mismatch).",
       });
     }
@@ -142,17 +123,29 @@ export default async function handler(req, res) {
 
     const updates = {};
 
-    // Name
+    // ── FIX 5: Name empty-string guard ───────────────────────────────────
+    // Previously: if name="" was sent, updates[NAME_FIELD]="" would silently
+    // blank the member's name in Airtable. Now we reject blank names
+    // explicitly so the caller knows it wasn't accepted.
+    // Name is optional on invite (it can legitimately be absent on a record),
+    // but once a name exists it should not be clearable to an empty string
+    // through this endpoint. The EditMemberPanel doesn't require name, so
+    // if name is undefined (field wasn't touched) we skip it entirely.
+    // ──────────────────────────────────────────────────────────────────────
     if (name !== undefined) {
-      updates[NAME_FIELD] = pickString(name);
+      const cleanName = pickString(name);
+      if (cleanName === "") {
+        return res.status(400).json({ error: "Name cannot be blank. Leave the field as-is to keep the current name." });
+      }
+      updates[NAME_FIELD] = cleanName;
     }
 
     // Role
     if (role !== undefined) {
-      if (!isValidRole(role)) return res.status(400).json({ error: "Role must be trainer or admin." });
-
+      if (!isValidRole(role)) {
+        return res.status(400).json({ error: "Role must be trainer or admin." });
+      }
       const desired = String(role).trim().toLowerCase();
-
       if (!canSetRole(actorRole, desired)) {
         return res.status(403).json({
           error: isOrg(actorRole)
@@ -160,7 +153,6 @@ export default async function handler(req, res) {
             : "Admin can set role to trainer only.",
         });
       }
-
       updates[ROLE_FIELD] = desired;
     }
 
@@ -169,7 +161,7 @@ export default async function handler(req, res) {
       updates[ACTIVE_FIELD] = Boolean(active);
     }
 
-    // Email (unique within org)
+    // Email — unique within org
     if (email !== undefined) {
       const nextEmail = normEmail(email);
       if (!nextEmail || !nextEmail.includes("@")) {
@@ -178,9 +170,6 @@ export default async function handler(req, res) {
 
       const safe = escapeAirtableString(nextEmail);
 
-      // This org filter formula is fine for conflicts because it searches by email within org,
-      // but if your Org field is also linked-record and this ever gets flaky,
-      // we can switch this conflict check to a JS scan too.
       const conflict = await b(AT.tables.orgMembers)
         .select({
           maxRecords: 1,
@@ -193,9 +182,9 @@ export default async function handler(req, res) {
         .firstPage();
 
       if (conflict?.length) {
-        return res
-          .status(409)
-          .json({ error: "Email already exists for another member in this organization." });
+        return res.status(409).json({
+          error: "Email already exists for another member in this organization.",
+        });
       }
 
       updates[EMAIL_FIELD] = nextEmail;
@@ -208,18 +197,19 @@ export default async function handler(req, res) {
     const updated = await b(AT.tables.orgMembers).update(id, updates);
 
     return res.status(200).json({
-      ok: true,
+      ok:     true,
       member: { id: updated.id, ...(updated.fields || {}) },
     });
+
   } catch (err) {
     console.error("[org/members/update] error:", err);
     return res.status(500).json({
-      error: "Failed to update member",
-      details: err?.message,
+      error:    "Failed to update member",
+      details:  err?.message,
       airtable: {
         statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
+        message:    err?.message,
+        error:      err?.error,
       },
     });
   }

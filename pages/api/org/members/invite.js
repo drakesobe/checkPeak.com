@@ -35,22 +35,19 @@ function addDaysISO(days = 7) {
 
 function originFromReq(req) {
   const proto = req.headers["x-forwarded-proto"];
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-
+  const host  = req.headers["x-forwarded-host"] || req.headers.host;
   if (proto && host) return `${proto}://${host}`;
   return `http://${host}`;
 }
 
-// Add rich query params so setup page can show context + prefill email on login
 function buildSetupUrl({ origin, token, email, orgName, role, inviterName, expiresAt }) {
   const qs = new URLSearchParams();
   qs.set("token", token);
-  if (email) qs.set("email", email);
-  if (orgName) qs.set("org", orgName);
-  if (role) qs.set("role", role);
-  if (inviterName) qs.set("inviter", inviterName);
-  if (expiresAt) qs.set("expiresAt", expiresAt);
-
+  if (email)       qs.set("email",     email);
+  if (orgName)     qs.set("org",       orgName);
+  if (role)        qs.set("role",      role);
+  if (inviterName) qs.set("inviter",   inviterName);
+  if (expiresAt)   qs.set("expiresAt", expiresAt);
   return `${origin}/setup/trainer?${qs.toString()}`;
 }
 
@@ -68,13 +65,13 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "Only Organization/Admin can invite members." });
     }
 
-    const orgId = String(user?.orgId || "").trim();
-    const orgToken = String(user?.Token || "").trim();
-    const orgName = String(user?.OrgName || user?.OrgName?.Name || user?.OrganizationName || "").trim();
-    const inviterName = String(user?.Name || user?.name || "").trim();
-    const inviterEmail = String(user?.Email || user?.email || "").trim().toLowerCase();
+    const orgId        = String(user?.orgId || "").trim();
+    const orgToken     = String(user?.Token  || "").trim();
+    const orgName      = String(user?.OrgName || user?.OrgName?.Name || user?.OrganizationName || "").trim();
+    const inviterName  = String(user?.Name   || user?.name  || "").trim();
+    const inviterEmail = String(user?.Email  || user?.email || "").trim().toLowerCase();
 
-    if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
+    if (!orgId)    return res.status(400).json({ error: "Missing orgId on session user." });
     if (!orgToken) return res.status(400).json({ error: "Missing Token on session user." });
 
     const { email, role, name } = req.body || {};
@@ -91,109 +88,125 @@ export default async function handler(req, res) {
 
     const b = base();
 
-    // ---- Field names (defaults)
-    const memEmailField = F.MEM_EMAIL || "Email";
-    const memNameField = F.MEM_NAME || "Name";
-    const memRoleField = F.MEM_ROLE || "Role";
-    const memActiveField = F.MEM_ACTIVE || "Active";
-    const memOrgField = F.MEM_ORG || "Organization";
-
-    // ✅ store org token on member (your debug / filtering strategy)
-    const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
-
-    // Invite token fields (must exist in Airtable)
-    const memInviteTokenField = F.MEM_INVITE_TOKEN || "InviteToken";
+    const memEmailField         = F.MEM_EMAIL          || "Email";
+    const memNameField          = F.MEM_NAME           || "Name";
+    const memRoleField          = F.MEM_ROLE           || "Role";
+    const memActiveField        = F.MEM_ACTIVE         || "Active";
+    const memOrgField           = F.MEM_ORG            || "Organization";
+    const memOrgTokenField      = F.MEM_ORG_TOKEN      || "OrgToken";
+    const memInviteTokenField   = F.MEM_INVITE_TOKEN   || "InviteToken";
     const memInviteExpiresField = F.MEM_INVITE_EXPIRES || "InviteExpiresAt";
-    const memInviteUsedField = F.MEM_INVITE_USED || "InviteUsedAt";
+    const memInviteUsedField    = F.MEM_INVITE_USED    || "InviteUsedAt";
 
-    // Find existing member in this org by email + org link
+    // Look for an existing member record in this org with the same email
     const safeEmail = escapeAirtableString(emailLower);
     const safeOrgId = escapeAirtableString(orgId);
 
     const existing = await b(AT.tables.orgMembers)
       .select({
-        filterByFormula: `AND(LOWER({${memEmailField}})='${safeEmail}', FIND('${safeOrgId}', ARRAYJOIN({${memOrgField}}&'')) > 0)`,
+        filterByFormula: `AND(
+          LOWER({${memEmailField}})='${safeEmail}',
+          FIND('${safeOrgId}', ARRAYJOIN({${memOrgField}}&'')) > 0
+        )`,
         maxRecords: 1,
       })
       .firstPage();
 
-    // New invite token + expiration
     const inviteToken = makeInviteToken();
-    const expiresAt = addDaysISO(7);
-
-    // Fields to write
-    const fieldsToWrite = {
-      [memEmailField]: emailLower,
-      [memRoleField]: roleLower,
-      [memOrgTokenField]: orgToken, // ✅ new debug field
-      [memOrgField]: [orgId], // ✅ keep link
-      [memActiveField]: false, // ✅ pending until finishSetup flips it
-    };
-
-    // Optional: name
-    if (name && String(name).trim()) fieldsToWrite[memNameField] = String(name).trim();
-
-    // Invite state
-    // If these fields don't exist in Airtable you will get 422; keep your table aligned.
-    fieldsToWrite[memInviteTokenField] = inviteToken;
-    fieldsToWrite[memInviteExpiresField] = expiresAt;
-    // clear any prior used marker on re-invite
-    if (memInviteUsedField) fieldsToWrite[memInviteUsedField] = "";
+    const expiresAt   = addDaysISO(7);
 
     let record;
+
     if (existing?.length) {
+      const existingFields    = existing[0].fields || {};
+      const isAlreadyActive   = Boolean(existingFields[memActiveField]);
+      const hasCompletedSetup = Boolean(existingFields[memInviteUsedField]);
+
+      // ── FIX: Re-invite guard ───────────────────────────────────────────────
+      // If InviteUsedAt is set AND Active=true, the member has already completed
+      // their setup and is a live account. Do NOT set Active=false — that locks
+      // them out immediately. Instead, refresh the invite token only (allows
+      // password reset flow) and leave Active untouched.
+      //
+      // Only set Active=false when:
+      //   - Record exists but setup was never completed (InviteUsedAt is blank)
+      //   - OR account is already inactive (Active=false)
+      //
+      // In both those cases the member has no working access anyway, so
+      // resetting to pending state is correct.
+      // ──────────────────────────────────────────────────────────────────────
+
+      const fieldsToWrite = {
+        [memRoleField]:          roleLower,
+        [memOrgTokenField]:      orgToken,
+        [memOrgField]:           [orgId],
+        [memInviteTokenField]:   inviteToken,
+        [memInviteExpiresField]: expiresAt,
+        [memInviteUsedField]:    "", // clear used marker so new token is valid
+      };
+
+      if (name && String(name).trim()) {
+        fieldsToWrite[memNameField] = String(name).trim();
+      }
+
+      if (isAlreadyActive && hasCompletedSetup) {
+        // Live member — preserve Active=true, don't include it in the write
+      } else {
+        // Pending or inactive — reset to pending
+        fieldsToWrite[memActiveField] = false;
+      }
+
       record = await b(AT.tables.orgMembers).update(existing[0].id, fieldsToWrite);
+
     } else {
+      // New record — always starts as pending (Active=false)
+      const fieldsToWrite = {
+        [memEmailField]:         emailLower,
+        [memRoleField]:          roleLower,
+        [memOrgTokenField]:      orgToken,
+        [memOrgField]:           [orgId],
+        [memActiveField]:        false,
+        [memInviteTokenField]:   inviteToken,
+        [memInviteExpiresField]: expiresAt,
+        [memInviteUsedField]:    "",
+      };
+
+      if (name && String(name).trim()) {
+        fieldsToWrite[memNameField] = String(name).trim();
+      }
+
       record = await b(AT.tables.orgMembers).create(fieldsToWrite);
     }
 
-    // Build setup URL with rich context
-    const origin = originFromReq(req);
-
+    const origin    = originFromReq(req);
     const inviteUrl = buildSetupUrl({
       origin,
-      token: inviteToken,
-      email: emailLower,
-      orgName: orgName || "Organization",
-      role: roleLower,
+      token:       inviteToken,
+      email:       emailLower,
+      orgName:     orgName || "Organization",
+      role:        roleLower,
       inviterName: inviterName || inviterEmail || "Admin",
       expiresAt,
     });
 
     return res.status(200).json({
-      ok: true,
-      memberId: record?.id,
+      ok:        true,
+      memberId:  record?.id,
       inviteUrl,
       expiresAt,
-      role: roleLower,
-      email: emailLower,
-
-      // ✅ Optional payload useful for your InviteCard email builder
-      context: {
-        orgId,
-        orgToken,
-        orgName: orgName || "Organization",
-        inviterName: inviterName || "",
-        inviterEmail: inviterEmail || "",
-      },
-
-      debug: {
-        wroteOrgId: orgId,
-        wroteOrgToken: orgToken,
-        active: fieldsToWrite[memActiveField],
-        wroteInviteTokenField: memInviteTokenField,
-        wroteInviteExpiresField: memInviteExpiresField,
-      },
+      role:      roleLower,
+      email:     emailLower,
     });
+
   } catch (err) {
     console.error("[org/members/invite] error:", err);
     return res.status(500).json({
-      error: "Failed to invite member",
-      details: err?.message,
+      error:    "Failed to invite member",
+      details:  err?.message,
       airtable: {
         statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
+        message:    err?.message,
+        error:      err?.error,
       },
     });
   }

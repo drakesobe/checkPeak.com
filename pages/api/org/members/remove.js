@@ -18,12 +18,33 @@ function isAdmin(role) {
   return role === "admin" || role.includes("admin") || role.includes("head");
 }
 
+// ── FIX: canManage now handles blank role (pending invite records) ─────────
+//
+// Original bug: if targetRole is blank (member was invited but Airtable field
+// is empty, or record was created manually), canManage returned false for
+// everyone. The org owner or admin trying to deactivate/remove a broken
+// pending invite would get a silent 403.
+//
+// Fix mirrors update.js canManageTarget logic:
+//   - Org owner can manage anyone except another org owner
+//   - Admin can manage trainers AND pending invites (blank role)
+//   - Nobody can touch an org-role record via this endpoint
+// ──────────────────────────────────────────────────────────────────────────
 function canManage(actorRole, targetRole) {
-  const t = String(targetRole || "").toLowerCase();
+  const t = String(targetRole || "").trim().toLowerCase();
+
+  // Never allow deactivating an org owner record via this endpoint
   if (t === "organization" || t === "org") return false;
 
-  if (isOrg(actorRole)) return t === "admin" || t === "trainer";
-  if (isAdmin(actorRole) && !isOrg(actorRole)) return t === "trainer";
+  // Org owner can deactivate admins, trainers, and pending invites (blank role)
+  if (isOrg(actorRole)) return t === "admin" || t === "trainer" || t === "";
+
+  // Admin can deactivate trainers and pending invites (blank role)
+  // but cannot touch other admins
+  if (isAdmin(actorRole) && !isOrg(actorRole)) {
+    return t === "trainer" || t === "";
+  }
+
   return false;
 }
 
@@ -36,19 +57,14 @@ function canManage(actorRole, targetRole) {
  */
 function isMemberInOrg(rec, ORG_FIELD, orgId) {
   const v = rec?.fields?.[ORG_FIELD];
-
   if (!orgId) return false;
 
-  // Linked record field usually comes back as array of record IDs
   if (Array.isArray(v)) {
     return v.map((x) => String(x).trim()).includes(String(orgId).trim());
   }
 
-  // Sometimes it can be a single string (or empty)
   const s = String(v ?? "").trim();
   if (!s) return false;
-
-  // If it's a string that contains orgId, treat as match (covers some lookup formats)
   return s === String(orgId).trim() || s.includes(String(orgId).trim());
 }
 
@@ -62,16 +78,15 @@ export default async function handler(req, res) {
 
   try {
     const actorRole = roleOf(user);
+    const orgId     = String(user?.orgId || user?.OrgId || "").trim();
 
-    // IMPORTANT: this must match what OrgMembers uses for Organization link (usually org record id)
-    const orgId = String(user?.orgId || user?.OrgId || "").trim();
     if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
 
-    const body = req.body || {};
+    const body     = req.body || {};
     const memberId = String(body.memberId || body.trainerId || "").trim();
     if (!memberId) return res.status(400).json({ error: "Missing memberId (or trainerId)." });
 
-    // Optional safety: don’t let someone remove themselves
+    // Don't allow self-removal
     const selfMemberId = String(user?.memberId || user?.MemberId || "").trim();
     if (selfMemberId && memberId === selfMemberId) {
       return res.status(409).json({ error: "You cannot remove yourself." });
@@ -80,23 +95,23 @@ export default async function handler(req, res) {
     const b = base();
 
     const ACTIVE_FIELD = pickField(F, "MEM_ACTIVE", "Active");
-    const ORG_FIELD = pickField(F, "MEM_ORG", "Organization");
-    const ROLE_FIELD = pickField(F, "MEM_ROLE", "Role");
+    const ORG_FIELD    = pickField(F, "MEM_ORG",    "Organization");
+    const ROLE_FIELD   = pickField(F, "MEM_ROLE",   "Role");
 
-    // Fetch target member once (single source of truth)
+    // Fetch once — single source of truth
     const rec = await b(AT.tables.orgMembers).find(memberId);
     if (!rec) return res.status(404).json({ error: "Member not found." });
 
-    // ✅ Hard org check (no Airtable formula round trip)
-    const inOrg = isMemberInOrg(rec, ORG_FIELD, orgId);
-    if (!inOrg) {
+    // Hard org check in JS — no Airtable formula round trip
+    if (!isMemberInOrg(rec, ORG_FIELD, orgId)) {
       return res.status(403).json({
-        error: "Forbidden.",
+        error:   "Forbidden.",
         details: "Target member is not in your organization (orgId mismatch).",
       });
     }
 
-    const targetRole = String(rec.fields?.[ROLE_FIELD] || "").toLowerCase();
+    const targetRole = String(rec.fields?.[ROLE_FIELD] || "").trim().toLowerCase();
+
     if (!canManage(actorRole, targetRole)) {
       return res.status(403).json({
         error: isOrg(actorRole)
@@ -110,10 +125,11 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({
-      ok: true,
+      ok:      true,
       removed: true,
-      member: { id: updated.id, ...updated.fields },
+      member:  { id: updated.id, ...updated.fields },
     });
+
   } catch (err) {
     console.error("[org/members/remove] error:", err);
     return res.status(500).json({ error: "Failed to remove member", details: err?.message });

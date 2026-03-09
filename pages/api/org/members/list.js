@@ -14,11 +14,21 @@ function isAdmin(role) {
   return role === "admin" || role.includes("admin") || role.includes("head");
 }
 
-// keep as-is (trainers can't view members list)
 function canViewMembers(actorRole) {
   return isOrg(actorRole) || isAdmin(actorRole);
 }
 
+// ── FIX 6: orgLink is the authoritative filter. ───────────────────────────
+// orgToken is kept as a fallback ONLY to support members whose Organization
+// linked-record field was never populated (legacy records or manual Airtable
+// edits). It is NOT the primary filter.
+//
+// MIGRATION PLAN: once all OrgMembers records have a correct Organization
+// link, remove the OR and use orgLinkFormula alone. You can audit readiness
+// by running this Airtable formula in a view:
+//   {Organization} = BLANK()
+// When that view is empty for your org, delete the orgToken branch below.
+// ──────────────────────────────────────────────────────────────────────────
 function orgLinkFormula(orgField, orgId) {
   const safeOrg = escapeAirtableString(String(orgId || "").trim());
   return `FIND('${safeOrg}', ARRAYJOIN({${orgField}}&'')) > 0`;
@@ -26,7 +36,6 @@ function orgLinkFormula(orgField, orgId) {
 
 function orgTokenFormula(tokenField, token) {
   const safeTok = escapeAirtableString(String(token || "").trim().toLowerCase());
-  // handle blank field safely with &'' coercion
   return `LOWER({${tokenField}}&'')='${safeTok}'`;
 }
 
@@ -36,10 +45,7 @@ async function selectAll(table, selectOpts = {}) {
     table
       .select({ pageSize: 100, ...selectOpts })
       .eachPage(
-        (records, fetchNextPage) => {
-          all.push(...records);
-          fetchNextPage();
-        },
+        (records, fetchNextPage) => { all.push(...records); fetchNextPage(); },
         (err) => (err ? reject(err) : resolve())
       );
   });
@@ -60,31 +66,34 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "Only Organization/Admin can view members." });
     }
 
-    const orgId = String(user?.orgId || "").trim();
-    const orgToken = String(user?.Token || "").trim();
+    const orgId    = String(user?.orgId || "").trim();
+    const orgToken = String(user?.Token  || "").trim();
 
-    if (!orgId) return res.status(400).json({ error: "Missing orgId on session user." });
+    if (!orgId)    return res.status(400).json({ error: "Missing orgId on session user." });
     if (!orgToken) return res.status(400).json({ error: "Missing Token on session user." });
 
     const b = base();
 
-    const memOrgField = F.MEM_ORG || "Organization";
-    const memActiveField = F.MEM_ACTIVE || "Active";
-    const memRoleField = F.MEM_ROLE || "Role";
+    const memOrgField      = F.MEM_ORG       || "Organization";
+    const memActiveField   = F.MEM_ACTIVE    || "Active";
+    const memRoleField     = F.MEM_ROLE      || "Role";
     const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
 
-    const athOrgField = F.ATH_ORG || "Organization";
-
-    // ✅ Filter members by org link OR org token
-    const memberFilter = `OR(${orgLinkFormula(memOrgField, orgId)}, ${orgTokenFormula(memOrgTokenField, orgToken)})`;
+    // Primary filter: Organization linked-record field.
+    // Fallback: OrgToken field (legacy records only — see migration note above).
+    // TODO: remove orgToken branch once all records have the Organization link.
+    const filter = `OR(${orgLinkFormula(memOrgField, orgId)}, ${orgTokenFormula(memOrgTokenField, orgToken)})`;
 
     const members = await selectAll(b(AT.tables.orgMembers), {
-      filterByFormula: memberFilter,
+      filterByFormula: filter,
     });
 
-    const athletes = await selectAll(b(AT.tables.athletes), {
-      filterByFormula: orgLinkFormula(athOrgField, orgId),
-    });
+    // ── FIX 4: Athletes query removed ────────────────────────────────────
+    // The org trainers page never uses the athletes list. Fetching it on
+    // every page load costs an extra full Airtable scan (up to N pages at
+    // 100 records/page). If athletes are needed in future, add
+    // ?include=athletes to the query string and gate the fetch behind that.
+    // ──────────────────────────────────────────────────────────────────────
 
     const trainers = members
       .filter((m) => {
@@ -94,24 +103,25 @@ export default async function handler(req, res) {
       .map((m) => ({
         id: m.id,
         ...m.fields,
+        // Normalize Active to a real boolean — Airtable checkbox fields can
+        // come back as true, false, or undefined (unchecked = missing key).
         [memActiveField]:
-          typeof m.fields?.[memActiveField] === "boolean" ? m.fields[memActiveField] : false,
+          typeof m.fields?.[memActiveField] === "boolean"
+            ? m.fields[memActiveField]
+            : false,
       }));
 
-    const athletesInOrg = athletes.map((a) => ({ id: a.id, ...a.fields }));
-
     return res.status(200).json({
-      ok: true,
+      ok:       true,
       trainers,
-      athletes: athletesInOrg,
       debug: {
         orgId,
-        orgToken,
-        memberFilter,
-        memberCount: members.length,
+        memberFilter: filter,
+        memberCount:  members.length,
         trainerCount: trainers.length,
       },
     });
+
   } catch (err) {
     console.error("[org/members/list] error:", err);
     return res.status(500).json({ error: "Failed to load members", details: err?.message });

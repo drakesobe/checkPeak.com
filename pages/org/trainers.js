@@ -15,6 +15,37 @@ async function safeJson(res) {
   try { return await res.json(); } catch { return {}; }
 }
 
+// Returns the first non-empty value found across multiple key candidates.
+// Handles field name casing variations without silent undefined failures.
+function resolveField(obj, keys, fallback = "") {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return fallback;
+}
+
+// Logs a console error in dev if any required session fields are missing.
+// Required: orgId, Token, role — all org API routes depend on these.
+function validateOrgSession(user) {
+  if (!user || typeof user !== "object") return;
+  const REQUIRED = [
+    { keys: ["orgId", "OrgId"],   label: "orgId",  why: "scopes all member queries"      },
+    { keys: ["Token", "token"],   label: "Token",  why: "required by invite + list APIs" },
+    { keys: ["role",  "Role"],    label: "role",   why: "controls canManage gates"        },
+  ];
+  const missing = REQUIRED.filter(
+    ({ keys }) => !keys.some((k) => user[k] !== undefined && user[k] !== null && user[k] !== "")
+  );
+  if (missing.length > 0) {
+    console.error(
+      "[trainers] Session user is missing required fields — API calls will return 400:\n" +
+      missing.map(({ label, why }) => `  ✗ ${label} (${why})`).join("\n") +
+      "\n  Actual keys on user:", Object.keys(user)
+    );
+  }
+}
+
 // Normalize the role string coming from various Airtable field shapes
 function parseRole(user) {
   const r = String(user?.role || user?.Role || "").trim().toLowerCase();
@@ -40,17 +71,29 @@ export default function TrainersPage() {
     if (!isOrgSide)  { router.push("/dashboard"); return; }
   }, [user, isOrgSide, router]);
 
-  /* ── Session display ── */
+  /* ── Session validation — surfaces field casing mismatches immediately ── */
+  useEffect(() => {
+    if (!user) return;
+    // validateOrgSession logs errors/warnings to the console if required fields
+    // are missing or under unexpected key names. In dev this makes field casing
+    // mismatches obvious immediately rather than silent 400s from the API.
+    validateOrgSession(user, { logWarnings: true });
+  }, [user]);
+
+  /* ── Session display — resolveField checks multiple key casings ── */
   const orgName = useMemo(() => {
-    const v = user?.OrgName || user?.["Organization Name"] || user?.OrganizationName ||
-              user?.organizationName || user?.Organization ||
-              (role === "organization" ? user?.Name || user?.name : "") || "Organization";
+    const v = resolveField(user, [
+      "OrgName", "orgName", "Organization Name", "OrganizationName", "organizationName", "Organization",
+    ]) || (role === "organization" ? resolveField(user, ["Name", "name"]) : "") || "Organization";
     return String(v || "Organization");
   }, [user, role]);
 
-  const orgEmail    = useMemo(() => String(user?.Email || user?.email || ""), [user]);
-  const orgToken    = useMemo(() => String(user?.Token || user?.token || "").trim(), [user]);
-  const inviterName = useMemo(() => String(user?.Name  || user?.name || orgName || "Team").trim(), [user, orgName]);
+  const orgEmail    = useMemo(() => resolveField(user, ["Email", "email"]),              [user]);
+  const orgToken    = useMemo(() => resolveField(user, ["Token", "token"]).trim(),        [user]);
+  const inviterName = useMemo(
+    () => (resolveField(user, ["Name", "name"]) || orgName || "Team").trim(),
+    [user, orgName]
+  );
 
   /* ── Data ── */
   const [loading,  setLoading]  = useState(true);

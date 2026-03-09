@@ -734,7 +734,7 @@ export default function HomePage() {
                   </Cta>
                 </div>
                 <p className="mt-4 text-base" style={{ color: DARK.dim }}>
-                  No credit card required to start.
+                  *No credit card required to start.
                 </p>
               </Reveal>
 
@@ -771,7 +771,7 @@ export default function HomePage() {
                           style={{
                             fontFamily: "'Barlow Condensed', sans-serif",
                             fontSize: "2.5rem",
-                            color: "rgba(79,171,255,0.2)",
+                            color: "rgba(255,255,255,0.45)",
                             letterSpacing: "-0.02em",
                             minWidth: "2.5rem",
                           }}

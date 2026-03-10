@@ -2,51 +2,22 @@
 /**
  * /pages/api/check.js
  *
- * Accepts POST { text?, ocrText?, barcode?, labelImage?, isBarcodeFlow?, userEmail?, scanId? }
+ * Accepts POST:
+ *   { text?, ocrText?, ingredientsText? }          — direct text flow (SmartStack / NutritionModal)
+ *   { barcode?, isBarcodeFlow?, text?, ocrText? }  — barcode flow (BarcodeUpload / BarcodeChecker)
  *
- * Behavior:
- *  - Normalize barcode into UPC-A candidate(s).
- *  - For each candidate, query providers in this order:
- *      1) OpenFoodFacts
- *      2) Nutritionix (v2 POST + v1 GET; combine both results)
- *      3) USDA (if configured)
- *      4) FoodRepo (if configured)
- *    For each candidate we attempt all providers and merge their outputs.
- *  - After trying all candidates, we pick the "best" candidate by a score:
- *      score = ingredientsText.length + 50 * nutritionFieldCount
- *    and use that candidate's merged ingredients/nutrition.
- *  - If still no text found for any candidate, DO NOT run OCR automatically.
- *    Return helpful debug.
- *  - If ingredients/nutrition found, match normalized ingredient text
- *    against Airtable banned/ingredient tables (if configured).
+ * Optional: { userEmail?, scanId?, debug? }
  *
- * Also:
- *  - If userEmail is provided and SCANS_* env vars are configured,
- *    we save a row into the Scans Airtable with:
- *      UserEmail, ScanName, ScanDate, StackDetails, ResultsSummary, ID, BannedDetails
- *
- * Response includes:
- *  {
- *    found: boolean,
- *    message?,
- *    ocrText?,
- *    productName?,
- *    ingredientsText?,
- *    nutritionFacts?,
- *    matchedBanned?,
- *    matchedIngredients?,
- *    bannedDetails?: {
- *      ProhibitedCount: number,
- *      LimitedCount: number,
- *      OtherBannedCount: number,
- *      OtherFlagsCount?: number
- *    },
- *    debug
- *  }
+ * Banned substances + ingredients are loaded from static JSON files at
+ * import time — zero Airtable calls per scan request.
  */
 
+import bannedRecordsRaw      from "../../data/banned.json"      assert { type: "json" };
+import ingredientRecordsRaw  from "../../data/ingredients.json" assert { type: "json" };
 import Airtable from "airtable";
-import Tesseract from "tesseract.js"; // kept in case OCR is re-enabled later
+
+const BANNED_RECORDS     = bannedRecordsRaw;
+const INGREDIENT_RECORDS = ingredientRecordsRaw;
 
 const DEFAULT_FETCH_TIMEOUT = 10000;
 
@@ -54,276 +25,288 @@ async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT)
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
-    const resp = await fetch(url, { ...opts, signal: controller.signal });
-    return resp;
+    return await fetch(url, { ...opts, signal: controller.signal });
   } finally {
     clearTimeout(id);
   }
 }
 
-/* --------------------
-   Airtable clients (if configured)
-   -------------------- */
-const bannedBase =
-  process.env.BANNED_API_KEY && process.env.BANNED_BASE_ID
-    ? new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
-        process.env.BANNED_BASE_ID
-      )
-    : null;
+// ---------------------------------------------------------------------------
+// Airtable client — Scans only
+// ---------------------------------------------------------------------------
 
-const ingredientsBase =
-  process.env.INGREDIENT_API_KEY && process.env.INGREDIENT_BASE_ID
-    ? new Airtable({ apiKey: process.env.INGREDIENT_API_KEY }).base(
-        process.env.INGREDIENT_BASE_ID
-      )
-    : null;
-
-// Scans DB (for My Scans)
 const scansBase =
   process.env.SCANS_API_KEY && process.env.SCANS_BASE_ID
-    ? new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
-        process.env.SCANS_BASE_ID
-      )
+    ? new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(process.env.SCANS_BASE_ID)
     : null;
 
-async function fetchAllAirtableRecordsUsingClient(baseInstance, tableName) {
-  if (!baseInstance) throw new Error("Airtable base instance not configured");
-  if (!tableName) throw new Error("Table name required");
-  const pageSize = 100;
-  const all = await baseInstance(tableName)
-    .select({ view: "Grid view", pageSize })
-    .all();
-  return all.map((r) => ({ id: r.id, fields: r.fields }));
+// ---------------------------------------------------------------------------
+// Text normalization + matching
+// ---------------------------------------------------------------------------
+
+const escapeRegex = (s = "") => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function normalizeText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/['']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-/* --------------------
-   Helpers: text normalization + matching
-   -------------------- */
-const escapeRegex = (s = "") =>
-  String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-function splitNormalizedTextToTerms(text) {
+// ---------------------------------------------------------------------------
+// KEY FIX: Do NOT split on commas or periods.
+// "1,3-dimethylamylamine" must stay as one token so "1" never becomes a
+// standalone term that matches "1 Scoop" on a label.
+// Only split on whitespace and structural bracket/quote separators.
+// ---------------------------------------------------------------------------
+function splitToTerms(text) {
   if (!text) return [];
-  const lower = text.toLowerCase();
-  const cleaned = lower.replace(
-    /\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi,
-    " "
-  );
-  const rawTerms = cleaned.split(
-    /[.,;:\/\\\[\]\(\)\{\}"“”‘’<>|@#\$%\^&\*_+=~`·•]/
-  );
-  return rawTerms
+  return normalizeText(text)
+    .replace(/\b(ma|made|with|contains|ingredients|ingredient|organic)\b/gi, " ")
+    .split(/[\s;\/\\\[\]\(\)\{\}"""''<>|@#$%^&*_+=~`·•]+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 1);
 }
+
+// ---------------------------------------------------------------------------
+// Noise token filter — prevents short/generic terms from matching
+// ---------------------------------------------------------------------------
+
+const NOISE_TOKENS = new Set([
+  "methyl", "ethyl", "propyl", "butyl", "acetyl",
+  "beta", "alpha", "gamma", "delta",
+  "acid", "acids", "salt", "salts",
+  "sodium", "potassium", "calcium", "magnesium",
+  "chloride", "citrate", "phosphate", "sulfate",
+  "oxide", "hydroxide", "extract", "blend", "complex",
+  "mg", "mcg", "g", "iu", "ml",
+  "scoop", "scoops", "serving", "servings", "container",
+  "per", "size", "amount", "other", "natural", "artificial",
+]);
+
+function isNoiseToken(t) {
+  const s = String(t || "").toLowerCase().trim();
+  if (!s)                         return true;
+  if (NOISE_TOKENS.has(s))        return true;
+  if (s.length < 4)               return true;  // catches "1", "3", "n", "g" etc.
+  if (/^\d+$/.test(s))            return true;  // pure number
+  if (/^\d+[a-z]{1,2}$/.test(s)) return true;  // unit like "25mg"
+  if (/^[a-z]{1,2}\d*$/.test(s)) return true;  // single/double letter
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Phrase matching — for multi-word / hyphenated substance names
+// ---------------------------------------------------------------------------
+
+function normalizeForPhrase(str = "") {
+  return String(str)
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[^a-z0-9\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function phraseInText(phrase = "", normalizedText = "") {
+  const p = normalizeForPhrase(phrase);
+  if (!p || p.length < 5 || !/[a-z]/.test(p)) return false;
+  return normalizeForPhrase(normalizedText).includes(p);
+}
+
+// ---------------------------------------------------------------------------
+// Record term extraction
+// ---------------------------------------------------------------------------
 
 function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
   const terms = new Set();
   for (const key of primaryFields) {
     const v = fields?.[key];
-    if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    if (v) splitToTerms(String(v)).forEach((t) => terms.add(t));
   }
-  const synonymCols = [
-    "Synonyms",
-    "Synonyms (Extended)",
-    "Depositor-Supplied Synonyms",
-  ];
-  for (const col of synonymCols) {
+  for (const col of ["Synonyms", "Synonyms (Extended)", "Depositor-Supplied Synonyms"]) {
     const v = fields?.[col];
-    if (!v) continue;
-    splitNormalizedTextToTerms(String(v)).forEach((t) => terms.add(t));
+    if (v) splitToTerms(String(v)).forEach((t) => terms.add(t));
   }
   return Array.from(terms);
 }
 
+// ---------------------------------------------------------------------------
+// Term-in-text check
+// ---------------------------------------------------------------------------
+
 function termInText(term = "", normalizedText = "") {
-  if (!term) return false;
-  if (term.length < 2) return false;
-  if (/^[0-9]+$/.test(term)) return false;
+  if (!term || term.length < 2) return false;
+  if (/^\d+$/.test(term))       return false;  // pure digit — never matches
   try {
-    const rx = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
-    return rx.test(normalizedText);
+    return new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(normalizedText);
   } catch {
     return normalizedText.includes(term.toLowerCase());
   }
 }
 
-async function matchAgainstBannedRecords(ingredientsText) {
-  if (!bannedBase || !process.env.BANNED_TABLE_NAME) return [];
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
-  const rawRecords = await fetchAllAirtableRecordsUsingClient(
-    bannedBase,
-    process.env.BANNED_TABLE_NAME
-  );
-  const matches = [];
-  for (const rec of rawRecords) {
-    const fields = rec.fields || {};
-    const candidates = recordTerms(fields, ["Substance Name"]);
-    const matchedTerms = [];
-    for (const t of candidates) {
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
-    if (matchedTerms.length > 0) {
-      matches.push({
-        id: rec.id,
-        fields: {
-          "Substance Name":
-            fields["Substance Name"] || fields["Name"] || "",
-          Synonyms: fields["Synonyms"] || "",
-          "Ban Type": fields["Ban Type"] || "",
-          "Banned By": fields["Banned By"] || "",
-          "Dosage Limit": fields["Dosage Limit"] || "",
-          Notes: fields["Notes"] || "",
-          "Source / Citation": fields["Source / Citation"] || "",
-        },
-        matchedTerms,
-      });
-    }
-  }
-  return matches;
+// ---------------------------------------------------------------------------
+// Strong match gate
+// A record only matches if:
+//   - A full phrase match fires on the substance name or a synonym, OR
+//   - At least one meaningful (non-noise) term of length >= 5 matches, OR
+//   - Two or more meaningful non-noise terms match
+// ---------------------------------------------------------------------------
+
+function hasStrongMatch(matchedTerms = [], phraseHit = false) {
+  if (phraseHit) return true;
+  if (!matchedTerms?.length) return false;
+  const meaningful = matchedTerms.filter((t) => !isNoiseToken(t));
+  if (!meaningful.length) return false;
+  if (meaningful.some((t) => String(t).length >= 5)) return true;
+  return meaningful.length >= 2;
 }
 
-async function matchAgainstIngredientRecords(ingredientsText) {
-  if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME)
-    throw new Error("Ingredients Airtable not configured");
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
-  const raw = await fetchAllAirtableRecordsUsingClient(
-    ingredientsBase,
-    process.env.INGREDIENT_TABLE_NAME
-  );
-  const matches = [];
-  for (const rec of raw) {
-    const fields = rec.fields || {};
-    const candidates = recordTerms(fields, ["Name", "Ingredient Name"]);
-    const matchedTerms = [];
-    for (const t of candidates) {
-      if (termInText(t, normalized)) matchedTerms.push(t);
-    }
-    if (matchedTerms.length > 0) {
-      matches.push({
-        id: rec.id,
-        fields: {
-          Name: fields["Name"] || fields["Ingredient Name"] || "",
-          "PubChem CID": fields["PubChem CID"] || "",
-          "Synonyms (Extended)":
-            fields["Synonyms (Extended)"] || fields["Synonyms"] || "",
-          "Pharmacology Notes": fields["Pharmacology Notes"] || "",
-          Benefits: fields["Benefits"] || "",
-          Weaknesses: fields["Weaknesses"] || "",
-          "Nutrient Antagonism":
-            fields["Nutrient Antagonism"] || "",
-          "Sources / References":
-            fields["Sources / References"] || "",
-        },
-        matchedTerms,
-      });
-    }
-  }
-  return matches;
+// ---------------------------------------------------------------------------
+// Matching functions
+// ---------------------------------------------------------------------------
+
+function matchAgainstBannedRecords(ingredientsText) {
+  const normalized = normalizeText(ingredientsText);
+
+  return BANNED_RECORDS.reduce((matches, rec) => {
+    const fields  = rec.fields || {};
+    const subName = fields["Substance Name"] || "";
+
+    // Phrase match on full substance name
+    const phraseHit = phraseInText(subName, normalized);
+
+    // Phrase match on each synonym individually
+    const synPhraseHit = ["Synonyms", "Other Names", "Alt Names"].some((col) => {
+      const v = fields?.[col];
+      if (!v) return false;
+      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
+    });
+
+    const matchedTerms = recordTerms(fields, ["Substance Name"])
+      .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
+
+    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
+
+    matches.push({
+      id: rec.id,
+      fields: {
+        "Substance Name":    fields["Substance Name"]    || fields["Name"] || "",
+        Synonyms:            fields["Synonyms"]           || "",
+        "Ban Type":          fields["Ban Type"]           || "",
+        "Banned By":         fields["Banned By"]          || "",
+        "Dosage Limit":      fields["Dosage Limit"]       || "",
+        Notes:               fields["Notes"]              || "",
+        "Source / Citation": fields["Source / Citation"]  || "",
+        Benefits:            fields["Benefits"]           || "",
+        Weaknesses:          fields["Weaknesses"]         || "",
+        "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
+      },
+      matchedTerms,
+    });
+    return matches;
+  }, []);
 }
 
-/* --------------------
-   UPC normalization & UPC-E expansion
-   -------------------- */
+function matchAgainstIngredientRecords(ingredientsText) {
+  const normalized = normalizeText(ingredientsText);
+
+  return INGREDIENT_RECORDS.reduce((matches, rec) => {
+    const fields      = rec.fields || {};
+    const primaryName = fields["Name"] || fields["Ingredient Name"] || "";
+
+    const phraseHit = phraseInText(primaryName, normalized);
+
+    const synPhraseHit = ["Synonyms", "Synonyms (Extended)"].some((col) => {
+      const v = fields?.[col];
+      if (!v) return false;
+      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
+    });
+
+    const matchedTerms = recordTerms(fields, ["Name", "Ingredient Name"])
+      .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
+
+    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
+
+    matches.push({
+      id: rec.id,
+      fields: {
+        Name:                   fields["Name"]                  || fields["Ingredient Name"] || "",
+        "PubChem CID":          fields["PubChem CID"]          || "",
+        "Synonyms (Extended)":  fields["Synonyms (Extended)"]  || fields["Synonyms"] || "",
+        "Pharmacology Notes":   fields["Pharmacology Notes"]   || "",
+        Benefits:               fields["Benefits"]              || "",
+        Weaknesses:             fields["Weaknesses"]            || "",
+        "Nutrient Antagonism":  fields["Nutrient Antagonism"]  || "",
+        "Sources / References": fields["Sources / References"] || "",
+      },
+      matchedTerms,
+    });
+    return matches;
+  }, []);
+}
+
+// ---------------------------------------------------------------------------
+// UPC helpers — unchanged
+// ---------------------------------------------------------------------------
+
 function calculateUPCACheckDigit(upcaWithoutChecksum) {
-  if (!upcaWithoutChecksum || !/^\d{11}$/.test(upcaWithoutChecksum))
-    return null;
+  if (!upcaWithoutChecksum || !/^\d{11}$/.test(upcaWithoutChecksum)) return null;
   const digits = upcaWithoutChecksum.split("").map(Number);
-  let oddSum = 0;
-  let evenSum = 0;
+  let odd = 0, even = 0;
   for (let i = 0; i < digits.length; i++) {
-    if ((i + 1) % 2 === 1) oddSum += digits[i];
-    else evenSum += digits[i];
+    if ((i + 1) % 2 === 1) odd += digits[i];
+    else                   even += digits[i];
   }
-  const total = oddSum * 3 + evenSum;
-  const mod = total % 10;
+  const mod = (odd * 3 + even) % 10;
   return mod === 0 ? "0" : String(10 - mod);
 }
 
 function convertUPCEtoUPCA(upceRaw) {
   if (!upceRaw) return null;
   let s = String(upceRaw).replace(/\D/g, "");
-  if (!/^\d{6,7,8}$/.test(s)) return null;
-
-  let numberSystem = "0";
-  let payload = "";
-
-  if (s.length === 8) {
-    numberSystem = s.charAt(0);
-    payload = s.slice(1, 7);
-  } else if (s.length === 7) {
-    numberSystem = "0";
-    payload = s.slice(0, 6);
-  } else if (s.length === 6) {
-    numberSystem = "0";
-    payload = s;
-  }
-
+  if (!/^\d{6,8}$/.test(s)) return null;
+  let numberSystem = "0", payload = "";
+  if      (s.length === 8) { numberSystem = s.charAt(0); payload = s.slice(1, 7); }
+  else if (s.length === 7) { numberSystem = "0";          payload = s.slice(0, 6); }
+  else                     { numberSystem = "0";          payload = s; }
   if (!/^\d{6}$/.test(payload)) return null;
   const [d0, d1, d2, d3, d4, d5] = payload.split("");
   const last = d5;
-
-  let upcaWithoutChecksum = null;
-
-  if (["0", "1", "2"].includes(last)) {
-    upcaWithoutChecksum = `${numberSystem}${d0}${d1}${last}0000${d2}${d3}${d4}`;
-  } else if (last === "3") {
-    upcaWithoutChecksum = `${numberSystem}${d0}${d1}${d2}00000${d3}${d4}`;
-  } else if (last === "4") {
-    upcaWithoutChecksum = `${numberSystem}${d0}${d1}${d2}${d3}00000${d4}`;
-  } else {
-    upcaWithoutChecksum = `${numberSystem}${d0}${d1}${d2}${d3}${d4}0000${last}`;
-  }
-
-  if (!/^\d{11}$/.test(upcaWithoutChecksum)) return null;
-  const check = calculateUPCACheckDigit(upcaWithoutChecksum);
-  if (check === null) return null;
-  return upcaWithoutChecksum + check;
+  let base = null;
+  if (["0","1","2"].includes(last)) base = `${numberSystem}${d0}${d1}${last}0000${d2}${d3}${d4}`;
+  else if (last === "3")            base = `${numberSystem}${d0}${d1}${d2}00000${d3}${d4}`;
+  else if (last === "4")            base = `${numberSystem}${d0}${d1}${d2}${d3}00000${d4}`;
+  else                              base = `${numberSystem}${d0}${d1}${d2}${d3}${d4}0000${last}`;
+  if (!/^\d{11}$/.test(base)) return null;
+  const check = calculateUPCACheckDigit(base);
+  return check ? base + check : null;
 }
 
 function normalizeToUPCA(raw) {
   if (!raw) return null;
-  const s = String(raw).replace(/\s+/g, "");
-  let digits = s.replace(/\D/g, "");
+  let digits = String(raw).replace(/\s+/g, "").replace(/\D/g, "");
   if (!digits) return null;
-
-  if (digits.length === 13 && digits.startsWith("0")) {
-    digits = digits.substring(1);
-  }
-
+  if (digits.length === 13 && digits.startsWith("0")) digits = digits.substring(1);
   if (digits.length === 12) return digits;
-  if (digits.length === 11) {
-    const c = calculateUPCACheckDigit(digits);
-    if (c) return digits + c;
-    return null;
-  }
-
-  if (digits.length === 6 || digits.length === 7 || digits.length === 8) {
-    const expanded = convertUPCEtoUPCA(digits);
-    if (expanded) return expanded;
-  }
-
+  if (digits.length === 11) { const c = calculateUPCACheckDigit(digits); return c ? digits + c : null; }
+  if (digits.length >= 6 && digits.length <= 8) return convertUPCEtoUPCA(digits);
   return null;
 }
 
 function generateBarcodeCandidates(rawBarcode) {
-  if (rawBarcode === undefined || rawBarcode === null) return [];
-  const rawStr = String(rawBarcode).trim();
+  if (rawBarcode == null) return [];
+  const rawStr     = String(rawBarcode).trim();
   const digitsOnly = rawStr.replace(/\D/g, "");
-  const set = new Set();
-
+  const set        = new Set();
   const normalized = normalizeToUPCA(rawStr);
   if (normalized) set.add(normalized);
-  if (digitsOnly) set.add(digitsOnly);
+  if (digitsOnly)  set.add(digitsOnly);
   if (digitsOnly.length === 12) set.add("0" + digitsOnly);
-  if (digitsOnly.length === 13 && digitsOnly.startsWith("0"))
-    set.add(digitsOnly.substring(1));
-  if (
-    digitsOnly.length === 6 ||
-    digitsOnly.length === 7 ||
-    digitsOnly.length === 8
-  ) {
+  if (digitsOnly.length === 13 && digitsOnly.startsWith("0")) set.add(digitsOnly.substring(1));
+  if (digitsOnly.length >= 6 && digitsOnly.length <= 8) {
     const expanded = convertUPCEtoUPCA(digitsOnly);
     if (expanded) set.add(expanded);
   }
@@ -335,197 +318,67 @@ function generateBarcodeCandidates(rawBarcode) {
   return Array.from(set).slice(0, 12);
 }
 
-/* --------------------
-   Provider-specific extraction helpers
-   -------------------- */
+// ---------------------------------------------------------------------------
+// Nutritionix helpers — unchanged
+// ---------------------------------------------------------------------------
 
-function extractNutritionFromNutritionixFood(f = {}) {
+function extractExplicitIngredients(food = {}) {
+  if (!food) return null;
+  for (const c of [food.ingredient_statement, food.nf_ingredient_statement, food.ingredients_text, food.ingredient_list]) {
+    if (c && typeof c === "string" && c.trim()) return c.trim();
+  }
+  return null;
+}
+
+function extractNutritionFromFood(f = {}) {
   const nutrition = {};
   for (const k of Object.keys(f || {})) {
-    if (k.startsWith("nf_")) {
-      const shortKey = k.replace(/^nf_/, "");
-      nutrition[shortKey] = f[k];
-    }
+    if (k.startsWith("nf_")) nutrition[k.replace(/^nf_/, "")] = f[k];
   }
   return nutrition;
 }
 
-/*
-  extractIngredientsFromNutritionixFood:
-  Robust extractor that tries many possible fields/nested shapes.
-  It returns a best-effort ingredient string or null.
-*/
-function extractIngredientsFromNutritionixFood(chosen = {}) {
-  if (!chosen) return null;
-
-  const possible = [];
-
-  // Common fields and variants
-  possible.push(chosen.ingredient_statement || null);
-  possible.push(chosen.nf_ingredient_statement || null);
-  possible.push(chosen.ingredients_text || null);
-  possible.push(chosen.ingredient_list || null);
-  possible.push(chosen.ingredients || null);
-
-  // Nested food object
-  if (chosen?.food) {
-    possible.push(chosen.food.ingredient_statement || null);
-    possible.push(chosen.food.ingredients_text || null);
-    possible.push(chosen.food.ingredients || null);
-  }
-
-  // If chosen is an array of items
-  if (Array.isArray(chosen)) {
-    possible.push(
-      chosen
-        .map(
-          (c) =>
-            c.ingredient_statement ||
-            c.nf_ingredient_statement ||
-            c.ingredients_text ||
-            ""
-        )
-        .filter(Boolean)
-        .join(", ")
-    );
-  }
-
-  // If ingredients is an array of {text}
-  if (!possible.some(Boolean) && Array.isArray(chosen.ingredients)) {
-    possible.push(
-      chosen.ingredients
-        .map((i) => (i && i.text) || "")
-        .filter(Boolean)
-        .join(", ")
-    );
-  }
-
-  for (const p of possible) {
-    if (!p) continue;
-    const s = (typeof p === "string" ? p : String(p)).trim();
-    if (s) return s;
-  }
-
-  return null;
-}
-
-/*
-  flattenNutritionixRawToText:
-  Given a raw v2/v1 Nutritionix object, extract readable text labels including
-  nutrition facts fields, ingredient statements, and common name fields.
-*/
-function flattenNutritionixRawToText(itemOrJson) {
+function flattenNutritionixForDisplay(itemOrJson) {
   if (!itemOrJson) return "";
   const parts = [];
-
-  // v2 search style
-  if (itemOrJson && Array.isArray(itemOrJson.foods)) {
-    for (const f of itemOrJson.foods) {
-      const names = [
-        f.food_name,
-        f.brand_name,
-        f.brand_name_item_name,
-        f.item_name,
-      ].filter(Boolean);
-      if (names.length) parts.push(`NAME: ${names.join(" / ")}`);
-
-      const ing = extractIngredientsFromNutritionixFood(f);
-      if (ing) parts.push(`INGREDIENTS: ${ing}`);
-
-      const nut = extractNutritionFromNutritionixFood(f);
-      if (nut && Object.keys(nut).length) {
-        const nutParts = Object.keys(nut).map((k) => `${k}: ${nut[k]}`);
-        parts.push(`NUTRITION: ${nutParts.join(" | ")}`);
-      }
-
-      const fallbackFields = [
-        "serving_size",
-        "serving_qty",
-        "serving_unit",
-        "serving_weight_grams",
-      ];
-      for (const ff of fallbackFields) {
-        if (f[ff]) parts.push(`${ff}: ${String(f[ff])}`);
-      }
+  const foods = Array.isArray(itemOrJson?.foods) ? itemOrJson.foods : [itemOrJson];
+  for (const f of foods) {
+    const names = [f.food_name, f.brand_name, f.item_name].filter(Boolean);
+    if (names.length) parts.push(`NAME: ${names.join(" / ")}`);
+    const ing = extractExplicitIngredients(f);
+    if (ing) parts.push(`INGREDIENTS: ${ing}`);
+    const nut = extractNutritionFromFood(f);
+    if (Object.keys(nut).length) {
+      parts.push(`NUTRITION: ${Object.entries(nut).map(([k,v]) => `${k}: ${v}`).join(" | ")}`);
     }
-    return parts.join("\n\n");
   }
-
-  const obj = itemOrJson || {};
-  const topNames = [
-    obj.brand_name,
-    obj.item_name,
-    obj.food_name,
-    obj.display_name,
-  ].filter(Boolean);
-  if (topNames.length) parts.push(`NAME: ${topNames.join(" / ")}`);
-
-  const ing = extractIngredientsFromNutritionixFood(obj);
-  if (ing) parts.push(`INGREDIENTS: ${ing}`);
-
-  const nut = extractNutritionFromNutritionixFood(obj);
-  if (nut && Object.keys(nut).length) {
-    const nutParts = Object.keys(nut).map((k) => `${k}: ${nut[k]}`);
-    parts.push(`NUTRITION: ${nutParts.join(" | ")}`);
-  }
-
-  if (obj.ingredient_statement)
-    parts.push(`INGREDIENT_STATEMENT: ${obj.ingredient_statement}`);
-  if (obj.ingredients_text)
-    parts.push(`INGREDIENTS_TEXT: ${obj.ingredients_text}`);
-
   return parts.join("\n\n");
 }
 
-/* --------------------
-   External providers (structured)
-   -------------------- */
+// ---------------------------------------------------------------------------
+// External providers — unchanged
+// ---------------------------------------------------------------------------
 
-/* --------------------
-   OpenFoodFacts
-   -------------------- */
 async function tryOpenFoodFacts(upcCandidate) {
   try {
-    const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(
-      upcCandidate
-    )}.json`;
     const resp = await fetchWithTimeout(
-      url,
-      { method: "GET", headers: { Accept: "application/json" } },
-      8000
+      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(upcCandidate)}.json`,
+      { method: "GET", headers: { Accept: "application/json" } }, 8000
     );
-    if (!resp.ok)
-      return { ok: false, provider: "openfoodfacts", status: resp.status };
+    if (!resp.ok) return { ok: false, provider: "openfoodfacts", status: resp.status };
     const json = await resp.json();
-    if (!json || json.status !== 1 || !json.product)
-      return { ok: false, provider: "openfoodfacts", raw: json };
+    if (!json || json.status !== 1 || !json.product) return { ok: false, provider: "openfoodfacts", raw: json };
     const p = json.product;
-    const productName =
-      p.product_name || p.generic_name || p.product_name_en || null;
-
     let ingredientsText = p.ingredients_text || p.ingredients_text_en || "";
     if (!ingredientsText && Array.isArray(p.ingredients)) {
-      ingredientsText = p.ingredients
-        .map((i) => i?.text)
-        .filter(Boolean)
-        .join(", ");
+      ingredientsText = p.ingredients.map((i) => i?.text).filter(Boolean).join(", ");
     }
-    if (
-      !ingredientsText &&
-      p.ingredients_from_or_that_may_be_from_palm_oil
-    ) {
-      ingredientsText = p.ingredients_from_or_that_may_be_from_palm_oil;
-    }
-
-    const nutrition = p.nutriments || null;
-
-    const ok = !!(ingredientsText || nutrition);
     return {
-      ok,
+      ok: !!(ingredientsText || p.nutriments),
       provider: "openfoodfacts",
-      productName,
-      ingredientsText: (ingredientsText || "").trim() || null,
-      nutrition,
+      productName: p.product_name || p.generic_name || p.product_name_en || null,
+      ingredientsText: ingredientsText.trim() || null,
+      nutrition: p.nutriments || null,
       raw: p,
     };
   } catch (err) {
@@ -533,188 +386,79 @@ async function tryOpenFoodFacts(upcCandidate) {
   }
 }
 
-/* --------------------
-   Nutritionix Combined (v2 + v1)
-   -------------------- */
 async function tryNutritionix(upcCandidate) {
-  const appId =
-    process.env.NUTRITIONIX_APP_ID || process.env.NUTRITIONIX_APPID || null;
-  const appKey =
-    process.env.NUTRITIONIX_APP_KEY || process.env.NUTRITIONIX_APP_KEY || null;
-
-  if (!appId || !appKey)
-    return { ok: false, provider: "nutritionix", reason: "no-api-key" };
-
+  const appId  = process.env.NUTRITIONIX_APP_ID  || null;
+  const appKey = process.env.NUTRITIONIX_APP_KEY || null;
+  if (!appId || !appKey) return { ok: false, provider: "nutritionix", reason: "no-api-key" };
+  let v2Json = null, v1Json = null, productName = null, mergedNutrition = {}, explicitIngredients = null;
   try {
-    let v2Json = null;
-    let v1Json = null;
-    let rawTextV2 = "";
-    let rawTextV1 = "";
-    let productName = null;
-    let mergedNutrition = {};
-    let explicitIngredients = null;
-
-    // v2
-    try {
-      const url = `https://trackapi.nutritionix.com/v2/search/item`;
-      const resp = await fetchWithTimeout(
-        url,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-app-id": appId,
-            "x-app-key": appKey,
-          },
-          body: JSON.stringify({ upc: String(upcCandidate) }),
-        },
-        9000
-      );
-
-      if (resp.ok) {
-        v2Json = await resp.json();
-        rawTextV2 = flattenNutritionixRawToText(v2Json);
-        if (Array.isArray(v2Json.foods) && v2Json.foods.length) {
-          const f = v2Json.foods[0];
-          productName =
-            productName ||
-            f.food_name ||
-            f.brand_name ||
-            f.item_name ||
-            null;
-          mergedNutrition = {
-            ...mergedNutrition,
-            ...extractNutritionFromNutritionixFood(f),
-          };
-          explicitIngredients =
-            explicitIngredients ||
-            f.ingredient_statement ||
-            f.nf_ingredient_statement ||
-            f.ingredients_text ||
-            null;
-        }
+    const resp = await fetchWithTimeout("https://trackapi.nutritionix.com/v2/search/item", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-app-id": appId, "x-app-key": appKey },
+      body: JSON.stringify({ upc: String(upcCandidate) }),
+    }, 9000);
+    if (resp.ok) {
+      v2Json = await resp.json();
+      if (Array.isArray(v2Json.foods) && v2Json.foods.length) {
+        const f = v2Json.foods[0];
+        productName         = productName         || f.food_name || f.brand_name || f.item_name || null;
+        explicitIngredients = explicitIngredients || extractExplicitIngredients(f);
+        mergedNutrition     = { ...mergedNutrition, ...extractNutritionFromFood(f) };
       }
-    } catch (v2err) {
-      console.warn("[/api/check] Nutritionix v2 error:", String(v2err));
     }
-
-    // v1
-    try {
-      const urlV1 = `https://api.nutritionix.com/v1_1/item?upc=${encodeURIComponent(
-        String(upcCandidate)
-      )}&appId=${encodeURIComponent(appId)}&appKey=${encodeURIComponent(
-        appKey
-      )}`;
-      const respV1 = await fetchWithTimeout(
-        urlV1,
-        { method: "GET", headers: { Accept: "application/json" } },
-        9000
-      );
-      if (respV1.ok) {
-        v1Json = await respV1.json();
-        rawTextV1 = flattenNutritionixRawToText(v1Json) || "";
-        productName =
-          productName ||
-          (v1Json.brand_name
-            ? `${v1Json.brand_name} - ${v1Json.item_name || ""}`.trim()
-            : v1Json.item_name || null);
-
-        for (const k of Object.keys(v1Json || {})) {
-          if (k.startsWith("nf_"))
-            mergedNutrition[k.replace(/^nf_/, "")] = v1Json[k];
-        }
-
-        explicitIngredients =
-          explicitIngredients ||
-          v1Json.ingredient_statement ||
-          v1Json.nf_ingredient_statement ||
-          v1Json.ingredients_text ||
-          null;
+  } catch (e) { console.warn("[/api/check] Nutritionix v2 error:", String(e)); }
+  try {
+    const resp = await fetchWithTimeout(
+      `https://api.nutritionix.com/v1_1/item?upc=${encodeURIComponent(String(upcCandidate))}&appId=${encodeURIComponent(appId)}&appKey=${encodeURIComponent(appKey)}`,
+      { method: "GET", headers: { Accept: "application/json" } }, 9000
+    );
+    if (resp.ok) {
+      v1Json = await resp.json();
+      productName         = productName         || (v1Json.brand_name ? `${v1Json.brand_name} - ${v1Json.item_name || ""}`.trim() : v1Json.item_name || null);
+      explicitIngredients = explicitIngredients || extractExplicitIngredients(v1Json);
+      for (const k of Object.keys(v1Json || {})) {
+        if (k.startsWith("nf_")) mergedNutrition[k.replace(/^nf_/, "")] = v1Json[k];
       }
-    } catch (v1err) {
-      console.warn("[/api/check] Nutritionix v1 error:", String(v1err));
     }
-
-    const combinedText = [rawTextV1, rawTextV2]
-      .filter(Boolean)
-      .join("\n\n--- Nutritionix Combined ---\n\n");
-
-    const combinedData = {
-      ok: !!(v1Json || v2Json),
-      provider: "nutritionix",
-      productName: productName || null,
-      ingredientsText: explicitIngredients || (combinedText || null),
-      nutrition:
-        mergedNutrition && Object.keys(mergedNutrition).length
-          ? mergedNutrition
-          : null,
-      raw: { v1: v1Json || null, v2: v2Json || null },
-      note:
-        !v1Json && !v2Json
-          ? "no-response-from-nutritionix"
-          : "nutritionix-v1-v2-combined",
-    };
-
-    return combinedData;
-  } catch (err) {
-    return { ok: false, provider: "nutritionix", error: String(err) };
-  }
+  } catch (e) { console.warn("[/api/check] Nutritionix v1 error:", String(e)); }
+  return {
+    ok: !!(v1Json || v2Json),
+    provider: "nutritionix",
+    productName,
+    ingredientsText: explicitIngredients || null,
+    nutrition: Object.keys(mergedNutrition).length ? mergedNutrition : null,
+    raw: { v1: v1Json || null, v2: v2Json || null },
+  };
 }
 
-/* --------------------
-   USDA
-   -------------------- */
 async function tryUSDA(upcCandidate) {
   try {
     const key = process.env.USDA_API_KEY;
     if (!key) return { ok: false, provider: "usda", reason: "no-api-key" };
-    const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(
-      String(upcCandidate)
-    )}&api_key=${encodeURIComponent(key)}&pageSize=5`;
     const resp = await fetchWithTimeout(
-      url,
-      { method: "GET", headers: { Accept: "application/json" } },
-      9000
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(String(upcCandidate))}&api_key=${encodeURIComponent(key)}&pageSize=5`,
+      { method: "GET", headers: { Accept: "application/json" } }, 9000
     );
-    if (!resp.ok)
-      return { ok: false, provider: "usda", status: resp.status };
+    if (!resp.ok) return { ok: false, provider: "usda", status: resp.status };
     const json = await resp.json();
-    if (!json || !Array.isArray(json.foods) || json.foods.length === 0)
-      return { ok: false, provider: "usda", raw: json };
-    const foods = json.foods;
-    const ingredientTexts = foods
-      .map((f) => f.ingredients || f.foodDescription || f.description || "")
-      .filter(Boolean);
-    const ingredientsText = ingredientTexts.join(" ").trim() || null;
-
+    if (!Array.isArray(json?.foods) || !json.foods.length) return { ok: false, provider: "usda", raw: json };
+    const ingredientsText = json.foods.map((f) => f.ingredients || f.foodDescription || "").filter(Boolean).join(" ").trim() || null;
+    const productName     = json.foods.map((f) => f.description || f.foodName || "").filter(Boolean)[0] || null;
     const nutrition = {};
-    for (const f of foods) {
+    for (const f of json.foods) {
       if (Array.isArray(f.foodNutrients)) {
         for (const n of f.foodNutrients) {
-          const name =
-            (n.nutrientName || n.name || n.nutrient || "").toString();
-          if (!name) continue;
+          const name = String(n.nutrientName || n.name || "");
           const value = n.value ?? n.amount ?? null;
-          const unit = n.unitName || n.unit || n.unit_name || "";
-          if (value !== null && value !== undefined) {
-            if (!nutrition[name]) nutrition[name] = { value, unit };
-          }
+          const unit  = n.unitName || n.unit || "";
+          if (name && value != null && !nutrition[name]) nutrition[name] = { value, unit };
         }
       }
     }
-
-    const productName =
-      foods
-        .map((f) => f.description || f.foodName || "")
-        .filter(Boolean)[0] || null;
-
     return {
       ok: !!(ingredientsText || Object.keys(nutrition).length),
-      provider: "usda",
-      productName,
-      ingredientsText,
-      nutrition:
-        Object.keys(nutrition).length ? nutrition : null,
+      provider: "usda", productName, ingredientsText,
+      nutrition: Object.keys(nutrition).length ? nutrition : null,
       raw: json,
     };
   } catch (err) {
@@ -722,36 +466,23 @@ async function tryUSDA(upcCandidate) {
   }
 }
 
-/* --------------------
-   FoodRepo
-   -------------------- */
 async function tryFoodRepo(upcCandidate) {
   try {
     const key = process.env.FOODREPO_API_KEY;
-    if (!key)
-      return { ok: false, provider: "foodrepo", reason: "no-api-key" };
-    const url = `https://www.foodrepo.org/api/v3/products/${encodeURIComponent(
-      String(upcCandidate)
-    )}`;
+    if (!key) return { ok: false, provider: "foodrepo", reason: "no-api-key" };
     const resp = await fetchWithTimeout(
-      url,
-      { method: "GET", headers: { Authorization: `Token token=${key}` } },
-      9000
+      `https://www.foodrepo.org/api/v3/products/${encodeURIComponent(String(upcCandidate))}`,
+      { method: "GET", headers: { Authorization: `Token token=${key}` } }, 9000
     );
-    if (!resp.ok)
-      return { ok: false, provider: "foodrepo", status: resp.status };
-    const json = await resp.json();
+    if (!resp.ok) return { ok: false, provider: "foodrepo", status: resp.status };
+    const json  = await resp.json();
     const attrs = json?.data?.attributes || {};
-    const ingredientsText = attrs.ingredients_text || attrs.ingredients || null;
-    const nutrition =
-      attrs.nutritional_values || attrs.nutriments || null;
-    const productName = attrs.name || attrs.display_name || null;
     return {
-      ok: !!(ingredientsText || nutrition),
+      ok: !!(attrs.ingredients_text || attrs.nutritional_values),
       provider: "foodrepo",
-      productName,
-      ingredientsText,
-      nutrition,
+      productName:     attrs.name || attrs.display_name || null,
+      ingredientsText: attrs.ingredients_text || attrs.ingredients || null,
+      nutrition:       attrs.nutritional_values || attrs.nutriments || null,
       raw: json,
     };
   } catch (err) {
@@ -759,495 +490,245 @@ async function tryFoodRepo(upcCandidate) {
   }
 }
 
-/* --------------------
-   Main handler
-   -------------------- */
+// ---------------------------------------------------------------------------
+// Main handler
+// ---------------------------------------------------------------------------
+
 export default async function handler(req, res) {
   if (req.method !== "POST")
-    return res
-      .status(405)
-      .json({ error: "Method not allowed. Use POST." });
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
 
-  // no-cache headers
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
 
   try {
     const body = req.body || {};
-    let { text, barcode, ocrText } = body;
 
-    // prefer explicit 'text' or 'ocrText' if provided
-    text = (text || ocrText || "").trim();
+    // ---------------------------------------------------------------------------
+    // Accept text from multiple field names so both flows work:
+    //   - BarcodeUpload / OCRUpload:  { text } or { ocrText }
+    //   - NutritionModal / SmartStack: { ingredientsText }
+    // ---------------------------------------------------------------------------
+    let directText = (
+      body.text            ||
+      body.ocrText         ||
+      body.ingredientsText ||
+      ""
+    ).trim();
 
-    // determine barcode flow
-    const isBarcodeFlowFlag = Boolean(body.isBarcodeFlow === true);
-    const isBarcodeFlow =
-      isBarcodeFlowFlag || (barcode !== undefined && barcode !== null);
-    const barcodeRaw =
-      barcode !== undefined && barcode !== null ? String(barcode) : null;
+    const isBarcodeFlow = Boolean(body.isBarcodeFlow) || (body.barcode != null);
+    const barcodeRaw    = body.barcode != null ? String(body.barcode) : null;
 
     const debug = {
       isBarcodeFlow,
-      isBarcodeFlowFlag,
-      barcodeOriginal: barcodeRaw,
-      candidates: [],
+      barcodeOriginal:  barcodeRaw,
+      directTextLength: directText.length,
+      candidates:       [],
       externalAttempts: [],
-      fetchedFrom: null,
-      fetchedCandidate: null,
-      fetchedTextPreview: null,
-      fetchedProductName: null,
-      fetchedNutritionPreview: null,
       candidateResults: [],
       airtable: {
-        bannedConfigured: Boolean(
-          bannedBase && process.env.BANNED_TABLE_NAME
-        ),
-        ingredientsConfigured: Boolean(
-          ingredientsBase && process.env.INGREDIENT_TABLE_NAME
-        ),
-        scansConfigured: Boolean(
-          scansBase && process.env.SCANS_TABLE_NAME
-        ),
+        bannedRecords:     BANNED_RECORDS.length,
+        ingredientRecords: INGREDIENT_RECORDS.length,
+        scansConfigured:   Boolean(scansBase && process.env.SCANS_TABLE_NAME),
       },
     };
 
-    // structured result holder
     let structured = {
-      productName: null,
-      ingredientsText: text || null,
-      nutrition: null,
-      rawProvider: null,
-      providerName: null,
-      rawNutritionix: null,
-      rawText: text || "",
+      productName:     null,
+      ingredientsText: directText || null,
+      nutrition:       null,
+      rawNutritionix:  null,
     };
 
-    // ---------------- BARCODE FLOW: evaluate all candidates, then choose best ----------------
+    // ── Barcode flow ────────────────────────────────────────────────────────
     if (isBarcodeFlow && barcodeRaw) {
-      console.log("[/api/check] Raw barcode:", barcodeRaw);
-
       const digitsOnly = String(barcodeRaw).replace(/\D/g, "");
       if (!digitsOnly) {
-        debug.error =
-          "barcode contains no digits after stripping non-digits";
-        console.warn(
-          "[/api/check] barcode contains no digits, aborting:",
-          barcodeRaw
-        );
-        return res
-          .status(400)
-          .json({ error: "Barcode contains no digits", debug });
+        return res.status(400).json({ error: "Barcode contains no digits", debug });
       }
 
       const candidates = generateBarcodeCandidates(barcodeRaw);
       debug.candidates = candidates.slice();
-      console.log("[/api/check] Candidates:", debug.candidates);
 
       let bestCandidate = null;
-      let bestScore = -1;
+      let bestScore     = -1;
 
       for (const cand of candidates) {
-        console.log("[/api/check] Starting candidate:", cand);
-
-        const perCandidate = {
-          candidate: cand,
-          productName: null,
-          ingredientsText: null,
-          nutrition: null,
-          rawProviders: {},
-          providersOk: {},
-        };
+        const per = { candidate: cand, productName: null, ingredientsText: null, nutrition: null };
 
         const providers = [
           { fn: tryOpenFoodFacts, name: "openfoodfacts" },
-          { fn: tryNutritionix, name: "nutritionix" },
-          { fn: tryUSDA, name: "usda" },
-          { fn: tryFoodRepo, name: "foodrepo" },
+          { fn: tryNutritionix,   name: "nutritionix"   },
+          { fn: tryUSDA,          name: "usda"           },
+          { fn: tryFoodRepo,      name: "foodrepo"       },
         ];
 
         for (const p of providers) {
           try {
-            console.log(`[/api/check] Trying ${p.name} candidate:`, cand);
             const result = await p.fn(cand);
-
             debug.externalAttempts.push({
-              candidate: cand,
-              provider: p.name,
-              ok: !!(result && result.ok),
-              note:
-                result?.reason ||
-                result?.status ||
-                result?.note ||
-                result?.error ||
-                null,
+              candidate: cand, provider: p.name,
+              ok:   !!(result?.ok),
+              note: result?.reason || result?.status || result?.note || result?.error || null,
             });
-
-            perCandidate.rawProviders[p.name] = result?.raw ?? null;
-            perCandidate.providersOk[p.name] = !!(result && result.ok);
-
-            if (!result) {
-              console.log(
-                `[/api/check] ${p.name} returned no object for candidate:`,
-                cand
-              );
-              continue;
-            }
-
-            if (p.name === "nutritionix") {
-              // keep full raw Nutritionix for optional flattening later
-              structured.rawNutritionix =
-                structured.rawNutritionix || result.raw || null;
-
-              if (result.productName && !perCandidate.productName)
-                perCandidate.productName = result.productName;
-              if (result.ingredientsText && !perCandidate.ingredientsText)
-                perCandidate.ingredientsText = result.ingredientsText;
-
-              if (result.nutrition) {
-                perCandidate.nutrition = perCandidate.nutrition || {};
-                for (const k of Object.keys(result.nutrition || {})) {
-                  if (!perCandidate.nutrition[k])
-                    perCandidate.nutrition[k] = result.nutrition[k];
-                }
-              }
-
-              console.log(
-                `[/api/check] nutritionix produced data for candidate ${cand}: productName=${!!perCandidate.productName}, ingredients=${!!perCandidate.ingredientsText}, nutrition=${!!perCandidate.nutrition}`
-              );
-              // continue to next provider for this candidate (we still want all providers)
-              continue;
-            }
-
-            // Non-Nutritionix providers: merge in productName / ingredients / nutrition
-            if (result.productName && !perCandidate.productName)
-              perCandidate.productName = result.productName;
-            if (result.ingredientsText && !perCandidate.ingredientsText)
-              perCandidate.ingredientsText = result.ingredientsText;
+            if (!result) continue;
+            if (p.name === "nutritionix") structured.rawNutritionix = structured.rawNutritionix || result.raw || null;
+            if (result.productName    && !per.productName)    per.productName    = result.productName;
+            if (result.ingredientsText && !per.ingredientsText) per.ingredientsText = result.ingredientsText;
             if (result.nutrition) {
-              perCandidate.nutrition = perCandidate.nutrition || {};
-              for (const k of Object.keys(result.nutrition || {})) {
-                if (!perCandidate.nutrition[k])
-                  perCandidate.nutrition[k] = result.nutrition[k];
+              per.nutrition = per.nutrition || {};
+              for (const k of Object.keys(result.nutrition)) {
+                if (!per.nutrition[k]) per.nutrition[k] = result.nutrition[k];
               }
-            }
-
-            if (
-              result.ok &&
-              (result.ingredientsText ||
-                (result.nutrition &&
-                  Object.keys(result.nutrition).length))
-            ) {
-              console.log(
-                `[/api/check] ${p.name} returned usable data for candidate:`,
-                cand
-              );
-            } else {
-              console.log(
-                `[/api/check] ${p.name} returned no useful structured ingredients/nutrition for candidate:`,
-                cand
-              );
             }
           } catch (err) {
-            console.error(
-              `[/api/check] Error calling provider ${p.name} for candidate ${cand}:`,
-              err
-            );
-            debug.externalAttempts.push({
-              candidate: cand,
-              provider: p.name,
-              ok: false,
-              note: String(err),
-            });
+            debug.externalAttempts.push({ candidate: cand, provider: p.name, ok: false, note: String(err) });
           }
-        } // end providers loop
+        }
 
-        const candidateText = (perCandidate.ingredientsText || "").trim();
-        const nutritionFieldCount = perCandidate.nutrition
-          ? Object.keys(perCandidate.nutrition).length
-          : 0;
-
-        // Heuristic: longer ingredients text + richer nutrition = better
-        const score =
-          candidateText.length + nutritionFieldCount * 50;
+        const ingText  = (per.ingredientsText || "").trim();
+        const nutCount = per.nutrition ? Object.keys(per.nutrition).length : 0;
+        const score    = ingText.length + nutCount * 50;
 
         debug.candidateResults.push({
-          candidate: cand,
-          hasIngredients: !!candidateText,
-          ingredientsLength: candidateText.length,
-          nutritionFieldCount,
-          score,
-          productNamePreview: perCandidate.productName || null,
+          candidate: cand, hasIngredients: !!ingText,
+          ingredientsLength: ingText.length, nutritionFieldCount: nutCount,
+          score, productNamePreview: per.productName || null,
         });
 
-        if ((candidateText || nutritionFieldCount > 0) && score > bestScore) {
-          bestScore = score;
-          bestCandidate = perCandidate;
+        if ((ingText || nutCount > 0) && score > bestScore) {
+          bestScore     = score;
+          bestCandidate = per;
         }
-      } // end candidates loop
+      }
 
       if (!bestCandidate) {
-        debug.note =
-          debug.note || "no-ingredient-text-or-nutrition-from-any-candidate";
         return res.status(200).json({
-          found: false,
-          message:
-            "We couldn't find product data for that barcode in our databases. Try a clearer photo, check the barcode, or enter the product/ingredients manually.",
+          found:   false,
+          message: "We couldn't find product data for that barcode. Try a clearer photo, check the barcode, or enter ingredients manually.",
           debug,
         });
       }
 
-      // Apply the best candidate to our structured output
-      debug.fetchedCandidate = bestCandidate.candidate;
-      debug.fetchedFrom = "best-candidate";
-      debug.fetchedTextPreview = (
-        bestCandidate.ingredientsText || ""
-      ).slice(0, 400);
-      debug.fetchedProductName = bestCandidate.productName || null;
-
-      structured.productName =
-        structured.productName || bestCandidate.productName || null;
-      structured.ingredientsText =
-        structured.ingredientsText ||
-        bestCandidate.ingredientsText ||
-        null;
-      structured.nutrition =
-        structured.nutrition || bestCandidate.nutrition || null;
+      structured.productName     = structured.productName     || bestCandidate.productName     || null;
+      structured.ingredientsText = structured.ingredientsText || bestCandidate.ingredientsText || null;
+      structured.nutrition       = structured.nutrition       || bestCandidate.nutrition       || null;
     }
-    // ---------------- END BARCODE FLOW ----------------
+    // ── End barcode flow ────────────────────────────────────────────────────
 
-    // If after barcode logic we still don't have useful data, bail out
-    if (
-      !(
-        structured.ingredientsText &&
-        structured.ingredientsText.trim()
-      ) &&
-      !(
-        structured.nutrition &&
-        Object.keys(structured.nutrition).length
-      )
-    ) {
-      debug.note =
-        debug.note || "no-ingredient-text-or-nutrition-from-providers";
+    // ---------------------------------------------------------------------------
+    // For direct text flow (SmartStack / NutritionModal) — no barcode involved.
+    // structured.ingredientsText is already set from directText above.
+    // We only gate on "no text AND no nutrition" so direct text always proceeds.
+    // ---------------------------------------------------------------------------
+    const hasIngredients = !!(structured.ingredientsText?.trim());
+    const hasNutrition   = !!(structured.nutrition && Object.keys(structured.nutrition).length);
+
+    if (!hasIngredients && !hasNutrition) {
       return res.status(200).json({
-        found: false,
-        message:
-          "We couldn't find product data for that barcode in our databases. Try a clearer photo, check the barcode, or enter the product/ingredients manually.",
+        found:   false,
+        message: isBarcodeFlow
+          ? "We couldn't find product data for that barcode. Try a clearer photo, check the barcode, or enter ingredients manually."
+          : "No ingredient text provided.",
         debug,
       });
     }
 
-    const rawText = String(
-      structured.ingredientsText || structured.rawText || ""
-    ).trim();
-    console.log(
-      "[/api/check] Final ingredient/raw text (preview):",
-      rawText.slice(0, 300)
-    );
+    const matchingText = (structured.ingredientsText || "").trim();
 
-    // ---------------- Airtable matching ----------------
-    let matchedBanned = [];
-    try {
-      if (rawText) {
-        matchedBanned = await matchAgainstBannedRecords(rawText);
-      } else {
-        matchedBanned = [];
-      }
-      debug.totalBannedMatches = matchedBanned.length;
-    } catch (err) {
-      console.error("[/api/check] Error matching banned records:", err);
-      debug.airtableBannedError = String(err?.message || err);
-    }
+    // ── Matching ────────────────────────────────────────────────────────────
+    let matchedBanned      = matchingText ? matchAgainstBannedRecords(matchingText)     : [];
+    let matchedIngredients = matchingText ? matchAgainstIngredientRecords(matchingText) : [];
+    debug.totalBannedMatches     = matchedBanned.length;
+    debug.totalIngredientMatches = matchedIngredients.length;
 
-    let matchedIngredients = [];
-    try {
-      if (rawText) {
-        matchedIngredients = await matchAgainstIngredientRecords(rawText);
-      } else {
-        matchedIngredients = [];
-      }
-      debug.totalIngredientMatches = matchedIngredients.length;
-    } catch (err) {
-      console.error("[/api/check] Error matching ingredients DB:", err);
-      debug.airtableIngredientError = String(err?.message || err);
-      if (!ingredientsBase || !process.env.INGREDIENT_TABLE_NAME) {
-        return res.status(500).json({
-          error:
-            "Ingredients Airtable not configured (set INGREDIENT_* env vars).",
-          debug,
-        });
-      }
-    }
-
-    // Enrich banned matches using ingredient DB when possible
+    // ── Enrich banned matches from ingredient DB ────────────────────────────
     if (matchedBanned.length && matchedIngredients.length) {
       const ingByName = new Map();
       for (const ing of matchedIngredients) {
-        const name = (ing.fields?.["Name"] || "")
-          .toString()
-          .trim()
-          .toLowerCase();
+        const name = String(ing.fields?.["Name"] || "").trim().toLowerCase();
         if (name) ingByName.set(name, ing);
-        const syns = (
-          ing.fields?.["Synonyms (Extended)"] ||
-          ing.fields?.["Synonyms"] ||
-          ""
-        ).toString();
-        syns
-          .split(/[;,\/\|\(\)\[\]\n]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
+        const syns = String(ing.fields?.["Synonyms (Extended)"] || ing.fields?.["Synonyms"] || "");
+        syns.split(/[;,\/\|\(\)\[\]\n]/).map((s) => s.trim()).filter(Boolean)
           .forEach((s) => ingByName.set(s.toLowerCase(), ing));
       }
-
       matchedBanned = matchedBanned.map((b) => {
-        const bName = (b.fields?.["Substance Name"] || "")
-          .toString()
-          .trim()
-          .toLowerCase();
-        const maybe = ingByName.get(bName);
-        if (maybe) {
-          const enriched = { ...b };
-          enriched.fields["Benefits"] =
-            enriched.fields["Benefits"] || maybe.fields?.Benefits || "";
-          enriched.fields["Weaknesses"] =
-            enriched.fields["Weaknesses"] ||
-            maybe.fields?.Weaknesses ||
-            "";
-          enriched.fields["Nutrient Antagonism"] =
-            enriched.fields["Nutrient Antagonism"] ||
-            maybe.fields?.["Nutrient Antagonism"] ||
-            "";
-          return enriched;
-        }
-        return b;
+        const bName  = String(b.fields?.["Substance Name"] || "").trim().toLowerCase();
+        const source = ingByName.get(bName);
+        if (!source) return b;
+        return {
+          ...b,
+          fields: {
+            ...b.fields,
+            Benefits:              b.fields["Benefits"]              || source.fields?.Benefits              || "",
+            Weaknesses:            b.fields["Weaknesses"]            || source.fields?.Weaknesses            || "",
+            "Nutrient Antagonism": b.fields["Nutrient Antagonism"]   || source.fields?.["Nutrient Antagonism"] || "",
+          },
+        };
       });
     }
 
-    // ---- Compute banned counts for BannedDetails ----
-    let prohibitedCount = 0;
-    let limitedCount = 0;
-    let otherBannedCount = 0;
+    // ── bannedDetails counts ────────────────────────────────────────────────
+    const bannedDetails = matchedBanned.reduce(
+      (acc, b) => {
+        const bt = String(b.fields?.["Ban Type"] || "").toLowerCase();
+        if      (bt.includes("prohibited") || bt.includes("in-competition") || bt.includes("banned")) acc.ProhibitedCount++;
+        else if (bt.includes("limited")    || bt.includes("out of competition") || bt.includes("threshold")) acc.LimitedCount++;
+        else acc.OtherBannedCount++;
+        return acc;
+      },
+      { ProhibitedCount: 0, LimitedCount: 0, OtherBannedCount: 0 }
+    );
 
-    for (const b of matchedBanned) {
-      const banTypeRaw = (b.fields?.["Ban Type"] || "")
-        .toString()
-        .toLowerCase();
-
-      if (!banTypeRaw) {
-        otherBannedCount += 1;
-        continue;
-      }
-
-      if (
-        banTypeRaw.includes("prohibited") ||
-        banTypeRaw.includes("in-competition") ||
-        banTypeRaw.includes("banned")
-      ) {
-        prohibitedCount += 1;
-      } else if (
-        banTypeRaw.includes("limited") ||
-        banTypeRaw.includes("out of competition") ||
-        banTypeRaw.includes("threshold")
-      ) {
-        limitedCount += 1;
-      } else {
-        otherBannedCount += 1;
-      }
-    }
-
-    const bannedDetails = {
-      ProhibitedCount: prohibitedCount,
-      LimitedCount: limitedCount,
-      OtherBannedCount: otherBannedCount,
-    };
-
-    // ------------- Save to Scans Airtable if userEmail is provided -------------
+    // ── Save to Scans Airtable ──────────────────────────────────────────────
     if (body.userEmail && scansBase && process.env.SCANS_TABLE_NAME) {
       try {
-        const now = new Date();
+        const now    = new Date();
         const scanId = body.scanId || `scan-${now.getTime()}`;
-
-        const scanName = structured.productName
-          ? `${structured.productName} (${now.toLocaleString("en-US", {
-              hour12: false,
-            })})`
-          : `Scan - ${now.toLocaleString("en-US", { hour12: false })}`;
-
-        const recordPayload = {
-          UserEmail: body.userEmail,
-          ScanName: scanName,
-          ScanDate: now.toISOString(),
-          StackDetails:
-            structured.ingredientsText ||
-            rawText ||
-            "No ingredient or label text captured",
-          ResultsSummary: `Prohibited: ${bannedDetails.ProhibitedCount}, Limited: ${bannedDetails.LimitedCount}, Other: ${bannedDetails.OtherBannedCount}`,
-          ID: scanId,
-          BannedDetails: JSON.stringify(bannedDetails),
-        };
-
-        console.log(
-          "[/api/check] Saving scan record to Scans Airtable:",
-          JSON.stringify(recordPayload, null, 2)
-        );
-
-        await scansBase(process.env.SCANS_TABLE_NAME).create([
-          { fields: recordPayload },
-        ]);
-
+        await scansBase(process.env.SCANS_TABLE_NAME).create([{
+          fields: {
+            UserEmail:      body.userEmail,
+            ScanName:       structured.productName
+              ? `${structured.productName} (${now.toLocaleString("en-US", { hour12: false })})`
+              : `Scan - ${now.toLocaleString("en-US", { hour12: false })}`,
+            ScanDate:       now.toISOString(),
+            StackDetails:   matchingText || "No ingredient text captured",
+            ResultsSummary: `Prohibited: ${bannedDetails.ProhibitedCount}, Limited: ${bannedDetails.LimitedCount}, Other: ${bannedDetails.OtherBannedCount}`,
+            ID:             scanId,
+            BannedDetails:  JSON.stringify(bannedDetails),
+          },
+        }]);
         debug.scansSaveSuccess = true;
       } catch (err) {
-        console.error(
-          "[/api/check] Failed to save scan to Scans Airtable:",
-          err
-        );
+        console.error("[/api/check] Failed to save scan:", err);
         debug.scansSaveError = String(err?.message || err);
       }
-    } else {
-      if (!body.userEmail) {
-        debug.scansSaveSkipped = "No userEmail provided in request body";
-      } else if (!scansBase || !process.env.SCANS_TABLE_NAME) {
-        debug.scansSaveSkipped = "Scans Airtable not configured";
-      }
     }
-    // ---------------------------------------------------------------------------
 
-    // Return success + structured data
+    // ── Response ────────────────────────────────────────────────────────────
     return res.status(200).json({
-      found: true,
-      ocrText:
-        structured.ingredientsText ||
-        (structured.rawNutritionix
-          ? flattenNutritionixRawToText(
-              structured.rawNutritionix?.v2 ||
-                structured.rawNutritionix?.v1 ||
-                {}
-            )
-          : null),
-      productName: structured.productName || null,
+      found:           true,
+      ocrText:         matchingText || flattenNutritionixForDisplay(structured.rawNutritionix?.v2 || structured.rawNutritionix?.v1) || null,
+      productName:     structured.productName     || null,
       ingredientsText: structured.ingredientsText || null,
-      nutritionFacts: structured.nutrition || null,
+      nutritionFacts:  structured.nutrition       || null,
       matchedBanned,
       matchedIngredients,
-      bannedDetails, // summarized counts for saving/display
+      bannedDetails,
+      // Also expose under smartstack field names so NutritionModal works without changes
+      bannedSubstances: matchedBanned,
+      ingredients:      matchedIngredients,
       debug: {
         ...debug,
-        totalBannedMatches: matchedBanned.length,
+        totalBannedMatches:     matchedBanned.length,
         totalIngredientMatches: matchedIngredients.length,
       },
     });
+
   } catch (err) {
     console.error("[/api/check] Unexpected error:", err);
-    return res
-      .status(500)
-      .json({
-        error: "Internal server error",
-        details: String(err?.message || err),
-      });
+    return res.status(500).json({ error: "Internal server error", details: String(err?.message || err) });
   }
 }

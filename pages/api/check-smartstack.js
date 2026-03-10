@@ -20,8 +20,6 @@
 import bannedRecordsRaw     from "../../data/banned.json"      assert { type: "json" };
 import ingredientRecordsRaw from "../../data/ingredients.json" assert { type: "json" };
 
-// Static records — shape: [{ id, fields }]
-// Loaded once at module init, never fetched at runtime.
 const BANNED_RECORDS     = bannedRecordsRaw;
 const INGREDIENT_RECORDS = ingredientRecordsRaw;
 
@@ -42,51 +40,71 @@ function normalizeText(text) {
     .trim();
 }
 
+// ---------------------------------------------------------------------------
+// Key fix: do NOT split on commas.
+// "1,3-dimethylamylamine" must stay as one token so "1" never becomes a
+// standalone term that matches "1 Scoop" in the label text.
+// Only split on whitespace and a narrow set of structural separators.
+// ---------------------------------------------------------------------------
 function splitNormalizedTextToTerms(text) {
   if (!text) return [];
   const lowered = normalizeText(text);
   const cleaned = lowered.replace(/[\n\r\t]+/g, " ");
   return cleaned
-    .split(/[.,;:\/\\\[\]\(\)\{\}"""''<>|@#\$%\^&\*_+=~`·•\s]+/)
+    // Split on structural separators ONLY — NOT commas, NOT hyphens
+    .split(/[\s;\/\\\[\]\(\)\{\}"""''<>|@#\$%\^&\*_+=~`·•]+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 1 && !/^\s*$/.test(t));
 }
 
 /* -------------------------------------------------------------------------- */
-/* Noise tokens + phrase matching                                             */
+/* Noise token filter                                                         */
 /* -------------------------------------------------------------------------- */
 
 const NOISE_TOKENS = new Set([
+  // Generic chemistry prefixes that appear in many compound names
   "methyl", "ethyl", "propyl", "butyl", "acetyl",
   "beta", "alpha", "gamma", "delta",
+  // Generic nutrition / supplement words
   "acid", "acids", "salt", "salts",
   "sodium", "potassium", "calcium", "magnesium",
   "chloride", "citrate", "phosphate", "sulfate",
   "oxide", "hydroxide", "extract", "blend", "complex",
-  "mg", "mcg", "g", "iu",
+  // Units — should never match anything
+  "mg", "mcg", "g", "iu", "ml",
+  // Serving-size words common on labels
+  "scoop", "scoops", "serving", "servings", "container",
+  "per", "size", "amount",
 ]);
 
 function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
-  if (!s || NOISE_TOKENS.has(s)) return true;
-  if (s.length < 3) return true;
-  if (/^\d+$/.test(s)) return true;
-  if (/^\d+[a-z]?$/.test(s)) return true;
+  if (!s)                       return true;   // empty
+  if (NOISE_TOKENS.has(s))      return true;   // known noise word
+  if (s.length < 4)             return true;   // too short — catches "1", "3", "n", etc.
+  if (/^\d+$/.test(s))          return true;   // pure number
+  if (/^\d+[a-z]{1,2}$/.test(s)) return true; // unit like "25mg", "50g"
+  if (/^[a-z]{1,2}\d*$/.test(s)) return true; // single/double letter optionally followed by digits
   return false;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Phrase matching — for multi-word substance names                          */
+/* -------------------------------------------------------------------------- */
 
 function normalizeForPhraseMatch(str = "") {
   return String(str)
     .toLowerCase()
     .replace(/[\u2010-\u2015]/g, "-")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^a-z0-9\-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhraseMatch(phrase);
-  if (!p || p.length < 6) return false;
+  // Require phrase to be meaningful — at least 6 chars and contain a letter
+  if (!p || p.length < 6 || !/[a-z]/.test(p)) return false;
   return normalizeForPhraseMatch(normalizedText).includes(p);
 }
 
@@ -108,13 +126,15 @@ function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Matching logic                                                             */
+/* Word-boundary term matching                                                */
 /* -------------------------------------------------------------------------- */
 
 function termInText(term, normalized) {
   if (!term || !normalized) return false;
   const t = String(term).toLowerCase().trim();
   if (!t || t.length < 2) return false;
+  // Pure digits never match — prevents "1" in "1,3-dimethyl" matching "1 Scoop"
+  if (/^\d+$/.test(t)) return false;
   try {
     return new RegExp(`\\b${escapeRegex(t)}\\b`, "i").test(normalized);
   } catch {
@@ -122,29 +142,57 @@ function termInText(term, normalized) {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Strong match gate                                                          */
+/*                                                                            */
+/* A record only matches if:                                                  */
+/*   - A full phrase match fires (e.g. "1,3-dimethylamylamine" in the text), */
+/*     OR                                                                     */
+/*   - At least one meaningful (non-noise) term of length >= 5 matches,      */
+/*     OR                                                                     */
+/*   - Two or more meaningful terms match (belt-and-suspenders)              */
+/* -------------------------------------------------------------------------- */
+
 function hasStrongMatch(matchedTerms = [], phraseHit = false) {
   if (phraseHit) return true;
   if (!matchedTerms?.length) return false;
+
   const meaningful = matchedTerms.filter((t) => !isNoiseToken(t));
   if (!meaningful.length) return false;
-  if (meaningful.some((t) => String(t).length >= 10)) return true;
+
+  // Single long term (>= 5 chars) is sufficient — catches "caffeine", "synephrine" etc.
+  if (meaningful.some((t) => String(t).length >= 5)) return true;
+
+  // Two or more shorter meaningful terms
   return meaningful.length >= 2;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Matching functions — synchronous, no network calls                        */
+/* Matching functions                                                         */
 /* -------------------------------------------------------------------------- */
 
 function matchAgainstBannedRecords(ingredientsText) {
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
+  const normalized = normalizeText(ingredientsText);
 
   return BANNED_RECORDS.reduce((matches, rec) => {
-    const fields      = rec.fields || {};
-    const phraseHit   = phraseInText(fields["Substance Name"] || "", normalized);
+    const fields    = rec.fields || {};
+    const subName   = fields["Substance Name"] || "";
+
+    // Phrase match on the full substance name — catches "1,3-dimethylamylamine" as a unit
+    const phraseHit = phraseInText(subName, normalized);
+
+    // Also phrase-match each synonym as a whole string
+    const synPhraseHit = ["Synonyms", "Other Names", "Alt Names"].some((col) => {
+      const v = fields?.[col];
+      if (!v) return false;
+      // Each synonym may be comma-separated — check each one as a phrase
+      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
+    });
+
     const matchedTerms = recordTerms(fields, ["Substance Name"])
       .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    if (!hasStrongMatch(matchedTerms, phraseHit)) return matches;
+    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
 
     matches.push({
       id: rec.id,
@@ -167,16 +215,24 @@ function matchAgainstBannedRecords(ingredientsText) {
 }
 
 function matchAgainstIngredientRecords(ingredientsText) {
-  const normalized = splitNormalizedTextToTerms(ingredientsText).join(" ");
+  const normalized = normalizeText(ingredientsText);
 
   return INGREDIENT_RECORDS.reduce((matches, rec) => {
     const fields      = rec.fields || {};
     const primaryName = fields["Name"] || fields["Ingredient Name"] || "";
-    const phraseHit   = phraseInText(primaryName, normalized);
+
+    const phraseHit = phraseInText(primaryName, normalized);
+
+    const synPhraseHit = ["Synonyms", "Other Names"].some((col) => {
+      const v = fields?.[col];
+      if (!v) return false;
+      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
+    });
+
     const matchedTerms = recordTerms(fields, ["Name", "Ingredient Name"])
       .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    if (!hasStrongMatch(matchedTerms, phraseHit)) return matches;
+    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
 
     matches.push({
       id: rec.id,
@@ -224,9 +280,9 @@ export default async function handler(req, res) {
       ingredients,
       ...(wantDebug && {
         debug: {
-          sampleText:              text.slice(0, 300),
-          totalBannedMatches:      bannedSubstances.length,
-          totalIngredientMatches:  ingredients.length,
+          sampleText:             text.slice(0, 300),
+          totalBannedMatches:     bannedSubstances.length,
+          totalIngredientMatches: ingredients.length,
         },
       }),
     });

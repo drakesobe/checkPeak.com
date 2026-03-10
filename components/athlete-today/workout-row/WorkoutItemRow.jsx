@@ -11,15 +11,43 @@ import {
   Sparkles,
   Upload,
   ShieldAlert,
+  Footprints,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button, Pill, SwipeRow } from "../ui";
 import StatusBadge from "./StatusBadge";
 import WorkoutTargets from "./WorkoutTargets";
 import { asBool, cx, formatWeight, normStatus, safeText, hasText } from "./helpers";
 import { getRowState, getTone } from "./tone";
 
+/* ── Swipe affordance: inject once, play once per page load ── */
+const SWIPE_ANIM_ID = "checkpeak-swipe-hint-anim";
+function ensureSwipeStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(SWIPE_ANIM_ID)) return;
+  const s = document.createElement("style");
+  s.id = SWIPE_ANIM_ID;
+  // Nudge the row content rightward then back — draws attention to swipe direction
+  s.textContent = `
+    @keyframes cp-swipe-nudge {
+      0%   { transform: translateX(0) }
+      20%  { transform: translateX(10px) }
+      45%  { transform: translateX(6px) }
+      70%  { transform: translateX(12px) }
+      85%  { transform: translateX(4px) }
+      100% { transform: translateX(0) }
+    }
+    .cp-swipe-nudge {
+      animation: cp-swipe-nudge 700ms cubic-bezier(0.22, 1, 0.36, 1) 900ms 1 both;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+// Module-level flag — only animate the first actionable row per page load
+let swipeHintFired = false;
+
 function pickCoachNote(item) {
-  // Try a few likely shapes (completion-driven OR dailyworkout-driven OR legacy)
   const candidates = [
     item?.ReviewNote,
     item?.reviewNote,
@@ -29,7 +57,7 @@ function pickCoachNote(item) {
     item?.coachNote,
     item?.NoteToAthlete,
     item?.noteToAthlete,
-    item?.Note, // (sometimes used for summary)
+    item?.Note,
   ];
 
   for (const v of candidates) {
@@ -39,26 +67,42 @@ function pickCoachNote(item) {
   return "";
 }
 
+/**
+ * Normalizes EvidenceRequired to a consistent lowercase string.
+ * byDate.js now returns the raw string value, but we guard against
+ * legacy boolean shapes here too.
+ */
+function normalizeEvidenceRequired(raw) {
+  if (raw === true || raw === "true") return "photo";
+  if (!raw || raw === false || raw === "false") return "none";
+  return String(raw).trim().toLowerCase();
+}
+
 export default function WorkoutItemRow({
   item,
   submitting = false,
   onUpload,
   onQuickComplete,
   optimisticStatus = "",
-  // ✅ NEW
-  onAcknowledge, // ({ completionId, workoutItemId }) => void
+  onAcknowledge,
   acknowledging = false,
 }) {
+  useEffect(() => { ensureSwipeStyles(); }, []);
+
+  const rowRef     = useRef(null);
+  const hintedRef  = useRef(false);
   const id = String(item?.id || item?.ID || item?.recordId || "").trim();
   const exercise = safeText(item?.ExerciseName || item?.Title || "Exercise");
-  const evidenceRequired = asBool(item?.EvidenceRequired);
 
-  // Prefer optimistic status for instant UI feedback after submit
+  // Normalize to string so we can distinguish VARA from photo/video
+  const evidenceValue   = normalizeEvidenceRequired(item?.EvidenceRequired);
+  const isVARA          = evidenceValue === "voluntary_activity_vara";
+  // Legacy boolean path: evidenceRequired=true means coach wants a file
+  const evidenceRequired = !isVARA && evidenceValue !== "none";
+
   let status = normStatus(optimisticStatus || item?.Status || "");
 
-  // Treat optimistic "acknowledged" as checked-off (and not rejected)
   const isAcknowledged = status === "acknowledged";
-
   const completedFlagRaw = normStatus(item?.Completed) === "true";
   const completedFlag = completedFlagRaw || isAcknowledged;
 
@@ -83,46 +127,64 @@ export default function WorkoutItemRow({
     evidenceRequired,
   });
 
-  const weightValue = formatWeight(item?.Weight ?? item?.Load ?? "");
-  const videoUrl = safeText(item?.VideoURL);
+  const weightValue  = formatWeight(item?.Weight ?? item?.Load ?? "");
+  const videoUrl     = safeText(item?.VideoURL);
   const instructions = safeText(item?.Instructions);
-
-  // ✅ Coach note for rejected items (and optionally needs-info)
-  const coachNote = pickCoachNote(item);
-
-  // ✅ completion id if your byDate returns it (you already return CompletionId)
+  const coachNote    = pickCoachNote(item);
   const completionId = safeText(item?.CompletionId || item?.completionId || "");
 
-  // Athlete can move on when pending OR completed OR acknowledged (unless rejected)
   const disabled = submitting || acknowledging || (isCheckedOff && !isRejected);
+
+  // Fire the swipe nudge animation once on the first actionable row per page load
+  useEffect(() => {
+    if (disabled) return;                    // already done, skip
+    if (hintedRef.current) return;           // already ran for this instance
+    if (swipeHintFired) return;              // already ran for a sibling row this load
+    hintedRef.current  = true;
+    swipeHintFired     = true;
+    const el = rowRef.current;
+    if (!el) return;
+    el.classList.add("cp-swipe-nudge");
+    const clean = () => el.classList.remove("cp-swipe-nudge");
+    el.addEventListener("animationend", clean, { once: true });
+    return () => { el.removeEventListener("animationend", clean); };
+  }, [disabled]);
 
   const swipeAction = () => {
     if (disabled) return;
 
-    // ✅ REJECTED => acknowledge (no re-upload loop)
     if (isRejected) {
       onAcknowledge?.({ completionId, workoutItemId: id });
       return;
     }
 
-    // normal flow
+    // VARA: self-report tap — same as quickComplete, no modal
+    if (isVARA) {
+      onQuickComplete?.(id);
+      return;
+    }
+
     if (evidenceRequired) return onUpload?.({ ...item, id });
     onQuickComplete?.(id);
   };
 
   const swipeHint = isRejected
     ? "Swipe to acknowledge"
+    : isVARA
+    ? "Swipe to log activity"
     : evidenceRequired
     ? "Swipe to upload"
     : "Swipe to complete";
 
-  const actionLabel = isRejected ? "Seen" : evidenceRequired ? "Uploaded" : "Done";
+  const actionLabel = isRejected ? "Seen" : isVARA ? "Logged" : evidenceRequired ? "Uploaded" : "Done";
 
   const iconNode =
     cardTone === "pending" ? (
       <Clock className="w-5 h-5 text-sky-800" />
     ) : cardTone === "completed" ? (
       <CheckCircle2 className="w-5 h-5 text-emerald-800" />
+    ) : isVARA ? (
+      <Footprints className="w-5 h-5 text-violet-600" />
     ) : evidenceRequired ? (
       <Camera className="w-5 h-5 text-amber-700" />
     ) : (
@@ -138,6 +200,8 @@ export default function WorkoutItemRow({
       actionIcon={
         isRejected ? (
           <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
+        ) : isVARA ? (
+          <Footprints className="w-5 h-5 text-[#46769B]" />
         ) : evidenceRequired ? (
           <Camera className="w-5 h-5 text-[#46769B]" />
         ) : (
@@ -147,6 +211,7 @@ export default function WorkoutItemRow({
       railTone={railTone}
     >
       <div
+        ref={rowRef}
         className={cx(
           "relative rounded-2xl border p-4 transition shadow-sm overflow-hidden",
           toneCardCls,
@@ -178,6 +243,14 @@ export default function WorkoutItemRow({
                   <div className="min-w-0 flex-1">
                     <p className="font-extrabold text-gray-900 truncate">{exercise}</p>
 
+                    {/* VARA badge */}
+                    {isVARA && !isCheckedOff ? (
+                      <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-200 px-2.5 py-0.5">
+                        <Footprints className="w-3 h-3 text-violet-500" />
+                        <span className="text-[11px] font-bold text-violet-700 uppercase tracking-wide">Voluntary Activity</span>
+                      </div>
+                    ) : null}
+
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <StatusBadge
                         isRejected={isRejected}
@@ -202,7 +275,7 @@ export default function WorkoutItemRow({
                     </div>
 
                     {isCheckedOff ? (
-                      <p className={cx("text-[12px] mt-2 leading-snug", hintToneText)}>
+                      <p className={cx("text-xs mt-2 leading-snug", hintToneText)}>
                         {isRejected
                           ? "Coach note available — acknowledge when seen."
                           : isPending
@@ -219,9 +292,11 @@ export default function WorkoutItemRow({
                     !hasText(item?.RPE) &&
                     !hasText(item?.Rest) &&
                     !isCheckedOff ? (
-                      <p className="text-[12px] text-gray-500 mt-2 leading-snug">
+                      <p className="text-xs text-gray-500 mt-2 leading-snug">
                         {isRejected
                           ? "Coach left a note — swipe to acknowledge."
+                          : isVARA
+                          ? "Self-report only — swipe to log."
                           : evidenceRequired
                           ? "Proof required — swipe to upload."
                           : "Swipe to mark complete."}
@@ -245,6 +320,19 @@ export default function WorkoutItemRow({
                   tone={cardTone === "pending" ? "pending" : cardTone === "completed" ? "completed" : "base"}
                 />
 
+                {/* VARA explanation (when not yet done) */}
+                {isVARA && !isCheckedOff ? (
+                  <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Footprints className="w-4 h-4 text-violet-500" />
+                      <p className="text-[11px] text-violet-800 font-extrabold">Voluntary Activity</p>
+                    </div>
+                    <p className="text-[12px] text-violet-900 leading-snug">
+                      This activity is optional and self-reported. No photo or video required — just tap Done when complete.
+                    </p>
+                  </div>
+                ) : null}
+
                 {/* Coach note (when rejected) */}
                 {isRejected && coachNote ? (
                   <div className={cx("mt-3", isCheckedOff ? "opacity-[0.92]" : "")}>
@@ -257,7 +345,7 @@ export default function WorkoutItemRow({
                         {coachNote}
                       </p>
                       <p className="text-[11px] text-amber-800 mt-2">
-                        No back-and-forth needed — just acknowledge once you’ve read it.
+                        No back-and-forth needed — just acknowledge once you've read it.
                       </p>
                     </div>
                   </div>
@@ -297,11 +385,10 @@ export default function WorkoutItemRow({
 
           {/* Right actions */}
           <div className="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-2 lg:items-end">
-            {/* ✅ Rejected: show acknowledge (not re-upload loop) */}
             {isRejected ? (
               <Button
                 variant="dark"
-                className="px-3 py-2 text-xs"
+                className="px-4 py-2.5 text-xs"
                 onClick={() => onAcknowledge?.({ completionId, workoutItemId: id })}
                 disabled={disabled || !id || (!completionId && !id)}
                 title="Confirm you saw the coach note"
@@ -311,29 +398,44 @@ export default function WorkoutItemRow({
               </Button>
             ) : !isCheckedOff ? (
               <>
-                <Button
-                  variant="secondary"
-                  className="px-3 py-2 text-xs"
-                  onClick={() => onUpload?.({ ...item, id })}
-                  disabled={submitting}
-                  title={evidenceRequired ? "Upload required proof" : "Upload photo / video"}
-                >
-                  {evidenceRequired ? <Camera className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
-                  {evidenceRequired ? "Upload proof" : "Upload"}
-                </Button>
-
-                {!evidenceRequired ? (
+                {isVARA ? (
                   <Button
                     variant="dark"
-                    className="px-3 py-2 text-xs"
+                    className="px-4 py-2.5 text-xs"
                     onClick={() => onQuickComplete?.(id)}
                     disabled={submitting}
-                    title="Mark complete without uploading"
+                    title="Log this voluntary activity as complete"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    <Footprints className="w-4 h-4" />
                     Done
                   </Button>
-                ) : null}
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      className="px-4 py-2.5 text-xs"
+                      onClick={() => onUpload?.({ ...item, id })}
+                      disabled={submitting}
+                      title={evidenceRequired ? "Upload required proof" : "Upload photo / video"}
+                    >
+                      {evidenceRequired ? <Camera className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                      {evidenceRequired ? "Upload proof" : "Upload"}
+                    </Button>
+
+                    {!evidenceRequired ? (
+                      <Button
+                        variant="dark"
+                        className="px-4 py-2.5 text-xs"
+                        onClick={() => onQuickComplete?.(id)}
+                        disabled={submitting}
+                        title="Mark complete without uploading"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Done
+                      </Button>
+                    ) : null}
+                  </>
+                )}
               </>
             ) : null}
           </div>

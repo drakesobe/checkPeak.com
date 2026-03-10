@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
+import { RefreshCw, ExternalLink, Salad } from "lucide-react";
 import {
   safeText,
   safeCompletionShape,
@@ -21,6 +22,8 @@ import SupplementsPanel from "./nutrition/sections/SupplementsPanel";
 import CoachNotesPanel from "./nutrition/sections/CoachNotesPanel";
 import GuidancePanel from "./nutrition/sections/GuidancePanel";
 
+function cx(...xs) { return xs.filter(Boolean).join(" "); }
+
 export default function NutritionCard({
   loading,
   err,
@@ -37,8 +40,7 @@ export default function NutritionCard({
   isFuture,
   message,
 
-  dailyHydrationOz: dailyHydrationOzProp,
-
+  dailyHydrationOzProp,
   nutritionCompletion,
   onCompletionChange,
 }) {
@@ -83,71 +85,130 @@ export default function NutritionCard({
   const [notesOpen, setNotesOpen] = useState(false);
 
   const setCompletion = useCallback(
-    (next) => {
-      if (typeof onCompletionChange === "function") onCompletionChange(next);
-    },
+    (next) => { if (typeof onCompletionChange === "function") onCompletionChange(next); },
     [onCompletionChange]
   );
 
+  const allDone = counts.total > 0 && counts.done >= counts.total;
+
   return (
-    <section className="bg-white rounded-2xl shadow-md border border-blue-100 p-5 overflow-visible">
-      <NutritionHeader
-        subtitle={subtitle}
-        metaStatus={metaStatus}
-        metaEff={metaEff}
-        counts={counts}
-        onRefresh={onRefresh}
-      />
+    <div className="rounded-2xl overflow-hidden bg-white border border-gray-200 shadow-sm">
 
-      {loading ? (
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm text-gray-600">Loading nutrition…</p>
+      {/* Card top accent — green when complete, brand blue otherwise */}
+      <div className={cx(
+        "h-1 w-full transition-colors duration-500",
+        allDone ? "bg-emerald-400" : "bg-[#46769B]"
+      )} />
+
+      <div className="p-5">
+
+        {/* ── Card header ── */}
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={cx(
+              "h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0",
+              allDone ? "bg-emerald-50 border border-emerald-100" : "bg-[#EEF4FA] border border-[#D0E4F0]"
+            )}>
+              <Salad className={cx("w-4 h-4", allDone ? "text-emerald-600" : "text-[#46769B]")} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-widest text-gray-400 leading-none mb-0.5">
+                Nutrition
+              </p>
+              <p className="text-sm font-bold text-gray-900 leading-snug truncate">
+                {subtitle}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Done counter */}
+            {counts.total > 0 ? (
+              <span className={cx(
+                "text-[11px] font-black rounded-full px-2 py-0.5 tabular-nums",
+                allDone
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-gray-100 text-gray-600"
+              )}>
+                {counts.done}/{counts.total}
+              </span>
+            ) : null}
+
+            {/* Open full nutrition page */}
+            {onOpenNutrition ? (
+              <button
+                type="button"
+                onClick={onOpenNutrition}
+                className="h-8 w-8 flex items-center justify-center rounded-xl border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition"
+                title="Open nutrition plan"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
+
+            {/* Refresh */}
+            {onRefresh ? (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={loading}
+                className="h-8 w-8 flex items-center justify-center rounded-xl border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition disabled:opacity-40"
+                title="Refresh nutrition"
+              >
+                <RefreshCw className={cx("w-3.5 h-3.5", loading ? "animate-spin" : "")} />
+              </button>
+            ) : null}
+          </div>
         </div>
-      ) : err ? (
-        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-          <p className="text-sm text-red-700 font-semibold">{err}</p>
-          <p className="text-xs text-red-700/80 mt-1">
-            If this persists, confirm /api/athlete/nutrition/today is deployed and the athlete session cookie is valid.
-          </p>
-        </div>
-      ) : !hasPlan ? (
-        <NutritionEmptyState
-          showUpcoming={showUpcoming}
-          message={message}
-          nextPlan={nextPlan}
-          onOpenNutrition={onOpenNutrition}
-          onRefresh={onRefresh}
-        />
-      ) : (
-        <div className="mt-4 space-y-4 overflow-visible">
-          {/* ✅ Daily Targets at the top */}
-          <DailyTargets daily={daily} dailyHydrationOz={dailyHydrationOz} />
 
-          {/* Meals / checks */}
-          <MealTargets
-            mealBlocks={mealBlocks}
-            completion={completion}
-            nutritionCompletion={nutritionCompletion}
-            onSetCompletion={setCompletion}
+        {/* ── Body ── */}
+        {loading ? (
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <p className="text-sm text-gray-500 font-semibold">Loading nutrition…</p>
+          </div>
+        ) : err ? (
+          <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+            <p className="text-sm text-red-700 font-semibold">{err}</p>
+            <p className="text-xs text-red-600/80 mt-1">
+              If this persists, confirm the nutrition API is deployed and your session is valid.
+            </p>
+          </div>
+        ) : !hasPlan ? (
+          <NutritionEmptyState
+            showUpcoming={showUpcoming}
+            message={message}
+            nextPlan={nextPlan}
+            onOpenNutrition={onOpenNutrition}
+            onRefresh={onRefresh}
           />
+        ) : (
+          <div className="space-y-4 overflow-visible">
+            <DailyTargets daily={daily} dailyHydrationOz={dailyHydrationOz} />
 
-          {/* Optional panels (collapsed) */}
-          <SupplementsPanel
-            open={suppOpen}
-            onToggle={() => setSuppOpen((v) => !v)}
-            supplementItems={supplementItems}
-            supplementNotes={supplementNotes}
-          />
+            <MealTargets
+              mealBlocks={mealBlocks}
+              completion={completion}
+              nutritionCompletion={nutritionCompletion}
+              onSetCompletion={setCompletion}
+            />
 
-          <CoachNotesPanel
-            open={notesOpen}
-            onToggle={() => setNotesOpen((v) => !v)}
-            coachNotes={coachNotes}
-          />
+            <SupplementsPanel
+              open={suppOpen}
+              onToggle={() => setSuppOpen((v) => !v)}
+              supplementItems={supplementItems}
+              supplementNotes={supplementNotes}
+            />
 
-          <GuidancePanel />
-        </div>
-      )}
-    </section>
+            <CoachNotesPanel
+              open={notesOpen}
+              onToggle={() => setNotesOpen((v) => !v)}
+              coachNotes={coachNotes}
+            />
+
+            <GuidancePanel />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

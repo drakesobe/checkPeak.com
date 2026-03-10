@@ -1,3 +1,4 @@
+// pages/api/athlete/workouts/completeItem.js
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 import formidable from "formidable";
@@ -17,8 +18,21 @@ function asString(v) {
   return String(x ?? "").trim();
 }
 
-function normBool(v) {
-  return asString(v).toLowerCase() === "true";
+/**
+ * Determines whether a workout item requires file evidence.
+ * Conservative: anything that isn't explicitly "none", "false", or VARA
+ * is treated as requiring a file. This prevents an empty/missing field
+ * from silently bypassing the photo requirement.
+ */
+function requiresFileEvidence(rawEvidenceRequired) {
+  const s = asString(rawEvidenceRequired).toLowerCase();
+  // Explicit no-evidence values
+  if (s === "false" || s === "none" || s === "voluntary_activity_vara") return false;
+  // Explicit evidence values
+  if (s === "true" || s === "photo" || s === "video" || s === "photo_or_video") return true;
+  // Unknown or empty — fail safe: treat as requiring evidence
+  // This prevents a missing/null field from bypassing the photo check
+  return s.length > 0; // empty string → false (truly unknown), non-empty unknown → true
 }
 
 function normalizeItemStatus(v) {
@@ -37,14 +51,8 @@ function deriveDailyWorkoutStatus(itemStatuses = []) {
   return "assigned";
 }
 
-/**
- * ✅ Support both requireAthlete shapes:
- * - auth wrapper: { ok, athlete, user, email, ... }
- * - athlete directly
- */
 function unwrapAuth(maybe) {
   if (!maybe) return { ok: false, athlete: null, user: null, raw: null };
-
   if (typeof maybe === "object" && "ok" in maybe) {
     return {
       ok: Boolean(maybe.ok),
@@ -53,7 +61,6 @@ function unwrapAuth(maybe) {
       raw: maybe,
     };
   }
-
   return { ok: true, athlete: maybe, user: null, raw: maybe };
 }
 
@@ -145,9 +152,7 @@ async function uploadToCloudinary({ blob, filename }) {
   const res = await fetch(endpoint, { method: "POST", body: fd });
 
   let json = {};
-  try {
-    json = await res.json();
-  } catch {}
+  try { json = await res.json(); } catch {}
 
   if (!res.ok) {
     throw new Error(json?.error?.message || "Cloudinary upload failed");
@@ -160,15 +165,9 @@ async function uploadToCloudinary({ blob, filename }) {
   };
 }
 
-/* ---------------- Org resolve (from session OR AthleteScans) ---------------- */
+/* ---------------- Org resolve ---------------- */
 
-/**
- * We want WorkoutCompletions.Organization (linked) + OrgToken (text)
- * Preferred source: session user payload if you store orgId/orgToken there
- * Fallback: lookup AthleteScans by athleteRecordId or athleteToken, read Organization link and OrgToken
- */
 async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
-  // 1) try session payload shapes (best if you already store these on athlete session)
   const orgId = asString(
     auth?.user?.orgId ||
       auth?.user?.OrgId ||
@@ -191,9 +190,6 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
 
   if (orgId || orgToken) return { orgId, orgToken, source: "session" };
 
-  // 2) fallback: AthleteScans lookup
-  // - If we have athleteRecordId (AthleteScans record id), fetch it
-  // - else find by AthleteToken
   try {
     let rec = null;
 
@@ -258,7 +254,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing DAILYWORKOUTS Airtable env vars" });
     }
 
-    // ✅ support either requireAthlete(req) or requireAthlete(req,res)
     let authRaw = null;
     try {
       authRaw = requireAthlete.length >= 2 ? await requireAthlete(req, res) : requireAthlete(req);
@@ -275,10 +270,14 @@ export default async function handler(req, res) {
 
     const { fields, files } = await parseMultipart(req);
 
-    const workoutItemId = asString(fields.workoutItemId);
-    const evidenceRequired = normBool(fields.evidenceRequired);
+    const workoutItemId  = asString(fields.workoutItemId);
+    // Client sends the raw EvidenceRequired string (e.g. "voluntary_activity_vara")
+    // Fall back to legacy boolean "true"/"false" for older clients
+    const evidenceRaw    = asString(fields.evidenceRequired);
+    const needsFile      = requiresFileEvidence(evidenceRaw);
+    const isVARA         = evidenceRaw.toLowerCase() === "voluntary_activity_vara";
     const dailyWorkoutId = asString(fields.dailyWorkoutId);
-    const athleteNote = asString(fields.athleteNote || fields.note || "");
+    const athleteNote    = asString(fields.athleteNote || fields.note || "");
 
     if (!workoutItemId) {
       return res.status(400).json({
@@ -300,18 +299,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // AthleteScans record id (your link field expects AthleteScans)
     const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
 
     const f = pickFirst(files?.file || files?.photo || files?.image);
-    if (evidenceRequired && !f) {
+
+    // VARA: self-report only, no file required or accepted
+    // Other evidence types: file required if needsFile is true
+    if (needsFile && !isVARA && !f) {
       return res.status(400).json({
         error: "Photo required",
-        debug: { evidenceRequired, filesKeys: Object.keys(files || {}) },
+        debug: { evidenceRaw, needsFile, filesKeys: Object.keys(files || {}) },
       });
     }
 
-    // Resolve org linkage for this completion
     const orgResolved = await resolveOrgForCompletion({
       base,
       auth,
@@ -319,12 +319,12 @@ export default async function handler(req, res) {
       athleteRecordId,
     });
 
-    // Upload to Cloudinary if file exists
+    // Upload to Cloudinary only if a file was actually provided (and not VARA)
     let uploaded = null;
     let attachment = [];
     let attachmentSummary = "";
 
-    if (f) {
+    if (f && !isVARA) {
       const fs = await import("fs");
       const path = f.filepath || f.path;
       const buff = fs.readFileSync(path);
@@ -341,47 +341,37 @@ export default async function handler(req, res) {
 
     const nowIso = new Date().toISOString();
 
-    // Athlete completion status:
-    // - evidence required => pending_review
-    // - else => completed immediately
-    const completionStatus = evidenceRequired ? "pending_review" : "completed";
+    // Completion status logic:
+    // - VARA => completed immediately (self-report, no coach review)
+    // - evidence required (photo/video) => pending_review
+    // - no evidence => completed immediately
+    const completionStatus = needsFile && !isVARA ? "pending_review" : "completed";
 
-    // 1) Create WorkoutCompletions
     const created = await base("WorkoutCompletions").create([
       {
         fields: {
           CompletedAt: nowIso,
 
-          // core identifiers
           AthleteToken: athleteToken,
           ...(athleteRecordId ? { Athlete: [athleteRecordId] } : {}),
 
-          // org linkage (so review queue can filter)
           ...(orgResolved?.orgId ? { Organization: [orgResolved.orgId] } : {}),
           ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken } : {}),
 
-          // link to the item completed
           WorkoutItem: [workoutItemId],
 
-          // uploads
           ...(attachment.length ? { Attachment: attachment } : {}),
           ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
 
-          // status (single select): rejected | pending_review | completed
           Status: completionStatus,
-
-          // optional: if you later add AthleteNote in Airtable, uncomment:
-          // ...(athleteNote ? { AthleteNote: athleteNote } : {}),
         },
       },
     ]);
 
     const wcId = created?.[0]?.id || "";
 
-    // 2) Update WorkoutItems.Status so athlete UI reflects immediately
     await base("WorkoutItems").update([{ id: workoutItemId, fields: { Status: completionStatus } }]);
 
-    // 3) Recompute + update DailyWorkouts.Status
     let daily = { updated: false, status: "" };
     try {
       daily = await recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId });
@@ -393,6 +383,7 @@ export default async function handler(req, res) {
       ok: true,
       workoutCompletionId: wcId,
       status: completionStatus,
+      isVARA,
       attachmentUrl: uploaded?.url || "",
       dailyWorkoutStatus: daily?.status || "",
       noteReceived: Boolean(athleteNote),

@@ -44,6 +44,16 @@ function renumberOrders(list) {
 // Sport options matching Airtable single-select
 const SPORT_OPTIONS = ["soccer","basketball","xc","football","track","swim","tennis","hockey","baseball","softball"];
 
+// EvidenceRequired options — must match Airtable single-select exactly
+const EVIDENCE_OPTIONS = [
+  { value: "none",                   label: "None" },
+  { value: "photo",                  label: "Photo" },
+  { value: "video",                  label: "Video" },
+  { value: "photo_or_video",         label: "Photo or Video" },
+  { value: "voluntary_activity_vara",label: "Voluntary Activity (VARA)" },
+];
+const VALID_EVIDENCE_VALUES = new Set(EVIDENCE_OPTIONS.map(o => o.value));
+
 // ---------- DS-token primitives ----------
 const inputStyle = {
   width: "100%", padding: "10px 14px", fontSize: "13px",
@@ -351,13 +361,12 @@ export default function CreateWorkoutModal({
     const list = sortedItemsForSubmit;
     for (let i=0; i<list.length; i++) {
       const it   = list[i] || {};
-      const name = String(it.ExerciseName||"").trim();
       const sets = toNumberOrEmpty(it.Sets);
       if (sets !== "" && Number(sets) < 0) return { ok: false, error: `Item #${i+1}: Sets must be ≥ 0.` };
       const ord  = toNumberOrEmpty(it.Order);
       if (ord  !== "" && Number(ord) <= 0) return { ok: false, error: `Item #${i+1}: Order must be ≥ 1.` };
       const ev   = String(it.EvidenceRequired||"none");
-      if (!["none","photo","video","photo_or_video"].includes(ev)) return { ok: false, error: `Item #${i+1}: Invalid EvidenceRequired.` };
+      if (!VALID_EVIDENCE_VALUES.has(ev)) return { ok: false, error: `Item #${i+1}: Invalid EvidenceRequired value "${ev}".` };
     }
     const cleaned = list
       .filter(it => String(it?.ExerciseName||"").trim())
@@ -561,11 +570,19 @@ export default function CreateWorkoutModal({
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
-                  <DSSelect label="Evidence required" value={it?.EvidenceRequired||"none"} onChange={e => updateItem(idx,{EvidenceRequired:e.target.value})} helper="Must match Airtable single select.">
-                    <option value="none">none</option>
-                    <option value="photo">photo</option>
-                    <option value="video">video</option>
-                    <option value="photo_or_video">photo_or_video</option>
+                  <DSSelect
+                    label="Evidence required"
+                    value={it?.EvidenceRequired||"none"}
+                    onChange={e => updateItem(idx,{EvidenceRequired:e.target.value})}
+                    helper={
+                      it?.EvidenceRequired === "voluntary_activity_vara"
+                        ? "VARA: athlete self-reports - no coach tracking."
+                        : "Must match Airtable single select."
+                    }
+                  >
+                    {EVIDENCE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </DSSelect>
                   <div>
                     <span style={labelStyle}>Video URL</span>
@@ -580,6 +597,17 @@ export default function CreateWorkoutModal({
                     <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "5px" }}>YouTube, Hudl, Drive link, etc.</p>
                   </div>
                 </div>
+
+                {/* VARA notice — shown inline when selected */}
+                {it?.EvidenceRequired === "voluntary_activity_vara" && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "10px 14px", marginBottom: "10px", backgroundColor: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, borderLeft: `3px solid ${DS.caution}` }}>
+                    <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: DS.caution }} />
+                    <p style={{ fontSize: "11px", fontWeight: 700, color: DS.caution, lineHeight: 1.5 }}>
+                      Voluntary Activity (VARA) - this item will not be tracked by coaching staff.
+                      Athletes self-report completion only.
+                    </p>
+                  </div>
+                )}
 
                 <DSTextarea label="Instructions" value={it?.Instructions||""} onChange={e => updateItem(idx,{Instructions:e.target.value})} placeholder="Coaching cues, tempo, technique notes…" />
               </div>

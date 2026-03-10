@@ -1,5 +1,4 @@
 // components/athlete-today/complete-item-modal/components/ModalActions.jsx
-
 "use client";
 
 import { Camera, CheckCircle2 } from "lucide-react";
@@ -20,7 +19,12 @@ export default function ModalActions({
         Cancel
       </Button>
 
-      <Button onClick={onSubmit} disabled={!canSubmit}>
+      {/* 
+        Always tappable unless actively submitting — missing photo is handled upstream
+        in handleAttemptSubmit which shows the error banner + shake instead of blocking
+        the tap entirely. This gives the athlete feedback rather than a silent dead button.
+      */}
+      <Button onClick={onSubmit} disabled={submitting}>
         {evidenceRequired ? (
           <Camera className="w-4 h-4" />
         ) : (

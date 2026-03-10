@@ -38,9 +38,21 @@ function pickBestDailyWorkout(rows) {
 }
 
 /**
- * WorkoutCompletions field names
- * NOTE: We support a couple of variants for AttachmentSummary just in case
+ * Normalizes EvidenceRequired from Airtable to a consistent string value.
+ * Airtable may store it as a boolean (true/false) or a single-select string
+ * ("none", "photo", "video", "photo_or_video", "voluntary_activity_vara").
+ *
+ * Returns the canonical string so the client can distinguish VARA from
+ * normal evidence-required items without a boolean cast.
  */
+function normalizeEvidenceRequired(raw) {
+  if (raw === true || raw === "true") return "photo"; // legacy boolean true => treat as photo
+  if (raw === false || raw === "false" || raw == null || raw === "") return "none";
+  const s = String(raw).trim().toLowerCase();
+  const known = ["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"];
+  return known.includes(s) ? s : "none";
+}
+
 const WC_FIELDS = {
   CompletedAt: "CompletedAt",
   Athlete: "Athlete",
@@ -65,7 +77,7 @@ function toBool(v) {
   return s === "true" || s === "1" || s === "yes";
 }
 
-// ✅ “done” for athlete:
+// "done" for athlete:
 // completed OR pending_review
 // OR rejected BUT acknowledged (so no endless loop)
 function isAthleteDone(status, acknowledged) {
@@ -180,7 +192,6 @@ export default async function handler(req, res) {
     const dateEsc = escapeAirtableString(isoDate);
     const tokenEsc = escapeAirtableString(athleteToken);
 
-    // ✅ Find DailyWorkouts for that athlete/date
     const formula = `AND(
       IS_SAME({Date}, "${dateEsc}", "day"),
       {AthleteToken} = "${tokenEsc}"
@@ -195,16 +206,13 @@ export default async function handler(req, res) {
     const rec = pickBestDailyWorkout(rows) || rows[0];
     const f = rec.fields || {};
 
-    // ✅ PRIMARY: hydrate from DailyWorkouts.WorkoutItems
     const linkedItemIds = safeArray(f.WorkoutItems).map(String).map((s) => s.trim()).filter(Boolean);
     let hydrated = await hydrateWorkoutItemsByIds(WorkoutItemsTable, linkedItemIds);
 
-    // ✅ FALLBACK: reverse-link lookup (only if needed)
     let wiFormula = "";
     if (!hydrated.length) {
       const dwIdEsc = escapeAirtableString(rec.id);
       wiFormula = `FIND("${dwIdEsc}", ARRAYJOIN({DailyWorkout}&""))>0`;
-
       const wiRows = await WorkoutItemsTable.select({ filterByFormula: wiFormula, pageSize: 100 }).firstPage();
       hydrated = (wiRows || []).slice();
     }
@@ -215,8 +223,6 @@ export default async function handler(req, res) {
       return ao - bo;
     });
 
-    // ✅ Fetch WorkoutCompletions for the day for this athlete token
-    // (tighter than pulling all completions that day)
     const wcFormula = `AND(
       IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day"),
       {${WC_FIELDS.AthleteToken}} = "${tokenEsc}"
@@ -232,7 +238,6 @@ export default async function handler(req, res) {
     for (const r of wcRows || []) {
       const wf = r.fields || {};
 
-      // extra safety: if Athlete link exists, confirm it matches
       const athleteLinks = safeArray(wf[WC_FIELDS.Athlete]).map(String);
       if (athleteLinks.length && !athleteLinks.includes(String(athleteRecordId))) continue;
 
@@ -240,7 +245,6 @@ export default async function handler(req, res) {
       const itemId = String(itemLinks?.[0] || "").trim();
       if (!itemId) continue;
 
-      // If multiple completions for the same item exist, keep the most recent CompletedAt
       const existing = completionByWorkoutItemId.get(itemId);
       if (!existing) {
         completionByWorkoutItemId.set(itemId, r);
@@ -261,8 +265,6 @@ export default async function handler(req, res) {
 
       const completionStatus = statusNorm(cf[WC_FIELDS.Status] || "");
       const itemStatus = statusNorm(it.Status || "");
-
-      // ✅ Athlete-facing status: completion > item
       const status = completionStatus || itemStatus || "";
 
       const reviewNote = String(cf[WC_FIELDS.ReviewNote] || "").trim();
@@ -276,14 +278,19 @@ export default async function handler(req, res) {
         String(cf[WC_FIELDS.AttachmentSummaryB] || "").trim() ||
         "";
 
-      const attachmentArr = safeArray(cf[WC_FIELDS.Attachment]); // Airtable attachment objects
+      const attachmentArr = safeArray(cf[WC_FIELDS.Attachment]);
+
+      // ── EvidenceRequired: always return the canonical string, never a boolean.
+      // This lets the client distinguish VARA from photo/video evidence.
+      const evidenceRequired = normalizeEvidenceRequired(it.EvidenceRequired);
 
       return {
         id,
         missing: false,
 
         ExerciseName: it.ExerciseName || it.Title || it.Name || `Workout Item ${idx + 1}`,
-        EvidenceRequired: !!it.EvidenceRequired,
+        // Raw string value — client uses this to distinguish none/photo/video/vara
+        EvidenceRequired: evidenceRequired,
         Sets: it.Sets ?? "",
         Reps: it.Reps ?? "",
         Weight: it.Weight ?? it.Load ?? "",
@@ -292,20 +299,16 @@ export default async function handler(req, res) {
         Instructions: it.Instructions ?? "",
         VideoURL: it.VideoURL ?? it.Video ?? "",
 
-        // ✅ For row UI logic
         Completed: doneForAthlete ? "true" : "false",
         Status: status,
 
-        // helpful debugging
         CompletionStatus: completionStatus,
         ItemStatus: itemStatus,
 
-        // completion payload
         CompletedAt: cf[WC_FIELDS.CompletedAt] || "",
         CompletionId: completionRec?.id || "",
 
-        // uploads + review
-        Note: attachmentSummary || "", // keep existing prop name (your UI uses this sometimes)
+        Note: attachmentSummary || "",
         AttachmentSummary: attachmentSummary || "",
         Attachment: attachmentArr,
         ReviewNote: reviewNote,

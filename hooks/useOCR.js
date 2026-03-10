@@ -1,52 +1,48 @@
 // hooks/useOCR.js
+//
+// Drop-in replacement for the Tesseract-based useOCR hook.
+// Uses AWS Textract via /api/ocr/textract instead of running
+// Tesseract in the browser. All exports, return shapes, and
+// onScan callback signatures are identical — nothing upstream changes.
+
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_RESIZE_DIM = 1800;
-const RESIZE_QUALITY = 0.9;
-const EARLY_EXIT_SCORE = 65;
-
-// Reduced from 6 attempts to 3 — PSM 6 and 4 cover ~90% of nutrition label
-// layouts. Threshold fallback only runs if both gray attempts score poorly.
-const OCR_ATTEMPTS = [
-  { psm: 6, mode: "gray"   },
-  { psm: 4, mode: "gray"   },
-  { psm: 6, mode: "thresh" }, // threshold fallback — only reached if score < EARLY_EXIT_SCORE
-];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // Textract hard limit
+const MAX_RESIZE_DIM = 2000;            // slightly higher than Tesseract — Textract handles it
+const RESIZE_QUALITY = 0.92;
 
 // ---------------------------------------------------------------------------
-// Image decode
-// Prefer createImageBitmap (handles EXIF orientation better).
-// Falls back to Image() + FileReader if unavailable (older Safari).
+// Image resize
+// Keeps the same resize logic as before so large photos don't breach
+// Textract's 5 MB limit and upload times stay reasonable.
 // ---------------------------------------------------------------------------
 
-async function decodeBitmapFromFile(file) {
+async function decodeBitmap(file) {
   if (typeof createImageBitmap === "function") {
     try {
       const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
       return { bitmap: bmp, width: bmp.width, height: bmp.height, close: () => bmp.close?.() };
-    } catch {
-      // fall through to Image() path
-    }
+    } catch { /* fall through */ }
   }
 
   const dataUrl = await new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = (e) => resolve(e.target.result);
+    r.onload  = (e) => resolve(e.target.result);
     r.onerror = reject;
     r.readAsDataURL(file);
   });
 
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
-    im.onload = () => resolve(im);
+    im.onload  = () => resolve(im);
     im.onerror = reject;
-    im.src = dataUrl;
+    im.src     = dataUrl;
   });
 
   return {
@@ -57,119 +53,60 @@ async function decodeBitmapFromFile(file) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Resize — caps dimensions for OCR speed/clarity balance
-// ---------------------------------------------------------------------------
+async function resizeForTextract(file) {
+  if (file.size <= MAX_FILE_SIZE) {
+    // Already within limit — still decode to normalise orientation
+    const { bitmap, width: srcW, height: srcH, close } = await decodeBitmap(file);
 
-async function resizeFile(file, maxDim = MAX_RESIZE_DIM, quality = RESIZE_QUALITY) {
-  const { bitmap, width: srcW, height: srcH, close } = await decodeBitmapFromFile(file);
+    let w = srcW, h = srcH;
+    if (w > MAX_RESIZE_DIM || h > MAX_RESIZE_DIM) {
+      const scale = Math.min(MAX_RESIZE_DIM / w, MAX_RESIZE_DIM / h);
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
+    }
 
-  let w = srcW;
-  let h = srcH;
+    const canvas = document.createElement("canvas");
+    canvas.width  = w;
+    canvas.height = h;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
 
-  if (w > maxDim || h > maxDim) {
-    const scale = Math.min(maxDim / w, maxDim / h);
-    w = Math.max(1, Math.round(w * scale));
-    h = Math.max(1, Math.round(h * scale));
+    const blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Resize failed"))),
+        "image/jpeg",
+        RESIZE_QUALITY
+      )
+    );
+
+    close();
+    return new File([blob], file.name.replace(/(\.\w+)?$/, ".jpg"), { type: "image/jpeg" });
   }
+
+  // File too large — scale down until it fits
+  const { bitmap, width: srcW, height: srcH, close } = await decodeBitmap(file);
+  const scale = Math.sqrt(MAX_FILE_SIZE / file.size) * 0.9; // 10% headroom
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
 
   const canvas = document.createElement("canvas");
   canvas.width  = w;
   canvas.height = h;
-  canvas.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0, w, h);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
 
-  const blob = await new Promise((resolve, reject) => {
+  const blob = await new Promise((resolve, reject) =>
     canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("Resize: empty blob"))),
+      (b) => (b ? resolve(b) : reject(new Error("Resize failed"))),
       "image/jpeg",
-      quality
-    );
-  });
+      0.85
+    )
+  );
 
   close();
-
   return new File([blob], file.name.replace(/(\.\w+)?$/, ".jpg"), { type: "image/jpeg" });
 }
 
 // ---------------------------------------------------------------------------
-// Preprocessing
-// Both functions operate in-place on the canvas context.
-// ---------------------------------------------------------------------------
-
-function applyGrayscaleContrast(canvas) {
-  const ctx  = canvas.getContext("2d", { willReadFrequently: true });
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const px   = data.data;
-
-  let min = 255, max = 0;
-  for (let i = 0; i < px.length; i += 4) {
-    const g = 0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2];
-    if (g < min) min = g;
-    if (g > max) max = g;
-  }
-
-  const scale = 255 / (max - min || 1);
-  for (let i = 0; i < px.length; i += 4) {
-    const g = Math.max(0, Math.min(255, (0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2] - min) * scale));
-    px[i] = px[i + 1] = px[i + 2] = g;
-  }
-
-  ctx.putImageData(data, 0, 0);
-}
-
-function applyThreshold(canvas, threshold = 165) {
-  const ctx  = canvas.getContext("2d", { willReadFrequently: true });
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const px   = data.data;
-
-  for (let i = 0; i < px.length; i += 4) {
-    const v = px[i] > threshold ? 255 : 0;
-    px[i] = px[i + 1] = px[i + 2] = v;
-  }
-
-  ctx.putImageData(data, 0, 0);
-}
-
-// ---------------------------------------------------------------------------
-// OCR worker lifecycle
-// Single worker, reused across the scan loop, terminated in finally.
-// ---------------------------------------------------------------------------
-
-async function initOCRWorker() {
-  const mod          = await import("tesseract.js");
-  const createWorker = mod.createWorker || mod.default?.createWorker;
-
-  if (!createWorker) {
-    throw new Error("Tesseract createWorker not found. Check your tesseract.js version.");
-  }
-
-  const worker = await createWorker();
-
-  if (typeof worker.load         === "function") await worker.load();
-  if (typeof worker.reinitialize === "function") await worker.reinitialize("eng");
-  else if (typeof worker.initialize === "function") await worker.initialize("eng");
-
-  if (typeof worker.setParameters === "function") {
-    await worker.setParameters({
-      preserve_interword_spaces: "1",
-      tessedit_pageseg_mode:     "6",
-    });
-  }
-
-  return worker;
-}
-
-async function runOCR(worker, canvas, psm) {
-  if (typeof worker.setParameters === "function") {
-    await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
-  }
-  const result = await worker.recognize(canvas);
-  return String(result?.data?.text ?? "").trim();
-}
-
-// ---------------------------------------------------------------------------
-// Quality scoring
-// Returns a numeric score 0–100 used to pick the best OCR attempt.
+// Quality scoring — kept identical to original so computeOCRQuality works
 // ---------------------------------------------------------------------------
 
 function scoreText(text) {
@@ -182,94 +119,56 @@ function scoreText(text) {
   const ratio   = letters / (s.length || 1);
 
   return (
-    Math.min(1, s.length / 700)  * 40 +
-    Math.min(1, ratio   / 0.45)  * 40 +
-    Math.min(1, lines   / 18)    * 15 +
-    Math.min(1, digits  / 80)    *  5
+    Math.min(1, s.length / 700) * 40 +
+    Math.min(1, ratio   / 0.45) * 40 +
+    Math.min(1, lines   / 18)   * 15 +
+    Math.min(1, digits  / 80)   *  5
   );
 }
 
 /**
  * Compute a human-readable quality label from OCR text.
- * Returns: { label: string, tone: "good"|"warn"|"bad", score: number, action: string|null }
+ * Identical export to the original — OCRUpload uses this directly.
+ * Returns: { label, tone: "good"|"warn"|"bad", score, action }
  */
 export function computeOCRQuality(text) {
-  const s      = String(text ?? "").trim();
-  const score  = scoreText(s);
+  const s       = String(text ?? "").trim();
+  const score   = scoreText(s);
   const letters = (s.match(/[A-Za-z]/g) || []).length;
   const ratio   = letters / (s.length || 1);
 
-  if (!s) {
-    return { label: "No text detected", tone: "bad", score: 0, action: "retake" };
-  }
-
-  if (s.length > 250 && ratio > 0.35) {
-    return { label: "Good scan",    tone: "good", score, action: null };
-  }
-  if (s.length > 120 && ratio > 0.22) {
-    return { label: "Okay scan",    tone: "warn", score, action: "recrop" };
-  }
-  return   { label: "Low clarity", tone: "bad",  score, action: "retake" };
+  if (!s) return { label: "No text detected", tone: "bad",  score: 0,     action: "retake" };
+  if (s.length > 250 && ratio > 0.35) return { label: "Good scan",    tone: "good", score, action: null     };
+  if (s.length > 120 && ratio > 0.22) return { label: "Okay scan",    tone: "warn", score, action: "recrop" };
+  return                                      { label: "Low clarity",  tone: "bad",  score, action: "retake" };
 }
 
 // ---------------------------------------------------------------------------
-// Scan a single file — runs OCR_ATTEMPTS in order with early exit
-// Returns { text, psm, mode, quality }
+// Send a single file to Textract via the API route
 // ---------------------------------------------------------------------------
 
-async function scanSingleFile(worker, file, workCanvas) {
-  const resized                                 = await resizeFile(file);
-  const { bitmap, width, height, close }        = await decodeBitmapFromFile(resized);
+async function scanWithTextract(file) {
+  const resized = await resizeForTextract(file);
 
-  workCanvas.width  = width;
-  workCanvas.height = height;
+  const res = await fetch("/api/ocr/textract", {
+    method:  "POST",
+    headers: { "Content-Type": resized.type || "image/jpeg" },
+    body:    resized,
+  });
 
-  const ctx = workCanvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(bitmap, 0, 0);
-
-  // Apply grayscale+contrast once — threshold mode re-applies on top
-  applyGrayscaleContrast(workCanvas);
-
-  let bestText  = "";
-  let bestScore = -1;
-  let bestPsm   = OCR_ATTEMPTS[0].psm;
-  let bestMode  = OCR_ATTEMPTS[0].mode;
-
-  for (const attempt of OCR_ATTEMPTS) {
-    if (attempt.mode === "thresh") {
-      // Reset to bitmap then re-apply grayscale before thresholding
-      ctx.drawImage(bitmap, 0, 0);
-      applyGrayscaleContrast(workCanvas);
-      applyThreshold(workCanvas);
-    }
-
-    const text  = await runOCR(worker, workCanvas, attempt.psm);
-    const score = scoreText(text);
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestText  = text;
-      bestPsm   = attempt.psm;
-      bestMode  = attempt.mode;
-    }
-
-    // Early exit — no need to run more expensive attempts
-    if (bestScore >= EARLY_EXIT_SCORE) break;
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json?.error || `Textract request failed (${res.status})`);
   }
 
-  close();
+  const json = await res.json();
+  if (!json?.ok) throw new Error(json?.error || "Textract returned no result");
 
-  return {
-    text:    bestText,
-    psm:     bestPsm,
-    mode:    bestMode,
-    quality: computeOCRQuality(bestText),
-  };
+  return String(json.text ?? "").trim();
 }
 
 // ---------------------------------------------------------------------------
-// Scan state shape
-// Single object prevents multiple re-renders per loop iteration.
+// Scan state — identical shape to original
 // ---------------------------------------------------------------------------
 
 const INITIAL_SCAN_STATE = {
@@ -282,24 +181,17 @@ const INITIAL_SCAN_STATE = {
 
 // ---------------------------------------------------------------------------
 // useOCR hook
+//
+// Identical interface to the Tesseract version:
+//   { scanState, startScan, clearError }
+//
+// onScan(text, meta) meta shape is identical — psmUsed and preprocess are
+// set to null since Textract doesn't expose those concepts, but the fields
+// are still present so nothing downstream breaks.
 // ---------------------------------------------------------------------------
 
-/**
- * @param {object}   options
- * @param {function} options.onScan       — called with (text, meta) after each file
- * @param {string[]} options.croppedFlags — tracks which files have been cropped
- * @param {string[]} options.athleteNames — optional per-file labels
- *
- * Returns:
- *   scanState   — { isLoading, currentIndex, completedCount, texts, error }
- *   startScan   — (files: File[]) => Promise<void>
- *   clearError  — () => void
- */
 export function useOCR({ onScan, croppedFlags = [], athleteNames = [] } = {}) {
   const [scanState, setScanState] = useState(INITIAL_SCAN_STATE);
-
-  // Keep a ref to the active worker so we can terminate on unmount
-  const workerRef = useRef(null);
 
   const clearError = useCallback(() => {
     setScanState((prev) => ({ ...prev, error: "" }));
@@ -320,48 +212,40 @@ export function useOCR({ onScan, croppedFlags = [], athleteNames = [] } = {}) {
         error:          "",
       });
 
-      let worker = null;
-
       try {
-        worker         = await initOCRWorker();
-        workerRef.current = worker;
-
-        // Reuse one offscreen canvas across all files (mobile memory-friendly)
-        const workCanvas = document.createElement("canvas");
-
         for (let i = 0; i < files.length; i++) {
-          // Update current index
           setScanState((prev) => ({ ...prev, currentIndex: i }));
 
-          let result;
+          let text = "";
           try {
-            result = await scanSingleFile(worker, files[i], workCanvas);
+            text = await scanWithTextract(files[i]);
           } catch (fileErr) {
-            console.error(`OCR failed for file ${files[i]?.name}:`, fileErr);
+            console.error(`Textract failed for ${files[i]?.name}:`, fileErr);
             throw new Error(
-              `Could not process "${files[i]?.name || "label"}". ` +
-              `Try cropping closer to the ingredients panel or taking a screenshot.`
+              `Could not scan "${files[i]?.name || "label"}". ` +
+              `${fileErr?.message || "Try re-cropping closer to the ingredients panel."}`
             );
           }
 
-          // Batch update: text + progress in one setState call
+          const quality = computeOCRQuality(text);
+
           setScanState((prev) => {
             const texts = [...prev.texts];
-            texts[i]    = result.text;
+            texts[i]    = text;
             return { ...prev, texts, completedCount: i + 1 };
           });
 
           if (typeof onScan === "function") {
             try {
-              await onScan(result.text, {
+              await onScan(text, {
                 index:       i,
                 total:       files.length,
                 fileName:    files[i]?.name    ?? "",
                 cropped:     !!croppedFlags[i],
                 athleteName: athleteNames[i]   ?? "",
-                psmUsed:     result.psm,
-                preprocess:  result.mode,
-                quality:     result.quality,
+                psmUsed:     null,   // N/A for Textract
+                preprocess:  null,   // N/A for Textract
+                quality,
               });
             } catch (cbErr) {
               console.error("onScan callback error:", cbErr);
@@ -369,22 +253,12 @@ export function useOCR({ onScan, croppedFlags = [], athleteNames = [] } = {}) {
           }
         }
       } catch (err) {
-        console.error("OCR pipeline error:", err);
+        console.error("Textract pipeline error:", err);
         setScanState((prev) => ({
           ...prev,
-          error: err?.message ||
-            "OCR failed. Try zooming in on the ingredients panel or uploading a screenshot.",
+          error: err?.message || "Scan failed. Try re-cropping closer to the ingredients panel.",
         }));
       } finally {
-        try {
-          if (worker && typeof worker.terminate === "function") {
-            await worker.terminate();
-          }
-        } catch (e) {
-          console.warn("Worker terminate failed (non-fatal):", e);
-        }
-
-        workerRef.current = null;
         setScanState((prev) => ({
           ...prev,
           isLoading:    false,

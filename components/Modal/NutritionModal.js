@@ -272,7 +272,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     setError("");
 
     try {
-      const res  = await fetch("/api/check-smartstack", {
+      const res  = await fetch("/api/check", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ ingredientsText: cleaned }),
@@ -280,8 +280,8 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to match ingredients");
 
-      const rawBanned      = Array.isArray(data?.bannedSubstances) ? data.bannedSubstances : [];
-      const rawIngredients = Array.isArray(data?.ingredients)       ? data.ingredients      : [];
+      const rawBanned      = Array.isArray(data?.matchedBanned)      ? data.matchedBanned      : [];
+      const rawIngredients = Array.isArray(data?.matchedIngredients) ? data.matchedIngredients : [];
 
       const normalize = (arr, type) =>
         arr.map((r) => {

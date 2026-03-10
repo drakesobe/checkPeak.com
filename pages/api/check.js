@@ -71,34 +71,44 @@ function splitToTerms(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Noise token filter — prevents short/generic terms from matching
+// Noise token filter
 // ---------------------------------------------------------------------------
 
 const NOISE_TOKENS = new Set([
-  "methyl", "ethyl", "propyl", "butyl", "acetyl",
+  // Chemistry fragments that appear in many compound names
+  "methyl", "ethyl", "propyl", "butyl", "acetyl", "phenyl", "dimethyl",
   "beta", "alpha", "gamma", "delta",
-  "acid", "acids", "salt", "salts",
-  "sodium", "potassium", "calcium", "magnesium",
-  "chloride", "citrate", "phosphate", "sulfate",
-  "oxide", "hydroxide", "extract", "blend", "complex",
+  // Generic food/supplement words
+  "acid", "acids", "salt", "salts", "powder", "powders",
+  "sodium", "potassium", "calcium", "magnesium", "iron",
+  "chloride", "citrate", "phosphate", "sulfate", "malate", "tartrate",
+  "oxide", "hydroxide", "extract", "blend", "complex", "concentrate",
+  "protein", "peptide", "enzyme", "enzymes", "culture", "cultures",
+  "milk", "cheese", "whey", "lactose", "casein", "sugar", "glucose",
+  "oil", "fat", "fiber", "starch", "flour", "water",
+  "color", "colour", "flavor", "flavors", "flavour", "spice", "spices",
+  "green", "red", "blue", "yellow", "white", "black",
+  // Units
   "mg", "mcg", "g", "iu", "ml",
+  // Label structure words
   "scoop", "scoops", "serving", "servings", "container",
   "per", "size", "amount", "other", "natural", "artificial",
+  "contains", "ingredients", "ingredient",
 ]);
 
 function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
   if (!s)                         return true;
   if (NOISE_TOKENS.has(s))        return true;
-  if (s.length < 4)               return true;  // catches "1", "3", "n", "g" etc.
+  if (s.length < 5)               return true;  // raised from 4 — kills "spice","green","chi" etc.
   if (/^\d+$/.test(s))            return true;  // pure number
   if (/^\d+[a-z]{1,2}$/.test(s)) return true;  // unit like "25mg"
-  if (/^[a-z]{1,2}\d*$/.test(s)) return true;  // single/double letter
+  if (/^[a-z]{1,3}\d*$/.test(s)) return true;  // 1-3 letter token
   return false;
 }
 
 // ---------------------------------------------------------------------------
-// Phrase matching — for multi-word / hyphenated substance names
+// Phrase matching — complete phrase must appear verbatim in text
 // ---------------------------------------------------------------------------
 
 function normalizeForPhrase(str = "") {
@@ -112,25 +122,41 @@ function normalizeForPhrase(str = "") {
 
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhrase(phrase);
-  if (!p || p.length < 5 || !/[a-z]/.test(p)) return false;
+  // Must be at least 6 chars and contain a letter — "K2" or "spice" alone won't qualify
+  if (!p || p.length < 6 || !/[a-z]/.test(p)) return false;
   return normalizeForPhrase(normalizedText).includes(p);
 }
 
 // ---------------------------------------------------------------------------
 // Record term extraction
+//
+// CRITICAL: Synonyms are only used for PHRASE matching (whole synonym string).
+// They are NOT split into tokens for individual word matching.
+// This prevents "Chi Powder" → ["chi","powder"] → "powder" matching "ONION POWDER".
+// Only the primary substance/ingredient name is split into tokens.
 // ---------------------------------------------------------------------------
 
-function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
+function primaryTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
   const terms = new Set();
   for (const key of primaryFields) {
     const v = fields?.[key];
     if (v) splitToTerms(String(v)).forEach((t) => terms.add(t));
   }
-  for (const col of ["Synonyms", "Synonyms (Extended)", "Depositor-Supplied Synonyms"]) {
-    const v = fields?.[col];
-    if (v) splitToTerms(String(v)).forEach((t) => terms.add(t));
-  }
+  // Do NOT add synonym tokens here — synonyms are phrase-matched only
   return Array.from(terms);
+}
+
+function synonymPhrases(fields = {}) {
+  const phrases = [];
+  for (const col of ["Synonyms", "Synonyms (Extended)", "Depositor-Supplied Synonyms", "Other Names", "Alt Names"]) {
+    const v = fields?.[col];
+    if (!v) continue;
+    String(v).split(/[,;\n]/).forEach((s) => {
+      const trimmed = s.trim();
+      if (trimmed) phrases.push(trimmed);
+    });
+  }
+  return phrases;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +165,7 @@ function recordTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) {
 
 function termInText(term = "", normalizedText = "") {
   if (!term || term.length < 2) return false;
-  if (/^\d+$/.test(term))       return false;  // pure digit — never matches
+  if (/^\d+$/.test(term))       return false;
   try {
     return new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(normalizedText);
   } catch {
@@ -149,19 +175,27 @@ function termInText(term = "", normalizedText = "") {
 
 // ---------------------------------------------------------------------------
 // Strong match gate
-// A record only matches if:
-//   - A full phrase match fires on the substance name or a synonym, OR
-//   - At least one meaningful (non-noise) term of length >= 5 matches, OR
-//   - Two or more meaningful non-noise terms match
+//
+// A record matches ONLY if:
+//   (A) The full substance/ingredient name phrase appears verbatim in the label, OR
+//   (B) A full synonym phrase (as a whole string) appears verbatim in the label, OR
+//   (C) A primary name token >= 7 chars matches (e.g. "caffeine", "synephrine",
+//       "ephedrine", "dmaa", "amphetamine") — NOT synonym tokens
+//
+// This means "Spice" (synonym of Synthetic Cannabinoids) will never match
+// "SPICES" because: (A) "synthetic cannabinoids" not in label, (B) "spice"
+// is only 5 chars so phraseInText rejects it, (C) synonym tokens not used.
 // ---------------------------------------------------------------------------
 
-function hasStrongMatch(matchedTerms = [], phraseHit = false) {
-  if (phraseHit) return true;
-  if (!matchedTerms?.length) return false;
-  const meaningful = matchedTerms.filter((t) => !isNoiseToken(t));
+function hasStrongMatch(primaryMatchedTerms = [], primaryPhraseHit = false, synPhraseHit = false) {
+  if (primaryPhraseHit || synPhraseHit) return true;
+  if (!primaryMatchedTerms?.length) return false;
+  const meaningful = primaryMatchedTerms.filter((t) => !isNoiseToken(t));
   if (!meaningful.length) return false;
-  if (meaningful.some((t) => String(t).length >= 5)) return true;
-  return meaningful.length >= 2;
+  // Primary name token must be at least 7 chars to match solo
+  // This lets "caffeine"(8), "synephrine"(10), "ephedrine"(9) through
+  // but blocks "spice"(5), "green"(5), "powder"(6) etc.
+  return meaningful.some((t) => String(t).length >= 7);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,36 +209,41 @@ function matchAgainstBannedRecords(ingredientsText) {
     const fields  = rec.fields || {};
     const subName = fields["Substance Name"] || "";
 
-    // Phrase match on full substance name
-    const phraseHit = phraseInText(subName, normalized);
+    // (A) Full substance name as phrase
+    const primaryPhraseHit = phraseInText(subName, normalized);
 
-    // Phrase match on each synonym individually
-    const synPhraseHit = ["Synonyms", "Other Names", "Alt Names"].some((col) => {
-      const v = fields?.[col];
-      if (!v) return false;
-      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
-    });
+    // (B) Each synonym as a complete phrase — NOT individual tokens
+    const syns = synonymPhrases(fields);
+    const synPhraseHit = syns.some((syn) => phraseInText(syn, normalized));
 
-    const matchedTerms = recordTerms(fields, ["Substance Name"])
+    // (C) Primary name tokens only (no synonym tokens)
+    const matchedTerms = primaryTerms(fields, ["Substance Name"])
       .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
+    if (!hasStrongMatch(matchedTerms, primaryPhraseHit, synPhraseHit)) return matches;
+
+    // What actually triggered the match — for display
+    const triggerTerms = primaryPhraseHit
+      ? [subName]
+      : synPhraseHit
+        ? syns.filter((syn) => phraseInText(syn, normalized))
+        : matchedTerms;
 
     matches.push({
       id: rec.id,
       fields: {
-        "Substance Name":    fields["Substance Name"]    || fields["Name"] || "",
-        Synonyms:            fields["Synonyms"]           || "",
-        "Ban Type":          fields["Ban Type"]           || "",
-        "Banned By":         fields["Banned By"]          || "",
-        "Dosage Limit":      fields["Dosage Limit"]       || "",
-        Notes:               fields["Notes"]              || "",
-        "Source / Citation": fields["Source / Citation"]  || "",
-        Benefits:            fields["Benefits"]           || "",
-        Weaknesses:          fields["Weaknesses"]         || "",
+        "Substance Name":      fields["Substance Name"]      || fields["Name"] || "",
+        Synonyms:              fields["Synonyms"]             || "",
+        "Ban Type":            fields["Ban Type"]             || "",
+        "Banned By":           fields["Banned By"]            || "",
+        "Dosage Limit":        fields["Dosage Limit"]         || "",
+        Notes:                 fields["Notes"]                || "",
+        "Source / Citation":   fields["Source / Citation"]   || "",
+        Benefits:              fields["Benefits"]             || "",
+        Weaknesses:            fields["Weaknesses"]           || "",
         "Nutrient Antagonism": fields["Nutrient Antagonism"] || "",
       },
-      matchedTerms,
+      matchedTerms: triggerTerms,
     });
     return matches;
   }, []);
@@ -217,18 +256,21 @@ function matchAgainstIngredientRecords(ingredientsText) {
     const fields      = rec.fields || {};
     const primaryName = fields["Name"] || fields["Ingredient Name"] || "";
 
-    const phraseHit = phraseInText(primaryName, normalized);
+    const primaryPhraseHit = phraseInText(primaryName, normalized);
 
-    const synPhraseHit = ["Synonyms", "Synonyms (Extended)"].some((col) => {
-      const v = fields?.[col];
-      if (!v) return false;
-      return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
-    });
+    const syns = synonymPhrases(fields);
+    const synPhraseHit = syns.some((syn) => phraseInText(syn, normalized));
 
-    const matchedTerms = recordTerms(fields, ["Name", "Ingredient Name"])
+    const matchedTerms = primaryTerms(fields, ["Name", "Ingredient Name"])
       .filter((t) => !isNoiseToken(t) && termInText(t, normalized));
 
-    if (!hasStrongMatch(matchedTerms, phraseHit || synPhraseHit)) return matches;
+    if (!hasStrongMatch(matchedTerms, primaryPhraseHit, synPhraseHit)) return matches;
+
+    const triggerTerms = primaryPhraseHit
+      ? [primaryName]
+      : synPhraseHit
+        ? syns.filter((syn) => phraseInText(syn, normalized))
+        : matchedTerms;
 
     matches.push({
       id: rec.id,
@@ -242,7 +284,7 @@ function matchAgainstIngredientRecords(ingredientsText) {
         "Nutrient Antagonism":  fields["Nutrient Antagonism"]  || "",
         "Sources / References": fields["Sources / References"] || "",
       },
-      matchedTerms,
+      matchedTerms: triggerTerms,
     });
     return matches;
   }, []);

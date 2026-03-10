@@ -174,17 +174,43 @@ function termInText(term = "", normalizedText = "") {
 }
 
 // ---------------------------------------------------------------------------
+// Short-term allowlist
+//
+// Some legitimate substance/ingredient names are short (< 7 chars) and must
+// still match as standalone tokens — e.g. "zinc", "dmaa", "dhea", "hgh".
+// Explicitly allowlisted so they pass the length gate.
+//
+// Do NOT add generic food words here (salt, acid, green, powder etc.) —
+// those belong in NOISE_TOKENS above.
+// ---------------------------------------------------------------------------
+
+const SHORT_TERM_ALLOWLIST = new Set([
+  // Banned substances with short names
+  "dmaa", "dmha", "dmba", "dmae",
+  "dhea", "dheas",
+  "hgh", "hcg", "epo", "igf",
+  "thc", "cbd", "cbn", "thcv",
+  "lsd", "ghb", "gbl",
+  "aicar", "sarms", "sarm",
+  // Short ingredient names that are meaningful identifiers
+  "zinc", "iodine",
+  "nac",    // N-Acetyl Cysteine
+  "atp", "gaba",
+  "5-htp", "egcg",
+]);
+
+// ---------------------------------------------------------------------------
 // Strong match gate
 //
 // A record matches ONLY if:
-//   (A) The full substance/ingredient name phrase appears verbatim in the label, OR
-//   (B) A full synonym phrase (as a whole string) appears verbatim in the label, OR
-//   (C) A primary name token >= 7 chars matches (e.g. "caffeine", "synephrine",
-//       "ephedrine", "dmaa", "amphetamine") — NOT synonym tokens
+//   (A) The full substance/ingredient name phrase appears verbatim, OR
+//   (B) A full synonym phrase (whole string) appears verbatim, OR
+//   (C) A primary name token matches AND is either:
+//         >= 7 chars  (e.g. "caffeine", "synephrine", "ephedrine"), OR
+//         in SHORT_TERM_ALLOWLIST  (e.g. "zinc", "dmaa", "dhea")
 //
-// This means "Spice" (synonym of Synthetic Cannabinoids) will never match
-// "SPICES" because: (A) "synthetic cannabinoids" not in label, (B) "spice"
-// is only 5 chars so phraseInText rejects it, (C) synonym tokens not used.
+// Synonym tokens are NEVER used — only full synonym phrases.
+// This prevents "Chi Powder" → "powder" matching "ONION POWDER".
 // ---------------------------------------------------------------------------
 
 function hasStrongMatch(primaryMatchedTerms = [], primaryPhraseHit = false, synPhraseHit = false) {
@@ -192,10 +218,10 @@ function hasStrongMatch(primaryMatchedTerms = [], primaryPhraseHit = false, synP
   if (!primaryMatchedTerms?.length) return false;
   const meaningful = primaryMatchedTerms.filter((t) => !isNoiseToken(t));
   if (!meaningful.length) return false;
-  // Primary name token must be at least 7 chars to match solo
-  // This lets "caffeine"(8), "synephrine"(10), "ephedrine"(9) through
-  // but blocks "spice"(5), "green"(5), "powder"(6) etc.
-  return meaningful.some((t) => String(t).length >= 7);
+  return meaningful.some((t) => {
+    const s = String(t).toLowerCase();
+    return s.length >= 7 || SHORT_TERM_ALLOWLIST.has(s);
+  });
 }
 
 // ---------------------------------------------------------------------------

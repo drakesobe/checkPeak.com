@@ -1,7 +1,7 @@
 // pages/_app.js
 import "@/styles/globals.css";
 import Head from "next/head";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuthContext } from "@/hooks/useAuth";
 import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import { useEffect, useMemo, useState } from "react";
@@ -10,22 +10,10 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import CookieBanner from "@/components/CookieBanner";
 import { getConsent, setConsent } from "@/lib/consent";
+import { usePageView } from "@/hooks/usePageView";
 
-/**
- * Consent model:
- * - Essential cookies: always on (auth, app functionality)
- * - Analytics: opt-in (GA + Clarity + first-party analytics events)
- *
- * Improvements:
- * ✅ Uses Google Consent Mode (default denied)
- * ✅ Only fires GA pageviews after consent
- * ✅ Only loads Microsoft Clarity after consent (true gating)
- * ✅ Keeps layout + auth untouched
- * ✅ Optional DNT respect (auto-deny)
- */
-
-const GA_ID = "G-0HXXN1SJ9K";
-const ADS_ID = "AW-17990566633";
+const GA_ID     = "G-0HXXN1SJ9K";
+const ADS_ID    = "AW-17990566633";
 const CLARITY_ID = "u244y5muc2";
 
 function isDoNotTrackEnabled() {
@@ -34,18 +22,47 @@ function isDoNotTrackEnabled() {
   return String(dnt) === "1" || String(dnt).toLowerCase() === "yes";
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   AppCore
+   Inner component so hooks that need AuthContext (useAuthContext, usePageView)
+   can run inside the AuthProvider tree. This is the right pattern — hooks
+   that depend on context must be children of that context's provider.
+───────────────────────────────────────────────────────────────────────────── */
+function AppCore({ Component, pageProps, analyticsEnabled }) {
+  const { user } = useAuthContext();
+
+  // ── Fire page_view + scroll/time milestones on every route change ───────
+  // userEmail is optional — enriches events for logged-in users,
+  // falls back to anonId for visitors.
+  usePageView({
+    userEmail: user?.Email || user?.email || "",
+  });
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <NavBar />
+      <main className="flex-grow">
+        <Component {...pageProps} />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MyApp
+───────────────────────────────────────────────────────────────────────────── */
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
   const [consent, setConsentState] = useState({
     analytics: false,
-    decided: false,
+    decided:   false,
   });
 
   // Load consent on mount (+ optional DNT auto-deny)
   useEffect(() => {
     const c = getConsent();
 
-    // If user hasn't decided and DNT is enabled, auto-deny analytics
     if (!c?.decided && isDoNotTrackEnabled()) {
       setConsent({ analytics: false, decided: true });
       setConsentState({ analytics: false, decided: true });
@@ -64,40 +81,33 @@ export default function MyApp({ Component, pageProps }) {
     const handleRouteChange = (url) => {
       if (typeof window.gtag === "function") {
         window.gtag("config", GA_ID, {
-          page_path: url,
+          page_path:    url,
           anonymize_ip: true,
         });
       }
     };
 
     router.events.on("routeChangeComplete", handleRouteChange);
-
-    // Track initial page load too (after consent)
     handleRouteChange(window.location.pathname);
-
     return () => router.events.off("routeChangeComplete", handleRouteChange);
   }, [router.events, analyticsEnabled]);
 
-  // Update Google consent mode whenever consent changes
+  // Update Google Consent Mode whenever consent changes
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     if (typeof window.gtag === "function") {
       window.gtag("consent", "update", {
-        analytics_storage: analyticsEnabled ? "granted" : "denied",
-        // You can add a separate "marketing" toggle later if desired.
-        // For now, keep ad-related storage denied (privacy-safe).
-        ad_storage: "denied",
-        ad_user_data: "denied",
+        analytics_storage:  analyticsEnabled ? "granted" : "denied",
+        ad_storage:         "denied",
+        ad_user_data:       "denied",
         ad_personalization: "denied",
       });
     }
   }, [analyticsEnabled]);
 
-  // Conditionally render Clarity script only when consented
+  // Clarity — only loads after consent
   const clarityScript = useMemo(() => {
     if (!analyticsEnabled) return null;
-
     return (
       <Script id="microsoft-clarity" strategy="afterInteractive">
         {`
@@ -113,15 +123,12 @@ export default function MyApp({ Component, pageProps }) {
 
   return (
     <>
-      {/* PWA / Mobile web app capability meta tags */}
       <Head>
-        {/* Standard (Chrome/Android) */}
-        <meta name="mobile-web-app-capable" content="yes" />
-        {/* iOS/Safari (legacy but still used) */}
+        <meta name="mobile-web-app-capable"       content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </Head>
 
-      {/* Google tag loader (GA4 + Google Ads share the same gtag.js) */}
+      {/* Google tag */}
       <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
       <Script id="gtag-init" strategy="afterInteractive">
         {`
@@ -129,7 +136,6 @@ export default function MyApp({ Component, pageProps }) {
           function gtag(){dataLayer.push(arguments);}
           window.gtag = gtag;
 
-          // Default deny (Consent Mode) until user opts in
           gtag('consent', 'default', {
             'analytics_storage': 'denied',
             'ad_storage': 'denied',
@@ -138,17 +144,12 @@ export default function MyApp({ Component, pageProps }) {
           });
 
           gtag('js', new Date());
-
-          // NOTE: We intentionally do NOT send pageviews until consent is granted.
-          // (routeChange effect handles pageviews after consent)
           gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: false });
-
-          // ✅ Google Ads base tag (AW) - uses same gtag instance
           gtag('config', '${ADS_ID}');
         `}
       </Script>
 
-      {/* Microsoft Clarity (ONLY loads if analytics consent is granted) */}
+      {/* Clarity (consent-gated) */}
       {clarityScript}
 
       {/* OpenCV */}
@@ -159,30 +160,23 @@ export default function MyApp({ Component, pageProps }) {
         onError={(e) => console.error("❌ Failed to load OpenCV.js", e)}
       />
 
-      {/* App layout */}
       <AuthProvider>
-        <div className="flex flex-col min-h-screen">
-          <NavBar />
+        {/* CookieBanner lives outside AppCore so consent state stays
+            at the MyApp level and drives GA/Clarity gating */}
+        <CookieBanner
+          onChange={(next) => {
+            const normalized = { analytics: !!next.analytics, decided: true };
+            setConsentState(normalized);
+            setConsent(normalized);
+          }}
+        />
 
-          <CookieBanner
-            onChange={(next) => {
-              // next shape comes from your CookieBanner: { analytics: bool, decided: true }
-              const normalized = {
-                analytics: !!next.analytics,
-                decided: true,
-              };
-
-              setConsentState(normalized);
-              setConsent(normalized);
-            }}
-          />
-
-          <main className="flex-grow">
-            <Component {...pageProps} />
-          </main>
-
-          <Footer />
-        </div>
+        {/* AppCore has access to AuthContext + fires usePageView */}
+        <AppCore
+          Component={Component}
+          pageProps={pageProps}
+          analyticsEnabled={analyticsEnabled}
+        />
 
         <Toaster position="top-right" />
       </AuthProvider>

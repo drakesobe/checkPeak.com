@@ -21,6 +21,8 @@ import {
 import StackCard from "../components/smartstack-cards/StackCard";
 import NutritionModal from "../components/Modal/NutritionModal";
 import CompareModal from "../components/Modal/CompareModal";
+import { useTrack } from "../hooks/useTrack";
+import { EVENTS } from "../lib/events";
 
 /* -------------------------------------------------------------------------- */
 /* Shimmer keyframe — injected once, used by LoadingGrid                      */
@@ -684,6 +686,7 @@ function EmptyState({ onClearAll }) {
 /* -------------------------------------------------------------------------- */
 export default function SmartStackPage() {
   const { user } = useAuthContext();
+  const track = useTrack();
 
   const userEmail = (user?.Email || user?.email || "").toString().trim().toLowerCase();
   const hasUserEmail = userEmail.includes("@");
@@ -751,6 +754,27 @@ export default function SmartStackPage() {
       }),
     [activeCategory, activeVitaminCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, visibleLimit]
   );
+
+  // ── Page view ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    track(EVENTS.PAGE_VIEW, {
+      userEmail,
+      path: "/smartstack",
+      source: "smartstack_page",
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Search engagement (fires when debounced query settles) ─────────────────
+  useEffect(() => {
+    if (!debouncedSearchQuery) return;
+    track(EVENTS.ENGAGEMENT, {
+      userEmail,
+      source: "smartstack_search",
+      payload: { query: debouncedSearchQuery },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -854,11 +878,30 @@ export default function SmartStackPage() {
   })).slice(0, effectiveLimit);
   const canLoadMore = effectiveLimit < visibleCount;
 
-  const handleLoadMore = useCallback(() => setVisibleLimit((prev) => prev + itemsPerChunk), [itemsPerChunk]);
+  const handleLoadMore = useCallback(() => {
+    setVisibleLimit((prev) => prev + itemsPerChunk);
+    track(EVENTS.CTA_CLICK, {
+      userEmail,
+      source: "smartstack_load_more",
+      payload: {
+        currentLimit: visibleLimit,
+        visibleCount,
+        category: activeCategory,
+      },
+    });
+  }, [itemsPerChunk, track, userEmail, visibleLimit, visibleCount, activeCategory]);
 
   const toggleValueFilter = useCallback((label) => {
-    setActiveValueFilters((prev) => (prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]));
-  }, []);
+    setActiveValueFilters((prev) => {
+      const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
+      track(EVENTS.ENGAGEMENT, {
+        userEmail,
+        source: "smartstack_value_filter",
+        payload: { filter: label, active: !prev.includes(label), activeFilters: next },
+      });
+      return next;
+    });
+  }, [track, userEmail]);
 
   const handleCategoryChange = useCallback((category) => {
     setActiveCategory(category);
@@ -867,7 +910,12 @@ export default function SmartStackPage() {
     } else {
       setActiveVitaminCategory("All Vitamins");
     }
-  }, []);
+    track(EVENTS.ENGAGEMENT, {
+      userEmail,
+      source: "smartstack_category_filter",
+      payload: { category },
+    });
+  }, [track, userEmail]);
 
   const clearAllFilters = useCallback(() => {
     setActiveCategory("All");
@@ -875,7 +923,54 @@ export default function SmartStackPage() {
     setActiveValueFilters([]);
     setShowSavedOnly(false);
     setSearchQuery("");
-  }, []);
+    track(EVENTS.ENGAGEMENT, {
+      userEmail,
+      source: "smartstack_clear_filters",
+    });
+  }, [track, userEmail]);
+
+  // ── Wrapped setModalStack to fire tracking on detail open ─────────────────
+  const handleOpenModal = useCallback((stack) => {
+    setModalStack(stack);
+    if (stack) {
+      track(EVENTS.ENGAGEMENT, {
+        userEmail,
+        source: "smartstack_detail_open",
+        payload: {
+          stackId: stack.id,
+          stackName: stack.name,
+          category: stack.category,
+          valueLabel: stack.valueLabel,
+        },
+      });
+    }
+  }, [track, userEmail]);
+
+  // ── Compare modal open ────────────────────────────────────────────────────
+  const handleOpenCompareModal = useCallback(() => {
+    setCompareModalOpen(true);
+    track(EVENTS.CTA_CLICK, {
+      userEmail,
+      source: "smartstack_compare_open",
+      payload: {
+        count: selectedCompareStacks.length,
+        stacks: selectedCompareStacks.map((s) => ({ id: s.id, name: s.name })),
+      },
+    });
+  }, [track, userEmail, selectedCompareStacks]);
+
+  // ── Saved-only toggle ─────────────────────────────────────────────────────
+  const handleToggleSavedOnly = useCallback((updater) => {
+    setShowSavedOnly((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      track(EVENTS.ENGAGEMENT, {
+        userEmail,
+        source: "smartstack_saved_filter",
+        payload: { showSavedOnly: next },
+      });
+      return next;
+    });
+  }, [track, userEmail]);
 
   return (
     <div
@@ -895,7 +990,7 @@ export default function SmartStackPage() {
         activeValueFilters={activeValueFilters}
         toggleValueFilter={toggleValueFilter}
         showSavedOnly={showSavedOnly}
-        setShowSavedOnly={setShowSavedOnly}
+        setShowSavedOnly={handleToggleSavedOnly}
         onClearAll={clearAllFilters}
         hasActiveFilters={hasActiveFilters}
       />
@@ -1147,7 +1242,7 @@ export default function SmartStackPage() {
             />
             <motion.button
               type="button"
-              onClick={() => setShowSavedOnly((prev) => !prev)}
+              onClick={() => handleToggleSavedOnly((prev) => !prev)}
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
               className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
@@ -1182,7 +1277,7 @@ export default function SmartStackPage() {
                   activeValueFilters={activeValueFilters}
                   toggleValueFilter={toggleValueFilter}
                   showSavedOnly={showSavedOnly}
-                  setShowSavedOnly={setShowSavedOnly}
+                  setShowSavedOnly={handleToggleSavedOnly}
                 />
               </motion.div>
             )}
@@ -1235,7 +1330,7 @@ export default function SmartStackPage() {
                       <StackCard
                         key={stack.id}
                         stack={stack}
-                        setModalStack={setModalStack}
+                        setModalStack={handleOpenModal}
                         selectedCompareStacks={selectedCompareStacks}
                         setSelectedCompareStacks={setSelectedCompareStacks}
                         savedStacks={savedStacks}
@@ -1329,7 +1424,7 @@ export default function SmartStackPage() {
               <button
                 type="button"
                 disabled={!canCompare}
-                onClick={() => setCompareModalOpen(true)}
+                onClick={handleOpenCompareModal}
                 className="w-full rounded-xl py-3 text-sm font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: canCompare ? "#5B9EC9" : "rgba(255,255,255,0.1)",
@@ -1402,7 +1497,7 @@ export default function SmartStackPage() {
               <button
                 type="button"
                 disabled={!canCompare}
-                onClick={() => setCompareModalOpen(true)}
+                onClick={handleOpenCompareModal}
                 className="rounded-full px-4 py-1.5 text-xs font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 style={{
                   background: canCompare ? "#5B9EC9" : "rgba(255,255,255,0.08)",

@@ -997,50 +997,61 @@ export default function SmartStackPage() {
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 pb-24 space-y-6">
         <section>
-          <div className="flex items-start gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-3">
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest shrink-0"
-                  style={{
-                    background: "rgba(91,158,201,0.1)",
-                    border: "1px solid rgba(91,158,201,0.25)",
-                    color: "#5B9EC9",
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                  }}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full bg-[#5B9EC9] inline-block animate-pulse"
-                    aria-hidden="true"
-                  />
-                  SmartStack
-                </span>
+  <div className="flex items-start gap-4">
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-3 mb-3">
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest shrink-0"
+          style={{
+            background: "rgba(91,158,201,0.1)",
+            border: "1px solid rgba(91,158,201,0.25)",
+            color: "#5B9EC9",
+            fontFamily: "'Barlow Condensed', sans-serif",
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-[#5B9EC9] inline-block animate-pulse"
+            aria-hidden="true"
+          />
+          SmartStack
+        </span>
 
-                {totalCount > 0 && !loading && (
-                  <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                    {totalCount} stacks in catalog
-                    {visibleCount !== totalCount && (
-                      <span style={{ color: "rgba(255,255,255,0.55)" }}> · {visibleCount} matching</span>
-                    )}
-                  </span>
-                )}
-              </div>
+        {totalCount > 0 && !loading && (
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+            {totalCount} supplements in catalog
+            {visibleCount !== totalCount && (
+              <span style={{ color: "rgba(255,255,255,0.55)" }}> · {visibleCount} matching</span>
+            )}
+          </span>
+        )}
+      </div>
 
-              <h1
-                className="text-3xl sm:text-4xl font-black text-white leading-tight"
-                style={{
-                  fontFamily: "'Barlow Condensed', sans-serif",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                Discover better stacks.
-              </h1>
-              <p className="mt-2 text-sm max-w-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-                Browse formulations, compare products side by side, and filter by category or value signal.
-              </p>
-            </div>
-          </div>
-        </section>
+      <h1
+        className="text-3xl sm:text-4xl font-black text-white leading-tight"
+        style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          letterSpacing: "0.02em",
+        }}
+      >
+        Stop guessing.
+      </h1>
+      <p
+        className="text-xl sm:text-2xl font-bold mt-1 leading-snug"
+        style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          color: "#5B9EC9",
+          letterSpacing: "0.02em",
+        }}
+      >
+        Compare every supplement before you take it.
+      </p>
+      <p className="mt-2 text-sm max-w-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+        Pre-workouts, protein powders, vitamins, and more — side-by-side comparisons, 
+        value ratings, and ingredient breakdowns for {totalCount > 0 ? `${totalCount} supplements` : "hundreds of supplements"} in one place.
+      </p>
+    </div>
+  </div>
+</section>
 
         <div
           className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6"

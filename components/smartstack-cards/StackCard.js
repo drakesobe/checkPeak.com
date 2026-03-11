@@ -338,18 +338,16 @@ export default function StackCard({
               loading="lazy"
               onError={(e) => { e.currentTarget.src = "/fallback-image.svg"; }}
             />
-            {/* Gradient — lighter than before so the image breathes */}
             <div
               aria-hidden="true"
               className="absolute inset-0"
               style={{
                 background:
-                  "linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 40%, rgba(13,17,23,0.8) 100%)",
+                  "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 40%, rgba(13,17,23,0.8) 100%)",
               }}
             />
           </>
         ) : (
-          /* No-image placeholder — consistent with dark aesthetic */
           <div
             className="h-full w-full flex flex-col items-center justify-center gap-2"
             style={{ background: "rgba(255,255,255,0.02)" }}
@@ -381,27 +379,26 @@ export default function StackCard({
         {/* ── Overlay controls (top row) ── */}
         <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
 
-          {/* Compare toggle */}
+          {/* Compare toggle — labeled pill button */}
           <motion.button
             type="button"
             onClick={toggleCompare}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-all"
             style={{
-              background:  isSelected ? "#5B9EC9" : "rgba(13,17,23,0.72)",
-              border:      isSelected ? "1px solid rgba(91,158,201,0.6)" : "1px solid rgba(255,255,255,0.15)",
+              background:     isSelected ? "#5B9EC9" : "rgba(13,17,23,0.72)",
+              border:         isSelected ? "1px solid rgba(91,158,201,0.6)" : "1px solid rgba(255,255,255,0.2)",
               backdropFilter: "blur(6px)",
-              boxShadow:   isSelected ? "0 0 12px rgba(91,158,201,0.4)" : "none",
+              boxShadow:      isSelected ? "0 0 12px rgba(91,158,201,0.4)" : "none",
             }}
-            whileHover={{ scale: 1.08 }}
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.94 }}
-            title={isSelected ? "Remove from compare" : `Compare (max ${maxCompare})`}
-            aria-label={isSelected ? "Remove from compare" : "Select for compare"}
+            aria-label={isSelected ? "Remove from compare" : "Add to compare"}
             aria-pressed={isSelected}
           >
             {isSelected ? (
               <svg
                 viewBox="0 0 24 24"
-                className="w-3.5 h-3.5 text-white"
+                className="w-3 h-3 text-white shrink-0"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={3}
@@ -410,19 +407,27 @@ export default function StackCard({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             ) : (
-              /* Columns icon — represents "compare" */
               <svg
                 viewBox="0 0 24 24"
-                className="w-3.5 h-3.5"
+                className="w-3 h-3 shrink-0"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
-                style={{ color: "rgba(255,255,255,0.55)" }}
+                style={{ color: "rgba(255,255,255,0.7)" }}
                 aria-hidden="true"
               >
                 <path strokeLinecap="round" d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h4M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M9 3v18M15 3v18" />
               </svg>
             )}
+            <span
+              className="text-[11px] font-bold uppercase tracking-wide"
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                color:      isSelected ? "#fff" : "rgba(255,255,255,0.8)",
+              }}
+            >
+              {isSelected ? "Comparing" : "Compare"}
+            </span>
           </motion.button>
 
           {/* Save / unsave */}
@@ -529,13 +534,13 @@ export default function StackCard({
 
         {/* Value badge */}
         <div className="pt-0.5">
-  <ValueBadge
-    valueScore={stack?.valueScore}
-    valueLabel={stack?.valueLabel}
-  />
-</div>
+          <ValueBadge
+            valueScore={stack?.valueScore}
+            valueLabel={stack?.valueLabel}
+          />
+        </div>
 
-        {/* Notes — only if present, as a subtle line */}
+        {/* Notes — only if present */}
         {stack?.notes && (
           <p
             className="text-[11px] leading-relaxed line-clamp-2"
@@ -552,8 +557,8 @@ export default function StackCard({
               key="authToast"
               className="overflow-hidden rounded-xl border"
               style={{
-                background:  "rgba(13,17,23,0.92)",
-                border:      "1px solid rgba(255,255,255,0.1)",
+                background:     "rgba(13,17,23,0.92)",
+                border:         "1px solid rgba(255,255,255,0.1)",
                 backdropFilter: "blur(8px)",
               }}
               initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -637,7 +642,7 @@ export default function StackCard({
         {/* ── Action buttons ── */}
         <div className="mt-auto pt-1 flex flex-col gap-1.5">
 
-          {/* Primary: View Nutrition — full width, always present */}
+          {/* Primary: Scan Label */}
           <button
             type="button"
             onClick={handleViewNutrition}
@@ -653,8 +658,8 @@ export default function StackCard({
             }}
             onMouseEnter={(e) => {
               if (!canOpenModal) return;
-              e.currentTarget.style.background   = "rgba(91,158,201,0.22)";
-              e.currentTarget.style.borderColor  = "rgba(91,158,201,0.5)";
+              e.currentTarget.style.background  = "rgba(91,158,201,0.22)";
+              e.currentTarget.style.borderColor = "rgba(91,158,201,0.5)";
             }}
             onMouseLeave={(e) => {
               if (!canOpenModal) return;
@@ -665,7 +670,7 @@ export default function StackCard({
             {canOpenModal ? "Scan Label" : "No label available"}
           </button>
 
-          {/* Secondary: Buy link — only rendered when present */}
+          {/* Secondary: Buy link */}
           {stack?.affiliateLink && (
             <a
               href={stack.affiliateLink}
@@ -680,28 +685,17 @@ export default function StackCard({
               }}
               onClick={(e) => e.stopPropagation()}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background  = "rgba(255,255,255,0.07)";
-                e.currentTarget.style.color       = "rgba(255,255,255,0.85)";
+                e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                e.currentTarget.style.color      = "rgba(255,255,255,0.85)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background  = "rgba(255,255,255,0.04)";
-                e.currentTarget.style.color       = "rgba(255,255,255,0.55)";
+                e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                e.currentTarget.style.color      = "rgba(255,255,255,0.55)";
               }}
             >
               View on Amazon
             </a>
           )}
-
-          {/* Compare status */}
-          <p
-            className="text-[10px] text-center mt-0.5"
-            style={{ color: isSelected ? "rgba(91,158,201,0.7)" : "rgba(255,255,255,0.22)" }}
-          >
-            {isSelected
-              ? `In comparison (${selectedCompareStacks.length}/${maxCompare})`
-              : `Add to compare`
-            }
-          </p>
         </div>
 
         {/* Banner */}

@@ -683,7 +683,14 @@ export default function StackCard({
                 color:      "rgba(255,255,255,0.55)",
                 fontFamily: "'Barlow Condensed', sans-serif",
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (typeof window.gtag === "function") {
+                  window.gtag("event", "conversion", {
+                    send_to: "AW-17990566633/eJHlCOT724YcEOmFyYJD",
+                  });
+                }
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "rgba(255,255,255,0.07)";
                 e.currentTarget.style.color      = "rgba(255,255,255,0.85)";

@@ -1,6 +1,31 @@
 import { useEffect, useState } from "react";
 import { getConsent, setConsent } from "@/lib/consent";
 
+function requestAndStoreGeolocation() {
+  if (typeof window === "undefined") return;
+  if (!navigator?.geolocation) return;
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      try {
+        localStorage.setItem(
+          "cp_geo",
+          JSON.stringify({
+            lat: parseFloat(pos.coords.latitude.toFixed(4)),
+            lng: parseFloat(pos.coords.longitude.toFixed(4)),
+            accuracy: Math.round(pos.coords.accuracy),
+          })
+        );
+      } catch {}
+    },
+    () => {
+      // User denied or unavailable — store a marker so we don't ask again
+      try { localStorage.setItem("cp_geo", JSON.stringify({ denied: true })); } catch {}
+    },
+    { timeout: 8000, maximumAge: 3_600_000 } // cache for 1 hour
+  );
+}
+
 export default function CookieBanner({ onChange }) {
   const [open, setOpen] = useState(false);
 
@@ -14,6 +39,7 @@ export default function CookieBanner({ onChange }) {
   const accept = () => {
     setConsent({ analytics: true });
     onChange?.({ analytics: true, decided: true });
+    requestAndStoreGeolocation();
     setOpen(false);
   };
 

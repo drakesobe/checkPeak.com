@@ -42,8 +42,6 @@ const SHIMMER_STYLE = `
     background-size: 400px 100%;
     animation: ss-shimmer 1.4s ease-in-out infinite;
   }
-  .category-scroll::-webkit-scrollbar { display: none; }
-  .category-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 `;
 
 /* -------------------------------------------------------------------------- */
@@ -183,48 +181,6 @@ function getValueLabel(stack, bucketStats) {
   if (score >= VALUE_THRESHOLD_BEST) return "Best Value";
   if (score >= VALUE_THRESHOLD_GOOD) return "Good Value";
   return "Decent Value";
-}
-
-/* -------------------------------------------------------------------------- */
-/* MobileCategoryStrip — always-visible horizontal scroll strip               */
-/* -------------------------------------------------------------------------- */
-function MobileCategoryStrip({ activeCategory, onCategoryChange }) {
-  return (
-    <div
-      className="category-scroll flex gap-2 overflow-x-auto px-4 sm:px-6 py-2"
-      style={{ scrollbarWidth: "none" }}
-      role="tablist"
-      aria-label="Supplement categories"
-    >
-      {CATEGORIES.map((cat) => {
-        const active = activeCategory === cat.name;
-        return (
-          <button
-            key={cat.name}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onCategoryChange(cat.name)}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold shrink-0 transition-all"
-            style={{
-              background:  active ? "rgba(91,158,201,0.18)" : "rgba(255,255,255,0.05)",
-              border:      active ? "1px solid rgba(91,158,201,0.45)" : "1px solid rgba(255,255,255,0.09)",
-              color:       active ? "#5B9EC9" : "rgba(255,255,255,0.6)",
-              fontFamily:  "'Barlow Condensed', sans-serif",
-              letterSpacing: "0.03em",
-            }}
-          >
-            {cat.icon && (
-              <span style={{ fontSize: 10, opacity: active ? 1 : 0.55 }} aria-hidden="true">
-                {cat.icon}
-              </span>
-            )}
-            {cat.name}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -878,9 +834,10 @@ export default function SmartStackPage() {
       <div
         className="sticky top-0 z-30"
         style={{
-          background:   "rgba(10,12,16,0.97)",
+          background:     "rgba(10,12,16,0.97)",
           backdropFilter: "blur(14px)",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom:   "1px solid rgba(255,255,255,0.06)",
+          overflow:       "hidden", /* clip blur artifact, but children scroll via -mx trick */
         }}
       >
         <div className="max-w-7xl mx-auto">
@@ -911,77 +868,82 @@ export default function SmartStackPage() {
             </div>
           </div>
 
-          {/* Mobile: category strip (always visible) + value/saved in drawer */}
-          <div className="sm:hidden">
-            <MobileCategoryStrip activeCategory={activeCategory} onCategoryChange={(cat) => { handleCategoryChange(cat); }} />
+          {/* Mobile: single pill row — Category, Value filters, Saved */}
+          <div className="sm:hidden flex items-center gap-2 px-4 pb-2.5 pt-1">
 
-            {/* Value filter chips — quick access row on mobile */}
-            <div className="category-scroll flex gap-2 overflow-x-auto px-4 pb-1.5" style={{ scrollbarWidth: "none" }}>
-              {VALUE_FILTERS.map((filter) => {
-                const active = activeValueFilters.includes(filter);
-                const colors = VALUE_COLOR[filter];
-                return (
-                  <button key={filter} type="button" onClick={() => toggleValueFilter(filter)}
-                    className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shrink-0 transition-all"
-                    style={{ background: active ? colors.bg : "rgba(255,255,255,0.04)", border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)", color: active ? colors.text : "rgba(255,255,255,0.45)" }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colors.text, opacity: active ? 1 : 0.4 }} aria-hidden="true" />
-                    {filter}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Vitamin subcategories on mobile when Vitamins selected */}
-            {activeCategory === "Vitamins" && (
-              <div className="category-scroll flex gap-2 overflow-x-auto px-4 pb-2" style={{ scrollbarWidth: "none" }}>
-                {VITAMIN_SUBCATEGORIES.map((subcat) => {
-                  const active = activeVitaminCategory === subcat;
-                  return (
-                    <button key={subcat} type="button" onClick={() => setActiveVitaminCategory(subcat)}
-                      className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold shrink-0 transition-all"
-                      style={{ background: active ? "rgba(91,158,201,0.18)" : "rgba(255,255,255,0.04)", border: active ? "1px solid rgba(91,158,201,0.45)" : "1px solid rgba(255,255,255,0.08)", color: active ? "#5B9EC9" : "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
-                    >
-                      {subcat}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Row: count + filter drawer trigger + saved toggle */}
-            <div className="flex items-center gap-2 px-4 pb-2 pt-0.5">
-              {totalCount > 0 && !loading && (
-                <span className="text-[11px] flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  {effectiveLimit} of {visibleCount}
-                  {visibleCount !== totalCount && " matching"}
+            {/* Category button — opens drawer, shows active category */}
+            <button
+              type="button"
+              onClick={() => setFilterDrawerOpen(true)}
+              className="flex items-center gap-1.5 rounded-full text-[12px] font-semibold transition-all"
+              style={{
+                flexShrink: 0,
+                padding: "6px 12px",
+                background: activeCategory !== "All" ? "rgba(91,158,201,0.15)" : "rgba(255,255,255,0.06)",
+                border:     activeCategory !== "All" ? "1px solid rgba(91,158,201,0.4)" : "1px solid rgba(255,255,255,0.1)",
+                color:      activeCategory !== "All" ? "#5B9EC9" : "rgba(255,255,255,0.7)",
+                fontFamily: "'Barlow Condensed', sans-serif",
+              }}
+              aria-label="Select category"
+            >
+              <FaFilter size={9} style={{ opacity: 0.7 }} />
+              {activeCategory === "All" ? "Category" : activeCategory}
+              {activeCategory !== "All" && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); handleCategoryChange("All"); }}
+                  style={{ display: "inline-flex", alignItems: "center", marginLeft: 2, color: "rgba(91,158,201,0.7)" }}
+                  role="button"
+                  aria-label="Clear category"
+                >
+                  <FaTimes size={8} />
                 </span>
               )}
-              {/* Saved toggle */}
-              <button type="button"
-                onClick={() => handleToggleSavedOnly((prev) => !prev)}
-                className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
-                style={{ background: showSavedOnly ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.04)", border: showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.08)", color: showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.55)" }}
-                aria-pressed={showSavedOnly}
-              >
-                {showSavedOnly ? <FaStar size={10} style={{ color: "#5B9EC9" }} /> : <FaRegStar size={10} />}
-                Saved
-              </button>
-              {/* Value / More filters drawer */}
-              <button type="button" onClick={() => setFilterDrawerOpen(true)}
-                className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
-                style={{ background: activeFilterCount > 0 ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.04)", border: activeFilterCount > 0 ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.08)", color: activeFilterCount > 0 ? "#5B9EC9" : "rgba(255,255,255,0.55)" }}
-                aria-label="More filters"
-              >
-                <FaFilter size={9} />
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: "#5B9EC9" }} aria-label={`${activeFilterCount} active`}>
-                    {activeFilterCount}
-                  </span>
-                )}
-              </button>
-            </div>
+            </button>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
+
+            {/* Value filter pills — inline, no scroll needed (only 4) */}
+            {VALUE_FILTERS.map((filter) => {
+              const active = activeValueFilters.includes(filter);
+              const colors = VALUE_COLOR[filter];
+              // Short labels to fit on one line
+              const shortLabel = { "Best Value": "Best", "Good Value": "Good", "Decent Value": "Decent", "Value N/A": "N/A" }[filter];
+              return (
+                <button key={filter} type="button" onClick={() => toggleValueFilter(filter)}
+                  className="flex items-center gap-1 rounded-full text-[11px] font-semibold transition-all"
+                  style={{
+                    flexShrink: 0, padding: "5px 9px",
+                    background: active ? colors.bg : "rgba(255,255,255,0.04)",
+                    border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.08)",
+                    color: active ? colors.text : "rgba(255,255,255,0.45)",
+                  }}
+                  aria-pressed={active}
+                  aria-label={filter}
+                >
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: colors.text, opacity: active ? 1 : 0.35 }} aria-hidden="true" />
+                  {shortLabel}
+                </button>
+              );
+            })}
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
+
+            {/* Saved toggle */}
+            <button type="button"
+              onClick={() => handleToggleSavedOnly((prev) => !prev)}
+              className="flex items-center gap-1.5 rounded-full text-[11px] font-semibold transition-all"
+              style={{
+                flexShrink: 0, padding: "5px 9px",
+                background: showSavedOnly ? "rgba(91,158,201,0.12)" : "rgba(255,255,255,0.04)",
+                border: showSavedOnly ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                color: showSavedOnly ? "#5B9EC9" : "rgba(255,255,255,0.45)",
+              }}
+              aria-pressed={showSavedOnly}
+            >
+              {showSavedOnly ? <FaStar size={9} style={{ color: "#5B9EC9" }} /> : <FaRegStar size={9} />}
+            </button>
           </div>
 
           {/* Desktop: category + value filter rows */}

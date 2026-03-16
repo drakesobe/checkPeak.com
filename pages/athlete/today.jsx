@@ -8,7 +8,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 import DateStrip from "@/components/athlete-today/DateStrip";
 import WorkoutCard from "@/components/athlete-today/WorkoutCard";
 import CompleteItemModal from "@/components/athlete-today/CompleteItemModal";
-import NutritionCard from "@/components/athlete-today/NutritionCard";
+import NutritionCard from "@/components/athlete-today/nutrition/NutritionCard";
 
 import { toISODateLocal, addDays } from "@/components/athlete-today/ui.jsx";
 
@@ -101,14 +101,12 @@ function ProgressRing({ done, total, size = 52, stroke = 4 }) {
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        {/* Track */}
         <circle
           cx={size / 2} cy={size / 2} r={r}
           fill="none"
           stroke="rgba(255,255,255,0.10)"
           strokeWidth={stroke}
         />
-        {/* Progress arc */}
         <circle
           cx={size / 2} cy={size / 2} r={r}
           fill="none"
@@ -120,7 +118,6 @@ function ProgressRing({ done, total, size = 52, stroke = 4 }) {
           style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1), stroke 0.4s ease" }}
         />
       </svg>
-      {/* Label */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         {allDone ? (
           <CheckCircleFill size={size * 0.38} />
@@ -135,7 +132,6 @@ function ProgressRing({ done, total, size = 52, stroke = 4 }) {
   );
 }
 
-/* Inline SVG checkmark for the ring done state — avoids an extra lucide import */
 function CheckCircleFill({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
@@ -150,17 +146,17 @@ function CheckCircleFill({ size = 20 }) {
 function TabBar({ value, onChange, workoutDone, workoutTotal, nutritionDone, nutritionTotal }) {
   const tabs = [
     {
-      id: "workout",
+      id:    "workout",
       label: "Workout",
-      icon: <Dumbbell className="w-4 h-4" />,
-      done: workoutDone,
+      icon:  <Dumbbell className="w-4 h-4" />,
+      done:  workoutDone,
       total: workoutTotal,
     },
     {
-      id: "nutrition",
+      id:    "nutrition",
       label: "Nutrition",
-      icon: <Salad className="w-4 h-4" />,
-      done: nutritionDone,
+      icon:  <Salad className="w-4 h-4" />,
+      done:  nutritionDone,
       total: nutritionTotal,
     },
   ];
@@ -212,7 +208,7 @@ export default function AthleteToday() {
   const router = useRouter();
   const { user, authReady } = useAuthContext();
 
-  /* role */
+  /* ── Role ─────────────────────────────────────────────────────────────── */
   const role = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
     if (!raw) return "";
@@ -221,7 +217,7 @@ export default function AthleteToday() {
   }, [user]);
   const isAthlete = role === "athlete";
 
-  /* tabs */
+  /* ── Tabs ─────────────────────────────────────────────────────────────── */
   const tabFromUrl = useMemo(() => normalizeTab(router?.query?.tab), [router?.query?.tab]);
   const [activeTab, setActiveTab] = useState("workout");
 
@@ -239,7 +235,7 @@ export default function AthleteToday() {
     } catch {}
   }, [router]);
 
-  /* workout hook */
+  /* ── Workout hook ─────────────────────────────────────────────────────── */
   const {
     selectedDate, setSelectedDate,
     loading, dailyWorkout, items,
@@ -253,16 +249,18 @@ export default function AthleteToday() {
     submitCompletion, quickComplete, acknowledgeCompletion,
   } = useWorkoutCompletion({ selectedDate, reload, setErr });
 
-  /* nutrition hook */
+  /* ── Nutrition hook ───────────────────────────────────────────────────── */
   const nutrition = useAthleteNutritionToday({ authReady, user, isAthlete, selectedDate });
+
+  const nutritionReload = nutrition.reload;
 
   const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyNutritionCompletion);
 
   const nutritionCompletionKey = useMemo(() => {
     const email = String(user?.Email || user?.email || "").trim().toLowerCase();
     const token = String(user?.token || user?.Token || user?.athleteToken || "").trim();
-    const who = token || email || "athlete";
-    const day = String(selectedDate || "").trim() || "unknown-date";
+    const who   = token || email || "athlete";
+    const day   = String(selectedDate || "").trim() || "unknown-date";
     return `checkpeak:nutritionCompletion:${who}:${day}`;
   }, [user, selectedDate]);
 
@@ -292,15 +290,10 @@ export default function AthleteToday() {
     lsSafeSet(nutritionCompletionKey, JSON.stringify(normalizeNutritionCompletionShape(nutritionCompletion)));
   }, [authReady, user, isAthlete, nutritionCompletionKey, nutritionCompletion]);
 
-  const dailyHydrationOz = useMemo(() => {
-    const v1 = nutrition?.daily?.hydrationOz;
-    const v2 = nutrition?.daily?.DailyHydration;
-    const v3 = nutrition?.planJson?.daily?.hydrationOz;
-    const v4 = nutrition?.planJson?.daily?.DailyHydration;
-    return safeNum(v1) ?? safeNum(v2) ?? safeNum(v3) ?? safeNum(v4) ?? null;
-  }, [nutrition?.daily, nutrition?.planJson]);
+  // hook already resolves this from all field variants (DailyHydration, hydrationOz, etc.)
+  const dailyHydrationOz = nutrition.dailyHydrationOz ?? null;
 
-  /* nav */
+  /* ── Navigation ───────────────────────────────────────────────────────── */
   const goPrev = useCallback(() =>
     setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))),
   [setSelectedDate]);
@@ -311,35 +304,40 @@ export default function AthleteToday() {
 
   const refresh = useCallback(() => {
     reload(selectedDate);
-    nutrition.reload(selectedDate);
-  }, [reload, selectedDate, nutrition]);
+    nutritionReload(selectedDate);
+  }, [reload, selectedDate, nutritionReload]);
 
-  useEffect(() => {
-    if (!authReady || !user || !isAthlete) return;
-    reload(selectedDate);
-  }, [authReady, user, isAthlete, selectedDate, reload]);
-
-  /* counts */
+  /* ── Counts ───────────────────────────────────────────────────────────── */
   const nutritionCounts = useMemo(() => computeNutritionCounts(nutritionCompletion), [nutritionCompletion]);
 
   const workoutDone  = progress?.done  ?? 0;
   const workoutTotal = progress?.total ?? 0;
 
-  /* early returns */
+  /* ── Early returns ────────────────────────────────────────────────────── */
   if (!authReady) return null;
   if (!user)      return <div className="p-6 text-sm text-gray-600">Please log in.</div>;
   if (!isAthlete) return <div className="p-6 text-sm text-gray-600">Not authorized.</div>;
 
+  /* ── Derived values ───────────────────────────────────────────────────── */
   const isSubmittingActiveItem = Boolean(submittingId && activeItem?.id === submittingId);
-
   const firstName = String(user?.name || user?.Name || user?.firstName || "").split(" ")[0] || "Athlete";
 
+  const canonicalItem = items?.find(i => String(i?.id || "") === String(activeItem?.id || ""));
+  const evRaw = String(
+    canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""
+  ).toLowerCase();
+  const evidenceRequired = evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara";
+
+  const totalDone  = workoutDone  + nutritionCounts.done;
+  const totalItems = workoutTotal + nutritionCounts.total;
+
+  /* ── Render ───────────────────────────────────────────────────────────── */
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
 
       {/* ── Dark hero header ── */}
       <div style={{ backgroundColor: "#0F1E2E" }} className="relative overflow-hidden">
-        {/* Subtle texture */}
+        {/* Subtle diagonal texture */}
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
@@ -348,7 +346,75 @@ export default function AthleteToday() {
           }}
         />
 
-        <div className="relative max-w-3xl mx-auto px-4 pt-6 pb-8">
+        {/* ── Mobile: Option C — dates in nav bar, identity as secondary line ── */}
+        <div className="relative sm:hidden">
+
+          {/* Row 1 — nav bar: back | date strip | ring | refresh */}
+          <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
+
+            {/* Back */}
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              className="flex-shrink-0 flex items-center text-white/55 hover:text-white transition"
+              aria-label="Back to dashboard"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+
+            {/* Date strip — flex-1 so it owns the center of the bar */}
+            <div className="flex-1 min-w-0">
+              <DateStrip
+                loading={loading}
+                selectedDate={selectedDate}
+                dateStrip={dateStrip}
+                onPrev={goPrev}
+                onNext={goNext}
+                onSelectDate={setSelectedDate}
+                darkBg
+              />
+            </div>
+
+            {/* Progress ring — only when there's something to track */}
+            {totalItems > 0 && (
+              <ProgressRing
+                done={totalDone}
+                total={totalItems}
+                size={32}
+                stroke={3}
+              />
+            )}
+
+            {/* Refresh */}
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={loading}
+              className="flex-shrink-0 text-white/50 hover:text-white transition disabled:opacity-30"
+              aria-label="Refresh"
+            >
+              <RefreshCw className={cx("w-4 h-4", loading ? "animate-spin" : "")} />
+            </button>
+          </div>
+
+          {/* Row 2 — secondary identity line: name · workout title */}
+          <div className="flex items-center gap-1.5 px-4 pb-2.5 min-w-0">
+            <span className="text-[11px] font-black text-white/85 flex-shrink-0">
+              {firstName}
+            </span>
+            {dailyWorkout?.Title ? (
+              <>
+                <span className="text-[10px] text-white/25 flex-shrink-0">·</span>
+                <span className="text-[11px] text-white/40 font-semibold truncate">
+                  {dailyWorkout.Title}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {/* ── Desktop: original spacious layout — unchanged ── */}
+        <div className="hidden sm:block max-w-3xl mx-auto px-4 pt-6 pb-8">
           {/* Top nav row */}
           <div className="flex items-center justify-between mb-7">
             <button
@@ -372,7 +438,7 @@ export default function AthleteToday() {
             </button>
           </div>
 
-          {/* Identity + progress */}
+          {/* Identity + progress ring */}
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
               <p className="text-white/55 text-[11px] font-black uppercase tracking-widest mb-1.5">
@@ -388,12 +454,11 @@ export default function AthleteToday() {
               ) : null}
             </div>
 
-            {/* Combined progress ring — workout + nutrition */}
-            {(workoutTotal + nutritionCounts.total) > 0 ? (
+            {totalItems > 0 ? (
               <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
                 <ProgressRing
-                  done={workoutDone + nutritionCounts.done}
-                  total={workoutTotal + nutritionCounts.total}
+                  done={totalDone}
+                  total={totalItems}
                   size={60}
                   stroke={5}
                 />
@@ -404,7 +469,7 @@ export default function AthleteToday() {
             ) : null}
           </div>
 
-          {/* Date strip — lives inside dark hero */}
+          {/* Date strip */}
           <div className="mt-5">
             <DateStrip
               loading={loading}
@@ -466,28 +531,14 @@ export default function AthleteToday() {
               onClose={closeModal}
               onPickFile={setSelectedFile}
               onChangeNote={setCoachNote}
-              // Derive evidenceRequired from the authoritative items array, not activeItem,
-              // since useWorkoutCompletion may store a slimmed version of the item that
-              // drops EvidenceRequired. This ensures the modal always has the correct value.
-              evidenceRequiredOverride={(() => {
-                const canonical = items?.find(i => String(i?.id || "") === String(activeItem?.id || ""));
-                const raw = String(canonical?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? "").toLowerCase();
-                return raw !== "" && raw !== "none" && raw !== "false" && raw !== "voluntary_activity_vara";
-              })()}
+              evidenceRequiredOverride={evidenceRequired}
               onSubmit={() => {
-                const canonical = items?.find(i => String(i?.id || "") === String(activeItem?.id || ""));
-                const evRaw = String(canonical?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? "").toLowerCase();
-                const needsFile =
-                  evRaw !== "none" &&
-                  evRaw !== "false" &&
-                  evRaw !== "" &&
-                  evRaw !== "voluntary_activity_vara";
-
-                if (needsFile && !selectedFile) return;
-
+                if (evidenceRequired && !selectedFile) return;
                 submitCompletion({
-                  workoutItemId: String(activeItem?.id || ""),
-                  evidenceRequired: String(canonical?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""),
+                  workoutItemId:    String(activeItem?.id || ""),
+                  evidenceRequired: String(
+                    canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""
+                  ),
                   dailyWorkoutId: String(
                     dailyWorkout?.id || dailyWorkout?.ID || dailyWorkout?.recordId || ""
                   ),
@@ -511,7 +562,7 @@ export default function AthleteToday() {
             nextPlan={nutrition.nextPlan}
             isFuture={nutrition.isFuture}
             message={nutrition.message}
-            onRefresh={() => nutrition.reload(selectedDate)}
+            onRefresh={() => nutritionReload(selectedDate)}
             onOpenNutrition={() => router.push("/athlete/nutrition")}
             dailyHydrationOz={dailyHydrationOz}
             nutritionCompletion={nutritionCompletion}

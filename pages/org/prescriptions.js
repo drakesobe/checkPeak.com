@@ -8,8 +8,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 import { DEFAULT_STRUCTURED } from "@/lib/org/prescriptions/prescriptions-utils";
 import { useOrgPrescriptionsData } from "@/hooks/org/useOrgPrescriptionsData";
 import { useRosterSpeedMode } from "@/hooks/org/useRosterSpeedMode";
-
-import { buildOptions, inputBase, subtleHint } from "@/lib/org/prescriptions/prescriptions-constants";
+import { buildOptions } from "@/lib/org/prescriptions/prescriptions-constants";
 
 import { useOrgPrescriptionsPageAuth } from "@/hooks/org/prescriptions/useOrgPrescriptionsPageAuth";
 import { useAthleteSelection } from "@/hooks/org/prescriptions/useAthleteSelection";
@@ -20,9 +19,6 @@ import { usePlanCreator } from "@/hooks/org/prescriptions/usePlanCreator";
 
 import ConfirmDeleteModal from "@/components/org/prescriptions/ConfirmDeleteModal";
 import AthleteRoster from "@/components/org/prescriptions/AthleteRoster";
-import SelectedAthleteCard from "@/components/org/prescriptions/SelectedAthleteCard";
-import TemplatesPanel from "@/components/org/prescriptions/TemplatesPanel";
-import PlanHistory from "@/components/org/prescriptions/PlanHistory";
 
 const PlanBuilderForm = dynamic(
   () => import("@/components/org/prescriptions/planBuilder/PlanBuilderForm"),
@@ -34,21 +30,21 @@ const GroupBlastPanel = dynamic(
   { ssr: false }
 );
 
-// ─── DS tokens (inline — page-level only) ────────────────────────────────────
+// ─── DS tokens (page-level only) ─────────────────────────────────────────────
 const DS = {
-  brand:       "#1E3A5F",
-  brandLight:  "#2A4F7C",
-  brandBg:     "#EEF3F9",
-  brandBorder: "#C0D0E0",
-  border:      "#E8ECF0",
-  pageBg:      "#F4F7FB",
-  cardBg:      "#FFFFFF",
-  bodyText:    "#1A2535",
-  labelText:   "#5A6A7D",
-  dimText:     "#9BA8B4",
-  banned:      "#C8102E",
-  bannedBg:    "#FFF0F0",
-  bannedBorder:"#FFC8C8",
+  brand:        "#1E3A5F",
+  brandLight:   "#2A4F7C",
+  brandBg:      "#EEF3F9",
+  brandBorder:  "#C0D0E0",
+  border:       "#E8ECF0",
+  pageBg:       "#F4F7FB",
+  cardBg:       "#FFFFFF",
+  bodyText:     "#1A2535",
+  labelText:    "#5A6A7D",
+  dimText:      "#9BA8B4",
+  banned:       "#C8102E",
+  bannedBg:     "#FFF0F0",
+  bannedBorder: "#FFC8C8",
 };
 
 export default function OrgPrescriptionsPage() {
@@ -59,13 +55,14 @@ export default function OrgPrescriptionsPage() {
 
   /* ── UI state ── */
   const [loading,    setLoading]    = useState(true);
-  const [view,       setView]       = useState("builder");  // builder | history
-  const [mode,       setMode]       = useState("individual"); // individual | group
+  const [view,       setView]       = useState("builder"); // kept for usePlanCreator compat
+  const [mode,       setMode]       = useState("individual");
   const [title,      setTitle]      = useState("Nutrition + Supplements Plan");
   const [error,      setError]      = useState("");
+  const [products,   setProducts]   = useState([]);
 
   const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
-  const onChange   = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
+  const onChange     = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
   const resetBuilder = () => {
     setTitle("Nutrition + Supplements Plan");
     setStructured({ ...DEFAULT_STRUCTURED });
@@ -112,8 +109,14 @@ export default function OrgPrescriptionsPage() {
     setLoading(true);
     setError("");
     try {
-      const list = await fetchAthletes();
-      await fetchTemplates();
+      const [list] = await Promise.all([
+        fetchAthletes(),
+        fetchTemplates(),
+        fetch("/api/stacks")
+          .then((r) => r.ok ? r.json() : Promise.reject(new Error(`stacks ${r.status}`)))
+          .then((d) => setProducts(Array.isArray(d?.records) ? d.records : []))
+          .catch((err) => console.warn("[prescriptions] stacks fetch failed:", err.message)),
+      ]);
       if (!selectedAthleteEmail) {
         const first = (list || []).find((a) => a?.email);
         if (first?.email) setSelectedAthleteEmail(String(first.email).toLowerCase());
@@ -165,6 +168,27 @@ export default function OrgPrescriptionsPage() {
     setView, setError, advanceSafely, goToNextAthlete,
   });
 
+  // ── Templates bundle — everything PlanBuilderForm's TemplatesDrawer needs ──
+  const builderTpl = useMemo(() => ({
+    // from useTemplateActions
+    templateId:               tpl.templateId,
+    setTemplateId:            tpl.setTemplateId,
+    templateName:             tpl.templateName,
+    setTemplateName:          tpl.setTemplateName,
+    applyTemplateToBuilder:   tpl.applyTemplateToBuilder,
+    openDeleteTemplateConfirm: tpl.openDeleteTemplateConfirm,
+    saveAsTemplate:           tpl.saveAsTemplate,
+    // from useOrgPrescriptionsData
+    activeTemplates,
+    templatesLoading,
+    templatesError,
+    onRefreshTemplates:       fetchTemplates,
+  }), [
+    tpl.templateId, tpl.setTemplateId, tpl.templateName, tpl.setTemplateName,
+    tpl.applyTemplateToBuilder, tpl.openDeleteTemplateConfirm, tpl.saveAsTemplate,
+    activeTemplates, templatesLoading, templatesError, fetchTemplates,
+  ]);
+
   const isBusy = loading || loadingAthletes || templatesLoading;
 
   return (
@@ -181,19 +205,17 @@ export default function OrgPrescriptionsPage() {
               Prescriptions
             </h1>
             <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              Logged in as <span className="font-bold" style={{ color: DS.labelText }}>{orgName}</span>
+              Logged in as{" "}
+              <span className="font-bold" style={{ color: DS.labelText }}>{orgName}</span>
               {statusLoading && <span className="ml-2">· checking plan status…</span>}
             </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Mode toggle */}
-            <div
-              className="flex rounded-sm overflow-hidden"
-              style={{ border: `1px solid ${DS.border}` }}
-            >
+            {/* Individual / Group Blast toggle */}
+            <div className="flex rounded-sm overflow-hidden" style={{ border: `1px solid ${DS.border}` }}>
               {[
-                { key: "individual", label: "Individual" },
+                { key: "individual", label: "Individual"  },
                 { key: "group",      label: "Group Blast" },
               ].map(({ key, label }) => (
                 <button
@@ -202,11 +224,11 @@ export default function OrgPrescriptionsPage() {
                   onClick={() => setMode(key)}
                   className="px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-all"
                   style={{
-                    backgroundColor: mode === key ? DS.brand : DS.cardBg,
-                    color:           mode === key ? "#fff"   : DS.labelText,
+                    backgroundColor: mode === key ? DS.brand   : DS.cardBg,
+                    color:           mode === key ? "#fff"     : DS.labelText,
                   }}
                   onMouseEnter={(e) => { if (mode !== key) { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.color = DS.brand; } }}
-                  onMouseLeave={(e) => { if (mode !== key) { e.currentTarget.style.backgroundColor = DS.cardBg; e.currentTarget.style.color = DS.labelText; } }}
+                  onMouseLeave={(e) => { if (mode !== key) { e.currentTarget.style.backgroundColor = DS.cardBg;  e.currentTarget.style.color = DS.labelText; } }}
                 >
                   {label}
                 </button>
@@ -219,20 +241,22 @@ export default function OrgPrescriptionsPage() {
               className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
               style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border;      e.currentTarget.style.color = DS.labelText; }}
             >
               Dashboard
             </button>
+
             <button
               type="button"
               onClick={() => router.push("/org/athletes")}
               className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
               style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border;      e.currentTarget.style.color = DS.labelText; }}
             >
               Athletes
             </button>
+
             <button
               type="button"
               onClick={async () => { await refreshAll(); await refreshRosterPlanStatus(); }}
@@ -248,29 +272,33 @@ export default function OrgPrescriptionsPage() {
 
         {/* ── Status banners ── */}
         {isBusy && (
-          <div className="px-4 py-3 text-xs" style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.labelText }}>
+          <div
+            className="px-4 py-3 text-xs"
+            style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.labelText }}
+          >
             Loading…
           </div>
         )}
         {error && (
-          <div className="px-4 py-3 text-xs font-bold" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}>
+          <div
+            className="px-4 py-3 text-xs font-bold"
+            style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}
+          >
             {error}
           </div>
         )}
 
-        {/* ── Group Blast mode ── full-width, no roster ── */}
+        {/* ── Group Blast mode ── */}
         {mode === "group" && (
           <div>
-            <div className="mb-3 px-1">
-              <p className="text-xs" style={{ color: DS.dimText }}>
-                Assign one plan to multiple athletes at once. Individual overrides live on each athlete's profile page.
-              </p>
-            </div>
+            <p className="text-xs mb-3 px-1" style={{ color: DS.dimText }}>
+              Assign one plan to multiple athletes at once. Individual overrides live on each athlete's profile.
+            </p>
             <GroupBlastPanel athletes={athletes} />
           </div>
         )}
 
-        {/* ── Individual mode ── roster + builder/history ── */}
+        {/* ── Individual mode: roster (left) + unified builder (right) ── */}
         {mode === "individual" && (
           <div className="grid grid-cols-12 gap-5">
 
@@ -291,85 +319,40 @@ export default function OrgPrescriptionsPage() {
                 doneTokens={doneTokens}
                 doneTokensLoading={statusLoading}
                 router={router}
-                inputBase={inputBase}
               />
             </div>
 
-            {/* Main panel */}
-            <section className="col-span-12 lg:col-span-8 space-y-5 min-w-0">
-              <SelectedAthleteCard
+            {/* Unified builder — athlete header + tabs + history all in one card */}
+            <section className="col-span-12 lg:col-span-8 min-w-0">
+              <PlanBuilderForm
+                // Plan data
+                title={title}
+                setTitle={setTitle}
+                structured={structured}
+                onChange={onChange}
+                OPTIONS={OPTIONS}
+                // Save
+                createLoading={createLoading}
+                selectedAthleteEmail={selectedAthleteEmail}
+                onReset={resetBuilder}
+                onSave={(e) => createPlan(e, { advance: false })}
+                onSaveNext={(e) => createPlan(e, { advance: true })}
+                // Athlete display
                 selectedAthlete={selectedAthlete}
-                selectedAthleteToken={selectedAthleteToken}
-                view={view}
-                setView={(v) => {
-                  setView(v);
-                  if (v === "history" && !hist.historyRequested) {
-                    hist.searchHistory({ reset: true });
-                  }
-                }}
+                // Templates
+                tpl={builderTpl}
+                // History
+                hist={hist}
+                // SmartStack products — fetched once at page level
+                products={products}
               />
-
-              {view === "builder" && (
-                <div className="space-y-4">
-                  <TemplatesPanel
-                    inputBase={inputBase}
-                    subtleHint={subtleHint}
-                    templatesLoading={templatesLoading}
-                    templatesError={templatesError}
-                    activeTemplates={activeTemplates}
-                    templateId={tpl.templateId}
-                    setTemplateId={tpl.setTemplateId}
-                    templateName={tpl.templateName}
-                    setTemplateName={tpl.setTemplateName}
-                    templateNotes={tpl.templateNotes}
-                    setTemplateNotes={tpl.setTemplateNotes}
-                    onRefreshTemplates={fetchTemplates}
-                    onApplyTemplate={tpl.applyTemplateToBuilder}
-                    onOpenDeleteConfirm={tpl.openDeleteTemplateConfirm}
-                    onSaveAsTemplate={tpl.saveAsTemplate}
-                  />
-
-                  <PlanBuilderForm
-                    inputBase={inputBase}
-                    subtleHint={subtleHint}
-                    title={title}
-                    setTitle={setTitle}
-                    structured={structured}
-                    onChange={(k, v) => onChange(k, v)}
-                    OPTIONS={OPTIONS}
-                    createLoading={createLoading}
-                    selectedAthleteEmail={selectedAthleteEmail}
-                    onReset={resetBuilder}
-                    onSave={(e) => createPlan(e, { advance: false })}
-                    onSaveNext={(e) => createPlan(e, { advance: true })}
-                  />
-                </div>
-              )}
-
-              {view === "history" && (
-                <PlanHistory
-                  prescriptions={hist.historyRequested ? hist.historyItems : []}
-                  selectedAthleteToken={selectedAthleteToken}
-                  selectedAthleteEmail={selectedAthleteEmail}
-                  selectedAthleteName={selectedAthlete?.name || ""}
-                  historyRequested={hist.historyRequested}
-                  loading={hist.historyLoading}
-                  hasMore={hist.historyHasMore}
-                  onSearch={() => hist.searchHistory({ reset: true })}
-                  onLoadMore={hist.loadMoreHistory}
-                  subtleHint={subtleHint}
-                  onCopyNotesToBuilder={(p) => {
-                    setTitle(p.title || "Nutrition + Supplements Plan");
-                    setStructured((prev) => ({ ...prev, freeformNotes: p.prescription || "" }));
-                    setView("builder");
-                  }}
-                />
-              )}
             </section>
           </div>
         )}
+
       </main>
 
+      {/* Template delete confirmation — unchanged */}
       <ConfirmDeleteModal
         open={tpl.confirmDeleteOpen}
         title="Delete Template"

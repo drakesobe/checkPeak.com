@@ -1,33 +1,59 @@
-// pages/athlete/nutrition/today.js
-"use client";
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/router";
-import { useAuthContext } from "@/hooks/useAuth";
+// pages/api/athlete/nutrition/today.js
+import Airtable from "airtable";
+import { requireAthlete } from "@/lib/requireAthlete";
 
 /* ---------------- helpers ---------------- */
-
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
 
 function asString(v) {
   return String(v ?? "").trim();
 }
 
-function asNum(v) {
-  const n = Number(String(v ?? "").trim());
-  return Number.isFinite(n) ? n : null;
+function normalizeEmail(v) {
+  return asString(v).toLowerCase();
 }
 
-function fmtMacro(v) {
-  const n = asNum(v);
-  return n == null ? "—" : String(n);
+function safeArr(v) {
+  return Array.isArray(v) ? v : [];
 }
 
-function safeText(v) {
-  const s = String(v ?? "").trim();
-  return s.length ? s : "";
+function escapeAirtableString(str = "") {
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function getTable(apiKey, baseId, tableNameOrId) {
+  if (!apiKey || !baseId || !tableNameOrId) return null;
+  return new Airtable({ apiKey }).base(baseId)(tableNameOrId);
+}
+
+function safeJsonParse(s) {
+  const raw = asString(s);
+  if (!raw) return null;
+
+  // First attempt — clean parse
+  try { return JSON.parse(raw); }
+  catch { /* fall through */ }
+
+  // Second attempt — strip invalid JSON escape sequences.
+  // Amazon image URLs sometimes contain \_ (backslash + underscore) which
+  // is not a valid JSON escape. JSON only allows: \" \\ \/ \b \f \n \r \t \uXXXX
+  // Replace any \X where X is not a recognised escape char with just X.
+  try {
+    const sanitized = raw.replace(/\\([^"\\\/bfnrtu])/g, "$1");
+    return JSON.parse(sanitized);
+  } catch {
+    return null;
+  }
+}
+
+function pickFromAuth(auth, paths) {
+  for (const p of paths) {
+    const parts = p.split(".");
+    let cur = auth;
+    for (const part of parts) cur = cur?.[part];
+    const s = asString(cur);
+    if (s) return s;
+  }
+  return "";
 }
 
 function isISODateOnly(s) {
@@ -37,303 +63,238 @@ function isISODateOnly(s) {
 function nyISODate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(new Date());
-
   const y = parts.find((p) => p.type === "year")?.value;
   const m = parts.find((p) => p.type === "month")?.value;
   const d = parts.find((p) => p.type === "day")?.value;
   return `${y}-${m}-${d}`;
 }
 
-function pickPlanJson(plan) {
-  const pj = plan?.planJson || plan?.PlanJson || plan?._raw?.planJson || plan?._raw?.PlanJson;
-  return pj && typeof pj === "object" ? pj : null;
+function toISODateOnlyNY(v) {
+  const s = asString(v);
+  if (!s) return "";
+  if (isISODateOnly(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(d);
+  const y  = parts.find((p) => p.type === "year")?.value;
+  const m  = parts.find((p) => p.type === "month")?.value;
+  const dd = parts.find((p) => p.type === "day")?.value;
+  return `${y}-${m}-${dd}`;
 }
 
-async function safeJson(res) {
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) {
-    const text = await res.text().catch(() => "");
-    return {
-      _nonJson: true,
-      _contentType: ct,
-      _textPreview: String(text).slice(0, 220),
-    };
+/* ---------------- env ---------------- */
+
+const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
+const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
+const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
+
+const NUTRITION_API_KEY     = process.env.NUTRITION_API_KEY;
+const NUTRITION_BASE_ID     = process.env.NUTRITION_BASE_ID;
+const NUTRITION_PLANS_TABLE =
+  process.env.NUTRITION_PLANS_TABLE ||
+  process.env.NUTRITION_TABLE_NAME  ||
+  process.env.NUTRITION_TABLE_ID    ||
+  "NutritionPlans";
+
+/* ---------------- field names ---------------- */
+
+const ATH_EMAIL = "Email";
+const ATH_TOKEN = "AthleteToken";
+
+const PLAN_STATUS     = "Status";
+const PLAN_CREATED_AT = "CreatedAt";
+const PLAN_CREATED_BY = "CreatedBy";
+const PLAN_PHASE      = "Phase";
+
+const PLAN_DCAL       = "DailyCalories";
+const PLAN_DPRO       = "DailyProtein";
+const PLAN_DCARB      = "DailyCarbs";
+const PLAN_DFAT       = "DailyFat";
+const PLAN_DHYDRATION = "DailyHydration"; // ← was missing from today.js
+
+const PLAN_JSON         = "PlanJson";
+const PLAN_PRESCRIPTION = "Prescription";
+
+const PLAN_ATH_TOKEN_LOOKUP    = "AthleteToken";
+const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
+
+/* ---------------- handler ---------------- */
+
+export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const auth = requireAthlete(req, res);
+  if (!auth?.ok) return;
+
+  const dateQ        = asString(req.query?.date);
+  const selectedDate = isISODateOnly(dateQ) ? dateQ : nyISODate();
+
+  const athleteTable = getTable(ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME);
+  const plansTable   = getTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE);
+
+  if (!athleteTable) {
+    return res.status(500).json({
+      error: "Athletes (AthleteScans) Airtable not configured.",
+      missing: { ATHLETE_API_KEY: !ATHLETE_API_KEY, ATHLETE_BASE_ID: !ATHLETE_BASE_ID, ATHLETE_TABLE_NAME: !ATHLETE_TABLE_NAME },
+    });
   }
-  return res.json().catch(() => ({}));
-}
 
-function MealBlockCard({ label, block }) {
-  const t = block?.targets || {};
-  const dining = safeText(block?.diningHallRules);
-  const home = safeText(block?.homeExamples);
+  if (!plansTable) {
+    return res.status(500).json({
+      error: "NutritionPlans Airtable not configured.",
+      missing: { NUTRITION_API_KEY: !NUTRITION_API_KEY, NUTRITION_BASE_ID: !NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE: !NUTRITION_PLANS_TABLE },
+    });
+  }
 
-  const hasAnyTargets =
-    asNum(t.calories) != null || asNum(t.protein) != null || asNum(t.carbs) != null || asNum(t.fat) != null;
+  try {
+    /* ── 1) Resolve athlete token ── */
+    let athleteToken = pickFromAuth(auth, [
+      "athlete.athleteToken", "athlete.AthleteToken",
+      "athleteToken", "user.athleteToken", "user.AthleteToken", "user.athlete_token",
+    ]);
 
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-gray-900">{label}</p>
-          <p className="text-xs text-gray-600 mt-1">
-            Target:{" "}
-            <span className="font-semibold">{fmtMacro(t.calories)}</span> cals •{" "}
-            <span className="font-semibold">{fmtMacro(t.protein)}</span>P •{" "}
-            <span className="font-semibold">{fmtMacro(t.carbs)}</span>C •{" "}
-            <span className="font-semibold">{fmtMacro(t.fat)}</span>F
-          </p>
-        </div>
+    const athleteEmail = normalizeEmail(
+      pickFromAuth(auth, ["athlete.email", "athlete.Email", "user.email", "user.Email", "email", "Email"])
+    );
 
-        <span
-          className={cx(
-            "shrink-0 text-[10px] px-2 py-1 rounded-lg border font-semibold",
-            hasAnyTargets
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-              : "bg-gray-100 text-gray-500 border-gray-200"
-          )}
-        >
-          {hasAnyTargets ? "Suggested" : "Unset"}
-        </span>
-      </div>
+    let athleteRec = null;
 
-      {(dining || home) ? (
-        <div className="mt-3 space-y-2">
-          {dining ? (
-            <div className="text-xs text-gray-700">
-              <span className="font-semibold text-gray-900">Dining hall:</span> {dining}
-            </div>
-          ) : null}
-          {home ? (
-            <div className="text-xs text-gray-700">
-              <span className="font-semibold text-gray-900">Home:</span> {home}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <p className="mt-3 text-xs text-gray-500">No examples added for this block yet.</p>
-      )}
-    </div>
-  );
-}
+    if (athleteToken) {
+      const safeTok = escapeAirtableString(athleteToken);
+      athleteRec = await athleteTable
+        .select({ filterByFormula: `FIND('${safeTok}', ARRAYJOIN({${ATH_TOKEN}}&''))`, maxRecords: 1 })
+        .firstPage()
+        .then((xs) => xs?.length ? xs[0] : null);
+    }
 
-/* ---------------- page ---------------- */
-
-export default function AthleteNutritionToday() {
-  const router = useRouter();
-  const { user, authReady } = useAuthContext();
-
-  const role = useMemo(() => {
-    const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
-    if (!raw) return "";
-    if (raw.includes("ath")) return "athlete";
-    return raw;
-  }, [user]);
-
-  const isAthlete = role === "athlete";
-
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const [selectedDate, setSelectedDate] = useState(nyISODate());
-  useEffect(() => {
-    if (!router.isReady) return;
-    const qd = asString(router.query?.date);
-    setSelectedDate(isISODateOnly(qd) ? qd : nyISODate());
-  }, [router.isReady, router.query?.date]);
-
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [latestPlan, setLatestPlan] = useState(null);
-  const [message, setMessage] = useState("");
-  const [nextPlan, setNextPlan] = useState(null);
-
-  // dedupe + abort
-  const lastLoadedRef = useRef("");
-  const inflightRef = useRef(null);
-
-  const load = useCallback(
-    async (isoDate, opts = {}) => {
-      const force = Boolean(opts?.force);
-      const date = isISODateOnly(isoDate) ? isoDate : selectedDate;
-
-      if (!authReady || !user || !isAthlete) return;
-      if (!isISODateOnly(date)) return;
-
-      if (!force && lastLoadedRef.current === date && !err) return;
-
-      try {
-        inflightRef.current?.abort?.();
-      } catch {}
-      const controller = new AbortController();
-      inflightRef.current = controller;
-
-      setLoading(true);
-      setErr("");
-      setMessage("");
-      setNextPlan(null);
-
-      try {
-        const res = await fetch(`/api/athlete/nutrition/today?date=${encodeURIComponent(date)}`, {
-          method: "GET",
-          credentials: "include",
-          signal: controller.signal,
-          headers: { "Content-Type": "application/json" },
-        });
-
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-          const msg =
-            data?._nonJson
-              ? `Non-JSON response (${data?._contentType || "unknown"}): ${data?._textPreview || ""}`
-              : data?.error || "Failed to load nutrition plan";
-          throw new Error(msg);
-        }
-
-        setLatestPlan(data?.latestPlan || null);
-        setMessage(safeText(data?.message || ""));
-        setNextPlan(data?.nextPlan || null);
-
-        lastLoadedRef.current = date;
-      } catch (e) {
-        if (String(e?.name || "") === "AbortError") return;
-        setErr(e?.message || "Failed to load nutrition");
-        setLatestPlan(null);
-        setMessage("");
-        setNextPlan(null);
-      } finally {
-        setLoading(false);
+    if (!athleteRec) {
+      if (!athleteEmail) {
+        return res.status(401).json({ error: "Athlete session missing AthleteToken and Email.", debug: { selectedDate } });
       }
-    },
-    [authReady, user, isAthlete, selectedDate, err]
-  );
+      athleteRec = await athleteTable
+        .select({ filterByFormula: `LOWER({${ATH_EMAIL}}&'')='${escapeAirtableString(athleteEmail)}'`, maxRecords: 1 })
+        .firstPage()
+        .then((xs) => xs?.length ? xs[0] : null);
 
-  useEffect(() => {
-    if (!mounted) return;
-    if (!router.isReady) return;
-    if (!authReady || !user || !isAthlete) return;
-    load(selectedDate);
-  }, [mounted, router.isReady, authReady, user, isAthlete, selectedDate, load]);
+      if (!athleteRec) {
+        return res.status(404).json({ error: "Athlete not found (by session email).", debug: { athleteEmail, selectedDate } });
+      }
+      athleteToken = asString(athleteRec.fields?.[ATH_TOKEN]);
+    }
 
-  // Guards
-  if (!mounted) return null;
-  if (!authReady) return null;
-  if (!user) return <div style={{ padding: 24 }}>Please log in.</div>;
-  if (!isAthlete) return <div style={{ padding: 24 }}>Not authorized.</div>;
+    if (!athleteToken) {
+      return res.status(500).json({
+        error: "Athlete record found but AthleteToken is missing/blank in Airtable.",
+        debug: { athleteId: athleteRec?.id, athleteEmail, selectedDate },
+      });
+    }
 
-  const planJson = pickPlanJson(latestPlan);
-  const mealBlocks = planJson?.mealBlocks || null;
-  const daily = planJson?.daily || latestPlan?.daily || null;
+    /* ── 2) Fetch active plans ── */
+    const safeTok      = escapeAirtableString(athleteToken);
+    const tokMatch     = `FIND('${safeTok}', ARRAYJOIN({${PLAN_ATH_TOKEN_LOOKUP}}&''))`;
+    const activeFilter = `AND(${tokMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-blue-50 text-gray-900 font-sans">
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-        <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-extrabold">Nutrition (Date View)</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Suggested targets by meal — built for dining halls, not calorie-perfect meal prep.
-            </p>
-            <p className="text-[11px] text-gray-500 mt-2">
-              Date: <span className="font-semibold">{selectedDate}</span>
-            </p>
-          </div>
+    const activeRecs = await plansTable
+      .select({
+        filterByFormula: activeFilter,
+        sort: [{ field: PLAN_CREATED_AT, direction: "desc" }],
+        maxRecords: 25,
+      })
+      .firstPage();
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push(`/athlete/nutrition?date=${encodeURIComponent(selectedDate)}`)}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"
-              type="button"
-            >
-              Open full view
-            </button>
-            <button
-              onClick={() => load(selectedDate, { force: true })}
-              className="px-4 py-2 rounded-xl bg-[#46769B] text-white text-sm font-semibold hover:brightness-110"
-              type="button"
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
+    const candidates = safeArr(activeRecs).map((r) => {
+      const f            = r.fields || {};
+      const planJsonRaw  = asString(f[PLAN_JSON]);
+      const planJson     = safeJsonParse(planJsonRaw);
+      const rawEff       =
+        asString(f[PLAN_META_EFFECTIVE_DATE]) ||
+        asString(planJson?.meta?.effectiveDate) ||
+        "";
+      const effectiveDate = toISODateOnlyNY(rawEff);
+      const createdAt     = asString(f[PLAN_CREATED_AT]) || asString(r._rawJson?.createdTime);
 
-        {loading ? (
-          <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-            <p className="text-sm text-gray-600">Loading…</p>
-          </div>
-        ) : null}
+      return { id: r.id, fields: f, planJsonRaw, planJson, effectiveDate, createdAt };
+    });
 
-        {!loading && err ? (
-          <div className="bg-white rounded-2xl shadow-md border border-red-200 p-5">
-            <p className="text-sm text-red-700 font-semibold">{err}</p>
-          </div>
-        ) : null}
+    /* ── 3) Pick plan effective for selectedDate ── */
+    const effective = candidates.filter((p) => !p.effectiveDate || p.effectiveDate <= selectedDate);
+    const picked    = effective[0] || null;
 
-        {!loading && !err ? (
-          <>
-            {message ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-900">{message}</p>
-                {nextPlan?.effectiveDate ? (
-                  <p className="text-xs text-amber-900/80 mt-1">
-                    Next plan starts: <span className="font-semibold">{nextPlan.effectiveDate}</span>
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+    let upcoming = null;
+    for (const p of candidates) {
+      if (!p.effectiveDate || p.effectiveDate <= selectedDate) continue;
+      if (!upcoming || p.effectiveDate < upcoming.effectiveDate) upcoming = p;
+    }
 
-            {!mealBlocks ? (
-              <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-5">
-                <p className="text-sm text-gray-900 font-extrabold">No effective plan for this date.</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  Try a different date or check back soon.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {daily ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                      <p className="text-[11px] text-gray-500">Calories</p>
-                      <p className="text-xl font-extrabold text-gray-900 mt-1">{fmtMacro(daily?.calories)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                      <p className="text-[11px] text-gray-500">Protein</p>
-                      <p className="text-xl font-extrabold text-gray-900 mt-1">{fmtMacro(daily?.protein)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                      <p className="text-[11px] text-gray-500">Carbs</p>
-                      <p className="text-xl font-extrabold text-gray-900 mt-1">{fmtMacro(daily?.carbs)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                      <p className="text-[11px] text-gray-500">Fat</p>
-                      <p className="text-xl font-extrabold text-gray-900 mt-1">{fmtMacro(daily?.fat)}</p>
-                    </div>
-                  </div>
-                ) : null}
+    if (!picked) {
+      return res.status(200).json({
+        ok: true,
+        selectedDate,
+        athleteToken,
+        athleteEmail,
+        latestPlan: null,
+        nextPlan: upcoming
+          ? { effectiveDate: upcoming.effectiveDate, createdAt: upcoming.createdAt }
+          : null,
+        message: upcoming
+          ? `No plan is effective on ${selectedDate}. Next plan starts ${upcoming.effectiveDate}.`
+          : `No active plan is effective on ${selectedDate}.`,
+        debug: { filterByFormula: activeFilter, candidateCount: candidates.length },
+      });
+    }
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-extrabold text-gray-900">Targets by Meal</p>
-                    <p className="text-[11px] text-gray-500">Breakfast • Lunch • Afternoon • Dinner</p>
-                  </div>
+    const f = picked.fields;
 
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <MealBlockCard label="Breakfast" block={mealBlocks.breakfast} />
-                    <MealBlockCard label="Lunch" block={mealBlocks.lunch} />
-                    <MealBlockCard label="Afternoon" block={mealBlocks.afternoon} />
-                    <MealBlockCard label="Dinner" block={mealBlocks.dinner} />
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        ) : null}
-      </main>
-    </div>
-  );
+    /* ── 4) Build latestPlan — include DailyHydration so the athlete UI
+            doesn't have to rely solely on planJson for hydration oz ── */
+    const latestPlan = {
+      id:    picked.id,
+      phase: asString(f[PLAN_PHASE]),
+
+      // Flat daily columns — hydrationOz NOW included
+      daily: {
+        calories:    f[PLAN_DCAL]       ?? "",
+        protein:     f[PLAN_DPRO]       ?? "",
+        carbs:       f[PLAN_DCARB]      ?? "",
+        fat:         f[PLAN_DFAT]       ?? "",
+        hydrationOz: f[PLAN_DHYDRATION] ?? "", // ← the fix
+      },
+
+      // Full structured blob — used for mealBlocks, supplements, coach notes
+      planJsonRaw:  picked.planJsonRaw,
+      planJson:     picked.planJson,
+
+      prescription: asString(f[PLAN_PRESCRIPTION]),
+      status:       asString(f[PLAN_STATUS]) || "active",
+      createdAt:    picked.createdAt,
+      createdBy:    asString(f[PLAN_CREATED_BY]),
+      effectiveDate: picked.effectiveDate || "",
+    };
+
+    return res.status(200).json({
+      ok: true,
+      selectedDate,
+      athleteToken,
+      athleteEmail,
+      latestPlan,
+      nextPlan: upcoming
+        ? { effectiveDate: upcoming.effectiveDate, createdAt: upcoming.createdAt }
+        : null,
+    });
+
+  } catch (e) {
+    console.error("[api/athlete/nutrition/today] error:", e);
+    return res.status(500).json({
+      error: e?.message || "Failed to load athlete nutrition plan.",
+      airtable: { statusCode: e?.statusCode, message: e?.message, error: e?.error },
+    });
+  }
 }

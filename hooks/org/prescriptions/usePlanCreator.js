@@ -15,7 +15,6 @@ function normalizeEmail(v) {
 }
 
 function safeNumOrString(v) {
-  // keep Airtable-friendly: numbers become numbers, blanks become "", strings pass through
   const s = asString(v);
   if (!s) return "";
   const n = Number(s);
@@ -30,51 +29,85 @@ function safeJson(obj) {
   }
 }
 
+// Sanitise a product object — only keep the fields the athlete UI needs.
+// Returns null if the value isn't a real product selection.
+function safeProduct(v) {
+  if (!v || typeof v !== "object" || !asString(v.id)) return null;
+  return {
+    id:              asString(v.id),
+    name:            asString(v.name),
+    affiliateLink:   asString(v.affiliateLink  || ""),
+    imageUrl:        asString(v.imageUrl       || ""),
+    category:        asString(v.category       || ""),
+    pricePerServing: v.pricePerServing != null ? Number(v.pricePerServing) || null : null,
+  };
+}
+
 /**
- * Build PlanJson consistently from "structured"
- * - meta: effectiveDate/status
- * - daily: calories/protein/carbs/fat/hydrationOz
- * - mealSplit, mealBlocks, locks, phase, notes, supplements
+ * Build PlanJson consistently from "structured".
+ *
+ * supplements block now carries both:
+ *   - legacy string fields (proteinRecommendation etc.) for backward compat
+ *   - product objects (proteinProduct etc.) for the new affiliate card UI
  */
 function buildPlanJson({ structured, title }) {
   const s = structured && typeof structured === "object" ? structured : {};
 
-  const metaEffectiveDate = asString(s.metaEffectiveDate); // date-only preferred
-  const metaStatus = asString(s.metaStatus || "active") || "active";
+  const metaEffectiveDate = asString(s.metaEffectiveDate);
+  const metaStatus        = asString(s.metaStatus || "active") || "active";
 
   const daily = {
-    ...(asString(s.calories) ? { calories: safeNumOrString(s.calories) } : {}),
-    ...(asString(s.proteinGrams) ? { protein: safeNumOrString(s.proteinGrams) } : {}),
-    ...(asString(s.carbsGrams) ? { carbs: safeNumOrString(s.carbsGrams) } : {}),
-    ...(asString(s.fatsGrams) ? { fat: safeNumOrString(s.fatsGrams) } : {}),
-    // ✅ DAILY HYDRATION (oz)
-    ...(asString(s.hydrationOz) ? { hydrationOz: safeNumOrString(s.hydrationOz) } : {}),
+    ...(asString(s.calories)     ? { calories:     safeNumOrString(s.calories)     } : {}),
+    ...(asString(s.proteinGrams) ? { protein:      safeNumOrString(s.proteinGrams) } : {}),
+    ...(asString(s.carbsGrams)   ? { carbs:        safeNumOrString(s.carbsGrams)   } : {}),
+    ...(asString(s.fatsGrams)    ? { fat:          safeNumOrString(s.fatsGrams)    } : {}),
+    ...(asString(s.hydrationOz)  ? { hydrationOz:  safeNumOrString(s.hydrationOz)  } : {}),
   };
 
+  // ── Supplement string recommendations (legacy — kept for backward compat) ──
+  const supplementStrings = {
+    proteinRecommendation:      asString(s.proteinRecommendation      || ""),
+    creatineRecommendation:     asString(s.creatineRecommendation     || ""),
+    bcaaRecommendation:         asString(s.bcaaRecommendation         || ""),
+    electrolytesRecommendation: asString(s.electrolytesRecommendation || ""),
+    // new categories (string fallback)
+    preWorkoutRecommendation:   asString(s.preWorkoutRecommendation   || ""),
+    proteinBarRecommendation:   asString(s.proteinBarRecommendation   || ""),
+  };
+
+  // ── Product objects (new — what powers the affiliate card on athlete side) ──
+  const supplementProducts = {};
+  const productKeys = [
+    "proteinProduct",
+    "creatineProduct",
+    "bcaaProduct",
+    "preWorkoutProduct",
+    "proteinBarProduct",
+  ];
+  for (const key of productKeys) {
+    const p = safeProduct(s[key]);
+    if (p) supplementProducts[key] = p;
+  }
+
   const planJson = {
-    title: asString(title) || "Nutrition + Supplements Plan",
+    title:    asString(title) || "Nutrition + Supplements Plan",
     meta: {
       ...(metaEffectiveDate ? { effectiveDate: metaEffectiveDate } : {}),
       status: metaStatus,
     },
-    phase: asString(s.phase || ""),
+    phase:              asString(s.phase || ""),
     daily,
-    // these let the athlete UI render meal-level targets
-    mealSplit: safeJson(s.mealSplit || {}),
-    mealBlocks: safeJson(s.mealBlocks || {}),
-    // keeps your lock UX state stored in template/plan
+    mealSplit:          safeJson(s.mealSplit          || {}),
+    mealBlocks:         safeJson(s.mealBlocks         || {}),
     mealAutoSplitLocks: safeJson(s.mealAutoSplitLocks || {}),
-
-    // optional convenience fields
     notes: {
-      macros: asString(s.notesMacros || ""),
-      supplements: asString(s.notesSupplements || ""),
+      macros:       asString(s.notesMacros      || ""),
+      supplements:  asString(s.notesSupplements || ""),
     },
+    // Combined supplements block — strings + product objects together
     supplements: {
-      proteinRecommendation: asString(s.proteinRecommendation || ""),
-      creatineRecommendation: asString(s.creatineRecommendation || ""),
-      bcaaRecommendation: asString(s.bcaaRecommendation || ""),
-      electrolytesRecommendation: asString(s.electrolytesRecommendation || ""),
+      ...supplementStrings,
+      ...supplementProducts,
     },
     freeformNotes: asString(s.freeformNotes || ""),
   };
@@ -91,19 +124,13 @@ export function usePlanCreator({
   selectedAthleteToken,
   structured,
   validateBuilder,
-
-  // roster helpers
   markDone,
   markDoneFromPlanStatus,
-
-  // history helpers (optional)
   view,
   searchHistory,
   setHistoryOffset,
   setView,
   setError,
-
-  // Save & Next helpers
   advanceSafely,
   goToNextAthlete,
 }) {
@@ -114,22 +141,13 @@ export function usePlanCreator({
       if (e?.preventDefault) e.preventDefault();
 
       const vErr = typeof validateBuilder === "function" ? validateBuilder() : "";
-      if (vErr) {
-        setError?.(vErr);
-        return;
-      }
+      if (vErr) { setError?.(vErr); return; }
 
       const athleteEmail = normalizeEmail(selectedAthleteEmail);
       const athleteToken = asString(selectedAthleteToken);
 
-      if (!athleteEmail) {
-        setError?.("Select an athlete first.");
-        return;
-      }
-      if (!athleteToken) {
-        setError?.("Selected athlete is missing AthleteToken.");
-        return;
-      }
+      if (!athleteEmail) { setError?.("Select an athlete first."); return; }
+      if (!athleteToken) { setError?.("Selected athlete is missing AthleteToken."); return; }
 
       setCreateLoading(true);
       setError?.("");
@@ -137,70 +155,54 @@ export function usePlanCreator({
       try {
         const createdBy =
           asString(user?.Email || user?.email) ||
-          asString(user?.name) ||
-          asString(user?.id) ||
+          asString(user?.name)                 ||
+          asString(user?.id)                   ||
           "org";
 
-        // ✅ Build PlanJson (single source of truth)
         const planJson = buildPlanJson({
           structured,
-          title: asString(structured?.title || "") || "",
+          title: asString(structured?.title || ""),
         });
 
-        // ✅ Daily payload (so API can write summary columns)
         const dailyPayload = {
-          calories: safeNumOrString(structured?.calories),
-          protein: safeNumOrString(structured?.proteinGrams),
-          carbs: safeNumOrString(structured?.carbsGrams),
-          fat: safeNumOrString(structured?.fatsGrams),
-          // ✅ DAILY HYDRATION (oz)
+          calories:    safeNumOrString(structured?.calories),
+          protein:     safeNumOrString(structured?.proteinGrams),
+          carbs:       safeNumOrString(structured?.carbsGrams),
+          fat:         safeNumOrString(structured?.fatsGrams),
           hydrationOz: safeNumOrString(structured?.hydrationOz),
         };
 
-        // Prefer metaEffectiveDate at top-level too (API supports multiple sources)
         const metaEffectiveDate = asString(structured?.metaEffectiveDate);
 
         const body = {
           athleteEmail,
-          athleteToken, // upsert expects athleteToken (ATH-...)
-          phase: asString(structured?.phase || "Maintain"),
-          status: asString(structured?.metaStatus || "active") || "active",
+          athleteToken,
+          phase:              asString(structured?.phase || "Maintain"),
+          status:             asString(structured?.metaStatus || "active") || "active",
           createdBy,
-          prescription: asString(structured?.freeformNotes || ""), // legacy notes field
-          structured: structured || {},
-          daily: dailyPayload,
-          metaEffectiveDate: metaEffectiveDate || "",
+          prescription:       asString(structured?.freeformNotes || ""),
+          structured:         structured || {},
+          daily:              dailyPayload,
+          metaEffectiveDate:  metaEffectiveDate || "",
           planJson,
         };
 
         const resp = await fetch("/api/org/nutrition/plans/upsert", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(orgAuthHeaders || {}),
-          },
-          body: JSON.stringify(body),
+          method:  "POST",
+          headers: { "Content-Type": "application/json", ...(orgAuthHeaders || {}) },
+          body:    JSON.stringify(body),
         });
 
         const data = await resp.json().catch(() => ({}));
 
         if (!resp.ok || !data?.ok) {
-          const msg =
-            asString(data?.error) ||
-            asString(data?.message) ||
-            `Save failed (${resp.status})`;
+          const msg = asString(data?.error) || asString(data?.message) || `Save failed (${resp.status})`;
           throw new Error(msg);
         }
 
-        // ✅ mark completed for roster UX
-        try {
-          markDone?.(athleteEmail);
-        } catch {}
-        try {
-          markDoneFromPlanStatus?.(athleteEmail);
-        } catch {}
+        try { markDone?.(athleteEmail); }            catch {}
+        try { markDoneFromPlanStatus?.(athleteEmail); } catch {}
 
-        // ✅ refresh history list if they're on history view
         try {
           if (view === "history" && typeof searchHistory === "function") {
             setHistoryOffset?.(0);
@@ -208,17 +210,12 @@ export function usePlanCreator({
           }
         } catch {}
 
-        // ✅ advance if Save & Next
         if (advance) {
           try {
-            if (typeof advanceSafely === "function") {
-              await advanceSafely();
-            } else if (typeof goToNextAthlete === "function") {
-              goToNextAthlete();
-            }
+            if (typeof advanceSafely === "function") await advanceSafely();
+            else if (typeof goToNextAthlete === "function") goToNextAthlete();
           } catch {}
         } else {
-          // keep them in builder view after save
           setView?.("builder");
         }
       } catch (err) {
@@ -229,21 +226,10 @@ export function usePlanCreator({
       }
     },
     [
-      orgAuthHeaders,
-      user,
-      selectedAthleteEmail,
-      selectedAthleteToken,
-      structured,
-      validateBuilder,
-      markDone,
-      markDoneFromPlanStatus,
-      view,
-      searchHistory,
-      setHistoryOffset,
-      setView,
-      setError,
-      advanceSafely,
-      goToNextAthlete,
+      orgAuthHeaders, user, selectedAthleteEmail, selectedAthleteToken,
+      structured, validateBuilder, markDone, markDoneFromPlanStatus,
+      view, searchHistory, setHistoryOffset, setView, setError,
+      advanceSafely, goToNextAthlete,
     ]
   );
 

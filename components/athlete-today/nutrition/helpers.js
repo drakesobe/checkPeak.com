@@ -9,11 +9,7 @@ export function safeText(v) {
   if (typeof v === "string") return v.trim();
   if (typeof v === "number") return String(v);
   if (typeof v === "object") {
-    try {
-      return JSON.stringify(v, null, 2);
-    } catch {
-      return "";
-    }
+    try { return JSON.stringify(v, null, 2); } catch { return ""; }
   }
   return String(v).trim();
 }
@@ -41,13 +37,9 @@ export function fmtHumanDate(isoDate) {
   try {
     return new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
+      month: "short", day: "numeric", year: "numeric",
     }).format(d);
-  } catch {
-    return s;
-  }
+  } catch { return s; }
 }
 
 export function pct(n) {
@@ -60,20 +52,19 @@ export function pct(n) {
 
 export function makeEmptyCompletion() {
   return {
-    breakfast: { mealDone: false, hydrationDone: false },
-    lunch: { mealDone: false, hydrationDone: false },
-    afternoon: { mealDone: false, hydrationDone: false },
-    dinner: { mealDone: false, hydrationDone: false },
+    breakfast:  { mealDone: false, hydrationDone: false },
+    lunch:      { mealDone: false, hydrationDone: false },
+    afternoon:  { mealDone: false, hydrationDone: false },
+    dinner:     { mealDone: false, hydrationDone: false },
   };
 }
 
 export function safeCompletionShape(v) {
   const base = makeEmptyCompletion();
   if (!v || typeof v !== "object") return base;
-
   for (const k of ["breakfast", "lunch", "afternoon", "dinner"]) {
     base[k] = {
-      mealDone: Boolean(v?.[k]?.mealDone),
+      mealDone:      Boolean(v?.[k]?.mealDone),
       hydrationDone: Boolean(v?.[k]?.hydrationDone),
     };
   }
@@ -81,17 +72,14 @@ export function safeCompletionShape(v) {
 }
 
 export function computeNutritionCounts(completion) {
-  const c = safeCompletionShape(completion);
+  const c    = safeCompletionShape(completion);
   const keys = ["breakfast", "lunch", "afternoon", "dinner"];
-  let done = 0;
-  let total = 0;
-
+  let done = 0, total = 0;
   for (const k of keys) {
-    total += 2; // meal + hydration
-    if (c[k].mealDone) done += 1;
+    total += 2;
+    if (c[k].mealDone)      done += 1;
     if (c[k].hydrationDone) done += 1;
   }
-
   return { done, total, pct: total ? (done / total) * 100 : 0 };
 }
 
@@ -100,12 +88,10 @@ export function computeNutritionCounts(completion) {
 export function pickDailyHydrationOz({ daily, planJson, dailyHydrationOzProp }) {
   const p = toNum(dailyHydrationOzProp);
   if (p != null) return p;
-
   const d1 = toNum(daily?.hydrationOz);
   const d2 = toNum(daily?.DailyHydration);
   if (d1 != null) return d1;
   if (d2 != null) return d2;
-
   const pj1 = toNum(planJson?.daily?.hydrationOz);
   const pj2 = toNum(planJson?.daily?.DailyHydration);
   const pj3 = toNum(planJson?.hydrationOz);
@@ -114,57 +100,106 @@ export function pickDailyHydrationOz({ daily, planJson, dailyHydrationOzProp }) 
 }
 
 export function pickCoachNotes({ planJson }) {
-  const v =
+  // ── 1) freeformNotes — the actual coach free-text field, check FIRST ──────
+  // planJson.notes is a structured object { macros, supplements }, NOT a string.
+  // The ?? operator would stop there and never reach freeformNotes, so we check
+  // freeformNotes explicitly before anything else.
+  const freeform = safeText(planJson?.freeformNotes);
+  if (freeform) return freeform;
+
+  // ── 2) Legacy text fields (older plans / other entry points) ─────────────
+  const legacy = safeText(
     planJson?.Prescription ??
     planJson?.prescription ??
-    planJson?.coachNotes ??
-    planJson?.notes ??
-    planJson?.freeformNotes ??
-    "";
+    planJson?.coachNotes   ??
+    ""
+  );
+  if (legacy) return legacy;
 
-  const s = safeText(v);
+  // ── 3) planJson.notes — structured object { macros, supplements } ─────────
+  // Only used as a fallback for plans that stored notes here instead of
+  // freeformNotes. Both fields are usually empty strings in practice.
+  const notesRaw = planJson?.notes;
+  const notesStr = safeText(notesRaw);
 
-  if (s && (s.startsWith("{") || s.startsWith("["))) {
+  if (notesStr && (notesStr.startsWith("{") || notesStr.startsWith("["))) {
     try {
-      const obj = JSON.parse(s);
-      if (obj && typeof obj === "object") {
-        const macros = safeText(obj?.macros);
-        const supp = safeText(obj?.supplements);
-        if (macros || supp) {
-          return [macros ? `Macros: ${macros}` : "", supp ? `Supplements: ${supp}` : ""]
-            .filter(Boolean)
-            .join("\n");
-        }
-        return JSON.stringify(obj, null, 2);
+      const obj    = JSON.parse(notesStr);
+      const macros = safeText(obj?.macros);
+      const supp   = safeText(obj?.supplements);
+      if (macros || supp) {
+        return [
+          macros ? `Macros: ${macros}`       : "",
+          supp   ? `Supplements: ${supp}`    : "",
+        ].filter(Boolean).join("\n");
       }
-    } catch {
-      // keep raw
-    }
+    } catch { /* keep raw */ }
   }
 
-  return s;
+  return notesStr;
 }
 
+/**
+ * pickSupplements
+ *
+ * Reads planJson.supplements and returns:
+ *   items  — array of { k, label, value, affiliateLink?, imageUrl?, pricePerServing? }
+ *   notes  — string dosing notes
+ *
+ * Priority: product object (new) → legacy string (old) → skip
+ *
+ * The 5 active categories mirror SUPP_CATEGORIES in PlanBuilderForm:
+ *   Pre-Workout, Protein Powder, Creatine, Protein Bars, BCAAs
+ * Legacy electrolytes kept for backward compat with old plans.
+ */
 export function pickSupplements({ planJson }) {
   const src =
-    (planJson?.supplements && typeof planJson.supplements === "object" ? planJson.supplements : null) ||
+    (planJson?.supplements && typeof planJson.supplements === "object"
+      ? planJson.supplements
+      : null) ||
     (planJson?.recommendations && typeof planJson.recommendations === "object"
       ? planJson.recommendations
       : null) ||
     planJson;
 
-  const protein = safeText(src?.proteinRecommendation);
-  const creatine = safeText(src?.creatineRecommendation);
-  const bcaa = safeText(src?.bcaaRecommendation);
-  const electrolytes = safeText(src?.electrolytesRecommendation);
-  const notes = safeText(src?.notesSupplements);
+  // Helper — try the product object first, fall back to the string recommendation
+  function resolveItem({ k, label, productKey, stringKey }) {
+    const product = src?.[productKey];
+
+    // Valid product object from the new picker
+    if (product && typeof product === "object" && safeText(product.name)) {
+      return {
+        k,
+        label,
+        value:          safeText(product.name),
+        affiliateLink:  safeText(product.affiliateLink || ""),
+        imageUrl:       safeText(product.imageUrl      || ""),
+        pricePerServing: product.pricePerServing != null
+          ? Number(product.pricePerServing) || null
+          : null,
+      };
+    }
+
+    // Legacy string recommendation
+    const str = safeText(src?.[stringKey]);
+    if (str) {
+      return { k, label, value: str };
+    }
+
+    return null;
+  }
 
   const items = [
-    protein ? { k: "protein", label: "Protein", value: protein } : null,
-    creatine ? { k: "creatine", label: "Creatine", value: creatine } : null,
-    bcaa ? { k: "bcaa", label: "BCAA/EAA", value: bcaa } : null,
-    electrolytes ? { k: "electrolytes", label: "Electrolytes", value: electrolytes } : null,
+    resolveItem({ k: "preWorkout",   label: "Pre-Workout",    productKey: "preWorkoutProduct",  stringKey: "preWorkoutRecommendation"   }),
+    resolveItem({ k: "protein",      label: "Protein",        productKey: "proteinProduct",     stringKey: "proteinRecommendation"      }),
+    resolveItem({ k: "creatine",     label: "Creatine",       productKey: "creatineProduct",    stringKey: "creatineRecommendation"     }),
+    resolveItem({ k: "proteinBar",   label: "Protein Bars",   productKey: "proteinBarProduct",  stringKey: "proteinBarRecommendation"   }),
+    resolveItem({ k: "bcaa",         label: "BCAA / EAA",     productKey: "bcaaProduct",        stringKey: "bcaaRecommendation"         }),
+    // Legacy — kept so old plans still render
+    resolveItem({ k: "electrolytes", label: "Electrolytes",   productKey: "electrolytesProduct", stringKey: "electrolytesRecommendation" }),
   ].filter(Boolean);
+
+  const notes = safeText(src?.notesSupplements || planJson?.notes?.supplements || "");
 
   return { items, notes };
 }

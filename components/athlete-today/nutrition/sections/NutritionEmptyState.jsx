@@ -1,74 +1,23 @@
-// components/athlete-today/nutrition/sections/NutritionEmptyState.jsx
 "use client";
 
 import { useMemo } from "react";
 import {
-  CalendarDays,
-  Info,
-  RefreshCcw,
-  ArrowRight,
-  CheckCircle2,
-  Sparkles,
-  ShieldCheck,
+  CalendarDays, RefreshCcw, ArrowRight,
+  CheckCircle2, ShieldCheck,
 } from "lucide-react";
 import { safeText, fmtHumanDate } from "../helpers";
 
-/**
- * NutritionEmptyState
- * Goals:
- * ✅ Premium soft SaaS styling (matches your other nutrition sections)
- * ✅ Strong hierarchy: headline → explanation → next-plan date (if any) → actions
- * ✅ Mobile-safe wrapping (min-w-0, truncate, whitespace-nowrap where needed)
- * ✅ Adds “alive” feel: icon bubble, subtle accent bar, guidance checklist
- */
-
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
-
-function SoftCard({ children, className = "" }) {
-  return (
-    <div
-      className={cx(
-        "relative rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden",
-        className
-      )}
-    >
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#46769B] via-blue-400 to-emerald-400 opacity-70" />
-      <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-blue-50/35 to-white/0" />
-      <div className="relative p-4">{children}</div>
-    </div>
-  );
-}
-
-function HintCard({ children }) {
-  return (
-    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 overflow-visible">
-      {children}
-    </div>
-  );
-}
-
-function IconBubble({ children }) {
-  return (
-    <div className="shrink-0 h-10 w-10 rounded-2xl border border-blue-100 bg-blue-50 flex items-center justify-center">
-      {children}
-    </div>
-  );
-}
+const C = {
+  brand:       "#1E3A5F",
+  brandBg:     "#EEF3F8",
+  brandBorder: "#C5D5E8",
+};
 
 function PrimaryButton({ onClick, children, disabled = false }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={cx(
-        "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl",
-        "bg-[#46769B] text-white text-sm font-semibold hover:brightness-110 transition",
-        disabled ? "opacity-70 cursor-not-allowed" : ""
-      )}
-    >
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+      style={{ backgroundColor: C.brand }}>
       {children}
     </button>
   );
@@ -76,16 +25,8 @@ function PrimaryButton({ onClick, children, disabled = false }) {
 
 function SecondaryButton({ onClick, children, disabled = false }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={cx(
-        "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl",
-        "bg-white border border-gray-200 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition",
-        disabled ? "opacity-70 cursor-not-allowed" : ""
-      )}
-    >
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:bg-gray-50 transition disabled:opacity-60">
       {children}
     </button>
   );
@@ -98,145 +39,108 @@ export default function NutritionEmptyState({
   onOpenNutrition,
   onRefresh,
 }) {
-  const hasMsg = Boolean(safeText(message));
+  const hasMsg  = Boolean(safeText(message));
   const nextEff = safeText(nextPlan?.effectiveDate);
-
-  const title = showUpcoming ? "Plan starts soon" : "No plan yet";
+  const title   = showUpcoming ? "Plan starts soon" : "No plan yet";
 
   const body = useMemo(() => {
-    if (!showUpcoming) {
-      return "Your coach hasn’t assigned a nutrition plan. Check back soon.";
-    }
-
-    if (hasMsg) return String(message);
-
-    if (nextEff) {
-      return `No plan is effective for this date. Next plan starts ${fmtHumanDate(String(nextEff))}.`;
-    }
-
-    return "No plan is effective for this date.";
+    if (!showUpcoming) return "Your coach hasn't assigned a nutrition plan yet. Check back soon.";
+    if (hasMsg)  return String(message);
+    if (nextEff) return `No plan active for this date. Next plan starts ${fmtHumanDate(String(nextEff))}.`;
+    return "No plan is active for this date.";
   }, [showUpcoming, hasMsg, message, nextEff]);
 
   return (
     <div className="mt-4 space-y-3">
-      {/* Main empty state card */}
-      <SoftCard>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <IconBubble>
-              <CalendarDays className="w-5 h-5 text-[#46769B]" />
-            </IconBubble>
+
+      {/* Main card */}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+        style={{ borderTop: `3px solid ${C.brand}` }}>
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 h-9 w-9 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: C.brandBg, border: `1px solid ${C.brandBorder}` }}>
+              <CalendarDays className="w-4 h-4" style={{ color: C.brand }} />
+            </span>
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-extrabold text-gray-900 truncate">{title}</p>
-
-                {showUpcoming ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-                    <Sparkles className="w-3.5 h-3.5" />
+                <p className="text-sm font-extrabold text-gray-900">{title}</p>
+                {showUpcoming && (
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 leading-none">
                     Upcoming
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
-                    <Info className="w-3.5 h-3.5" />
-                    Suggested
-                  </span>
                 )}
-
-                {nextEff ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-900">
-                    <CalendarDays className="w-3.5 h-3.5" />
+                {nextEff && (
+                  <span className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none"
+                    style={{ borderColor: C.brandBorder, backgroundColor: C.brandBg, color: C.brand }}>
+                    <CalendarDays className="w-3 h-3" />
                     Starts {fmtHumanDate(String(nextEff))}
                   </span>
-                ) : null}
-              </div>
-
-              <p className="text-sm text-gray-600 mt-1">
-                {showUpcoming && !hasMsg && nextEff ? (
-                  <>
-                    No plan is effective for this date.{" "}
-                    <span className="font-semibold text-gray-800">
-                      Next plan starts {fmtHumanDate(String(nextEff))}
-                    </span>
-                    .
-                  </>
-                ) : (
-                  body
                 )}
-              </p>
-
-              <p className="text-[11px] text-gray-500 mt-2">
-                Nutrition targets are guidance — not mandatory like workouts.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="mt-4 flex flex-col sm:flex-row gap-2">
-          <SecondaryButton onClick={onOpenNutrition}>
-            Open Nutrition
-            <ArrowRight className="w-4 h-4" />
-          </SecondaryButton>
-
-          <PrimaryButton onClick={onRefresh}>
-            <RefreshCcw className="w-4 h-4" />
-            Refresh
-          </PrimaryButton>
-        </div>
-
-        {/* Subtle “next steps” strip */}
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-semibold text-gray-900">What you can do right now</p>
-
-          <div className="mt-2 grid gap-2 text-[12px] text-gray-700">
-            <div className="flex items-start gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <p className="min-w-0">
-                If you’re on campus, build meals around a{" "}
-                <span className="font-semibold">protein anchor</span> + a carb that supports training.
-              </p>
-            </div>
-
-            <div className="flex items-start gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <p className="min-w-0">
-                Keep hydration steady. A bottle with measured ounces makes this automatic.
-              </p>
-            </div>
-
-            <div className="flex items-start gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <p className="min-w-0">
-                Don’t chase perfect labels — aim for{" "}
-                <span className="font-semibold">repeatable portions</span> you can execute daily.
+              </div>
+              <p className="text-sm text-gray-600 mt-1.5 leading-snug">{body}</p>
+              <p className="text-[11px] text-gray-500 mt-1">
+                Nutrition targets are guidance, not mandatory like workouts.
               </p>
             </div>
           </div>
-        </div>
-      </SoftCard>
 
-      {/* Guidance card */}
-      <HintCard>
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 h-10 w-10 rounded-2xl border border-blue-200 bg-white/70 flex items-center justify-center">
-            <ShieldCheck className="w-5 h-5 text-blue-900" />
+          {/* Actions */}
+          <div className="mt-4 flex flex-col sm:flex-row gap-2">
+            <SecondaryButton onClick={onOpenNutrition}>
+              Open Nutrition
+              <ArrowRight className="w-4 h-4" />
+            </SecondaryButton>
+            <PrimaryButton onClick={onRefresh}>
+              <RefreshCcw className="w-4 h-4" />
+              Refresh
+            </PrimaryButton>
           </div>
 
+          {/* What to do now */}
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-900 mb-2">What you can do right now</p>
+            <div className="space-y-2 text-[12px] text-gray-700">
+              {[
+                "Build meals around a protein anchor + a training carb.",
+                "Keep hydration steady — a measured bottle makes it automatic.",
+                "Aim for repeatable portions, not perfect labels.",
+              ].map((line) => (
+                <div key={line} className="flex items-start gap-2 min-w-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <p className="min-w-0">{line}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Hint card */}
+      <div className="rounded-2xl overflow-hidden"
+        style={{ border: `1px solid ${C.brandBorder}`, backgroundColor: C.brandBg }}>
+        <div className="p-4 flex items-start gap-3">
+          <span className="shrink-0 h-9 w-9 rounded-xl flex items-center justify-center"
+            style={{ backgroundColor: "#fff", border: `1px solid ${C.brandBorder}` }}>
+            <ShieldCheck className="w-4 h-4" style={{ color: C.brand }} />
+          </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-blue-900">How to use this</p>
-            <p className="text-sm text-blue-900/80 mt-1">
-              Targets are guidance — not “mandatory” like workouts. Focus on the big rocks:
-              <span className="font-semibold"> protein</span>, <span className="font-semibold">hydration</span>,
-              and <span className="font-semibold">reasonable portions</span>. If you do those consistently, you’re winning.
+            <p className="text-sm font-semibold" style={{ color: C.brand }}>How to use this</p>
+            <p className="text-sm mt-1 leading-snug" style={{ color: `${C.brand}cc` }}>
+              Targets are guidance. Focus on{" "}
+              <span className="font-semibold">protein</span>,{" "}
+              <span className="font-semibold">hydration</span>, and{" "}
+              <span className="font-semibold">consistent portions</span>. That covers 80% of the plan.
             </p>
-
-            <p className="text-[11px] text-blue-900/70 mt-2">
-              Tip: If you’re seeing “No plan yet” for multiple days, ask your coach to publish a plan effective date.
-            </p>
+            {showUpcoming && (
+              <p className="text-[11px] mt-2" style={{ color: `${C.brand}99` }}>
+                Seeing "No plan yet" for multiple days? Ask your coach to set the plan effective date.
+              </p>
+            )}
           </div>
         </div>
-      </HintCard>
+      </div>
     </div>
   );
 }

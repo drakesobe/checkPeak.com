@@ -9,16 +9,43 @@ function asString(v) {
   return String(v ?? "").trim();
 }
 
+// Recursively strip invalid JSON escape sequences (e.g. \_ in Amazon image URLs).
+// JSON only allows: \" \\ \/ \b \f \n \r \t \uXXXX
+// Any other \X is reduced to just X so JSON.stringify produces valid output.
+function sanitizeForJson(obj) {
+  if (typeof obj === "string") {
+    return obj.replace(/\\([^"\\\/bfnrtu])/g, "$1");
+  }
+  if (Array.isArray(obj)) return obj.map(sanitizeForJson);
+  if (obj && typeof obj === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) out[k] = sanitizeForJson(v);
+    return out;
+  }
+  return obj;
+}
+
 function safeJsonStringify(obj) {
   if (!obj) return "";
   if (typeof obj === "string") return obj;
-  try { return JSON.stringify(obj); } catch { return ""; }
+  try { return JSON.stringify(sanitizeForJson(obj)); } catch { return ""; }
 }
 
 function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+
+  // First attempt — clean parse
+  try { return JSON.parse(raw); }
+  catch { /* fall through */ }
+
+  // Second attempt — strip invalid escape sequences then retry
+  try {
+    const sanitized = raw.replace(/\\([^"\\\/bfnrtu])/g, "$1");
+    return JSON.parse(sanitized);
+  } catch {
+    return null;
+  }
 }
 
 function escapeAirtableString(str = "") {
@@ -99,7 +126,7 @@ const PLAN_ATH_LINK    = "Athlete";
 const PLAN_STATUS      = "Status";
 const PLAN_CREATED_AT  = "CreatedAt";
 const PLAN_UPDATED_AT  = "UpdatedAt";
-const PLAN_ARCHIVED_AT = "ArchivedAt";   // ← new: stamp when archiving
+const PLAN_ARCHIVED_AT = "ArchivedAt";
 const PLAN_CREATED_BY  = "CreatedBy";
 
 const PLAN_PHASE      = "Phase";
@@ -109,8 +136,8 @@ const PLAN_DCARB      = "DailyCarbs";
 const PLAN_DFAT       = "DailyFat";
 const PLAN_DHYDRATION = "DailyHydration";
 
-const PLAN_JSON         = "PlanJson";
-const PLAN_PRESCRIPTION = "Prescription";
+const PLAN_JSON                = "PlanJson";
+const PLAN_PRESCRIPTION        = "Prescription";
 const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
 
 /* ---------------- handler ---------------- */
@@ -203,7 +230,7 @@ export default async function handler(req, res) {
     }
 
     /* ── 2) find all existing active plans for this athlete ── */
-    const planAthMatch      = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
+    const planAthMatch       = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
     const latestActiveFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
 
     const existingActive = await plansTable
@@ -242,7 +269,7 @@ export default async function handler(req, res) {
       pjDaily?.hydrationOz, pjDaily?.hydration, pjDaily?.waterOz, pjDaily?.water
     );
 
-    /* ── 5) merge PlanJson ── */
+    /* ── 5) merge and sanitize PlanJson before storing ── */
     const mergedPlanJson = planJsonObj && typeof planJsonObj === "object"
       ? {
           ...planJsonObj,
@@ -268,6 +295,8 @@ export default async function handler(req, res) {
           },
         };
 
+    // safeJsonStringify runs sanitizeForJson first — strips \_ and other
+    // invalid escape sequences from Amazon URLs before writing to Airtable.
     const planJsonString = safeJsonStringify(mergedPlanJson);
 
     /* ── 6) always create a fresh active plan ── */
@@ -294,9 +323,9 @@ export default async function handler(req, res) {
         : {}),
     };
 
-    if (ENABLE_TOKEN_TEXT_MIRROR)          fields["AthleteTokenText"]        = athleteToken;
+    if (ENABLE_TOKEN_TEXT_MIRROR) fields["AthleteTokenText"] = athleteToken;
     if (ENABLE_EFFECTIVE_DATE_TEXT_MIRROR && effectiveDate)
-                                            fields["Meta Effective Date ISO"] = effectiveDate;
+      fields["Meta Effective Date ISO"] = effectiveDate;
 
     const saved = await plansTable.create(fields);
 

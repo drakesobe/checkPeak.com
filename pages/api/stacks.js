@@ -64,8 +64,9 @@ export default async function handler(req, res) {
         f["AffiliateLink"]          ||
         "";
       const imageUrl = f["Image URL"] || "";
-      const rating       = Number.isFinite(Number(f["Rating"]))      ? Number(f["Rating"])      : null;
-      const reviewCount  = Number.isFinite(Number(f["ReviewCount"])) ? Number(f["ReviewCount"]) : null;
+      const rating       = Number.isFinite(Number(f["Review Rating"])) ? Number(f["Review Rating"]) : null;
+      const reviewCount  = Number.isFinite(Number(f["Reviews"]))       ? Number(f["Reviews"])       : null;
+      const boughtLastMonth = Number.isFinite(Number(f["Bought"]))     ? Number(f["Bought"])        : null;
 
       let valueScore = Number.isFinite(Number(f["Value Rating"])) ? Number(f["Value Rating"]) : null;
       if (valueScore == null && price && servings) valueScore = (servings / price) * 10;
@@ -81,6 +82,7 @@ export default async function handler(req, res) {
         nutritionLabel,
         rating,
         reviewCount,
+        boughtLastMonth,
         Price:    price,
         Servings: servings,
         pricePerServing: price != null && servings != null && servings > 0 ? price / servings : null,

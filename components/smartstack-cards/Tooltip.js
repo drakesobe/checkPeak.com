@@ -2,10 +2,31 @@
 
 export default function Tooltip({ content, children }) {
   return (
-    <div className="relative group inline-block">
+    <div className="relative group inline-flex">
       {children}
-      <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 px-2 py-1 text-xs bg-gray-800 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-        {content}
+      <div
+        className="absolute top-full left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50"
+        style={{ marginTop: 4 }}
+      >
+        <div
+          style={{
+            background:    "rgba(15,20,28,0.96)",
+            border:        "1px solid rgba(255,255,255,0.1)",
+            borderRadius:  6,
+            padding:       "4px 8px",
+            fontSize:      10,
+            fontFamily:    "'Barlow Condensed', sans-serif",
+            fontWeight:    500,
+            letterSpacing: "0.02em",
+            color:         "rgba(255,255,255,0.75)",
+            whiteSpace:    "normal",
+            maxWidth:      160,
+            lineHeight:    1.4,
+            backdropFilter:"blur(6px)",
+          }}
+        >
+          {content}
+        </div>
       </div>
     </div>
   );

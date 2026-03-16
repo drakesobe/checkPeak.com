@@ -1,59 +1,41 @@
-import fetch from "node-fetch";
+// pages/api/smartstack.js
 
 export default async function handler(req, res) {
   const AIRTABLE_API_KEY = process.env.AFFILIATE_API_KEY;
-  const BASE_ID = process.env.AFFILIATE_BASE_ID;
-  const TABLE_ID = process.env.AFFILIATE_TABLE_NAME;
-  const VIEW_ID = "viwUcs1qpyxyLqkIM";
+  const BASE_ID          = process.env.AFFILIATE_BASE_ID;
+  const TABLE_ID         = process.env.AFFILIATE_TABLE_NAME;
+  const VIEW_ID          = "viwUcs1qpyxyLqkIM";
 
-  if (!AIRTABLE_API_KEY) {
-    return res.status(500).json({ error: "Missing AFFILIATE_API_KEY env var" });
-  }
-  if (!BASE_ID) {
-    return res.status(500).json({ error: "Missing AFFILIATE_BASE_ID env var" });
-  }
-  if (!TABLE_ID) {
-    return res.status(500).json({ error: "Missing AFFILIATE_TABLE_NAME env var" });
-  }
+  if (!AIRTABLE_API_KEY) return res.status(500).json({ error: "Missing AFFILIATE_API_KEY env var" });
+  if (!BASE_ID)          return res.status(500).json({ error: "Missing AFFILIATE_BASE_ID env var" });
+  if (!TABLE_ID)         return res.status(500).json({ error: "Missing AFFILIATE_TABLE_NAME env var" });
 
   const buildUrl = (offset) => {
     const params = new URLSearchParams();
     if (VIEW_ID) params.set("view", VIEW_ID);
     params.set("pageSize", "100");
     if (offset) params.set("offset", offset);
-
-    return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(
-      TABLE_ID
-    )}?${params.toString()}`;
+    return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_ID)}?${params.toString()}`;
   };
 
   try {
     let allRecords = [];
-    let offset = null;
+    let offset     = null;
 
     while (true) {
-      const url = buildUrl(offset);
-
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+      const response = await fetch(buildUrl(offset), {
+        headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}`, "Content-Type": "application/json" },
       });
 
       if (!response.ok) {
         const text = await response.text();
         console.error("Airtable fetch error:", response.status, text);
-        return res
-          .status(500)
-          .json({ error: "Failed to fetch Airtable: " + response.status });
+        return res.status(500).json({ error: "Failed to fetch Airtable: " + response.status });
       }
 
-      const data = await response.json();
-      const pageRecords = data.records || [];
-      allRecords = allRecords.concat(pageRecords);
-
-      offset = data.offset;
+      const data  = await response.json();
+      allRecords  = allRecords.concat(data.records || []);
+      offset      = data.offset;
       if (!offset) break;
     }
 
@@ -64,56 +46,51 @@ export default async function handler(req, res) {
       if (Array.isArray(f["Supplements"])) {
         supplements = f["Supplements"];
       } else if (typeof f["Supplements"] === "string") {
-        supplements = f["Supplements"]
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
+        supplements = f["Supplements"].split(",").map((s) => s.trim()).filter(Boolean);
       }
 
-      const priceNumber = Number(f["Price"]);
+      const priceNumber    = Number(f["Price"]);
       const servingsNumber = Number(f["Servings"]);
-
-      const price = Number.isFinite(priceNumber) ? priceNumber : null;
+      const price    = Number.isFinite(priceNumber)    ? priceNumber    : null;
       const servings = Number.isFinite(servingsNumber) ? servingsNumber : null;
 
       const nutritionLabel = f["Nutrition Label URL"] || "";
-      const affiliateLink =
+      const affiliateLink  =
         f["Lo. Amazon/Stripe Link"] ||
         f["Sh. Amazon/Stripe Link"] ||
-        f["AffiliateLink"] ||
-        "";
+        f["AffiliateLink"]          || "";
       const imageUrl = f["Image URL"] || "";
-      const rating = Number.isFinite(Number(f["Rating"])) ? Number(f["Rating"]) : null;
 
-      // Keep legacy score for fallback / compatibility
-      let valueScore = Number.isFinite(Number(f["Value Rating"]))
-        ? Number(f["Value Rating"])
-        : null;
+      // ── Review data — exact Airtable column names ──
+      const rating      = Number.isFinite(Number(f["Review Rating"])) ? Number(f["Review Rating"]) : null;
+      const reviewCount = Number.isFinite(Number(f["Reviews"]))       ? Number(f["Reviews"])       : null;
+      const boughtLastMonth = Number.isFinite(Number(f["Bought"]))    ? Number(f["Bought"])        : null;
 
-      if (valueScore == null && price && servings) {
-        valueScore = (servings / price) * 10;
-      }
+      // ── Value score ──
+      let valueScore = Number.isFinite(Number(f["Value Rating"])) ? Number(f["Value Rating"]) : null;
+      if (valueScore == null && price && servings) valueScore = (servings / price) * 10;
 
       return {
-        id: record.id,
-        name: f["Product Name"] || "No Name",
-        category: f["Category"] || "Misc",
+        id:       record.id,
+        name:     f["Product Name"] || "No Name",
+        category: f["Category"]     || "Misc",
         supplements,
-        notes: `Servings: ${servings ?? "N/A"} • Price: $${
-          price != null ? price.toFixed(2) : "0.00"
-        }`,
+        notes: `Servings: ${servings ?? "N/A"} • Price: $${price != null ? price.toFixed(2) : "0.00"}`,
         affiliateLink,
         imageUrl,
         nutritionLabel,
+
+        // Review signals
         rating,
+        reviewCount,
+        boughtLastMonth,
 
-        // IMPORTANT: expose these so the client can calculate category-bucket value
-        Price: price,
+        // Pricing
+        Price:    price,
         Servings: servings,
-        pricePerServing:
-          price != null && servings != null && servings > 0 ? price / servings : null,
+        pricePerServing: price != null && servings != null && servings > 0 ? price / servings : null,
 
-        // Legacy / fallback field
+        // Value
         valueScore,
 
         rawFields: f,

@@ -420,7 +420,6 @@ function LoadingGrid() {
             style={{ background: "#0D1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "16px" }}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}
           >
-            {/* image placeholder */}
             <div className="relative w-full ss-shimmer" style={{ aspectRatio: "3/2" }}>
               <div className="absolute top-2 left-2 w-14 h-5 rounded-lg" style={{ background: "rgba(255,255,255,0.04)" }} />
               <div className="absolute top-2 right-2 w-7 h-7 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
@@ -462,7 +461,6 @@ function EmptyState({ onClearAll, searchQuery, onCategoryChange }) {
         {searchQuery ? "Try a different name or browse by category below." : "Try broadening your search or clearing active filters."}
       </p>
 
-      {/* Suggested categories */}
       {onCategoryChange && (
         <div className="flex flex-wrap gap-2 justify-center mb-5">
           {suggestedCategories.map((cat) => (
@@ -681,10 +679,10 @@ export default function SmartStackPage() {
     return result;
   }, [allStacks, activeCategory, activeVitaminCategory, activeValueFilters, bucketStats, showSavedOnly, savedStackIDs, debouncedSearchQuery]);
 
-  const totalCount    = allStacks.length;
-  const visibleCount  = filteredStacks.length;
+  const totalCount     = allStacks.length;
+  const visibleCount   = filteredStacks.length;
   const effectiveLimit = visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
-  const pageStacks    = filteredStacks.map((stack) => ({
+  const pageStacks     = filteredStacks.map((stack) => ({
     ...stack,
     valueScore:       getValueScore(stack, bucketStats),
     valueLabel:       getValueLabel(stack, bucketStats),
@@ -771,7 +769,6 @@ export default function SmartStackPage() {
       <div className="px-4 sm:px-6 pt-4 sm:pt-8 pb-3 sm:pb-4">
         <div className="max-w-7xl mx-auto">
 
-          {/* Badge row */}
           <div className="flex items-center gap-2.5 mb-2 flex-wrap">
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest shrink-0"
@@ -787,7 +784,6 @@ export default function SmartStackPage() {
             )}
           </div>
 
-          {/* Headline — SEO-targeted, always visible */}
           <h1
             className="font-black text-white leading-none"
             style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.01em", fontSize: "clamp(1.75rem, 6vw, 2.6rem)" }}
@@ -796,13 +792,11 @@ export default function SmartStackPage() {
             <span className="block" style={{ color: "#5B9EC9" }}>Made Simple.</span>
           </h1>
 
-          {/* Sub-headline — hidden on mobile */}
           <p className="hidden sm:block mt-2 text-sm max-w-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
             Compare pre-workouts, protein powders, vitamins, and more — side-by-side value ratings,
             price-per-serving, and ingredient breakdowns{totalCount > 0 ? ` for ${totalCount} supplements` : ""} in one place.
           </p>
 
-          {/* Social proof stat bar — mobile only shows inline, desktop full row */}
           {!loading && totalCount > 0 && (
             <div className="flex items-center gap-3 mt-2.5 sm:mt-3 flex-wrap">
               {[
@@ -821,7 +815,7 @@ export default function SmartStackPage() {
         </div>
       </div>
 
-      {/* ── COMPARE NUDGE — shown until first compare selection ──────────── */}
+      {/* ── COMPARE NUDGE ─────────────────────────────────────────────────── */}
       <AnimatePresence>
         {!nudgeDismissed && compareCount === 0 && !loading && allStacks.length > 0 && (
           <div className="max-w-7xl mx-auto" onClick={() => setNudgeDismissed(true)}>
@@ -837,7 +831,7 @@ export default function SmartStackPage() {
           background:     "rgba(10,12,16,0.97)",
           backdropFilter: "blur(14px)",
           borderBottom:   "1px solid rgba(255,255,255,0.06)",
-          overflow:       "hidden", /* clip blur artifact, but children scroll via -mx trick */
+          overflow:       "hidden",
         }}
       >
         <div className="max-w-7xl mx-auto">
@@ -868,10 +862,12 @@ export default function SmartStackPage() {
             </div>
           </div>
 
-          {/* Mobile: single pill row — Category, Value filters, Saved */}
-          <div className="sm:hidden flex items-center gap-2 px-4 pb-2.5 pt-1">
+          {/* ── MOBILE pill row ─────────────────────────────────────────────
+              PATCH 1: Value pills bigger, labeled with short text, glow on active
+          ─────────────────────────────────────────────────────────────────── */}
+          <div className="sm:hidden flex items-center gap-2 px-4 pb-2.5 pt-1 overflow-x-auto scrollbar-none">
 
-            {/* Category button — opens drawer, shows active category */}
+            {/* Category button */}
             <button
               type="button"
               onClick={() => setFilterDrawerOpen(true)}
@@ -900,34 +896,43 @@ export default function SmartStackPage() {
               )}
             </button>
 
-            {/* Divider */}
             <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
 
-            {/* Value filter pills — inline, no scroll needed (only 4) */}
+            {/* Value filter pills — larger, labeled, glow when active */}
             {VALUE_FILTERS.map((filter) => {
               const active = activeValueFilters.includes(filter);
               const colors = VALUE_COLOR[filter];
-              // Short labels to fit on one line
               const shortLabel = { "Best Value": "Best", "Good Value": "Good", "Decent Value": "Decent", "Value N/A": "N/A" }[filter];
               return (
-                <button key={filter} type="button" onClick={() => toggleValueFilter(filter)}
-                  className="flex items-center gap-1 rounded-full text-[11px] font-semibold transition-all"
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => toggleValueFilter(filter)}
+                  className="flex items-center gap-1 rounded-full transition-all"
                   style={{
-                    flexShrink: 0, padding: "5px 9px",
-                    background: active ? colors.bg : "rgba(255,255,255,0.04)",
-                    border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.08)",
-                    color: active ? colors.text : "rgba(255,255,255,0.45)",
+                    flexShrink:    0,
+                    padding:       active ? "5px 10px" : "5px 9px",
+                    background:    active ? colors.bg   : "rgba(255,255,255,0.04)",
+                    border:        active ? `1.5px solid ${colors.border}` : "1px solid rgba(255,255,255,0.09)",
+                    color:         active ? colors.text : "rgba(255,255,255,0.5)",
+                    fontFamily:    "'Barlow Condensed', sans-serif",
+                    fontSize:      12,
+                    fontWeight:    active ? 700 : 500,
+                    letterSpacing: "0.02em",
+                    boxShadow:     active ? `0 0 10px ${colors.border}` : "none",
                   }}
                   aria-pressed={active}
                   aria-label={filter}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: colors.text, opacity: active ? 1 : 0.35 }} aria-hidden="true" />
+                  <span
+                    style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: colors.text, opacity: active ? 1 : 0.3 }}
+                    aria-hidden="true"
+                  />
                   {shortLabel}
                 </button>
               );
             })}
 
-            {/* Divider */}
             <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
 
             {/* Saved toggle */}
@@ -946,7 +951,10 @@ export default function SmartStackPage() {
             </button>
           </div>
 
-          {/* Desktop: category + value filter rows */}
+          {/* ── DESKTOP filter rows ──────────────────────────────────────────
+              PATCH 2: Value row changed from hidden lg:flex → hidden sm:flex
+              so it appears on tablet too. Active state gets glow treatment.
+          ─────────────────────────────────────────────────────────────────── */}
           <div className="hidden sm:block">
             <div className="px-6 flex items-center gap-1.5 py-1.5 flex-wrap" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
               <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none" style={{ color: "rgba(255,255,255,0.25)" }}>Category</span>
@@ -983,7 +991,8 @@ export default function SmartStackPage() {
               </div>
             )}
 
-            <div className="px-6 hidden lg:flex items-center gap-2.5 py-1.5 pb-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            {/* Value row — now sm:flex (was lg:flex), higher-contrast active state */}
+            <div className="px-6 hidden sm:flex items-center gap-2.5 py-2 pb-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
               <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none" style={{ color: "rgba(255,255,255,0.25)" }}>Value</span>
               {VALUE_FILTERS.map((filter) => {
                 const active = activeValueFilters.includes(filter);
@@ -992,7 +1001,13 @@ export default function SmartStackPage() {
                   <motion.button key={filter} type="button" onClick={() => toggleValueFilter(filter)}
                     whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                     className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
-                    style={{ background: active ? colors.bg : "rgba(255,255,255,0.04)", border: active ? `1px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)", color: active ? colors.text : "rgba(255,255,255,0.6)" }}
+                    style={{
+                      background: active ? colors.bg   : "rgba(255,255,255,0.04)",
+                      border:     active ? `1.5px solid ${colors.border}` : "1px solid rgba(255,255,255,0.07)",
+                      color:      active ? colors.text : "rgba(255,255,255,0.55)",
+                      fontWeight: active ? 700 : 500,
+                      boxShadow:  active ? `0 0 8px ${colors.border}` : "none",
+                    }}
                   >
                     <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colors.text, opacity: active ? 1 : 0.35 }} />
                     {filter}
@@ -1050,14 +1065,57 @@ export default function SmartStackPage() {
           <LoadingGrid />
         ) : (
           <>
-            {/* Desktop count */}
-            {visibleCount > 0 && (
-              <p className="hidden sm:block mb-4 text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                Showing <span style={{ color: "rgba(255,255,255,0.8)" }}>{effectiveLimit}</span> of{" "}
-                <span style={{ color: "rgba(255,255,255,0.8)" }}>{visibleCount}</span>
-                {visibleCount !== totalCount && " matching stacks"}
-              </p>
-            )}
+            {/* ── PATCH 3: Live result count — all screen sizes, with inline clear ──
+                Replaces the old hidden sm:block desktop-only count.
+                Animates when count changes. Shows "Clear filters" shortcut.
+            ─────────────────────────────────────────────────────────────────── */}
+            <div className="flex items-center justify-between mb-4">
+              <motion.p
+                key={`${visibleCount}-${effectiveLimit}`}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className="text-[12px]"
+                style={{ color: "rgba(255,255,255,0.45)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                {visibleCount === 0 ? (
+                  <span style={{ color: "rgba(255,255,255,0.3)" }}>No results</span>
+                ) : (
+                  <>
+                    Showing{" "}
+                    <span style={{ color: "rgba(255,255,255,0.85)", fontWeight: 700 }}>{effectiveLimit}</span>
+                    {" "}of{" "}
+                    <span style={{ color: "rgba(255,255,255,0.85)", fontWeight: 700 }}>{visibleCount}</span>
+                    {hasActiveFilters && visibleCount !== totalCount && (
+                      <span style={{ color: "rgba(255,255,255,0.35)" }}> matching</span>
+                    )}
+                  </>
+                )}
+              </motion.p>
+
+              {hasActiveFilters && (
+                <motion.button
+                  type="button"
+                  onClick={clearAllFilters}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-[11px] flex items-center gap-1"
+                  style={{
+                    color:      "rgba(255,255,255,0.35)",
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    background: "none",
+                    border:     "none",
+                    cursor:     "pointer",
+                    padding:    0,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.35)"; }}
+                >
+                  <FaTimes size={8} />
+                  Clear filters
+                </motion.button>
+              )}
+            </div>
 
             <AnimatePresence mode="wait">
               {pageStacks.length > 0 ? (
@@ -1106,7 +1164,6 @@ export default function SmartStackPage() {
               </p>
             )}
 
-            {/* Scroll to top — appears after scrolling down on mobile */}
             <ScrollToTopButton />
           </>
         )}

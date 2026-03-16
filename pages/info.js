@@ -12,7 +12,14 @@ import InfoCard          from "@/components/info/InfoCard";
 import ResourceLink      from "@/components/info/ResourceLink";
 import ComplianceSection from "@/components/info/ComplianceSection";
 
-import * as InfoContent from "@/lib/info/infoContent";
+// ── Named imports — eliminates webpack "not exported" warnings ───────────────
+import {
+  infoHero,
+  howItWorksSteps,
+  productPillars,
+  positioningCards,
+  safetyNotes,
+} from "@/lib/info/infoContent";
 import { ncaaWordingCallouts }                      from "@/lib/compliance/ncaaWording";
 import { ncaaResourceBackbone, NCAA_LAST_REVIEWED } from "@/lib/compliance/ncaaSources";
 
@@ -111,29 +118,19 @@ function StepCard({ step, index }) {
         borderTop: `4px solid ${stepColor}`,
       }}
     >
-      {/* Watermark step number */}
       <span
         className="bc absolute top-2 right-3 font-black select-none pointer-events-none"
-        style={{
-          fontSize: "5rem",
-          lineHeight: 1,
-          color: `${stepColor}22`,
-          userSelect: "none",
-        }}
+        style={{ fontSize: "5rem", lineHeight: 1, color: `${stepColor}22`, userSelect: "none" }}
         aria-hidden
       >
         {index + 1}
       </span>
 
       <div className="relative p-5 sm:p-6 flex flex-col flex-1">
-        {/* Step badge + icon */}
         <div className="flex items-center gap-3 mb-4">
           <span
             className="bc inline-flex items-center justify-center w-7 h-7 font-black text-xs shrink-0"
-            style={{
-              backgroundColor: stepColor,
-              color: "#fff",
-            }}
+            style={{ backgroundColor: stepColor, color: "#fff" }}
           >
             {index + 1}
           </span>
@@ -145,34 +142,18 @@ function StepCard({ step, index }) {
           </div>
         </div>
 
-        {/* Title */}
         <h3
           className="bc font-black uppercase leading-tight mb-2"
-          style={{
-            fontSize: "1.05rem",
-            color: DS.bodyText,
-            letterSpacing: "0.04em",
-          }}
+          style={{ fontSize: "1.05rem", color: DS.bodyText, letterSpacing: "0.04em" }}
         >
           {step.label}
         </h3>
 
-        {/* Body */}
-        <p
-          className="bw text-sm leading-relaxed flex-1"
-          style={{ color: DS.labelText }}
-        >
+        <p className="bw text-sm leading-relaxed flex-1" style={{ color: DS.labelText }}>
           {step.description}
         </p>
 
-        {/* Outcome */}
-        <div
-          className="mt-4 px-3 py-2"
-          style={{
-            backgroundColor: DS.brandBg,
-            borderLeft: `3px solid ${stepColor}`,
-          }}
-        >
+        <div className="mt-4 px-3 py-2" style={{ backgroundColor: DS.brandBg, borderLeft: `3px solid ${stepColor}` }}>
           <p className="bw text-xs sm:text-sm" style={{ color: stepColor }}>
             <span className="font-bold">Outcome: </span>
             <span>{step.outcome}</span>
@@ -192,11 +173,7 @@ function CtaButton({ href, icon, children, primary = false }) {
         style={
           primary
             ? { backgroundColor: "#fff", color: DS.brand }
-            : {
-                backgroundColor: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.22)",
-                color: "#fff",
-              }
+            : { backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.22)", color: "#fff" }
         }
         onMouseEnter={(e) => {
           e.currentTarget.style.filter = primary ? "brightness(0.95)" : "none";
@@ -218,24 +195,21 @@ function CtaButton({ href, icon, children, primary = false }) {
 // ─── Divider ─────────────────────────────────────────────────────────────────
 function Divider() {
   return (
-    <div
-      className="max-w-6xl mx-auto px-4 sm:px-6"
-      style={{ borderTop: `1px solid ${DS.border}` }}
-    />
+    <div className="max-w-6xl mx-auto px-4 sm:px-6" style={{ borderTop: `1px solid ${DS.border}` }} />
   );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function InfoPage() {
-  const infoHero         = InfoContent?.infoHero          || {};
-  const howItWorksSteps  = Array.isArray(InfoContent?.howItWorksSteps)  ? InfoContent.howItWorksSteps  : [];
-  const productPillars   = Array.isArray(InfoContent?.productPillars)   ? InfoContent.productPillars   : [];
-  const positioningCards = Array.isArray(InfoContent?.positioningCards) ? InfoContent.positioningCards : [];
-  const safetyNotes      = Array.isArray(InfoContent?.safetyNotes)      ? InfoContent.safetyNotes      : [];
-  const heroPills        = Array.isArray(infoHero?.pills) ? infoHero.pills : [];
-  const primaryCta       = infoHero?.primaryCta   || { href: "/nutrition-label-scanner", label: "Scan a Label" };
-  const secondaryCta     = infoHero?.secondaryCta || { href: "/search", label: "Search Ingredients" };
-  const safety           = safetyNotes[0] || null;
+  // Derive convenience values from the named imports directly
+  const heroPills    = Array.isArray(infoHero?.pills) ? infoHero.pills : [];
+  const primaryCta   = infoHero?.primaryCta   || { href: "/nutrition-label-scanner", label: "Scan a Label" };
+  const secondaryCta = infoHero?.secondaryCta || { href: "/search", label: "Search Ingredients" };
+  const safety       = Array.isArray(safetyNotes) && safetyNotes.length > 0 ? safetyNotes[0] : null;
+
+  const steps   = Array.isArray(howItWorksSteps)  ? howItWorksSteps  : [];
+  const pillars = Array.isArray(productPillars)   ? productPillars   : [];
+  const cards   = Array.isArray(positioningCards) ? positioningCards : [];
 
   return (
     <>
@@ -251,28 +225,21 @@ export default function InfoPage() {
       <div className="bw min-h-screen" style={{ backgroundColor: DS.pageBg }}>
 
         {/* ══════════════════════════════════════════════════════════════════
-            1. HERO — dark navy, massive editorial type
+            1. HERO
            ══════════════════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: DS.brand }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-12 sm:pt-20 sm:pb-16">
             <div className="grid lg:grid-cols-12 gap-10 items-start">
 
-              {/* Left — headline block */}
               <div className="lg:col-span-7">
                 <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ duration: 0.5 }}>
                   <Eyebrow light>
                     {infoHero?.kicker || "CheckPeak · Athlete Tools + Team Workflows"}
                   </Eyebrow>
 
-                  {/* Main headline — massive condensed */}
                   <h1
                     className="bc font-black leading-none mb-5"
-                    style={{
-                      fontSize: "clamp(1.9rem, 6vw, 3.5rem)",
-                      color: "#fff",
-                      letterSpacing: "0.01em",
-                      textTransform: "uppercase",
-                    }}
+                    style={{ fontSize: "clamp(1.9rem, 6vw, 3.5rem)", color: "#fff", letterSpacing: "0.01em", textTransform: "uppercase" }}
                   >
                     Accountability builds{" "}
                     <span style={{ color: DS.caution }}>confidence</span>
@@ -281,32 +248,20 @@ export default function InfoPage() {
                     even off campus.
                   </h1>
 
-                  {/* Thin rule */}
-                  <div
-                    className="mb-5"
-                    style={{ height: 2, width: "3rem", backgroundColor: DS.banned }}
-                  />
+                  <div className="mb-5" style={{ height: 2, width: "3rem", backgroundColor: DS.banned }} />
 
-                  <p
-                    className="bw text-base leading-relaxed max-w-xl mb-7"
-                    style={{ color: "rgba(255,255,255,0.78)" }}
-                  >
+                  <p className="bw text-base leading-relaxed max-w-xl mb-7" style={{ color: "rgba(255,255,255,0.78)" }}>
                     {infoHero?.subtitle ||
                       "CheckPeak keeps athletes and staff aligned away from campus with clear plans, quick check-ins, and staff visibility."}
                   </p>
 
-                  {/* Pill badges */}
                   {heroPills.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-7">
                       {heroPills.map((p) => (
                         <span
                           key={p.label}
                           className="bw inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-sm"
-                          style={{
-                            backgroundColor: "rgba(255,255,255,0.1)",
-                            border: "1px solid rgba(255,255,255,0.18)",
-                            color: "rgba(255,255,255,0.85)",
-                          }}
+                          style={{ backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.85)" }}
                         >
                           {p.icon}
                           {p.label}
@@ -315,7 +270,6 @@ export default function InfoPage() {
                     </div>
                   )}
 
-                  {/* CTAs */}
                   <div className="flex flex-col sm:flex-row gap-3 mb-6">
                     <CtaButton href={primaryCta.href} icon={<FaCamera />} primary>
                       {primaryCta.label}
@@ -325,7 +279,6 @@ export default function InfoPage() {
                     </CtaButton>
                   </div>
 
-                  {/* Anchor nav */}
                   <div className="flex flex-wrap gap-5">
                     {[
                       { href: "#how-it-works",   label: "→ How it works" },
@@ -343,34 +296,23 @@ export default function InfoPage() {
                   </div>
 
                   {infoHero?.microDisclaimer && (
-                    <p
-                      className="bw text-xs sm:text-sm mt-5"
-                      style={{ color: "rgba(255,255,255,0.42)" }}
-                    >
+                    <p className="bw text-xs sm:text-sm mt-5" style={{ color: "rgba(255,255,255,0.42)" }}>
                       {infoHero.microDisclaimer}
                     </p>
                   )}
                 </motion.div>
               </div>
 
-              {/* Right — what we're best at */}
               <div className="lg:col-span-5">
                 <motion.div
                   initial="hidden"
                   animate="visible"
                   variants={fadeIn}
                   transition={{ duration: 0.5, delay: 0.15 }}
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderTop: `4px solid ${DS.banned}`,
-                    backgroundColor: "rgba(255,255,255,0.04)",
-                  }}
+                  style={{ border: "1px solid rgba(255,255,255,0.12)", borderTop: `4px solid ${DS.banned}`, backgroundColor: "rgba(255,255,255,0.04)" }}
                   className="p-5 sm:p-6"
                 >
-                  <p
-                    className="bc font-black uppercase text-sm sm:text-base mb-4 tracking-wide"
-                    style={{ color: "rgba(255,255,255,0.9)" }}
-                  >
+                  <p className="bc font-black uppercase text-sm sm:text-base mb-4 tracking-wide" style={{ color: "rgba(255,255,255,0.9)" }}>
                     What CheckPeak does best
                   </p>
                   <ul className="space-y-3 mb-5">
@@ -386,24 +328,16 @@ export default function InfoPage() {
                         >
                           {i + 1}
                         </span>
-                        <span
-                          className="bw text-sm leading-relaxed"
-                          style={{ color: "rgba(255,255,255,0.75)" }}
-                        >
+                        <span className="bw text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.75)" }}>
                           {item}
                         </span>
                       </li>
                     ))}
                   </ul>
 
-                  {/* Divider */}
                   <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", marginBottom: "1rem" }} />
 
-                  {/* Mini reminder */}
-                  <div
-                    className="px-3 py-2.5"
-                    style={{ backgroundColor: "rgba(200,16,46,0.18)", borderLeft: `3px solid ${DS.banned}` }}
-                  >
+                  <div className="px-3 py-2.5" style={{ backgroundColor: "rgba(200,16,46,0.18)", borderLeft: `3px solid ${DS.banned}` }}>
                     <p className="bw text-xs font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
                       Always confirm with your compliance and medical staff before consuming any product.
                     </p>
@@ -416,7 +350,7 @@ export default function InfoPage() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            2. RISK CALLOUT — full red band, emotional hook
+            2. RISK CALLOUT
            ══════════════════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: "#0F1E30" }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
@@ -428,31 +362,22 @@ export default function InfoPage() {
               variants={fadeUp}
               transition={{ duration: 0.5 }}
             >
-              {/* Big statement */}
               <div className="md:col-span-8">
                 <h2
                   className="bc font-black uppercase leading-none"
-                  style={{
-                    fontSize: "clamp(1.6rem, 5vw, 3rem)",
-                    color: "#fff",
-                    letterSpacing: "0.02em",
-                  }}
+                  style={{ fontSize: "clamp(1.6rem, 5vw, 3rem)", color: "#fff", letterSpacing: "0.02em" }}
                 >
                   One substance.{" "}
                   One test.{" "}
                   <span style={{ color: "#C8102E" }}>Career over.</span>
                 </h2>
-                <p
-                  className="bw text-sm sm:text-base leading-relaxed mt-4 max-w-2xl"
-                  style={{ color: "rgba(255,255,255,0.8)" }}
-                >
+                <p className="bw text-sm sm:text-base leading-relaxed mt-4 max-w-2xl" style={{ color: "rgba(255,255,255,0.8)" }}>
                   Supplements are contaminated, mislabeled, and relabeled every year.
                   The NCAA doesn't care about intent — a positive test is a positive test.
                   CheckPeak gives athletes a fast first-pass screen before anything goes in their body.
                 </p>
               </div>
 
-              {/* Scan CTA */}
               <div className="md:col-span-4 flex justify-start md:justify-end">
                 <Link href="/nutrition-label-scanner" legacyBehavior>
                   <a
@@ -472,7 +397,7 @@ export default function InfoPage() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            3. WHAT YOU GET — three pillars
+            3. WHAT YOU GET
            ══════════════════════════════════════════════════════════════════ */}
         <section className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-16">
           <SectionHeader
@@ -482,16 +407,14 @@ export default function InfoPage() {
             subtitle="Workout accountability, nutrition targets, and supplement screening — one repeatable workflow."
           />
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {productPillars.map((p) => (
+            {pillars.map((p) => (
               <InfoCard key={p.title} icon={p.icon} title={p.title} text={p.text} />
             ))}
           </div>
-
-
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            4. HOW IT WORKS — white, playbook steps
+            4. HOW IT WORKS
            ══════════════════════════════════════════════════════════════════ */}
         <section
           id="how-it-works"
@@ -506,7 +429,7 @@ export default function InfoPage() {
           />
 
           <div className="mt-8 grid gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {howItWorksSteps.map((step, index) => (
+            {steps.map((step, index) => (
               <StepCard key={step.label || index} step={step} index={index} />
             ))}
           </div>
@@ -519,11 +442,7 @@ export default function InfoPage() {
               <Link key={l.href} href={l.href} legacyBehavior>
                 <a
                   className="bw inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold transition-all rounded-sm"
-                  style={{
-                    backgroundColor: DS.brandBg,
-                    color: DS.brand,
-                    border: `1px solid ${DS.brandBorder}`,
-                  }}
+                  style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#D8E6F3")}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = DS.brandBg)}
                 >
@@ -538,7 +457,7 @@ export default function InfoPage() {
         <Divider />
 
         {/* ══════════════════════════════════════════════════════════════════
-            5. SCOREBOARD — dark navy, ESPN-style stats
+            5. SCOREBOARD
            ══════════════════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: DS.brand }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-16">
@@ -546,57 +465,40 @@ export default function InfoPage() {
               <Eyebrow light>By the numbers</Eyebrow>
               <h2
                 className="bc font-black uppercase"
-                style={{
-                  fontSize: "clamp(1.4rem, 3.5vw, 2.25rem)",
-                  color: "#fff",
-                  letterSpacing: "0.02em",
-                }}
+                style={{ fontSize: "clamp(1.4rem, 3.5vw, 2.25rem)", color: "#fff", letterSpacing: "0.02em" }}
               >
                 The database behind every scan
               </h2>
             </div>
 
-            {/* Stats grid */}
-            <div
-              className="grid grid-cols-2 md:grid-cols-4 gap-0"
-              style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-            >
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-0" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
               {[
                 { value: "900+",  label: "Substances tracked" },
-                { value: "1000+",  label: "Ingredients mapped" },
+                { value: "1000+", label: "Ingredients mapped" },
                 { value: "4",     label: "Data providers" },
-                { value: "D2",    label: "Program focus" },
+                { value: "Collegiate",    label: "Program focus" },
               ].map((s, i) => (
                 <div
                   key={s.label}
                   className="py-8 px-4"
-                  style={{
-                    borderRight: i < 3 ? "1px solid rgba(255,255,255,0.08)" : "none",
-                    textAlign: "center",
-                  }}
+                  style={{ borderRight: i < 3 ? "1px solid rgba(255,255,255,0.08)" : "none", textAlign: "center" }}
                 >
                   <Stat value={s.value} label={s.label} index={i} />
                 </div>
               ))}
             </div>
 
-            {/* Sub-note */}
-            <p
-              className="bw text-xs text-center mt-5 uppercase tracking-wide"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-            >
+            <p className="bw text-xs text-center mt-5 uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.35)" }}>
               Data synced from Airtable at build time · Updated quarterly
             </p>
           </div>
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            6. POSITIONING — white, editorial cards
+            6. POSITIONING CARDS
            ══════════════════════════════════════════════════════════════════ */}
-        {positioningCards.length > 0 && (
-          <section
-            className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-16"
-          >
+        {cards.length > 0 && (
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-16">
             <SectionHeader
               kicker="Why teams use CheckPeak"
               title="Away-from-campus is where"
@@ -604,7 +506,7 @@ export default function InfoPage() {
               subtitle="Offseason, breaks, travel, and rehab are where routines get messy. CheckPeak keeps it simple: athletes check in, staff responds, everyone stays aligned."
             />
             <div className="mt-8 grid gap-4 md:grid-cols-3">
-              {positioningCards.map((c) => (
+              {cards.map((c) => (
                 <InfoCard key={c.title} icon={c.icon} title={c.title} text={c.text} />
               ))}
             </div>
@@ -618,7 +520,7 @@ export default function InfoPage() {
            ══════════════════════════════════════════════════════════════════ */}
         <div style={{ backgroundColor: DS.pageBg, paddingTop: "2rem" }}>
           <ComplianceSection
-            wording={Array.isArray(ncaaWordingCallouts)   ? ncaaWordingCallouts   : []}
+            wording={Array.isArray(ncaaWordingCallouts)    ? ncaaWordingCallouts    : []}
             ncaaSources={Array.isArray(ncaaResourceBackbone) ? ncaaResourceBackbone : []}
             lastReviewed={NCAA_LAST_REVIEWED}
           />
@@ -627,10 +529,7 @@ export default function InfoPage() {
         {/* ══════════════════════════════════════════════════════════════════
             8. TRUSTED RESOURCES
            ══════════════════════════════════════════════════════════════════ */}
-        <section
-          className="max-w-6xl mx-auto px-4 sm:px-6 pb-16"
-          style={{ backgroundColor: DS.pageBg }}
-        >
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-16" style={{ backgroundColor: DS.pageBg }}>
           <SectionHeader
             kicker="Trusted resources"
             title="Use CheckPeak alongside"
@@ -650,7 +549,7 @@ export default function InfoPage() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            DISCLAIMER — safety notice + legal note
+            DISCLAIMER
            ══════════════════════════════════════════════════════════════════ */}
         <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-10">
           {safety && (
@@ -661,21 +560,11 @@ export default function InfoPage() {
               viewport={{ once: true }}
               variants={fadeUp}
               transition={{ duration: 0.4 }}
-              style={{
-                backgroundColor: DS.bannedBg,
-                border: `1px solid ${DS.bannedBorder}`,
-                borderLeft: `4px solid ${DS.banned}`,
-              }}
+              style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, borderLeft: `4px solid ${DS.banned}` }}
             >
-              <FaExclamationTriangle
-                className="shrink-0 mt-0.5"
-                style={{ color: DS.banned }}
-              />
+              <FaExclamationTriangle className="shrink-0 mt-0.5" style={{ color: DS.banned }} />
               <div>
-                <p
-                  className="bc font-black uppercase text-sm tracking-wider mb-1"
-                  style={{ color: DS.banned }}
-                >
+                <p className="bc font-black uppercase text-sm tracking-wider mb-1" style={{ color: DS.banned }}>
                   {safety.title}
                 </p>
                 <p className="bw text-sm leading-relaxed" style={{ color: "#7A1A1A" }}>
@@ -692,7 +581,7 @@ export default function InfoPage() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════════════
-            9. CTA CLOSER — dark navy banner
+            9. CTA CLOSER
            ══════════════════════════════════════════════════════════════════ */}
         <section style={{ backgroundColor: DS.brand }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
@@ -705,15 +594,10 @@ export default function InfoPage() {
               transition={{ duration: 0.5 }}
             >
               <div className="md:col-span-8">
-                {/* Red rule */}
                 <div style={{ height: 3, width: "2.5rem", backgroundColor: DS.banned, marginBottom: "1rem" }} />
                 <h2
                   className="bc font-black uppercase leading-none mb-4"
-                  style={{
-                    fontSize: "clamp(1.6rem, 4.5vw, 3rem)",
-                    color: "#fff",
-                    letterSpacing: "0.02em",
-                  }}
+                  style={{ fontSize: "clamp(1.6rem, 4.5vw, 3rem)", color: "#fff", letterSpacing: "0.02em" }}
                 >
                   Run your next label through{" "}
                   <span style={{ color: DS.caution }}>CheckPeak</span>{" "}
@@ -743,10 +627,7 @@ export default function InfoPage() {
           style={{ backgroundColor: "#0F1E30", borderTop: "1px solid rgba(255,255,255,0.06)" }}
         >
           <div className="max-w-6xl mx-auto text-center">
-            <p
-              className="bw text-xs uppercase tracking-wide"
-              style={{ color: "rgba(255,255,255,0.28)" }}
-            >
+            <p className="bw text-xs uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.28)" }}>
               © {new Date().getFullYear()} CheckPeak · Educational use only · Always defer to your compliance office and health care staff.
             </p>
           </div>

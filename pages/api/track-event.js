@@ -57,6 +57,7 @@ export default async function handler(req, res) {
       client,
       timestampEst,
       timestampUtc,
+      consentGiven, // new: sent by no-consent base payload
     } = req.body || {};
 
     if (!eventName) return res.status(400).json({ error: "eventName is required" });
@@ -64,6 +65,13 @@ export default async function handler(req, res) {
     if (SKIP_AIRTABLE.has(eventName)) {
       return res.status(200).json({ ok: true, skipped: true });
     }
+
+    // Resolve whether analytics consent was given
+    // Supports both old shape (consent.analytics) and new shape (consentGiven bool)
+    const hasConsent =
+      consent?.analytics === true ||
+      consentGiven === true ||
+      consentGiven === "true";
 
     // Use client-side EST timestamp if present, fallback to server time
     const createdAt  = timestampUtc || new Date().toISOString();
@@ -83,78 +91,53 @@ export default async function handler(req, res) {
     const userAgent  = req.headers["user-agent"] || "";
     const acceptLang = req.headers["accept-language"] || "";
 
-    const deviceType = client?.deviceType || "";
-    const connection = client?.connection || "";
-    const pageLoadMs = client?.pageLoadMs ?? null;
-    const timezone   = client?.timezone   || "";
-    const language   = client?.language   || "";
-    const referrer   = client?.referrer   || "";
-    const utm        = client?.utm        || {};
-    const viewport   = client?.viewport   || {};
-    const screen     = client?.screen     || {};
-    const geo        = client?.geo        || {};
-
-    const fields = {
-      // ── Core ──────────────────────────────────────────────────────────
+    // ── Fields available regardless of consent ───────────────────────────
+    const baseFields = {
       "Event Name":        String(eventName),
-      "Event Type":        String(eventType  || ""),
-      "User Email":        String(userEmail  || ""),
-      "Source":            String(source     || ""),
-      "Path":              String(path       || ""),
-
-      // ── Timestamps ────────────────────────────────────────────────────
+      "Event Type":        String(eventType || ""),
+      "Path":              String(path      || ""),
+      "Page Title":        String(pageTitle || ""),
       "Created At":        createdAt,
       "Created At (EST)":  createdEst,
+      "Consent":           hasConsent ? "yes" : "no",
+      "Device Type":       String(client?.deviceType || ""),
+      "Referrer":          String(client?.referrer   || ""),
+      "User Agent":        String(userAgent  || ""),
+      "Accept-Language":   String(acceptLang || ""),
+      "IP Hash":           hashIp(ip), // always hashed, never raw — privacy safe
+    };
 
-      // ── Page context ──────────────────────────────────────────────────
-      "Page Title":        String(pageTitle    || ""),
+    // ── Fields only written when consent is given ────────────────────────
+    const consentFields = hasConsent ? {
+      "User Email":        String(userEmail    || ""),
+      "Source":            String(source       || ""),
       "Previous Path":     String(previousPath || ""),
       "Entry Page":        String(entryPage    || ""),
-
-      // ── Engagement ────────────────────────────────────────────────────
       "Scroll Depth":      typeof scrollDepth   === "number" ? scrollDepth   : null,
       "Time on Page":      typeof timeOnPageSec === "number" ? timeOnPageSec : null,
-
-      // ── Visitor identity ───────────────────────────────────────────────
       "Anon ID":           String(anonId    || ""),
       "Session ID":        String(sessionId || ""),
       "Is Return Visitor": typeof isReturnVisitor === "boolean" ? isReturnVisitor : false,
-
-      // ── Device + network ───────────────────────────────────────────────
-      "Device Type":       String(deviceType || ""),
-      "Connection":        String(connection || ""),
-      "Performance (ms)":  typeof pageLoadMs === "number" ? pageLoadMs : null,
-
-      // ── Location ──────────────────────────────────────────────────────
-      "Latitude":          typeof geo.lat === "number" ? geo.lat : null,
-      "Longitude":         typeof geo.lng === "number" ? geo.lng : null,
-      "Geo Accuracy (m)":  typeof geo.accuracy === "number" ? geo.accuracy : null,
-
-      // ── Client context ─────────────────────────────────────────────────
-      "Timezone":          String(timezone   || ""),
-      "Language":          String(language   || ""),
-      "Referrer":          String(referrer   || ""),
-      "User Agent":        String(userAgent  || ""),
-      "Accept-Language":   String(acceptLang || ""),
-
-      // ── Privacy-safe identity ──────────────────────────────────────────
-      "IP Hash":           hashIp(ip),
-
-      // ── Consent ────────────────────────────────────────────────────────
-      "Consent":           consent?.analytics ? "yes" : "no",
-
-      // ── Structured overflows ───────────────────────────────────────────
-      "UTM (JSON)":        JSON.stringify(utm),
-      "Viewport (JSON)":   JSON.stringify({ viewport, screen }),
+      "Connection":        String(client?.connection || ""),
+      "Performance (ms)":  typeof client?.pageLoadMs === "number" ? client.pageLoadMs : null,
+      "Latitude":          typeof client?.geo?.lat === "number" ? client.geo.lat : null,
+      "Longitude":         typeof client?.geo?.lng === "number" ? client.geo.lng : null,
+      "Geo Accuracy (m)":  typeof client?.geo?.accuracy === "number" ? client.geo.accuracy : null,
+      "Timezone":          String(client?.timezone || ""),
+      "Language":          String(client?.language || ""),
+      "UTM (JSON)":        JSON.stringify(client?.utm        || {}),
+      "Viewport (JSON)":   JSON.stringify({ viewport: client?.viewport, screen: client?.screen }),
       "Payload (JSON)":    JSON.stringify(payload || {}),
-    };
+    } : {};
 
-    const cleanFields = Object.fromEntries(
-      Object.entries(fields).filter(([, v]) => v !== null && v !== undefined)
+    // Merge and strip nulls/undefined
+    const fields = Object.fromEntries(
+      Object.entries({ ...baseFields, ...consentFields })
+        .filter(([, v]) => v !== null && v !== undefined)
     );
 
     const created = await analyticsBase(process.env.ANALYTICS_TABLE_NAME).create([
-      { fields: cleanFields },
+      { fields },
     ]);
 
     return res.status(200).json({ ok: true, id: created[0].id });

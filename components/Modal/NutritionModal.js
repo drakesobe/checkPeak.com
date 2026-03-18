@@ -30,39 +30,15 @@ function isPlaceholderText(text) {
   );
 }
 
-function getRiskLevel(flaggedCount) {
-  if (flaggedCount === 0) return {
-    label:  "Clear",
-    color:  "#22c55e",
-    bg:     "rgba(34,197,94,0.08)",
-    border: "rgba(34,197,94,0.25)",
-    glow:   "rgba(34,197,94,0.15)",
-  };
-  if (flaggedCount === 1) return {
-    label:  "Caution",
-    color:  "#f77f00",
-    bg:     "rgba(247,127,0,0.08)",
-    border: "rgba(247,127,0,0.25)",
-    glow:   "rgba(247,127,0,0.15)",
-  };
-  return {
-    label:  "High Risk",
-    color:  "#E83A2F",
-    bg:     "rgba(232,58,47,0.08)",
-    border: "rgba(232,58,47,0.25)",
-    glow:   "rgba(232,58,47,0.2)",
-  };
-}
-
 async function fetchLabelAsFile(url) {
   if (!url) throw new Error("No image URL provided");
   try {
     const res = await fetch(url, { mode: "cors" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob     = await res.blob();
-    const ext      = blob.type.includes("png") ? "png" : "jpg";
+    const blob = await res.blob();
+    const ext  = blob.type.includes("png") ? "png" : "jpg";
     return new File([blob], `nutrition-label.${ext}`, { type: blob.type || "image/jpeg" });
-  } catch { /* CORS blocked */ }
+  } catch { /* CORS blocked — fall through to proxy */ }
   const proxyUrl = `/api/ocr/proxy-image?url=${encodeURIComponent(url)}`;
   const res      = await fetch(proxyUrl);
   if (!res.ok) throw new Error(`Could not fetch label image (${res.status})`);
@@ -72,94 +48,9 @@ async function fetchLabelAsFile(url) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ScanOverlay                                                                 */
-/* -------------------------------------------------------------------------- */
-function ScanOverlay({ label, dots }) {
-  return (
-    <motion.div
-      className="absolute inset-0 z-10 flex flex-col items-center justify-center"
-      style={{ background: "rgba(10,12,16,0.80)", backdropFilter: "blur(2px)" }}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <motion.div
-          className="absolute left-0 right-0 h-[2px]"
-          style={{
-            background: "linear-gradient(to right, transparent, rgba(70,118,155,0.9) 30%, rgba(91,158,201,1) 50%, rgba(70,118,155,0.9) 70%, transparent)",
-            boxShadow:  "0 0 12px rgba(91,158,201,0.7), 0 0 28px rgba(91,158,201,0.3)",
-          }}
-          initial={{ top: "0%" }} animate={{ top: "100%" }}
-          transition={{ duration: 2.2, ease: "linear", repeat: Infinity }}
-        />
-      </div>
-      {["top-3 left-3 border-t-2 border-l-2", "top-3 right-3 border-t-2 border-r-2",
-        "bottom-3 left-3 border-b-2 border-l-2", "bottom-3 right-3 border-b-2 border-r-2"].map((cls, i) => (
-        <div key={i} aria-hidden="true" className={`absolute w-5 h-5 rounded-sm ${cls}`}
-             style={{ borderColor: "rgba(91,158,201,0.65)" }} />
-      ))}
-      <div className="relative z-10 text-center px-6 pointer-events-none">
-        <p className="text-sm font-bold tracking-widest uppercase text-white/90"
-           style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-          {label}{dots}
-        </p>
-        <p className="text-xs text-white/60 mt-1 tracking-wide">Analysing nutrition label</p>
-      </div>
-    </motion.div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* RiskBanner                                                                  */
-/* -------------------------------------------------------------------------- */
-function RiskBanner({ flaggedCount, totalCount, isVisible }) {
-  const risk = getRiskLevel(flaggedCount);
-  return (
-    <AnimatePresence>
-      {isVisible && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.35, ease: "easeOut" }}
-          className="rounded-xl border px-4 py-3 flex items-center gap-4"
-          style={{ background: risk.bg, borderColor: risk.border, boxShadow: `0 0 24px ${risk.glow}` }}
-        >
-          <div className="relative shrink-0" aria-hidden="true">
-            <span className="absolute inset-0 rounded-full animate-ping opacity-25" style={{ backgroundColor: risk.color }} />
-            <span className="relative w-3 h-3 rounded-full block" style={{ backgroundColor: risk.color }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xl font-black leading-none tracking-tight"
-               style={{ color: risk.color, fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {risk.label.toUpperCase()}
-            </p>
-            <p className="text-[11px] text-white/60 uppercase tracking-widest mt-0.5">Scan complete</p>
-          </div>
-          <div className="flex items-center gap-4 shrink-0">
-            <div className="text-center">
-              <p className="text-2xl font-black leading-none"
-                 style={{ fontFamily: "'Barlow Condensed', sans-serif", color: flaggedCount > 0 ? risk.color : "rgba(255,255,255,0.85)" }}>
-                {flaggedCount}
-              </p>
-              <p className="text-[11px] text-white/55 uppercase tracking-widest mt-0.5">Flagged</p>
-            </div>
-            <div aria-hidden="true" className="w-px h-7 bg-white/10" />
-            <div className="text-center">
-              <p className="text-2xl font-black text-white/65 leading-none"
-                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                {totalCount}
-              </p>
-              <p className="text-[11px] text-white/55 uppercase tracking-widest mt-0.5">Ingredients</p>
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* NutritionModal                                                              */
 /* -------------------------------------------------------------------------- */
+
 export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
   const [ocrText,            setOcrText]            = useState("");
@@ -168,11 +59,8 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   const [matchedIngredients, setMatchedIngredients] = useState([]);
   const [animDots,           setAnimDots]           = useState("");
   const [error,              setError]              = useState("");
-  const [imageLoaded,        setImageLoaded]        = useState(false);
   const [scanComplete,       setScanComplete]       = useState(false);
 
-  const imageRef      = useRef(null);
-  const startedRef    = useRef({ url: "", started: false });
   const hasScannedRef = useRef(false);
 
   /* ── useOCR ─────────────────────────────────────────────────────────── */
@@ -194,8 +82,9 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     setError("");
     try {
       const res  = await fetch("/api/check", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredientsText: cleaned }),
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ingredientsText: cleaned }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to match ingredients");
@@ -239,6 +128,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   }, []);
 
   const { scanState, startScan, clearError: clearOCRError } = useOCR({ onScan: handleScanResult });
+
   const isScanning = scanState.isLoading || loadingRecords;
   const loadingOCR = scanState.isLoading;
 
@@ -268,11 +158,11 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   const affiliateLink = useMemo(() => {
     if (!stack) return "";
     return (
-      stack.affiliateLink                          ||
-      stack.rawFields?.["Lo. Amazon/Stripe Link"]  ||
-      stack.rawFields?.AffiliateLink               ||
-      stack.fields?.["Lo. Amazon/Stripe Link"]     ||
-      stack.fields?.AffiliateLink                  ||
+      stack.affiliateLink                         ||
+      stack.rawFields?.["Lo. Amazon/Stripe Link"] ||
+      stack.rawFields?.AffiliateLink              ||
+      stack.fields?.["Lo. Amazon/Stripe Link"]    ||
+      stack.fields?.AffiliateLink                 ||
       ""
     );
   }, [stack]);
@@ -289,30 +179,27 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
   const stackId = useMemo(() => stack?.id || imageUrl || "unknown", [stack?.id, imageUrl]);
 
-  const loadingLabel = useMemo(() => {
-    if (loadingOCR && loadingRecords) return "Reading label and matching ingredients";
-    if (loadingOCR)                   return "Reading label";
-    if (loadingRecords)               return "Matching ingredients";
-    return "Preparing scan";
-  }, [loadingOCR, loadingRecords]);
-
   /* ── Core scan ──────────────────────────────────────────────────────── */
 
   const runOCR = useCallback(async (force = false) => {
     if (!imageUrl || isScanning) return;
+
     if (force) {
       deleteCacheKey(imageUrl);
       setScanComplete(false);
       setOcrText("");
       setMatchedRecords([]);
       setMatchedIngredients([]);
+      hasScannedRef.current = false;
     }
+
+    // Cache hit — skip Textract entirely
     if (!force && ocrCache[imageUrl]) {
       const cached = String(ocrCache[imageUrl] || "").trim();
       setOcrText(cached);
       if (recordsCache[cached]) {
         const c = recordsCache[cached];
-        setMatchedRecords(c.banned || []);
+        setMatchedRecords(c.banned       || []);
         setMatchedIngredients(c.ingredients || []);
         setScanComplete(true);
         return;
@@ -320,6 +207,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
       await handleScanResult(cached);
       return;
     }
+
     setError("");
     clearOCRError();
     try {
@@ -334,10 +222,71 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
   /* ── Cache ocrText by URL ───────────────────────────────────────────── */
 
   useEffect(() => {
-    if (ocrText && imageUrl && !isPlaceholderText(ocrText)) touchCache(ocrCache, imageUrl, ocrText);
+    if (ocrText && imageUrl && !isPlaceholderText(ocrText)) {
+      touchCache(ocrCache, imageUrl, ocrText);
+    }
   }, [ocrText, imageUrl]);
 
-  /* ── Escape key ─────────────────────────────────────────────────────── */
+  /* ── Auto-scan when imageUrl is available ───────────────────────────── */
+  /* No longer tied to DOM image onLoad — we fetch the label directly.    */
+
+  useEffect(() => {
+    if (!imageUrl || hasScannedRef.current) return;
+
+    // Restore from cache immediately if available
+    if (ocrCache[imageUrl]) {
+      const cached = String(ocrCache[imageUrl] || "").trim();
+      setOcrText(cached);
+      if (recordsCache[cached]) {
+        const c = recordsCache[cached];
+        setMatchedRecords(c.banned       || []);
+        setMatchedIngredients(c.ingredients || []);
+        setScanComplete(true);
+      } else {
+        handleScanResult(cached).catch(() => {});
+      }
+      hasScannedRef.current = true;
+      return;
+    }
+
+    // Fresh scan — short delay so modal animation completes first
+    hasScannedRef.current = true;
+    const timer = setTimeout(() => runOCR(false), 400);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageUrl]);
+
+  /* ── Reset on new stack ─────────────────────────────────────────────── */
+
+  useEffect(() => {
+    setOcrText("");
+    setMatchedRecords([]);
+    setMatchedIngredients([]);
+    setError("");
+    setLoadingRecords(false);
+    setScanComplete(false);
+    hasScannedRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stack?.id]);
+
+  /* ── Re-scan handler ────────────────────────────────────────────────── */
+
+  const handleRescan = useCallback(() => runOCR(true), [runOCR]);
+
+  /* ── Affiliate click ────────────────────────────────────────────────── */
+
+  const handleAffiliateLinkClick = useCallback(e => {
+    e.stopPropagation();
+    if (!affiliateLink) e.preventDefault();
+  }, [affiliateLink]);
+
+  /* ── Surface OCR hook error ─────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (scanState.error) setError(scanState.error);
+  }, [scanState.error]);
+
+  /* ── Keyboard close ─────────────────────────────────────────────────── */
 
   useEffect(() => {
     if (!stack) return;
@@ -354,55 +303,17 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
     const pb = document.body.style.overflow;
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow             = "hidden";
-    return () => { document.documentElement.style.overflow = ph; document.body.style.overflow = pb; };
+    return () => {
+      document.documentElement.style.overflow = ph;
+      document.body.style.overflow             = pb;
+    };
   }, [stack]);
-
-  /* ── Reset on new stack ─────────────────────────────────────────────── */
-
-  useEffect(() => {
-    setOcrText("");
-    setMatchedRecords([]);
-    setMatchedIngredients([]);
-    setError("");
-    setLoadingRecords(false);
-    setImageLoaded(false);
-    setScanComplete(false);
-    hasScannedRef.current = false;
-    startedRef.current    = { url: imageUrl, started: false };
-    if (!imageUrl) return;
-    if (ocrCache[imageUrl]) {
-      const cached = String(ocrCache[imageUrl] || "").trim();
-      setOcrText(cached);
-      if (recordsCache[cached]) {
-        const c = recordsCache[cached];
-        setMatchedRecords(c.banned || []);
-        setMatchedIngredients(c.ingredients || []);
-        setScanComplete(true);
-      } else { handleScanResult(cached).catch(() => {}); }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stack?.id]);
-
-  /* ── Auto-scan on image load ────────────────────────────────────────── */
-
-  const handleImageLoad = useCallback(() => {
-    setImageLoaded(true);
-    if (!imageUrl || hasScannedRef.current || ocrCache[imageUrl]) return;
-    hasScannedRef.current = true;
-    setTimeout(() => runOCR(false), 350);
-  }, [imageUrl, runOCR]);
-
-  const handleRescan = useCallback(() => { hasScannedRef.current = false; runOCR(true); }, [runOCR]);
-
-  const handleAffiliateLinkClick = useCallback(e => { e.stopPropagation(); if (!affiliateLink) e.preventDefault(); }, [affiliateLink]);
-
-  useEffect(() => { if (scanState.error) setError(scanState.error); }, [scanState.error]);
 
   if (!stack) return null;
 
-  /* ---------------------------------------------------------------------- */
-  /* Render                                                                   */
-  /* ---------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                    */
+  /* ------------------------------------------------------------------------ */
   return (
     <motion.div
       className="fixed inset-0 z-50"
@@ -430,25 +341,35 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           transition={{ duration: 0.25, ease: "easeOut" }}
           onClick={e => e.stopPropagation()}
         >
-          {/* ── Header ───────────────────────────────────────────────── */}
-          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b"
-               style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <div
+            className="shrink-0 flex items-center justify-between px-5 py-4 border-b"
+            style={{ borderColor: "rgba(255,255,255,0.07)" }}
+          >
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-widest mb-0.5"
-                 style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+              <p
+                className="text-xs font-semibold uppercase tracking-widest mb-0.5"
+                style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
                 {stack?.category || "Supplement"}
               </p>
-              <h2 className="text-xl font-bold text-white leading-tight truncate mb-2"
-                  style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}>
+              <h2
+                className="text-xl font-bold text-white leading-tight truncate mb-2"
+                style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}
+              >
                 {stack?.name || "Untitled Stack"}
               </h2>
-              {/* Servings + price — visible on ALL screen sizes */}
+
+              {/* Servings + price — always visible, not hidden on mobile */}
               {(servingsNumber > 0 || priceNumber > 0) && (
                 <div className="flex items-center gap-3">
                   {servingsNumber > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-bold text-white/85"
-                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      <span
+                        className="text-sm font-bold text-white/85"
+                        style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                      >
                         {servingsNumber}
                       </span>
                       <span className="text-xs text-white/50 uppercase tracking-wide">servings</span>
@@ -459,8 +380,10 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                   )}
                   {priceNumber > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-bold text-white/85"
-                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      <span
+                        className="text-sm font-bold text-white/85"
+                        style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                      >
                         ${priceNumber.toFixed(2)}
                       </span>
                       <span className="text-xs text-white/50 uppercase tracking-wide">price</span>
@@ -469,6 +392,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                 </div>
               )}
             </div>
+
             <button
               type="button" onClick={onClose} aria-label="Close modal"
               className="w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ml-4"
@@ -482,122 +406,37 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
             </button>
           </div>
 
-          {/* ── Scrollable body ──────────────────────────────────────── */}
+          {/* ── Scrollable body ──────────────────────────────────────────
+              Clean — no hero image eating half the screen.
+              ModalContent owns all result rendering including thumbnail.
+          ─────────────────────────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto">
-
-            {/* Label image */}
-            {imageUrl ? (
-              <div className="relative w-full shrink-0"
-                   style={{ aspectRatio: "16/7", minHeight: 160, maxHeight: 260 }}>
-                <img
-                  ref={imageRef} src={imageUrl} alt="Nutrition Label"
-                  className="w-full h-full object-cover"
-                  crossOrigin="anonymous" onLoad={handleImageLoad}
-                  onError={e => { e.currentTarget.style.opacity = "0.3"; }}
-                />
-                <div aria-hidden="true" className="absolute inset-0 pointer-events-none"
-                     style={{ background: "linear-gradient(to bottom, rgba(13,17,23,0.15) 0%, rgba(13,17,23,0) 35%, rgba(13,17,23,0.9) 100%)" }} />
-                <AnimatePresence>
-                  {isScanning && <ScanOverlay label={loadingLabel} dots={animDots} />}
-                </AnimatePresence>
-                <AnimatePresence>
-                  {scanComplete && !isScanning && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full px-2.5 py-1"
-                      style={{ background: "rgba(13,17,23,0.78)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(8px)" }}
-                      aria-hidden="true"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
-                      <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.65)" }}>Scanned</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                  {affiliateLink && (
-                    <a href={affiliateLink} target="_blank" rel="noreferrer" onClick={handleAffiliateLinkClick}
-                       className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white transition-all"
-                       style={{ background: "rgba(70,118,155,0.82)", border: "1px solid rgba(91,158,201,0.35)", backdropFilter: "blur(8px)" }}>
-                      View product
-                    </a>
-                  )}
-                  <button
-                    type="button" onClick={handleRescan} disabled={isScanning}
-                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: "rgba(13,17,23,0.72)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", backdropFilter: "blur(8px)" }}
-                    aria-label={isScanning ? "Scan in progress" : "Re-scan nutrition label"}
-                  >
-                    <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9V6a2 2 0 012-2h3M15 4h3a2 2 0 012 2v3M21 15v3a2 2 0 01-2 2h-3M9 20H6a2 2 0 01-2-2v-3" />
-                    </svg>
-                    {isScanning ? "Scanning…" : "Re-scan"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full flex items-center justify-center text-sm shrink-0"
-                   style={{ height: 160, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.45)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                No nutrition label available
-              </div>
-            )}
-
-            {/* Content area */}
-            <div className="px-4 sm:px-5 pt-4 pb-2 space-y-4">
-
-              <RiskBanner
-                flaggedCount={matchedRecords.length}
-                totalCount={matchedIngredients.length}
-                isVisible={scanComplete && !isScanning}
+            <div className="px-4 sm:px-5 pt-4 pb-2">
+              <ModalContent
+                loadingOCR={loadingOCR}
+                loadingRecords={loadingRecords}
+                animDots={animDots}
+                ocrText={ocrText}
+                matchedRecords={matchedRecords}
+                matchedIngredients={matchedIngredients}
+                error={error}
+                runOCR={runOCR}
+                stackId={stackId}
+                scanComplete={scanComplete}
+                isScanning={isScanning}
               />
-
-              <AnimatePresence>
-                {error && (
-                  <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                    className="rounded-xl px-4 py-3 text-sm"
-                    style={{ background: "rgba(232,58,47,0.08)", border: "1px solid rgba(232,58,47,0.25)", color: "#E83A2F" }}
-                    role="alert">
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* ModalContent — self-contained, no tabs needed */}
-              {(ocrText || scanComplete || error) && (
-                <ModalContent
-                  loadingOCR={loadingOCR}
-                  loadingRecords={loadingRecords}
-                  animDots={animDots}
-                  ocrText={ocrText}
-                  matchedRecords={matchedRecords}
-                  matchedIngredients={matchedIngredients}
-                  error={error}
-                  runOCR={runOCR}
-                  stackId={stackId}
-                />
-              )}
-
-              {!ocrText && !scanComplete && !error && !isScanning && imageUrl && (
-                <div className="py-8 text-center">
-                  <p className="text-sm text-white/60 mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                    Scan starts automatically once the label loads.
-                  </p>
-                  <button type="button" onClick={() => runOCR(false)}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-white transition-all"
-                    style={{ background: "rgba(70,118,155,0.18)", border: "1px solid rgba(70,118,155,0.35)" }}>
-                    Start scan manually
-                  </button>
-                </div>
-              )}
-
               <div aria-hidden="true" style={{ height: "calc(8px + env(safe-area-inset-bottom, 0px))" }} />
             </div>
           </div>
 
-          {/* ── Sticky footer ────────────────────────────────────────── */}
-          <div className="shrink-0 px-4 sm:px-5 py-3 border-t"
-               style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1117" }}>
-            <ModalFooter affiliateLink={affiliateLink} runOCR={runOCR} />
+          {/* ── Sticky footer ────────────────────────────────────────────
+              Re-scan lives here and only here. One place, no confusion.
+          ─────────────────────────────────────────────────────────────── */}
+          <div
+            className="shrink-0 px-4 sm:px-5 py-3 border-t"
+            style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1117" }}
+          >
+            <ModalFooter affiliateLink={affiliateLink} runOCR={handleRescan} />
             <div aria-hidden="true" style={{ height: "calc(4px + env(safe-area-inset-bottom, 0px))" }} />
           </div>
 

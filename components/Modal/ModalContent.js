@@ -85,6 +85,203 @@ function highlightHtml(text, terms, ocrText, color = "#93c5fd") {
   return out;
 }
 
+/* ── ScanContext — always-visible briefing panel for first-time visitors ───── */
+
+const LEGEND = [
+  {
+    type:   "Prohibited",
+    dot:    "#E83A2F",
+    bg:     "rgba(232,58,47,0.15)",
+    text:   "#fca5a5",
+    title:  "Prohibited",
+    desc:   "Banned in and out of competition by the NCAA, WADA, or USADA. Using this substance risks disqualification.",
+  },
+  {
+    type:   "Limited",
+    dot:    "#f77f00",
+    bg:     "rgba(247,127,0,0.15)",
+    text:   "#fdba74",
+    title:  "Limited",
+    desc:   "Permitted out of competition only. Restricted or banned during the competitive season — timing matters.",
+  },
+  {
+    type:   "Sport-Specific",
+    dot:    "#5B9EC9",
+    bg:     "rgba(91,158,201,0.15)",
+    text:   "#93c5fd",
+    title:  "Sport-Specific",
+    desc:   "Banned in certain sports only. Rules vary by governing body — check your specific sport's regulations.",
+  },
+  {
+    type:   "Monitored",
+    dot:    "#9ca3af",
+    bg:     "rgba(156,163,175,0.15)",
+    text:   "#e2e8f0",
+    title:  "Monitored",
+    desc:   "Under active observation by anti-doping agencies. Not currently banned, but worth confirming with staff.",
+  },
+];
+
+function ScanContext() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{
+        background:   "rgba(91,158,201,0.06)",
+        border:       "1px solid rgba(91,158,201,0.18)",
+        borderLeft:   "3px solid rgba(91,158,201,0.6)",
+      }}
+    >
+      {/* ── Always-visible summary row ─────────────────────────────────── */}
+      <div className="px-4 py-3.5">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            {/* Database icon */}
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: "rgba(91,158,201,0.18)", border: "1px solid rgba(91,158,201,0.28)" }}
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="#5B9EC9" strokeWidth={2} aria-hidden="true">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path strokeLinecap="round" d="M3 5v4c0 1.657 4.03 3 9 3s9-1.343 9-3V5" />
+                <path strokeLinecap="round" d="M3 9v4c0 1.657 4.03 3 9 3s9-1.343 9-3V9" />
+                <path strokeLinecap="round" d="M3 13v4c0 1.657 4.03 3 9 3s9-1.343 9-3v-4" />
+              </svg>
+            </div>
+
+            <div>
+              <p
+                className="text-[11px] font-bold uppercase tracking-widest leading-none mb-0.5"
+                style={{ color: "#5B9EC9", fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                How this scan works
+              </p>
+              <p className="text-xs leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>
+                We compare this label against substances monitored by the{" "}
+                <span style={{ color: "rgba(255,255,255,0.85)" }}>NCAA, WADA, and USADA</span>.
+              </p>
+            </div>
+          </div>
+
+          {/* Expand toggle */}
+          <button
+            type="button"
+            onClick={() => setExpanded(o => !o)}
+            className="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 transition-all"
+            style={{
+              background:    expanded ? "rgba(91,158,201,0.18)" : "rgba(255,255,255,0.05)",
+              border:        expanded ? "1px solid rgba(91,158,201,0.3)" : "1px solid rgba(255,255,255,0.09)",
+              color:         expanded ? "#5B9EC9" : "rgba(255,255,255,0.45)",
+              fontFamily:    "'Barlow Condensed', sans-serif",
+              fontSize:      10,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              cursor:        "pointer",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(91,158,201,0.35)"; e.currentTarget.style.color = "#5B9EC9"; }}
+            onMouseLeave={e => {
+              if (!expanded) {
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.09)";
+                e.currentTarget.style.color = "rgba(255,255,255,0.45)";
+              }
+            }}
+            aria-expanded={expanded}
+          >
+            {expanded ? "Less" : "Learn more"}
+            {expanded ? <FaChevronUp size={8} /> : <FaChevronDown size={8} />}
+          </button>
+        </div>
+
+        {/* Color legend — compact dot row, always visible */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {LEGEND.map(item => (
+            <div key={item.type} className="flex items-center gap-1.5">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: item.dot }}
+                aria-hidden="true"
+              />
+              <span
+                className="text-[11px] font-semibold"
+                style={{ color: item.text, fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                {item.title}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Expanded detail — one card per category ─────────────────────── */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="legend-detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div
+              className="px-4 pb-4 pt-1 space-y-2"
+              style={{ borderTop: "1px solid rgba(91,158,201,0.12)" }}
+            >
+              {LEGEND.map((item, i) => (
+                <motion.div
+                  key={item.type}
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.18, delay: i * 0.05 }}
+                  className="flex items-start gap-3 rounded-lg px-3 py-2.5"
+                  style={{ background: item.bg, border: `1px solid ${item.dot}22` }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0 mt-1"
+                    style={{ background: item.dot }}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <p
+                      className="text-xs font-bold mb-0.5"
+                      style={{ color: item.text, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}
+                    >
+                      {item.title}
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+                      {item.desc}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+
+              {/* Database source note */}
+              <div
+                className="mt-1 rounded-lg px-3 py-2.5 flex items-start gap-2.5"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+              >
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2} aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path strokeLinecap="round" d="M12 8v4m0 4h.01" />
+                </svg>
+                <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  Classifications are based on{" "}
+                  <span style={{ color: "rgba(255,255,255,0.75)" }}>NCAA Bylaw 31, WADA Prohibited List, and USADA guidelines</span>.
+                  This is an educational screening tool — always confirm with your athletics staff before making any decisions.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 /* ── BannedCard ───────────────────────────────────────────────────────────── */
 
 function BannedCard({ rec, ocrText }) {
@@ -397,6 +594,9 @@ export default function ModalContent({
   return (
     <div className="space-y-4">
 
+      {/* ── Context strip — always shown, explains system to new visitors ── */}
+      <ScanContext />
+
       {/* ── Banned / monitored section ──────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-2.5 px-0.5">
@@ -449,21 +649,26 @@ export default function ModalContent({
             onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; }}
             onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
           >
-            <div className="flex items-center gap-2.5">
-              <p
-                className="text-[11px] font-bold uppercase tracking-widest"
-                style={{ color: "rgba(255,255,255,0.6)", fontFamily: "'Barlow Condensed', sans-serif" }}
-              >
-                Ingredients detected
+            <div className="flex flex-col items-start gap-0.5 min-w-0">
+              <div className="flex items-center gap-2.5">
+                <p
+                  className="text-[11px] font-bold uppercase tracking-widest"
+                  style={{ color: "rgba(255,255,255,0.7)", fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  Ingredients detected
+                </p>
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
+                >
+                  {matchedIngredients.length}
+                </span>
+              </div>
+              <p className="text-xs leading-snug" style={{ color: "rgba(255,255,255,0.42)" }}>
+                Matched against our pharmacology database — benefits, interactions &amp; sources
               </p>
-              <span
-                className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
-              >
-                {matchedIngredients.length}
-              </span>
             </div>
-            <div style={{ color: "rgba(255,255,255,0.45)" }}>
+            <div className="shrink-0 ml-3" style={{ color: "rgba(255,255,255,0.45)" }}>
               {showIngredients ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
             </div>
           </button>

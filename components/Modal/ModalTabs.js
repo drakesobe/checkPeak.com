@@ -1,40 +1,39 @@
 "use client";
 
-export default function ModalTabs({
-  activeTab,
-  setActiveTab,
-  tabs = [
-    { key: "detected", label: "Detected Substances", hint: "Only banned/monitored ingredients found" },
-    { key: "all", label: "All Ingredients", hint: "Full OCR text of label" },
-  ],
-  small = false,
-}) {
+export default function ModalTabs({ activeTab, setActiveTab }) {
+  const tabs = [
+    { key: "detected", label: "Detected" },
+    { key: "all",      label: "All Text"  },
+  ];
+
   return (
-    <div className={`flex border-b border-gray-700 mb-${small ? "1" : "3"}`}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.key}
-          className={`relative px-${small ? "2" : "4"} py-${small ? "1" : "2"} text-sm font-medium transition-colors duration-200
-            ${activeTab === tab.key ? "text-white" : "text-gray-400 hover:text-white"}
-          `}
-          onClick={() => setActiveTab(tab.key)}
-        >
-          {tab.label}
-          {/* Underline animation */}
-          <span
-            className={`absolute left-0 bottom-0 h-0.5 w-full bg-blue-500 transition-all duration-300
-              ${activeTab === tab.key ? "scale-x-100" : "scale-x-0"}
-              origin-left
-            `}
-          ></span>
-          {/* Optional hint tooltip */}
-          {tab.hint && !small && (
-            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
-              {tab.hint}
-            </span>
-          )}
-        </button>
-      ))}
+    <div
+      className="flex gap-1 rounded-xl p-1"
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+    >
+      {tabs.map((tab) => {
+        const active = activeTab === tab.key;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background:    active ? "rgba(91,158,201,0.18)" : "transparent",
+              border:        active ? "1px solid rgba(91,158,201,0.3)" : "1px solid transparent",
+              color:         active ? "#5B9EC9" : "rgba(255,255,255,0.4)",
+              fontFamily:    "'Barlow Condensed', sans-serif",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+            aria-selected={active}
+            role="tab"
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

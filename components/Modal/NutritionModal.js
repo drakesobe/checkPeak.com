@@ -103,7 +103,7 @@ function ScanOverlay({ label, dots }) {
            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
           {label}{dots}
         </p>
-        <p className="text-[10px] text-white/35 mt-1 tracking-wide">Analysing nutrition label</p>
+        <p className="text-xs text-white/60 mt-1 tracking-wide">Analysing nutrition label</p>
       </div>
     </motion.div>
   );
@@ -132,7 +132,7 @@ function RiskBanner({ flaggedCount, totalCount, isVisible }) {
                style={{ color: risk.color, fontFamily: "'Barlow Condensed', sans-serif" }}>
               {risk.label.toUpperCase()}
             </p>
-            <p className="text-[10px] text-white/35 uppercase tracking-widest mt-0.5">Scan complete</p>
+            <p className="text-[11px] text-white/60 uppercase tracking-widest mt-0.5">Scan complete</p>
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <div className="text-center">
@@ -140,7 +140,7 @@ function RiskBanner({ flaggedCount, totalCount, isVisible }) {
                  style={{ fontFamily: "'Barlow Condensed', sans-serif", color: flaggedCount > 0 ? risk.color : "rgba(255,255,255,0.85)" }}>
                 {flaggedCount}
               </p>
-              <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">Flagged</p>
+              <p className="text-[11px] text-white/55 uppercase tracking-widest mt-0.5">Flagged</p>
             </div>
             <div aria-hidden="true" className="w-px h-7 bg-white/10" />
             <div className="text-center">
@@ -148,7 +148,7 @@ function RiskBanner({ flaggedCount, totalCount, isVisible }) {
                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
                 {totalCount}
               </p>
-              <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">Ingredients</p>
+              <p className="text-[11px] text-white/55 uppercase tracking-widest mt-0.5">Ingredients</p>
             </div>
           </div>
         </motion.div>
@@ -431,43 +431,55 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
           onClick={e => e.stopPropagation()}
         >
           {/* ── Header ───────────────────────────────────────────────── */}
-          <div className="shrink-0 flex items-center justify-between px-5 py-3.5 border-b"
-               style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b"
+               style={{ borderColor: "rgba(255,255,255,0.07)" }}>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-0.5"
-                 style={{ color: "rgba(255,255,255,0.28)" }}>
+              <p className="text-xs font-semibold uppercase tracking-widest mb-0.5"
+                 style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                 {stack?.category || "Supplement"}
               </p>
-              <h2 className="text-lg font-bold text-white leading-tight truncate"
+              <h2 className="text-xl font-bold text-white leading-tight truncate mb-2"
                   style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}>
                 {stack?.name || "Untitled Stack"}
               </h2>
-            </div>
-            <div className="flex items-center gap-4 shrink-0 ml-4">
-              {servingsNumber > 0 && (
-                <div className="hidden sm:block text-right">
-                  <p className="text-sm font-bold text-white/75" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{servingsNumber}</p>
-                  <p className="text-[10px] text-white/28 uppercase tracking-wider">servings</p>
+              {/* Servings + price — visible on ALL screen sizes */}
+              {(servingsNumber > 0 || priceNumber > 0) && (
+                <div className="flex items-center gap-3">
+                  {servingsNumber > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold text-white/85"
+                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                        {servingsNumber}
+                      </span>
+                      <span className="text-xs text-white/50 uppercase tracking-wide">servings</span>
+                    </div>
+                  )}
+                  {servingsNumber > 0 && priceNumber > 0 && (
+                    <div aria-hidden="true" className="w-px h-3.5 bg-white/15" />
+                  )}
+                  {priceNumber > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold text-white/85"
+                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                        ${priceNumber.toFixed(2)}
+                      </span>
+                      <span className="text-xs text-white/50 uppercase tracking-wide">price</span>
+                    </div>
+                  )}
                 </div>
               )}
-              {priceNumber > 0 && (
-                <div className="hidden sm:block text-right">
-                  <p className="text-sm font-bold text-white/75" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>${priceNumber.toFixed(2)}</p>
-                  <p className="text-[10px] text-white/28 uppercase tracking-wider">price</p>
-                </div>
-              )}
-              <button
-                type="button" onClick={onClose} aria-label="Close modal"
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.45)" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)";  e.currentTarget.style.color = "#fff"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
-              >
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
+            <button
+              type="button" onClick={onClose} aria-label="Close modal"
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ml-4"
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.55)" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           {/* ── Scrollable body ──────────────────────────────────────── */}
@@ -498,7 +510,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                       aria-hidden="true"
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.45)" }}>Scanned</span>
+                      <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.65)" }}>Scanned</span>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -525,7 +537,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
               </div>
             ) : (
               <div className="w-full flex items-center justify-center text-sm shrink-0"
-                   style={{ height: 160, background: "rgba(255,255,255,0.02)", color: "rgba(255,255,255,0.2)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                   style={{ height: 160, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.45)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
                 No nutrition label available
               </div>
             )}
@@ -567,7 +579,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
 
               {!ocrText && !scanComplete && !error && !isScanning && imageUrl && (
                 <div className="py-8 text-center">
-                  <p className="text-sm text-white/30 mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-sm text-white/60 mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
                     Scan starts automatically once the label loads.
                   </p>
                   <button type="button" onClick={() => runOCR(false)}

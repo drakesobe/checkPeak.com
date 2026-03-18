@@ -24,10 +24,10 @@ const normalizeBanType = (val) => {
 const SEVERITY = { Prohibited: 0, Limited: 1, "Sport-Specific": 2, Other: 3 };
 
 const BAN_STYLE = {
-  Prohibited:       { border: "#E83A2F", pillBg: "rgba(232,58,47,0.18)",   pillText: "#fca5a5", label: "Prohibited"     },
-  Limited:          { border: "#f77f00", pillBg: "rgba(247,127,0,0.18)",   pillText: "#fdba74", label: "Limited"        },
-  "Sport-Specific": { border: "#5B9EC9", pillBg: "rgba(91,158,201,0.18)",  pillText: "#7dd3fc", label: "Sport-Specific" },
-  Other:            { border: "#6b7280", pillBg: "rgba(107,114,128,0.18)", pillText: "#d1d5db", label: "Monitored"      },
+  Prohibited:       { border: "#E83A2F", pillBg: "rgba(232,58,47,0.32)",   pillText: "#fca5a5", label: "Prohibited"     },
+  Limited:          { border: "#f77f00", pillBg: "rgba(247,127,0,0.32)",   pillText: "#fdba74", label: "Limited"        },
+  "Sport-Specific": { border: "#5B9EC9", pillBg: "rgba(91,158,201,0.32)",  pillText: "#93c5fd", label: "Sport-Specific" },
+  Other:            { border: "#6b7280", pillBg: "rgba(107,114,128,0.32)", pillText: "#e2e8f0", label: "Monitored"      },
 };
 
 /* ── React-node highlighter for raw text view ─────────────────────────────── */
@@ -111,51 +111,51 @@ function BannedCard({ rec, ocrText }) {
       layout="position"
       className="overflow-hidden rounded-xl"
       style={{
-        background: "rgba(255,255,255,0.03)",
-        border:     "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.06)",
+        border:     "1px solid rgba(255,255,255,0.09)",
         borderLeft: `3px solid ${style.border}`,
         cursor:     hasDetail ? "pointer" : "default",
       }}
       onClick={() => hasDetail && setOpen(o => !o)}
     >
       {/* ── Card header ─────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3">
+      <div className="flex items-start justify-between gap-3 px-4 py-3.5">
         <div className="flex-1 min-w-0 space-y-1.5">
 
           {/* Meta row: pill + banned-by + dosage */}
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+              className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
               style={{ background: style.pillBg, color: style.pillText, fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               {style.label}
             </span>
             {bannedBy && (
-              <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
                 {bannedBy}
               </span>
             )}
             {dosage && (
-              <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
                 Limit: {dosage}
               </span>
             )}
           </div>
 
           {/* Substance name */}
-          <p className="text-sm font-semibold text-white leading-snug">{name}</p>
+          <p className="text-base font-bold text-white leading-snug">{name}</p>
 
           {/* Synonyms */}
           {synonyms && (
-            <p className="text-[11px] leading-relaxed line-clamp-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-xs leading-relaxed line-clamp-2" style={{ color: "rgba(255,255,255,0.6)" }}>
               {synonyms}
             </p>
           )}
         </div>
 
         {hasDetail && (
-          <div className="shrink-0 mt-1.5" style={{ color: "rgba(255,255,255,0.25)" }}>
-            {open ? <FaChevronUp size={10} /> : <FaChevronDown size={10} />}
+          <div className="shrink-0 mt-2" style={{ color: "rgba(255,255,255,0.45)" }}>
+            {open ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
           </div>
         )}
       </div>
@@ -173,44 +173,44 @@ function BannedCard({ rec, ocrText }) {
           >
             <div
               className="px-4 pb-4 pt-3 space-y-3.5"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+              style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
               onClick={e => e.stopPropagation()}
             >
               {whatItDoes && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5"
-                     style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     What it does
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(whatItDoes, terms, ocrText, "#bfdbfe") }} />
                 </div>
               )}
 
               {watchFor && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5"
-                     style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     Watch for
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(watchFor, terms, ocrText, "#fecaca") }} />
                 </div>
               )}
 
               {interactions && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5"
-                     style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     Nutrient interactions
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.78)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(interactions, terms, ocrText, "#facc15") }} />
                 </div>
               )}
 
               {source && (
-                <p className="text-[10px] pt-0.5" style={{ color: "rgba(255,255,255,0.2)" }}>
+                <p className="text-xs pt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
                   <span className="font-semibold">Source: </span>{source}
                 </p>
               )}
@@ -242,22 +242,22 @@ function IngredientCard({ ing, ocrText }) {
     <div
       className="rounded-lg overflow-hidden"
       style={{
-        background: "rgba(255,255,255,0.02)",
-        border:     "1px solid rgba(255,255,255,0.05)",
+        background: "rgba(255,255,255,0.04)",
+        border:     "1px solid rgba(255,255,255,0.07)",
         cursor:     hasDetail ? "pointer" : "default",
       }}
       onClick={() => hasDetail && setOpen(o => !o)}
     >
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 px-3.5 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium truncate" style={{ color: "rgba(255,255,255,0.72)" }}>{name}</p>
+          <p className="text-[13px] font-semibold truncate" style={{ color: "rgba(255,255,255,0.85)" }}>{name}</p>
           {synonyms && (
-            <p className="text-[10px] truncate mt-0.5" style={{ color: "rgba(255,255,255,0.28)" }}>{synonyms}</p>
+            <p className="text-xs truncate mt-0.5" style={{ color: "rgba(255,255,255,0.5)" }}>{synonyms}</p>
           )}
         </div>
         {hasDetail && (
-          <div className="shrink-0" style={{ color: "rgba(255,255,255,0.2)" }}>
-            {open ? <FaChevronUp size={9} /> : <FaChevronDown size={9} />}
+          <div className="shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>
+            {open ? <FaChevronUp size={10} /> : <FaChevronDown size={10} />}
           </div>
         )}
       </div>
@@ -273,42 +273,42 @@ function IngredientCard({ ing, ocrText }) {
             className="overflow-hidden"
           >
             <div
-              className="px-3 pb-3 pt-2 space-y-2.5"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}
+              className="px-3.5 pb-3 pt-2.5 space-y-2.5"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
               onClick={e => e.stopPropagation()}
             >
               {benefits && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                     style={{ color: "rgba(255,255,255,0.25)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     What it does
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.72)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(benefits, terms, ocrText, "#a5b4fc") }} />
                 </div>
               )}
               {weaknesses && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                     style={{ color: "rgba(255,255,255,0.25)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     Watch for
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.72)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(weaknesses, terms, ocrText, "#fecaca") }} />
                 </div>
               )}
               {antagonism && (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                     style={{ color: "rgba(255,255,255,0.25)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-1"
+                     style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}>
                     Interactions
                   </p>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.52)" }}
+                  <p className="text-[13px] leading-relaxed" style={{ color: "rgba(255,255,255,0.72)" }}
                      dangerouslySetInnerHTML={{ __html: highlightHtml(antagonism, terms, ocrText, "#facc15") }} />
                 </div>
               )}
               {source && (
-                <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+                <p className="text-xs" style={{ color: "rgba(255,255,255,0.38)" }}>
                   <span className="font-semibold">Source: </span>{source}
                 </p>
               )}
@@ -335,8 +335,8 @@ function LoadingDots({ label }) {
         ))}
       </div>
       <p
-        className="text-[10px] uppercase tracking-widest"
-        style={{ color: "rgba(255,255,255,0.28)", fontFamily: "'Barlow Condensed', sans-serif" }}
+        className="text-[11px] uppercase tracking-widest"
+        style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
       >
         {label}
       </p>
@@ -401,12 +401,12 @@ export default function ModalContent({
       <div>
         <div className="flex items-center justify-between mb-2.5 px-0.5">
           <p
-            className="text-[10px] font-bold uppercase tracking-widest"
-            style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Barlow Condensed', sans-serif" }}
+            className="text-[11px] font-bold uppercase tracking-widest"
+            style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
           >
             Banned / Monitored
           </p>
-          <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+          <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
             {sortedBanned.length} {sortedBanned.length === 1 ? "match" : "matches"}
           </span>
         </div>
@@ -428,7 +428,7 @@ export default function ModalContent({
             >
               No banned substances detected
             </p>
-            <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.28)" }}>
+            <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>
               Always confirm with your athletics staff before use.
             </p>
           </div>
@@ -441,30 +441,30 @@ export default function ModalContent({
           <button
             type="button"
             onClick={() => setShowIngredients(o => !o)}
-            className="w-full flex items-center justify-between rounded-xl px-4 py-3 transition-all"
+            className="w-full flex items-center justify-between rounded-xl px-4 py-3.5 transition-all"
             style={{
-              background: "rgba(255,255,255,0.03)",
-              border:     "1px solid rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.06)",
+              border:     "1px solid rgba(255,255,255,0.09)",
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
           >
             <div className="flex items-center gap-2.5">
               <p
-                className="text-[10px] font-bold uppercase tracking-widest"
-                style={{ color: "rgba(255,255,255,0.38)", fontFamily: "'Barlow Condensed', sans-serif" }}
+                className="text-[11px] font-bold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.6)", fontFamily: "'Barlow Condensed', sans-serif" }}
               >
                 Ingredients detected
               </p>
               <span
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.45)" }}
+                className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
               >
                 {matchedIngredients.length}
               </span>
             </div>
-            <div style={{ color: "rgba(255,255,255,0.22)" }}>
-              {showIngredients ? <FaChevronUp size={10} /> : <FaChevronDown size={10} />}
+            <div style={{ color: "rgba(255,255,255,0.45)" }}>
+              {showIngredients ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
             </div>
           </button>
 
@@ -501,9 +501,9 @@ export default function ModalContent({
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="#f87171" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
-          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.42)" }}>
+          <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.62)" }}>
             This is a first-pass screening only. Always confirm flagged substances with your{" "}
-            <span style={{ color: "rgba(255,255,255,0.65)" }}>athletics staff or compliance office</span>{" "}
+            <span style={{ color: "rgba(255,255,255,0.85)" }}>athletics staff or compliance office</span>{" "}
             before use.
           </p>
         </motion.div>
@@ -517,9 +517,9 @@ export default function ModalContent({
             onClick={() => setShowRawText(o => !o)}
             className="flex items-center gap-1.5 transition-all"
             style={{
-              color:         "rgba(255,255,255,0.2)",
+              color:         "rgba(255,255,255,0.35)",
               fontFamily:    "'Barlow Condensed', sans-serif",
-              fontSize:      10,
+              fontSize:      11,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
               background:    "none",
@@ -527,10 +527,10 @@ export default function ModalContent({
               cursor:        "pointer",
               padding:       0,
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.2)"; }}
+            onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.35)"; }}
           >
-            {showRawText ? <FaChevronUp size={8} /> : <FaChevronDown size={8} />}
+            {showRawText ? <FaChevronUp size={9} /> : <FaChevronDown size={9} />}
             {showRawText ? "Hide" : "View"} raw scan text
           </button>
 
@@ -545,12 +545,12 @@ export default function ModalContent({
                 className="overflow-hidden"
               >
                 <div
-                  className="mt-2 rounded-xl p-3 text-[11px] whitespace-pre-wrap break-words max-h-48 overflow-y-auto"
+                  className="mt-2 rounded-xl p-3 text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto"
                   style={{
-                    background:  "rgba(255,255,255,0.02)",
-                    border:      "1px solid rgba(255,255,255,0.05)",
-                    color:       "rgba(255,255,255,0.42)",
-                    lineHeight:  1.6,
+                    background:  "rgba(255,255,255,0.04)",
+                    border:      "1px solid rgba(255,255,255,0.08)",
+                    color:       "rgba(255,255,255,0.62)",
+                    lineHeight:  1.7,
                     fontFamily:  "monospace",
                   }}
                 >

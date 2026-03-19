@@ -20,10 +20,19 @@ export default async function handler(req, res) {
   const auth = requireOrg(req);
   if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
+  // orgId is the primary identifier (modern); token is legacy fallback
+  const orgId    = String(auth?.org?.id    || "").trim();
   const orgToken = String(auth?.org?.token || "").trim();
-  if (!orgToken) return res.status(401).json({ error: "Organization token missing" });
 
-  if (!process.env.ATHLETE_API_KEY || !process.env.ATHLETE_BASE_ID || !process.env.ATHLETE_TABLE_NAME) {
+  if (!orgId && !orgToken) {
+    return res.status(401).json({ error: "Organization session missing orgId/token" });
+  }
+
+  if (
+    !process.env.ATHLETE_API_KEY ||
+    !process.env.ATHLETE_BASE_ID ||
+    !process.env.ATHLETE_TABLE_NAME
+  ) {
     return res.status(500).json({ error: "Athletes Airtable not configured." });
   }
 
@@ -39,17 +48,21 @@ export default async function handler(req, res) {
   try {
     let recordId = athleteId;
 
-    // If we only have email, look up the record — and verify it belongs to this org
+    // If we only have email, look up the record and verify it belongs to this org.
+    // Filter by orgId if available, otherwise fall back to legacy Token field.
     if (!recordId && athleteEmail) {
-      const email      = String(athleteEmail).trim().toLowerCase();
-      const safeEmail  = escapeAirtableString(email);
-      const safeToken  = escapeAirtableString(orgToken);
+      const email     = String(athleteEmail).trim().toLowerCase();
+      const safeEmail = escapeAirtableString(email);
+
+      const filterFormula = orgId
+        ? `AND(LOWER({Email})='${safeEmail}', {OrgId}='${escapeAirtableString(orgId)}')`
+        : `AND(LOWER({Email})='${safeEmail}', {Token}='${escapeAirtableString(orgToken)}')`;
 
       const records = await base(process.env.ATHLETE_TABLE_NAME)
         .select({
-          filterByFormula: `AND(LOWER({Email})='${safeEmail}', {Token}='${safeToken}')`,
-          maxRecords:      1,
-          fields:          ["Email"],
+          filterByFormula,
+          maxRecords: 1,
+          fields:     ["Email"],
         })
         .firstPage();
 
@@ -63,8 +76,8 @@ export default async function handler(req, res) {
     await base(process.env.ATHLETE_TABLE_NAME).destroy(String(recordId).trim());
 
     return res.status(200).json({
-      ok:          true,
-      deletedId:   recordId,
+      ok:           true,
+      deletedId:    recordId,
       athleteEmail: athleteEmail || null,
     });
   } catch (err) {
@@ -75,45 +88,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err?.message || "Failed to delete athlete" });
   }
 }
-
-
-  const { athleteId, athleteEmail } = req.body || {};
-
-  if (!athleteId && !athleteEmail) {
-    return res.status(400).json({ error: "athleteId or athleteEmail is required" });
-  }
-
-  const base  = getBase();
-  const table = process.env.AIRTABLE_ATHLETES_TABLE || "Athletes";
-
-  try {
-    let recordId = athleteId;
-
-    // If we only have email, look up the record ID first
-    if (!recordId && athleteEmail) {
-      const records = await base(table)
-        .select({
-          filterByFormula: `LOWER({Email}) = "${String(athleteEmail).toLowerCase().trim()}"`,
-          maxRecords:      1,
-          fields:          ["Email"],
-        })
-        .firstPage();
-
-      if (!records || records.length === 0) {
-        return res.status(404).json({ error: "Athlete not found" });
-      }
-
-      recordId = records[0].id;
-    }
-
-    await base(table).destroy(String(recordId).trim());
-
-    return res.status(200).json({
-      ok:          true,
-      deletedId:   recordId,
-      athleteEmail: athleteEmail || null,
-    });
-  } catch (err) {
-    console.error("[deleteAthlete]", err);
-    return res.status(500).json({ error: err?.message || "Failed to delete athlete" });
-  }

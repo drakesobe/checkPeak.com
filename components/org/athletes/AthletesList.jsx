@@ -1,7 +1,281 @@
 // components/org/athletes/AthletesList.jsx
 "use client";
 
-import { formatDateTime, statusPillClass } from "@/lib/org/athletes/utils";
+import { Star, CheckCircle2, ExternalLink, Copy, ChevronRight, Mail } from "lucide-react";
+import { formatDateTime } from "@/lib/org/athletes/utils";
+
+const DS = {
+  brand:       "#1E3A5F",
+  brandBg:     "#EEF3F9",
+  brandBorder: "#C0D0E0",
+  safe:        "#00873E",
+  safeBg:      "#F0FBF4",
+  safeBorder:  "#A8DFB8",
+  caution:     "#B86000",
+  cautionBg:   "#FFFBF0",
+  cautionBorder:"#FFD580",
+  banned:      "#C8102E",
+  border:      "#E8ECF0",
+  cardBg:      "#FFFFFF",
+  rowHover:    "#F8FAFD",
+  rowActive:   "#EEF3F9",
+  bodyText:    "#1A2535",
+  labelText:   "#5A6A7D",
+  dimText:     "#9BA8B4",
+};
+
+function StatusChip({ hasEmail }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
+      style={{
+        background: hasEmail ? DS.safeBg     : DS.cautionBg,
+        border:     hasEmail ? `1px solid ${DS.safeBorder}` : `1px solid ${DS.cautionBorder}`,
+        color:      hasEmail ? DS.safe       : DS.caution,
+      }}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ background: hasEmail ? DS.safe : DS.caution }}
+      />
+      {hasEmail ? "Ready" : "Incomplete"}
+    </span>
+  );
+}
+
+function RowBtn({ onClick, disabled, children, primary = false }) {
+  return (
+    <button
+      type="button"
+      onClick={e => { e.stopPropagation(); onClick?.(); }}
+      disabled={disabled}
+      className="inline-flex items-center gap-1 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+      style={{
+        padding:    "5px 10px",
+        background:  primary ? DS.brand  : DS.cardBg,
+        border:      primary ? `1px solid ${DS.brand}` : `1px solid ${DS.border}`,
+        color:       primary ? "#fff"    : DS.labelText,
+      }}
+      onMouseEnter={e => {
+        if (disabled) return;
+        e.currentTarget.style.background = primary ? "#162d4a" : DS.brandBg;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = primary ? DS.brand : DS.cardBg;
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ── Mobile card ─────────────────────────────────────────────────────────── */
+
+function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred, toggleStarred, toggleDone, openPrescriptions, copyEmail }) {
+  const done     = isDone(a.id);
+  const starred  = isStarred(a.id);
+  const selected = selectedIds.has(a.id);
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden transition-all"
+      style={{
+        background:  selected ? DS.brandBg : DS.cardBg,
+        border:      `1px solid ${selected ? DS.brandBorder : DS.border}`,
+        borderLeft:  `3px solid ${done ? DS.safe : selected ? DS.brand : "transparent"}`,
+      }}
+    >
+      <div className="px-3.5 py-3 flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => toggleSelect(a.id)}
+          onClick={e => e.stopPropagation()}
+          className="mt-0.5 accent-[#1E3A5F]"
+        />
+        <div className="flex-1 min-w-0">
+          <button type="button" onClick={() => openDrawer(a.id)} className="text-left w-full">
+            <p className="text-sm font-bold truncate" style={{ color: DS.bodyText }}>{a.name}</p>
+            {a.title && (
+              <p className="text-xs truncate mt-0.5" style={{ color: DS.dimText }}>{a.title}</p>
+            )}
+          </button>
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            <StatusChip hasEmail={!!a.email} />
+            {done && (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+                style={{ background: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}
+              >
+                ✓ Done
+              </span>
+            )}
+            {starred && (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+                style={{ background: DS.cautionBg, color: DS.caution, border: `1px solid ${DS.cautionBorder}` }}
+              >
+                ★ Priority
+              </span>
+            )}
+          </div>
+          {a.email && (
+            <p className="text-xs mt-1.5 flex items-center gap-1" style={{ color: DS.dimText }}>
+              <Mail className="w-3 h-3" />
+              <span className="truncate">{a.email}</span>
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); toggleStarred(a.id); }}
+          className="shrink-0 mt-0.5 transition-opacity"
+          style={{ color: starred ? DS.caution : DS.dimText, background: "none", border: "none", cursor: "pointer" }}
+        >
+          <Star className="w-4 h-4" fill={starred ? "currentColor" : "none"} />
+        </button>
+      </div>
+
+      <div className="px-3.5 pb-3 flex items-center gap-1.5 flex-wrap" style={{ borderTop: `1px solid ${DS.border}` }}>
+        <RowBtn onClick={() => openPrescriptions(a.email)} disabled={!a.email} primary>
+          <ExternalLink className="w-3 h-3" />
+          Prescriptions
+        </RowBtn>
+        <RowBtn onClick={() => copyEmail(a.email)} disabled={!a.email}>
+          <Copy className="w-3 h-3" />
+          Copy
+        </RowBtn>
+        <RowBtn onClick={() => toggleDone(a.id, false)}>
+          <CheckCircle2 className="w-3 h-3" style={{ color: done ? DS.safe : undefined }} />
+          {done ? "Done" : "Mark done"}
+        </RowBtn>
+        <RowBtn onClick={() => openDrawer(a.id)}>
+          <ChevronRight className="w-3 h-3" />
+          View
+        </RowBtn>
+      </div>
+    </div>
+  );
+}
+
+/* ── Desktop table row ───────────────────────────────────────────────────── */
+
+function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred, toggleStarred, toggleDone, openPrescriptions, copyEmail, activeRowId, setActiveRowId }) {
+  const done     = isDone(a.id);
+  const starred  = isStarred(a.id);
+  const selected = selectedIds.has(a.id);
+  const active   = activeRowId === a.id;
+
+  return (
+    <tr
+      onClick={() => setActiveRowId(a.id)}
+      onDoubleClick={() => openDrawer(a.id)}
+      style={{
+        background:  active   ? DS.rowActive : selected ? DS.brandBg : "transparent",
+        borderLeft:  `2px solid ${done ? DS.safe : "transparent"}`,
+        cursor:      "pointer",
+        transition:  "background 0.1s ease",
+      }}
+      onMouseEnter={e => { if (!active && !selected) e.currentTarget.style.background = DS.rowHover; }}
+      onMouseLeave={e => { if (!active && !selected) e.currentTarget.style.background = "transparent"; }}
+    >
+      <td className="py-3 px-3 w-10">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => toggleSelect(a.id)}
+          onClick={e => e.stopPropagation()}
+          className="accent-[#1E3A5F]"
+        />
+      </td>
+
+      <td className="py-3 px-2 w-10">
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); toggleStarred(a.id); }}
+          style={{ color: starred ? DS.caution : DS.dimText, background: "none", border: "none", cursor: "pointer" }}
+          onMouseEnter={e => { e.currentTarget.style.color = DS.caution; }}
+          onMouseLeave={e => { e.currentTarget.style.color = starred ? DS.caution : DS.dimText; }}
+        >
+          <Star className="w-3.5 h-3.5" fill={starred ? "currentColor" : "none"} />
+        </button>
+      </td>
+
+      <td className="py-3 px-3">
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); openDrawer(a.id); }}
+          className="text-left font-semibold text-sm transition-colors"
+          style={{ color: DS.bodyText, background: "none", border: "none", cursor: "pointer" }}
+          onMouseEnter={e => { e.currentTarget.style.color = DS.brand; }}
+          onMouseLeave={e => { e.currentTarget.style.color = DS.bodyText; }}
+        >
+          {a.name}
+        </button>
+        {a.title && (
+          <p className="text-[11px] mt-0.5" style={{ color: DS.dimText }}>{a.title}</p>
+        )}
+      </td>
+
+      <td className="py-3 px-3 max-w-[200px]">
+        {a.email ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs truncate" style={{ color: DS.labelText }}>{a.email}</span>
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); copyEmail(a.email); }}
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-all opacity-0 group-hover:opacity-100"
+              style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
+            >
+              Copy
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs font-semibold" style={{ color: DS.banned }}>Missing</span>
+        )}
+      </td>
+
+      <td className="py-3 px-3">
+        <StatusChip hasEmail={!!a.email} />
+      </td>
+
+      <td className="py-3 px-3 text-xs" style={{ color: DS.dimText }}>
+        {formatDateTime(a.createdAt)}
+      </td>
+
+      <td className="py-3 px-3">
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); toggleDone(a.id, false); }}
+          className="rounded-lg text-xs font-semibold transition-all"
+          style={{
+            padding:    "5px 10px",
+            background:  done ? DS.safeBg  : DS.cardBg,
+            border:      done ? `1px solid ${DS.safeBorder}` : `1px solid ${DS.border}`,
+            color:       done ? DS.safe    : DS.labelText,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = done ? "#dcfae6" : DS.brandBg; }}
+          onMouseLeave={e => { e.currentTarget.style.background = done ? DS.safeBg : DS.cardBg; }}
+        >
+          {done ? "✓ Done" : "Mark"}
+        </button>
+      </td>
+
+      <td className="py-3 px-3">
+        <div className="flex items-center gap-1.5">
+          <RowBtn onClick={() => openPrescriptions(a.email)} disabled={!a.email} primary>
+            <ExternalLink className="w-3 h-3" />
+            Prescriptions
+          </RowBtn>
+          <RowBtn onClick={() => openDrawer(a.id)}>View</RowBtn>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/* ── Main export ─────────────────────────────────────────────────────────── */
 
 export default function AthletesList({
   paged,
@@ -16,252 +290,87 @@ export default function AthletesList({
   copyEmail,
   activeRowId,
   setActiveRowId,
-  cardClass,
 }) {
+  if (paged.length === 0) {
+    return (
+      <div
+        className="rounded-2xl px-5 py-10 text-center shadow-sm"
+        style={{ background: DS.cardBg, border: `1px solid ${DS.border}` }}
+      >
+        <p className="text-sm" style={{ color: DS.dimText }}>
+          No athletes found — try clearing filters or search.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className={`${cardClass} p-6`}>
-      {paged.length === 0 ? (
-        <div className="text-sm text-gray-600">No athletes found. Try clearing filters/search.</div>
-      ) : (
-        <>
-          {/* Mobile cards */}
-          <div className="space-y-3 md:hidden">
-            {paged.map((a) => (
-              <div key={a.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} />
-                      <button type="button" onClick={() => openDrawer(a.id)} className="text-left min-w-0">
-                        <p className="text-sm font-bold text-gray-900 truncate">{a.name}</p>
-                        <p className="text-xs text-gray-500 mt-1 truncate">{a.title}</p>
-                      </button>
-                    </div>
+    <div
+      className="rounded-2xl overflow-hidden shadow-sm"
+      style={{ background: DS.cardBg, border: `1px solid ${DS.border}` }}
+    >
+      {/* Mobile cards */}
+      <div className="md:hidden p-3 space-y-2">
+        {paged.map(a => (
+          <AthleteCard
+            key={a.id}
+            a={a}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
+            openDrawer={openDrawer}
+            isDone={isDone}
+            isStarred={isStarred}
+            toggleStarred={toggleStarred}
+            toggleDone={toggleDone}
+            openPrescriptions={openPrescriptions}
+            copyEmail={copyEmail}
+          />
+        ))}
+      </div>
 
-                    <p className="text-xs text-gray-600 mt-2 truncate">
-                      {a.email ? a.email : <span className="text-red-600 font-semibold">Missing email</span>}
-                    </p>
-
-                    <p className="text-[11px] text-gray-500 mt-1">Created: {formatDateTime(a.createdAt)}</p>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <button
-                      className={`px-2 py-1 rounded-lg text-xs font-bold border ${
-                        isStarred(a.id)
-                          ? "bg-yellow-400 border-yellow-300 text-gray-900"
-                          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
-                      onClick={() => toggleStarred(a.id)}
-                      title="Star"
-                    >
-                      ★
-                    </button>
-
-                    <span className={`text-xs px-2 py-1 rounded-lg border ${statusPillClass(a)}`}>
-                      {a.email ? "Ready" : "Incomplete"}
-                    </span>
-
-                    <button
-                      className={`text-xs px-2 py-1 rounded-lg border ${
-                        isDone(a.id)
-                          ? "bg-emerald-600 text-white border-emerald-600"
-                          : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                      }`}
-                      onClick={() => toggleDone(a.id, false)}
-                      title="Toggle done"
-                    >
-                      {isDone(a.id) ? "Done" : "Not done"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openPrescriptions(a.email)}
-                    className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50"
-                    disabled={!a.email}
-                  >
-                    Prescriptions
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyEmail(a.email)}
-                    className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
-                    disabled={!a.email}
-                  >
-                    Copy Email
-                  </button>
-                </div>
-
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openDrawer(a.id)}
-                    className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
-                  >
-                    Quick View
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleDone(a.id, false)}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-                      isDone(a.id) ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    {isDone(a.id) ? "✓ Done" : "Mark done"}
-                  </button>
-                </div>
-              </div>
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto">
+        <p className="px-4 pt-3 text-[11px]" style={{ color: DS.dimText }}>
+          Single click to highlight · Double click to open Quick View
+        </p>
+        <table className="w-full text-sm group">
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${DS.border}` }}>
+              {["", "", "Name", "Email", "Status", "Created", "Done", "Actions"].map((h, i) => (
+                <th
+                  key={i}
+                  className="py-2.5 px-3 text-left text-[10px] font-bold uppercase tracking-widest"
+                  style={{ color: DS.dimText }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paged.map(a => (
+              <TableRow
+                key={a.id}
+                a={a}
+                selectedIds={selectedIds}
+                toggleSelect={toggleSelect}
+                openDrawer={openDrawer}
+                isDone={isDone}
+                isStarred={isStarred}
+                toggleStarred={toggleStarred}
+                toggleDone={toggleDone}
+                openPrescriptions={openPrescriptions}
+                copyEmail={copyEmail}
+                activeRowId={activeRowId}
+                setActiveRowId={setActiveRowId}
+              />
             ))}
-          </div>
-
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <p className="text-xs text-gray-500 mb-3">Single click highlight • Double click Quick View</p>
-
-            <div className="max-h-[560px] overflow-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white z-10 border-b border-gray-200">
-                  <tr className="text-left text-gray-500">
-                    <th className="py-3 px-3 w-[44px]">Sel</th>
-                    <th className="py-3 px-3 w-[44px]">★</th>
-                    <th className="py-3 px-3">Name</th>
-                    <th className="py-3 px-3">Email</th>
-                    <th className="py-3 px-3">Title</th>
-                    <th className="py-3 px-3">Created</th>
-                    <th className="py-3 px-3 w-[110px]">Done</th>
-                    <th className="py-3 px-3">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {paged.map((a) => (
-                    <tr
-                      key={a.id}
-                      className={`border-b last:border-b-0 hover:bg-gray-50 ${activeRowId === a.id ? "bg-blue-50" : ""}`}
-                      onClick={() => setActiveRowId(a.id)}
-                      onDoubleClick={() => openDrawer(a.id)}
-                    >
-                      <td className="py-3 px-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(a.id)}
-                          onChange={() => toggleSelect(a.id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-
-                      <td className="py-3 px-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStarred(a.id);
-                          }}
-                          className={`px-2 py-1 rounded-lg text-xs font-bold border ${
-                            isStarred(a.id)
-                              ? "bg-yellow-400 border-yellow-300 text-gray-900"
-                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                          }`}
-                          title="Star"
-                        >
-                          ★
-                        </button>
-                      </td>
-
-                      <td className="py-3 px-3 font-semibold text-gray-900">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDrawer(a.id);
-                          }}
-                          className="hover:underline text-left"
-                        >
-                          {a.name}
-                        </button>
-                      </td>
-
-                      <td className="py-3 px-3 text-gray-700">
-                        {a.email ? (
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{a.email}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyEmail(a.email);
-                              }}
-                              className="px-2 py-1 rounded-lg border border-gray-200 bg-white text-[11px] font-semibold hover:bg-gray-50"
-                              title="Copy email"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-red-600 font-semibold">Missing email</span>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-3 text-gray-700">{a.title}</td>
-
-                      <td className="py-3 px-3 text-gray-500">{formatDateTime(a.createdAt)}</td>
-
-                      <td className="py-3 px-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDone(a.id, false);
-                          }}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-                            isDone(a.id)
-                              ? "bg-emerald-600 text-white border-emerald-600"
-                              : "bg-white border-gray-200 hover:bg-gray-50"
-                          }`}
-                        >
-                          {isDone(a.id) ? "✓ Done" : "Mark"}
-                        </button>
-                      </td>
-
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openPrescriptions(a.email);
-                            }}
-                            className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50"
-                            disabled={!a.email}
-                          >
-                            Prescriptions
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDrawer(a.id);
-                            }}
-                            className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50"
-                          >
-                            Quick View
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <p className="mt-4 text-[11px] text-gray-500 leading-relaxed">
-              Done/Star/Notes + Saved Views are stored locally for speed. Exports include coach notes.
-            </p>
-          </div>
-        </>
-      )}
+          </tbody>
+        </table>
+        <p className="px-4 pb-3 pt-2 text-[11px]" style={{ color: DS.dimText }}>
+          Done / Star / Notes stored locally · Exports include coach notes
+        </p>
+      </div>
     </div>
   );
 }

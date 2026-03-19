@@ -80,9 +80,9 @@ export function useAthletesRosterActions({
     const header = ["Name", "Email", "Title", "CreatedAt", "Done", "Starred", "CoachNote"].join(",");
 
     const lines = rows.map((a) => {
-      const done = coachState?.done?.[a.id] ? "Yes" : "No";
+      const done    = coachState?.done?.[a.id]    ? "Yes" : "No";
       const starred = coachState?.starred?.[a.id] ? "Yes" : "No";
-      const note = cleanString(coachState?.notes?.[a.id] || "");
+      const note    = cleanString(coachState?.notes?.[a.id] || "");
       return [
         safeCsvCell(a.name),
         safeCsvCell(a.email || ""),
@@ -95,7 +95,11 @@ export function useAthletesRosterActions({
     });
 
     const content = [header, ...lines].join("\n");
-    downloadTextFile(`${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.csv`, content, "text/csv;charset=utf-8");
+    downloadTextFile(
+      `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.csv`,
+      content,
+      "text/csv;charset=utf-8"
+    );
   };
 
   const exportSelectedCsv = () => {
@@ -119,7 +123,7 @@ export function useAthletesRosterActions({
     if (!selectedEmails.length) return toast.error("Select athletes with emails first.");
 
     const limit = 12;
-    const list = selectedEmails.slice(0, limit);
+    const list  = selectedEmails.slice(0, limit);
 
     if (selectedEmails.length > 6) {
       const ok = window.confirm(`Open ${list.length} prescription tabs now? (We cap at ${limit} tabs.)`);
@@ -133,7 +137,8 @@ export function useAthletesRosterActions({
       openPrescriptionsNewTab(list[i]);
     }
 
-    if (selectedEmails.length > limit) toast(`Opened first ${limit}. Export/copy emails for the rest.`, { icon: "ℹ️" });
+    if (selectedEmails.length > limit)
+      toast(`Opened first ${limit}. Export/copy emails for the rest.`, { icon: "ℹ️" });
   };
 
   const bulkMarkDone = (value) => {
@@ -162,6 +167,46 @@ export function useAthletesRosterActions({
     if (advanceIfDone && willBeDone) setTimeout(() => goNextAfter(id), 60);
   };
 
+  /**
+   * deleteAthlete
+   * Calls DELETE /api/org/deleteAthlete, then cleans up all local state
+   * for that athlete. Throws on failure so the drawer can show the error inline.
+   */
+  const deleteAthlete = async (athleteId) => {
+    if (!athleteId) throw new Error("No athlete ID provided.");
+
+    const res  = await fetch("/api/org/deleteAthlete", {
+      method:      "DELETE",
+      credentials: "include",
+      headers:     { "Content-Type": "application/json" },
+      body:        JSON.stringify({ athleteId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Failed to delete athlete.");
+
+    // Scrub from coachState (done / starred / notes)
+    setCoachState((prev) => {
+      const next = { ...prev };
+      ["done", "starred", "notes"].forEach((k) => {
+        if (next[k]) {
+          next[k] = { ...next[k] };
+          delete next[k][athleteId];
+        }
+      });
+      return next;
+    });
+
+    // Remove from any active selection
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(athleteId);
+      return next;
+    });
+
+    toast.success("Athlete removed from roster.");
+    return data;
+  };
+
   return {
     copyText,
     openPrescriptions,
@@ -177,5 +222,6 @@ export function useAthletesRosterActions({
     bulkMarkDone,
     bulkStar,
     toggleDoneAndMaybeAdvance,
+    deleteAthlete,
   };
 }

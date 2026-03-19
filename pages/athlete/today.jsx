@@ -256,34 +256,66 @@ export default function AthleteToday() {
 
   const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyNutritionCompletion);
 
+  // Key uses AthleteToken (the per-athlete unique ID) — never Token/token which is the shared org token.
+  // Checked capital-first to match the cookie field name set by requireAthlete.
   const nutritionCompletionKey = useMemo(() => {
+    const athleteToken = String(
+      user?.AthleteToken || user?.athleteToken || user?.athlete_token || ""
+    ).trim();
     const email = String(user?.Email || user?.email || "").trim().toLowerCase();
-    const token = String(user?.token || user?.Token || user?.athleteToken || "").trim();
-    const who   = token || email || "athlete";
-    const day   = String(selectedDate || "").trim() || "unknown-date";
+    // If neither unique identifier is available, do NOT fall back to Token/token
+    // (that is the org-shared token and would make all athletes share the same key)
+    const who = athleteToken || email || "";
+    if (!who) return "";                        // no key = no read/write until identity is known
+    const day = String(selectedDate || "").trim() || "unknown-date";
     return `checkpeak:nutritionCompletion:${who}:${day}`;
   }, [user, selectedDate]);
 
   const hydratingRef = useRef(false);
 
+  // Load completion: fetch from Airtable (source of truth) on mount.
+  // Fall back to localStorage while the fetch is in flight so the UI isn't empty.
   useEffect(() => {
-    if (!authReady || !user || !isAthlete) return;
-    hydratingRef.current = true;
-    const raw = lsSafeGet(nutritionCompletionKey);
-    if (!raw) {
-      setNutritionCompletion(makeEmptyNutritionCompletion());
-      hydratingRef.current = false;
-      return;
-    }
-    try {
-      setNutritionCompletion(normalizeNutritionCompletionShape(JSON.parse(raw)));
-    } catch {
-      setNutritionCompletion(makeEmptyNutritionCompletion());
-    } finally {
-      setTimeout(() => { hydratingRef.current = false; }, 0);
-    }
-  }, [authReady, user, isAthlete, nutritionCompletionKey]);
+    if (!authReady || !user || !isAthlete || !selectedDate) return;
 
+    hydratingRef.current = true;
+
+    // Show localStorage immediately while we wait for the API
+    if (nutritionCompletionKey) {
+      const cached = lsSafeGet(nutritionCompletionKey);
+      if (cached) {
+        try {
+          setNutritionCompletion(normalizeNutritionCompletionShape(JSON.parse(cached)));
+        } catch { /* ignore */ }
+      } else {
+        setNutritionCompletion(makeEmptyNutritionCompletion());
+      }
+    }
+
+    // Fetch authoritative data from Airtable
+    fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
+      method:      "GET",
+      credentials: "include",
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.ok) return;
+        const normalized = normalizeNutritionCompletionShape(data.completion);
+        setNutritionCompletion(normalized);
+        // Keep localStorage in sync with what Airtable says
+        if (nutritionCompletionKey) {
+          lsSafeSet(nutritionCompletionKey, JSON.stringify(normalized));
+        }
+      })
+      .catch(() => { /* network error — localStorage value already shown */ })
+      .finally(() => {
+        setTimeout(() => { hydratingRef.current = false; }, 0);
+      });
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, user, isAthlete, selectedDate]);
+
+  // Write-through: persist to localStorage whenever completion changes (after hydration)
   useEffect(() => {
     if (!authReady || !user || !isAthlete) return;
     if (hydratingRef.current || !nutritionCompletionKey) return;

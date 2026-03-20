@@ -7,7 +7,7 @@ import { DS, Button } from "@/components/org/dashboard/DashboardUI";
 import { fmtDate } from "@/lib/org/dashboard-utils";
 
 export default function RecentActivityPanel({
-  loading, recentActivity = [], onRefresh, onViewHistory, pageSize = 8,
+  loading, recentActivity = [], onRefresh, onViewHistory, pageSize = 6,
 }) {
   const [page, setPage] = useState(1);
 

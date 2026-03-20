@@ -39,7 +39,7 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
   const hydrationSetCount = Number(summary?.hydrationSetCount || 0);
 
   const coveragePct  = useMemo(() => pct(withPlan, total),            [withPlan, total]);
-  const hydrationPct = useMemo(() => pct(hydrationSetCount, withPlan), [hydrationSetCount, withPlan]);
+  const hydrationPct = useMemo(() => pct(hydrationSetCount, total), [hydrationSetCount, total]);
 
   const MAX_PREVIEW = 1;
   const preview   = useMemo(() => needsList.slice(0, MAX_PREVIEW), [needsList]);
@@ -100,7 +100,7 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
             <p className="text-2xl font-black mt-1 tabular-nums" style={{ color: DS.bodyText, fontFamily: "'Barlow Condensed', sans-serif" }}>
               {loading ? "…" : `${hydrationPct}%`}
             </p>
-            <p className="text-xs mt-1" style={{ color: DS.dimText }}>{hydrationSetCount}/{withPlan} with plan</p>
+            <p className="text-xs mt-1" style={{ color: DS.dimText }}>{hydrationSetCount}/{total} athletes</p>
           </div>
         </div>
 
@@ -136,27 +136,48 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
         {/* Needs list */}
         {!loading && !err && needsList.length > 0 && (
           <div className="mt-3">
+            {/* Header */}
             <div className="flex items-center justify-between gap-2 mb-2">
               <p className="text-xs font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
                 Needs a Plan
-                <span className="ml-1.5 font-bold normal-case" style={{ color: DS.dimText }}>({needsList.length})</span>
+                <span
+                  className="ml-1.5 px-1.5 py-0.5 font-bold normal-case"
+                  style={{
+                    background: DS.cautionBg,
+                    border: `1px solid ${DS.cautionBorder}`,
+                    color: DS.caution,
+                    fontSize: 10,
+                  }}
+                >
+                  {needsList.length}
+                </span>
               </p>
-              {remaining > 0 && onGoNutrition && (
-                <Button variant="secondary" onClick={onGoNutrition}>
-                  View all {remaining}<ExternalLink className="w-3 h-3" />
-                </Button>
-              )}
             </div>
-            <div className="space-y-1">
+
+            {/* Scrollable athlete rows */}
+            <div
+              className="space-y-1"
+              style={{
+                maxHeight: 280,
+                overflowY: needsList.length > 4 ? "auto" : "visible",
+              }}
+            >
               {preview.map((a) => (
                 <div
                   key={a.token || a.email}
                   className="flex items-center justify-between gap-3 px-3 py-2"
-                  style={{ border: `1px solid ${DS.border}`, borderLeft: `3px solid ${DS.caution}` }}
+                  style={{
+                    border:     `1px solid ${DS.border}`,
+                    borderLeft: `3px solid ${DS.caution}`,
+                  }}
                 >
                   <div className="min-w-0">
-                    <p className="text-xs font-bold truncate" style={{ color: DS.bodyText }}>{a.name || "Athlete"}</p>
-                    <p className="text-xs truncate" style={{ color: DS.dimText }}>{a.email || a.token || ""}</p>
+                    <p className="text-xs font-bold truncate" style={{ color: DS.bodyText }}>
+                      {a.name || "Athlete"}
+                    </p>
+                    <p className="text-xs truncate" style={{ color: DS.dimText }}>
+                      {a.email || a.token || ""}
+                    </p>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     {onViewAthleteNutrition && (
@@ -173,6 +194,25 @@ export default function TodayNutritionPanel({ onGoNutrition, onBuildNutritionPla
                 </div>
               ))}
             </div>
+
+            {/* Overflow CTA */}
+            {remaining > 0 && onGoNutrition && (
+              <button
+                type="button"
+                onClick={onGoNutrition}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold transition-all"
+                style={{
+                  background: DS.cautionBg,
+                  border:     `1px solid ${DS.cautionBorder}`,
+                  color:      DS.caution,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#fff0d0"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = DS.cautionBg; }}
+              >
+                <ExternalLink className="w-3 h-3" />
+                View all {needsList.length} athletes without a plan
+              </button>
+            )}
           </div>
         )}
       </div>

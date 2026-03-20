@@ -51,7 +51,7 @@ export default function ActivityTemplatesPanel({
   onRefreshTemplates,
   onViewHistory,
   onUseTemplate,
-  activityLimit = 8,
+  activityLimit = 6,
   templateLimit = 6,
   defaultCollapsed = true, // collapsed by default
 }) {

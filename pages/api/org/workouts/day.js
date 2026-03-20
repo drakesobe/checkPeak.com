@@ -147,15 +147,16 @@ export default async function handler(req, res) {
       const f       = rec.fields || {};
       const itemIds = safeArray(f.WorkoutItems).filter(Boolean);
       return {
-        id:           rec.id,
-        Title:        f.Title || "Workout",
-        Date:         f.Date ? String(f.Date).slice(0, 10) : date,
-        Status:       f.Status || "assigned",
-        Sport:        f.Sport  || "",
-        athleteCount: safeArray(f.Athlete).length,
-        itemCount:    itemIds.length,
+        id:            rec.id,
+        Title:         f.Title || "Workout",
+        Date:          f.Date ? String(f.Date).slice(0, 10) : date,
+        Status:        f.Status || "assigned",
+        Sport:         f.Sport  || "",
+        athleteCount:  safeArray(f.Athlete).length,
+        athleteToken:  String(f.AthleteToken || "").trim(),
+        itemCount:     itemIds.length,
         itemIds,
-        _orgLink:     f.Organization,
+        _orgLink:      f.Organization,
       };
     });
 
@@ -296,48 +297,39 @@ export default async function handler(req, res) {
   let athletes = [];
   if (!(missing.ATHLETE_API_KEY || missing.ATHLETE_BASE_ID || missing.ATHLETE_TABLE_NAME)) {
     try {
-      const athleteTable   = encodeURIComponent(process.env.ATHLETE_TABLE_NAME);
-      const athleteBaseUrl = `https://api.airtable.com/v0/${process.env.ATHLETE_BASE_ID}/${athleteTable}`;
+      const athleteBase  = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
+      const AthleteTable = athleteBase(process.env.ATHLETE_TABLE_NAME);
 
-      const athleteOrgJoin = `ARRAYJOIN({Organization}&"")`;
-      const orgClause = candidates.length === 1
-        ? `FIND("${escFormulaString(candidates[0])}", ${athleteOrgJoin})`
-        : `OR(${candidates.map(c => `FIND("${escFormulaString(c)}", ${athleteOrgJoin})`).join(",")})`;
+      // Athletes table links to org via {Token} — NOT via {Organization}
+      const safeToken    = escFormulaString(orgToken);
+      const athleteFilter = orgToken
+        ? `FIND("${safeToken}", ARRAYJOIN({Token}&""))>0`
+        : "";
 
-      let athleteFormula = orgClause;
-      if (sportQ) {
-        athleteFormula = `AND(${orgClause}, LOWER({sport}&"")="${escFormulaString(sportQ)}")`;
-      }
-
-      debug.formulas.athletes = athleteFormula;
-
-      const qs = new URLSearchParams();
-      qs.set("filterByFormula", athleteFormula);
-      qs.set("sort[0][field]", "CreatedAt");
-      qs.set("sort[0][direction]", "desc");
-      ["Name", "Email", "CreatedAt", "Organization", "sport", "Team", "Status"].forEach(f => qs.append("fields[]", f));
-
-      const atRes = await fetch(`${athleteBaseUrl}?${qs.toString()}`, {
-        method:  "GET",
-        headers: { Authorization: `Bearer ${process.env.ATHLETE_API_KEY}`, "Content-Type": "application/json" },
-      });
-
-      const data = await safeJson(atRes);
-
-      if (!atRes.ok) {
-        debug.athletesError = { status: atRes.status, data };
+      if (!athleteFilter) {
+        debug.athletesError = { message: "No orgToken to filter athletes" };
       } else {
-        athletes = (Array.isArray(data?.records) ? data.records : []).map(r => {
+        debug.formulas.athletes = athleteFilter;
+
+        const atRecs = await athleteBase(process.env.ATHLETE_TABLE_NAME)
+          .select({
+            filterByFormula: athleteFilter,
+            fields: ["Name", "Email", "AthleteToken", "CreatedAt", "sport", "Team", "Status"],
+            maxRecords: 2000,
+          })
+          .all();
+
+        athletes = (atRecs || []).map(r => {
           const f = r.fields || {};
           return {
             id:           r.id,
-            name:         String(f.Name   || "").trim(),
-            email:        String(f.Email  || "").trim(),
-            createdAt:    String(f.CreatedAt || "").trim(),
-            sport:        String(f.sport  || "").trim(),
-            team:         String(f.Team   || "").trim(),
-            status:       String(f.Status || "").trim(),
-            organization: f.Organization,
+            name:         String(f.Name         || "").trim(),
+            email:        String(f.Email        || "").trim(),
+            athleteToken: String(f.AthleteToken || "").trim(),
+            createdAt:    String(f.CreatedAt    || "").trim(),
+            sport:        String(f.sport        || "").trim(),
+            team:         String(f.Team         || "").trim(),
+            status:       String(f.Status       || "").trim(),
           };
         });
         debug.counts.athletes = athletes.length;
@@ -348,8 +340,23 @@ export default async function handler(req, res) {
     }
   }
 
+  // Cross-reference: add athleteName to each workout using AthleteToken
+  const tokenToName = new Map(
+    athletes
+      .filter(a => a.athleteToken && a.name)
+      .map(a => [a.athleteToken, a.name])
+  );
+
+  const enrichWorkout = (w) => ({
+    ...w,
+    athleteName: (w.athleteToken ? tokenToName.get(w.athleteToken) : null) || null,
+  });
+
+  const enrichedWorkouts        = workouts.map(enrichWorkout);
+  const enrichedWorkoutsAll     = workoutsAll.map(enrichWorkout);
+
   return res.status(200).json({
-    workouts,
+    workouts:           enrichedWorkouts,
     athletes,
     itemsByWorkoutId,
     completionByItemId,

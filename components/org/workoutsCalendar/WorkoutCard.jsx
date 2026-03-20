@@ -15,12 +15,13 @@ function statusTone(s) {
 }
 
 export default function WorkoutCard({ w, onOpen, compact = false }) {
-  const title    = w?.Title || "Workout";
-  const status   = w?.Status || "assigned";
-  const sport    = titleSport(w?.Sport || "");
-  const athletes = Number(w?.athleteCount || 0);
-  const items    = Number(w?.itemCount    || 0);
-  const tone     = statusTone(status);
+  const title       = w?.Title       || "Workout";
+  const status      = w?.Status      || "assigned";
+  const sport       = titleSport(w?.Sport || "");
+  const athletes    = Number(w?.athleteCount || 0);
+  const items       = Number(w?.itemCount    || 0);
+  const athleteName = String(w?.athleteName  || "").trim();
+  const tone        = statusTone(status);
 
   return (
     <button
@@ -39,6 +40,7 @@ export default function WorkoutCard({ w, onOpen, compact = false }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
+
           {/* Title */}
           <p
             className="font-bold truncate"
@@ -46,6 +48,16 @@ export default function WorkoutCard({ w, onOpen, compact = false }) {
           >
             {title}
           </p>
+
+          {/* Athlete name — shown when available */}
+          {athleteName && (
+            <p
+              className="truncate font-semibold"
+              style={{ color: DS.brand, fontSize: "11px", marginTop: "1px" }}
+            >
+              {athleteName}
+            </p>
+          )}
 
           {/* Meta row */}
           <div className="flex flex-wrap items-center gap-2 mt-1">

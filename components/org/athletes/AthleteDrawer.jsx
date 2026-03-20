@@ -190,6 +190,9 @@ export default function AthleteDrawer({
   const [deleteMode,  setDeleteMode]  = useState(false);
   const [deleting,    setDeleting]    = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [sport,       setSport]       = useState("");
+  const [sportSaving, setSportSaving] = useState(false);
+  const [sportError,  setSportError]  = useState("");
 
   // Lock background scroll
   useEffect(() => {
@@ -199,11 +202,14 @@ export default function AthleteDrawer({
     return () => { document.documentElement.style.overflow = prev; };
   }, [open]);
 
-  // Reset delete state when athlete changes or drawer closes
+  // Reset delete + sport state when athlete changes or drawer closes
   useEffect(() => {
     setDeleteMode(false);
     setDeleting(false);
     setDeleteError("");
+    setSport(String(athlete?.sport || "").trim());
+    setSportSaving(false);
+    setSportError("");
   }, [athlete?.id, open]);
 
   const athleteId = String(athlete?.id || "");
@@ -228,6 +234,27 @@ export default function AthleteDrawer({
     } catch (err) {
       setDeleteError(String(err?.message || "Delete failed. Try again."));
       setDeleting(false);
+    }
+  };
+
+  const handleSportSave = async (newSport) => {
+    if (!athleteId) return;
+    setSportSaving(true);
+    setSportError("");
+    try {
+      const res  = await fetch("/api/org/updateAthleteMeta", {
+        method:      "PATCH",
+        credentials: "include",
+        headers:     { "Content-Type": "application/json" },
+        body:        JSON.stringify({ athleteId, sport: newSport }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to save sport.");
+      setSport(newSport);
+    } catch (err) {
+      setSportError(String(err?.message || "Save failed."));
+    } finally {
+      setSportSaving(false);
     }
   };
 
@@ -439,16 +466,57 @@ export default function AthleteDrawer({
                   />
                 </Section>
 
-                {/* Keyboard shortcuts */}
-                <Section title="Keyboard shortcuts">
-                  <p className="text-xs leading-relaxed" style={{ color: DS.labelText }}>
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>/</span> search &nbsp;·&nbsp;
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>j/k</span> move &nbsp;·&nbsp;
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>x</span> select &nbsp;·&nbsp;
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>o</span> open &nbsp;·&nbsp;
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>d</span> done &nbsp;·&nbsp;
-                    <span className="font-semibold" style={{ color: DS.bodyText }}>s</span> star
-                  </p>
+                {/* Sport */}
+                <Section title="Sport" subtitle="Updates the athlete's sport in Airtable">
+                  <div className="space-y-2">
+                    <select
+                      value={sport}
+                     onChange={e => {
+                      const val = e.target.value;
+                      console.log("sport change — athleteId:", athleteId, "val:", val);
+                      setSport(val);
+                      handleSportSave(val);
+                    }}
+                      disabled={!athleteId || sportSaving}
+                      className="w-full text-sm rounded-xl outline-none transition-all disabled:opacity-50"
+                      style={{
+                        background:  DS.cardBg,
+                        border:      `1px solid ${DS.border}`,
+                        color:       DS.bodyText,
+                        padding:     "9px 12px",
+                        fontFamily:  "inherit",
+                      }}
+                      onFocus={e  => { e.currentTarget.style.border = `1px solid ${DS.brand}`; }}
+                      onBlur={e   => { e.currentTarget.style.border = `1px solid ${DS.border}`; }}
+                    >
+                      <option value="">— No sport selected —</option>
+                      {[
+                        ["baseball",      "Baseball"],
+                        ["basketball",    "Basketball"],
+                        ["cross country", "Cross Country"],
+                        ["football",      "Football"],
+                        ["golf",          "Golf"],
+                        ["hockey",        "Hockey"],
+                        ["lacrosse",      "Lacrosse"],
+                        ["soccer",        "Soccer"],
+                        ["softball",      "Softball"],
+                        ["swimming",      "Swimming"],
+                        ["tennis",        "Tennis"],
+                        ["track",         "Track & Field"],
+                        ["volleyball",    "Volleyball"],
+                        ["wrestling",     "Wrestling"],
+                        ["other",         "Other"],
+                      ].map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                    {sportSaving && (
+                      <p className="text-xs" style={{ color: DS.dimText }}>Saving…</p>
+                    )}
+                    {sportError && (
+                      <p className="text-xs font-semibold" style={{ color: DS.banned }}>{sportError}</p>
+                    )}
+                  </div>
                 </Section>
 
                 {/* ── Delete zone ──────────────────────────────────────────── */}

@@ -53,15 +53,10 @@ const athletesBase =
     ? new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID)
     : null;
 
-const prescriptionsBase =
-  process.env.PRESCRIPTIONS_API_KEY && process.env.PRESCRIPTIONS_BASE_ID
-    ? new Airtable({ apiKey: process.env.PRESCRIPTIONS_API_KEY }).base(process.env.PRESCRIPTIONS_BASE_ID)
-    : null;
-
-// Workouts live in a separate base (same one used by workouts-calendar)
+// Workouts use their own env vars (DAILYWORKOUTS_*)
 const workoutsBase =
-  process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID
-    ? new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID)
+  process.env.DAILYWORKOUTS_API_KEY && process.env.DAILYWORKOUTS_BASE_ID
+    ? new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID)
     : null;
 
 // Nutrition completions (same base as nutrition plans)
@@ -81,8 +76,11 @@ export default async function handler(req, res) {
   }
 
   const ATHLETES_TABLE      = process.env.ATHLETE_TABLE_NAME;
-  const PRESCRIPTIONS_TABLE = process.env.PRESCRIPTIONS_TABLE_NAME;
-  const WORKOUTS_TABLE      = process.env.AIRTABLE_WORKOUTS_TABLE || "DailyWorkouts";
+  const NUTRITION_PLANS_TABLE  =
+    process.env.NUTRITION_PLANS_TABLE ||
+    process.env.NUTRITION_TABLE_NAME  ||
+    "NutritionPlans";
+  const WORKOUTS_TABLE      = process.env.DAILYWORKOUTS_TABLE_ID || process.env.AIRTABLE_WORKOUTS_TABLE || "DailyWorkouts";
   const NUTRITION_COMPLETIONS_TABLE =
     process.env.NUTRITION_COMPLETIONS_TABLE || "NutritionCompletions";
 
@@ -91,12 +89,6 @@ export default async function handler(req, res) {
       error: "Athletes Airtable not configured. Check ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME.",
     });
   }
-  if (!prescriptionsBase || !PRESCRIPTIONS_TABLE) {
-    return res.status(500).json({
-      error: "Prescriptions Airtable not configured. Check PRESCRIPTIONS_API_KEY, PRESCRIPTIONS_BASE_ID, PRESCRIPTIONS_TABLE_NAME.",
-    });
-  }
-
   const auth = requireOrg(req);
   if (!auth?.ok) {
     return res.status(401).json({ error: auth?.error || "Unauthorized" });
@@ -106,8 +98,9 @@ export default async function handler(req, res) {
   const orgId    = String(auth?.org?.id    || "").trim();
   const orgToken = String(auth?.org?.token || "").trim();
 
-  if (!orgId && !orgToken) {
-    return res.status(401).json({ error: "Organization session missing orgId/token" });
+  // All Airtable filters use Token — it is required
+  if (!orgToken) {
+    return res.status(401).json({ error: "Organization token missing from session. Please log out and back in." });
   }
 
   const daysStale    = Math.max(7,  Math.min(180, Number(req.query?.daysStale    || 30)));
@@ -115,12 +108,9 @@ export default async function handler(req, res) {
 
   try {
     const safeToken = orgToken ? escapeAirtableString(orgToken) : "";
-    const safeOrgId = orgId    ? escapeAirtableString(orgId)    : "";
 
-    // Build org filter — prefer orgId, fall back to Token field
-    const athleteOrgFilter = orgId
-      ? `{OrgId}='${safeOrgId}'`
-      : `{Token}='${safeToken}'`;
+    // Athletes table uses {Token} — there is no OrgId field on this table
+    const athleteOrgFilter = `{Token}='${safeToken}'`;
 
     /* ── 1. Load ALL athletes for this org (eachPage avoids 100-record cap) ── */
     const athleteRecords = await fetchAllPages(
@@ -155,51 +145,85 @@ export default async function handler(req, res) {
       return res.status(200).json({ stats: emptyStats, athletes: [], recentActivity: [] });
     }
 
-    /* ── 2. Load ALL prescriptions for this org ── */
-    const rxOrgFilter = orgId
-      ? `{OrgId}='${safeOrgId}'`
-      : `{Organization Token}='${safeToken}'`;
+    /* ── 2. Check nutrition plan coverage per athlete ─────────────────────
+       Mirrors /api/org/nutrition/table.js exactly — individual lookups with
+       concurrency limit of 8. Avoids batched OR formulas that fail silently
+       when Airtable rejects overly-long formula strings.
+    ── */
 
-    const rxRecords = await fetchAllPages(
-      prescriptionsBase(PRESCRIPTIONS_TABLE).select({
-        filterByFormula: rxOrgFilter,
-        sort: [{ field: "CreatedAt", direction: "desc" }],
-      })
+    // Build a stable recordId→athleteToken map from already-loaded athlete records
+    const recIdToToken = new Map(
+      athleteRecords.map(r => [r.id, String(r.fields?.AthleteToken || "").trim()])
     );
 
-    // Group by athlete email
-    const byEmail = {};
+    // lookupSafeContains: works whether AthleteToken is a text or lookup/array field
+    function lookupSafeContains(fieldName, value) {
+      const safe = escapeAirtableString(value);
+      return `FIND('${safe}', ARRAYJOIN({${fieldName}}&''))>0`;
+    }
+
+    // Concurrency-limited map — same as nutrition/table.js
+    async function mapLimit(items, limit, fn) {
+      const results = new Array(items.length);
+      let i = 0;
+      async function worker() {
+        while (i < items.length) {
+          const idx = i++;
+          results[idx] = await fn(items[idx], idx);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+      return results;
+    }
+
     const activity = [];
 
-    for (const r of rxRecords) {
-      const f     = r.fields || {};
-      const email = String(f["Athlete Email"] || f.AthleteEmail || "").trim().toLowerCase();
-      if (!email) continue;
+    // Per-athlete plan lookup — concurrency 8, exactly like nutrition/table.js
+    const planResultsByRecId = nutritionBase
+      ? await mapLimit(athleteRecords, 8, async (athRec) => {
+          const tok = String(athRec.fields?.AthleteToken || "").trim();
+          if (!tok) return { recId: athRec.id, plans: [] };
 
-      const item = {
-        id:           r.id,
-        athleteEmail: email,
-        title:        f.Title        || "",
-        createdAt:    f.CreatedAt    || "",
-        createdBy:    f.CreatedBy    || "",
-        organization: f.Organization || "",
-        prescription: f.Prescription || "",
-      };
+          try {
+            const filter = lookupSafeContains("AthleteToken", tok);
+            const recs   = await nutritionBase(NUTRITION_PLANS_TABLE)
+              .select({
+                filterByFormula: filter,
+                fields:          ["AthleteToken", "Status", "CreatedAt", "CreatedBy", "Prescription"],
+                sort:            [{ field: "CreatedAt", direction: "desc" }],
+                maxRecords:      50,
+              })
+              .firstPage();
 
-      byEmail[email] = byEmail[email] || [];
-      byEmail[email].push(item);
-      activity.push({
-        type:         "plan",
-        athleteEmail: email,
-        title:        item.title || "Plan",
-        createdAt:    item.createdAt,
-        createdBy:    item.createdBy,
-      });
-    }
+            const plans = (recs || []).map(r => ({
+              id:        r.id,
+              title:     String(r.fields?.Prescription || "").slice(0, 80),
+              status:    String(r.fields?.Status       || "").toLowerCase(),
+              createdAt: r.fields?.CreatedAt || "",
+              createdBy: r.fields?.CreatedBy || "",
+            }));
 
-    for (const email of Object.keys(byEmail)) {
-      byEmail[email].sort(sortByDateDesc);
-    }
+            // Populate activity feed from this athlete's plans
+            const email = String(athRec.fields?.Email || "").trim().toLowerCase();
+            for (const p of plans) {
+              activity.push({
+                type:         "plan",
+                athleteEmail: email,
+                title:        p.title || "Nutrition Plan",
+                createdAt:    p.createdAt,
+                createdBy:    p.createdBy,
+              });
+            }
+
+            return { recId: athRec.id, plans };
+          } catch {
+            return { recId: athRec.id, plans: [] };
+          }
+        })
+      : athleteRecords.map(r => ({ recId: r.id, plans: [] }));
+
+    // Index by record ID for fast lookup during enrichment
+    const plansByRecId = new Map(planResultsByRecId.map(x => [x.recId, x.plans]));
 
     /* ── 3. Build per-athlete metrics ── */
     const now    = new Date();
@@ -209,10 +233,14 @@ export default async function handler(req, res) {
     let activeLast30 = 0, staleCount = 0, needsPlan = 0;
 
     const enrichedAthletes = athletes.map((a) => {
-      const plans   = byEmail[a.email] || [];
-      totalPlans   += plans.length;
+      // Match athlete to their Airtable record to get the plan lookup
+      const athRec = athleteRecords.find(
+        r => String(r.fields?.Email || "").trim().toLowerCase() === a.email
+      );
+      const plans    = (athRec ? plansByRecId.get(athRec.id) : null) || [];
+      totalPlans    += plans.length;
 
-      const hasPlan = plans.length > 0;
+      const hasPlan  = plans.length > 0;
       if (hasPlan) athletesWithPlans += 1;
       else needsPlan += 1;
 
@@ -245,77 +273,129 @@ export default async function handler(req, res) {
     const recentActivity = activity.slice(0, activityLimit);
 
     /* ── 4. Workouts today ─────────────────────────────────────────────── */
+    // DailyWorkouts links to org via {Organization} linked record field.
+    // Match by org name/token/id as primary values — same approach as workouts/range.js.
     let workoutsTodayCompleted = 0;
     let workoutsTodayTotal     = 0;
 
     if (workoutsBase) {
       try {
-        const today       = todayNY();
-        // Filter: records for this org where date = today
-        // DailyWorkouts stores OrgId and a Date field
-        const wFilter = orgId
-          ? `AND({OrgId}='${safeOrgId}', IS_SAME({Date}, '${today}', 'day'))`
-          : `AND({Token}='${safeToken}', IS_SAME({Date}, '${today}', 'day'))`;
+        const today = todayNY();
 
-        const workoutRecs = await fetchAllPages(
-          workoutsBase(WORKOUTS_TABLE).select({
-            filterByFormula: wFilter,
-            fields: ["Status", "Date", "OrgId"],
-          })
-        );
+        // Build org candidates — name most reliable (linked primary), token/id as fallbacks
+        const orgName = String(
+          auth?.user?.OrgName || auth?.user?.organizationName ||
+          auth?.user?.["Organization Name"] || auth?.org?.name || ""
+        ).trim();
 
-        workoutsTodayTotal     = workoutRecs.length;
-        workoutsTodayCompleted = workoutRecs.filter(r =>
-          String(r.fields?.Status || "").toLowerCase() === "complete"
-        ).length;
+        const wOrgCandidates = [orgName, orgToken, orgId].filter(Boolean);
+
+        if (wOrgCandidates.length > 0) {
+          const orgJoin = `ARRAYJOIN({Organization}&"")`;
+          const orgMatch = wOrgCandidates.length === 1
+            ? `FIND("${wOrgCandidates[0].replace(/\\/g, "\\\\").replace(/"/g, '\\"')}", ${orgJoin})`
+            : `OR(${wOrgCandidates.map(c =>
+                `FIND("${c.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}", ${orgJoin})`
+              ).join(",")})`;
+
+          // Inclusive date range for today — same pattern as range.js
+          const wFilter = `AND(${orgMatch}, OR(IS_SAME({Date}, "${today}", "day")))`;
+
+          const workoutRecs = await fetchAllPages(
+            workoutsBase(WORKOUTS_TABLE).select({
+              filterByFormula: wFilter,
+              fields: ["Status", "Date"],
+              sort: [{ field: "Date", direction: "asc" }],
+            })
+          );
+
+          workoutsTodayTotal     = workoutRecs.length;
+          workoutsTodayCompleted = workoutRecs.filter(r => {
+            const status = String(r.fields?.Status || "").toLowerCase();
+            // "completed" = all items done, "pending_review" = submitted awaiting coach
+            // Both count as done from the athlete's perspective (matches isAthleteDone in byDate.js)
+            return status === "completed" || status === "pending_review";
+          }).length;
+        }
       } catch (wErr) {
-        // Non-fatal — workouts stats degrade gracefully
+        // Non-fatal — workouts stats degrade gracefully to 0
         console.warn("[getOrgOverview] workouts today query failed:", wErr?.message);
       }
     }
 
     /* ── 5. Nutrition completions today ────────────────────────────────── */
+    // Uses AthleteToken — same approach as /api/org/nutrition/table.js
     let nutritionTodayCompleted = 0;
     let nutritionTodayTotal     = 0;
 
-    if (nutritionBase && emails.length > 0) {
+    if (nutritionBase && athletes.length > 0) {
       try {
         const today = todayNY();
-        // NutritionCompletions has a Date field and links to Athlete record
-        // We count: how many athletes have a completion record for today,
-        // and of those, how many have all meals done (totalPct = 100 or mealDone = true for all)
-        const ncFilter = `IS_SAME({Date}, '${today}', 'day')`;
+        const MEAL_KEYS = ["breakfast", "lunch", "afternoon", "dinner"];
 
-        const ncRecs = await fetchAllPages(
-          nutritionBase(NUTRITION_COMPLETIONS_TABLE).select({
-            filterByFormula: ncFilter,
-            fields: ["Date", "CompletionJson", "Athlete"],
-          })
-        );
+        const countChecked = (comp) => {
+          let n = 0;
+          for (const k of MEAL_KEYS) {
+            if (comp?.[k]?.mealDone)      n++;
+            if (comp?.[k]?.hydrationDone) n++;
+          }
+          return n;
+        };
 
-        // Get the set of athlete record IDs for this org
-        const orgAthleteIds = new Set(athleteRecords.map(r => r.id));
+        // Collect AthleteTokens for every org athlete
+        const athleteTokens = athleteRecords
+          .map(r => String(r.fields?.AthleteToken || "").trim())
+          .filter(Boolean);
 
-        // Only count completions for athletes in this org
-        const orgNcRecs = ncRecs.filter(r => {
-          const links = r.fields?.Athlete || [];
-          return Array.isArray(links) && links.some(id => orgAthleteIds.has(id));
-        });
+        if (athleteTokens.length > 0) {
+          const orgTokenSet = new Set(athleteTokens);
 
-        nutritionTodayTotal = orgAthleteIds.size; // denominator = all athletes in org
+          // Batch into groups of 200 to stay within Airtable formula length limits
+          const BATCH = 200;
+          const allTodayRecs = [];
 
-        for (const r of orgNcRecs) {
-          try {
+          for (let i = 0; i < athleteTokens.length; i += BATCH) {
+            const batch = athleteTokens.slice(i, i + BATCH);
+            const tokenOr = batch
+              .map(t => `FIND('${escapeAirtableString(t)}', ARRAYJOIN({AthleteToken}&''))>0`)
+              .join(", ");
+            const batchFilter = `AND(IS_SAME({Date}, '${today}', 'day'), OR(${tokenOr}))`;
+
+            const batchRecs = await fetchAllPages(
+              nutritionBase(NUTRITION_COMPLETIONS_TABLE).select({
+                filterByFormula: batchFilter,
+                fields: ["Date", "CompletionJson", "AthleteToken"],
+                sort: [{ field: "Date", direction: "desc" }],
+              })
+            );
+            allTodayRecs.push(...batchRecs);
+          }
+
+          // Deduplicate by AthleteToken — pick record with most boxes checked if dupes
+          const byToken = new Map();
+          for (const r of allTodayRecs) {
+            const tok = String(r.fields?.AthleteToken || "").trim();
+            if (!tok || !orgTokenSet.has(tok)) continue;
+
             const raw  = r.fields?.CompletionJson || "{}";
-            const comp = typeof raw === "string" ? JSON.parse(raw) : raw;
-            const keys = ["breakfast", "lunch", "afternoon", "dinner"];
-            // Count as "done" if at least one meal is checked
-            const anyDone = keys.some(k => comp?.[k]?.mealDone || comp?.[k]?.hydrationDone);
-            if (anyDone) nutritionTodayCompleted += 1;
-          } catch { /* malformed JSON — skip */ }
+            let   comp = {};
+            try { comp = typeof raw === "string" ? JSON.parse(raw) : raw; } catch {}
+
+            const existing = byToken.get(tok);
+            if (!existing || countChecked(comp) > countChecked(existing)) {
+              byToken.set(tok, comp);
+            }
+          }
+
+          // Total  = all org athletes × 8 checkboxes (4 meals × meal + hydration)
+          // Completed = every checked box across all athletes who have a record today
+          nutritionTodayTotal     = athletes.length * 8;
+          nutritionTodayCompleted = 0;
+          for (const comp of byToken.values()) {
+            nutritionTodayCompleted += countChecked(comp);
+          }
         }
       } catch (nErr) {
-        // Non-fatal — nutrition stats degrade gracefully
         console.warn("[getOrgOverview] nutrition today query failed:", nErr?.message);
       }
     }

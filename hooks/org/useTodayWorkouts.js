@@ -9,7 +9,6 @@ function normKey(s) {
 }
 
 export function useTodayWorkouts({ isOrgSide }) {
-  // ✅ Default = all sports
   const [sport, setSport] = useState("");
   const [availableSports, setAvailableSports] = useState([]);
 
@@ -23,15 +22,12 @@ export function useTodayWorkouts({ isOrgSide }) {
 
   const abortRef = useRef(null);
   const todayISO = useMemo(() => nyDateISO(), []);
-
   const didInitSportRef = useRef(false);
 
   const fetchToday = useCallback(async () => {
     if (!isOrgSide) return;
 
-    try {
-      abortRef.current?.abort?.();
-    } catch {}
+    try { abortRef.current?.abort?.(); } catch {}
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -42,14 +38,10 @@ export function useTodayWorkouts({ isOrgSide }) {
     try {
       const qs = new URLSearchParams();
       qs.set("date", todayISO);
-      if (sport && String(sport).trim()) {
-        qs.set("sport", sport);
-      }
+      if (sport && String(sport).trim()) qs.set("sport", sport);
 
-      const res = await fetch(`/api/org/workouts/day?${qs.toString()}`, {
-        method: "GET",
-        credentials: "include",
-        signal: controller.signal,
+      const res  = await fetch(`/api/org/workouts/day?${qs.toString()}`, {
+        method: "GET", credentials: "include", signal: controller.signal,
       });
 
       const data = await safeJson(res);
@@ -58,30 +50,26 @@ export function useTodayWorkouts({ isOrgSide }) {
       const sports = Array.isArray(data?.availableSports) ? data.availableSports : [];
       setAvailableSports(sports);
 
-      // ✅ only repair invalid sport if a specific sport is selected
       if (sports.length > 0) {
-        const current = normKey(sport);
-        const hasCurrent = sports.some((s) => normKey(s) === current);
+        const current    = normKey(sport);
+        const hasCurrent = sports.some(s => normKey(s) === current);
 
         if (current && !hasCurrent) {
           const next = sports[0];
-          if (normKey(next) !== current) {
-            setSport(next);
-          }
+          if (normKey(next) !== current) setSport(next);
         }
 
         if (!didInitSportRef.current) didInitSportRef.current = true;
       }
 
       setDay({
-        workouts: Array.isArray(data?.workouts) ? data.workouts : [],
-        itemsByWorkoutId: data?.itemsByWorkoutId || {},
+        workouts:           Array.isArray(data?.workouts) ? data.workouts : [],
+        itemsByWorkoutId:   data?.itemsByWorkoutId   || {},
         completionByItemId: data?.completionByItemId || {},
       });
     } catch (e) {
       const msg = String(e?.name || "").toLowerCase();
       if (msg.includes("abort")) return;
-
       setErr(e?.message || "Failed to load");
       setAvailableSports([]);
       setDay({ workouts: [], itemsByWorkoutId: {}, completionByItemId: {} });
@@ -92,32 +80,27 @@ export function useTodayWorkouts({ isOrgSide }) {
 
   useEffect(() => {
     fetchToday();
-    return () => {
-      try {
-        abortRef.current?.abort?.();
-      } catch {}
-    };
+    return () => { try { abortRef.current?.abort?.(); } catch {} };
   }, [fetchToday]);
 
   const summary = useMemo(() => {
-    const workouts = Array.isArray(day?.workouts) ? day.workouts : [];
-    const itemsByWorkoutId = day?.itemsByWorkoutId || {};
+    const workouts           = Array.isArray(day?.workouts) ? day.workouts : [];
+    const itemsByWorkoutId   = day?.itemsByWorkoutId   || {};
     const completionByItemId = day?.completionByItemId || {};
 
-    let workoutCount = workouts.length;
-    let itemCount = 0;
-    let completedCount = 0;
-    let pendingReviewCount = 0;
-    let rejectedCount = 0;
-    let athleteSum = 0;
+    let workoutCount      = workouts.length;
+    let itemCount         = 0;
+    let completedCount    = 0;   // completed + pending_review (athlete did the work)
+    let pendingReviewCount = 0;  // subset of above — awaiting coach review
+    let rejectedCount     = 0;
+    let athleteSum        = 0;
 
     workouts.forEach((w) => {
       athleteSum += Number(w?.athleteCount || 0);
 
-      const wid = String(w?.id || "");
+      const wid   = String(w?.id || "");
       const items = Array.isArray(itemsByWorkoutId?.[wid]) ? itemsByWorkoutId[wid] : [];
 
-      // ✅ Fallback to workout.itemCount if API didn’t hydrate item rows for some reason
       if (items.length > 0) {
         itemCount += items.length;
       } else {
@@ -125,21 +108,22 @@ export function useTodayWorkouts({ isOrgSide }) {
       }
 
       items.forEach((it) => {
-        const itemId = String(it?.id || "");
+        const itemId     = String(it?.id || "");
         const completion = completionByItemId?.[itemId] || null;
-        const status = String(
-          completion?.Status ||
-          completion?.status ||
-          it?.Status ||
-          it?.status ||
-          ""
+        const status     = String(
+          completion?.Status || completion?.status ||
+          it?.Status         || it?.status         || ""
         ).toLowerCase();
 
         if (!status) return;
 
         if (status === "completed" || status === "complete") {
+          // Fully approved — counts toward completion
           completedCount += 1;
         } else if (status === "pending_review" || status === "pending review") {
+          // Athlete submitted, awaiting coach review.
+          // Counts toward completion (work is done) AND review queue.
+          completedCount    += 1;
           pendingReviewCount += 1;
         } else if (status === "rejected" || status === "reject") {
           rejectedCount += 1;
@@ -147,7 +131,9 @@ export function useTodayWorkouts({ isOrgSide }) {
       });
     });
 
-    const completionPct = itemCount > 0 ? Math.round((completedCount / itemCount) * 100) : 0;
+    const completionPct = itemCount > 0
+      ? Math.round((completedCount / itemCount) * 100)
+      : 0;
 
     return {
       workoutCount,

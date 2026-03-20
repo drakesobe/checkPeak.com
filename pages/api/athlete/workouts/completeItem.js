@@ -18,21 +18,11 @@ function asString(v) {
   return String(x ?? "").trim();
 }
 
-/**
- * Determines whether a workout item requires file evidence.
- * Conservative: anything that isn't explicitly "none", "false", or VARA
- * is treated as requiring a file. This prevents an empty/missing field
- * from silently bypassing the photo requirement.
- */
 function requiresFileEvidence(rawEvidenceRequired) {
   const s = asString(rawEvidenceRequired).toLowerCase();
-  // Explicit no-evidence values
   if (s === "false" || s === "none" || s === "voluntary_activity_vara") return false;
-  // Explicit evidence values
   if (s === "true" || s === "photo" || s === "video" || s === "photo_or_video") return true;
-  // Unknown or empty — fail safe: treat as requiring evidence
-  // This prevents a missing/null field from bypassing the photo check
-  return s.length > 0; // empty string → false (truly unknown), non-empty unknown → true
+  return s.length > 0;
 }
 
 function normalizeItemStatus(v) {
@@ -66,32 +56,13 @@ function unwrapAuth(maybe) {
 
 function mustAthleteToken({ athlete, user, raw, fields }) {
   const candidates = [
-    athlete?.AthleteToken,
-    athlete?.athleteToken,
-    athlete?.Token,
-    athlete?.token,
-
-    user?.AthleteToken,
-    user?.athleteToken,
-    user?.Token,
-    user?.token,
-
-    raw?.AthleteToken,
-    raw?.athleteToken,
-    raw?.Token,
-    raw?.token,
-
-    raw?.athlete?.AthleteToken,
-    raw?.athlete?.athleteToken,
-    raw?.user?.AthleteToken,
-    raw?.user?.athleteToken,
-
-    fields?.AthleteToken,
-    fields?.athleteToken,
-    fields?.token,
-    fields?.Token,
+    athlete?.AthleteToken, athlete?.athleteToken, athlete?.Token, athlete?.token,
+    user?.AthleteToken, user?.athleteToken, user?.Token, user?.token,
+    raw?.AthleteToken, raw?.athleteToken, raw?.Token, raw?.token,
+    raw?.athlete?.AthleteToken, raw?.athlete?.athleteToken,
+    raw?.user?.AthleteToken, raw?.user?.athleteToken,
+    fields?.AthleteToken, fields?.athleteToken, fields?.token, fields?.Token,
   ];
-
   return asString(candidates.find((x) => asString(x)));
 }
 
@@ -114,7 +85,6 @@ async function parseMultipart(req) {
     keepExtensions: true,
     maxFileSize: 15 * 1024 * 1024,
   });
-
   return await new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
       if (err) return reject(err);
@@ -126,19 +96,19 @@ async function parseMultipart(req) {
 /* ---------------- Cloudinary upload ---------------- */
 
 async function uploadToCloudinary({ blob, filename }) {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName  = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey     = process.env.CLOUDINARY_API_KEY;
+  const apiSecret  = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error("Missing Cloudinary env vars");
   }
 
   const timestamp = Math.floor(Date.now() / 1000);
-  const folder = "checkpeak/workout-proof";
+  const folder    = "checkpeak/workout-proof";
 
-  const crypto = await import("crypto");
-  const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const crypto    = await import("crypto");
+  const toSign    = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const fd = new FormData();
@@ -154,49 +124,33 @@ async function uploadToCloudinary({ blob, filename }) {
   let json = {};
   try { json = await res.json(); } catch {}
 
-  if (!res.ok) {
-    throw new Error(json?.error?.message || "Cloudinary upload failed");
-  }
+  if (!res.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
 
-  return {
-    url: json.secure_url || json.url,
-    bytes: json.bytes,
-    public_id: json.public_id,
-  };
+  return { url: json.secure_url || json.url, bytes: json.bytes, public_id: json.public_id };
 }
 
 /* ---------------- Org resolve ---------------- */
 
 async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
   const orgId = asString(
-    auth?.user?.orgId ||
-      auth?.user?.OrgId ||
-      auth?.raw?.orgId ||
-      auth?.raw?.OrgId ||
-      auth?.athlete?.orgId ||
-      auth?.athlete?.OrgId ||
-      ""
+    auth?.user?.orgId || auth?.user?.OrgId ||
+    auth?.raw?.orgId  || auth?.raw?.OrgId  ||
+    auth?.athlete?.orgId || auth?.athlete?.OrgId || ""
   );
-
   const orgToken = asString(
-    auth?.user?.OrgToken ||
-      auth?.user?.orgToken ||
-      auth?.raw?.OrgToken ||
-      auth?.raw?.orgToken ||
-      auth?.athlete?.OrgToken ||
-      auth?.athlete?.orgToken ||
-      ""
+    auth?.user?.OrgToken  || auth?.user?.orgToken  ||
+    auth?.raw?.OrgToken   || auth?.raw?.orgToken   ||
+    auth?.athlete?.OrgToken || auth?.athlete?.orgToken || ""
   ).toUpperCase();
 
   if (orgId || orgToken) return { orgId, orgToken, source: "session" };
 
   try {
     let rec = null;
-
     if (athleteRecordId) {
       rec = await base("AthleteScans").find(athleteRecordId);
     } else if (athleteToken) {
-      const tok = escapeAirtableString(athleteToken);
+      const tok  = escapeAirtableString(athleteToken);
       const rows = await base("AthleteScans")
         .select({
           maxRecords: 1,
@@ -206,13 +160,13 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
         .firstPage();
       rec = rows?.[0] || null;
     }
-
-    const f = rec?.fields || {};
+    const f        = rec?.fields || {};
     const orgLinks = Array.isArray(f?.Organization) ? f.Organization : [];
-    const orgId2 = asString(orgLinks?.[0] || "");
-    const orgToken2 = asString(f?.OrgToken || "").toUpperCase();
-
-    return { orgId: orgId2, orgToken: orgToken2, source: rec ? "athleteScans" : "none" };
+    return {
+      orgId:   asString(orgLinks?.[0] || ""),
+      orgToken: asString(f?.OrgToken || "").toUpperCase(),
+      source:  rec ? "athleteScans" : "none",
+    };
   } catch {
     return { orgId: "", orgToken: "", source: "error" };
   }
@@ -223,7 +177,7 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
 async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
   if (!dailyWorkoutId) return { updated: false, status: "" };
 
-  const dw = await base("DailyWorkouts").find(dailyWorkoutId);
+  const dw      = await base("DailyWorkouts").find(dailyWorkoutId);
   const itemIds = Array.isArray(dw?.fields?.WorkoutItems) ? dw.fields.WorkoutItems : [];
 
   if (!itemIds.length) {
@@ -231,14 +185,13 @@ async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
     return { updated: true, status: "assigned" };
   }
 
-  const orFormula = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
-
+  const orFormula  = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
   const itemRecords = await base("WorkoutItems")
     .select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 })
     .all();
 
   const statuses = itemRecords.map((r) => r?.fields?.Status || "assigned");
-  const next = deriveDailyWorkoutStatus(statuses);
+  const next     = deriveDailyWorkoutStatus(statuses);
 
   await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: next } }]);
   return { updated: true, status: next };
@@ -271,8 +224,6 @@ export default async function handler(req, res) {
     const { fields, files } = await parseMultipart(req);
 
     const workoutItemId  = asString(fields.workoutItemId);
-    // Client sends the raw EvidenceRequired string (e.g. "voluntary_activity_vara")
-    // Fall back to legacy boolean "true"/"false" for older clients
     const evidenceRaw    = asString(fields.evidenceRequired);
     const needsFile      = requiresFileEvidence(evidenceRaw);
     const isVARA         = evidenceRaw.toLowerCase() === "voluntary_activity_vara";
@@ -292,9 +243,9 @@ export default async function handler(req, res) {
         error: "Missing AthleteToken in session. Log out/in after AthleteScans.AthleteToken is populated.",
         debug: {
           athleteKeys: Object.keys(auth.athlete || {}),
-          userKeys: Object.keys(auth.user || {}),
-          rawKeys: Object.keys(auth.raw || {}),
-          fieldsKeys: Object.keys(fields || {}),
+          userKeys:    Object.keys(auth.user    || {}),
+          rawKeys:     Object.keys(auth.raw     || {}),
+          fieldsKeys:  Object.keys(fields       || {}),
         },
       });
     }
@@ -303,8 +254,6 @@ export default async function handler(req, res) {
 
     const f = pickFirst(files?.file || files?.photo || files?.image);
 
-    // VARA: self-report only, no file required or accepted
-    // Other evidence types: file required if needsFile is true
     if (needsFile && !isVARA && !f) {
       return res.status(400).json({
         error: "Photo required",
@@ -313,54 +262,53 @@ export default async function handler(req, res) {
     }
 
     const orgResolved = await resolveOrgForCompletion({
-      base,
-      auth,
-      athleteToken,
-      athleteRecordId,
+      base, auth, athleteToken, athleteRecordId,
     });
 
-    // Upload to Cloudinary only if a file was actually provided (and not VARA)
-    let uploaded = null;
-    let attachment = [];
+    // Upload file if provided (and not VARA)
+    let uploaded         = null;
+    let attachment       = [];
     let attachmentSummary = "";
 
     if (f && !isVARA) {
-      const fs = await import("fs");
-      const path = f.filepath || f.path;
-      const buff = fs.readFileSync(path);
-      const mime = f.mimetype || "image/jpeg";
+      const fs       = await import("fs");
+      const path     = f.filepath || f.path;
+      const buff     = fs.readFileSync(path);
+      const mime     = f.mimetype || "image/jpeg";
       const filename = f.originalFilename || "proof.jpg";
+      const blob     = new Blob([buff], { type: mime });
 
-      const blob = new Blob([buff], { type: mime });
-      uploaded = await uploadToCloudinary({ blob, filename });
-
-      attachment = [{ url: uploaded.url, filename }];
-      const kb = uploaded.bytes ? Math.round(uploaded.bytes / 1024) : null;
+      uploaded          = await uploadToCloudinary({ blob, filename });
+      attachment        = [{ url: uploaded.url, filename }];
+      const kb          = uploaded.bytes ? Math.round(uploaded.bytes / 1024) : null;
       attachmentSummary = kb ? `${filename} (${kb} KB)` : filename;
     }
 
-    const nowIso = new Date().toISOString();
-
-    // Completion status logic:
-    // - VARA => completed immediately (self-report, no coach review)
-    // - evidence required (photo/video) => pending_review
-    // - no evidence => completed immediately
-    const completionStatus = needsFile && !isVARA ? "pending_review" : "completed";
+    // ── Status logic ────────────────────────────────────────────────────────
+    // VARA           → completed immediately (self-report, no photo/review needed)
+    // File uploaded  → pending_review regardless of EvidenceRequired field value.
+    //                  If the athlete submitted a photo, a coach should review it.
+    // No file + no evidence required → completed immediately
+    const completionStatus =
+      isVARA       ? "completed" :
+      uploaded     ? "pending_review" :
+      needsFile    ? "pending_review" :
+                     "completed";
 
     const created = await base("WorkoutCompletions").create([
       {
         fields: {
-          CompletedAt: nowIso,
+          CompletedAt: new Date().toISOString(),
 
           AthleteToken: athleteToken,
           ...(athleteRecordId ? { Athlete: [athleteRecordId] } : {}),
 
-          ...(orgResolved?.orgId ? { Organization: [orgResolved.orgId] } : {}),
-          ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken } : {}),
+          ...(orgResolved?.orgId    ? { Organization: [orgResolved.orgId] } : {}),
+          ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken    } : {}),
 
           WorkoutItem: [workoutItemId],
 
-          ...(attachment.length ? { Attachment: attachment } : {}),
+          ...(attachment.length ? { Attachment: attachment }                : {}),
           ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
 
           Status: completionStatus,
@@ -380,18 +328,18 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      ok: true,
+      ok:                  true,
       workoutCompletionId: wcId,
-      status: completionStatus,
+      status:              completionStatus,
       isVARA,
-      attachmentUrl: uploaded?.url || "",
-      dailyWorkoutStatus: daily?.status || "",
-      noteReceived: Boolean(athleteNote),
-      athleteTokenSent: athleteToken,
-      athleteLinked: Boolean(athleteRecordId),
-      orgLinked: Boolean(orgResolved?.orgId),
-      orgTokenSet: Boolean(orgResolved?.orgToken),
-      orgSource: orgResolved?.source || "",
+      attachmentUrl:       uploaded?.url || "",
+      dailyWorkoutStatus:  daily?.status || "",
+      noteReceived:        Boolean(athleteNote),
+      athleteTokenSent:    athleteToken,
+      athleteLinked:       Boolean(athleteRecordId),
+      orgLinked:           Boolean(orgResolved?.orgId),
+      orgTokenSet:         Boolean(orgResolved?.orgToken),
+      orgSource:           orgResolved?.source || "",
     });
   } catch (e) {
     console.error("completeItem error:", e);

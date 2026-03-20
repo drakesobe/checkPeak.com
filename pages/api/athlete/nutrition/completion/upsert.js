@@ -2,8 +2,6 @@
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
-/* ---------------- helpers ---------------- */
-
 function asString(v) {
   if (v === 0) return "0";
   return String(v ?? "").trim();
@@ -50,8 +48,6 @@ function normalizeCompletion(input) {
   return base;
 }
 
-/* ---------------- env ---------------- */
-
 const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
 const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
 const NUTRITION_COMPLETIONS_TABLE =
@@ -65,12 +61,8 @@ const F_ATHLETE_LINK = "Athlete";
 const F_DATE         = "Date";
 const F_JSON         = "CompletionJson";
 const F_UPDATED_AT   = "UpdatedAt";
-
-// AthleteScans
-const ATH_TOKEN = "AthleteToken";
-const ATH_EMAIL = "Email";
-
-/* ---------------- handler ---------------- */
+const ATH_TOKEN      = "AthleteToken";
+const ATH_EMAIL      = "Email";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -81,8 +73,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const auth = requireAthlete(req, res);
-  if (!auth?.ok) return;
+  const auth = requireAthlete(req);
+  // Fixed: was returning without a response on auth failure
+  if (!auth?.ok) {
+    return res.status(401).json({ error: auth?.error || "Unauthorized" });
+  }
 
   if (!NUTRITION_API_KEY || !NUTRITION_BASE_ID) {
     return res.status(500).json({ error: "Nutrition completions Airtable not configured." });
@@ -91,12 +86,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Athlete Airtable not configured." });
   }
 
-  // FIX: resolve by token first, email as fallback — consistent with all other endpoints
   const athleteToken =
-    asString(auth?.athlete?.athleteToken) ||
     asString(auth?.athlete?.AthleteToken) ||
-    asString(auth?.user?.athleteToken)    ||
-    asString(auth?.user?.AthleteToken);
+    asString(auth?.athlete?.athleteToken) ||
+    asString(auth?.user?.AthleteToken)    ||
+    asString(auth?.user?.athleteToken);
 
   const athleteEmail =
     asString(auth?.athlete?.Email || auth?.athlete?.email ||
@@ -114,8 +108,7 @@ export default async function handler(req, res) {
     /* 1) Find athlete record — token preferred, email fallback */
     let athleteFilter = "";
     if (athleteToken) {
-      const safeTok = escapeAirtableString(athleteToken);
-      athleteFilter = `FIND('${safeTok}', ARRAYJOIN({${ATH_TOKEN}}&''))`;
+      athleteFilter = `FIND('${escapeAirtableString(athleteToken)}', ARRAYJOIN({${ATH_TOKEN}}&''))`;
     } else if (athleteEmail) {
       athleteFilter = `LOWER({${ATH_EMAIL}}&'')='${escapeAirtableString(athleteEmail.toLowerCase())}'`;
     } else {
@@ -131,23 +124,34 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Athlete record not found.", athleteEmail, athleteToken });
     }
 
-    /* 2) Find existing completion record */
-    const aId = escapeAirtableString(athleteRec.id);
-    const d   = escapeAirtableString(date);
+    /* 2) Find existing completion record.
+       Use a date-window filter instead of DATETIME_FORMAT to avoid timezone issues.
+       Records are stored as T12:00:00.000Z so a ±12 hour window safely covers any timezone. */
+    const dayStart = `${date}T00:00:00.000Z`;
+    const dayEnd   = `${date}T23:59:59.999Z`;
+    const aId      = escapeAirtableString(athleteRec.id);
+
     const filter = `AND(
       FIND('${aId}', ARRAYJOIN({${F_ATHLETE_LINK}}&'')) > 0,
-      DATETIME_FORMAT({${F_DATE}}, 'YYYY-MM-DD')='${d}'
+      IS_AFTER({${F_DATE}},  '${dayStart}'),
+      IS_BEFORE({${F_DATE}}, '${dayEnd}')
     )`;
 
     const existing = await nutritionBase(NUTRITION_COMPLETIONS_TABLE)
       .select({ filterByFormula: filter, maxRecords: 1 })
       .firstPage()
-      .then((xs) => xs?.[0] || null);
+      .then(xs => xs?.[0] || null);
 
     /* GET = read */
     if (method === "GET") {
       const completion = normalizeCompletion(safeJsonParse(existing?.fields?.[F_JSON]) || null);
-      return res.status(200).json({ ok: true, date, athleteId: athleteRec.id, completion, hasRecord: Boolean(existing?.id) });
+      return res.status(200).json({
+        ok:        true,
+        date,
+        athleteId: athleteRec.id,
+        completion,
+        hasRecord: Boolean(existing?.id),
+      });
     }
 
     /* POST = upsert */
@@ -163,10 +167,19 @@ export default async function handler(req, res) {
       ? await nutritionBase(NUTRITION_COMPLETIONS_TABLE).update(existing.id, fields)
       : await nutritionBase(NUTRITION_COMPLETIONS_TABLE).create(fields);
 
-    return res.status(200).json({ ok: true, date, athleteId: athleteRec.id, completion, recordId: saved?.id });
+    return res.status(200).json({
+      ok:        true,
+      date,
+      athleteId: athleteRec.id,
+      completion,
+      recordId:  saved?.id,
+    });
 
   } catch (e) {
     console.error("[athlete/nutrition/completion/upsert] error:", e);
-    return res.status(500).json({ error: e?.message || "Failed to save nutrition completion.", airtable: { statusCode: e?.statusCode } });
+    return res.status(500).json({
+      error:    e?.message || "Failed to save nutrition completion.",
+      airtable: { statusCode: e?.statusCode },
+    });
   }
 }

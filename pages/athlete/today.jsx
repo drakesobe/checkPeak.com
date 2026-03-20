@@ -300,9 +300,12 @@ export default function AthleteToday() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.ok) return;
+        // Only overwrite if Airtable actually has a record for today.
+        // If hasRecord is false, the athlete hasn't saved anything yet this session —
+        // keep whatever localStorage has (may include in-flight state from this session).
+        if (!data.hasRecord) return;
         const normalized = normalizeNutritionCompletionShape(data.completion);
         setNutritionCompletion(normalized);
-        // Keep localStorage in sync with what Airtable says
         if (nutritionCompletionKey) {
           lsSafeSet(nutritionCompletionKey, JSON.stringify(normalized));
         }

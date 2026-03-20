@@ -19,23 +19,17 @@ import {
   CheckSquare, ChevronLeft, ChevronRight, Clock,
   Download, ExternalLink, HelpCircle, Image as ImageIcon,
   MessageSquare, Paperclip, RefreshCcw, Search,
-  Square, ThumbsUp, X, Zap,
+  Square, ThumbsUp, X, Zap, Dumbbell,
 } from "lucide-react";
 
-/* ─────────────────────────────────────────────────────────────
-   DESIGN TOKENS  — mirrors Workout Calendar / Nutrition pages
-───────────────────────────────────────────────────────────── */
 const DS = {
-  // surfaces
   pageBg:        "#F4F7FB",
   cardBg:        "#FFFFFF",
   cardHover:     "#F8FAFD",
-  // brand
   brand:         "#1E3A5F",
   brandLight:    "#2A4F7C",
   brandBg:       "#EEF3F9",
   brandBorder:   "#C0D0E0",
-  // status
   banned:        "#C8102E",
   bannedBg:      "#FFF0F0",
   bannedBorder:  "#FFC8C8",
@@ -45,17 +39,12 @@ const DS = {
   safe:          "#00873E",
   safeBg:        "#F0FBF4",
   safeBorder:    "#A8DFB8",
-  // text
   bodyText:      "#1A2535",
   labelText:     "#5A6A7D",
   dimText:       "#9BA8B4",
-  // borders
   border:        "#E8ECF0",
 };
 
-/* ─────────────────────────────────────────────────────────────
-   TINY HELPERS
-───────────────────────────────────────────────────────────── */
 function cx(...xs) { return xs.filter(Boolean).join(" "); }
 function normLower(v) { return String(v || "").trim().toLowerCase(); }
 
@@ -85,9 +74,6 @@ async function postReview(id, status, coachNotes = "") {
   });
 }
 
-/* ─────────────────────────────────────────────────────────────
-   STATUS BADGE
-───────────────────────────────────────────────────────────── */
 function StatusBadge({ status, size = "sm" }) {
   const { color, label, Icon } = reviewMeta(status);
   const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]";
@@ -102,16 +88,12 @@ function StatusBadge({ status, size = "sm" }) {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   TOP BAR  — same pattern as Nutrition NavBar
-───────────────────────────────────────────────────────────── */
 function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport }) {
   return (
     <div
       className="flex items-center justify-between px-4 py-2.5 gap-4"
       style={{ backgroundColor: DS.brand }}
     >
-      {/* Left */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           type="button" onClick={onBack}
@@ -122,9 +104,7 @@ function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport }
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
         </button>
-
         <div className="w-px h-4 shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-
         <span
           className="font-black uppercase tracking-wider text-xs"
           style={{ color: "rgba(255,255,255,0.9)", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}
@@ -137,8 +117,6 @@ function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport }
           </span>
         )}
       </div>
-
-      {/* Right */}
       <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button" onClick={onExport} disabled={disableExport}
@@ -147,8 +125,7 @@ function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport }
           onMouseEnter={e => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.35)"; }}
           onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
         >
-          <Download className="w-3.5 h-3.5 inline mr-1" />
-          Export
+          <Download className="w-3.5 h-3.5 inline mr-1" />Export
         </button>
         <button
           type="button" onClick={onRefresh} disabled={loading}
@@ -166,14 +143,11 @@ function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport }
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   FILTER BAR
-───────────────────────────────────────────────────────────── */
 const FILTER_TABS = [
-  { id: "pending",    label: "Pending",    countKey: "pending",  color: DS.brand   },
-  { id: "needs_info", label: "Needs Info", countKey: "needsInfo",color: DS.caution },
-  { id: "approved",   label: "Approved",   countKey: "approved", color: DS.safe    },
-  { id: "all",        label: "All",        countKey: "total",    color: DS.labelText},
+  { id: "pending",    label: "Pending",    countKey: "pending",   color: DS.brand    },
+  { id: "needs_info", label: "Needs Info", countKey: "needsInfo", color: DS.caution  },
+  { id: "approved",   label: "Approved",   countKey: "approved",  color: DS.safe     },
+  { id: "all",        label: "All",        countKey: "total",     color: DS.labelText },
 ];
 
 function FilterBar({
@@ -191,9 +165,7 @@ function FilterBar({
       className="px-4 sm:px-5 py-2.5 border-b space-y-2"
       style={{ backgroundColor: DS.cardBg, borderColor: DS.border }}
     >
-      {/* Row 1 */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Filter tabs */}
         <div className="flex items-center gap-1">
           {FILTER_TABS.map(({ id, label, countKey, color }) => {
             const active = filterMode === id;
@@ -223,10 +195,7 @@ function FilterBar({
             );
           })}
         </div>
-
         <div className="flex-1" />
-
-        {/* Search */}
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: DS.dimText }} />
           <input
@@ -247,8 +216,6 @@ function FilterBar({
             </button>
           )}
         </div>
-
-        {/* Sort */}
         <button
           type="button"
           onClick={() => setSortMode(s => s === "newest" ? "oldest" : "newest")}
@@ -257,8 +224,6 @@ function FilterBar({
         >
           {sortMode === "newest" ? "Newest" : "Oldest"}
         </button>
-
-        {/* Date range toggle */}
         <button
           type="button" onClick={() => setShowDates(v => !v)}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-sm border text-xs font-bold transition"
@@ -272,8 +237,6 @@ function FilterBar({
           {hasDate ? "Dates ✓" : "Dates"}
         </button>
       </div>
-
-      {/* Row 2: date pickers */}
       {showDates && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px]" style={{ color: DS.dimText }}>From</span>
@@ -302,9 +265,6 @@ function FilterBar({
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   LIST PANEL
-───────────────────────────────────────────────────────────── */
 function ListHeader({ total, selected, onSelectAll, onClear, onBulkApprove, onBulkNeedsInfo, bulkSaving }) {
   const hasSel = selected.size > 0;
   return (
@@ -374,7 +334,6 @@ function ListRow({ item, isActive, isSelected, onSelect, onActivate }) {
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = DS.cardHover; }}
       onMouseLeave={e => { e.currentTarget.style.backgroundColor = isActive ? DS.brandBg : DS.cardBg; }}
     >
-      {/* Checkbox */}
       <button
         type="button"
         onClick={e => { e.stopPropagation(); onSelect(item.id); }}
@@ -383,21 +342,19 @@ function ListRow({ item, isActive, isSelected, onSelect, onActivate }) {
       >
         {isSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
       </button>
-
-      {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>
               {item?.athleteName || "—"}
             </p>
+            {/* ── CHANGE 1: show exerciseName in list row ── */}
             <p className="text-[11px] truncate mt-0.5" style={{ color: DS.labelText }}>
-              {item?.title || "Workout Completion"}
+              {item?.exerciseName || item?.title || "Workout Completion"}
             </p>
           </div>
           <StatusBadge status={item?.reviewStatus} size="xs" />
         </div>
-
         <div className="flex items-center gap-2 mt-1.5">
           {item?.date && (
             <span className="text-[10px]" style={{ color: DS.dimText }}>{item.date}</span>
@@ -432,9 +389,6 @@ function ListEmpty({ filterMode }) {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   DETAIL PANEL — right side
-───────────────────────────────────────────────────────────── */
 function DetailEmpty() {
   return (
     <div className="flex flex-col items-center justify-center h-full py-20 px-8 text-center">
@@ -524,12 +478,10 @@ function DetailPanel({
             <StatusBadge status={item?.reviewStatus} />
           </div>
           <p className="text-xs truncate mt-0.5" style={{ color: DS.labelText }}>
-            {item?.title || "Workout Completion"}
+            {item?.exerciseName || item?.title || "Workout Completion"}
             {item?.date ? ` · ${fmtDate?.(item.date) || item.date}` : ""}
           </p>
         </div>
-
-        {/* Prev / Next nav */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button" onClick={onPrev} disabled={currentIndex <= 0}
@@ -555,7 +507,6 @@ function DetailPanel({
       <div className="flex-1 overflow-y-auto" style={{ backgroundColor: DS.pageBg }}>
         <div className="p-5 space-y-4">
 
-          {/* Error */}
           {saveErr && (
             <div
               className="px-3 py-2 rounded-sm text-xs font-bold"
@@ -565,9 +516,28 @@ function DetailPanel({
             </div>
           )}
 
-          {/* Athlete meta */}
+          {/* Athlete email */}
           {item?.athleteEmail && (
             <p className="text-xs" style={{ color: DS.labelText }}>{item.athleteEmail}</p>
+          )}
+
+          {/* ── CHANGE 2: Exercise name badge ── */}
+          {item?.exerciseName && (
+            <div
+              className="flex items-center gap-2 px-3 py-2.5 rounded-sm"
+              style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}
+            >
+              <Dumbbell className="w-3.5 h-3.5 shrink-0" style={{ color: DS.brand }} />
+              <span
+                className="text-[10px] font-black uppercase tracking-wider shrink-0"
+                style={{ color: DS.brand }}
+              >
+                Exercise
+              </span>
+              <span className="text-xs font-bold truncate" style={{ color: DS.bodyText }}>
+                {item.exerciseName}
+              </span>
+            </div>
           )}
 
           {/* Attachment summary */}
@@ -581,21 +551,16 @@ function DetailPanel({
               className="rounded-sm overflow-hidden"
               style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
             >
-              {/* Section label */}
               <div
                 className="flex items-center gap-2 px-4 py-2 border-b"
                 style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}
               >
                 <ImageIcon className="w-3.5 h-3.5" style={{ color: DS.labelText }} />
-                <span
-                  className="text-[10px] font-black uppercase tracking-wider"
-                  style={{ color: DS.labelText }}
-                >
+                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: DS.labelText }}>
                   Uploads ({attachments.length})
                 </span>
               </div>
 
-              {/* Thumb strip */}
               {attachments.length > 1 && (
                 <div className="flex gap-2 p-3 border-b overflow-x-auto" style={{ borderColor: DS.border }}>
                   {attachments.map((att, i) => {
@@ -624,7 +589,6 @@ function DetailPanel({
                 </div>
               )}
 
-              {/* Viewer toolbar */}
               <div
                 className="flex items-center justify-between gap-2 px-3 py-2 border-b"
                 style={{ borderColor: DS.border }}
@@ -675,7 +639,6 @@ function DetailPanel({
                 </div>
               </div>
 
-              {/* Preview */}
               <div className="p-3">
                 {selUrl ? (
                   isPdfUrl(selUrl) ? (
@@ -691,7 +654,7 @@ function DetailPanel({
                     />
                   ) : (
                     <p className="py-8 text-center text-xs" style={{ color: DS.dimText }}>
-                      Preview -{" "}
+                      Preview —{" "}
                       <a href={selUrl} target="_blank" rel="noreferrer" className="font-bold underline" style={{ color: DS.brand }}>Open</a>
                     </p>
                   )
@@ -778,8 +741,6 @@ function DetailPanel({
             {saving ? "Saving…" : "Approve"}
           </button>
         </div>
-
-        {/* Keyboard hints */}
         <div className="flex items-center justify-center gap-4 flex-wrap">
           <KbdHint kbd="J" label="next" />
           <KbdHint kbd="K" label="prev" />
@@ -792,9 +753,6 @@ function DetailPanel({
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   MOBILE BOTTOM SHEET
-───────────────────────────────────────────────────────────── */
 function MobileSheet({ item, open, onClose, saving, saveErr, onApprove, onNeedsInfo, onOpenLightbox, fmtDate, onSaveNote, currentIndex, total, onPrev, onNext }) {
   useEffect(() => {
     if (!open) return;
@@ -830,9 +788,6 @@ function MobileSheet({ item, open, onClose, saving, saveErr, onApprove, onNeedsI
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
-   PAGE
-───────────────────────────────────────────────────────────── */
 export default function ReviewQueuePage() {
   const router = useRouter();
   const { user, logout } = useAuthContext();
@@ -848,20 +803,16 @@ export default function ReviewQueuePage() {
     return String(g || "");
   }, [user, role]);
 
-  /* ── guards ── */
   useEffect(() => {
     if (!user)              { router.push("/");          return; }
     if (role && !isOrgSide) { router.push("/dashboard"); return; }
   }, [user, role, isOrgSide, router]);
 
-  /* ── billing ── */
   const { billingLoading, billingErr, billing, isPaidOk } = useBillingGate({ user, role, isOrgSide });
 
-  /* ── filters ── */
   const { search, setSearch, filterMode, setFilterMode, sortMode, setSortMode, filtered } =
     useReviewQueueFilters(items);
 
-  /* ── date range ── */
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
 
@@ -877,7 +828,6 @@ export default function ReviewQueuePage() {
     });
   }, [filtered, dateFrom, dateTo]);
 
-  /* ── active item ── */
   const [activeId, setActiveId] = useState(null);
 
   const activeIndex = useMemo(
@@ -900,10 +850,7 @@ export default function ReviewQueuePage() {
   const goPrev = useCallback(() => { if (activeIndex > 0) activateIndex(activeIndex - 1); }, [activeIndex, activateIndex]);
   const goNext = useCallback(() => { if (activeIndex < displayItems.length - 1) activateIndex(activeIndex + 1); }, [activeIndex, displayItems.length, activateIndex]);
 
-  /* ── mobile sheet ── */
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-
-  /* ── bulk selection ── */
   const [selected,   setSelected]   = useState(new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
 
@@ -913,11 +860,9 @@ export default function ReviewQueuePage() {
   const selectAll     = useCallback(() => setSelected(new Set(displayItems.map(it => it.id).filter(Boolean))), [displayItems]);
   const clearSelected = useCallback(() => setSelected(new Set()), []);
 
-  /* ── save state ── */
   const [saving,  setSaving]  = useState(false);
   const [saveErr, setSaveErr] = useState("");
 
-  /* ── initial load ── */
   const didLoadRef = useRef(false);
   useEffect(() => {
     if (!user || !isOrgSide || billingLoading || !isPaidOk) return;
@@ -926,7 +871,6 @@ export default function ReviewQueuePage() {
     refreshQueue();
   }, [user, isOrgSide, billingLoading, isPaidOk, refreshQueue]);
 
-  /* ── keyboard nav ── */
   useEffect(() => {
     const handler = e => {
       const tag = document.activeElement?.tagName?.toLowerCase();
@@ -941,7 +885,6 @@ export default function ReviewQueuePage() {
     return () => window.removeEventListener("keydown", handler);
   }, [goNext, goPrev, activeItem, saving]);
 
-  /* ── helpers ── */
   const applyUpdate = useCallback((id, reviewStatus, coachNotes = "") => {
     setItems(prev => {
       const list = Array.isArray(prev) ? [...prev] : [];
@@ -1007,10 +950,17 @@ export default function ReviewQueuePage() {
   }, [selected, setItems, clearSelected]);
 
   const exportCSV = useCallback(() => {
-    const rows = [["Athlete", "Email", "Title", "Date", "Review Status", "Coach Notes"]];
+    const rows = [["Athlete", "Email", "Exercise", "Title", "Date", "Review Status", "Coach Notes"]];
     (Array.isArray(items) ? items : []).forEach(it => {
-      rows.push([it?.athleteName || "", it?.athleteEmail || "", it?.title || "",
-                 it?.date || "", it?.reviewStatus || "", it?.coachNotes || ""]);
+      rows.push([
+        it?.athleteName  || "",
+        it?.athleteEmail || "",
+        it?.exerciseName || "",
+        it?.title        || "",
+        it?.date         || "",
+        it?.reviewStatus || "",
+        it?.coachNotes   || "",
+      ]);
     });
     const csv  = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1026,7 +976,6 @@ export default function ReviewQueuePage() {
     try { await logout?.(); } finally { router.push("/"); }
   }, [logout, router]);
 
-  /* ── billing gates ── */
   if (billingLoading) return <BillingLoadingScreen />;
   if (billingErr || !isPaidOk) {
     return (
@@ -1037,7 +986,6 @@ export default function ReviewQueuePage() {
     );
   }
 
-  /* ── render ── */
   return (
     <div className="flex flex-col min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
 
@@ -1057,7 +1005,6 @@ export default function ReviewQueuePage() {
         dateTo={dateTo} setDateTo={setDateTo}
       />
 
-      {/* Error banner */}
       {error && (
         <div
           className="px-5 py-2 text-xs font-bold"
@@ -1067,10 +1014,8 @@ export default function ReviewQueuePage() {
         </div>
       )}
 
-      {/* Split pane */}
       <div className="flex flex-1 overflow-hidden" style={{ height: "calc(100vh - 91px)" }}>
 
-        {/* LEFT — list */}
         <div
           className="flex flex-col w-full md:w-80 lg:w-96 shrink-0 border-r overflow-hidden"
           style={{ borderColor: DS.border, backgroundColor: DS.cardBg }}
@@ -1086,14 +1031,9 @@ export default function ReviewQueuePage() {
           />
           <div className="flex-1 overflow-y-auto">
             {loading && !displayItems.length ? (
-              /* Skeleton */
               <div className="space-y-0">
                 {[...Array(6)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="animate-pulse px-4 py-3 border-b"
-                    style={{ borderColor: DS.border }}
-                  >
+                  <div key={i} className="animate-pulse px-4 py-3 border-b" style={{ borderColor: DS.border }}>
                     <div className="h-3 rounded-sm mb-2" style={{ backgroundColor: DS.pageBg, width: "60%" }} />
                     <div className="h-2 rounded-sm" style={{ backgroundColor: DS.pageBg, width: "40%" }} />
                   </div>
@@ -1116,7 +1056,6 @@ export default function ReviewQueuePage() {
           </div>
         </div>
 
-        {/* RIGHT — detail (desktop only) */}
         <div
           className="hidden md:flex flex-col flex-1 overflow-hidden"
           style={{ backgroundColor: DS.pageBg }}
@@ -1134,7 +1073,6 @@ export default function ReviewQueuePage() {
 
       </div>
 
-      {/* Mobile bottom sheet */}
       <MobileSheet
         item={activeItem} open={mobileSheetOpen}
         onClose={() => setMobileSheetOpen(false)}

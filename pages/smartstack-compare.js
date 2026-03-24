@@ -198,9 +198,9 @@ function AmazonBtn({ stack, size = "md", showPrice = false }) {
   const ppsStr = pps ? ppsLabel(pps) : null;
 
   const label = price
-    ? `Buy on Amazon — ${price}`
+    ? `Buy on Amazon - ${price}`
     : ppsStr
-    ? `Buy on Amazon — ${ppsStr}/srv`
+    ? `Buy on Amazon - ${ppsStr}/srv`
     : "View on Amazon";
 
   const pad = size === "lg" ? "12px 20px" : size === "sm" ? "6px 10px" : "9px 14px";
@@ -374,7 +374,7 @@ function ValueExplainer() {
             How Value Scores work
           </p>
           <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:"#6B6259", margin:0, lineHeight:1.65 }}>
-            We calculate <strong>price-per-serving</strong> for every supplement, then compare it against the median for that category. Rankings are based purely on value — no brand pays for placement.
+            We calculate <strong>price-per-serving</strong> for every supplement, then compare it against the median for that category. Rankings are based purely on value - no brand pays for placement.
           </p>
         </div>
         <div style={{ display:"flex", gap:8, flex:"2 1 300px", flexWrap:"wrap" }}>
@@ -408,7 +408,7 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
     <div style={{ background:"#fff", border:"1.5px solid #1A3A5C", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 28px rgba(26,58,92,0.1)", marginBottom:32 }}>
       <div style={{ padding:"14px 20px", borderBottom:"1px solid #E8E3DB", background:"linear-gradient(135deg,#1A3A5C,#2A5282)", display:"flex", alignItems:"center", gap:12 }}>
         <p style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:16, fontWeight:700, color:"#fff", margin:0 }}>
-          Top {stacks.length} {catLabel} — Compared
+          Top {stacks.length} {catLabel} - Compared
         </p>
         <span style={{ fontSize:11, color:"rgba(255,255,255,0.55)", fontFamily:"'DM Sans',sans-serif" }}>
           Ranked by value · Updated {getLastChecked()}
@@ -444,7 +444,7 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
             {[
               {
                 label:"Price / Serving",
-                render: s => { const p = getPPS(s); return p ? <strong style={{ fontFamily:"'Libre Baskerville',serif" }}>{ppsLabel(p)}</strong> : "—"; },
+                render: s => { const p = getPPS(s); return p ? <strong style={{ fontFamily:"'Libre Baskerville',serif" }}>{ppsLabel(p)}</strong> : "-"; },
                 bestOf: ss => { const ns = ss.map(getPPS).filter(n=>n!=null); return ns.length ? Math.min(...ns) : null; },
                 isBest: (s,b) => getPPS(s)===b,
               },
@@ -454,13 +454,13 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
               },
               {
                 label:"Customer Rating",
-                render: s => s?.rating > 0 ? <span>★ <strong>{Number(s.rating).toFixed(1)}</strong>{s.reviewCount>0?` (${formatK(s.reviewCount)})`:""}</span> : "—",
+                render: s => s?.rating > 0 ? <span>★ <strong>{Number(s.rating).toFixed(1)}</strong>{s.reviewCount>0?` (${formatK(s.reviewCount)})`:""}</span> : "-",
                 bestOf: ss => { const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0); return ns.length?Math.max(...ns):null; },
                 isBest: (s,b) => Number(s?.rating)===b,
               },
               {
                 label:"Popularity",
-                render: s => { const b=formatK(s?.boughtLastMonth); return b?`🔥 ${b}+ last month`:"—"; },
+                render: s => { const b=formatK(s?.boughtLastMonth); return b?`🔥 ${b}+ last month`:"-"; },
                 bestOf: ss => { const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0); return ns.length?Math.max(...ns):null; },
                 isBest: (s,b) => Number(s?.boughtLastMonth)===b,
               },
@@ -506,7 +506,7 @@ async function fetchLabelAsFile(url) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const b = await r.blob();
     return new File([b], `label.${b.type.includes("png")?"png":"jpg"}`, { type:b.type||"image/jpeg" });
-  } catch { /* CORS — proxy */ }
+  } catch { /* CORS - proxy */ }
   const r = await fetch(`/api/ocr/proxy-image?url=${encodeURIComponent(url)}`);
   if (!r.ok) throw new Error(`Proxy failed (${r.status})`);
   const b = await r.blob();
@@ -516,7 +516,7 @@ async function fetchLabelAsFile(url) {
 async function runSafetyCheck(stack, startScan) {
   if (!stack?.nutritionLabel) return null;
   const file = await fetchLabelAsFile(stack.nutritionLabel);
-  // startScan is a promise-based wrapper — we wrap in a promise
+  // startScan is a promise-based wrapper - we wrap in a promise
   return new Promise((resolve, reject) => {
     let resolved = false;
     const onResult = async (text) => {
@@ -534,7 +534,7 @@ async function runSafetyCheck(stack, startScan) {
       } catch { resolve({ matchedBanned:[], matchedIngredients:[] }); }
     };
     startScan([file]).catch(reject);
-    // onResult is called via the hook's onScan callback — handled in ManualCompareTable
+    // onResult is called via the hook's onScan callback - handled in ManualCompareTable
   });
 }
 
@@ -786,23 +786,23 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
             {[
               {
                 label:"Price/Serving",
-                render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:"'Libre Baskerville',serif"}}>{ppsLabel(p)}</strong>:"—";},
+                render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:"'Libre Baskerville',serif"}}>{ppsLabel(p)}</strong>:"-";},
                 bestOf:ss=>{const ns=ss.map(getPPS).filter(n=>n!=null);return ns.length?Math.min(...ns):null;},
                 isBest:(s,b)=>getPPS(s)===b,
               },
               {
                 label:"Value Rating",
-                render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{padding:"2px 8px",borderRadius:20,background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`,fontSize:11,fontWeight:700}}>{tm.label}</span>:"—";},
+                render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{padding:"2px 8px",borderRadius:20,background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`,fontSize:11,fontWeight:700}}>{tm.label}</span>:"-";},
               },
               {
                 label:"Rating",
-                render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"—",
+                render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"-",
                 bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;},
                 isBest:(s,b)=>Number(s?.rating)===b,
               },
               {
                 label:"Popularity",
-                render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"—";},
+                render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"-";},
                 bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;},
                 isBest:(s,b)=>Number(s?.boughtLastMonth)===b,
               },
@@ -862,7 +862,7 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
       {/* Footer note */}
       <div style={{ padding:"10px 20px", borderTop:"1px solid #F0EBE2", background:"#FAFAF8" }}>
         <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:"#BDB5A8", margin:0, textAlign:"center" }}>
-          Safety Check powered by CheckPeak — matched against our banned substances database. Results are for informational purposes only.
+          Safety Check powered by CheckPeak - matched against our banned substances database. Results are for informational purposes only.
         </p>
       </div>
 
@@ -968,7 +968,7 @@ function EmailCaptureStrip({ activeCatLabel }) {
       });
     } catch (err) {
       console.error("[EmailCapture] save failed:", err);
-      // Non-fatal — still show success to user
+      // Non-fatal - still show success to user
     } finally {
       setSaving(false);
     }
@@ -1080,7 +1080,7 @@ export default function SmartStackComparePage() {
 
   const stats = useMemo(() => buildBucketStats(allStacks), [allStacks]);
 
-  /* ── Stable value rank — computed by value score within each Airtable category,
+  /* ── Stable value rank - computed by value score within each Airtable category,
      independent of display sort order. Survives filter/sort changes.
      Map<stackId, { rank: number, total: number }> ── */
   const valueRankMap = useMemo(() => {
@@ -1179,8 +1179,8 @@ export default function SmartStackComparePage() {
 
   /* ── Dynamic page metadata ── */
   const pageTitle = activeCatLabel
-    ? `Best ${activeCatLabel} Compared — SmartStack by CheckPeak`
-    : "Supplement Comparison — SmartStack by CheckPeak";
+    ? `Best ${activeCatLabel} Compared - SmartStack by CheckPeak`
+    : "Supplement Comparison - SmartStack by CheckPeak";
 
   const pageDesc = activeCatLabel
     ? `Compare the best ${activeCatLabel} by price-per-serving, value rating, and customer reviews. Independent rankings. No sponsored placements.`
@@ -1243,7 +1243,7 @@ export default function SmartStackComparePage() {
 
             <h1 style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:"clamp(1.9rem,6vw,3.2rem)", fontWeight:700, color:"#1A1410", lineHeight:1.15, margin:"0 0 16px", letterSpacing:"-0.02em" }}>
               {activeCatLabel
-                ? `Best ${activeCatLabel} — compared by real value`
+                ? `Best ${activeCatLabel} - compared by real value`
                 : "Which supplements are actually worth your money?"
               }
             </h1>
@@ -1461,7 +1461,7 @@ export default function SmartStackComparePage() {
                 Serious about your supplements?
               </p>
               <p style={{ fontSize:14, color:"rgba(255,255,255,0.65)", margin:"0 0 24px", lineHeight:1.7, maxWidth:480, marginLeft:"auto", marginRight:"auto" }}>
-                CheckPeak helps you track nutrition, manage workouts, and scan supplements for banned substances — all in one place.
+                CheckPeak helps you track nutrition, manage workouts, and scan supplements for banned substances - all in one place.
               </p>
               <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
                 <a href="/dashboard" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", borderRadius:10, background:"#fff", color:"#1A3A5C", fontWeight:700, fontSize:14, textDecoration:"none", fontFamily:"'DM Sans',sans-serif" }}

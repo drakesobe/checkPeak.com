@@ -399,21 +399,38 @@ export default function GridCard({
           pointerEvents:"none",
         }} aria-hidden="true" />
 
-        {/* Value rank — bottom-right. Stable regardless of sort. */}
-        {rank != null && totalInCat != null && (
-          <div style={{
-            position:"absolute", bottom:8, right:8,
-            padding:"3px 9px", borderRadius:99,
-            background:"rgba(0,0,0,0.48)", backdropFilter:"blur(6px)",
-          }}>
-            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, color:"rgba(255,255,255,0.95)", letterSpacing:"0.03em" }}>
-              #{rank} of {totalInCat}
-            </span>
-          </div>
-        )}
+        {/* Editorial pick badge — bottom-right.
+             Rank 1 → "Top Pick", 2 → "Runner-Up", 3 → "Strong Pick".
+             Rank 4+ → nothing. Selective = meaningful.
+             Always based on value rank, never display order. */}
+        {rank != null && rank <= 3 && totalInCat != null && (() => {
+          const PICK = {
+            1: { label:"Top Pick",    icon:"✓" },
+            2: { label:"Runner-Up",   icon:"✓" },
+            3: { label:"Strong Pick", icon:"✓" },
+          }[rank];
+          return (
+            <div style={{
+              position:"absolute", bottom:8, right:8,
+              display:"flex", alignItems:"center", gap:4,
+              padding:"3px 9px", borderRadius:99,
+              background:"rgba(0,0,0,0.54)", backdropFilter:"blur(8px)",
+              border:"1px solid rgba(255,255,255,0.15)",
+            }}>
+              <span style={{ fontSize:9, color:"#6EE7B7", fontWeight:900, lineHeight:1 }}>{PICK.icon}</span>
+              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, color:"rgba(255,255,255,0.96)", letterSpacing:"0.04em", whiteSpace:"nowrap" }}>
+                {PICK.label}
+              </span>
+              <span style={{ fontSize:9, color:"rgba(255,255,255,0.38)", fontWeight:500 }}>—</span>
+              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:600, color:"rgba(255,255,255,0.55)", whiteSpace:"nowrap" }}>
+                {totalInCat} reviewed
+              </span>
+            </div>
+          );
+        })()}
 
-        {/* Bought — bottom-left, only when no rank */}
-        {bought && rank == null && (
+        {/* Bought — bottom-left social proof, shown regardless of rank */}
+        {bought && (
           <div style={{
             position:"absolute", bottom:8, left:8,
             padding:"3px 9px", borderRadius:99,

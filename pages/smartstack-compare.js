@@ -495,22 +495,263 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+   SAFETY CHECK HELPERS  (fetch label → OCR → /api/check)
+   Mirrors NutritionModal.jsx and GridCard.jsx pipeline exactly.
+════════════════════════════════════════════════════════════════════════════ */
+
+async function fetchLabelAsFile(url) {
+  if (!url) throw new Error("No image URL");
+  try {
+    const r = await fetch(url, { mode:"cors" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const b = await r.blob();
+    return new File([b], `label.${b.type.includes("png")?"png":"jpg"}`, { type:b.type||"image/jpeg" });
+  } catch { /* CORS — proxy */ }
+  const r = await fetch(`/api/ocr/proxy-image?url=${encodeURIComponent(url)}`);
+  if (!r.ok) throw new Error(`Proxy failed (${r.status})`);
+  const b = await r.blob();
+  return new File([b], `label.${b.type.includes("png")?"png":"jpg"}`, { type:b.type||"image/jpeg" });
+}
+
+async function runSafetyCheck(stack, startScan) {
+  if (!stack?.nutritionLabel) return null;
+  const file = await fetchLabelAsFile(stack.nutritionLabel);
+  // startScan is a promise-based wrapper — we wrap in a promise
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const onResult = async (text) => {
+      if (resolved) return;
+      resolved = true;
+      const t = String(text || "").trim();
+      if (!t) { resolve({ matchedBanned:[], matchedIngredients:[] }); return; }
+      try {
+        const r    = await fetch("/api/check", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({ ingredientsText:t }), credentials:"include",
+        });
+        const data = await r.json().catch(()=>({}));
+        resolve(r.ok ? data : { matchedBanned:[], matchedIngredients:[] });
+      } catch { resolve({ matchedBanned:[], matchedIngredients:[] }); }
+    };
+    startScan([file]).catch(reject);
+    // onResult is called via the hook's onScan callback — handled in ManualCompareTable
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
    MANUAL COMPARE TABLE  (user-assembled)
+   Auto-runs Safety Check for each product when added to compare.
 ════════════════════════════════════════════════════════════════════════════ */
 
 function ManualCompareTable({ stacks, stats, onRemove }) {
   const ref = useRef(null);
 
+  // Safety check results and phases per stack id
+  // phase: "idle" | "scanning" | "done" | "error" | "no_label"
+  const [safetyData, setSafetyData] = useState({}); // { [id]: { phase, result } }
+
+  /* ── Auto-scroll when 2nd product added ── */
   useEffect(() => {
     if (stacks.length === 2 && ref.current) {
       setTimeout(() => ref.current?.scrollIntoView({ behavior:"smooth", block:"start" }), 100);
     }
   }, [stacks.length]);
 
+  /* ── Auto-scan each stack when added ── */
+  useEffect(() => {
+    stacks.forEach(stack => {
+      const id = stack.id;
+      // Skip if already scanned or scanning
+      if (safetyData[id]) return;
+
+      if (!stack?.nutritionLabel) {
+        setSafetyData(prev => ({ ...prev, [id]: { phase:"no_label", result:null } }));
+        return;
+      }
+
+      // Mark as scanning immediately
+      setSafetyData(prev => ({ ...prev, [id]: { phase:"scanning", result:null } }));
+
+      // Run the full pipeline: fetch image → OCR → check
+      (async () => {
+        try {
+          // Step 1: fetch label image
+          const file = await fetchLabelAsFile(stack.nutritionLabel);
+
+          // Step 2: OCR via Tesseract (dynamic import to avoid SSR issues)
+          const { createWorker } = await import("tesseract.js");
+          const worker = await createWorker();
+          if (typeof worker.load === "function")         await worker.load();
+          if (typeof worker.reinitialize === "function") await worker.reinitialize("eng");
+          else if (typeof worker.initialize === "function") await worker.initialize("eng");
+
+          // Resize + grayscale via canvas
+          const canvas  = document.createElement("canvas");
+          const bitmap  = await createImageBitmap(file);
+          const maxDim  = 1800;
+          let w = bitmap.width, h = bitmap.height;
+          if (w > maxDim || h > maxDim) {
+            const s = Math.min(maxDim/w, maxDim/h);
+            w = Math.round(w*s); h = Math.round(h*s);
+          }
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext("2d", { willReadFrequently:true });
+          ctx.drawImage(bitmap, 0, 0, w, h);
+
+          // Grayscale + contrast
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const px = imgData.data;
+          let min=255, max=0;
+          for (let i=0;i<px.length;i+=4){ const g=0.3*px[i]+0.59*px[i+1]+0.11*px[i+2]; if(g<min)min=g; if(g>max)max=g; }
+          const scale = 255/(max-min||1);
+          for (let i=0;i<px.length;i+=4){ const g=Math.max(0,Math.min(255,(0.3*px[i]+0.59*px[i+1]+0.11*px[i+2]-min)*scale)); px[i]=px[i+1]=px[i+2]=g; }
+          ctx.putImageData(imgData, 0, 0);
+
+          if (typeof worker.setParameters === "function") {
+            await worker.setParameters({ tesseract_pageseg_mode:"6" });
+          }
+          const result  = await worker.recognize(canvas);
+          const ocrText = String(result?.data?.text ?? "").trim();
+          await worker.terminate().catch(()=>{});
+
+          // Step 3: check against banned/ingredient database
+          if (!ocrText) {
+            setSafetyData(prev => ({ ...prev, [id]: { phase:"done", result:{ matchedBanned:[], matchedIngredients:[] } } }));
+            return;
+          }
+
+          const checkRes  = await fetch("/api/check", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({ ingredientsText:ocrText }), credentials:"include",
+          });
+          const checkData = await checkRes.json().catch(()=>({}));
+
+          setSafetyData(prev => ({
+            ...prev,
+            [id]: {
+              phase:"done",
+              result: checkRes.ok ? checkData : { matchedBanned:[], matchedIngredients:[] },
+            },
+          }));
+        } catch (err) {
+          console.error("[SafetyCheck] failed for", stack.name, err);
+          setSafetyData(prev => ({ ...prev, [id]: { phase:"error", result:null } }));
+        }
+      })();
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stacks.map(s=>s.id).join(",")]);
+
+  // Clean up safety data for removed stacks
+  useEffect(() => {
+    const ids = new Set(stacks.map(s => s.id));
+    setSafetyData(prev => {
+      const next = {};
+      for (const k of Object.keys(prev)) {
+        if (ids.has(k)) next[k] = prev[k];
+      }
+      return next;
+    });
+  }, [stacks]);
+
   if (stacks.length < 2) return null;
+
+  /* ── Safety check cell renderer ── */
+  const renderSafetyCell = (stack) => {
+    const sd = safetyData[stack.id];
+
+    if (!sd || sd.phase === "scanning") {
+      return (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+          <div style={{
+            width:16, height:16, borderRadius:"50%",
+            border:"2px solid #C0D0E0", borderTopColor:"#1A3A5C",
+            animation:"cmp-spin 0.8s linear infinite",
+          }} />
+          <span style={{ fontSize:9, color:"#9B8E7E" }}>Checking…</span>
+        </div>
+      );
+    }
+
+    if (sd.phase === "no_label") {
+      return <span style={{ fontSize:11, color:"#BDB5A8" }}>No label</span>;
+    }
+
+    if (sd.phase === "error") {
+      return <span style={{ fontSize:11, color:"#BDB5A8" }}>Unavailable</span>;
+    }
+
+    const banned = sd.result?.matchedBanned || [];
+    const hasBanned = banned.length > 0;
+
+    return (
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
+        {/* Verdict pill */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:5,
+          padding:"3px 10px", borderRadius:99,
+          background: hasBanned ? "#FFF0F0" : "#DCFCE7",
+          border:`1px solid ${hasBanned ? "#FFC8C8" : "#BBF7D0"}`,
+        }}>
+          <span style={{ fontSize:11 }}>{hasBanned ? "⚠️" : "✅"}</span>
+          <span style={{
+            fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:800,
+            color: hasBanned ? "#C8102E" : "#15803D",
+          }}>
+            {hasBanned ? `${banned.length} flagged` : "Nothing flagged"}
+          </span>
+        </div>
+
+        {/* Flagged substance names */}
+        {hasBanned && (
+          <div style={{ display:"flex", flexDirection:"column", gap:3, width:"100%" }}>
+            {banned.slice(0, 4).map((b, i) => {
+              const name = b?.fields?.["Substance Name"] || b?.fields?.["Name"] || "Unknown";
+              const type = b?.fields?.["Ban Type"] || "";
+              return (
+                <div key={i} style={{
+                  padding:"3px 8px", borderRadius:6,
+                  background:"#FFF0F0", border:"1px solid #FFC8C8",
+                  textAlign:"left",
+                }}>
+                  <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700, color:"#C8102E", display:"block" }}>
+                    {name}
+                  </span>
+                  {type && (
+                    <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:"#C8102E", opacity:0.7 }}>
+                      {type}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {banned.length > 4 && (
+              <span style={{ fontSize:9, color:"#9B8E7E", textAlign:"center" }}>
+                +{banned.length - 4} more
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* ── Safety winner: product with 0 banned or fewest ── */
+  const safetyBestId = (() => {
+    const counts = stacks.map(s => {
+      const sd = safetyData[s.id];
+      if (sd?.phase !== "done") return null;
+      return { id:s.id, count:(sd.result?.matchedBanned||[]).length };
+    }).filter(Boolean);
+    if (counts.length < stacks.length) return null; // not all done yet
+    const min = Math.min(...counts.map(c => c.count));
+    const winners = counts.filter(c => c.count === min);
+    return winners.length === 1 ? winners[0].id : null; // only crown if unambiguous
+  })();
 
   return (
     <div ref={ref} id="compare-result" style={{ background:"#fff", border:"1.5px solid #1A3A5C", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 28px rgba(26,58,92,0.1)", scrollMarginTop:72 }}>
+      {/* Header */}
       <div style={{ padding:"14px 20px", borderBottom:"1px solid #E8E3DB", background:"#EEF3F9", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <p style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:15, fontWeight:700, color:"#1A1410", margin:0 }}>
           Your Comparison
@@ -525,6 +766,7 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
         </div>
       </div>
 
+      {/* Table */}
       <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:"'DM Sans',sans-serif", minWidth:400 }}>
           <thead>
@@ -542,15 +784,36 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
           </thead>
           <tbody>
             {[
-              { label:"Price/Serving", render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:"'Libre Baskerville',serif"}}>{ppsLabel(p)}</strong>:"—";}, bestOf:ss=>{const ns=ss.map(getPPS).filter(n=>n!=null);return ns.length?Math.min(...ns):null;}, isBest:(s,b)=>getPPS(s)===b },
-              { label:"Value Rating",  render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{padding:"2px 8px",borderRadius:20,background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`,fontSize:11,fontWeight:700}}>{tm.label}</span>:"—";} },
-              { label:"Rating",        render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"—", bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.rating)===b },
-              { label:"Popularity",    render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"—";}, bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.boughtLastMonth)===b },
-              { label:"Buy",           render:s=><AmazonBtn stack={s} size="sm" showPrice /> },
+              {
+                label:"Price/Serving",
+                render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:"'Libre Baskerville',serif"}}>{ppsLabel(p)}</strong>:"—";},
+                bestOf:ss=>{const ns=ss.map(getPPS).filter(n=>n!=null);return ns.length?Math.min(...ns):null;},
+                isBest:(s,b)=>getPPS(s)===b,
+              },
+              {
+                label:"Value Rating",
+                render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{padding:"2px 8px",borderRadius:20,background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`,fontSize:11,fontWeight:700}}>{tm.label}</span>:"—";},
+              },
+              {
+                label:"Rating",
+                render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"—",
+                bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;},
+                isBest:(s,b)=>Number(s?.rating)===b,
+              },
+              {
+                label:"Popularity",
+                render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"—";},
+                bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;},
+                isBest:(s,b)=>Number(s?.boughtLastMonth)===b,
+              },
+              {
+                label:"Buy",
+                render:s=><AmazonBtn stack={s} size="sm" showPrice />,
+              },
             ].map((row, ri) => {
               const bestVal = row.bestOf ? row.bestOf(stacks) : null;
               return (
-                <tr key={row.label} style={{ borderBottom: ri < 4 ? "1px solid #F8F4EE" : "none" }}>
+                <tr key={row.label} style={{ borderBottom:"1px solid #F8F4EE" }}>
                   <td style={{ padding:"11px 16px", fontSize:10, fontWeight:700, color:"#9B8E7E", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap" }}>{row.label}</td>
                   {stacks.map(s => {
                     const isBest = row.isBest && bestVal != null ? row.isBest(s, bestVal) : false;
@@ -564,9 +827,46 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
                 </tr>
               );
             })}
+
+            {/* ── SAFETY CHECK ROW ─────────────────────────────────────── */}
+            <tr style={{ borderTop:"2px solid #E8E3DB", background:"#FAFAF8" }}>
+              <td style={{ padding:"12px 16px", verticalAlign:"top" }}>
+                <div style={{ fontSize:10, fontWeight:800, color:"#1A3A5C", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", marginBottom:2 }}>
+                  Safety Check
+                </div>
+                <div style={{ fontSize:9, color:"#9B8E7E", fontWeight:400, lineHeight:1.4, maxWidth:90 }}>
+                  Banned substance scan
+                </div>
+              </td>
+              {stacks.map(s => {
+                const isSafest = safetyBestId === s.id;
+                return (
+                  <td key={s.id} style={{
+                    padding:"12px 16px", textAlign:"center", verticalAlign:"top",
+                    background: isSafest ? "#F0FDF4" : "transparent",
+                  }}>
+                    {renderSafetyCell(s)}
+                    {isSafest && (
+                      <div style={{ fontSize:9, color:"#16A34A", fontWeight:800, marginTop:4, textTransform:"uppercase", letterSpacing:"0.08em" }}>
+                        Safest
+                      </div>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
           </tbody>
         </table>
       </div>
+
+      {/* Footer note */}
+      <div style={{ padding:"10px 20px", borderTop:"1px solid #F0EBE2", background:"#FAFAF8" }}>
+        <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:"#BDB5A8", margin:0, textAlign:"center" }}>
+          Safety Check powered by CheckPeak — matched against our banned substances database. Results are for informational purposes only.
+        </p>
+      </div>
+
+      <style>{`@keyframes cmp-spin { to { transform:rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -925,8 +1225,8 @@ export default function SmartStackComparePage() {
                 ← All Categories
               </button>
             )}
-            <a href="/smartstack" style={{ fontSize:12, fontWeight:600, color:"#1A3A5C", textDecoration:"none", padding:"6px 14px", border:"1px solid #C0D0E0", borderRadius:8, background:"#EEF3F9" }}>
-              Full App →
+            <a href="/nutrition-label-scanner" style={{ fontSize:12, fontWeight:600, color:"#1A3A5C", textDecoration:"none", padding:"6px 14px", border:"1px solid #C0D0E0", borderRadius:8, background:"#EEF3F9" }}>
+              Scan a Label →
             </a>
           </div>
         </nav>
@@ -960,7 +1260,6 @@ export default function SmartStackComparePage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A3A5C" strokeWidth={2} aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>
               <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:"#1A1410", margin:0, lineHeight:1.5 }}>
                 <strong>Our rankings are calculated from public Amazon pricing data, updated weekly.</strong>
-                {" "}No brand pays for placement. <a href="/about" style={{ color:"#1A3A5C" }}>See methodology →</a>
               </p>
             </div>
           </div>
@@ -1171,11 +1470,11 @@ export default function SmartStackComparePage() {
                 >
                   Get started free →
                 </a>
-                <a href="/smartstack" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", borderRadius:10, background:"transparent", color:"rgba(255,255,255,0.8)", fontWeight:600, fontSize:14, textDecoration:"none", fontFamily:"'DM Sans',sans-serif", border:"1px solid rgba(255,255,255,0.25)" }}
+                <a href="/nutrition-label-scanner" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", borderRadius:10, background:"transparent", color:"rgba(255,255,255,0.8)", fontWeight:600, fontSize:14, textDecoration:"none", fontFamily:"'DM Sans',sans-serif", border:"1px solid rgba(255,255,255,0.25)" }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor="rgba(255,255,255,0.6)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor="rgba(255,255,255,0.25)"; }}
                 >
-                  Full supplement app
+                  Scan your supplements
                 </a>
               </div>
             </section>

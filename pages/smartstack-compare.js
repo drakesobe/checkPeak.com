@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
+import GridCard from "@/components/smartstack-cards/GridCard";
 
 /* ════════════════════════════════════════════════════════════════════════════
    UTILITIES
@@ -247,23 +248,28 @@ function CategorySelector({ onSelect }) {
       <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:"#6B6259", marginBottom:16, textAlign:"center" }}>
         What are you shopping for today?
       </p>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10 }}>
+      {/* Grid: 2 cols on mobile, 3 on sm, auto-fill on larger */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
+        <style>{`
+          @media (min-width:480px) { .ss-cat-grid { grid-template-columns:repeat(3,1fr) !important; } }
+          @media (min-width:680px) { .ss-cat-grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important; } }
+        `}</style>
         {CAT_CONFIG.map(cat => (
           <button
             key={cat.slug} type="button"
             onClick={() => onSelect(cat.slug)}
             style={{
-              padding:"16px 12px", borderRadius:14, border:"1.5px solid #E8E3DB",
+              padding:"14px 10px", borderRadius:14, border:"1.5px solid #E8E3DB",
               background:"#fff", cursor:"pointer", textAlign:"center",
-              display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+              display:"flex", flexDirection:"column", alignItems:"center", gap:5,
               transition:"all 0.14s", boxShadow:"0 2px 8px rgba(0,0,0,0.04)",
             }}
             onMouseEnter={e => { e.currentTarget.style.borderColor="#1A3A5C"; e.currentTarget.style.boxShadow="0 4px 20px rgba(26,58,92,0.12)"; e.currentTarget.style.transform="translateY(-2px)"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor="#E8E3DB"; e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.04)"; e.currentTarget.style.transform="none"; }}
           >
-            <span style={{ fontSize:28 }}>{cat.emoji}</span>
-            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:700, color:"#1A1410" }}>{cat.label}</span>
-            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:"#9B8E7E", lineHeight:1.4 }}>{cat.desc}</span>
+            <span style={{ fontSize:26 }}>{cat.emoji}</span>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700, color:"#1A1410" }}>{cat.label}</span>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:"#9B8E7E", lineHeight:1.4 }}>{cat.desc}</span>
           </button>
         ))}
       </div>
@@ -489,93 +495,6 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   GRID CARD
-════════════════════════════════════════════════════════════════════════════ */
-
-function GridCard({ stack, stats, onCompare, isComparing }) {
-  const pps    = getPPS(stack);
-  const score  = getValueScore(stack, stats);
-  const tier   = getValueTier(score);
-  const tm     = tier ? TIER[tier] : null;
-  const hasImg = Boolean(stack?.imageUrl);
-  const bought = formatK(stack?.boughtLastMonth);
-
-  return (
-    <div style={{
-      background:"#fff",
-      border: isComparing ? "2px solid #1A3A5C" : "1px solid #EAE5DC",
-      borderRadius:12, overflow:"hidden",
-      display:"flex", flexDirection:"column",
-      boxShadow: isComparing ? "0 0 0 3px rgba(26,58,92,0.1), 0 4px 20px rgba(26,58,92,0.1)" : "0 2px 10px rgba(0,0,0,0.05)",
-      transition:"transform 0.15s, box-shadow 0.15s",
-    }}
-      onMouseEnter={e => { if (!isComparing) { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 8px 28px rgba(0,0,0,0.1)"; }}}
-      onMouseLeave={e => { if (!isComparing) { e.currentTarget.style.transform="translateY(0)"; e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,0.05)"; }}}
-    >
-      {/* Image */}
-      <div style={{ background:"#F8F6F2", aspectRatio:"1/1", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
-        {hasImg
-          ? /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={stack.imageUrl} alt={stack.name} style={{ width:"100%", height:"100%", objectFit:"contain", padding:10 }} loading="lazy" />
-          : <div style={{ fontSize:28, opacity:.13 }}>💊</div>
-        }
-        {tm && (
-          <div style={{ position:"absolute", top:6, left:6, fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:20, background:tm.bg, color:tm.text, border:`1px solid ${tm.border}`, fontFamily:"'DM Sans',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em" }}>
-            {tm.label}
-          </div>
-        )}
-        {isComparing && (
-          <div style={{ position:"absolute", top:6, right:6, width:20, height:20, borderRadius:"50%", background:"#1A3A5C", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-          </div>
-        )}
-      </div>
-
-      {/* Body */}
-      <div style={{ padding:"10px", flex:1, display:"flex", flexDirection:"column", gap:5 }}>
-        <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:"#1A1410", lineHeight:1.35, margin:0, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
-          {stack?.name}
-        </p>
-
-        {(stack?.rating > 0 || bought) && (
-          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-            {stack?.rating > 0 && <span style={{ fontSize:10, color:"#9B8E7E", fontFamily:"'DM Sans',sans-serif" }}>★ {Number(stack.rating).toFixed(1)}</span>}
-            {bought && <span style={{ fontSize:10, color:"#9B8E7E", fontFamily:"'DM Sans',sans-serif" }}>· {bought}+ bought</span>}
-          </div>
-        )}
-
-        {pps != null && (
-          <p style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:15, fontWeight:700, color:"#1A1410", margin:0 }}>
-            {ppsLabel(pps)}
-            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:400, color:"#9B8E7E", marginLeft:3 }}>/srv</span>
-          </p>
-        )}
-
-        <div style={{ display:"flex", flexDirection:"column", gap:5, marginTop:"auto", paddingTop:4 }}>
-          <AmazonBtn stack={stack} size="sm" showPrice />
-          <button type="button"
-            onClick={e => { e.stopPropagation(); onCompare?.(stack); }}
-            style={{
-              display:"flex", alignItems:"center", justifyContent:"center", gap:5,
-              padding:"6px 10px", borderRadius:8, cursor:"pointer",
-              background: isComparing ? "#EEF3F9" : "transparent",
-              border: isComparing ? "1.5px solid #1A3A5C" : "1px solid #DDD5C8",
-              color: isComparing ? "#1A3A5C" : "#9B8E7E",
-              fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600,
-              transition:"all 0.12s",
-            }}
-            onMouseEnter={e => { if (!isComparing) { e.currentTarget.style.borderColor="#1A3A5C"; e.currentTarget.style.color="#1A3A5C"; }}}
-            onMouseLeave={e => { if (!isComparing) { e.currentTarget.style.borderColor="#DDD5C8"; e.currentTarget.style.color="#9B8E7E"; }}}
-          >
-            {isComparing ? "✓ Added" : "+ Compare"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
    MANUAL COMPARE TABLE  (user-assembled)
 ════════════════════════════════════════════════════════════════════════════ */
 
@@ -717,6 +636,7 @@ function EmailCaptureStrip({ activeCatLabel }) {
   const [dismissed, setDismissed] = useState(false);
   const [email,     setEmail]     = useState("");
   const [sent,      setSent]      = useState(false);
+  const [saving,    setSaving]    = useState(false);
   const scrolledHalf = useScrollDepth(0.5);
 
   useEffect(() => {
@@ -730,15 +650,30 @@ function EmailCaptureStrip({ activeCatLabel }) {
 
   if (!visible || dismissed) return null;
 
-  const handleSubmit = e => {
-    e.preventDefault();
-    if (!email.includes("@")) return;
+  const handleSubmit = async e => {
+    e?.preventDefault();
+    if (!email.includes("@") || saving) return;
+    setSaving(true);
     try {
+      // Fire analytics
       window.gtag?.("event", "email_capture", { category: activeCatLabel, email });
       window.dataLayer?.push({ event:"email_capture", category: activeCatLabel });
     } catch {}
+    try {
+      // Save to AthleteScans (Scans table) via API
+      await fetch("/api/smartstack/subscribe", {
+        method:  "POST",
+        headers: { "Content-Type":"application/json" },
+        body:    JSON.stringify({ email, category: activeCatLabel || "Supplements" }),
+      });
+    } catch (err) {
+      console.error("[EmailCapture] save failed:", err);
+      // Non-fatal — still show success to user
+    } finally {
+      setSaving(false);
+    }
     setSent(true);
-    setTimeout(() => setDismissed(true), 3000);
+    setTimeout(() => setDismissed(true), 3500);
   };
 
   return (
@@ -764,21 +699,27 @@ function EmailCaptureStrip({ activeCatLabel }) {
               We track {activeCatLabel || "supplement"} prices weekly. We'll notify you when the best-value option drops.
             </p>
           </div>
-          <form onSubmit={handleSubmit} style={{ display:"flex", gap:8, flex:"1 1 260px", minWidth:0 }}>
+          <div style={{ display:"flex", gap:8, flex:"1 1 260px", minWidth:0 }}>
             <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSubmit(e); }}
               placeholder="your@email.com"
-              required
-              style={{ flex:1, padding:"8px 12px", borderRadius:8, border:"none", fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:"none", minWidth:0 }}
+              autoComplete="email"
+              style={{ flex:1, padding:"8px 12px", borderRadius:8, border:"none", fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:"none", minWidth:0, background:"#fff", color:"#1A1410" }}
             />
-            <button type="submit"
-              style={{ padding:"8px 16px", borderRadius:8, background:"#FF9900", color:"#fff", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700, border:"none", cursor:"pointer", flexShrink:0, transition:"background 0.12s" }}
-              onMouseEnter={e => { e.currentTarget.style.background="#E68A00"; }}
-              onMouseLeave={e => { e.currentTarget.style.background="#FF9900"; }}
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              style={{ padding:"8px 16px", borderRadius:8, background:"#FF9900", color:"#fff", fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700, border:"none", cursor:saving?"wait":"pointer", flexShrink:0, transition:"background 0.12s", opacity:saving?0.7:1 }}
+              onMouseEnter={e => { if(!saving) e.currentTarget.style.background="#E68A00"; }}
+              onMouseLeave={e => { if(!saving) e.currentTarget.style.background="#FF9900"; }}
             >
-              Notify me
+              {saving ? "Saving…" : "Notify me"}
             </button>
-          </form>
+          </div>
         </>
       )}
       <button type="button" onClick={() => setDismissed(true)}
@@ -838,6 +779,31 @@ export default function SmartStackComparePage() {
   }, []);
 
   const stats = useMemo(() => buildBucketStats(allStacks), [allStacks]);
+
+  /* ── Stable value rank — computed by value score within each Airtable category,
+     independent of display sort order. Survives filter/sort changes.
+     Map<stackId, { rank: number, total: number }> ── */
+  const valueRankMap = useMemo(() => {
+    const byCat = new Map();
+    allStacks.forEach(s => {
+      const cat = String(s?.category || "").trim();
+      if (!cat) return;
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(s);
+    });
+    const map = new Map();
+    byCat.forEach((stacksInCat) => {
+      const sorted = [...stacksInCat].sort((a, b) => {
+        const sa = getValueScore(a, stats) ?? -Infinity;
+        const sb = getValueScore(b, stats) ?? -Infinity;
+        return sb - sa;
+      });
+      sorted.forEach((s, i) => {
+        map.set(s.id, { rank: i + 1, total: sorted.length });
+      });
+    });
+    return map;
+  }, [allStacks, stats]);
 
   /* ── Category selection ── */
   const handleSelectCat = useCallback((slug) => {
@@ -994,6 +960,7 @@ export default function SmartStackComparePage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A3A5C" strokeWidth={2} aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>
               <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:"#1A1410", margin:0, lineHeight:1.5 }}>
                 <strong>Our rankings are calculated from public Amazon pricing data, updated weekly.</strong>
+                {" "}No brand pays for placement. <a href="/about" style={{ color:"#1A3A5C" }}>See methodology →</a>
               </p>
             </div>
           </div>
@@ -1131,12 +1098,22 @@ export default function SmartStackComparePage() {
                 <>
                   {gridStacks.length > 0 ? (
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:12 }}>
-                      {gridStacks.map(stack => (
-                        <GridCard key={stack.id} stack={stack} stats={stats}
-                          onCompare={toggleCompare}
-                          isComparing={Boolean(comparing.find(s => s.id === stack.id))}
-                        />
-                      ))}
+                      {gridStacks.map((stack) => {
+                        const rankInfo = valueRankMap.get(stack.id);
+                        return (
+                          <GridCard
+                            key={stack.id}
+                            stack={stack}
+                            stats={stats}
+                            onCompare={toggleCompare}
+                            isComparing={Boolean(comparing.find(s => s.id === stack.id))}
+                            valueTier={getValueTier(getValueScore(stack, stats))}
+                            pps={getPPS(stack)}
+                            rank={rankInfo?.rank ?? null}
+                            totalInCat={rankInfo?.total ?? null}
+                          />
+                        );
+                      })}
                     </div>
                   ) : (
                     <div style={{ padding:"60px 20px", textAlign:"center" }}>

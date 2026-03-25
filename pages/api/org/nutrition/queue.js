@@ -1,384 +1,336 @@
 // pages/api/org/nutrition/queue.js
+//
+// Builds the full per-athlete nutrition queue for the current week.
+// Uses /api/org/getAthletes internally for athlete fetching so org
+// scoping and auth are handled consistently.
+//
+// Env vars used:
+//   ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME
+//   NUTRITION_API_KEY, NUTRITION_BASE_ID
+//   NUTRITION_TABLE_NAME        — NutritionPlans table ID
+//   NUTRITION_TOKEN_FIELD       — "AthleteToken" (token field on plans)
+//   NUTRITION_PLANS_LINK_FIELD  — "Athlete" (linked athlete field)
+//   NUTRITION_STATUS_FIELD      — "Status" (active/inactive plan status)
+//   NUTRITION_CREATEDAT_FIELD   — "CreatedAt"
+//   NUTRITION_COMPLETIONS_TABLE — NutritionCompletions table ID
+
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
-/* ---------------- helpers ---------------- */
+// ── Env vars ──────────────────────────────────────────────────────────────────
+const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
+const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
+const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
-function asString(v) {
-  return String(v ?? "").trim();
+const NUTRITION_API_KEY     = process.env.NUTRITION_API_KEY;
+const NUTRITION_BASE_ID     = process.env.NUTRITION_BASE_ID;
+
+// NutritionPlans — matches getByAthlete.js exactly
+const PLANS_TABLE           = process.env.NUTRITION_PLANS_TABLE         || "tblbN4C6BWn6MNWzu";
+const PLAN_TOKEN_FIELD      = process.env.NUTRITION_TOKEN_FIELD         || "AthleteToken";
+const PLAN_CREATEDAT_FIELD  = process.env.NUTRITION_CREATED_AT_FIELD    || "CreatedAt";
+const PLAN_PHASE_FIELD      = process.env.NUTRITION_PHASE_FIELD         || "Phase";
+const PLAN_STATUS_FIELD     = process.env.NUTRITION_STATUS_FIELD        || "Status";
+const PLAN_CAL_FIELD        = process.env.NUTRITION_DAILY_CAL_FIELD     || "DailyCalories";
+const PLAN_PROTEIN_FIELD    = process.env.NUTRITION_DAILY_P_FIELD       || "DailyProtein";
+const PLAN_CARBS_FIELD      = process.env.NUTRITION_DAILY_C_FIELD       || "DailyCarbs";
+const PLAN_FAT_FIELD        = process.env.NUTRITION_DAILY_F_FIELD       || "DailyFat";
+
+// NutritionCompletions
+const COMPLETIONS_TABLE     = process.env.NUTRITION_COMPLETIONS_TABLE;
+
+// Fields to pull from NutritionPlans
+const PLAN_FIELDS = [
+  PLAN_TOKEN_FIELD,
+  PLAN_CREATEDAT_FIELD,
+  PLAN_PHASE_FIELD,
+  PLAN_STATUS_FIELD,
+  PLAN_CAL_FIELD,
+  PLAN_PROTEIN_FIELD,
+  PLAN_CARBS_FIELD,
+  PLAN_FAT_FIELD,
+];
+
+// Fields to pull from NutritionCompletions
+// Update these to match your actual field names in the completions table
+const COMPLETION_TOKEN_FIELD    = process.env.NUTRITION_TOKEN_FIELD || "AthleteToken";
+const COMPLETION_WEEK_FIELD     = "WeekStart";   // ISO date "YYYY-MM-DD" — update if different
+const COMPLETION_CALORIES_FIELD = "CaloriesLogged"; // update if different
+const COMPLETION_TARGET_FIELD   = "CaloriesTarget"; // update if different
+
+// Athlete table reminder fields (written by send-reminder.js)
+const ATH_LAST_REMINDER  = "LastReminderSentAt";
+const ATH_REMINDER_COUNT = "ReminderCount";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function asStr(v) { return String(v ?? "").trim(); }
+
+function getAirtableTable(apiKey, baseId, tableId) {
+  if (!apiKey || !baseId || !tableId) return null;
+  return new Airtable({ apiKey }).base(baseId)(tableId);
 }
 
-function safeArr(v) {
-  return Array.isArray(v) ? v : [];
+function getWeekStart() {
+  const now   = new Date();
+  const start = new Date(now);
+  start.setUTCDate(now.getUTCDate() - now.getUTCDay());
+  start.setUTCHours(0, 0, 0, 0);
+  return start.toISOString().slice(0, 10); // "YYYY-MM-DD"
 }
 
-function chunk(arr, size = 25) {
-  const out = [];
-  const a = Array.isArray(arr) ? arr : [];
-  for (let i = 0; i < a.length; i += size) out.push(a.slice(i, i + size));
-  return out;
+function escapeAirtable(str = "") {
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-function makeOrEquals(fieldName, values) {
-  const safe = (v) => String(v).replace(/'/g, "\\'");
-  const parts = (Array.isArray(values) ? values : [])
-    .map((v) => asString(v))
-    .filter(Boolean)
-    .map((v) => `{${fieldName}}='${safe(v)}'`);
-
-  if (!parts.length) return "";
-  if (parts.length === 1) return parts[0];
-  return `OR(${parts.join(",")})`;
+async function fetchAllRecords(table, opts = {}) {
+  const records = [];
+  await table.select(opts).eachPage((page, next) => { records.push(...page); next(); });
+  return records;
 }
 
-function clampPct(n) {
-  const x = Number(n);
-  if (Number.isNaN(x)) return 0;
-  return Math.max(0, Math.min(100, Math.round(x)));
+// A plan exists if the athlete's token is present in the NutritionPlans table.
+// Status = "Active" confirms it — but presence alone is sufficient.
+// No need to filter by status value.
+function hasPlanRecord(fields) {
+  return Boolean(asStr(fields[NUTRITION_TOKEN_FIELD]));
 }
 
-function weekStartISO(d = new Date()) {
-  // Sunday-start week
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  const day = x.getDay(); // 0=Sun
-  x.setDate(x.getDate() - day);
-  return x.toISOString().slice(0, 10);
-}
-
-function daysAgoISO(n) {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return {};
-  }
-}
-
-function normalizePlanStatus(raw) {
-  const s = asString(raw).toLowerCase();
-  if (!s) return "no_plan";
-  if (s === "active") return "active";
-  if (s === "no plan" || s === "no_plan" || s === "noplan") return "no_plan";
-  return s.replace(/\s+/g, "_");
-}
-
-function labelPlanStatus(norm) {
-  if (norm === "active") return "Active";
-  if (norm === "no_plan") return "No Plan";
-  return norm
-    .split("_")
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
-    .join(" ");
-}
-
-/* ---------------- Airtable: NutritionCheckins ---------------- */
-
-const NUTRITIONCHECKINS_API_KEY = process.env.NUTRITIONCHECKINS_API_KEY;
-const NUTRITIONCHECKINS_BASE_ID = process.env.NUTRITIONCHECKINS_BASE_ID;
-const NUTRITIONCHECKINS_TABLE = process.env.NUTRITIONCHECKINS_TABLE || "NutritionCheckins";
-
-function getCheckinsTable() {
-  if (!NUTRITIONCHECKINS_API_KEY || !NUTRITIONCHECKINS_BASE_ID) return null;
-  const base = new Airtable({ apiKey: NUTRITIONCHECKINS_API_KEY }).base(NUTRITIONCHECKINS_BASE_ID);
-  return base(NUTRITIONCHECKINS_TABLE);
-}
-
-/* ---------------- Airtable: NutritionPlans ---------------- */
-
-const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
-const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
-const NUTRITION_PLANS_TABLE = process.env.NUTRITION_PLANS_TABLE || "NutritionPlans";
-
-function getPlansTable() {
-  if (!NUTRITION_API_KEY || !NUTRITION_BASE_ID || !NUTRITION_PLANS_TABLE) return null;
-  const base = new Airtable({ apiKey: NUTRITION_API_KEY }).base(NUTRITION_BASE_ID);
-  return base(NUTRITION_PLANS_TABLE);
-}
-
-/* ---------------- STRICT FIELD NAMES ---------------- */
-
-// NutritionCheckins
-const CHECKIN_TOKEN_FIELD = "AthleteToken"; // lookup
-const CHECKIN_WEEK_FIELD = "WeekStartISO";
-const CHECKIN_CREATED_FIELD = "CreatedAt";
-const CHECKIN_CAL_FIELD = "CaloriesAdherencePct";
-const CHECKIN_PRO_FIELD = "ProteinAdherencePct";
-const CHECKIN_HYD_FIELD = "HydrationAdherencePct";
-const CHECKIN_NOTES_FIELD = "Notes";
-const CHECKIN_STATUS_FIELD = "Status"; // lookup
-
-// NutritionPlans
-const PLAN_TOKEN_FIELD = "AthleteToken"; // lookup
-const PLAN_STATUS_FIELD = "Status"; // text
-const PLAN_CREATED_FIELD = "CreatedAt";
-
-/* ---------------- main handler ---------------- */
-
+// ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const org = requireOrg(req, res);
-  if (!org?.ok) return;
+  const auth = requireOrg(req, res);
+  if (!auth?.ok) return;
+
+  const weekStart = getWeekStart();
 
   try {
-    // 1) Load athletes via internal endpoint (cookie session)
-    const host = req.headers.host;
-    const proto = (req.headers["x-forwarded-proto"] || "http").toString();
+    // ── 1. Fetch athletes via existing getAthletes endpoint ───────────────────
+    const protocol   = process.env.VERCEL_URL ? "https" : "http";
+    const host       = process.env.VERCEL_URL || `localhost:${process.env.PORT || 3000}`;
 
-    const athletesRes = await fetch(`${proto}://${host}/api/org/getAthletes`, {
-      method: "GET",
-      headers: { cookie: req.headers.cookie || "" },
+    const athleteRes  = await fetch(`${protocol}://${host}/api/org/getAthletes`, {
+      method:  "GET",
+      headers: {
+        cookie: req.headers.cookie || "",
+        ...(req.headers.authorization ? { authorization: req.headers.authorization } : {}),
+      },
     });
 
-    const athletesJson = await safeJson(athletesRes);
-    if (!athletesRes.ok) {
-      return res.status(athletesRes.status).json({
-        error: athletesJson?.error || "Failed to load athletes for nutrition queue.",
+    const athleteJson = await athleteRes.json().catch(() => ({}));
+
+    if (!athleteRes.ok) {
+      return res.status(athleteRes.status).json({
+        error:   "Failed to fetch athletes",
+        details: athleteJson?.error || athleteJson,
       });
     }
 
-    const athletesRaw = Array.isArray(athletesJson?.athletes) ? athletesJson.athletes : [];
+    const athletes = Array.isArray(athleteJson?.athletes) ? athleteJson.athletes : [];
 
-    // ✅ Source of truth: getAthletes already returns sport/team from AthleteScans
-    const athletes = athletesRaw
-      .map((a) => {
-        const athleteToken = asString(a?.athleteToken);
-        return {
-          id: asString(a?.id || a?.athleteId),
-          name: asString(a?.name) || "Athlete",
-          email: asString(a?.email),
-          sport: asString(a?.sport), // single select in AthleteScans
-          team: asString(a?.team),   // Team field in AthleteScans
-          athleteToken,
-        };
-      })
-      .filter((a) => Boolean(a.athleteToken) && Boolean(a.id));
-
-    // ✅ Build dropdown options
-    const sports = Array.from(new Set(athletes.map((a) => asString(a.sport)).filter(Boolean))).sort();
-    const teams = Array.from(new Set(athletes.map((a) => asString(a.team)).filter(Boolean))).sort();
-
-    // ✅ sport -> teams map (for narrowing dropdown on sport selection)
-    const teamsBySport = athletes.reduce((acc, a) => {
-      const s = asString(a.sport);
-      const t = asString(a.team);
-      if (!s || !t) return acc;
-      if (!acc[s]) acc[s] = [];
-      acc[s].push(t);
-      return acc;
-    }, {});
-
-    for (const k of Object.keys(teamsBySport)) {
-      teamsBySport[k] = Array.from(new Set(teamsBySport[k])).sort();
+    if (!athletes.length) {
+      return res.status(200).json({
+        rows:   [],
+        meta:   { weekStartISO: weekStart, sports: [], teams: [] },
+        counts: { total: 0, withPlan: 0, missingPlan: 0, noCheckin: 0, lowAdherence: 0, onTrack: 0 },
+      });
     }
 
-    const thisWeek = weekStartISO(new Date());
+    // Build token → athlete lookup
+    const athleteByToken = {};
+    for (const a of athletes) {
+      const tok = asStr(a.athleteToken);
+      if (tok) athleteByToken[tok] = a;
+    }
+    const tokens = Object.keys(athleteByToken);
 
-    /* -------- 2) Latest check-in per athlete (by AthleteToken) -------- */
+    // ── 2. Fetch reminder tally from AthleteScans ─────────────────────────────
+    // These two fields are written by send-reminder.js and aren't in getAthletes
+    const reminderByToken = {};
 
-    const checkinsByToken = {};
-    const chkTable = getCheckinsTable();
+    if (ATHLETE_API_KEY && ATHLETE_BASE_ID && ATHLETE_TABLE_NAME && tokens.length) {
+      try {
+        const athTable = getAirtableTable(ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME);
+        const BATCH = 100;
 
-    if (chkTable && athletes.length) {
-      const minWeek = daysAgoISO(21);
-      const tokens = athletes.map((a) => a.athleteToken);
+        for (let i = 0; i < tokens.length; i += BATCH) {
+          const batch   = tokens.slice(i, i + BATCH);
+          const formula = batch.length === 1
+            ? `{AthleteToken}='${escapeAirtable(batch[0])}'`
+            : `OR(${batch.map(t => `{AthleteToken}='${escapeAirtable(t)}'`).join(",")})`;
 
-      for (const group of chunk(tokens, 40)) {
-        const filter = `AND(
-          IS_AFTER(
-            DATETIME_PARSE({${CHECKIN_WEEK_FIELD}} & ''),
-            DATETIME_PARSE('${minWeek}')
-          ),
-          ${makeOrEquals(CHECKIN_TOKEN_FIELD, group)}
-        )`;
+          const recs = await fetchAllRecords(athTable, {
+            filterByFormula: formula,
+            fields: ["AthleteToken", ATH_LAST_REMINDER, ATH_REMINDER_COUNT],
+          });
 
-        const recs = await chkTable
-          .select({
-            filterByFormula: filter,
-            pageSize: 100,
-            sort: [{ field: CHECKIN_CREATED_FIELD, direction: "desc" }],
-          })
-          .all();
-
-        recs.forEach((r) => {
-          const tok = asString(r.get(CHECKIN_TOKEN_FIELD));
-          if (!tok) return;
-
-          const createdAt = asString(r.get(CHECKIN_CREATED_FIELD)) || asString(r._rawJson?.createdTime);
-          const week = asString(r.get(CHECKIN_WEEK_FIELD)).slice(0, 10);
-
-          const statusLookup = r.get(CHECKIN_STATUS_FIELD);
-          const status = Array.isArray(statusLookup) ? asString(statusLookup[0]) : asString(statusLookup);
-
-          const row = {
-            weekStartISO: week,
-            createdAt,
-            caloriesPct: clampPct(r.get(CHECKIN_CAL_FIELD)),
-            proteinPct: clampPct(r.get(CHECKIN_PRO_FIELD)),
-            hydrationPct: clampPct(r.get(CHECKIN_HYD_FIELD)),
-            notes: asString(r.get(CHECKIN_NOTES_FIELD)),
-            status,
-          };
-
-          const prev = checkinsByToken[tok];
-          if (!prev) checkinsByToken[tok] = row;
-          else {
-            const pt = prev.createdAt ? new Date(prev.createdAt).getTime() : 0;
-            const nt = createdAt ? new Date(createdAt).getTime() : 0;
-            if (nt >= pt) checkinsByToken[tok] = row;
+          for (const r of recs) {
+            const tok = asStr(r.fields["AthleteToken"]);
+            if (tok) reminderByToken[tok] = {
+              lastReminderSentAt: asStr(r.fields[ATH_LAST_REMINDER]) || null,
+              reminderCount:      Number(r.fields[ATH_REMINDER_COUNT] || 0),
+            };
           }
-        });
+        }
+      } catch (e) {
+        console.warn("[nutrition/queue] reminder fields unavailable:", e?.message);
       }
     }
 
-    /* -------- 3) Latest plan per athlete (by AthleteToken) -------- */
-
+    // ── 3. Fetch active nutrition plans from NutritionPlans ───────────────────
+    // Uses same lookup pattern as getByAthlete.js — FIND() on AthleteToken field
     const plansByToken = {};
-    const plansTable = getPlansTable();
+    const planTable    = getAirtableTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, PLANS_TABLE);
 
-    if (plansTable && athletes.length) {
-      const tokens = athletes.map((a) => a.athleteToken);
+    if (planTable && tokens.length) {
+      try {
+        // Batch tokens into groups of 20 — FIND() OR formulas get long fast
+        const BATCH = 20;
+        for (let i = 0; i < tokens.length; i += BATCH) {
+          const batch = tokens.slice(i, i + BATCH);
 
-      for (const group of chunk(tokens, 40)) {
-        const filter = `${makeOrEquals(PLAN_TOKEN_FIELD, group)}`;
-        if (!filter) continue;
+          // Use FIND() exactly like getByAthlete.js for reliable linked field lookup
+          const formula = batch.length === 1
+            ? `FIND('${escapeAirtable(batch[0])}', ARRAYJOIN({${PLAN_TOKEN_FIELD}}&''))>0`
+            : `OR(${batch.map(t => `FIND('${escapeAirtable(t)}', ARRAYJOIN({${PLAN_TOKEN_FIELD}}&''))>0`).join(",")})`;
 
-        const recs = await plansTable
-          .select({
-            filterByFormula: filter,
-            pageSize: 100,
-            sort: [{ field: PLAN_CREATED_FIELD, direction: "desc" }],
-          })
-          .all();
+          const recs = await fetchAllRecords(planTable, {
+            filterByFormula: formula,
+            fields: PLAN_FIELDS.filter(Boolean),
+            sort: [{ field: PLAN_CREATEDAT_FIELD, direction: "desc" }],
+          });
 
-        recs.forEach((r) => {
-          const tok = asString(r.get(PLAN_TOKEN_FIELD));
-          if (!tok) return;
+          for (const r of recs) {
+            // AthleteToken may be an array (linked field) or a string
+            const rawTok = r.fields[PLAN_TOKEN_FIELD];
+            const tok = Array.isArray(rawTok)
+              ? asStr(rawTok[0])
+              : asStr(rawTok);
 
-          const createdAt = asString(r.get(PLAN_CREATED_FIELD)) || asString(r._rawJson?.createdTime);
-          const statusRaw = asString(r.get(PLAN_STATUS_FIELD));
-          const statusNorm = normalizePlanStatus(statusRaw);
-
-          const next = { createdAt, statusRaw, statusNorm };
-
-          const prev = plansByToken[tok];
-          if (!prev) plansByToken[tok] = next;
-          else {
-            const pt = prev.createdAt ? new Date(prev.createdAt).getTime() : 0;
-            const nt = createdAt ? new Date(createdAt).getTime() : 0;
-            if (nt >= pt) plansByToken[tok] = next;
+            // Token present + athlete in our roster = has a plan
+            // Keep most recent only (sort is desc)
+            if (tok && athleteByToken[tok] && !plansByToken[tok]) {
+              plansByToken[tok] = { ...r.fields, _recordId: r.id };
+            }
           }
-        });
+        }
+
+        console.log(`[nutrition/queue] Plans: ${Object.keys(plansByToken).length}/${tokens.length} athletes matched`);
+      } catch (e) {
+        console.warn("[nutrition/queue] NutritionPlans fetch failed:", e?.message);
       }
+    } else if (!planTable) {
+      console.warn("[nutrition/queue] NutritionPlans not configured — check NUTRITION_API_KEY, NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE");
     }
 
-    /* -------- 4) Build rows -------- */
+    // ── 4. Fetch this week's completions from NutritionCompletions ────────────
+    const completionsByToken = {};
+    const completionsTable   = getAirtableTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, COMPLETIONS_TABLE);
 
-    const rows = athletes.map((a) => {
-      const tok = a.athleteToken;
+    if (completionsTable) {
+      try {
+        // Try filtering by week — if COMPLETION_WEEK_FIELD doesn't exist this
+        // will throw and we fall through gracefully
+        const safeWeek = escapeAirtable(weekStart);
+        const recs     = await fetchAllRecords(completionsTable, {
+          filterByFormula: `{${COMPLETION_WEEK_FIELD}} = '${safeWeek}'`,
+          fields: [
+            COMPLETION_TOKEN_FIELD,
+            COMPLETION_WEEK_FIELD,
+            COMPLETION_CALORIES_FIELD,
+            COMPLETION_TARGET_FIELD,
+          ].filter(Boolean),
+        });
 
-      const plan = plansByToken[tok] || null;
-      const planStatusNorm = plan?.statusNorm || "no_plan";
-      const planStatusLabel = labelPlanStatus(planStatusNorm);
+        for (const r of recs) {
+          const tok = asStr(r.fields[COMPLETION_TOKEN_FIELD]);
+          if (tok && athleteByToken[tok]) {
+            completionsByToken[tok] = { ...r.fields, _recordId: r.id };
+          }
+        }
 
-      // hasPlan means ACTIVE only
-      const hasPlan = planStatusNorm === "active";
-      const latestPlanCreatedAt = plan?.createdAt || "";
+        console.log(`[nutrition/queue] Completions this week (${weekStart}): ${recs.length} records, ${Object.keys(completionsByToken).length} matched athletes`);
+      } catch (e) {
+        console.warn("[nutrition/queue] NutritionCompletions unavailable:", e?.message);
+        console.warn("  → Check NUTRITION_COMPLETIONS_TABLE and field names (COMPLETION_WEEK_FIELD etc.)");
+      }
+    } else {
+      console.warn("[nutrition/queue] NutritionCompletions table not configured — check NUTRITION_COMPLETIONS_TABLE");
+    }
 
-      const lastCheckin = checkinsByToken[tok] || null;
-      const missingCheckin = !lastCheckin || lastCheckin.weekStartISO !== thisWeek;
+    // ── 5. Build queue rows ───────────────────────────────────────────────────
+    const rows = tokens.map(token => {
+      const ath        = athleteByToken[token];
+      const plan       = plansByToken[token]       ?? null;
+      const completion = completionsByToken[token] ?? null;
+      const reminder   = reminderByToken[token]    ?? { lastReminderSentAt: null, reminderCount: 0 };
 
-      const adherenceAvg = lastCheckin
-        ? Math.round((lastCheckin.caloriesPct + lastCheckin.proteinPct + lastCheckin.hydrationPct) / 3)
-        : 0;
+      const hasPlan        = Boolean(plan);
+      const missingCheckin = hasPlan && !completion;
 
-      const lowAdherence = lastCheckin ? adherenceAvg < 70 : false;
-
-      const needsAction = !hasPlan || missingCheckin || lowAdherence;
-      const priority = !hasPlan ? 1 : missingCheckin ? 2 : lowAdherence ? 3 : 9;
-
-      const reasons = [];
-      if (!hasPlan) reasons.push("No active plan");
-      if (missingCheckin) reasons.push("Missing this week’s check-in");
-      if (lowAdherence) reasons.push("Adherence below 70%");
-
-      const priorityLabel =
-        !hasPlan ? "No Plan" : missingCheckin ? "Missing Check-in" : lowAdherence ? "Low Adherence" : "Good";
+      // Adherence: logged calories vs target for the week
+      let adherenceAvg = null;
+      if (completion) {
+        const logged = Number(completion[COMPLETION_CALORIES_FIELD] || 0);
+        const target = Number(
+          completion[COMPLETION_TARGET_FIELD] ||
+          plan?.[PLAN_CAL_FIELD] ||
+          0
+        );
+        adherenceAvg = target > 0 ? Math.min(100, Math.round((logged / target) * 100)) : null;
+      }
 
       return {
-        athleteId: a.id,
-        athleteName: a.name,
-        athleteEmail: a.email,
-        athleteToken: tok,
-
-        // ✅ used by filters/table
-        sport: a.sport,
-        team: a.team,
-
-        planStatus: planStatusLabel,
-        planStatusRaw: plan?.statusRaw || "",
-        planStatusNorm,
-
+        athleteToken:       token,
+        athleteName:        asStr(ath.name)  || "Athlete",
+        position:           asStr(ath.role)  || "",
+        team:               asStr(ath.team)  || "",
+        sport:              asStr(ath.sport) || "",
         hasPlan,
-        latestPlanCreatedAt,
-
-        lastCheckin,
         missingCheckin,
         adherenceAvg,
-        lowAdherence,
-
-        needsAction,
-        priority,
-        reasons,
-        priorityLabel,
+        // Plan details — useful for the assign/edit panel
+        plan: plan ? {
+          calories: Number(plan[PLAN_CAL_FIELD]     || 0),
+          protein:  Number(plan[PLAN_PROTEIN_FIELD] || 0),
+          carbs:    Number(plan[PLAN_CARBS_FIELD]   || 0),
+          fat:      Number(plan[PLAN_FAT_FIELD]     || 0),
+          phase:    asStr(plan[PLAN_PHASE_FIELD]),
+          status:   asStr(plan[PLAN_STATUS_FIELD]),
+          recordId: plan._recordId,
+        } : null,
+        lastReminderSentAt: reminder.lastReminderSentAt,
+        reminderCount:      reminder.reminderCount,
+        lastSeen:           null,
       };
     });
 
-    rows.sort((x, y) => (x.priority || 9) - (y.priority || 9));
-
-    const counts = {
-      total: rows.length,
-      needsAction: rows.filter((r) => r.needsAction).length,
-      missingCheckin: rows.filter((r) => r.missingCheckin).length,
-      lowAdherence: rows.filter((r) => r.lowAdherence).length,
-      noPlan: rows.filter((r) => !r.hasPlan).length,
-    };
+    // ── 6. Counts ─────────────────────────────────────────────────────────────
+    const total        = rows.length;
+    const withPlan     = rows.filter(r => r.hasPlan).length;
+    const missingPlan  = rows.filter(r => !r.hasPlan).length;
+    const noCheckin    = rows.filter(r => r.hasPlan && r.missingCheckin).length;
+    const lowAdherence = rows.filter(r => r.adherenceAvg != null && r.adherenceAvg < 65).length;
+    const onTrack      = rows.filter(r =>
+      r.hasPlan && !r.missingCheckin &&
+      (r.adherenceAvg == null || r.adherenceAvg >= 65)
+    ).length;
 
     return res.status(200).json({
-      ok: true,
       rows,
-      counts,
       meta: {
-        weekStartISO: thisWeek,
-        generatedAt: new Date().toISOString(),
-        athletesCount: rows.length,
-        mode: "AthleteToken matching for Plans + Checkins",
-
-        // ✅ these feed NutritionControls dropdowns
-        sports,
-        teams,
-        teamsBySport,
+        weekStartISO: weekStart,
+        sports:       athleteJson.sports || [],
+        teams:        athleteJson.teams  || [],
       },
+      counts: { total, withPlan, missingPlan, noCheckin, lowAdherence, onTrack },
     });
+
   } catch (e) {
     console.error("[nutrition/queue] error:", e);
-    return res.status(500).json({
-      error: e?.message || "Failed to build nutrition queue.",
-      airtable: {
-        statusCode: e?.statusCode,
-        message: e?.message,
-        error: e?.error,
-      },
-    });
+    return res.status(500).json({ error: e?.message || "Failed to load nutrition queue." });
   }
 }

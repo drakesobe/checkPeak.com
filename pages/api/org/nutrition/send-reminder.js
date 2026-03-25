@@ -2,18 +2,16 @@
 //
 // Phase 1: mailto-based reminders.
 // Returns a pre-built mailto: URL the client opens directly.
-// No Twilio, no webhook, no extra Airtable table required.
-// When Twilio is ready, swap in the delivery block below.
+// Also persists ReminderSentAt + ReminderCount to Airtable so the
+// queue page can show tally, countdown, and "Send Again" after 12h.
 
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 
 function asString(v) { return String(v ?? "").trim(); }
-
 function escapeAirtableString(str = "") {
   return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
-
 function getTable(apiKey, baseId, tableNameOrId) {
   if (!apiKey || !baseId || !tableNameOrId) return null;
   return new Airtable({ apiKey }).base(baseId)(tableNameOrId);
@@ -23,9 +21,14 @@ const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
 const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
 const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
-const ATH_TOKEN = "AthleteToken";
-const ATH_NAME  = "Name";
-const ATH_EMAIL = "Email";
+// Add these two fields to your Athlete table in Airtable if not present:
+//   ReminderSentAt  — Date field (date + time)
+//   ReminderCount   — Number field (integer, default 0)
+const ATH_TOKEN          = "AthleteToken";
+const ATH_NAME           = "Name";
+const ATH_EMAIL          = "Email";
+const ATH_REMINDER_AT    = "ReminderSentAt";
+const ATH_REMINDER_COUNT = "ReminderCount";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -45,7 +48,6 @@ export default async function handler(req, res) {
   if (!athleteTable) return res.status(500).json({ error: "Athlete Airtable not configured." });
 
   try {
-    /* 1) Resolve athlete */
     const safeTok    = escapeAirtableString(asString(athleteToken));
     const athleteRec = await athleteTable
       .select({
@@ -72,7 +74,6 @@ export default async function handler(req, res) {
       });
     }
 
-    /* 2) Build mailto — client opens this directly */
     const subject = encodeURIComponent(`Nutrition check-in reminder`);
     const body    = encodeURIComponent(
       `Hi ${athleteName},\n\n` +
@@ -82,16 +83,28 @@ export default async function handler(req, res) {
     );
     const mailto = `mailto:${athleteEmail}?subject=${subject}&body=${body}`;
 
+    // Persist tally — non-fatal if it fails
+    const prevCount = Number(af[ATH_REMINDER_COUNT] || 0);
+    const nowISO    = new Date().toISOString();
+
+    try {
+      await athleteTable.update(athleteRec.id, {
+        [ATH_REMINDER_AT]:    nowISO,
+        [ATH_REMINDER_COUNT]: prevCount + 1,
+      });
+    } catch (updateErr) {
+      console.warn("[send-reminder] Airtable tally update failed:", updateErr?.message);
+    }
+
     return res.status(200).json({
-      ok:           true,
+      ok:            true,
       mailto,
       athleteToken,
       athleteName,
       athleteEmail,
-      sentAt:       new Date().toISOString(),
-      // Future: when Twilio is enabled, delivery will happen server-side
-      // and this field will be `delivery: "sms"` instead of `delivery: "mailto"`
-      delivery:     "mailto",
+      sentAt:        nowISO,
+      reminderCount: prevCount + 1,
+      delivery:      "mailto",
     });
 
   } catch (e) {

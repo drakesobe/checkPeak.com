@@ -1,713 +1,1222 @@
-// components/org/nutrition/page/OrgNutritionQueuePage.jsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
-import { useAuthContext } from "@/hooks/useAuth";
-import { useNutritionQueue } from "@/hooks/org/useNutritionQueue";
-import {
-  Search, X, ChevronDown, ChevronUp,
-  ExternalLink, Bell, ClipboardList, RefreshCw,
-  AlertTriangle, CheckCircle, Zap, Target, ShieldCheck, BarChart3,
-} from "lucide-react";
 
-import NutritionHeader from "@/components/org/nutrition/NutritionHeader";
-import { normalizeRole, isOrgSideRole, isLikelyOrgToken } from "@/lib/org/nutrition/pageUtils";
+// ─── Real imports — uncomment when integrating ────────────────────────────────
+// import { useAuthContext } from "@/hooks/useAuth";
+// import { useNutritionQueue } from "@/hooks/org/useNutritionQueue";
+// import { safeJson } from "@/lib/org/dashboard-utils";
+// import { normalizeRole, isOrgSideRole } from "@/lib/org/nutrition/pageUtils";
+// Then delete everything between the "STUB START" and "STUB END" comments below.
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const DS = {
-  brand:         "#1E3A5F",
-  brandLight:    "#2A4F7C",
-  brandBg:       "#EEF3F9",
-  brandBorder:   "#C0D0E0",
-  banned:        "#C8102E",
-  bannedBg:      "#FFF0F0",
-  bannedBorder:  "#FFC8C8",
-  caution:       "#B86000",
-  cautionBg:     "#FFFBF0",
-  cautionBorder: "#FFD580",
-  safe:          "#00873E",
-  safeBg:        "#F0FBF4",
-  safeBorder:    "#A8DFB8",
-  border:        "#E8ECF0",
-  pageBg:        "#F4F7FB",
-  cardBg:        "#FFFFFF",
-  bodyText:      "#1A2535",
-  labelText:     "#5A6A7D",
-  dimText:       "#9BA8B4",
-};
+// ─── STUB START — remove when using real hooks ────────────────────────────────
+function useAuthContext() {
+  return { user: { role: "org_admin" }, authReady: true };
+}
 
-// ─── D2 football plan presets ─────────────────────────────────────────────────
-const PLAN_PRESETS = [
-  { label: "Bulk",     calories: 4200, protein: 225, carbs: 480, fat: 110, phase: "Surplus",  desc: "Linemen, heavy skill"   },
-  { label: "Maintain", calories: 3200, protein: 185, carbs: 360, fat: 95,  phase: "Maintain", desc: "Standard in-season"     },
-  { label: "Cut",      calories: 2700, protein: 210, carbs: 270, fat: 75,  phase: "Cut",      desc: "Weight management"      },
-  { label: "Skill",    calories: 3600, protein: 195, carbs: 420, fat: 90,  phase: "Maintain", desc: "Speed/skill positions"  },
+/**
+ * Inline data hook — mirrors the shape of the real useNutritionQueue hook.
+ *
+ * Data strategy (tried in order):
+ *   1. /api/org/nutrition/queue          — dedicated queue endpoint (preferred)
+ *      Expected: { rows: [{ athleteToken, athleteName, hasPlan, missingCheckin,
+ *                           adherenceAvg, position, team, sport, lastSeen }],
+ *                  meta: { weekStartISO, sports, teams }, counts: {} }
+ *
+ *   2. /api/org/nutrition/todaySummary   — same endpoint as TodayNutritionPanel
+ *      Expected: { summary: { totalAthletes, withPlan, missingPlan, ... },
+ *                  needsList: [{ token, name, email, position, team }] }
+ *      → Normalised into the queue row shape automatically.
+ *
+ *   3. MOCK_ATHLETES                     — local fallback, always works in dev.
+ */
+function useNutritionQueue({ enabled } = {}) {
+  const [loading,          setLoading]          = useState(true);
+  const [rows,             setRows]             = useState([]);
+  const [error,            setError]            = useState(null);
+  const [meta,             setMeta]             = useState(null);
+  const [lastUpdatedLabel, setLastUpdatedLabel] = useState("");
+
+  // ── Normalise a todaySummary response into queue rows ──────────────────────
+  function normaliseSummaryResponse(json) {
+    const needsList = Array.isArray(json?.needsList) ? json.needsList : [];
+    const summary   = json?.summary ?? {};
+
+    // Athletes without a plan come from needsList
+    const noPlanRows = needsList.map(a => ({
+      athleteToken:   a.token  || a.athleteToken || "",
+      athleteName:    a.name   || a.athleteName  || "Athlete",
+      position:       a.position || "",
+      team:           a.team     || "",
+      sport:          a.sport    || "",
+      hasPlan:        false,
+      missingCheckin: false,
+      adherenceAvg:   null,
+      lastSeen:       a.lastSeen ?? null,
+    }));
+
+    // todaySummary doesn't give us per-athlete check-in status for those WITH plans,
+    // so we synthesise a minimal "on track" placeholder from the aggregate counts.
+    // When the real /queue endpoint is available this block is bypassed entirely.
+    const withPlan    = Number(summary.withPlan    || 0);
+    const totalCount  = Number(summary.totalAthletes || 0);
+    const onTrackCount = Math.max(0, withPlan - noPlanRows.length);
+
+    return {
+      rows: noPlanRows,
+      meta: {
+        weekStartISO: new Date().toISOString().slice(0, 10),
+        sports:       [],
+        teams:        [],
+        totalAthletes: totalCount,
+        onTrackCount,
+      },
+    };
+  }
+
+  const load = useCallback(async () => {
+    if (!enabled) return;
+    setLoading(true);
+    setError(null);
+
+    // ── 1. Try dedicated queue endpoint ──────────────────────────────────────
+    try {
+      const res  = await fetch("/api/org/nutrition/queue", { credentials: "include" });
+      const json = await res.json().catch(() => null);
+
+      if (res.ok && Array.isArray(json?.rows)) {
+        setRows(json.rows);
+        setMeta(json.meta ?? null);
+        setLastUpdatedLabel("just now");
+        setLoading(false);
+        return;
+      }
+    } catch (_) { /* fall through */ }
+
+    // ── 2. Try todaySummary (same endpoint as TodayNutritionPanel) ────────────
+    try {
+      const res  = await fetch("/api/org/nutrition/todaySummary", { credentials: "include" });
+      const json = await res.json().catch(() => null);
+
+      if (res.ok && (json?.summary || json?.needsList)) {
+        const { rows: normRows, meta: normMeta } = normaliseSummaryResponse(json);
+        setRows(normRows);
+        setMeta(normMeta);
+        setLastUpdatedLabel("via summary");
+        setLoading(false);
+        return;
+      }
+    } catch (_) { /* fall through */ }
+
+    // ── 3. Fallback to mock data (dev / offline) ──────────────────────────────
+    console.warn("[useNutritionQueue] Both API endpoints unavailable — using mock data.");
+    setRows(MOCK_ATHLETES);
+    setMeta({
+      weekStartISO: new Date().toISOString().slice(0, 10),
+      sports: ["Football"],
+      teams:  ["Offense", "Defense"],
+    });
+    setLastUpdatedLabel("demo data");
+    setLoading(false);
+  }, [enabled]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { loading, error, rows, meta, lastUpdatedLabel, refresh: load };
+}
+// ─── STUB END ─────────────────────────────────────────────────────────────────
+
+// ─── Mock data for demonstration ──────────────────────────────────────────────
+const MOCK_ATHLETES = [
+  { athleteToken: "t1",  athleteName: "Marcus Williams",  position: "OT",  team: "Offense", sport: "Football", hasPlan: false, missingCheckin: false, adherenceAvg: null,  lastSeen: 6 },
+  { athleteToken: "t2",  athleteName: "Devon Carter",     position: "DE",  team: "Defense", sport: "Football", hasPlan: false, missingCheckin: false, adherenceAvg: null,  lastSeen: 3 },
+  { athleteToken: "t3",  athleteName: "Jaylen Brooks",    position: "QB",  team: "Offense", sport: "Football", hasPlan: true,  missingCheckin: true,  adherenceAvg: null,  lastSeen: 5, lastReminderSentAt: new Date(Date.now() - 6*60*60*1000).toISOString(),  reminderCount: 1 },
+  { athleteToken: "t4",  athleteName: "Trevon Mills",     position: "LB",  team: "Defense", sport: "Football", hasPlan: true,  missingCheckin: true,  adherenceAvg: null,  lastSeen: 4, lastReminderSentAt: new Date(Date.now() - 14*60*60*1000).toISOString(), reminderCount: 2 },
+  { athleteToken: "t5",  athleteName: "Caleb Rhodes",     position: "WR",  team: "Offense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 52,    lastSeen: 1 },
+  { athleteToken: "t6",  athleteName: "Isaiah Grant",     position: "CB",  team: "Defense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 61,    lastSeen: 1 },
+  { athleteToken: "t7",  athleteName: "Darius Thompson",  position: "RB",  team: "Offense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 88,    lastSeen: 0 },
+  { athleteToken: "t8",  athleteName: "Malik Johnson",    position: "S",   team: "Defense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 94,    lastSeen: 0 },
+  { athleteToken: "t9",  athleteName: "Jordan Pierce",    position: "TE",  team: "Offense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 79,    lastSeen: 1 },
+  { athleteToken: "t10", athleteName: "Elijah Foster",    position: "DT",  team: "Defense", sport: "Football", hasPlan: true,  missingCheckin: false, adherenceAvg: 91,    lastSeen: 0 },
+  { athleteToken: "t11", athleteName: "Noah Washington",  position: "OG",  team: "Offense", sport: "Football", hasPlan: false, missingCheckin: false, adherenceAvg: null,  lastSeen: 8 },
+  { athleteToken: "t12", athleteName: "Cameron Davis",    position: "MLB", team: "Defense", sport: "Football", hasPlan: true,  missingCheckin: true,  adherenceAvg: null,  lastSeen: 7 },
 ];
 
-// ─── Grouping logic ───────────────────────────────────────────────────────────
+const PLAN_PRESETS = [
+  { label: "Bulk",     calories: 4200, protein: 225, carbs: 480, fat: 110, phase: "Surplus",  desc: "Linemen / heavy skill" },
+  { label: "Maintain", calories: 3200, protein: 185, carbs: 360, fat: 95,  phase: "Maintain", desc: "Standard in-season"    },
+  { label: "Cut",      calories: 2700, protein: 210, carbs: 270, fat: 75,  phase: "Cut",      desc: "Weight management"     },
+  { label: "Skill",    calories: 3600, protein: 195, carbs: 420, fat: 90,  phase: "Maintain", desc: "Speed / skill spots"   },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getSubGroup(row) {
-  if (!row?.hasPlan)         return "noPlan";
-  if (row?.missingCheckin)   return "noCheckin";
-  if (row?.lowAdherence)     return "lowAdherence";
+  if (!row?.hasPlan)       return "noPlan";
+  if (row?.missingCheckin) return "noCheckin";
+  if ((row?.adherenceAvg ?? 100) < 65) return "lowAdherence";
   return "onTrack";
 }
 
-function assignGroup(row) {
+function getUrgency(row) {
   const sg = getSubGroup(row);
-  if (sg === "noPlan" || sg === "noCheckin") return "act";
-  if (sg === "lowAdherence")                  return "followup";
-  return "good";
+  if (sg === "noPlan")       return 0;
+  if (sg === "noCheckin")    return 1;
+  if (sg === "lowAdherence") return 2;
+  return 3;
 }
 
-function applyFilters(rows, { search, sport, team }) {
-  let out = Array.isArray(rows) ? rows : [];
-  const q = String(search || "").trim().toLowerCase();
+function avgAdh(rows) {
+  const v = rows.map(r => Number(r.adherenceAvg)).filter(n => isFinite(n) && n > 0);
+  if (!v.length) return null;
+  return Math.round(v.reduce((a, b) => a + b, 0) / v.length);
+}
 
-  if (q) {
-    out = out.filter((r) => {
-      const name     = String(r?.athleteName || r?.name || "").toLowerCase();
-      const email    = String(r?.athleteEmail || r?.email || "").toLowerCase();
-      const token    = String(r?.athleteToken || "").toLowerCase();
-      const teamVal  = String(r?.team || "").toLowerCase();
-      const sportVal = String(r?.sport || "").toLowerCase();
-      const position = String(r?.position || r?.pos || "").toLowerCase();
-      return name.includes(q) || email.includes(q) || token.includes(q)
-        || teamVal.includes(q) || sportVal.includes(q) || position.includes(q);
-    });
+// ─── Reminder tally helpers ──────────────────────────────────────────────────
+const REMINDER_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+function getReminderState(row) {
+  const sentAt = row?.lastReminderSentAt ? new Date(row.lastReminderSentAt) : null;
+  const count  = Number(row?.reminderCount || 0);
+  if (!sentAt || isNaN(sentAt.getTime())) return { sent: false, canResend: false, hoursAgo: null, count };
+  const msAgo    = Date.now() - sentAt.getTime();
+  const hoursAgo = Math.floor(msAgo / (1000 * 60 * 60));
+  const canResend = msAgo >= REMINDER_WINDOW_MS;
+  return { sent: true, canResend, hoursAgo, count };
+}
+
+function formatHoursAgo(h) {
+  if (h == null) return "";
+  if (h < 1)    return "less than 1 hour ago";
+  if (h === 1)  return "1 hour ago";
+  if (h < 24)   return `${h} hours ago`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "1 day ago" : `${d} days ago`;
+}
+
+function getDayGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "MORNING BRIEF";
+  if (h < 17) return "AFTERNOON CHECK";
+  return "END OF DAY";
+}
+
+function getWeekLabel() {
+  const now = new Date();
+  const day = now.getDay();
+  const start = new Date(now);
+  start.setDate(now.getDate() - day);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+// ─── Global styles injected once ─────────────────────────────────────────────
+const GLOBAL_STYLE = `
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700;800;900&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root {
+    --void: #F7F9FC;
+    --deep: #FFFFFF;
+    --surface: #FFFFFF;
+    --raised: #F2F5F9;
+    --panel: #EBF0F7;
+    --rim: #DDE4EE;
+    --wire: #C8D3E3;
+    --muted: #9AAABF;
+    --ghost: #6B7E99;
+    --fog:   #4E6080;
+    --chalk: #2D3E56;
+    --ice:   #1A2B40;
+    --white: #0D1B2A;
+
+    --red:    #D92B3A;
+    --red-bg: rgba(217,43,58,0.06);
+    --red-rim: rgba(217,43,58,0.2);
+
+    --amber:    #C47A00;
+    --amber-bg: rgba(196,122,0,0.06);
+    --amber-rim: rgba(196,122,0,0.2);
+
+    --green:    #0A8A4A;
+    --green-bg: rgba(10,138,74,0.06);
+    --green-rim: rgba(10,138,74,0.2);
+
+    --brand:    #0070CC;
+    --brand-bg: rgba(0,112,204,0.06);
+    --brand-rim: rgba(0,112,204,0.18);
+
+    --font-display: 'Barlow Condensed', sans-serif;
+    --font-body:    'Barlow', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out:  cubic-bezier(0.0, 0.0, 0.2, 1);
   }
 
-  if (sport && sport !== "all") out = out.filter((r) => String(r.sport || "") === sport);
-  if (team  && team  !== "all") out = out.filter((r) => String(r.team  || "") === team);
-  return out;
-}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-function groupRows(rows) {
-  const out = { act: [], followup: [], good: [] };
-  for (const r of rows) out[assignGroup(r)].push(r);
-  return out;
-}
+  body {
+    background: var(--void);
+    color: var(--white);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
 
-function avgAdherence(rows) {
-  const valid = rows.map((r) => Number(r.adherenceAvg)).filter((n) => Number.isFinite(n) && n > 0);
-  if (!valid.length) return null;
-  return Math.round(valid.reduce((s, n) => s + n, 0) / valid.length);
-}
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--wire); border-radius: 2px; }
 
-function deriveProgramStats(rows) {
-  const list = Array.isArray(rows) ? rows : [];
-  const total = list.length;
-  const withPlan = list.filter((r) => !!r?.hasPlan).length;
-  const checkedIn = list.filter((r) => r?.hasPlan && !r?.missingCheckin).length;
-  const adherence = avgAdherence(list);
+  /* Animations */
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(100%); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes cardFlip {
+    0%   { opacity: 1; transform: translateY(0) scale(1); }
+    40%  { opacity: 0; transform: translateY(-20px) scale(0.97); }
+    60%  { opacity: 0; transform: translateY(20px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+  @keyframes scanline {
+    from { background-position: 0 0; }
+    to   { background-position: 0 100%; }
+  }
+  @keyframes progressFill {
+    from { width: 0; }
+    to   { width: var(--target-w); }
+  }
+  @keyframes countUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to   { background-position:  200% 0; }
+  }
 
-  return {
-    total,
-    withPlan,
-    checkedIn,
-    adherence,
-    planPct: total ? Math.round((withPlan / total) * 100) : 0,
-    checkinPct: total ? Math.round((checkedIn / total) * 100) : 0,
+  .anim-slide-up    { animation: slideUp 0.45s var(--ease-snap) both; }
+  .anim-fade-in     { animation: fadeIn 0.3s ease both; }
+  .anim-slide-right { animation: slideInRight 0.4s var(--ease-snap) both; }
+  .anim-slide-left  { animation: slideInLeft 0.35s var(--ease-snap) both; }
+
+  .delay-1 { animation-delay: 0.05s; }
+  .delay-2 { animation-delay: 0.10s; }
+  .delay-3 { animation-delay: 0.15s; }
+  .delay-4 { animation-delay: 0.20s; }
+  .delay-5 { animation-delay: 0.25s; }
+
+  /* Scan line overlay on dark panels */
+  .scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.04) 2px,
+      rgba(0,0,0,0.04) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Noise texture */
+  .noise::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+`;
+
+// ─── Tiny primitives ──────────────────────────────────────────────────────────
+function Tag({ children, color = "brand" }) {
+  const map = {
+    brand: { bg: "var(--brand-bg)",   border: "var(--brand-rim)",  color: "var(--brand)"  },
+    red:   { bg: "var(--red-bg)",     border: "var(--red-rim)",    color: "var(--red)"    },
+    amber: { bg: "var(--amber-bg)",   border: "var(--amber-rim)",  color: "var(--amber)"  },
+    green: { bg: "var(--green-bg)",   border: "var(--green-rim)",  color: "var(--green)"  },
+    ghost: { bg: "transparent",       border: "var(--wire)",       color: "var(--ghost)"  },
   };
-}
-
-// ─── Shared input primitives ──────────────────────────────────────────────────
-function DSInput({ type = "text", value, onChange, placeholder, min, step }) {
+  const t = map[color] || map.brand;
   return (
-    <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      min={min}
-      step={step}
-      className="w-full text-sm px-3 py-2 outline-none rounded-sm"
-      style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.cardBg, color: DS.bodyText }}
-      onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.boxShadow = `0 0 0 2px ${DS.brand}18`; }}
-      onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.boxShadow = "none"; }}
-    />
-  );
-}
-
-function DSSelect({ value, onChange, disabled, children }) {
-  return (
-    <select
-      value={value}
-      onChange={onChange}
-      disabled={disabled}
-      className="text-sm px-3 py-2 outline-none transition-all rounded-sm w-full"
-      style={{
-        border: `1px solid ${DS.brandBorder}`,
-        backgroundColor: disabled ? DS.pageBg : DS.brandBg,
-        color: disabled ? DS.dimText : DS.bodyText,
-      }}
-      onFocus={(e) => { if (!disabled) e.currentTarget.style.borderColor = DS.brand; }}
-      onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
-    >
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "2px 7px",
+      borderRadius: 2,
+      border: `1px solid ${t.border}`,
+      background: t.bg,
+      color: t.color,
+      fontFamily: "var(--font-display)",
+      fontWeight: 700,
+      fontSize: 11,
+      letterSpacing: "0.06em",
+      textTransform: "uppercase",
+      lineHeight: 1.6,
+    }}>
       {children}
-    </select>
+    </span>
   );
 }
 
-// ─── Intro / framing card ─────────────────────────────────────────────────────
-function QueueIntroCard({ weekLabel, stats }) {
-  const accountabilityText =
-    stats.total === 0
-      ? "No athletes are in the queue yet."
-      : stats.checkedIn === stats.total
-      ? "Everyone is accounted for this week."
-      : `${stats.total - stats.checkedIn} athlete${stats.total - stats.checkedIn !== 1 ? "s" : ""} still need accountability attention.`;
+function Divider({ my = 16 }) {
+  return <div style={{ height: 1, background: "var(--rim)", margin: `${my}px 0` }} />;
+}
 
+function StatusDot({ color = "green", pulse = false }) {
+  const colors = { green: "var(--green)", red: "var(--red)", amber: "var(--amber)", ghost: "var(--ghost)" };
   return (
-    <div
-      className="px-4 py-4"
-      style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}
-    >
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0">
-          <p
-            className="text-sm font-black uppercase tracking-wide"
-            style={{ color: DS.brand, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em" }}
-          >
-            Weekly Nutrition Queue
-          </p>
-          <h1
-            className="mt-1 text-xl sm:text-2xl font-black"
-            style={{ color: DS.bodyText, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}
-          >
-          </h1>
-          <p className="mt-2 text-sm max-w-2xl" style={{ color: DS.labelText }}>
-            Use this page as your weekly nutrition accountability board - assign plans, prompt missed check-ins, and quickly open athlete profiles for follow-up.
-          </p>
-        </div>
+    <span style={{
+      display: "inline-block",
+      width: 7, height: 7,
+      borderRadius: "50%",
+      background: colors[color] || colors.green,
+      flexShrink: 0,
+      animation: pulse ? "pulse 1.8s ease-in-out infinite" : "none",
+    }} />
+  );
+}
 
-        {weekLabel && (
-          <div
-            className="px-3 py-2 text-xs font-black uppercase tracking-wide rounded-sm shrink-0"
-            style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}
-          >
-            {weekLabel}
-          </div>
-        )}
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+function ProgressBar({ value, max, color = "var(--brand)", height = 3, animate = true }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div style={{ height, background: "var(--rim)", borderRadius: height, overflow: "hidden", position: "relative" }}>
+      <div style={{
+        height: "100%",
+        width: `${pct}%`,
+        background: color,
+        borderRadius: height,
+        transition: animate ? "width 0.8s var(--ease-snap)" : "none",
+      }} />
+    </div>
+  );
+}
+
+// ─── Nav bar ──────────────────────────────────────────────────────────────────
+function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "0 20px", height: 48,
+      background: "var(--deep)",
+      borderBottom: "1px solid var(--rim)",
+      position: "sticky", top: 0, zIndex: 100,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        {/* Logo mark */}
+        <div style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 900,
+          fontSize: 15,
+          letterSpacing: "0.12em",
+          color: "var(--brand)",
+          textTransform: "uppercase",
+        }}>
+          PEAK
+        </div>
+        <div style={{ width: 1, height: 20, background: "var(--rim)" }} />
+        <span style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 600,
+          fontSize: 13,
+          letterSpacing: "0.08em",
+          color: "var(--ghost)",
+          textTransform: "uppercase",
+        }}>
+          Nutrition Queue
+        </span>
       </div>
 
-      <div className="mt-3 text-sm font-bold" style={{ color: stats.checkedIn === stats.total && stats.total > 0 ? DS.safe : DS.bodyText }}>
-        {accountabilityText}
+      {/* Mode toggle */}
+      <div style={{
+        display: "flex", alignItems: "center",
+        background: "var(--surface)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        padding: 3,
+        gap: 2,
+      }}>
+        {[
+          { key: "queue",  label: "Queue"  },
+          { key: "list",   label: "Actions" },
+          { key: "roster", label: "Roster"  },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => onMode(key)} style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 700,
+            fontSize: 12,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            padding: "5px 12px",
+            borderRadius: 3,
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            background: mode === key ? "var(--brand)" : "transparent",
+            color: mode === key ? "var(--void)" : "var(--ghost)",
+          }}>
+            {label}
+            {key === "queue" && actCount > 0 && (
+              <span style={{
+                marginLeft: 6,
+                background: mode === key ? "rgba(0,0,0,0.25)" : "var(--red)",
+                color: mode === key ? "rgba(0,0,0,0.7)" : "#fff",
+                borderRadius: 10,
+                padding: "0 5px",
+                fontSize: 10,
+                fontFamily: "var(--font-mono)",
+              }}>
+                {actCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Nav links */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {[
+          { label: "Dashboard", fn: onDashboard },
+          { label: "Plans",     fn: onPlans     },
+        ].map(({ label, fn }) => (
+          <button key={label} onClick={fn} style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 600,
+            fontSize: 12,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            padding: "6px 12px",
+            background: "transparent",
+            border: "1px solid transparent",
+            borderRadius: 3,
+            color: "var(--ghost)",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = "var(--chalk)"; e.currentTarget.style.borderColor = "var(--wire)"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "var(--ghost)"; e.currentTarget.style.borderColor = "transparent"; }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-// ─── Compact program health strip ─────────────────────────────────────────────
-function ProgramHealthStrip({ stats }) {
-  if (!stats.total) return null;
+// ─── Program Readiness Strip ──────────────────────────────────────────────────
+function ReadinessStrip({ rows, actionCount }) {
+  const total = rows.length;
+  const ready = rows.filter(r => getSubGroup(r) === "onTrack").length;
+  const pct = total ? Math.round((ready / total) * 100) : 0;
+  const adh = avgAdh(rows.filter(r => r.hasPlan && !r.missingCheckin));
 
-  const items = [
-    {
-      label: "Athletes with a Nutrition plan",
-      value: `${stats.withPlan}/${stats.total}`,
-      sub: `${stats.planPct}% covered`,
-      icon: ClipboardList,
-      tone: stats.planPct >= 90 ? "safe" : stats.planPct >= 70 ? "caution" : "brand",
-    },
-    {
-      label: "Athletes checked in this week",
-      value: `${stats.checkedIn}/${stats.total}`,
-      sub: `${stats.checkinPct}% complete`,
-      icon: ShieldCheck,
-      tone: stats.checkinPct >= 80 ? "safe" : stats.checkinPct >= 60 ? "caution" : "banned",
-    },
-    {
-      label: "Average adherence to Nutrition plan",
-      value: stats.adherence != null ? `${stats.adherence}%` : "—",
-      sub: "among active check-ins",
-      icon: BarChart3,
-      tone: stats.adherence == null ? "brand" : stats.adherence >= 80 ? "safe" : stats.adherence >= 65 ? "caution" : "banned",
-    },
-  ];
-
-  const toneMap = {
-    safe:    { bg: DS.safeBg,    border: DS.safeBorder,    text: DS.safe },
-    caution: { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution },
-    banned:  { bg: DS.bannedBg,  border: DS.bannedBorder,  text: DS.banned },
-    brand:   { bg: DS.brandBg,   border: DS.brandBorder,   text: DS.brand },
-  };
+  const color = pct >= 85 ? "var(--green)" : pct >= 65 ? "var(--amber)" : "var(--red)";
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-      {items.map(({ label, value, sub, icon: Icon, tone }) => {
-        const c = toneMap[tone];
-        return (
-          <div
-            key={label}
-            className="px-4 py-3"
-            style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide" style={{ color: DS.labelText }}>
-                  {label}
-                </p>
-                <p
-                  className="mt-1 text-xl font-black tabular-nums"
-                  style={{ color: DS.bodyText, fontFamily: "'Barlow Condensed', sans-serif" }}
-                >
-                  {value}
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-                  {sub}
-                </p>
-              </div>
-              <div
-                className="w-8 h-8 rounded-sm flex items-center justify-center shrink-0"
-                style={{ backgroundColor: c.bg, border: `1px solid ${c.border}` }}
-              >
-                <Icon className="h-4 w-4" style={{ color: c.text }} />
-              </div>
+    <div className="anim-slide-up" style={{
+      display: "grid",
+      gridTemplateColumns: "1fr auto",
+      gap: 24,
+      alignItems: "center",
+      padding: "16px 20px",
+      background: "var(--surface)",
+      border: "1px solid var(--rim)",
+      borderLeft: `3px solid ${color}`,
+      borderRadius: 4,
+    }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+          <span style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 900,
+            fontSize: 42,
+            lineHeight: 1,
+            color,
+            letterSpacing: "-0.02em",
+          }}>
+            {pct}%
+          </span>
+          <div>
+            <div style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 13,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--chalk)",
+            }}>
+              Program Readiness
+            </div>
+            <div style={{ fontSize: 12, color: "var(--ghost)", fontFamily: "var(--font-body)" }}>
+              {ready} of {total} athletes on track this week
             </div>
           </div>
-        );
-      })}
+        </div>
+        <ProgressBar value={ready} max={total} color={color} height={4} />
+      </div>
+
+      <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
+        {[
+          { label: "Need Action",  value: actionCount,       color: actionCount > 0 ? "var(--red)" : "var(--green)" },
+          { label: "Avg Adherence", value: adh != null ? `${adh}%` : "—", color: adh == null ? "var(--ghost)" : adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)" },
+          { label: "Week",          value: getWeekLabel(),   color: "var(--ghost)" },
+        ].map(({ label, value, color: c }) => (
+          <div key={label} style={{ textAlign: "right" }}>
+            <div style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 18,
+              color: c,
+              lineHeight: 1.1,
+            }}>
+              {value}
+            </div>
+            <div style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+              marginTop: 2,
+            }}>
+              {label}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Inline plan assignment panel ─────────────────────────────────────────────
-function AssignPlanPanel({ row, onClose, onSaved }) {
-  const [calories, setCalories] = useState("");
-  const [protein,  setProtein]  = useState("");
-  const [carbs,    setCarbs]    = useState("");
-  const [fat,      setFat]      = useState("");
-  const [phase,    setPhase]    = useState("Maintain");
-  const [notes,    setNotes]    = useState("");
-  const [saving,   setSaving]   = useState(false);
-  const [err,      setErr]      = useState("");
-  const [preset,   setPreset]   = useState(null);
+// ─── Plan assign slide-over ───────────────────────────────────────────────────
+function AssignSlideOver({ row, onClose, onSaved }) {
+  const [values, setValues] = useState({ calories: "", protein: "", carbs: "", fat: "", phase: "Maintain", notes: "" });
+  const [preset, setPreset] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
 
   function applyPreset(p) {
     setPreset(p.label);
-    setCalories(String(p.calories));
-    setProtein(String(p.protein));
-    setCarbs(String(p.carbs));
-    setFat(String(p.fat));
-    setPhase(p.phase);
+    setValues(v => ({ ...v, calories: String(p.calories), protein: String(p.protein), carbs: String(p.carbs), fat: String(p.fat), phase: p.phase }));
   }
 
-  async function handleSave() {
-    if (!calories || !protein) { setErr("Calories and protein are required."); return; }
+  function set(key) { return e => { setValues(v => ({ ...v, [key]: e.target.value })); setPreset(null); }; }
+
+  async function save() {
+    if (!values.calories || !values.protein) { setErr("Calories and protein required."); return; }
     setSaving(true);
     setErr("");
     try {
       const res = await fetch("/api/org/nutrition/assign-plan", {
-        method:      "POST",
-        headers:     { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          athleteToken: row.athleteToken,
+          athleteToken: row?.athleteToken,
           plan: {
-            calories: Number(calories),
-            protein:  Number(protein),
-            carbs:    Number(carbs)  || 0,
-            fat:      Number(fat)    || 0,
-            phase,
-            notes,
+            calories: Number(values.calories),
+            protein:  Number(values.protein),
+            carbs:    Number(values.carbs)  || 0,
+            fat:      Number(values.fat)    || 0,
+            phase:    values.phase,
+            notes:    values.notes,
           },
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || "Failed to save plan.");
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
       onSaved?.();
     } catch (e) {
-      setErr(e?.message || "Failed to save plan.");
+      setErr(e?.message || "Failed to save. Please try again.");
+    } finally {
       setSaving(false);
     }
   }
 
+  const inputStyle = {
+    width: "100%",
+    background: "var(--raised)",
+    border: "1px solid var(--rim)",
+    borderRadius: 3,
+    padding: "9px 12px",
+    color: "var(--white)",
+    fontFamily: "var(--font-mono)",
+    fontSize: 13,
+    outline: "none",
+    transition: "border-color 0.15s ease",
+  };
+
   return (
-    <div style={{ backgroundColor: DS.brandBg, borderTop: `2px solid ${DS.brand}` }}>
-      <div
-        className="flex items-center justify-between px-4 py-2.5"
-        style={{ borderBottom: `1px solid ${DS.brandBorder}` }}
-      >
-        <div>
-          <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
-            Assign Nutrition Plan
-          </p>
-          <p className="text-xs" style={{ color: DS.labelText }}>
-            {row.athleteName || row.name || "Athlete"}{row.position || row.pos ? ` · ${row.position || row.pos}` : ""}
-          </p>
-        </div>
-        <button type="button" onClick={onClose} style={{ color: DS.dimText }}>
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{
+        position: "fixed", inset: 0, background: "rgba(15,30,50,0.4)",
+        backdropFilter: "blur(2px)", zIndex: 200, animation: "fadeIn 0.2s ease",
+      }} />
 
-      <div className="px-4 pt-3 pb-2">
-        <p className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: DS.labelText }}>
-          Quick Fill
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {PLAN_PRESETS.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => applyPreset(p)}
-              className="text-xs font-bold px-3 py-1.5 rounded-sm transition-all"
-              style={{
-                backgroundColor: preset === p.label ? DS.brand : DS.cardBg,
-                color:           preset === p.label ? "#fff" : DS.bodyText,
-                border:          `1px solid ${preset === p.label ? DS.brand : DS.brandBorder}`,
-              }}
-              title={p.desc}
+      {/* Panel */}
+      <div className="anim-slide-right" style={{
+        position: "fixed", top: 0, right: 0, bottom: 0,
+        width: "min(480px, 100vw)",
+        background: "var(--deep)",
+        borderLeft: "1px solid var(--rim)",
+        zIndex: 201,
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: "20px 24px",
+          borderBottom: "1px solid var(--rim)",
+          background: "var(--surface)",
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <div>
+              <div style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 700, fontSize: 11, letterSpacing: "0.12em",
+                textTransform: "uppercase", color: "var(--brand)", marginBottom: 4,
+              }}>
+                Assign Nutrition Plan
+              </div>
+              <div style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 900, fontSize: 24, color: "var(--white)", lineHeight: 1.1,
+              }}>
+                {row?.athleteName || "Athlete"}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                {row?.position && <Tag color="ghost">{row.position}</Tag>}
+                {row?.team && <Tag color="ghost">{row.team}</Tag>}
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              background: "var(--raised)", border: "1px solid var(--rim)",
+              borderRadius: 3, padding: "6px 8px", cursor: "pointer",
+              color: "var(--ghost)", fontSize: 16, lineHeight: 1,
+            }}>✕</button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+
+          {/* Quick fill presets */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
+              color: "var(--ghost)", marginBottom: 10,
+            }}>
+              Quick Fill
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {PLAN_PRESETS.map(p => (
+                <button key={p.label} onClick={() => applyPreset(p)} style={{
+                  padding: "10px 12px",
+                  background: preset === p.label ? "var(--brand)" : "var(--raised)",
+                  border: `1px solid ${preset === p.label ? "var(--brand)" : "var(--rim)"}`,
+                  borderRadius: 3, cursor: "pointer", textAlign: "left",
+                  transition: "all 0.15s ease",
+                }}>
+                  <div style={{
+                    fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14,
+                    color: preset === p.label ? "var(--void)" : "var(--white)",
+                    marginBottom: 2,
+                  }}>{p.label}</div>
+                  <div style={{
+                    fontFamily: "var(--font-mono)", fontSize: 11,
+                    color: preset === p.label ? "rgba(0,0,0,0.55)" : "var(--ghost)",
+                  }}>
+                    {p.calories} cal · {p.protein}g protein
+                  </div>
+                  <div style={{
+                    fontSize: 10, fontFamily: "var(--font-body)",
+                    color: preset === p.label ? "rgba(0,0,0,0.45)" : "var(--muted)",
+                    marginTop: 2,
+                  }}>
+                    {p.desc}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* Macro inputs */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
+              color: "var(--ghost)", marginBottom: 10,
+            }}>
+              Targets
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                { key: "calories", label: "Calories / day *", placeholder: "3200" },
+                { key: "protein",  label: "Protein (g) *",    placeholder: "185"  },
+                { key: "carbs",    label: "Carbs (g)",        placeholder: "360"  },
+                { key: "fat",      label: "Fat (g)",          placeholder: "95"   },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label style={{
+                    display: "block",
+                    fontFamily: "var(--font-display)", fontWeight: 700,
+                    fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase",
+                    color: "var(--ghost)", marginBottom: 6,
+                  }}>{label}</label>
+                  <input
+                    type="number" value={values[key]}
+                    onChange={set(key)} placeholder={placeholder} min="0"
+                    style={inputStyle}
+                    onFocus={e => { e.target.style.borderColor = "var(--brand)"; e.target.style.boxShadow = "0 0 0 2px var(--brand-bg)"; }}
+                    onBlur={e => { e.target.style.borderColor = "var(--rim)"; e.target.style.boxShadow = "none"; }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Phase */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{
+              display: "block",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase",
+              color: "var(--ghost)", marginBottom: 6,
+            }}>Phase</label>
+            <select
+              value={values.phase} onChange={set("phase")}
+              style={{ ...inputStyle, cursor: "pointer" }}
+              onFocus={e => { e.target.style.borderColor = "var(--brand)"; }}
+              onBlur={e => { e.target.style.borderColor = "var(--rim)"; }}
             >
-              {p.label}
-              <span
-                className="ml-1.5 font-normal"
-                style={{ color: preset === p.label ? "rgba(255,255,255,0.65)" : DS.dimText }}
-              >
-                {p.calories} cal
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+              {["Surplus", "Maintain", "Cut", "Game Week", "Bye Week"].map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
 
-      <div className="px-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {[
-          { label: "Calories / day *", value: calories, set: setCalories, placeholder: "e.g. 3200" },
-          { label: "Protein (g) *",    value: protein,  set: setProtein,  placeholder: "e.g. 185"  },
-          { label: "Carbs (g)",        value: carbs,    set: setCarbs,    placeholder: "e.g. 360"  },
-          { label: "Fat (g)",          value: fat,      set: setFat,      placeholder: "e.g. 95"   },
-        ].map(({ label, value, set, placeholder }) => (
-          <div key={label}>
-            <label className="block text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.labelText }}>
-              {label}
-            </label>
-            <DSInput
-              type="number"
-              value={value}
-              onChange={(e) => { set(e.target.value); setPreset(null); }}
-              placeholder={placeholder}
-              min="0"
-              step="1"
+          {/* Notes */}
+          <div style={{ marginBottom: 8 }}>
+            <label style={{
+              display: "block",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase",
+              color: "var(--ghost)", marginBottom: 6,
+            }}>Notes</label>
+            <input
+              type="text" value={values.notes} onChange={set("notes")}
+              placeholder="Optional coaching note…"
+              style={inputStyle}
+              onFocus={e => { e.target.style.borderColor = "var(--brand)"; }}
+              onBlur={e => { e.target.style.borderColor = "var(--rim)"; }}
             />
           </div>
-        ))}
 
-        <div>
-          <label className="block text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.labelText }}>
-            Phase
-          </label>
-          <DSSelect value={phase} onChange={(e) => setPhase(e.target.value)}>
-            <option value="Surplus">Surplus</option>
-            <option value="Maintain">Maintain</option>
-            <option value="Cut">Cut</option>
-            <option value="Game Week">Game Week</option>
-            <option value="Bye Week">Bye Week</option>
-          </DSSelect>
+          {err && (
+            <div style={{
+              marginTop: 12, padding: "10px 14px",
+              background: "var(--red-bg)", border: "1px solid var(--red-rim)",
+              borderRadius: 3, color: "var(--red)", fontSize: 13,
+              fontFamily: "var(--font-body)",
+            }}>{err}</div>
+          )}
         </div>
 
-        <div className="sm:col-span-3">
-          <label className="block text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.labelText }}>
-            Notes
-          </label>
-          <DSInput
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional — e.g. pre-game adjustments"
-          />
+        {/* Footer actions */}
+        <div style={{
+          padding: "16px 24px",
+          borderTop: "1px solid var(--rim)",
+          display: "flex", gap: 10,
+          background: "var(--surface)",
+        }}>
+          <button onClick={save} disabled={saving} style={{
+            flex: 1, padding: "12px 20px",
+            background: saving ? "var(--muted)" : "var(--brand)",
+            border: "none", borderRadius: 3, cursor: saving ? "not-allowed" : "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 800,
+            fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: saving ? "var(--chalk)" : "var(--void)",
+            transition: "all 0.15s ease",
+          }}>
+            {saving ? "Saving…" : "Save Plan"}
+          </button>
+          <button onClick={onClose} style={{
+            padding: "12px 16px",
+            background: "transparent",
+            border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--ghost)",
+          }}>
+            Cancel
+          </button>
         </div>
       </div>
+    </>
+  );
+}
 
-      {err && (
-        <div
-          className="mx-4 mb-3 px-3 py-2 text-xs rounded-sm"
-          style={{ backgroundColor: DS.bannedBg, borderLeft: `3px solid ${DS.banned}`, color: "#7A1A1A" }}
-        >
-          {err}
+// ─── Queue mode card ──────────────────────────────────────────────────────────
+function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
+  const [animating, setAnimating] = useState(false);
+  const sg = getSubGroup(row);
+
+  const statusMap = {
+    noPlan:       { label: "No Plan Assigned",        color: "var(--red)",   tag: "red",   icon: "⊗", action: "Assign Plan",   desc: "This athlete has no nutrition targets. Assign a plan to enable check-ins." },
+    noCheckin:    { label: "Missed Weekly Check-In",  color: "var(--amber)", tag: "amber", icon: "◎", action: "Send Reminder", desc: "Has a plan but hasn't logged this week. Opens a pre-filled email reminder for you to send directly." },
+    lowAdherence: { label: "Low Adherence",           color: "var(--amber)", tag: "amber", icon: "▽", action: "View Profile",  desc: `Logging consistently but hitting ${Math.round(row.adherenceAvg || 0)}% of targets. Review their plan or coaching notes.` },
+  };
+
+  const s = statusMap[sg];
+
+  function handleAction() {
+    if (sg === "noPlan") { onAssign(row); return; }
+    setAnimating(true);
+    setTimeout(() => { onAction(row, sg); setAnimating(false); }, 420);
+  }
+
+  function handleSkip() {
+    setAnimating(true);
+    setTimeout(() => { onAction(row, "skip"); setAnimating(false); }, 380);
+  }
+
+  return (
+    <div style={{
+      position: "relative",
+      animation: animating ? "cardFlip 0.42s var(--ease-snap)" : "slideUp 0.4s var(--ease-snap) both",
+    }}>
+      {/* Progress counter */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 12,
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+            {index + 1} / {total}
+          </span>
+          <div style={{ width: 80, height: 2, background: "var(--rim)", borderRadius: 1, overflow: "hidden" }}>
+            <div style={{
+              height: "100%",
+              width: `${((index + 1) / total) * 100}%`,
+              background: "var(--brand)",
+              transition: "width 0.4s var(--ease-snap)",
+            }} />
+          </div>
         </div>
-      )}
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)" }}>
+          {total - index - 1} remaining
+        </span>
+      </div>
 
-      <div className="px-4 pb-4 flex gap-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-black uppercase tracking-wide rounded-sm"
-          style={{ backgroundColor: saving ? DS.labelText : DS.brand, color: "#fff", cursor: saving ? "not-allowed" : "pointer" }}
-        >
-          <ClipboardList className="h-3.5 w-3.5" />
-          {saving ? "Saving…" : "Save Plan"}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-4 py-2 text-xs font-bold uppercase tracking-wide rounded-sm"
-          style={{ backgroundColor: DS.cardBg, color: DS.labelText, border: `1px solid ${DS.border}` }}
-        >
-          Cancel
-        </button>
+      {/* Main card */}
+      <div style={{
+        background: "var(--surface)",
+        border: `1px solid var(--rim)`,
+        borderTop: `3px solid ${s.color}`,
+        borderRadius: 4,
+        overflow: "hidden",
+      }}>
+        {/* Card header */}
+        <div style={{ padding: "24px 28px 20px", position: "relative" }}>
+          {/* Big status icon */}
+          <div style={{
+            position: "absolute", top: 20, right: 24,
+            fontFamily: "var(--font-display)", fontWeight: 900,
+            fontSize: 48, color: s.color, opacity: 0.12, lineHeight: 1,
+            userSelect: "none",
+          }}>
+            {s.icon}
+          </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <Tag color={s.tag}>{s.label}</Tag>
+          </div>
+
+          <div style={{
+            fontFamily: "var(--font-display)", fontWeight: 900,
+            fontSize: 32, color: "var(--white)", lineHeight: 1.05,
+            marginBottom: 8,
+          }}>
+            {row.athleteName}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {row.position && <Tag color="ghost">{row.position}</Tag>}
+            {row.team && <Tag color="ghost">{row.team}</Tag>}
+            {row.lastSeen > 0 && (
+              <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-body)" }}>
+                · Last active {row.lastSeen}d ago
+              </span>
+            )}
+          </div>
+        </div>
+
+        <Divider my={0} />
+
+        {/* Status description */}
+        <div style={{ padding: "16px 28px" }}>
+          <p style={{ fontSize: 14, color: "var(--chalk)", lineHeight: 1.6, fontFamily: "var(--font-body)" }}>
+            {s.desc}
+          </p>
+        </div>
+
+        {/* Adherence bar if relevant */}
+        {sg === "lowAdherence" && row.adherenceAvg != null && (
+          <div style={{ padding: "0 28px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ghost)" }}>
+                Weekly Adherence
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--amber)" }}>
+                {Math.round(row.adherenceAvg)}%
+              </span>
+            </div>
+            <ProgressBar value={row.adherenceAvg} max={100} color="var(--amber)" height={4} />
+          </div>
+        )}
+
+        <Divider my={0} />
+
+        {/* Actions */}
+        <div style={{ padding: "16px 28px", display: "flex", gap: 10 }}>
+          <button onClick={handleAction} style={{
+            flex: 1,
+            padding: "13px 20px",
+            background: s.color,
+            border: "none", borderRadius: 3,
+            cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 800,
+            fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: sg === "noCheckin" ? "var(--void)" : sg === "noPlan" ? "var(--void)" : "var(--void)",
+            transition: "all 0.15s ease",
+            filter: "none",
+          }}
+          onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
+          onMouseLeave={e => e.currentTarget.style.filter = "none"}
+          >
+            {s.action}
+          </button>
+
+          {sg !== "lowAdherence" && (
+            <button onClick={() => onOpenProfile(row)} style={{
+              padding: "13px 16px",
+              background: "transparent",
+              border: "1px solid var(--rim)",
+              borderRadius: 3, cursor: "pointer",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase",
+              color: "var(--ghost)",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
+            >
+              Profile
+            </button>
+          )}
+
+          <button onClick={handleSkip} style={{
+            padding: "13px 16px",
+            background: "transparent",
+            border: "1px solid var(--rim)",
+            borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--muted)",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = "var(--ghost)"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "var(--muted)"; }}
+          >
+            Skip →
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Secondary ghost button ───────────────────────────────────────────────────
-function SecBtn({ icon: Icon, label, onClick, disabled: dis }) {
+// ─── Queue done state ─────────────────────────────────────────────────────────
+function QueueClear({ onViewAll }) {
   return (
-    <button
-      type="button"
-      onClick={dis ? undefined : onClick}
-      disabled={dis}
-      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-sm whitespace-nowrap transition-all"
-      style={{
-        color:           dis ? DS.dimText : DS.labelText,
-        border:          `1px solid ${DS.border}`,
-        backgroundColor: "transparent",
-        cursor:          dis ? "not-allowed" : "pointer",
-        opacity:         dis ? 0.45 : 1,
-      }}
-      onMouseEnter={(e) => {
-        if (!dis) {
-          e.currentTarget.style.borderColor = DS.brandBorder;
-          e.currentTarget.style.color = DS.brand;
-          e.currentTarget.style.backgroundColor = DS.brandBg;
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = DS.border;
-        e.currentTarget.style.color = DS.labelText;
-        e.currentTarget.style.backgroundColor = "transparent";
-      }}
-    >
-      <Icon className="h-3 w-3 shrink-0" />
-      <span>{label}</span>
-    </button>
+    <div className="anim-slide-up" style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", padding: "60px 24px", textAlign: "center",
+    }}>
+      <div style={{
+        width: 64, height: 64, borderRadius: "50%",
+        background: "var(--green-bg)", border: "1px solid var(--green-rim)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 28, marginBottom: 20,
+      }}>
+        ✓
+      </div>
+      <div style={{
+        fontFamily: "var(--font-display)", fontWeight: 900,
+        fontSize: 28, color: "var(--white)", marginBottom: 8,
+      }}>
+        Queue Clear
+      </div>
+      <div style={{
+        fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)",
+        maxWidth: 280, lineHeight: 1.6, marginBottom: 28,
+      }}>
+        Everyone is accounted for this week. Come back Thursday to check in on adherence.
+      </div>
+      <button onClick={onViewAll} style={{
+        padding: "11px 24px",
+        background: "var(--raised)", border: "1px solid var(--rim)",
+        borderRadius: 3, cursor: "pointer",
+        fontFamily: "var(--font-display)", fontWeight: 700,
+        fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+        color: "var(--chalk)",
+      }}>
+        View All Athletes
+      </button>
+    </div>
   );
 }
 
-// ─── Single athlete row ───────────────────────────────────────────────────────
-function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
-  const [assignOpen,   setAssignOpen]   = useState(false);
-  const [reminding,    setReminding]    = useState(false);
-  const [doneState,    setDoneState]    = useState(null);
+// ─── Queue mode wrapper ───────────────────────────────────────────────────────
+function QueueMode({ rows, onRefresh, onViewAll }) {
+  const queue = useMemo(
+    () => [...rows].filter(r => getUrgency(r) < 3).sort((a, b) => getUrgency(a) - getUrgency(b)),
+    [rows]
+  );
 
-  const athleteName = row?.athleteName || row?.name || "Athlete";
-  const athleteTeam = row?.team || "";
-  const athletePos  = row?.position || row?.pos || "";
-  const subGroup    = getSubGroup(row);
-  const hasToken    = Boolean(String(row?.athleteToken || "").trim());
+  const [idx, setIdx] = useState(0);
+  const [done, setDone] = useState([]);
+  const [assignRow, setAssignRow] = useState(null);
+  const [reminderSent, setReminderSent] = useState([]);
 
-  const adherence = row.adherenceAvg != null
-    ? Math.max(0, Math.min(100, Math.round(Number(row.adherenceAvg))))
-    : null;
+  const remaining = queue.filter(r => !done.includes(r.athleteToken));
+  const current = remaining[0];
 
-  const adherenceColor =
-    adherence == null ? DS.dimText
-    : adherence >= 80 ? DS.safe
-    : adherence >= 65 ? DS.caution
-    : DS.banned;
-
-  const situationLabel =
-    subGroup === "noPlan"         ? "No plan assigned"
-    : subGroup === "noCheckin"    ? "No check-in this week"
-    : subGroup === "lowAdherence" ? "Low adherence"
-    : "On track";
-
-  const situationColor =
-    subGroup === "noPlan"         ? DS.banned
-    : subGroup === "noCheckin"    ? DS.caution
-    : subGroup === "lowAdherence" ? DS.caution
-    : DS.safe;
-
-  async function sendReminder() {
-    if (reminding || !hasToken) return;
-    setReminding(true);
-    try {
-      const res  = await fetch("/api/org/nutrition/send-reminder", {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ athleteToken: row.athleteToken }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (json?.mailto) window.open(json.mailto, "_blank");
-      setDoneState("remind");
-    } catch {
-      // non-fatal
-    } finally {
-      setReminding(false);
+  async function handleAction(row, type) {
+    if (type === "skip") {
+      setDone(d => [...d, row.athleteToken]);
+      return;
+    }
+    if (type === "noCheckin") {
+      try {
+        await sendReminderAPI(row.athleteToken);
+      } catch (e) {
+        alert(`Reminder not sent: ${e.message}`);
+        return; // Leave in queue so coach can retry
+      }
+      setReminderSent(r => [...r, row.athleteToken]);
+      setDone(d => [...d, row.athleteToken]);
+      return;
+    }
+    if (type === "lowAdherence") {
+      setDone(d => [...d, row.athleteToken]);
     }
   }
 
   function handlePlanSaved() {
-    setAssignOpen(false);
-    setDoneState("plan");
-    setTimeout(() => onPlanSaved?.(), 1800);
+    setAssignRow(null);
+    if (current) setDone(d => [...d, current.athleteToken]);
+    onRefresh?.();
   }
 
-  if (doneState) {
+  if (!current && remaining.length === 0 && queue.length > 0) {
     return (
-      <div
-        className="flex items-center gap-3 px-4 py-3"
-        style={{ backgroundColor: DS.safeBg, borderBottom: `1px solid ${DS.border}`, opacity: 0.8 }}
-      >
-        <CheckCircle className="h-4 w-4 shrink-0" style={{ color: DS.safe }} />
-        <span className="text-sm font-bold" style={{ color: DS.bodyText }}>
-          {athleteName}
-        </span>
-        <span className="text-xs" style={{ color: DS.safe }}>
-          {doneState === "plan" ? "Plan assigned ✓" : "Reminder sent ✓"}
-        </span>
-      </div>
+      <>
+        <QueueClear onViewAll={onViewAll} />
+        {done.length > 0 && (
+          <div className="anim-fade-in delay-2" style={{
+            marginTop: 24,
+            padding: "14px 20px",
+            background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4,
+          }}>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
+              color: "var(--ghost)", marginBottom: 10,
+            }}>
+              Completed this session
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {queue.filter(r => done.includes(r.athleteToken)).map(r => (
+                <div key={r.athleteToken} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  fontSize: 13, fontFamily: "var(--font-body)",
+                }}>
+                  <StatusDot color="green" />
+                  <span style={{ color: "var(--chalk)" }}>{r.athleteName}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {reminderSent.includes(r.athleteToken) ? "reminder sent" : getSubGroup(r) === "noPlan" ? "plan assigned" : "reviewed"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
+  if (queue.length === 0) {
+    return <QueueClear onViewAll={onViewAll} />;
+  }
+
   return (
-    <div style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.cardBg }}>
-      <div className="flex items-center gap-3 px-4 py-3.5">
-        <div
-          className="shrink-0 self-stretch rounded-full"
-          style={{ width: 3, backgroundColor: situationColor, minHeight: 40 }}
+    <div>
+      {current && (
+        <QueueCard
+          key={current.athleteToken}
+          row={current}
+          index={queue.length - remaining.length}
+          total={queue.length}
+          onAction={handleAction}
+          onAssign={setAssignRow}
+          onOpenProfile={() => setDone(d => [...d, current.athleteToken])}
         />
+      )}
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="font-bold text-sm" style={{ color: DS.bodyText }}>
-              {athleteName}
-            </span>
-            {athletePos && (
-              <span className="text-xs hidden sm:inline" style={{ color: DS.dimText }}>
-                {athletePos}
-              </span>
-            )}
-            {athleteTeam && (
-              <span
-                className="text-xs font-bold px-1.5 py-0.5 rounded-sm hidden sm:inline"
-                style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}
-              >
-                {athleteTeam}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center flex-wrap gap-x-2 mt-0.5">
-            <span className="text-xs font-bold" style={{ color: situationColor }}>
-              {situationLabel}
-            </span>
-            {adherence != null && (
-              <span className="text-xs" style={{ color: DS.dimText }}>
-                ·{" "}
-                <span className="font-bold tabular-nums" style={{ color: adherenceColor }}>
-                  {adherence}%
-                </span>{" "}
-                adherence
-              </span>
-            )}
-          </div>
+      {/* Skipped pile preview */}
+      {done.filter(t => !reminderSent.includes(t) && queue.find(r => r.athleteToken === t && getSubGroup(r) !== "noPlan")).length > 0 && (
+        <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-body)", textAlign: "center" }}>
+          {done.length} handled so far
         </div>
+      )}
 
-        <div
-          className="shrink-0 flex items-center gap-3"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {subGroup === "noPlan" && (
-            <button
-              type="button"
-              onClick={() => hasToken && setAssignOpen((v) => !v)}
-              disabled={!hasToken}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black uppercase tracking-wide rounded-sm whitespace-nowrap transition-all"
-              style={{
-                backgroundColor: assignOpen ? DS.brandLight : DS.brand,
-                color: "#fff",
-                opacity: hasToken ? 1 : 0.4,
-                minWidth: 110,
-                justifyContent: "center",
-              }}
-              onMouseEnter={(e) => { if (hasToken) e.currentTarget.style.backgroundColor = DS.brandLight; }}
-              onMouseLeave={(e) => { if (!assignOpen) e.currentTarget.style.backgroundColor = DS.brand; }}
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              {assignOpen ? "Close Form" : "Assign Plan"}
-            </button>
-          )}
-
-          {subGroup === "noCheckin" && (
-            <button
-              type="button"
-              onClick={sendReminder}
-              disabled={!hasToken || reminding}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black uppercase tracking-wide rounded-sm whitespace-nowrap transition-all"
-              style={{
-                backgroundColor: DS.caution,
-                color: "#fff",
-                opacity: hasToken && !reminding ? 1 : 0.4,
-                minWidth: 130,
-                justifyContent: "center",
-              }}
-              onMouseEnter={(e) => { if (hasToken) e.currentTarget.style.filter = "brightness(1.08)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
-            >
-              <Bell className="h-3.5 w-3.5" />
-              {reminding ? "Sending…" : "Send Reminder"}
-            </button>
-          )}
-
-          {(subGroup === "lowAdherence" || subGroup === "onTrack") && (
-            <button
-              type="button"
-              onClick={() => typeof onOpenAthlete === "function" && onOpenAthlete(row)}
-              disabled={!hasToken}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-black uppercase tracking-wide rounded-sm whitespace-nowrap transition-all"
-              style={{
-                backgroundColor: subGroup === "lowAdherence" ? DS.cautionBg : DS.safeBg,
-                color:           subGroup === "lowAdherence" ? DS.caution : DS.safe,
-                border:          `1px solid ${subGroup === "lowAdherence" ? DS.cautionBorder : DS.safeBorder}`,
-                opacity: hasToken ? 1 : 0.4,
-                minWidth: 110,
-                justifyContent: "center",
-              }}
-              onMouseEnter={(e) => { if (hasToken) e.currentTarget.style.filter = "brightness(0.94)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              View Profile
-            </button>
-          )}
-
-          <div className="shrink-0" style={{ width: 1, height: 28, backgroundColor: DS.border }} />
-
-          <div className="flex items-center gap-1.5">
-            {subGroup !== "noPlan" && (
-              <SecBtn
-                icon={ClipboardList}
-                label="Edit Plan"
-                disabled={!hasToken}
-                onClick={() => setAssignOpen((v) => !v)}
-              />
-            )}
-            {subGroup !== "noCheckin" && (
-              <SecBtn
-                icon={Bell}
-                label="Remind"
-                disabled={!hasToken || reminding}
-                onClick={sendReminder}
-              />
-            )}
-            {(subGroup === "noPlan" || subGroup === "noCheckin") && (
-              <SecBtn
-                icon={ExternalLink}
-                label="Profile"
-                disabled={!hasToken}
-                onClick={() => typeof onOpenAthlete === "function" && onOpenAthlete(row)}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {assignOpen && hasToken && (
-        <AssignPlanPanel
-          row={row}
-          onClose={() => setAssignOpen(false)}
+      {assignRow && (
+        <AssignSlideOver
+          row={assignRow}
+          onClose={() => setAssignRow(null)}
           onSaved={handlePlanSaved}
         />
       )}
@@ -715,587 +1224,983 @@ function AthleteRow({ row, onOpenAthlete, onPlanSaved }) {
   );
 }
 
-// ─── Needs Immediate Action section ───────────────────────────────────────────
-function ActNowSection({ rows, onOpenAthlete, onPlanSaved, sectionRef }) {
-  const [open, setOpen] = useState(true);
-
-  const noPlan = useMemo(
-    () => rows
-      .filter((r) => !r.hasPlan)
-      .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
-    [rows]
-  );
-
-  const noCheckin = useMemo(
-    () => rows
-      .filter((r) => r.hasPlan && r.missingCheckin)
-      .sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
-    [rows]
-  );
-
-  if (!rows.length) return null;
-
-  return (
-    <div ref={sectionRef} style={{ border: `1px solid ${DS.bannedBorder}`, borderTop: `3px solid ${DS.banned}` }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
-        style={{ backgroundColor: open ? DS.bannedBg : DS.cardBg }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.bannedBg; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = open ? DS.bannedBg : DS.cardBg; }}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className="font-black tabular-nums leading-none"
-            style={{ fontSize: "2rem", color: DS.banned, fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
-            {rows.length}
-          </span>
-          <div className="text-left">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.banned }}>
-                Needs Immediate Action
-              </span>
-              <span
-                className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-sm"
-                style={{ backgroundColor: DS.banned, color: "#fff" }}
-              >
-                <Zap className="h-3 w-3" />
-                Priority
-              </span>
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              {noPlan.length > 0 && `${noPlan.length} need a plan`}
-              {noPlan.length > 0 && noCheckin.length > 0 && " · "}
-              {noCheckin.length > 0 && `${noCheckin.length} missed a check-in`}
-            </div>
-          </div>
-        </div>
-        {open
-          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-          : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-        }
-      </button>
-
-      {open && (
-        <div style={{ borderTop: `1px solid ${DS.bannedBorder}` }}>
-          {noPlan.length > 0 && (
-            <>
-              <div
-                className="flex items-center gap-2.5 px-4 py-2"
-                style={{ backgroundColor: "#FFF5F5", borderBottom: `1px solid ${DS.bannedBorder}` }}
-              >
-                <span
-                  className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-black shrink-0"
-                  style={{ backgroundColor: DS.banned, color: "#fff" }}
-                >
-                  {noPlan.length}
-                </span>
-                <div>
-                  <span className="text-xs font-black uppercase tracking-wide" style={{ color: DS.banned }}>
-                    No Plan Assigned
-                  </span>
-                  <span className="text-xs ml-2" style={{ color: DS.dimText }}>
-                    Athletes cannot check in until they have a plan
-                  </span>
-                </div>
-              </div>
-              {noPlan.map((row, i) => (
-                <AthleteRow
-                  key={row.athleteToken || row.id || `np-${i}`}
-                  row={row}
-                  onOpenAthlete={onOpenAthlete}
-                  onPlanSaved={onPlanSaved}
-                />
-              ))}
-            </>
-          )}
-
-          {noCheckin.length > 0 && (
-            <>
-              <div
-                className="flex items-center gap-2.5 px-4 py-2"
-                style={{
-                  backgroundColor: "#FFFBF0",
-                  borderTop: noPlan.length > 0 ? `2px solid ${DS.border}` : "none",
-                  borderBottom: `1px solid ${DS.cautionBorder}`,
-                }}
-              >
-                <span
-                  className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-black shrink-0"
-                  style={{ backgroundColor: DS.caution, color: "#fff" }}
-                >
-                  {noCheckin.length}
-                </span>
-                <div>
-                  <span className="text-xs font-black uppercase tracking-wide" style={{ color: DS.caution }}>
-                    Missing Weekly Check-In
-                  </span>
-                  <span className="text-xs ml-2" style={{ color: DS.dimText }}>
-                    These athletes have a plan but have not logged this week
-                  </span>
-                </div>
-              </div>
-              {noCheckin.map((row, i) => (
-                <AthleteRow
-                  key={row.athleteToken || row.id || `nc-${i}`}
-                  row={row}
-                  onOpenAthlete={onOpenAthlete}
-                  onPlanSaved={onPlanSaved}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Needs Follow-Up section ──────────────────────────────────────────────────
-function FollowUpSection({ rows, onOpenAthlete, onPlanSaved, defaultOpen, sectionRef }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  const sorted = useMemo(
-    () => [...rows].sort((a, b) => Number(a.adherenceAvg || 0) - Number(b.adherenceAvg || 0)),
-    [rows]
-  );
-
-  const avg = avgAdherence(rows);
-
-  if (!rows.length) return null;
-
-  return (
-    <div ref={sectionRef} style={{ border: `1px solid ${DS.cautionBorder}`, borderTop: `3px solid ${DS.caution}` }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
-        style={{ backgroundColor: open ? DS.cautionBg : DS.cardBg }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.cautionBg; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = open ? DS.cautionBg : DS.cardBg; }}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className="font-black tabular-nums leading-none"
-            style={{ fontSize: "2rem", color: DS.caution, fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
-            {rows.length}
-          </span>
-          <div className="text-left">
-            <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.caution }}>
-              Needs Follow-Up
-            </span>
-            <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              Has a plan and check-in, but adherence is below target
-              {avg != null && ` · avg ${avg}% this week`}
-            </div>
-          </div>
-        </div>
-        {open
-          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-          : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-        }
-      </button>
-
-      {open && (
-        <div style={{ borderTop: `1px solid ${DS.cautionBorder}` }}>
-          <div
-            className="px-4 py-2 text-xs"
-            style={{ backgroundColor: "#FFFBF0", borderBottom: `1px solid ${DS.cautionBorder}`, color: DS.labelText }}
-          >
-            Lowest adherence appears first. Open an athlete profile to adjust targets, leave a note, or coach the next step.
-          </div>
-          {sorted.map((row, i) => (
-            <AthleteRow
-              key={row.athleteToken || row.id || i}
-              row={row}
-              onOpenAthlete={onOpenAthlete}
-              onPlanSaved={onPlanSaved}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── On Track section ─────────────────────────────────────────────────────────
-function OnTrackSection({ rows, onOpenAthlete, sectionRef, defaultOpen = false }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    setOpen(defaultOpen);
-  }, [defaultOpen]);
-
-  const avg = avgAdherence(rows);
-  const sorted = useMemo(
-    () => [...rows].sort((a, b) => (a.athleteName || a.name || "").localeCompare(b.athleteName || b.name || "")),
-    [rows]
-  );
-
-  if (!rows.length) return null;
-
-  return (
-    <div ref={sectionRef} style={{ border: `1px solid ${DS.safeBorder}`, borderTop: `3px solid ${DS.safe}` }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
-        style={{ backgroundColor: open ? DS.safeBg : DS.cardBg }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.safeBg; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = open ? DS.safeBg : DS.cardBg; }}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className="font-black tabular-nums leading-none"
-            style={{ fontSize: "2rem", color: DS.safe, fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
-            {rows.length}
-          </span>
-          <div className="text-left">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-black uppercase tracking-wide" style={{ color: DS.safe }}>
-                On Track
-              </span>
-              {avg != null && (
-                <span
-                  className="text-xs font-black px-2 py-0.5 rounded-sm"
-                  style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}
-                >
-                  avg {avg}% adherence
-                </span>
-              )}
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-              Plan and weekly check-in completed
-            </div>
-          </div>
-        </div>
-        {open
-          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-          : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: DS.dimText }} />
-        }
-      </button>
-
-      {open && (
-        <div style={{ borderTop: `1px solid ${DS.safeBorder}` }}>
-          {sorted.map((row, i) => (
-            <AthleteRow
-              key={row.athleteToken || row.id || i}
-              row={row}
-              onOpenAthlete={onOpenAthlete}
-              onPlanSaved={() => {}}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Nav bar ──────────────────────────────────────────────────────────────────
-function NavBar({ weekLabel, loading, onRefresh, onGoDashboard, onGoPlans }) {
-  const dayCtx = useMemo(() => {
-    const day = new Date().getDay();
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const daysLeft = day === 0 ? 0 : 7 - day;
-    return daysLeft <= 1
-      ? { text: `${dayNames[day]} · final push this week`, color: "#FFB3B3" }
-      : daysLeft <= 3
-      ? { text: `${dayNames[day]} · ${daysLeft} days left in week`, color: "#FFD580" }
-      : { text: dayNames[day], color: "rgba(255,255,255,0.4)" };
-  }, []);
-
-  return (
-    <div
-      className="flex items-center justify-between px-4 py-2.5 gap-4"
-      style={{ backgroundColor: DS.brand }}
-    >
-      <div className="flex items-center gap-3 min-w-0 overflow-hidden">
-        <span className="font-black uppercase tracking-wider text-xs shrink-0" style={{ color: "rgba(255,255,255,0.55)" }}>
-          Weekly Nutrition Queue
-        </span>
-        {weekLabel && (
-          <span className="text-xs truncate" style={{ color: "rgba(255,255,255,0.3)" }}>
-            {weekLabel}
-          </span>
-        )}
-        <span className="text-xs font-bold shrink-0" style={{ color: dayCtx.color }}>
-          {dayCtx.text}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1.5 shrink-0">
-        {[
-          { label: "Dashboard", onClick: onGoDashboard },
-          { label: "Plans",     onClick: onGoPlans },
-        ].map(({ label, onClick }) => (
-          <button
-            key={label}
-            type="button"
-            onClick={onClick}
-            className="text-xs font-bold px-2.5 py-1.5 rounded-sm transition-all"
-            style={{ color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.35)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-          >
-            {label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-sm transition-all"
-          style={{
-            backgroundColor: loading ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.12)",
-            color: loading ? "rgba(255,255,255,0.3)" : "#fff",
-          }}
-        >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">{loading ? "Loading…" : "Refresh"}</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-export default function OrgNutritionQueuePage() {
-  const router = useRouter();
-  const { user, authReady } = useAuthContext();
-
-  const role      = useMemo(() => normalizeRole(user), [user]);
-  const isOrgSide = useMemo(() => isOrgSideRole(role), [role]);
-
-  useEffect(() => {
-    if (!authReady) return;
-    if (!user) return;
-    if (!isOrgSide) router.push("/dashboard");
-  }, [authReady, user, isOrgSide, router]);
-
-  const { loading, error, rows, counts, meta, lastUpdatedLabel, refresh } = useNutritionQueue({
-    enabled: Boolean(authReady && user && isOrgSide),
+// ─── Shared send-reminder API call ───────────────────────────────────────────
+async function sendReminderAPI(athleteToken) {
+  const res  = await fetch("/api/org/nutrition/send-reminder", {
+    method:      "POST",
+    headers:     { "Content-Type": "application/json" },
+    credentials: "include",
+    body:        JSON.stringify({ athleteToken }),
   });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || "Could not build reminder.");
+  if (json?.mailto) window.open(json.mailto, "_blank");
+  return json;
+}
 
-  const [search, setSearch] = useState("");
-  const [sport,  setSport]  = useState("all");
-  const [team,   setTeam]   = useState("all");
+// ─── List view row ────────────────────────────────────────────────────────────
+function ListRow({ row, onAssign, onRemind, index }) {
+  const sg = getSubGroup(row);
 
-  const sports = Array.isArray(meta?.sports) ? meta.sports : [];
-  const teams  = Array.isArray(meta?.teams)  ? meta.teams  : [];
+  // Local optimistic reminder state — merges with server data from row props
+  const [localSentAt, setLocalSentAt] = useState(null);
+  const [localCount,  setLocalCount]  = useState(null);
+  const [sending,     setSending]     = useState(false);
+  const [sendErr,     setSendErr]     = useState("");
 
-  const filtered = useMemo(
-    () => applyFilters(rows, { search, sport, team }),
-    [rows, search, sport, team]
-  );
+  // Derive reminder state — prefer local optimistic value over stale Airtable
+  const rs = useMemo(() => {
+    const mergedRow = {
+      ...row,
+      lastReminderSentAt: localSentAt || row?.lastReminderSentAt,
+      reminderCount:      localCount  ?? row?.reminderCount,
+    };
+    return getReminderState(mergedRow);
+  }, [row, localSentAt, localCount]);
 
-  const groups = useMemo(() => groupRows(filtered), [filtered]);
-  const programStats = useMemo(() => deriveProgramStats(filtered), [filtered]);
+  const statusConfig = {
+    noPlan:       { dot: "red",   label: "No Plan",       color: "var(--red)"   },
+    noCheckin:    { dot: "amber", label: "No Check-In",   color: "var(--amber)" },
+    lowAdherence: { dot: "amber", label: "Low Adherence", color: "var(--amber)" },
+    onTrack:      { dot: "green", label: "On Track",      color: "var(--green)" },
+  };
+  const sc = statusConfig[sg] || statusConfig.onTrack;
 
-  const actRef      = useRef(null);
-  const followupRef = useRef(null);
-  const goodRef     = useRef(null);
-
-  function jumpToSection(key) {
-    const map = { act: actRef, followup: followupRef, good: goodRef };
-    map[key]?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  async function handleRemind() {
+    if (sending) return;
+    setSending(true);
+    setSendErr("");
+    try {
+      await sendReminderAPI(row.athleteToken);
+      const now = new Date().toISOString();
+      setLocalSentAt(now);
+      setLocalCount(c => (c ?? Number(row?.reminderCount || 0)) + 1);
+      onRemind?.(row);
+    } catch (e) {
+      setSendErr(e?.message || "Failed to send.");
+    } finally {
+      setSending(false);
+    }
   }
 
-  const onOpenAthlete = useCallback((row) => {
-    const token = String(row?.athleteToken || "").trim();
-    if (!token || isLikelyOrgToken(token)) return;
-    router.push(`/org/nutrition/athlete/${encodeURIComponent(token)}`);
-  }, [router]);
+  const hoursLeft = Math.max(1, 12 - (rs.hoursAgo || 0));
 
-  const hasAnyRows = Array.isArray(rows) && rows.length > 0;
-  const hasResults = filtered.length > 0;
-  const canReset   = Boolean(search || sport !== "all" || team !== "all");
-
-  const weekLabel = useMemo(() => {
-    if (!meta?.weekStartISO) return "";
-    try {
-      const d = new Date(String(meta.weekStartISO).slice(0, 10) + "T12:00:00Z");
-      if (Number.isNaN(d.getTime())) return "";
-      const e = new Date(d);
-      e.setDate(e.getDate() + 6);
-      const fmt = (x) => x.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      return `${fmt(d)} – ${fmt(e)}`;
-    } catch {
-      return "";
-    }
-  }, [meta?.weekStartISO]);
-
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: DS.pageBg }}>
-      <NavBar
-        weekLabel={weekLabel}
-        loading={loading}
-        onRefresh={() => refresh()}
-        onGoDashboard={() => router.push("/org/dashboard")}
-        onGoPlans={() => router.push("/org/prescriptions")}
-      />
-
-      <main className="max-w-4xl mx-auto px-4 py-4 space-y-3">
-        <QueueIntroCard weekLabel={weekLabel} stats={deriveProgramStats(rows)} />
-
-        {!loading && hasResults && (
-          <ProgramHealthStrip stats={programStats} />
-        )}
-
-        {error && (
-          <div
-            className="flex items-start gap-3 px-4 py-3 text-sm"
-            style={{ backgroundColor: DS.bannedBg, borderLeft: `4px solid ${DS.banned}`, color: "#7A1A1A" }}
-          >
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: DS.banned }} />
-            <div className="flex-1">{error}</div>
-            <button type="button" className="text-xs font-bold underline shrink-0" onClick={() => refresh()}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        <div
-          className="flex flex-col sm:flex-row gap-2 px-3 py-2.5"
-          style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}
+  // Single unified reminder control — three states: never sent / locked / unlocked
+  function ReminderControl() {
+    if (!rs.sent) {
+      return (
+        <button onClick={handleRemind} disabled={sending} style={{
+          padding: "7px 14px",
+          background: sending ? "transparent" : "var(--amber-bg)",
+          border: "1px solid var(--amber-rim)",
+          borderRadius: 3, cursor: sending ? "not-allowed" : "pointer",
+          fontFamily: "var(--font-display)", fontWeight: 700,
+          fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+          color: "var(--amber)", transition: "all 0.15s ease",
+        }}
+        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
         >
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: DS.dimText }} />
-            <input
-              className="w-full pl-8 pr-7 text-sm py-2 outline-none rounded-sm"
-              style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.bodyText }}
-              placeholder="Search by athlete, team, position…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; e.currentTarget.style.boxShadow = `0 0 0 3px ${DS.brand}15`; }}
-              onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.boxShadow = "none"; }}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2"
-                style={{ color: DS.dimText }}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          {sending ? "Sending…" : "Remind"}
+        </button>
+      );
+    }
 
-          <div className="flex gap-2">
-            {sports.length > 0 && (
-              <DSSelect value={sport} onChange={(e) => { setSport(e.target.value); setTeam("all"); }}>
-                <option value="all">All sports</option>
-                {sports.map((s) => <option key={s} value={s}>{s}</option>)}
-              </DSSelect>
-            )}
-            <DSSelect value={team} onChange={(e) => setTeam(e.target.value)} disabled={!teams.length}>
-              <option value="all">All teams</option>
-              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
-            </DSSelect>
-            {canReset && (
-              <button
-                type="button"
-                onClick={() => { setSearch(""); setSport("all"); setTeam("all"); }}
-                className="shrink-0 px-3 py-2 rounded-sm transition-all"
-                style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}
-                title="Clear filters"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+    if (rs.sent && !rs.canResend) {
+      return (
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
+            {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
+          </div>
+          <div style={{
+            padding: "6px 10px",
+            background: "transparent", border: "1px solid var(--rim)",
+            borderRadius: 3,
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--muted)", whiteSpace: "nowrap",
+          }}>
+            Send Again in {hoursLeft}h
           </div>
         </div>
+      );
+    }
 
-        {loading && !hasAnyRows && (
-          <div className="space-y-2">
-            <div className="animate-pulse h-14 rounded-sm" style={{ backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}` }} />
-            {[0,1,2].map((i) => (
-              <div key={i} className="animate-pulse h-16 rounded-sm" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, marginLeft: 8 }} />
-            ))}
-            <div className="animate-pulse h-14 rounded-sm mt-3" style={{ backgroundColor: DS.cautionBg, border: `1px solid ${DS.cautionBorder}` }} />
-            {[0,1].map((i) => (
-              <div key={i} className="animate-pulse h-16 rounded-sm" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, marginLeft: 8 }} />
-            ))}
+    // Unlocked resend
+    return (
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--amber)", marginBottom: 3 }}>
+          {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
+        </div>
+        <button onClick={handleRemind} disabled={sending} style={{
+          padding: "7px 14px",
+          background: sending ? "transparent" : "var(--amber-bg)",
+          border: "1px solid var(--amber-rim)",
+          borderRadius: 3, cursor: sending ? "not-allowed" : "pointer",
+          fontFamily: "var(--font-display)", fontWeight: 700,
+          fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+          color: "var(--amber)", transition: "all 0.15s ease",
+        }}
+        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
+        >
+          {sending ? "Sending…" : "Send Again ↑"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="anim-slide-up" style={{
+      display: "grid",
+      gridTemplateColumns: "4px 1fr auto auto",
+      alignItems: "center",
+      gap: 16,
+      padding: "12px 0",
+      borderBottom: "1px solid var(--rim)",
+      animationDelay: `${index * 0.03}s`,
+    }}>
+      <div style={{ width: 4, height: 40, background: sc.color, borderRadius: 2, alignSelf: "center" }} />
+
+      <div>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--white)", marginBottom: 3 }}>
+          {row.athleteName}
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {row.position && <Tag color="ghost">{row.position}</Tag>}
+          {row.team && <Tag color="ghost">{row.team}</Tag>}
+          <span style={{ fontSize: 11, color: sc.color, fontFamily: "var(--font-display)", fontWeight: 700 }}>
+            {sc.label}
+          </span>
+          {row.adherenceAvg != null && sg !== "onTrack" && (
+            <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
+              {Math.round(row.adherenceAvg)}%
+            </span>
+          )}
+        </div>
+        {sendErr && (
+          <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3, fontFamily: "var(--font-body)" }}>
+            ⚠ {sendErr}
           </div>
         )}
+      </div>
 
-        {!loading && !hasAnyRows && (
-          <div
-            className="p-6"
-            style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderLeft: `4px solid ${DS.brand}` }}
+      <div style={{ width: 80, display: "flex", flexDirection: "column", gap: 4 }}>
+        {row.adherenceAvg != null && (
+          <>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ghost)", textAlign: "right" }}>
+              {Math.round(row.adherenceAvg)}%
+            </div>
+            <ProgressBar
+              value={row.adherenceAvg} max={100}
+              color={row.adherenceAvg >= 80 ? "var(--green)" : row.adherenceAvg >= 65 ? "var(--amber)" : "var(--red)"}
+              height={3}
+            />
+          </>
+        )}
+      </div>
+
+      <div>
+        {sg === "noPlan" && (
+          <button onClick={() => onAssign(row)} style={{
+            padding: "7px 14px",
+            background: "var(--red-bg)", border: "1px solid var(--red-rim)",
+            borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--red)", transition: "all 0.15s ease",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--red)"; e.currentTarget.style.color = "#fff"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "var(--red-bg)"; e.currentTarget.style.color = "var(--red)"; }}
           >
-            <p
-              className="font-black uppercase mb-1"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.15rem", color: DS.bodyText, letterSpacing: "0.04em" }}
-            >
-              No athletes in the queue yet
-            </p>
-            <p className="text-sm mb-4" style={{ color: DS.labelText }}>
-              Once athletes join your org, this page becomes your weekly nutrition accountability board.
-            </p>
-            <button
-              type="button"
-              onClick={() => router.push("/org/athletes")}
-              className="px-4 py-2 text-xs font-bold uppercase tracking-wide rounded-sm"
-              style={{ backgroundColor: DS.brand, color: "#fff" }}
-            >
-              Go to Athletes →
-            </button>
-          </div>
+            Assign Plan
+          </button>
         )}
-
-        {!loading && hasAnyRows && !hasResults && (
-          <div
-            className="px-4 py-3"
-            style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderLeft: `4px solid ${DS.brand}` }}
+        {sg === "noCheckin" && <ReminderControl />}
+        {(sg === "lowAdherence" || sg === "onTrack") && (
+          <button style={{
+            padding: "7px 14px",
+            background: "transparent", border: "1px solid var(--rim)",
+            borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--ghost)",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
           >
-            <p className="text-sm font-bold mb-1" style={{ color: DS.bodyText }}>
-              No athletes match your filters.
-            </p>
-            <button
-              type="button"
-              onClick={() => { setSearch(""); setSport("all"); setTeam("all"); }}
-              className="text-xs font-bold underline"
-              style={{ color: DS.brand }}
-            >
-              Clear filters
-            </button>
-          </div>
+            Profile ↗
+          </button>
         )}
-
-        {!loading && hasResults && (
-          <div className="space-y-3">
-            <ActNowSection
-              rows={groups.act}
-              onOpenAthlete={onOpenAthlete}
-              onPlanSaved={() => refresh()}
-              sectionRef={actRef}
-            />
-            <FollowUpSection
-              rows={groups.followup}
-              onOpenAthlete={onOpenAthlete}
-              onPlanSaved={() => refresh()}
-              defaultOpen={groups.act.length === 0}
-              sectionRef={followupRef}
-            />
-            <OnTrackSection
-              rows={groups.good}
-              onOpenAthlete={onOpenAthlete}
-              sectionRef={goodRef}
-            />
-          </div>
-        )}
-
-        {lastUpdatedLabel && !loading && (
-          <p className="text-xs text-center pb-2" style={{ color: DS.dimText }}>
-            Updated {lastUpdatedLabel}
-          </p>
-        )}
-      </main>
+      </div>
     </div>
+  );
+}
+
+// ─── List mode ────────────────────────────────────────────────────────────────
+function ListMode({ rows }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [assignRow, setAssignRow] = useState(null);
+
+  const filtered = useMemo(() => {
+    let out = [...rows];
+    const q = search.trim().toLowerCase();
+    if (q) out = out.filter(r =>
+      (r.athleteName || "").toLowerCase().includes(q) ||
+      (r.position || "").toLowerCase().includes(q) ||
+      (r.team || "").toLowerCase().includes(q)
+    );
+    if (filter !== "all") out = out.filter(r => getSubGroup(r) === filter);
+    return out.sort((a, b) => getUrgency(a) - getUrgency(b));
+  }, [rows, search, filter]);
+
+  const counts = useMemo(() => ({
+    all: rows.length,
+    noPlan: rows.filter(r => getSubGroup(r) === "noPlan").length,
+    noCheckin: rows.filter(r => getSubGroup(r) === "noCheckin").length,
+    lowAdherence: rows.filter(r => getSubGroup(r) === "lowAdherence").length,
+    onTrack: rows.filter(r => getSubGroup(r) === "onTrack").length,
+  }), [rows]);
+
+  const filters = [
+    { key: "all",          label: "All",          count: counts.all          },
+    { key: "noPlan",       label: "No Plan",       count: counts.noPlan       },
+    { key: "noCheckin",    label: "No Check-In",   count: counts.noCheckin    },
+    { key: "lowAdherence", label: "Low Adherence", count: counts.lowAdherence },
+    { key: "onTrack",      label: "On Track",      count: counts.onTrack      },
+  ];
+
+  return (
+    <div>
+      {/* Search + filters */}
+      <div className="anim-slide-up" style={{
+        padding: "16px 20px",
+        background: "var(--surface)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        marginBottom: 12,
+      }}>
+        <div style={{ position: "relative", marginBottom: 14 }}>
+          <span style={{
+            position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+            color: "var(--muted)", fontSize: 14, pointerEvents: "none",
+          }}>⌕</span>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search athletes, position, team…"
+            style={{
+              width: "100%", padding: "9px 12px 9px 34px",
+              background: "var(--raised)", border: "1px solid var(--rim)",
+              borderRadius: 3, color: "var(--white)",
+              fontFamily: "var(--font-body)", fontSize: 13, outline: "none",
+              transition: "border-color 0.15s ease",
+            }}
+            onFocus={e => e.target.style.borderColor = "var(--brand)"}
+            onBlur={e => e.target.style.borderColor = "var(--rim)"}
+          />
+        </div>
+
+        {/* Filter tabs */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {filters.map(({ key, label, count }) => (
+            <button key={key} onClick={() => setFilter(key)} style={{
+              padding: "5px 12px",
+              background: filter === key ? "var(--brand)" : "var(--raised)",
+              border: `1px solid ${filter === key ? "var(--brand)" : "var(--rim)"}`,
+              borderRadius: 20, cursor: "pointer",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 12, letterSpacing: "0.04em",
+              color: filter === key ? "var(--void)" : "var(--ghost)",
+              transition: "all 0.15s ease",
+            }}>
+              {label}
+              <span style={{
+                marginLeft: 5,
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                opacity: filter === key ? 0.6 : 0.5,
+              }}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Rows */}
+      <div className="anim-slide-up delay-1" style={{
+        background: "var(--surface)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        padding: "0 20px",
+      }}>
+        {filtered.length === 0 ? (
+          <div style={{
+            padding: "40px 0", textAlign: "center",
+            fontFamily: "var(--font-body)", fontSize: 14, color: "var(--ghost)",
+          }}>
+            No athletes match your filters.
+          </div>
+        ) : (
+          filtered.map((row, i) => (
+            <ListRow
+              key={row.athleteToken}
+              row={row}
+              index={i}
+              onAssign={setAssignRow}
+              onRemind={() => {}}
+            />
+          ))
+        )}
+      </div>
+
+      {assignRow && (
+        <AssignSlideOver
+          row={assignRow}
+          onClose={() => setAssignRow(null)}
+          onSaved={() => setAssignRow(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Summary hero ─────────────────────────────────────────────────────────────
+function SummaryHero({ rows, onEnterQueue }) {
+  const actionCount = rows.filter(r => getUrgency(r) < 3).length;
+  const urgent = rows.filter(r => getSubGroup(r) === "noPlan").length;
+  const noCheckin = rows.filter(r => getSubGroup(r) === "noCheckin").length;
+
+  return (
+    <div className="anim-slide-up" style={{
+      padding: "28px 28px 24px",
+      background: "var(--surface)",
+      border: "1px solid var(--rim)",
+      borderTop: actionCount > 0 ? "3px solid var(--red)" : "3px solid var(--green)",
+      borderRadius: 4,
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      {/* Background decoration */}
+      <div style={{
+        position: "absolute", top: -20, right: -20,
+        fontFamily: "var(--font-display)", fontWeight: 900,
+        fontSize: 160, lineHeight: 1,
+        color: actionCount > 0 ? "var(--red)" : "var(--green)",
+        opacity: 0.04,
+        userSelect: "none",
+        pointerEvents: "none",
+      }}>
+        {actionCount}
+      </div>
+
+      <div style={{ position: "relative" }}>
+        <div style={{
+          fontFamily: "var(--font-display)", fontWeight: 700,
+          fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase",
+          color: "var(--ghost)", marginBottom: 6,
+        }}>
+          {getDayGreeting()} · {getWeekLabel()}
+        </div>
+
+        <div style={{
+          fontFamily: "var(--font-display)", fontWeight: 900,
+          fontSize: 38, lineHeight: 1.05, color: "var(--white)",
+          marginBottom: 6,
+        }}>
+          {actionCount > 0
+            ? <><span style={{ color: "var(--red)" }}>{actionCount} athletes</span> need your attention.</>
+            : <>Program is <span style={{ color: "var(--green)" }}>locked in</span> this week.</>
+          }
+        </div>
+
+        {actionCount > 0 && (
+          <div style={{
+            fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)",
+            marginBottom: 24, lineHeight: 1.5,
+          }}>
+            {urgent > 0 && `${urgent} without a plan`}
+            {urgent > 0 && noCheckin > 0 && " · "}
+            {noCheckin > 0 && `${noCheckin} missed their check-in`}
+          </div>
+        )}
+
+        {actionCount === 0 && (
+          <div style={{
+            fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)",
+            marginBottom: 24,
+          }}>
+            All athletes have plans and have checked in. Average adherence is looking good.
+          </div>
+        )}
+
+        {actionCount > 0 && (
+          <button onClick={onEnterQueue} style={{
+            display: "inline-flex", alignItems: "center", gap: 10,
+            padding: "13px 28px",
+            background: "var(--brand)",
+            border: "none", borderRadius: 3,
+            cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 800,
+            fontSize: 15, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: "var(--void)",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
+          onMouseLeave={e => e.currentTarget.style.filter = "none"}
+          >
+            Work the Queue
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, opacity: 0.6 }}>→</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Roster Mode ──────────────────────────────────────────────────────────────
+function RosterMode({ rows, onAssign }) {
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState("status"); // status | name | adherence
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  const filtered = useMemo(() => {
+    let out = [...rows];
+    const q = search.trim().toLowerCase();
+    if (q) out = out.filter(r =>
+      (r.athleteName || "").toLowerCase().includes(q) ||
+      (r.position || "").toLowerCase().includes(q) ||
+      (r.team || "").toLowerCase().includes(q)
+    );
+    if (filterStatus !== "all") out = out.filter(r => getSubGroup(r) === filterStatus);
+    out.sort((a, b) => {
+      if (sortKey === "name")      return (a.athleteName || "").localeCompare(b.athleteName || "");
+      if (sortKey === "adherence") return (b.adherenceAvg ?? -1) - (a.adherenceAvg ?? -1);
+      return getUrgency(a) - getUrgency(b); // default: by status urgency
+    });
+    return out;
+  }, [rows, search, sortKey, filterStatus]);
+
+  const counts = useMemo(() => ({
+    all:          rows.length,
+    noPlan:       rows.filter(r => getSubGroup(r) === "noPlan").length,
+    noCheckin:    rows.filter(r => getSubGroup(r) === "noCheckin").length,
+    lowAdherence: rows.filter(r => getSubGroup(r) === "lowAdherence").length,
+    onTrack:      rows.filter(r => getSubGroup(r) === "onTrack").length,
+  }), [rows]);
+
+  const statusConfig = {
+    noPlan:       { label: "No Plan",       dot: "red",   color: "var(--red)"   },
+    noCheckin:    { label: "No Check-In",   dot: "amber", color: "var(--amber)" },
+    lowAdherence: { label: "Low Adherence", dot: "amber", color: "var(--amber)" },
+    onTrack:      { label: "On Track",      dot: "green", color: "var(--green)" },
+  };
+
+  const filterTabs = [
+    { key: "all",          label: "All",          count: counts.all          },
+    { key: "noPlan",       label: "No Plan",       count: counts.noPlan,       color: "var(--red)"   },
+    { key: "noCheckin",    label: "No Check-In",   count: counts.noCheckin,    color: "var(--amber)" },
+    { key: "lowAdherence", label: "Low Adherence", count: counts.lowAdherence, color: "var(--amber)" },
+    { key: "onTrack",      label: "On Track",      count: counts.onTrack,      color: "var(--green)" },
+  ];
+
+  return (
+    <div className="anim-slide-up">
+      {/* Toolbar */}
+      <div style={{
+        display: "flex", flexDirection: "column", gap: 10,
+        padding: "14px 16px",
+        background: "var(--surface)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        marginBottom: 10,
+      }}>
+        {/* Search + sort */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <span style={{
+              position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+              color: "var(--muted)", fontSize: 13, pointerEvents: "none",
+            }}>⌕</span>
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search name, position, team…"
+              style={{
+                width: "100%", padding: "8px 10px 8px 30px",
+                background: "var(--raised)", border: "1px solid var(--rim)",
+                borderRadius: 3, color: "var(--white)",
+                fontFamily: "var(--font-body)", fontSize: 13, outline: "none",
+              }}
+              onFocus={e => e.target.style.borderColor = "var(--brand)"}
+              onBlur={e => e.target.style.borderColor = "var(--rim)"}
+            />
+          </div>
+          {/* Sort */}
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value)}
+            style={{
+              padding: "8px 10px",
+              background: "var(--raised)", border: "1px solid var(--rim)",
+              borderRadius: 3, color: "var(--ghost)",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 12, letterSpacing: "0.04em", outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="status">Sort: Status</option>
+            <option value="name">Sort: Name</option>
+            <option value="adherence">Sort: Adherence</option>
+          </select>
+        </div>
+
+        {/* Filter pills */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {filterTabs.map(({ key, label, count, color }) => (
+            <button key={key} onClick={() => setFilterStatus(key)} style={{
+              padding: "4px 10px",
+              background: filterStatus === key ? (color || "var(--brand)") : "var(--raised)",
+              border: `1px solid ${filterStatus === key ? (color || "var(--brand)") : "var(--rim)"}`,
+              borderRadius: 20, cursor: "pointer",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 11, letterSpacing: "0.04em",
+              color: filterStatus === key ? (key === "all" ? "var(--void)" : "#fff") : "var(--ghost)",
+              transition: "all 0.15s ease",
+            }}>
+              {label}
+              <span style={{
+                marginLeft: 5, fontFamily: "var(--font-mono)", fontSize: 10, opacity: 0.7,
+              }}>{count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary stat bar */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 1,
+        background: "var(--rim)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        overflow: "hidden",
+        marginBottom: 10,
+      }}>
+        {[
+          { label: "Total",        value: counts.all,          color: "var(--brand)" },
+          { label: "No Plan",      value: counts.noPlan,       color: counts.noPlan > 0       ? "var(--red)"   : "var(--ghost)" },
+          { label: "No Check-In",  value: counts.noCheckin,    color: counts.noCheckin > 0    ? "var(--amber)" : "var(--ghost)" },
+          { label: "On Track",     value: counts.onTrack,      color: counts.onTrack > 0      ? "var(--green)" : "var(--ghost)" },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{
+            padding: "10px 14px",
+            background: "var(--surface)",
+            textAlign: "center",
+          }}>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 900,
+              fontSize: 22, color, lineHeight: 1,
+            }}>{value}</div>
+            <div style={{
+              fontFamily: "var(--font-display)", fontWeight: 600,
+              fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase",
+              color: "var(--muted)", marginTop: 3,
+            }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Roster table */}
+      <div style={{
+        background: "var(--surface)",
+        border: "1px solid var(--rim)",
+        borderRadius: 4,
+        overflow: "hidden",
+      }}>
+        {/* Table header */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 80px 100px 90px 120px",
+          gap: 0,
+          padding: "8px 16px",
+          background: "var(--raised)",
+          borderBottom: "1px solid var(--rim)",
+        }}>
+          {["Athlete", "Pos", "Status", "Adherence", "Action"].map((h, i) => (
+            <div key={h} style={{
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase",
+              color: "var(--muted)",
+              textAlign: i >= 3 ? "center" : "left",
+            }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {filtered.length === 0 ? (
+          <div style={{
+            padding: "32px 16px", textAlign: "center",
+            fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ghost)",
+          }}>
+            No athletes match your filters.
+          </div>
+        ) : (
+          filtered.map((row, i) => {
+            const sg = getSubGroup(row);
+            const sc = statusConfig[sg];
+            const rs = getReminderState(row);
+            const adh = row.adherenceAvg != null ? Math.round(row.adherenceAvg) : null;
+            const adhColor = adh == null ? "var(--muted)"
+              : adh >= 80 ? "var(--green)"
+              : adh >= 65 ? "var(--amber)"
+              : "var(--red)";
+
+            return (
+              <div key={row.athleteToken} className="anim-slide-up" style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 80px 100px 90px 120px",
+                alignItems: "center",
+                gap: 0,
+                padding: "10px 16px",
+                borderBottom: i < filtered.length - 1 ? "1px solid var(--rim)" : "none",
+                background: i % 2 === 0 ? "var(--surface)" : "var(--raised)",
+                animationDelay: `${Math.min(i * 0.02, 0.3)}s`,
+                transition: "background 0.1s ease",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "var(--panel)"}
+              onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "var(--surface)" : "var(--raised)"}
+              >
+                {/* Name + team */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div style={{
+                    width: 3, height: 32, borderRadius: 2,
+                    background: sc.color, flexShrink: 0,
+                  }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: "var(--font-display)", fontWeight: 700,
+                      fontSize: 14, color: "var(--white)",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}>
+                      {row.athleteName}
+                    </div>
+                    {row.team && (
+                      <div style={{
+                        fontFamily: "var(--font-body)", fontSize: 11,
+                        color: "var(--ghost)", marginTop: 1,
+                      }}>
+                        {row.team}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Position */}
+                <div>
+                  {row.position
+                    ? <Tag color="ghost">{row.position}</Tag>
+                    : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>
+                  }
+                </div>
+
+                {/* Status */}
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <StatusDot color={sc.dot} pulse={sg === "noPlan"} />
+                  <span style={{
+                    fontFamily: "var(--font-display)", fontWeight: 700,
+                    fontSize: 11, color: sc.color,
+                  }}>
+                    {sc.label}
+                  </span>
+                </div>
+
+                {/* Adherence */}
+                <div style={{ textAlign: "center" }}>
+                  {adh != null ? (
+                    <div>
+                      <div style={{
+                        fontFamily: "var(--font-mono)", fontWeight: 700,
+                        fontSize: 13, color: adhColor, marginBottom: 3,
+                      }}>
+                        {adh}%
+                      </div>
+                      <ProgressBar value={adh} max={100} color={adhColor} height={3} animate={false} />
+                    </div>
+                  ) : (
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)",
+                    }}>
+                      {sg === "noPlan" ? "—" : "Pending"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Action */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  {sg === "noPlan" && (
+                    <button onClick={() => onAssign(row)} style={{
+                      padding: "5px 10px",
+                      background: "var(--red-bg)", border: "1px solid var(--red-rim)",
+                      borderRadius: 3, cursor: "pointer",
+                      fontFamily: "var(--font-display)", fontWeight: 700,
+                      fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase",
+                      color: "var(--red)", whiteSpace: "nowrap",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "var(--red)"; e.currentTarget.style.color = "#fff"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "var(--red-bg)"; e.currentTarget.style.color = "var(--red)"; }}
+                    >
+                      Assign Plan
+                    </button>
+                  )}
+                  {sg === "noCheckin" && (
+                    <div style={{ textAlign: "center" }}>
+                      {rs.sent ? (
+                        <span style={{
+                          fontFamily: "var(--font-mono)", fontSize: 10,
+                          color: rs.canResend ? "var(--amber)" : "var(--muted)",
+                        }}>
+                          {rs.count}× · {rs.canResend ? "Ready" : `${Math.max(0, 12 - (rs.hoursAgo || 0))}h`}
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontFamily: "var(--font-display)", fontWeight: 700,
+                          fontSize: 11, color: "var(--amber)",
+                        }}>
+                          Remind
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {sg === "lowAdherence" && (
+                    <span style={{
+                      fontFamily: "var(--font-display)", fontWeight: 700,
+                      fontSize: 11, color: "var(--amber)",
+                    }}>
+                      Review
+                    </span>
+                  )}
+                  {sg === "onTrack" && (
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 11,
+                      color: "var(--green)",
+                    }}>
+                      ✓
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {filtered.length > 0 && (
+        <div style={{
+          marginTop: 8, textAlign: "right",
+          fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)",
+        }}>
+          {filtered.length} of {rows.length} athletes
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Root page ────────────────────────────────────────────────────────────────
+export default function OrgNutritionQueuePage() {
+  const [mode, setMode] = useState("summary"); // summary | queue | list
+  const [key, setKey] = useState(0); // force re-mount queue on refresh
+
+  // ── Auth & role guard ──────────────────────────────────────────────────────
+  const router = useRouter();
+  const { user, authReady } = useAuthContext();
+  // Uncomment when real auth is wired:
+  // const role = user?.role ?? "";
+  // const isOrgSide = ["org_admin","coach","staff"].includes(normalizeRole(user));
+  // useEffect(() => { if (authReady && user && !isOrgSide) router.push("/dashboard"); }, [authReady, user, isOrgSide]);
+
+  // ── Data ───────────────────────────────────────────────────────────────────
+  const { loading, error, rows, meta, lastUpdatedLabel, refresh: reloadRows } = useNutritionQueue({
+    enabled: Boolean(authReady && user),
+  });
+
+  const actionCount = useMemo(() => rows.filter(r => getUrgency(r) < 3).length, [rows]);
+  const [rosterAssignRow, setRosterAssignRow] = useState(null);
+
+  function refresh() {
+    setKey(k => k + 1);
+    reloadRows();
+  }
+
+  function switchMode(m) {
+    if (m === "queue") setMode("queue");
+    else if (m === "list") setMode("list");
+    else setMode("summary");
+  }
+
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
+
+      <div style={{ minHeight: "100vh", background: "var(--void)" }}>
+        <NavBar
+          mode={mode === "summary" ? "queue" : mode}
+          onMode={m => setMode(m)}
+          actCount={actionCount}
+          onDashboard={() => router.push("/org/dashboard")}
+          onPlans={() => router.push("/org/prescriptions")}
+        />
+
+        <main style={{ maxWidth: 680, margin: "0 auto", padding: "24px 20px 60px" }}>
+
+          {/* Loading skeleton */}
+          {loading && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[1, 2].map(i => (
+                <div key={i} style={{
+                  height: i === 1 ? 160 : 90,
+                  borderRadius: 4,
+                  background: "linear-gradient(90deg, var(--raised) 25%, var(--panel) 50%, var(--raised) 75%)",
+                  backgroundSize: "200% 100%",
+                  animation: "shimmer 1.4s infinite",
+                  border: "1px solid var(--rim)",
+                }} />
+              ))}
+            </div>
+          )}
+
+          {/* Hard error — only shown when no fallback data available */}
+          {!loading && error && rows.length === 0 && (
+            <div style={{
+              padding: "16px 20px",
+              background: "var(--red-bg)", border: "1px solid var(--red-rim)",
+              borderLeft: "3px solid var(--red)", borderRadius: 4,
+              display: "flex", alignItems: "flex-start", gap: 12,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--red)", marginBottom: 4 }}>
+                  Failed to load queue
+                </div>
+                <div style={{ fontSize: 13, color: "var(--ghost)", fontFamily: "var(--font-body)" }}>
+                  {error}
+                </div>
+              </div>
+              <button onClick={refresh} style={{
+                padding: "7px 14px", background: "var(--red)", border: "none",
+                borderRadius: 3, cursor: "pointer",
+                fontFamily: "var(--font-display)", fontWeight: 700,
+                fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+                color: "#fff", flexShrink: 0,
+              }}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Summary / entry */}
+          {!loading && mode === "summary" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <SummaryHero
+                rows={rows}
+                onEnterQueue={() => setMode("queue")}
+              />
+              <ReadinessStrip rows={rows} actionCount={actionCount} />
+            </div>
+          )}
+
+          {/* Queue mode */}
+          {!loading && mode === "queue" && (
+            <div>
+              {/* Back link */}
+              <button onClick={() => setMode("summary")} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                marginBottom: 20,
+                background: "transparent", border: "none", cursor: "pointer",
+                fontFamily: "var(--font-display)", fontWeight: 600,
+                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "var(--ghost)",
+                transition: "color 0.15s ease",
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
+              >
+                ← Overview
+              </button>
+              <QueueMode key={key} rows={rows} onRefresh={refresh} onViewAll={() => setMode("roster")} />
+            </div>
+          )}
+
+          {/* List / Actions mode */}
+          {!loading && mode === "list" && (
+            <div>
+              <button onClick={() => setMode("summary")} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                marginBottom: 20,
+                background: "transparent", border: "none", cursor: "pointer",
+                fontFamily: "var(--font-display)", fontWeight: 600,
+                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "var(--ghost)",
+                transition: "color 0.15s ease",
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
+              >
+                ← Overview
+              </button>
+              <ListMode rows={rows} />
+            </div>
+          )}
+
+          {/* Roster mode */}
+          {!loading && mode === "roster" && (
+            <div>
+              <button onClick={() => setMode("summary")} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                marginBottom: 20,
+                background: "transparent", border: "none", cursor: "pointer",
+                fontFamily: "var(--font-display)", fontWeight: 600,
+                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "var(--ghost)",
+                transition: "color 0.15s ease",
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
+              >
+                ← Overview
+              </button>
+              <RosterMode rows={rows} onAssign={row => {
+                // Open the slide-over for plan assignment from roster view
+                setRosterAssignRow(row);
+              }} />
+            </div>
+          )}
+
+          {/* Last updated label */}
+          {!loading && lastUpdatedLabel && (
+            <p style={{
+              textAlign: "center", marginTop: 24,
+              fontSize: 11, color: "var(--muted)",
+              fontFamily: "var(--font-mono)",
+            }}>
+              Updated {lastUpdatedLabel}
+            </p>
+          )}
+
+        </main>
+
+        {/* Roster plan assignment slide-over — rendered outside main so it overlays correctly */}
+        {rosterAssignRow && (
+          <AssignSlideOver
+            row={rosterAssignRow}
+            onClose={() => setRosterAssignRow(null)}
+            onSaved={() => { setRosterAssignRow(null); refresh(); }}
+          />
+        )}
+      </div>
+    </>
   );
 }

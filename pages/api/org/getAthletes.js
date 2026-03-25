@@ -125,10 +125,9 @@ export default async function handler(req, res) {
     }
 
     /**
-     * ✅ IMPORTANT:
      * Only request fields that EXIST in AthleteScans.
-     * Your table has "sport" (lowercase) and "Team" (capital T).
-     * Do NOT request "Sport" if it doesn't exist.
+     * "Team" does not exist as a standalone field — team/org membership
+     * is derived from the "Organization" linked record field instead.
      */
     const FIELDS = [
       "Name",
@@ -138,8 +137,7 @@ export default async function handler(req, res) {
       "CreatedAt",
       "Organization",
       "Token",
-      "sport", // ✅ real field
-      "Team",  // ✅ real field
+      "sport",   // lowercase — real field name in AthleteScans
       "Status",
     ];
     debug.fieldsRequested = FIELDS;
@@ -193,6 +191,12 @@ export default async function handler(req, res) {
         const fields = r?.fields || {};
         const athleteToken = firstString(fields.AthleteToken);
 
+        // "Team" does not exist as a field in AthleteScans.
+        // Team/org membership comes from the Organization linked record field.
+        // firstString() returns the first linked record ID; if you have an
+        // org name lookup field, reference that field name here instead.
+        const team = firstString(fields.Organization) || "";
+
         all.push({
           id: r.id,
           name: toStr(fields.Name),
@@ -201,7 +205,7 @@ export default async function handler(req, res) {
           role: toStr(fields.Role),
           createdAt: toStr(fields.CreatedAt),
           sport: toStr(fields.sport),
-          team: toStr(fields.Team),
+          team,
           status: toStr(fields.Status),
           organization: safeArray(fields.Organization),
           token: fields.Token,
@@ -215,7 +219,7 @@ export default async function handler(req, res) {
     debug.count = all.length;
 
     const sports = Array.from(new Set(all.map((a) => String(a.sport || "").trim()).filter(Boolean))).sort();
-    const teams = Array.from(new Set(all.map((a) => String(a.team || "").trim()).filter(Boolean))).sort();
+    const teams  = Array.from(new Set(all.map((a) => String(a.team  || "").trim()).filter(Boolean))).sort();
 
     return res.status(200).json({ athletes: all, sports, teams, debug });
   } catch (err) {

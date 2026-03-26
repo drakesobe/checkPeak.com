@@ -104,6 +104,25 @@ const CAT_CONFIG = [
   { slug:"energy-drinks", label:"Energy Drinks", emoji:"☕", cats:["Energy Drinks"], desc:"Ready-to-drink caffeine" },
 ];
 
+const BRAND_CONFIG = [
+  { name:"Thorne",               initials:"TH" },
+  { name:"Cellucor",             initials:"CL" },
+  { name:"RAW",                  initials:"RW" },
+  { name:"ProSupps",             initials:"PS" },
+  { name:"Orgain",               initials:"OR" },
+  { name:"Optimum Nutrition",    initials:"ON" },
+  { name:"ONE",                  initials:"1" },
+  { name:"Nutricost",            initials:"NC" },
+  { name:"Quest",                initials:"QT" },
+  { name:"Ryse",                 initials:"RY" },
+  { name:"Transparent Labs",     initials:"TL" },
+  { name:"Momentous",            initials:"MO" },
+  { name:"Solgar",               initials:"SG" },
+  { name:"Pure Encapsulations",  initials:"PE" },
+  { name:"MaryRuth",             initials:"MR" },
+  { name:"Nature Made",          initials:"NM" },
+];
+
 const SORT_OPTIONS = [
   { id:"best_value", label:"Best Value" },
   { id:"price_asc", label:"Price ↑" },
@@ -267,8 +286,64 @@ function CategorySelector({ onSelect }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   BEST SELLER STRIP - STRONGER & MORE PERSUASIVE
+   BRAND SELECTOR
 ════════════════════════════════════════════════════════════════════════════ */
+function BrandSelector({ onSelect }) {
+  return (
+    <div style={{ marginTop:36 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:16 }}>
+        <div style={{ flex:1, height:1, background:"#E8E3DB" }} />
+        <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:"#6B6259", margin:0, whiteSpace:"nowrap" }}>
+          Or shop by brand
+        </p>
+        <div style={{ flex:1, height:1, background:"#E8E3DB" }} />
+      </div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center" }}>
+        {BRAND_CONFIG.map(brand => (
+          <button
+            key={brand.name}
+            type="button"
+            onClick={() => onSelect(brand.name)}
+            style={{
+              display:"flex", alignItems:"center", gap:8,
+              padding:"8px 14px", borderRadius:99,
+              border:"1.5px solid #E8E3DB", background:"#fff",
+              cursor:"pointer", transition:"all 0.14s",
+              boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor="#1A3A5C";
+              e.currentTarget.style.background="#EEF3F9";
+              e.currentTarget.style.boxShadow="0 3px 14px rgba(26,58,92,0.1)";
+              e.currentTarget.style.transform="translateY(-1px)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor="#E8E3DB";
+              e.currentTarget.style.background="#fff";
+              e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.04)";
+              e.currentTarget.style.transform="none";
+            }}
+          >
+            <div style={{
+              width:22, height:22, borderRadius:"50%",
+              background:"#1A3A5C", flexShrink:0,
+              display:"flex", alignItems:"center", justifyContent:"center",
+            }}>
+              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:8, fontWeight:800, color:"#fff", letterSpacing:"0.02em" }}>
+                {brand.initials}
+              </span>
+            </div>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:600, color:"#1A1410", whiteSpace:"nowrap" }}>
+              {brand.name}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 function BestSellerStrip({ stack, stats, catLabel }) {
   if (!stack) return null;
   const pps = getPPS(stack);
@@ -306,16 +381,17 @@ function BestSellerStrip({ stack, stats, catLabel }) {
           <p style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:21, fontWeight:700, color:"#1A1410", margin:"0 0 6px", lineHeight:1.25 }}>
             {stack.name}
           </p>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 18px", fontSize:13.5, color:"#6B6259", fontFamily:"'DM Sans',sans-serif" }}>
+          {/* FIX: column layout prevents overlap between rating and bought-last-month */}
+          <div style={{ display:"flex", flexDirection:"column", gap:6, fontSize:13.5, color:"#6B6259", fontFamily:"'DM Sans',sans-serif" }}>
             {pps && (
               <span>
                 <strong style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:18, color:"#1A1410" }}>{ppsLabel(pps)}</strong> per serving
               </span>
             )}
             {stack.rating > 0 && (
-              <span>★ {Number(stack.rating).toFixed(1)} ({formatK(stack.reviewCount)} reviews)</span>
+              <span>★ {Number(stack.rating).toFixed(1)}{stack.reviewCount > 0 ? ` (${formatK(stack.reviewCount)} reviews)` : ""}</span>
             )}
-            {bought && <span>✅ {bought}+ bought last month</span>}
+            {bought && <span>🔥 {bought}+ bought last month</span>}
           </div>
           <p style={{ fontSize:10.5, color:"#B0A89E", fontFamily:"'DM Sans',sans-serif", marginTop:8 }}>
             Amazon price last checked {lastChecked} today • Live data
@@ -865,9 +941,10 @@ export default function SmartStackComparePage() {
 
   useEffect(() => {
     if (!router.isReady) return;
-    const { cat, sort } = router.query;
+    const { cat, sort, brand } = router.query;
     if (cat) setActiveCatSlug(String(cat).toLowerCase());
     if (sort && SORT_OPTIONS.find(o => o.id === sort)) setSortBy(sort);
+    if (brand) setSearchRaw(String(brand));
   }, [router.isReady, router.query]);
 
   useEffect(() => {
@@ -913,6 +990,17 @@ export default function SmartStackComparePage() {
     return map;
   }, [allStacks, stats]);
 
+  const handleSelectBrand = useCallback((brandName) => {
+    setActiveCatSlug("all");
+    setSearchRaw(brandName);
+    setLimit(24);
+    router.replace(
+      { pathname: router.pathname, query: { ...router.query, cat: "all", brand: brandName } },
+      undefined,
+      { shallow:true, scroll:false }
+    );
+  }, [router]);
+
   const handleSelectCat = useCallback((slug) => {
     setActiveCatSlug(slug === "all" ? "all" : slug);
     setLimit(24);
@@ -926,6 +1014,13 @@ export default function SmartStackComparePage() {
   }, [activeCatSlug]);
 
   const activeCatLabel = activeCatConfig?.label || "";
+
+  // Detect if we're in a brand search so we can show it in the nav + heading
+  const activeBrandName = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const match = BRAND_CONFIG.find(b => b.name.toLowerCase() === searchQuery.trim().toLowerCase());
+    return match ? match.name : null;
+  }, [searchQuery]);
 
   const filtered = useMemo(() => {
     let result = allStacks;
@@ -1016,10 +1111,16 @@ export default function SmartStackComparePage() {
                 <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:"#1A3A5C", fontWeight:600 }}>{activeCatLabel}</span>
               </>
             )}
+            {activeBrandName && (
+              <>
+                <span style={{ color:"#DDD5C8", fontSize:12 }}>/</span>
+                <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, color:"#1A3A5C", fontWeight:600 }}>{activeBrandName}</span>
+              </>
+            )}
           </div>
           <div style={{ display:"flex", gap:8 }}>
-            {activeCatLabel && (
-              <button type="button" onClick={() => { setActiveCatSlug(null); router.replace({ pathname:router.pathname, query:{} }, undefined, { shallow:true }); }}
+            {(activeCatLabel || activeBrandName) && (
+              <button type="button" onClick={() => { setActiveCatSlug(null); setSearchRaw(""); router.replace({ pathname:router.pathname, query:{} }, undefined, { shallow:true }); }}
                 style={{ fontSize:12, fontWeight:600, color:"#6B6259", padding:"6px 12px", background:"none", border:"1px solid #DDD5C8", borderRadius:8, cursor:"pointer" }}>
                 ← All Categories
               </button>
@@ -1040,13 +1141,17 @@ export default function SmartStackComparePage() {
               {!loading && totalCount > 0 && <span style={{ fontSize:12, color:"#9B8E7E" }}>{totalCount} supplements tracked</span>}
             </div>
             <h1 style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:"clamp(2rem,6.5vw,3.5rem)", fontWeight:700, color:"#1A1410", lineHeight:1.12, margin:"0 0 18px", letterSpacing:"-0.03em" }}>
-              {activeCatLabel
+              {activeBrandName
+                ? `${activeBrandName} Supplements – Ranked by Real Value`
+                : activeCatLabel
                 ? `The Best ${activeCatLabel} That's Actually Worth Buying`
-                : "Stop Wasting Money on Supplements – Here’s What’s Truly Worth It"
+                : "Stop Wasting Money on Supplements – Here's What's Truly Worth It"
               }
             </h1>
             <p style={{ fontSize:"clamp(15px,2.6vw,18px)", color:"#6B6259", lineHeight:1.68, maxWidth:620, margin:"0 0 24px" }}>
-              {activeCatLabel
+              {activeBrandName
+                ? `Every ${activeBrandName} product ranked by price-per-serving against the category median. No paid placements. Just honest value.`
+                : activeCatLabel
                 ? `We ranked every ${activeCatLabel.toLowerCase()} by real price-per-serving against the category median. No hype. No paid placements. Just honest value.`
                 : "We compare pre-workouts, protein powders, vitamins, and more by true cost per serving. Independent rankings updated weekly."
               }
@@ -1065,6 +1170,7 @@ export default function SmartStackComparePage() {
           {!loading && !activeCatSlug && (
             <section style={{ marginTop:36 }}>
               <CategorySelector onSelect={handleSelectCat} />
+              <BrandSelector onSelect={handleSelectBrand} />
             </section>
           )}
 
@@ -1099,7 +1205,12 @@ export default function SmartStackComparePage() {
             <section style={{ marginTop:32 }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginBottom:16, flexWrap:"wrap" }}>
                 <h2 style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:19, fontWeight:700, color:"#1A1410", margin:0 }}>
-                  {activeCatLabel ? `All ${activeCatLabel}` : "Browse All Supplements"}
+                  {activeBrandName
+                    ? `All ${activeBrandName} Products`
+                    : activeCatLabel
+                    ? `All ${activeCatLabel}`
+                    : "Browse All Supplements"
+                  }
                 </h2>
                 <div style={{ position:"relative", width:"min(100%,240px)" }}>
                   <svg viewBox="0 0 24 24" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:13, height:13 }} fill="none" stroke="#9B8E7E" strokeWidth={2.5}>
@@ -1145,8 +1256,8 @@ export default function SmartStackComparePage() {
               {!loading && (
                 <p style={{ fontSize:12, color:"#9B8E7E", marginBottom:14, fontFamily:"'DM Sans',sans-serif" }}>
                   {filtered.length} supplement{filtered.length !== 1 ? "s" : ""}
-                  {activeCatLabel && activeCatSlug !== "all" ? ` in ${activeCatLabel}` : ""}
-                  {searchQuery ? ` matching "${searchQuery}"` : ""}
+                  {activeBrandName ? ` from ${activeBrandName}` : activeCatLabel && activeCatSlug !== "all" ? ` in ${activeCatLabel}` : ""}
+                  {searchQuery && !activeBrandName ? ` matching "${searchQuery}"` : ""}
                 </p>
               )}
 

@@ -1,24 +1,19 @@
 // components/smartstack-cards/GridCard.jsx
 //
 //  ┌─────────────────────────────┐
-//  │  Product image  (4:3)       │  Hero. Full bleed. Desire before data.
-//  │              [#1 of 47]     │  Value rank — stable, not sort-dependent.
+//  │  Product image  (4:3)       │  Clean. 🔥 bought pill only. No badge clutter.
 //  ├─────────────────────────────┤
-//  │ ● BEST VALUE · 15% below   │  Badge row — proof fused with label.
+//  │ ● BEST VALUE                │  Tier inline with name. Not a banner.
+//  │  Product name               │  2-line max.
 //  ├─────────────────────────────┤
-//  │  Product name               │  2-line max. Clean weight.
-//  │  ★ 4.6  ·  $0.67/srv        │  One signal line. Rating + price together.
+//  │  54% below avg              │  THE HERO. Big number. The reason to buy.
+//  │  vs. category median        │  Supporting copy, small.
+//  │  ★ 4.5  ·  $0.26/srv        │  Proof. Quiet.
 //  ├─────────────────────────────┤
-//  │  BUY ON AMAZON — $34.99     │  Orange. Full width. Single clear action.
+//  │  Buy on Amazon — $23.10     │  Orange. Full width. One line.
 //  ├─────────────────────────────┤
-//  │  [+ Compare]  [🔬 Scan]     │  Equal secondaries. Quiet until needed.
+//  │  [Compare]  [Check Safety]  │  Equal secondaries.
 //  └─────────────────────────────┘
-//
-//  Scan pipeline (mirrors NutritionModal.jsx exactly):
-//    1. fetchLabelAsFile(nutritionLabel) → File (CORS → /api/ocr/proxy-image)
-//    2. useOCR startScan([file])         → Tesseract client-side OCR
-//    3. POST /api/check { ingredientsText } → matchedBanned + matchedIngredients
-//    4. Results slide up from bottom of card
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -39,9 +34,6 @@ const C = {
   banned:        "#C8102E",
   bannedBg:      "#FFF0F0",
   bannedBorder:  "#FFC8C8",
-  good:          "#1D4ED8",
-  goodBg:        "#DBEAFE",
-  goodBorder:    "#BFDBFE",
   body:          "#1C1917",
   muted:         "#6B6259",
   dim:           "#A8A29E",
@@ -53,9 +45,9 @@ const C = {
 };
 
 const TIER = {
-  best:   { label:"Best Value",   bg:"#F0FDF4", text:"#15803D", border:"#BBF7D0", dot:"#16A34A" },
-  good:   { label:"Good Value",   bg:"#EFF6FF", text:"#1D4ED8", border:"#BFDBFE", dot:"#3B82F6" },
-  decent: { label:"Decent Value", bg:"#FFFBEB", text:"#92400E", border:"#FDE68A", dot:"#D97706" },
+  best:   { label:"Best Value",   dot:"#16A34A", text:"#15803D" },
+  good:   { label:"Good Value",   dot:"#3B82F6", text:"#1D4ED8" },
+  decent: { label:"Decent Value", dot:"#D97706", text:"#92400E" },
 };
 
 /* ─── Pure helpers ───────────────────────────────────────────────────────── */
@@ -78,11 +70,11 @@ function pctDiff(pps, stats, category) {
   if (Math.abs(diff) < 0.02) return null;
   const pct = Math.round(Math.abs(diff) * 100);
   return diff > 0
-    ? { label:`${pct}% below avg`, below:true  }
-    : { label:`${pct}% above avg`, below:false };
+    ? { pct, dir:"below" }
+    : { pct, dir:"above" };
 }
 
-/* ─── fetchLabelAsFile — mirrors NutritionModal.jsx verbatim ────────────── */
+/* ─── fetchLabelAsFile ───────────────────────────────────────────────────── */
 async function fetchLabelAsFile(url) {
   if (!url) throw new Error("No image URL");
   try {
@@ -111,7 +103,6 @@ function ScanOverlay({ label }) {
         alignItems:"center", justifyContent:"center", gap:14,
       }}
     >
-      {/* Spinner */}
       <div style={{ position:"relative", width:40, height:40 }}>
         <div style={{ position:"absolute", inset:0, borderRadius:"50%", border:`2px solid ${C.brandBorder}` }} />
         <div style={{
@@ -133,7 +124,7 @@ function ScanOverlay({ label }) {
   );
 }
 
-/* ─── Scan result panel — slides up from bottom ──────────────────────────── */
+/* ─── Scan result panel ──────────────────────────────────────────────────── */
 function ScanPanel({ result, onClose }) {
   const banned  = result?.matchedBanned      || [];
   const ings    = result?.matchedIngredients || [];
@@ -158,12 +149,9 @@ function ScanPanel({ result, onClose }) {
       }}
       onClick={e => e.stopPropagation()}
     >
-      {/* Handle */}
       <div style={{ display:"flex", justifyContent:"center", paddingTop:8, paddingBottom:4, flexShrink:0 }}>
         <div style={{ width:28, height:3, borderRadius:99, background:C.border }} />
       </div>
-
-      {/* Header */}
       <div style={{ padding:"0 12px 10px", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{
@@ -190,25 +178,17 @@ function ScanPanel({ result, onClose }) {
           </svg>
         </button>
       </div>
-
-      {/* Body */}
       <div style={{ flex:1, overflowY:"auto", padding:"0 12px 16px", display:"flex", flexDirection:"column", gap:10 }}>
         {hasBan && (
           <div>
-            <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:C.banned, margin:"0 0 6px" }}>
-              Flagged
-            </p>
+            <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:C.banned, margin:"0 0 6px" }}>Flagged</p>
             {banned.map((b, i) => {
               const f    = b?.fields || b || {};
               const name = f["Substance Name"] || f["Name"] || "Unknown";
               const type = f["Ban Type"] || f["Banned By"] || "";
               const note = f["Notes"] || "";
               return (
-                <div key={i} style={{
-                  marginBottom: i < banned.length-1 ? 5 : 0,
-                  background:C.bannedBg, borderLeft:`3px solid ${C.banned}`,
-                  borderRadius:"0 8px 8px 0", padding:"7px 10px",
-                }}>
+                <div key={i} style={{ marginBottom:i<banned.length-1?5:0, background:C.bannedBg, borderLeft:`3px solid ${C.banned}`, borderRadius:"0 8px 8px 0", padding:"7px 10px" }}>
                   <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:800, color:C.banned, margin:"0 0 1px" }}>{name}</p>
                   {type && <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.banned, opacity:0.7, margin:0 }}>{type}</p>}
                   {note && <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.muted, margin:"3px 0 0", lineHeight:1.5 }}>{String(note).slice(0,120)}{note.length>120?"…":""}</p>}
@@ -217,22 +197,15 @@ function ScanPanel({ result, onClose }) {
             })}
           </div>
         )}
-
         {hasIngs && (
           <div>
-            <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:C.brand, margin:"0 0 6px" }}>
-              Ingredients ({ings.length})
-            </p>
+            <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:C.brand, margin:"0 0 6px" }}>Ingredients ({ings.length})</p>
             <div style={{ display:"flex", flexWrap:"wrap", gap:"4px 5px" }}>
               {ings.slice(0,16).map((ing, i) => {
                 const f    = ing?.fields || ing || {};
                 const name = f["Ingredient Name"] || f["Name"] || "?";
                 return (
-                  <span key={i} style={{
-                    fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, lineHeight:1.7,
-                    padding:"1px 8px", borderRadius:99,
-                    background:C.brandBg, color:C.brand, border:`1px solid ${C.brandBorder}`,
-                  }}>
+                  <span key={i} style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:600, lineHeight:1.7, padding:"1px 8px", borderRadius:99, background:C.brandBg, color:C.brand, border:`1px solid ${C.brandBorder}` }}>
                     {name}
                   </span>
                 );
@@ -241,15 +214,10 @@ function ScanPanel({ result, onClose }) {
             </div>
           </div>
         )}
-
         {!hasBan && !hasIngs && (
-          <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:C.dim, textAlign:"center", margin:"12px 0" }}>
-            No matches in our database.
-          </p>
+          <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, color:C.dim, textAlign:"center", margin:"12px 0" }}>No matches in our database.</p>
         )}
       </div>
-
-      {/* Footer */}
       <div style={{ padding:"7px 12px", borderTop:`1px solid ${C.border}`, flexShrink:0, background:C.surface }}>
         <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, color:C.dim, margin:0, textAlign:"center" }}>
           CheckPeak banned substances + ingredient database
@@ -264,19 +232,19 @@ export default function GridCard({
   stack,
   onCompare,
   isComparing,
-  valueTier,    // "best"|"good"|"decent"|null — pre-computed by parent
-  pps,          // number|null — pre-computed by parent
-  stats,        // bucket stats — for pct diff copy
-  rank,         // stable value rank within category (Option B — never changes on resort)
-  totalInCat,   // total in that category
+  valueTier,
+  pps,
+  stats,
+  rank,
+  totalInCat,
 }) {
-  const tm       = valueTier ? TIER[valueTier] : null;
-  const hasImg   = Boolean(stack?.imageUrl);
-  const rating   = Number(stack?.rating) || 0;
+  const tm        = valueTier ? TIER[valueTier] : null;
+  const hasImg    = Boolean(stack?.imageUrl);
+  const rating    = Number(stack?.rating) || 0;
   const hasRating = rating > 0;
-  const ppsStr   = fmtPPS(pps);
-  const bought   = fmtK(stack?.boughtLastMonth);
-  const diff     = pctDiff(pps, stats, stack?.category);
+  const ppsStr    = fmtPPS(pps);
+  const bought    = fmtK(stack?.boughtLastMonth);
+  const diff      = pctDiff(pps, stats, stack?.category);
 
   const fullPrice = (() => {
     const p = Number(stack?.Price || stack?.price);
@@ -334,7 +302,7 @@ export default function GridCard({
     } catch(err) { setScanError(err?.message||"Could not load label."); setPhase("error"); }
   }, [isDone, isLoading, canScan, stack, startScan]);
 
-  const closeScan = useCallback(() => { setPhase("idle"); setScanResult(null); }, []);
+  const closeScan   = useCallback(() => { setPhase("idle"); setScanResult(null); }, []);
 
   const trackAmazon = useCallback(() => {
     try {
@@ -369,7 +337,7 @@ export default function GridCard({
       transition={{ duration:0.15 }}
     >
 
-      {/* ── HERO IMAGE ──────────────────────────────────────────────── */}
+      {/* ── HERO IMAGE — one overlay max ────────────────────────────── */}
       <div style={{
         position:"relative", aspectRatio:"4/3", flexShrink:0,
         background: hasImg ? C.surface : "linear-gradient(145deg,#EEF3F9,#E0EAF4)",
@@ -392,44 +360,14 @@ export default function GridCard({
           </div>
         )}
 
-        {/* Gradient vignette — bottom only */}
+        {/* Vignette */}
         <div style={{
           position:"absolute", bottom:0, left:0, right:0, height:"40%",
           background:"linear-gradient(to top,rgba(0,0,0,0.2),transparent)",
           pointerEvents:"none",
         }} aria-hidden="true" />
 
-        {/* Editorial pick badge — bottom-right.
-             Rank 1 → "Top Pick", 2 → "Runner-Up", 3 → "Strong Pick".
-             Rank 4+ → nothing. Selective = meaningful.
-             Always based on value rank, never display order. */}
-        {rank != null && rank <= 3 && totalInCat != null && (() => {
-          const PICK = {
-            1: { label:"Top Pick",    icon:"✓" },
-            2: { label:"Runner-Up",   icon:"✓" },
-            3: { label:"Strong Pick", icon:"✓" },
-          }[rank];
-          return (
-            <div style={{
-              position:"absolute", bottom:8, right:8,
-              display:"flex", alignItems:"center", gap:4,
-              padding:"3px 9px", borderRadius:99,
-              background:"rgba(0,0,0,0.54)", backdropFilter:"blur(8px)",
-              border:"1px solid rgba(255,255,255,0.15)",
-            }}>
-              <span style={{ fontSize:9, color:"#6EE7B7", fontWeight:900, lineHeight:1 }}>{PICK.icon}</span>
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800, color:"rgba(255,255,255,0.96)", letterSpacing:"0.04em", whiteSpace:"nowrap" }}>
-                {PICK.label}
-              </span>
-              <span style={{ fontSize:9, color:"rgba(255,255,255,0.38)", fontWeight:500 }}>—</span>
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:600, color:"rgba(255,255,255,0.55)", whiteSpace:"nowrap" }}>
-                {totalInCat} reviewed
-              </span>
-            </div>
-          );
-        })()}
-
-        {/* Bought — bottom-left social proof, shown regardless of rank */}
+        {/* Bought — the ONE image overlay. Social proof. Nothing else competes. */}
         {bought && (
           <div style={{
             position:"absolute", bottom:8, left:8,
@@ -463,7 +401,7 @@ export default function GridCard({
           )}
         </AnimatePresence>
 
-        {/* Scan status — top-left after scan */}
+        {/* Safety result badge — top-left, post-scan only */}
         <AnimatePresence>
           {isDone && (
             <motion.div
@@ -483,88 +421,79 @@ export default function GridCard({
         </AnimatePresence>
       </div>
 
-      {/* ── VALUE BADGE ROW ───────────────────────────────────────────── */}
-      {/* Between image and name — badge + proof fuse into one signal */}
-      {tm && (
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          padding:"5px 12px",
-          background:tm.bg,
-          borderTop:`1px solid ${tm.border}`,
-          borderBottom:`1px solid ${tm.border}`,
-        }}>
-          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+      {/* ── IDENTITY: tier dot + name, no band ───────────────────────── */}
+      <div style={{ padding:"10px 12px 0" }}>
+        {tm && (
+          <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4 }}>
             <div style={{ width:6, height:6, borderRadius:"50%", background:tm.dot, flexShrink:0 }} />
             <span style={{
-              fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:800,
+              fontFamily:"'DM Sans',sans-serif", fontSize:9, fontWeight:800,
               textTransform:"uppercase", letterSpacing:"0.07em",
               color:tm.text, lineHeight:1,
             }}>
               {tm.label}
             </span>
           </div>
-          {diff && (
-            <span style={{
-              fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700,
-              color: diff.below ? C.safe : C.caution,
-            }}>
-              {diff.label}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── IDENTITY + SIGNAL ─────────────────────────────────────────── */}
-      <div style={{ padding:"10px 12px 8px" }}>
-        {/* Name — 2-line cap, generous line-height */}
+        )}
         <p style={{
           fontFamily:"'DM Sans',sans-serif", fontSize:12, fontWeight:700,
-          color:C.body, lineHeight:1.4, margin:"0 0 5px",
+          color:C.body, lineHeight:1.4, margin:0,
           display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden",
         }}>
           {stack?.name || "Untitled"}
         </p>
-
-        {/* One signal line: rating · pps · bought (if rank shown) */}
-        <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"nowrap", overflow:"hidden" }}>
-          {hasRating && (
-            <>
-              <span style={{ fontSize:11, color:"#F59E0B", flexShrink:0 }}>★</span>
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, color:C.body, flexShrink:0 }}>
-                {rating.toFixed(1)}
-              </span>
-            </>
-          )}
-          {hasRating && ppsStr && (
-            <span style={{ fontSize:11, color:C.dim, flexShrink:0 }}>·</span>
-          )}
-          {ppsStr && (
-            <>
-              <span style={{
-                fontFamily:"'Libre Baskerville',Georgia,serif",
-                fontSize:13, fontWeight:700, color:C.body, flexShrink:0,
-              }}>
-                {ppsStr}
-              </span>
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.dim, flexShrink:0 }}>/srv</span>
-            </>
-          )}
-          {/* Bought as inline text when rank is shown in image */}
-          {bought && rank != null && (
-            <>
-              {(hasRating || ppsStr) && <span style={{ fontSize:11, color:C.dim, flexShrink:0 }}>·</span>}
-              <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.dim, flexShrink:0 }}>
-                🔥 {bought}+
-              </span>
-            </>
-          )}
-          {!hasRating && !ppsStr && (
-            <span style={{ fontSize:10, color:C.dim }}>—</span>
-          )}
-        </div>
       </div>
 
-      {/* ── AMAZON CTA — primary ──────────────────────────────────────── */}
+      {/* ── HERO STAT: % diff — the reason to buy ────────────────────── */}
+      <div style={{ padding:"8px 12px 6px" }}>
+        {diff ? (
+          <>
+            <p style={{
+              fontFamily:"'DM Sans',sans-serif",
+              fontSize:26, fontWeight:800,
+              color: diff.dir === "below" ? C.body : C.muted,
+              lineHeight:1, margin:"0 0 3px",
+              letterSpacing:"-0.02em",
+            }}>
+              {diff.pct}%{" "}
+              <span style={{ fontSize:14, fontWeight:600, color:C.muted, letterSpacing:0 }}>
+                {diff.dir} avg
+              </span>
+            </p>
+            <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.dim, margin:0, lineHeight:1.4 }}>
+              vs. category median · per serving
+            </p>
+          </>
+        ) : (
+          <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.dim, margin:0, lineHeight:1.4, minHeight:38 }}>
+            Price comparison unavailable
+          </p>
+        )}
+      </div>
+
+      {/* ── PROOF: rating + pps — supporting, quiet ──────────────────── */}
+      <div style={{ padding:"0 12px 10px", display:"flex", alignItems:"center", gap:5 }}>
+        {hasRating && (
+          <>
+            <span style={{ fontSize:11, color:"#F59E0B", flexShrink:0 }}>★</span>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:700, color:C.body, flexShrink:0 }}>
+              {rating.toFixed(1)}
+            </span>
+          </>
+        )}
+        {hasRating && ppsStr && <span style={{ fontSize:11, color:C.dim, flexShrink:0 }}>·</span>}
+        {ppsStr && (
+          <>
+            <span style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:12, fontWeight:700, color:C.body, flexShrink:0 }}>
+              {ppsStr}
+            </span>
+            <span style={{ fontFamily:"'DM Sans',sans-serif", fontSize:10, color:C.dim, flexShrink:0 }}>/srv</span>
+          </>
+        )}
+        {!hasRating && !ppsStr && <span style={{ fontSize:10, color:C.dim }}>—</span>}
+      </div>
+
+      {/* ── AMAZON CTA — single line ──────────────────────────────────── */}
       <div style={{ padding:"0 12px 7px" }}>
         {stack?.affiliateLink ? (
           <motion.a
@@ -572,33 +501,25 @@ export default function GridCard({
             onClick={e => { e.stopPropagation(); trackAmazon(); }}
             whileTap={{ scale:0.97 }}
             style={{
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-              padding:"9px 10px", borderRadius:10, textDecoration:"none",
+              display:"flex", alignItems:"center", justifyContent:"center", gap:5,
+              padding:"10px", borderRadius:10, textDecoration:"none",
               background:C.amazon, color:"#fff",
-              fontFamily:"'DM Sans',sans-serif", fontWeight:800, lineHeight:1,
+              fontFamily:"'DM Sans',sans-serif",
+              fontSize:11, fontWeight:800, lineHeight:1,
               boxShadow:"0 2px 8px rgba(255,153,0,0.32)",
-              gap:2,
+              whiteSpace:"nowrap",
             }}
             onMouseEnter={e => { e.currentTarget.style.background=C.amazonHover; }}
             onMouseLeave={e => { e.currentTarget.style.background=C.amazon; }}
           >
-            {/* Top line: icon + "Buy on Amazon" */}
-            <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, whiteSpace:"nowrap" }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} style={{ flexShrink:0 }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-              </svg>
-              {fullPrice ? "Buy on Amazon" : "View on Amazon"}
-            </span>
-            {/* Bottom line: price — only shown when we have it */}
-            {fullPrice && (
-              <span style={{ fontSize:12, letterSpacing:"0.01em", whiteSpace:"nowrap" }}>
-                {fullPrice}
-              </span>
-            )}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} style={{ flexShrink:0 }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+            </svg>
+            {fullPrice ? `Buy on Amazon — ${fullPrice}` : "View on Amazon"}
           </motion.a>
         ) : (
           <div style={{
-            padding:"9px 14px", borderRadius:10, textAlign:"center",
+            padding:"10px 14px", borderRadius:10, textAlign:"center",
             background:C.surface, border:`1px solid ${C.border}`,
             fontFamily:"'DM Sans',sans-serif", fontSize:11, color:C.dim,
           }}>
@@ -607,10 +528,9 @@ export default function GridCard({
         )}
       </div>
 
-      {/* ── SECONDARY ROW: Compare + Scan ─────────────────────────────── */}
+      {/* ── SECONDARIES: Compare + Check Safety ───────────────────────── */}
       <div style={{ padding:"0 12px 12px", display:"flex", gap:7 }}>
 
-        {/* Compare */}
         <motion.button
           type="button"
           onClick={e => { e.stopPropagation(); onCompare?.(stack); }}
@@ -620,9 +540,9 @@ export default function GridCard({
             flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
             padding:"7px 10px", borderRadius:9, cursor:"pointer",
             fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700,
-            background:    isComparing ? C.brandBg   : "transparent",
-            border:        isComparing ? `1.5px solid ${C.brand}` : `1px solid ${C.border}`,
-            color:         isComparing ? C.brand      : C.muted,
+            background:  isComparing ? C.brandBg : "transparent",
+            border:      isComparing ? `1.5px solid ${C.brand}` : `1px solid ${C.border}`,
+            color:       isComparing ? C.brand : C.muted,
             transition:"all 0.12s",
           }}
           onMouseEnter={e => { if(!isComparing){ e.currentTarget.style.background=C.brandBg; e.currentTarget.style.borderColor=C.brand; e.currentTarget.style.color=C.brand; }}}
@@ -645,42 +565,35 @@ export default function GridCard({
           )}
         </motion.button>
 
-        {/* Scan */}
+        {/* "Check Safety" — clear intent, no jargon */}
         {canScan ? (
           <motion.button
             type="button" onClick={handleScan} disabled={isLoading}
             whileTap={{ scale:0.96 }}
-            aria-label={isDone ? "View scan results" : "Scan ingredients"}
+            aria-label={isDone ? "View safety results" : "Check safety"}
             style={{
               flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
-              padding:"7px 10px", borderRadius:9,
+              padding:"7px 6px", borderRadius:9,
               cursor:     isLoading ? "wait" : "pointer",
               fontFamily:"'DM Sans',sans-serif", fontSize:10, fontWeight:700,
               opacity:    isLoading ? 0.6 : 1,
               background: isDone  ? (hasBanned ? C.bannedBg : C.safeBg)
-                        : isError ? C.bannedBg : C.brandBg,
+                        : isError ? C.bannedBg : "transparent",
               border:     isDone  ? `1.5px solid ${hasBanned ? C.bannedBorder : C.safeBorder}`
-                        : isError ? `1.5px solid ${C.bannedBorder}` : `1px solid ${C.brandBorder}`,
+                        : isError ? `1.5px solid ${C.bannedBorder}` : `1px solid ${C.border}`,
               color:      isDone  ? (hasBanned ? C.banned : C.safe)
-                        : isError ? C.banned : C.brand,
+                        : isError ? C.banned : C.muted,
               transition:"all 0.12s",
+              whiteSpace:"nowrap",
             }}
+            onMouseEnter={e => { if(!isLoading && !isDone && !isError){ e.currentTarget.style.background=C.brandBg; e.currentTarget.style.borderColor=C.brandBorder; e.currentTarget.style.color=C.brand; }}}
+            onMouseLeave={e => { if(!isLoading && !isDone && !isError){ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor=C.border; e.currentTarget.style.color=C.muted; }}}
           >
             {isLoading ? (
               <span style={{ display:"inline-block", width:10, height:10, borderRadius:"50%", border:"1.5px solid currentColor", borderTopColor:"transparent", animation:"gc-spin 0.65s linear infinite" }} />
             ) : isDone ? (
               hasBanned ? "⚠ Flags" : "✓ Clear"
-            ) : isError ? "Retry" : (
-              <>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="7" height="7" rx="1"/>
-                  <rect x="14" y="3" width="7" height="7" rx="1"/>
-                  <rect x="3" y="14" width="7" height="7" rx="1"/>
-                  <path strokeLinecap="round" d="M14 14h2m2 0h1m-3 2v2m0 2v1"/>
-                </svg>
-                Scan
-              </>
-            )}
+            ) : isError ? "Retry" : "Check Safety"}
           </motion.button>
         ) : (
           <div style={{

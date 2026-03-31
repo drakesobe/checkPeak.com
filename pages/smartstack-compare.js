@@ -3,7 +3,6 @@
 // Built for higher conversion - Stronger headlines, urgent Amazon buttons, better trust
 // All original functionality preserved (safety checks, compare tables, etc.)
 
-"use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -150,15 +149,11 @@ function formatK(n) {
   return num >= 1000 ? `${(num/1000).toFixed(num%1000===0?0:1)}k` : String(Math.round(num));
 }
 
-function getLastChecked() {
-  const now = new Date();
-  const mins = now.getMinutes();
-  const rounded = Math.floor(mins / 30) * 30;
-  const d = new Date(now);
-  d.setMinutes(rounded, 0, 0);
-  const h = d.getHours() % 12 || 12;
-  const m = String(d.getMinutes()).padStart(2, "0");
-  const ampm = d.getHours() >= 12 ? "pm" : "am";
+function formatFetchTime(date) {
+  if (!date) return "today";
+  const h = date.getHours() % 12 || 12;
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const ampm = date.getHours() >= 12 ? "pm" : "am";
   return `${h}:${m}${ampm}`;
 }
 
@@ -175,7 +170,7 @@ function sortStacks(stacks, sortBy, stats) {
 /* ════════════════════════════════════════════════════════════════════════════
    OPTIMIZED AMAZON BUTTON - Higher Click Intent
 ════════════════════════════════════════════════════════════════════════════ */
-function AmazonBtn({ stack, size = "md", showPrice = false }) {
+function AmazonBtn({ stack, size = "md", showPrice = false, tier = null }) {
   const price = showPrice ? priceLabel(stack) : null;
   const pps = getPPS(stack);
   const ppsStr = pps ? ppsLabel(pps) : null;
@@ -200,7 +195,7 @@ function AmazonBtn({ stack, size = "md", showPrice = false }) {
   return (
     <a
       href={stack.affiliateLink} target="_blank" rel="noopener noreferrer"
-      onClick={() => trackAmazon(stack)}
+      onClick={() => trackAmazon(stack, tier)}
       style={{
         display:"flex", alignItems:"center", justifyContent:"center", gap:8,
         padding:pad, borderRadius:10, textDecoration:"none",
@@ -210,13 +205,13 @@ function AmazonBtn({ stack, size = "md", showPrice = false }) {
         transition:"all 0.14s ease",
         whiteSpace:"nowrap",
       }}
-      onMouseEnter={e => { 
-        e.currentTarget.style.background="#E68A00"; 
-        e.currentTarget.style.boxShadow="0 8px 22px rgba(255,153,0,0.6)"; 
+      onMouseEnter={e => {
+        e.currentTarget.style.background="#E68A00";
+        e.currentTarget.style.boxShadow="0 8px 22px rgba(255,153,0,0.6)";
       }}
-      onMouseLeave={e => { 
-        e.currentTarget.style.background="#FF9900"; 
-        e.currentTarget.style.boxShadow="0 4px 16px rgba(255,153,0,0.45)"; 
+      onMouseLeave={e => {
+        e.currentTarget.style.background="#FF9900";
+        e.currentTarget.style.boxShadow="0 4px 16px rgba(255,153,0,0.45)";
       }}
     >
       <svg width={fs} height={fs} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} aria-hidden="true">
@@ -227,13 +222,13 @@ function AmazonBtn({ stack, size = "md", showPrice = false }) {
   );
 }
 
-function trackAmazon(stack) {
+function trackAmazon(stack, tier) {
   try {
     const payload = {
       event_category: "affiliate",
       supplement_name: stack?.name || "",
       category: stack?.category || "",
-      value_tier: getValueTier(getValueScore(stack, {})) ?? "unknown",
+      value_tier: tier ?? "unknown",
       price_per_serving: getPPS(stack) ?? "",
     };
     if (typeof window !== "undefined") {
@@ -252,11 +247,7 @@ function CategorySelector({ onSelect }) {
       <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13, color:"#6B6259", marginBottom:16, textAlign:"center" }}>
         What are you shopping for today?
       </p>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
-        <style>{`
-          @media (min-width:480px) { .ss-cat-grid { grid-template-columns:repeat(3,1fr) !important; } }
-          @media (min-width:680px) { .ss-cat-grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important; } }
-        `}</style>
+      <div className="ss-cat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
         {CAT_CONFIG.map(cat => (
           <button
             key={cat.slug} type="button"
@@ -344,14 +335,14 @@ function BrandSelector({ onSelect }) {
 }
 
 
-function BestSellerStrip({ stack, stats, catLabel }) {
+function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
   if (!stack) return null;
   const pps = getPPS(stack);
   const score = getValueScore(stack, stats);
   const tier = getValueTier(score);
   const tm = tier ? TIER[tier] : null;
   const bought = formatK(stack?.boughtLastMonth);
-  const lastChecked = getLastChecked();
+  const fetchedStr = formatFetchTime(fetchedAt);
 
   return (
     <div style={{
@@ -381,7 +372,6 @@ function BestSellerStrip({ stack, stats, catLabel }) {
           <p style={{ fontFamily:"'Libre Baskerville',Georgia,serif", fontSize:21, fontWeight:700, color:"#1A1410", margin:"0 0 6px", lineHeight:1.25 }}>
             {stack.name}
           </p>
-          {/* FIX: column layout prevents overlap between rating and bought-last-month */}
           <div style={{ display:"flex", flexDirection:"column", gap:6, fontSize:13.5, color:"#6B6259", fontFamily:"'DM Sans',sans-serif" }}>
             {pps && (
               <span>
@@ -394,11 +384,11 @@ function BestSellerStrip({ stack, stats, catLabel }) {
             {bought && <span>🔥 {bought}+ bought last month</span>}
           </div>
           <p style={{ fontSize:10.5, color:"#B0A89E", fontFamily:"'DM Sans',sans-serif", marginTop:8 }}>
-            Amazon price last checked {lastChecked} today • Live data
+            Prices last loaded at {fetchedStr} today • Verified by CheckPeak
           </p>
         </div>
         <div style={{ flexShrink:0, minWidth:220 }}>
-          <AmazonBtn stack={stack} size="lg" showPrice />
+          <AmazonBtn stack={stack} size="lg" showPrice tier={tier} />
           <p style={{ textAlign:"center", fontSize:10, color:"#B0A89E", marginTop:6 }}>
             Opens Amazon • Fast Prime shipping • Price may vary
           </p>
@@ -409,7 +399,7 @@ function BestSellerStrip({ stack, stats, catLabel }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   VALUE EXPLAINER - STRONGER
+   VALUE EXPLAINER
 ════════════════════════════════════════════════════════════════════════════ */
 function ValueExplainer() {
   return (
@@ -420,7 +410,7 @@ function ValueExplainer() {
             How We Calculate Real Value
           </p>
           <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:13.2, color:"#6B6259", lineHeight:1.7 }}>
-            We calculate <strong>price-per-serving</strong> for every supplement and compare it to the category median. 
+            We calculate <strong>price-per-serving</strong> for every supplement and compare it to the category median.
             Rankings are 100% independent — no brand pays for placement.
           </p>
         </div>
@@ -432,8 +422,8 @@ function ValueExplainer() {
                 <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:12.5, fontWeight:800, color:tm.text, margin:"0 0 3px" }}>{tm.label}</p>
                 <p style={{ fontSize:11, color:tm.text, opacity:0.9, lineHeight:1.5 }}>
                   {key === "best" ? "Significantly cheaper than the category average" :
-                   key === "good" ? "Right at the median — excellent choice" :
-                   "Slightly above median but still competitive"}
+                   key === "good" ? "Near the category average — solid pick" :
+                   "Slightly above average, still worth considering"}
                 </p>
               </div>
             </div>
@@ -445,10 +435,11 @@ function ValueExplainer() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   PRELOADED COMPARE TABLE (your original - unchanged)
+   PRELOADED COMPARE TABLE
 ════════════════════════════════════════════════════════════════════════════ */
-function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingIds }) {
+function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
   if (!stacks.length) return null;
+  const fetchedStr = formatFetchTime(fetchedAt);
   return (
     <div style={{ background:"#fff", border:"1.5px solid #1A3A5C", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 28px rgba(26,58,92,0.1)", marginBottom:32 }}>
       <div style={{ padding:"14px 20px", borderBottom:"1px solid #E8E3DB", background:"linear-gradient(135deg,#1A3A5C,#2A5282)", display:"flex", alignItems:"center", gap:12 }}>
@@ -456,7 +447,7 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
           Top {stacks.length} {catLabel} – Compared
         </p>
         <span style={{ fontSize:11, color:"rgba(255,255,255,0.55)", fontFamily:"'DM Sans',sans-serif" }}>
-          Ranked by value • Updated {getLastChecked()}
+          Ranked by value • Updated {fetchedStr}
         </span>
       </div>
       <div style={{ overflowX:"auto" }}>
@@ -509,7 +500,7 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
               },
               {
                 label:"Buy Now",
-                render: s => <AmazonBtn stack={s} size="sm" showPrice />,
+                render: s => <AmazonBtn stack={s} size="sm" showPrice tier={getValueTier(getValueScore(s, stats))} />,
               },
             ].map((row, ri) => {
               const bestVal = row.bestOf ? row.bestOf(stacks) : null;
@@ -538,7 +529,7 @@ function PreloadedCompare({ stacks, stats, catLabel, onAddToCompare, comparingId
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   MANUAL COMPARE TABLE + SAFETY CHECK (your full original logic - unchanged)
+   MANUAL COMPARE TABLE + SAFETY CHECK
 ════════════════════════════════════════════════════════════════════════════ */
 function ManualCompareTable({ stacks, stats, onRemove }) {
   const ref = useRef(null);
@@ -563,9 +554,7 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
         try {
           const file = await fetchLabelAsFile(stack.nutritionLabel);
           const { createWorker } = await import("tesseract.js");
-          const worker = await createWorker();
-          await worker.load();
-          await worker.initialize("eng");
+          const worker = await createWorker("eng");
           const canvas = document.createElement("canvas");
           const bitmap = await createImageBitmap(file);
           let w = bitmap.width, h = bitmap.height;
@@ -609,7 +598,7 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
         }
       })();
     });
-  }, [stacks]);
+  }, [stacks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const ids = new Set(stacks.map(s => s.id));
@@ -711,8 +700,8 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
               { label:"Value Rating", render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{padding:"2px 8px",borderRadius:20,background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`,fontSize:11,fontWeight:700}}>{tm.label}</span>:"-";} },
               { label:"Rating", render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"-", bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.rating)===b },
               { label:"Popularity", render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"-";}, bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.boughtLastMonth)===b },
-              { label:"Buy", render:s=><AmazonBtn stack={s} size="sm" showPrice /> },
-            ].map((row, ri) => {
+              { label:"Buy", render:s=><AmazonBtn stack={s} size="sm" showPrice tier={getValueTier(getValueScore(s, stats))} /> },
+            ].map((row) => {
               const bestVal = row.bestOf ? row.bestOf(stacks) : null;
               return (
                 <tr key={row.label} style={{ borderBottom:"1px solid #F8F4EE" }}>
@@ -752,7 +741,6 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
           Safety Check powered by CheckPeak - matched against our banned substances database. Results are for informational purposes only.
         </p>
       </div>
-      <style>{`@keyframes cmp-spin { to { transform:rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -848,7 +836,7 @@ function EmailCaptureStrip({ activeCatLabel }) {
     if (!email.includes("@") || saving) return;
     setSaving(true);
     try {
-      window.gtag?.("event", "email_capture", { category: activeCatLabel, email });
+      window.gtag?.("event", "email_capture", { category: activeCatLabel });
       window.dataLayer?.push({ event:"email_capture", category: activeCatLabel });
     } catch {}
     try {
@@ -930,6 +918,7 @@ export default function SmartStackComparePage() {
   const [allStacks, setAllStacks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [dataFetchedAt, setDataFetchedAt] = useState(null);
 
   const [activeCatSlug, setActiveCatSlug] = useState(null);
   const [sortBy, setSortBy] = useState("best_value");
@@ -955,7 +944,10 @@ export default function SmartStackComparePage() {
         const res = await fetch("/api/smartstack");
         if (!res.ok) throw new Error(`Server error ${res.status}`);
         const data = await res.json();
-        if (!cancelled) setAllStacks(data.records || []);
+        if (!cancelled) {
+          setAllStacks(data.records || []);
+          setDataFetchedAt(new Date());
+        }
       } catch(err) {
         if (!cancelled) setLoadError("Failed to load. Please refresh.");
       } finally {
@@ -1015,7 +1007,6 @@ export default function SmartStackComparePage() {
 
   const activeCatLabel = activeCatConfig?.label || "";
 
-  // Detect if we're in a brand search so we can show it in the nav + heading
   const activeBrandName = useMemo(() => {
     if (!searchQuery.trim()) return null;
     const match = BRAND_CONFIG.find(b => b.name.toLowerCase() === searchQuery.trim().toLowerCase());
@@ -1090,6 +1081,11 @@ export default function SmartStackComparePage() {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+        <style>{`
+          @keyframes cmp-spin { to { transform:rotate(360deg); } }
+          @media (min-width:480px) { .ss-cat-grid { grid-template-columns:repeat(3,1fr) !important; } }
+          @media (min-width:680px) { .ss-cat-grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important; } }
+        `}</style>
       </Head>
 
       <div style={{ minHeight:"100vh", background:"#FAF8F4", fontFamily:"'DM Sans',sans-serif", paddingBottom: comparing.length > 0 || isEmailCaptureActive ? 72 : 0 }}>
@@ -1131,7 +1127,7 @@ export default function SmartStackComparePage() {
           </div>
         </nav>
 
-        {/* HERO - OPTIMIZED FOR CLICKS */}
+        {/* HERO */}
         <div style={{ background:"linear-gradient(160deg,#fff 0%,#F4F0E8 100%)", borderBottom:"1px solid #EAE5DC", padding:"52px 20px 40px" }}>
           <div style={{ maxWidth:860, margin:"0 auto" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, flexWrap:"wrap" }}>
@@ -1159,7 +1155,7 @@ export default function SmartStackComparePage() {
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", padding:"12px 18px", background:"rgba(255,255,255,0.8)", border:"1px solid #E8E3DB", borderRadius:12, maxWidth:560 }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth={2.5}><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>
               <p style={{ fontSize:13.5, color:"#1A1410", margin:0, lineHeight:1.5 }}>
-                Prices checked live today. Pure value-based rankings. No brand pays to be here.
+                Prices checked daily. Pure value-based rankings. No brand pays to be here.
               </p>
             </div>
           </div>
@@ -1178,7 +1174,7 @@ export default function SmartStackComparePage() {
             <>
               {bestSeller && (
                 <section style={{ marginTop:32 }}>
-                  <BestSellerStrip stack={bestSeller} stats={stats} catLabel={activeCatLabel} />
+                  <BestSellerStrip stack={bestSeller} stats={stats} catLabel={activeCatLabel} fetchedAt={dataFetchedAt} />
                 </section>
               )}
               {preloadedTop3.length >= 2 && (
@@ -1187,6 +1183,7 @@ export default function SmartStackComparePage() {
                     stacks={preloadedTop3}
                     stats={stats}
                     catLabel={activeCatLabel}
+                    fetchedAt={dataFetchedAt}
                     onAddToCompare={toggleCompare}
                     comparingIds={comparing.map(s => s.id)}
                   />

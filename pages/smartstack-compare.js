@@ -131,6 +131,36 @@ const SORT_OPTIONS = [
 ];
 
 /* ════════════════════════════════════════════════════════════════════════════
+   SEO CONFIG — per-category optimized titles + descriptions
+════════════════════════════════════════════════════════════════════════════ */
+const SEO_BY_CAT = {
+  "pre-workout": {
+    title: "Best Pre-Workout 2025 – Ranked by Price Per Serving | SmartStack",
+    desc:  "We ranked every pre-workout supplement by true cost per serving vs. the category median. No sponsored picks. Find the best value pre-workout on Amazon today.",
+  },
+  "protein": {
+    title: "Best Protein Powder 2025 – Cheapest Per Serving Ranked | SmartStack",
+    desc:  "Compare protein powders by real price-per-serving. Optimum Nutrition, Transparent Labs, Nutricost and more — independently ranked. No paid placements.",
+  },
+  "creatine": {
+    title: "Best Creatine 2025 – Ranked by Price Per Serving | SmartStack",
+    desc:  "Find the cheapest creatine monohydrate per serving. Every product ranked against the category median. Independent analysis, no brand deals.",
+  },
+  "vitamins": {
+    title: "Best Vitamins 2025 – Ranked by Real Value | SmartStack",
+    desc:  "Compare vitamins and supplements by price-per-serving. Thorne, Nature Made, Solgar and more — independently ranked by value, not sponsorship.",
+  },
+  "bcaas": {
+    title: "Best BCAAs 2025 – Cheapest Per Serving Ranked | SmartStack",
+    desc:  "Every BCAA supplement ranked by price-per-serving vs. category median. Find the best value BCAAs for recovery and endurance. No paid placements.",
+  },
+  "energy-drinks": {
+    title: "Best Energy Drinks 2025 – Ranked by Value | SmartStack",
+    desc:  "Compare ready-to-drink energy drinks by real cost per serving. Independent rankings. No sponsored placements. Find the best deal on Amazon today.",
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════════════════
    HELPERS
 ════════════════════════════════════════════════════════════════════════════ */
 function ppsLabel(pps) {
@@ -168,7 +198,7 @@ function sortStacks(stacks, sortBy, stats) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   OPTIMIZED AMAZON BUTTON - Higher Click Intent
+   OPTIMIZED AMAZON BUTTON
 ════════════════════════════════════════════════════════════════════════════ */
 function AmazonBtn({ stack, size = "md", showPrice = false, tier = null }) {
   const price = showPrice ? priceLabel(stack) : null;
@@ -334,7 +364,9 @@ function BrandSelector({ onSelect }) {
   );
 }
 
-
+/* ════════════════════════════════════════════════════════════════════════════
+   BEST SELLER STRIP
+════════════════════════════════════════════════════════════════════════════ */
 function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
   if (!stack) return null;
   const pps = getPPS(stack);
@@ -1063,13 +1095,22 @@ export default function SmartStackComparePage() {
     document.getElementById("compare-result")?.scrollIntoView({ behavior:"smooth", block:"start" });
   }, []);
 
-  const pageTitle = activeCatLabel
-    ? `Best ${activeCatLabel} Compared - SmartStack by CheckPeak`
-    : "Supplement Comparison - SmartStack by CheckPeak";
+  // ── SEO: per-category optimized titles + descriptions ──
+  const catSeo = activeCatSlug ? SEO_BY_CAT[activeCatSlug] : null;
 
-  const pageDesc = activeCatLabel
-    ? `Compare the best ${activeCatLabel} by price-per-serving, value rating, and customer reviews. Independent rankings. No sponsored placements.`
-    : `Compare ${totalCount}+ supplements by price-per-serving and value rating. Find the best pre-workout, protein, and vitamins for your budget.`;
+  const pageTitle = activeBrandName
+    ? `${activeBrandName} Supplements Ranked by Value | SmartStack`
+    : catSeo
+    ? catSeo.title
+    : `Best Supplements 2025 – Ranked by Price Per Serving | SmartStack`;
+
+  const pageDesc = activeBrandName
+    ? `Every ${activeBrandName} supplement ranked by price-per-serving against the category median. Independent analysis. No paid placements.`
+    : catSeo
+    ? catSeo.desc
+    : `Compare ${totalCount}+ supplements by true price-per-serving. Pre-workout, protein, creatine, vitamins and more — independently ranked. No brand pays to be here.`;
+
+  const pageUrl = `https://checkpeak.com/smartstack-compare${activeCatSlug ? `?cat=${activeCatSlug}` : ""}`;
 
   const isEmailCaptureActive = comparing.length === 0;
 
@@ -1078,6 +1119,20 @@ export default function SmartStackComparePage() {
       <Head>
         <title>{pageTitle}</title>
         <meta name="description" content={pageDesc} />
+        <link rel="canonical" href={pageUrl} />
+
+        {/* Open Graph */}
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={pageDesc} />
+        <meta property="og:url" content={pageUrl} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="SmartStack by CheckPeak" />
+
+        {/* Twitter Card */}
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={pageTitle} />
+        <meta name="twitter:description" content={pageDesc} />
+
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />

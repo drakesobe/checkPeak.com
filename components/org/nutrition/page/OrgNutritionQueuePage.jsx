@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 
@@ -15,20 +13,47 @@ function useAuthContext() {
   return { user: { role: "org_admin" }, authReady: true };
 }
 
+// Normalise a todaySummary response into queue rows — kept outside hook so it's stable
+function normaliseSummaryResponse(json) {
+  const needsList = Array.isArray(json?.needsList) ? json.needsList : [];
+  const summary   = json?.summary ?? {};
+
+  const noPlanRows = needsList.map(a => ({
+    athleteToken:   a.token  || a.athleteToken || "",
+    athleteName:    a.name   || a.athleteName  || "Athlete",
+    position:       a.position || "",
+    team:           a.team     || "",
+    sport:          a.sport    || "",
+    hasPlan:        false,
+    missingCheckin: false,
+    adherenceAvg:   null,
+    lastSeen:       a.lastSeen ?? null,
+  }));
+
+  const withPlan     = Number(summary.withPlan    || 0);
+  const totalCount   = Number(summary.totalAthletes || 0);
+  // onTrackCount = athletes who have a plan (they may still be missing check-ins,
+  // but that's unknown from this endpoint — the /queue endpoint gives full detail)
+  const onTrackCount = withPlan;
+
+  return {
+    rows: noPlanRows,
+    meta: {
+      weekStartISO: new Date().toISOString().slice(0, 10),
+      sports:       [],
+      teams:        [],
+      totalAthletes: totalCount,
+      onTrackCount,
+    },
+  };
+}
+
 /**
  * Inline data hook — mirrors the shape of the real useNutritionQueue hook.
  *
  * Data strategy (tried in order):
  *   1. /api/org/nutrition/queue          — dedicated queue endpoint (preferred)
- *      Expected: { rows: [{ athleteToken, athleteName, hasPlan, missingCheckin,
- *                           adherenceAvg, position, team, sport, lastSeen }],
- *                  meta: { weekStartISO, sports, teams }, counts: {} }
- *
  *   2. /api/org/nutrition/todaySummary   — same endpoint as TodayNutritionPanel
- *      Expected: { summary: { totalAthletes, withPlan, missingPlan, ... },
- *                  needsList: [{ token, name, email, position, team }] }
- *      → Normalised into the queue row shape automatically.
- *
  *   3. MOCK_ATHLETES                     — local fallback, always works in dev.
  */
 function useNutritionQueue({ enabled } = {}) {
@@ -37,43 +62,6 @@ function useNutritionQueue({ enabled } = {}) {
   const [error,            setError]            = useState(null);
   const [meta,             setMeta]             = useState(null);
   const [lastUpdatedLabel, setLastUpdatedLabel] = useState("");
-
-  // ── Normalise a todaySummary response into queue rows ──────────────────────
-  function normaliseSummaryResponse(json) {
-    const needsList = Array.isArray(json?.needsList) ? json.needsList : [];
-    const summary   = json?.summary ?? {};
-
-    // Athletes without a plan come from needsList
-    const noPlanRows = needsList.map(a => ({
-      athleteToken:   a.token  || a.athleteToken || "",
-      athleteName:    a.name   || a.athleteName  || "Athlete",
-      position:       a.position || "",
-      team:           a.team     || "",
-      sport:          a.sport    || "",
-      hasPlan:        false,
-      missingCheckin: false,
-      adherenceAvg:   null,
-      lastSeen:       a.lastSeen ?? null,
-    }));
-
-    // todaySummary doesn't give us per-athlete check-in status for those WITH plans,
-    // so we synthesise a minimal "on track" placeholder from the aggregate counts.
-    // When the real /queue endpoint is available this block is bypassed entirely.
-    const withPlan    = Number(summary.withPlan    || 0);
-    const totalCount  = Number(summary.totalAthletes || 0);
-    const onTrackCount = Math.max(0, withPlan - noPlanRows.length);
-
-    return {
-      rows: noPlanRows,
-      meta: {
-        weekStartISO: new Date().toISOString().slice(0, 10),
-        sports:       [],
-        teams:        [],
-        totalAthletes: totalCount,
-        onTrackCount,
-      },
-    };
-  }
 
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -213,6 +201,9 @@ function getWeekLabel() {
 }
 
 // ─── Global styles injected once ─────────────────────────────────────────────
+// NOTE: Move font @import, CSS vars, and @keyframes to _app.js / globals.css
+// to avoid re-injecting on every mount. The body/reset rules below are scoped
+// to .onq-root to prevent bleeding into other pages.
 const GLOBAL_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700;800;900&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -229,7 +220,7 @@ const GLOBAL_STYLE = `
     --fog:   #4E6080;
     --chalk: #2D3E56;
     --ice:   #1A2B40;
-    --white: #0D1B2A;
+    --ink:   #0D1B2A;
 
     --red:    #D92B3A;
     --red-bg: rgba(217,43,58,0.06);
@@ -255,19 +246,19 @@ const GLOBAL_STYLE = `
     --ease-out:  cubic-bezier(0.0, 0.0, 0.2, 1);
   }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
+  /* Scoped reset — only affects this page's tree */
+  .onq-root * { box-sizing: border-box; margin: 0; padding: 0; }
+  .onq-root {
     background: var(--void);
-    color: var(--white);
+    color: var(--ink);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
   }
 
   /* Scrollbar */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: var(--panel); }
-  ::-webkit-scrollbar-thumb { background: var(--wire); border-radius: 2px; }
+  .onq-root ::-webkit-scrollbar { width: 4px; height: 4px; }
+  .onq-root ::-webkit-scrollbar-track { background: var(--panel); }
+  .onq-root ::-webkit-scrollbar-thumb { background: var(--wire); border-radius: 2px; }
 
   /* Animations */
   @keyframes slideUp {
@@ -665,7 +656,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
     border: "1px solid var(--rim)",
     borderRadius: 3,
     padding: "9px 12px",
-    color: "var(--white)",
+    color: "var(--ink)",
     fontFamily: "var(--font-mono)",
     fontSize: 13,
     outline: "none",
@@ -707,7 +698,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
               </div>
               <div style={{
                 fontFamily: "var(--font-display)",
-                fontWeight: 900, fontSize: 24, color: "var(--white)", lineHeight: 1.1,
+                fontWeight: 900, fontSize: 24, color: "var(--ink)", lineHeight: 1.1,
               }}>
                 {row?.athleteName || "Athlete"}
               </div>
@@ -716,7 +707,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
                 {row?.team && <Tag color="ghost">{row.team}</Tag>}
               </div>
             </div>
-            <button onClick={onClose} style={{
+            <button onClick={onClose} aria-label="Close" style={{
               background: "var(--raised)", border: "1px solid var(--rim)",
               borderRadius: 3, padding: "6px 8px", cursor: "pointer",
               color: "var(--ghost)", fontSize: 16, lineHeight: 1,
@@ -747,7 +738,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
                 }}>
                   <div style={{
                     fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14,
-                    color: preset === p.label ? "var(--void)" : "var(--white)",
+                    color: preset === p.label ? "var(--void)" : "var(--ink)",
                     marginBottom: 2,
                   }}>{p.label}</div>
                   <div style={{
@@ -886,6 +877,67 @@ function AssignSlideOver({ row, onClose, onSaved }) {
   );
 }
 
+// ─── Reminder control — extracted from ListRow to avoid React remount bug ─────
+function ReminderControl({ rs, sending, onRemind }) {
+  const hoursLeft = Math.max(1, 12 - (rs.hoursAgo || 0));
+
+  const btnStyle = {
+    padding: "7px 14px",
+    background: sending ? "transparent" : "var(--amber-bg)",
+    border: "1px solid var(--amber-rim)",
+    borderRadius: 3, cursor: sending ? "not-allowed" : "pointer",
+    fontFamily: "var(--font-display)", fontWeight: 700,
+    fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
+    color: "var(--amber)", transition: "all 0.15s ease",
+  };
+
+  if (!rs.sent) {
+    return (
+      <button onClick={onRemind} disabled={sending} style={btnStyle}
+        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
+      >
+        {sending ? "Sending…" : "Remind"}
+      </button>
+    );
+  }
+
+  if (!rs.canResend) {
+    return (
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
+          {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
+        </div>
+        <div style={{
+          padding: "6px 10px",
+          background: "transparent", border: "1px solid var(--rim)",
+          borderRadius: 3,
+          fontFamily: "var(--font-display)", fontWeight: 700,
+          fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase",
+          color: "var(--muted)", whiteSpace: "nowrap",
+        }}>
+          Send Again in {hoursLeft}h
+        </div>
+      </div>
+    );
+  }
+
+  // Unlocked resend
+  return (
+    <div style={{ textAlign: "right" }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--amber)", marginBottom: 3 }}>
+        {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
+      </div>
+      <button onClick={onRemind} disabled={sending} style={btnStyle}
+        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
+      >
+        {sending ? "Sending…" : "Send Again ↑"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Queue mode card ──────────────────────────────────────────────────────────
 function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
   const [animating, setAnimating] = useState(false);
@@ -894,7 +946,7 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
   const statusMap = {
     noPlan:       { label: "No Plan Assigned",        color: "var(--red)",   tag: "red",   icon: "⊗", action: "Assign Plan",   desc: "This athlete has no nutrition targets. Assign a plan to enable check-ins." },
     noCheckin:    { label: "Missed Weekly Check-In",  color: "var(--amber)", tag: "amber", icon: "◎", action: "Send Reminder", desc: "Has a plan but hasn't logged this week. Opens a pre-filled email reminder for you to send directly." },
-    lowAdherence: { label: "Low Adherence",           color: "var(--amber)", tag: "amber", icon: "▽", action: "View Profile",  desc: `Logging consistently but hitting ${Math.round(row.adherenceAvg || 0)}% of targets. Review their plan or coaching notes.` },
+    lowAdherence: { label: "Low Adherence",           color: "var(--amber)", tag: "amber", icon: "▽", action: "Review Plan",   desc: `Logging consistently but hitting ${Math.round(row.adherenceAvg || 0)}% of targets. Review their plan or coaching notes.` },
   };
 
   const s = statusMap[sg];
@@ -920,9 +972,7 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 12,
       }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
             {index + 1} / {total}
           </span>
@@ -966,7 +1016,7 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
 
           <div style={{
             fontFamily: "var(--font-display)", fontWeight: 900,
-            fontSize: 32, color: "var(--white)", lineHeight: 1.05,
+            fontSize: 32, color: "var(--ink)", lineHeight: 1.05,
             marginBottom: 8,
           }}>
             {row.athleteName}
@@ -1019,7 +1069,7 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
             cursor: "pointer",
             fontFamily: "var(--font-display)", fontWeight: 800,
             fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase",
-            color: sg === "noCheckin" ? "var(--void)" : sg === "noPlan" ? "var(--void)" : "var(--void)",
+            color: "var(--void)",
             transition: "all 0.15s ease",
             filter: "none",
           }}
@@ -1085,7 +1135,7 @@ function QueueClear({ onViewAll }) {
       </div>
       <div style={{
         fontFamily: "var(--font-display)", fontWeight: 900,
-        fontSize: 28, color: "var(--white)", marginBottom: 8,
+        fontSize: 28, color: "var(--ink)", marginBottom: 8,
       }}>
         Queue Clear
       </div>
@@ -1116,15 +1166,16 @@ function QueueMode({ rows, onRefresh, onViewAll }) {
     [rows]
   );
 
-  const [idx, setIdx] = useState(0);
-  const [done, setDone] = useState([]);
-  const [assignRow, setAssignRow] = useState(null);
+  const [done,         setDone]         = useState([]);
+  const [assignRow,    setAssignRow]    = useState(null);
   const [reminderSent, setReminderSent] = useState([]);
+  const [actionError,  setActionError]  = useState("");
 
   const remaining = queue.filter(r => !done.includes(r.athleteToken));
-  const current = remaining[0];
+  const current   = remaining[0];
 
   async function handleAction(row, type) {
+    setActionError("");
     if (type === "skip") {
       setDone(d => [...d, row.athleteToken]);
       return;
@@ -1133,7 +1184,7 @@ function QueueMode({ rows, onRefresh, onViewAll }) {
       try {
         await sendReminderAPI(row.athleteToken);
       } catch (e) {
-        alert(`Reminder not sent: ${e.message}`);
+        setActionError(`Reminder not sent: ${e.message}`);
         return; // Leave in queue so coach can retry
       }
       setReminderSent(r => [...r, row.athleteToken]);
@@ -1194,6 +1245,17 @@ function QueueMode({ rows, onRefresh, onViewAll }) {
 
   return (
     <div>
+      {actionError && (
+        <div style={{
+          marginBottom: 12, padding: "10px 14px",
+          background: "var(--red-bg)", border: "1px solid var(--red-rim)",
+          borderRadius: 3, color: "var(--red)", fontSize: 13,
+          fontFamily: "var(--font-body)",
+        }}>
+          ⚠ {actionError}
+        </div>
+      )}
+
       {current && (
         <QueueCard
           key={current.athleteToken}
@@ -1248,7 +1310,7 @@ function ListRow({ row, onAssign, onRemind, index }) {
   const [sending,     setSending]     = useState(false);
   const [sendErr,     setSendErr]     = useState("");
 
-  // Derive reminder state — prefer local optimistic value over stale Airtable
+  // Derive reminder state — prefer local optimistic value over stale server data
   const rs = useMemo(() => {
     const mergedRow = {
       ...row,
@@ -1283,73 +1345,6 @@ function ListRow({ row, onAssign, onRemind, index }) {
     }
   }
 
-  const hoursLeft = Math.max(1, 12 - (rs.hoursAgo || 0));
-
-  // Single unified reminder control — three states: never sent / locked / unlocked
-  function ReminderControl() {
-    if (!rs.sent) {
-      return (
-        <button onClick={handleRemind} disabled={sending} style={{
-          padding: "7px 14px",
-          background: sending ? "transparent" : "var(--amber-bg)",
-          border: "1px solid var(--amber-rim)",
-          borderRadius: 3, cursor: sending ? "not-allowed" : "pointer",
-          fontFamily: "var(--font-display)", fontWeight: 700,
-          fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
-          color: "var(--amber)", transition: "all 0.15s ease",
-        }}
-        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
-        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
-        >
-          {sending ? "Sending…" : "Remind"}
-        </button>
-      );
-    }
-
-    if (rs.sent && !rs.canResend) {
-      return (
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
-            {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
-          </div>
-          <div style={{
-            padding: "6px 10px",
-            background: "transparent", border: "1px solid var(--rim)",
-            borderRadius: 3,
-            fontFamily: "var(--font-display)", fontWeight: 700,
-            fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase",
-            color: "var(--muted)", whiteSpace: "nowrap",
-          }}>
-            Send Again in {hoursLeft}h
-          </div>
-        </div>
-      );
-    }
-
-    // Unlocked resend
-    return (
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--amber)", marginBottom: 3 }}>
-          {rs.count}× sent · {formatHoursAgo(rs.hoursAgo)}
-        </div>
-        <button onClick={handleRemind} disabled={sending} style={{
-          padding: "7px 14px",
-          background: sending ? "transparent" : "var(--amber-bg)",
-          border: "1px solid var(--amber-rim)",
-          borderRadius: 3, cursor: sending ? "not-allowed" : "pointer",
-          fontFamily: "var(--font-display)", fontWeight: 700,
-          fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase",
-          color: "var(--amber)", transition: "all 0.15s ease",
-        }}
-        onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
-        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
-        >
-          {sending ? "Sending…" : "Send Again ↑"}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="anim-slide-up" style={{
       display: "grid",
@@ -1363,7 +1358,7 @@ function ListRow({ row, onAssign, onRemind, index }) {
       <div style={{ width: 4, height: 40, background: sc.color, borderRadius: 2, alignSelf: "center" }} />
 
       <div>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--white)", marginBottom: 3 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--ink)", marginBottom: 3 }}>
           {row.athleteName}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -1416,7 +1411,9 @@ function ListRow({ row, onAssign, onRemind, index }) {
             Assign Plan
           </button>
         )}
-        {sg === "noCheckin" && <ReminderControl />}
+        {sg === "noCheckin" && (
+          <ReminderControl rs={rs} sending={sending} onRemind={handleRemind} />
+        )}
         {(sg === "lowAdherence" || sg === "onTrack") && (
           <button style={{
             padding: "7px 14px",
@@ -1456,11 +1453,11 @@ function ListMode({ rows }) {
   }, [rows, search, filter]);
 
   const counts = useMemo(() => ({
-    all: rows.length,
-    noPlan: rows.filter(r => getSubGroup(r) === "noPlan").length,
-    noCheckin: rows.filter(r => getSubGroup(r) === "noCheckin").length,
+    all:          rows.length,
+    noPlan:       rows.filter(r => getSubGroup(r) === "noPlan").length,
+    noCheckin:    rows.filter(r => getSubGroup(r) === "noCheckin").length,
     lowAdherence: rows.filter(r => getSubGroup(r) === "lowAdherence").length,
-    onTrack: rows.filter(r => getSubGroup(r) === "onTrack").length,
+    onTrack:      rows.filter(r => getSubGroup(r) === "onTrack").length,
   }), [rows]);
 
   const filters = [
@@ -1492,7 +1489,7 @@ function ListMode({ rows }) {
             style={{
               width: "100%", padding: "9px 12px 9px 34px",
               background: "var(--raised)", border: "1px solid var(--rim)",
-              borderRadius: 3, color: "var(--white)",
+              borderRadius: 3, color: "var(--ink)",
               fontFamily: "var(--font-body)", fontSize: 13, outline: "none",
               transition: "border-color 0.15s ease",
             }}
@@ -1569,7 +1566,7 @@ function ListMode({ rows }) {
 // ─── Summary hero ─────────────────────────────────────────────────────────────
 function SummaryHero({ rows, onEnterQueue }) {
   const actionCount = rows.filter(r => getUrgency(r) < 3).length;
-  const urgent = rows.filter(r => getSubGroup(r) === "noPlan").length;
+  const urgent    = rows.filter(r => getSubGroup(r) === "noPlan").length;
   const noCheckin = rows.filter(r => getSubGroup(r) === "noCheckin").length;
 
   return (
@@ -1606,7 +1603,7 @@ function SummaryHero({ rows, onEnterQueue }) {
 
         <div style={{
           fontFamily: "var(--font-display)", fontWeight: 900,
-          fontSize: 38, lineHeight: 1.05, color: "var(--white)",
+          fontSize: 38, lineHeight: 1.05, color: "var(--ink)",
           marginBottom: 6,
         }}>
           {actionCount > 0
@@ -1662,9 +1659,11 @@ function SummaryHero({ rows, onEnterQueue }) {
 
 // ─── Roster Mode ──────────────────────────────────────────────────────────────
 function RosterMode({ rows, onAssign }) {
-  const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState("status"); // status | name | adherence
+  const [search,       setSearch]       = useState("");
+  const [sortKey,      setSortKey]      = useState("status");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [sendingToken, setSendingToken] = useState(null);
+  const [sentTokens,   setSentTokens]   = useState(new Set());
 
   const filtered = useMemo(() => {
     let out = [...rows];
@@ -1678,7 +1677,7 @@ function RosterMode({ rows, onAssign }) {
     out.sort((a, b) => {
       if (sortKey === "name")      return (a.athleteName || "").localeCompare(b.athleteName || "");
       if (sortKey === "adherence") return (b.adherenceAvg ?? -1) - (a.adherenceAvg ?? -1);
-      return getUrgency(a) - getUrgency(b); // default: by status urgency
+      return getUrgency(a) - getUrgency(b);
     });
     return out;
   }, [rows, search, sortKey, filterStatus]);
@@ -1706,6 +1705,20 @@ function RosterMode({ rows, onAssign }) {
     { key: "onTrack",      label: "On Track",      count: counts.onTrack,      color: "var(--green)" },
   ];
 
+  async function handleRosterRemind(row) {
+    if (sendingToken) return;
+    setSendingToken(row.athleteToken);
+    try {
+      await sendReminderAPI(row.athleteToken);
+      setSentTokens(s => new Set([...s, row.athleteToken]));
+    } catch (_) {
+      // Failure is silent in the compact roster view — user can switch to
+      // Actions tab for full reminder state and error details.
+    } finally {
+      setSendingToken(null);
+    }
+  }
+
   return (
     <div className="anim-slide-up">
       {/* Toolbar */}
@@ -1730,7 +1743,7 @@ function RosterMode({ rows, onAssign }) {
               style={{
                 width: "100%", padding: "8px 10px 8px 30px",
                 background: "var(--raised)", border: "1px solid var(--rim)",
-                borderRadius: 3, color: "var(--white)",
+                borderRadius: 3, color: "var(--ink)",
                 fontFamily: "var(--font-body)", fontSize: 13, outline: "none",
               }}
               onFocus={e => e.target.style.borderColor = "var(--brand)"}
@@ -1790,20 +1803,15 @@ function RosterMode({ rows, onAssign }) {
         marginBottom: 10,
       }}>
         {[
-          { label: "Total",        value: counts.all,          color: "var(--brand)" },
-          { label: "No Plan",      value: counts.noPlan,       color: counts.noPlan > 0       ? "var(--red)"   : "var(--ghost)" },
-          { label: "No Check-In",  value: counts.noCheckin,    color: counts.noCheckin > 0    ? "var(--amber)" : "var(--ghost)" },
-          { label: "On Track",     value: counts.onTrack,      color: counts.onTrack > 0      ? "var(--green)" : "var(--ghost)" },
+          { label: "Total",       value: counts.all,       color: "var(--brand)" },
+          { label: "No Plan",     value: counts.noPlan,    color: counts.noPlan > 0    ? "var(--red)"   : "var(--ghost)" },
+          { label: "No Check-In", value: counts.noCheckin, color: counts.noCheckin > 0 ? "var(--amber)" : "var(--ghost)" },
+          { label: "On Track",    value: counts.onTrack,   color: counts.onTrack > 0   ? "var(--green)" : "var(--ghost)" },
         ].map(({ label, value, color }) => (
-          <div key={label} style={{
-            padding: "10px 14px",
-            background: "var(--surface)",
-            textAlign: "center",
-          }}>
-            <div style={{
-              fontFamily: "var(--font-display)", fontWeight: 900,
-              fontSize: 22, color, lineHeight: 1,
-            }}>{value}</div>
+          <div key={label} style={{ padding: "10px 14px", background: "var(--surface)", textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, color, lineHeight: 1 }}>
+              {value}
+            </div>
             <div style={{
               fontFamily: "var(--font-display)", fontWeight: 600,
               fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase",
@@ -1814,12 +1822,7 @@ function RosterMode({ rows, onAssign }) {
       </div>
 
       {/* Roster table */}
-      <div style={{
-        background: "var(--surface)",
-        border: "1px solid var(--rim)",
-        borderRadius: 4,
-        overflow: "hidden",
-      }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, overflow: "hidden" }}>
         {/* Table header */}
         <div style={{
           display: "grid",
@@ -1849,14 +1852,15 @@ function RosterMode({ rows, onAssign }) {
           </div>
         ) : (
           filtered.map((row, i) => {
-            const sg = getSubGroup(row);
-            const sc = statusConfig[sg];
-            const rs = getReminderState(row);
+            const sg  = getSubGroup(row);
+            const sc  = statusConfig[sg];
             const adh = row.adherenceAvg != null ? Math.round(row.adherenceAvg) : null;
             const adhColor = adh == null ? "var(--muted)"
               : adh >= 80 ? "var(--green)"
               : adh >= 65 ? "var(--amber)"
               : "var(--red)";
+            const isSending = sendingToken === row.athleteToken;
+            const wasSent   = sentTokens.has(row.athleteToken);
 
             return (
               <div key={row.athleteToken} className="anim-slide-up" style={{
@@ -1875,23 +1879,17 @@ function RosterMode({ rows, onAssign }) {
               >
                 {/* Name + team */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <div style={{
-                    width: 3, height: 32, borderRadius: 2,
-                    background: sc.color, flexShrink: 0,
-                  }} />
+                  <div style={{ width: 3, height: 32, borderRadius: 2, background: sc.color, flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{
                       fontFamily: "var(--font-display)", fontWeight: 700,
-                      fontSize: 14, color: "var(--white)",
+                      fontSize: 14, color: "var(--ink)",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>
                       {row.athleteName}
                     </div>
                     {row.team && (
-                      <div style={{
-                        fontFamily: "var(--font-body)", fontSize: 11,
-                        color: "var(--ghost)", marginTop: 1,
-                      }}>
+                      <div style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--ghost)", marginTop: 1 }}>
                         {row.team}
                       </div>
                     )}
@@ -1909,10 +1907,7 @@ function RosterMode({ rows, onAssign }) {
                 {/* Status */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <StatusDot color={sc.dot} pulse={sg === "noPlan"} />
-                  <span style={{
-                    fontFamily: "var(--font-display)", fontWeight: 700,
-                    fontSize: 11, color: sc.color,
-                  }}>
+                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, color: sc.color }}>
                     {sc.label}
                   </span>
                 </div>
@@ -1921,18 +1916,13 @@ function RosterMode({ rows, onAssign }) {
                 <div style={{ textAlign: "center" }}>
                   {adh != null ? (
                     <div>
-                      <div style={{
-                        fontFamily: "var(--font-mono)", fontWeight: 700,
-                        fontSize: 13, color: adhColor, marginBottom: 3,
-                      }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color: adhColor, marginBottom: 3 }}>
                         {adh}%
                       </div>
                       <ProgressBar value={adh} max={100} color={adhColor} height={3} animate={false} />
                     </div>
                   ) : (
-                    <span style={{
-                      fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)",
-                    }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
                       {sg === "noPlan" ? "—" : "Pending"}
                     </span>
                   )}
@@ -1957,39 +1947,46 @@ function RosterMode({ rows, onAssign }) {
                     </button>
                   )}
                   {sg === "noCheckin" && (
-                    <div style={{ textAlign: "center" }}>
-                      {rs.sent ? (
-                        <span style={{
-                          fontFamily: "var(--font-mono)", fontSize: 10,
-                          color: rs.canResend ? "var(--amber)" : "var(--muted)",
-                        }}>
-                          {rs.count}× · {rs.canResend ? "Ready" : `${Math.max(0, 12 - (rs.hoursAgo || 0))}h`}
-                        </span>
-                      ) : (
-                        <span style={{
+                    wasSent ? (
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--green)" }}>Sent ✓</span>
+                    ) : (
+                      <button
+                        onClick={() => handleRosterRemind(row)}
+                        disabled={!!sendingToken}
+                        style={{
+                          padding: "5px 10px",
+                          background: "var(--amber-bg)", border: "1px solid var(--amber-rim)",
+                          borderRadius: 3, cursor: sendingToken ? "not-allowed" : "pointer",
                           fontFamily: "var(--font-display)", fontWeight: 700,
-                          fontSize: 11, color: "var(--amber)",
-                        }}>
-                          Remind
-                        </span>
-                      )}
-                    </div>
+                          fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase",
+                          color: "var(--amber)", whiteSpace: "nowrap",
+                          transition: "all 0.15s ease",
+                          opacity: sendingToken && !isSending ? 0.5 : 1,
+                        }}
+                        onMouseEnter={e => { if (!sendingToken) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+                        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
+                      >
+                        {isSending ? "Sending…" : "Remind"}
+                      </button>
+                    )
                   )}
                   {sg === "lowAdherence" && (
-                    <span style={{
+                    <button style={{
+                      padding: "5px 10px",
+                      background: "transparent", border: "1px solid var(--rim)",
+                      borderRadius: 3, cursor: "pointer",
                       fontFamily: "var(--font-display)", fontWeight: 700,
-                      fontSize: 11, color: "var(--amber)",
-                    }}>
+                      fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase",
+                      color: "var(--ghost)", whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
+                    >
                       Review
-                    </span>
+                    </button>
                   )}
                   {sg === "onTrack" && (
-                    <span style={{
-                      fontFamily: "var(--font-mono)", fontSize: 11,
-                      color: "var(--green)",
-                    }}>
-                      ✓
-                    </span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--green)" }}>✓</span>
                   )}
                 </div>
               </div>
@@ -2012,8 +2009,8 @@ function RosterMode({ rows, onAssign }) {
 
 // ─── Root page ────────────────────────────────────────────────────────────────
 export default function OrgNutritionQueuePage() {
-  const [mode, setMode] = useState("summary"); // summary | queue | list
-  const [key, setKey] = useState(0); // force re-mount queue on refresh
+  const [mode, setMode] = useState("summary"); // summary | queue | list | roster
+  const [key,  setKey]  = useState(0); // force re-mount queue on refresh
 
   // ── Auth & role guard ──────────────────────────────────────────────────────
   const router = useRouter();
@@ -2024,7 +2021,7 @@ export default function OrgNutritionQueuePage() {
   // useEffect(() => { if (authReady && user && !isOrgSide) router.push("/dashboard"); }, [authReady, user, isOrgSide]);
 
   // ── Data ───────────────────────────────────────────────────────────────────
-  const { loading, error, rows, meta, lastUpdatedLabel, refresh: reloadRows } = useNutritionQueue({
+  const { loading, error, rows, lastUpdatedLabel, refresh: reloadRows } = useNutritionQueue({
     enabled: Boolean(authReady && user),
   });
 
@@ -2036,17 +2033,28 @@ export default function OrgNutritionQueuePage() {
     reloadRows();
   }
 
-  function switchMode(m) {
-    if (m === "queue") setMode("queue");
-    else if (m === "list") setMode("list");
-    else setMode("summary");
-  }
+  const backBtn = (
+    <button onClick={() => setMode("summary")} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      marginBottom: 20,
+      background: "transparent", border: "none", cursor: "pointer",
+      fontFamily: "var(--font-display)", fontWeight: 600,
+      fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
+      color: "var(--ghost)",
+      transition: "color 0.15s ease",
+    }}
+    onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
+    onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
+    >
+      ← Overview
+    </button>
+  );
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
 
-      <div style={{ minHeight: "100vh", background: "var(--void)" }}>
+      <div className="onq-root" style={{ minHeight: "100vh" }}>
         <NavBar
           mode={mode === "summary" ? "queue" : mode}
           onMode={m => setMode(m)}
@@ -2104,10 +2112,7 @@ export default function OrgNutritionQueuePage() {
           {/* Summary / entry */}
           {!loading && mode === "summary" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <SummaryHero
-                rows={rows}
-                onEnterQueue={() => setMode("queue")}
-              />
+              <SummaryHero rows={rows} onEnterQueue={() => setMode("queue")} />
               <ReadinessStrip rows={rows} actionCount={actionCount} />
             </div>
           )}
@@ -2115,21 +2120,7 @@ export default function OrgNutritionQueuePage() {
           {/* Queue mode */}
           {!loading && mode === "queue" && (
             <div>
-              {/* Back link */}
-              <button onClick={() => setMode("summary")} style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                marginBottom: 20,
-                background: "transparent", border: "none", cursor: "pointer",
-                fontFamily: "var(--font-display)", fontWeight: 600,
-                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "var(--ghost)",
-                transition: "color 0.15s ease",
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
-              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
-              >
-                ← Overview
-              </button>
+              {backBtn}
               <QueueMode key={key} rows={rows} onRefresh={refresh} onViewAll={() => setMode("roster")} />
             </div>
           )}
@@ -2137,20 +2128,7 @@ export default function OrgNutritionQueuePage() {
           {/* List / Actions mode */}
           {!loading && mode === "list" && (
             <div>
-              <button onClick={() => setMode("summary")} style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                marginBottom: 20,
-                background: "transparent", border: "none", cursor: "pointer",
-                fontFamily: "var(--font-display)", fontWeight: 600,
-                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "var(--ghost)",
-                transition: "color 0.15s ease",
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
-              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
-              >
-                ← Overview
-              </button>
+              {backBtn}
               <ListMode rows={rows} />
             </div>
           )}
@@ -2158,24 +2136,8 @@ export default function OrgNutritionQueuePage() {
           {/* Roster mode */}
           {!loading && mode === "roster" && (
             <div>
-              <button onClick={() => setMode("summary")} style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                marginBottom: 20,
-                background: "transparent", border: "none", cursor: "pointer",
-                fontFamily: "var(--font-display)", fontWeight: 600,
-                fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "var(--ghost)",
-                transition: "color 0.15s ease",
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
-              onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
-              >
-                ← Overview
-              </button>
-              <RosterMode rows={rows} onAssign={row => {
-                // Open the slide-over for plan assignment from roster view
-                setRosterAssignRow(row);
-              }} />
+              {backBtn}
+              <RosterMode rows={rows} onAssign={row => setRosterAssignRow(row)} />
             </div>
           )}
 

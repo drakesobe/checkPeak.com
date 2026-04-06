@@ -101,6 +101,7 @@ const CAT_CONFIG = [
   { slug:"creatine", label:"Creatine", emoji:"🔬", cats:["Creatine"], desc:"Strength & power output" },
   { slug:"bcaas", label:"BCAAs", emoji:"🌿", cats:["BCAAs"], desc:"Recovery & endurance" },
   { slug:"energy-drinks", label:"Energy Drinks", emoji:"☕", cats:["Energy Drinks"], desc:"Ready-to-drink caffeine" },
+  { slug:"energy-gel", label:"Energy Gel", emoji:"🍯", cats:["Energy Gel"], desc:"Fast-acting carb boost" },
 ];
 
 const BRAND_CONFIG = [
@@ -120,6 +121,7 @@ const BRAND_CONFIG = [
   { name:"Pure Encapsulations",  initials:"PE" },
   { name:"MaryRuth",             initials:"MR" },
   { name:"Nature Made",          initials:"NM" },
+  { name:"Stinger",              initials:"ST" },
 ];
 
 const SORT_OPTIONS = [
@@ -158,6 +160,10 @@ const SEO_BY_CAT = {
     title: "Best Energy Drinks 2025 – Ranked by Value | SmartStack",
     desc:  "Compare ready-to-drink energy drinks by real cost per serving. Independent rankings. No sponsored placements. Find the best deal on Amazon today.",
   },
+  "energy-gel": {
+    title: "Best Energy Gels 2025 – Ranked by Value | SmartStack",
+    desc:  "Compare energy gels by real cost per serving. Find the best value running and endurance gels ranked independently. No sponsored placements.",
+  }
 };
 
 /* ════════════════════════════════════════════════════════════════════════════

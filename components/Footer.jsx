@@ -189,7 +189,7 @@ export default function Footer() {
             </h3>
             <ul className="space-y-2.5">
               <NavLink href="/nutrition-label-scanner" arrow>Start a Scan</NavLink>
-              <NavLink href="/smartstack"              arrow>SmartStack</NavLink>
+              <NavLink href="/smartstack-compare"      arrow>SmartStack</NavLink>
               <NavLink href="/faq"                     arrow>FAQs</NavLink>
               <NavLink href="/info"                    arrow>Info &amp; About</NavLink>
             </ul>

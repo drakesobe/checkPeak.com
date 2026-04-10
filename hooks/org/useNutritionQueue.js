@@ -15,13 +15,8 @@ function clampPct(v) {
   return Math.max(0, Math.min(100, n));
 }
 
-// ─── These two helpers match exactly what /api/org/nutrition/table returns ────
-// table rows have: row.plan = { daily, phase, createdAt, ... } or null
-// table rows have: row.completion = { totalPct, mealPct, hydrationPct } or null
-
 function planOkFromRow(r) {
   const p = r?.plan;
-  // plan object exists AND has at least one meaningful field
   return Boolean(p && (p?.daily || p?.phase || p?.createdAt || p?.calories || p?.protein));
 }
 
@@ -37,10 +32,9 @@ const LOW_ADHERENCE_THRESHOLD = 65;
 function normalizeRow(r) {
   const planOk = planOkFromRow(r);
   const compOk = completionOkFromRow(r);
+  const avg    = clampPct(r?.adherenceAvg ?? r?.completion?.totalPct);
 
-  const avg = clampPct(r?.adherenceAvg ?? r?.completion?.totalPct);
-
-  const hasPlan        = planOk;                                        // ← what the page reads
+  const hasPlan        = planOk;
   const noPlan         = !planOk;
   const missingCheckin = !compOk;
   const lowAdherence   = avg != null && avg < LOW_ADHERENCE_THRESHOLD;
@@ -48,20 +42,16 @@ function normalizeRow(r) {
 
   return {
     ...r,
-    // ✅ hasPlan is what OrgNutritionQueuePage.getSubGroup() reads
     hasPlan,
     noPlan,
     missingCheckin,
     lowAdherence,
     needsAction,
     adherenceAvg: avg ?? r?.adherenceAvg ?? null,
-    actionReason: noPlan
-      ? "noPlan"
-      : missingCheckin
-      ? "missingCheckin"
-      : lowAdherence
-      ? "lowAdherence"
-      : "",
+    actionReason: noPlan         ? "noPlan"
+                : missingCheckin ? "missingCheckin"
+                : lowAdherence   ? "lowAdherence"
+                : "",
   };
 }
 
@@ -69,13 +59,13 @@ function normalizeCountsFromRows(rows = []) {
   const list = safeArray(rows);
   let noPlan = 0, missingCheckin = 0, lowAdherence = 0;
   for (const r of list) {
-    if (!r.hasPlan)        noPlan        += 1;
-    if (r.missingCheckin)  missingCheckin += 1;
-    if (r.lowAdherence)    lowAdherence   += 1;
+    if (!r.hasPlan)       noPlan        += 1;
+    if (r.missingCheckin) missingCheckin += 1;
+    if (r.lowAdherence)   lowAdherence   += 1;
   }
   return {
-    total: list.length,
-    needsAction: list.filter((r) => r.needsAction).length,
+    total:         list.length,
+    needsAction:   list.filter(r => r.needsAction).length,
     missingCheckin,
     lowAdherence,
     noPlan,
@@ -83,9 +73,9 @@ function normalizeCountsFromRows(rows = []) {
 }
 
 function normalizeMetaFromRows(rows = []) {
-  const list = safeArray(rows);
-  const sportsSet = new Set();
-  const teamsSet  = new Set();
+  const list       = safeArray(rows);
+  const sportsSet  = new Set();
+  const teamsSet   = new Set();
   const teamsBySport = {};
 
   for (const r of list) {
@@ -98,8 +88,7 @@ function normalizeMetaFromRows(rows = []) {
       if (!teamsBySport[sport].includes(team)) teamsBySport[sport].push(team);
     }
   }
-
-  Object.keys(teamsBySport).forEach((s) => {
+  Object.keys(teamsBySport).forEach(s => {
     teamsBySport[s].sort((a, b) => a.localeCompare(b));
   });
 
@@ -125,18 +114,16 @@ function makeEmpty() {
 const CACHE = { queue: { data: null, savedAt: 0 } };
 
 export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_000 } = {}) {
-  // Always start loading=true. Auth resolves fast (cookie-based) so the spinner
-  // is brief. The page redirects unauthed users before they'd see a stuck spinner.
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
   const [rows,    setRows]    = useState([]);
   const [counts,  setCounts]  = useState(makeEmpty().counts);
   const [meta,    setMeta]    = useState(makeEmpty().meta);
 
-  const mountedRef      = useRef(false);
-  const abortRef        = useRef(null);
-  const inflightRef     = useRef(null);
-  const requestSeqRef   = useRef(0);
+  const mountedRef       = useRef(false);
+  const abortRef         = useRef(null);
+  const inflightRef      = useRef(null);
+  const requestSeqRef    = useRef(0);
   const lastRefreshAtRef = useRef(0);
 
   useEffect(() => {
@@ -158,7 +145,7 @@ export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_
   }, []);
 
   const writeCache = useCallback((payload) => {
-    CACHE.queue.data   = payload;
+    CACHE.queue.data    = payload;
     CACHE.queue.savedAt = Date.now();
   }, []);
 
@@ -175,9 +162,9 @@ export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_
       setError("");
 
       abortRef.current?.abort();
-      const controller  = new AbortController();
-      abortRef.current  = controller;
-      const seq         = ++requestSeqRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const seq        = ++requestSeqRef.current;
 
       const p = (async () => {
         try {
@@ -187,11 +174,9 @@ export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_
           const json = await safeJson(res);
           if (!res.ok) throw new Error(json?.error || "Failed to load nutrition table.");
 
-          // ✅ normalizeRow adds hasPlan, noPlan, missingCheckin, lowAdherence
           const list = safeArray(json?.rows).map(normalizeRow);
-
-          const c = normalizeCountsFromRows(list);
-          const m = normalizeMetaFromRows(list);
+          const c    = normalizeCountsFromRows(list);
+          const m    = normalizeMetaFromRows(list);
 
           if (!mountedRef.current || seq !== requestSeqRef.current) return;
 
@@ -222,18 +207,19 @@ export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_
     [enabled, cacheTtlMs, hydrateFromCache, writeCache]
   );
 
-  // Trigger fetch whenever enabled becomes true (auth resolved).
-  // Using enabled as the sole dep means this fires exactly once when
-  // the user transitions from unauthenticated → authenticated.
+  // KEY FIX: when enabled is false (auth not yet ready), drop the loading
+  // spinner immediately rather than hanging on the skeleton indefinitely.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     if (swr) {
       const hadCache = hydrateFromCache();
       refresh({ silent: hadCache, force: true });
     } else {
       refresh({ silent: false, force: true });
     }
-    // intentionally omit refresh/hydrateFromCache — stable refs, don't need to retrigger
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
@@ -248,7 +234,10 @@ export function useNutritionQueue({ enabled = true, swr = true, cacheTtlMs = 60_
     return `Updated ${mins} mins ago`;
   }, [meta.generatedAt, rows?.length, counts?.total]);
 
-  const lastRefreshAt = useMemo(() => lastRefreshAtRef.current, [meta.generatedAt]);
+  const lastRefreshAt = useMemo(
+    () => lastRefreshAtRef.current,
+    [meta.generatedAt]
+  );
 
   const isStale = useMemo(() => {
     const savedAt = CACHE.queue.savedAt || 0;

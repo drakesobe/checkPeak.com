@@ -1,126 +1,151 @@
 // pages/athlete/today.jsx
+// Athlete command center — workout, schedule, nutrition in one scroll.
+// Body styling matches what WorkoutCard / NutritionCard expect (#F0F4F8 bg,
+// max-w-3xl / px-4 / space-y-4 container). Dark header preserved from original.
 "use client";
 
 import { useEffect, useMemo, useCallback, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
-import DateStrip from "@/components/athlete-today/DateStrip";
-import WorkoutCard from "@/components/athlete-today/WorkoutCard";
+import DateStrip         from "@/components/athlete-today/DateStrip";
+import WorkoutCard       from "@/components/athlete-today/WorkoutCard";
 import CompleteItemModal from "@/components/athlete-today/CompleteItemModal";
-import NutritionCard from "@/components/athlete-today/nutrition/NutritionCard";
-
+import NutritionCard     from "@/components/athlete-today/nutrition/NutritionCard";
 import { toISODateLocal, addDays } from "@/components/athlete-today/ui.jsx";
 
-import { useAthleteToday } from "@/hooks/athlete-today/useAthleteToday";
-import { useWorkoutCompletion } from "@/hooks/athlete-today/useWorkoutCompletion";
+import { useAthleteToday }          from "@/hooks/athlete-today/useAthleteToday";
+import { useWorkoutCompletion }      from "@/hooks/athlete-today/useWorkoutCompletion";
 import { useAthleteNutritionToday } from "@/hooks/athlete-today/useAthleteNutritionToday";
 
-import {
-  ChevronLeft,
-  Dumbbell,
-  Salad,
-  RefreshCw,
-  AlertCircle,
-} from "lucide-react";
+import { ChevronLeft, RefreshCw, Plus, X, Calendar } from "lucide-react";
 
-/* ─────────────────────────────────────────────────────────── helpers ── */
+// ─── CLASS SCHEDULE HELPERS ───────────────────────────────────────────────────
+const WEEK_DAYS = [
+  { idx: 1, short: "Mo", long: "Monday"    },
+  { idx: 2, short: "Tu", long: "Tuesday"   },
+  { idx: 3, short: "We", long: "Wednesday" },
+  { idx: 4, short: "Th", long: "Thursday"  },
+  { idx: 5, short: "Fr", long: "Friday"    },
+  { idx: 6, short: "Sa", long: "Saturday"  },
+  { idx: 0, short: "Su", long: "Sunday"    },
+];
 
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
+const DURATION_PRESETS = [
+  { label: "50 min", value: 50  },
+  { label: "75 min", value: 75  },
+  { label: "90 min", value: 90  },
+  { label: "3 hrs",  value: 180 },
+];
+
+function timeStrToMin(str) {
+  if (!str) return 9 * 60;
+  const [h, m] = str.split(":").map(Number);
+  return (isNaN(h) ? 9 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function minToTimeStr(min) {
+  const h = Math.floor((min ?? 540) / 60) % 24;
+  const m = (min ?? 540) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function formatTime(min) {
+  const h = Math.floor(min / 60) % 24;
+  const mn = min % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${dh}:${String(mn).padStart(2, "0")} ${ampm}`;
+}
+function classMatchesDate(cls, dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  const dow = d.getDay();
+  if (!Array.isArray(cls.days) || !cls.days.includes(dow)) return false;
+  if (cls.startDate && dateStr < cls.startDate) return false;
+  if (cls.endDate   && dateStr > cls.endDate)   return false;
+  return true;
+}
+function classesToday(schedules, dateStr) {
+  return (schedules || [])
+    .filter(cls => classMatchesDate(cls, dateStr))
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+function dayPattern(days) {
+  if (!Array.isArray(days) || !days.length) return "";
+  const SHORT = { 0: "Su", 1: "M", 2: "T", 3: "W", 4: "Th", 5: "F", 6: "Sa" };
+  return [...days]
+    .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+    .map(d => SHORT[d] || "?")
+    .join("/");
+}
+function formatDuration(min) {
+  if (min >= 60) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+  return `${min}m`;
 }
 
-function safeNum(v) {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-}
+// localStorage
+const lsClassKey = (tok) => `cp_classes:${tok}`;
+function lsGet(k) { try { return typeof window !== "undefined" ? localStorage.getItem(k) : null; } catch { return null; } }
+function lsSet(k, v) { try { if (typeof window !== "undefined") localStorage.setItem(k, v); } catch {} }
 
-function makeEmptyNutritionCompletion() {
+// Nutrition completion helpers
+function makeEmptyCompletion() {
   return {
-    breakfast:  { mealDone: false, hydrationDone: false },
-    lunch:      { mealDone: false, hydrationDone: false },
-    afternoon:  { mealDone: false, hydrationDone: false },
-    dinner:     { mealDone: false, hydrationDone: false },
+    breakfast: { mealDone: false, hydrationDone: false },
+    lunch:     { mealDone: false, hydrationDone: false },
+    afternoon: { mealDone: false, hydrationDone: false },
+    dinner:    { mealDone: false, hydrationDone: false },
   };
 }
-
-function computeNutritionCounts(nutritionCompletion) {
-  const c = nutritionCompletion && typeof nutritionCompletion === "object"
-    ? nutritionCompletion : {};
-  const keys = ["breakfast", "lunch", "afternoon", "dinner"];
-  let done = 0, total = 0;
-  for (const k of keys) {
-    const row = c?.[k] || {};
-    total += 2;
-    if (Boolean(row.mealDone))      done += 1;
-    if (Boolean(row.hydrationDone)) done += 1;
-  }
-  return { done, total };
-}
-
-function normalizeTab(v) {
-  const s = String(v || "").trim().toLowerCase();
-  return s === "nutrition" ? "nutrition" : "workout";
-}
-
-function lsSafeGet(key) {
-  try { if (typeof window === "undefined") return null; return window.localStorage.getItem(key); }
-  catch { return null; }
-}
-
-function lsSafeSet(key, value) {
-  try { if (typeof window === "undefined") return; window.localStorage.setItem(key, value); }
-  catch {}
-}
-
-function isPlainObj(v) { return v && typeof v === "object" && !Array.isArray(v); }
-
-function normalizeNutritionCompletionShape(raw) {
-  const base = makeEmptyNutritionCompletion();
-  if (!isPlainObj(raw)) return base;
-  const keys = ["breakfast", "lunch", "afternoon", "dinner"];
+function normalizeCompletion(raw) {
+  const base = makeEmptyCompletion();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return base;
   const out = { ...base };
-  for (const k of keys) {
-    const row = isPlainObj(raw?.[k]) ? raw[k] : {};
+  for (const k of Object.keys(base)) {
+    const row = (raw[k] && typeof raw[k] === "object") ? raw[k] : {};
     out[k] = { mealDone: Boolean(row.mealDone), hydrationDone: Boolean(row.hydrationDone) };
   }
   return out;
 }
+function computeNutritionCounts(comp) {
+  let done = 0, total = 0;
+  for (const k of Object.keys(makeEmptyCompletion())) {
+    total += 2;
+    if (comp?.[k]?.mealDone)      done++;
+    if (comp?.[k]?.hydrationDone) done++;
+  }
+  return { done, total };
+}
 
-/* ──────────────────────────────────────────────── Progress ring ── */
+function cx(...xs) { return xs.filter(Boolean).join(" "); }
 
-function ProgressRing({ done, total, size = 52, stroke = 4 }) {
-  const r      = (size - stroke) / 2;
-  const circ   = 2 * Math.PI * r;
-  const pct    = total > 0 ? Math.min(done / total, 1) : 0;
-  const offset = circ * (1 - pct);
+// ─── PROGRESS RING (same as original today.jsx) ────────────────────────────────
+function ProgressRing({ done, total, size = 40, stroke = 3.5 }) {
+  const r     = (size - stroke) / 2;
+  const circ  = 2 * Math.PI * r;
+  const pct   = total > 0 ? Math.min(done / total, 1) : 0;
   const allDone = total > 0 && done >= total;
-
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none"
-          stroke="rgba(255,255,255,0.10)"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none"
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none"
           stroke={allDone ? "#34d399" : "#7eb8e0"}
           strokeWidth={stroke}
           strokeDasharray={circ}
-          strokeDashoffset={offset}
+          strokeDashoffset={circ * (1 - pct)}
           strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1), stroke 0.4s ease" }}
+          style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1)" }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         {allDone ? (
-          <CheckCircleFill size={size * 0.38} />
+          <svg width={size * 0.38} height={size * 0.38} viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="10" fill="#34d399" opacity="0.25" />
+            <path d="M6 10.5l3 3 5-6" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         ) : (
           <>
             <span className="text-[13px] font-black text-white leading-none">{done}</span>
@@ -132,110 +157,370 @@ function ProgressRing({ done, total, size = 52, stroke = 4 }) {
   );
 }
 
-function CheckCircleFill({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
-      <circle cx="10" cy="10" r="10" fill="#34d399" opacity="0.25" />
-      <path d="M6 10.5l3 3 5-6" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/* ───────────────────────────────────────────────── Tab switcher ── */
-
-function TabBar({ value, onChange, workoutDone, workoutTotal, nutritionDone, nutritionTotal }) {
-  const tabs = [
-    {
-      id:    "workout",
-      label: "Workout",
-      icon:  <Dumbbell className="w-4 h-4" />,
-      done:  workoutDone,
-      total: workoutTotal,
-    },
-    {
-      id:    "nutrition",
-      label: "Nutrition",
-      icon:  <Salad className="w-4 h-4" />,
-      done:  nutritionDone,
-      total: nutritionTotal,
-    },
-  ];
+// ─── SCHEDULE SECTION ─────────────────────────────────────────────────────────
+// Styled as a card — matches WorkoutCard / NutritionCard visual language.
+function ScheduleSection({ selectedDate, classSchedules, onEditClass, onAddClass, onOpenPlanner }) {
+  const classes = useMemo(() => classesToday(classSchedules, selectedDate), [classSchedules, selectedDate]);
 
   return (
-    <div className="flex gap-1.5 bg-gray-100/80 p-1.5 rounded-2xl">
-      {tabs.map((t) => {
-        const active  = value === t.id;
-        const allDone = t.total > 0 && t.done >= t.total;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onChange(t.id)}
-            aria-pressed={active}
-            className={cx(
-              "flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-sm font-bold transition",
-              active
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-white/50"
-            )}
-          >
-            <span className={cx(active ? "text-[#1E3A5F]" : "text-gray-400")}>
-              {t.icon}
+    <div className="rounded-2xl overflow-hidden bg-white shadow-sm border border-gray-100">
+      {/* Card header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Schedule</span>
+          {classes.length > 0 && (
+            <span className="text-[11px] font-black bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">
+              {classes.length} today
             </span>
-            <span>{t.label}</span>
-            {t.total > 0 ? (
-              <span className={cx(
-                "ml-auto text-[11px] font-black rounded-full px-2 py-0.5 tabular-nums",
-                allDone
-                  ? "bg-emerald-100 text-emerald-700"
-                  : active
-                  ? "bg-[#1E3A5F]/10 text-[#1E3A5F]"
-                  : "bg-gray-200 text-gray-600"
-              )}>
-                {t.done}/{t.total}
-              </span>
-            ) : null}
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onAddClass}
+            className="flex items-center gap-1 text-[12px] font-semibold text-amber-600 hover:text-amber-700 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add class
           </button>
-        );
-      })}
+          <button
+            onClick={onOpenPlanner}
+            className="flex items-center gap-1 text-[12px] font-semibold text-gray-400 hover:text-gray-600 transition"
+          >
+            <Calendar className="w-3.5 h-3.5" /> Plan day
+          </button>
+        </div>
+      </div>
+
+      {/* Class rows */}
+      {classes.length === 0 ? (
+        <div className="px-4 py-5 text-center">
+          <p className="text-sm text-gray-400 mb-2">No classes today</p>
+          <button
+            onClick={onAddClass}
+            className="text-[13px] font-semibold text-amber-600 hover:text-amber-700 transition"
+          >
+            Set up your class schedule →
+          </button>
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {classes.map((cls) => {
+            const pat = dayPattern(cls.days);
+            return (
+              <button
+                key={cls.id}
+                type="button"
+                onClick={() => onEditClass(cls)}
+                className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 transition text-left"
+              >
+                {/* Time */}
+                <div className="flex-shrink-0 w-[72px]">
+                  <p className="text-[13px] font-bold text-amber-600 tabular-nums leading-tight">
+                    {formatTime(cls.startMinutes)}
+                  </p>
+                  <p className="text-[11px] text-gray-400 tabular-nums leading-tight mt-0.5">
+                    {formatTime(cls.startMinutes + cls.durationMinutes)}
+                  </p>
+                </div>
+
+                {/* Title + location */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[14px] font-semibold text-gray-900 truncate leading-tight">
+                      {cls.title}
+                    </span>
+                    {pat && (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                        {pat}
+                      </span>
+                    )}
+                  </div>
+                  {cls.notes && (
+                    <p className="text-[12px] text-gray-400 truncate">{cls.notes}</p>
+                  )}
+                </div>
+
+                {/* Duration */}
+                <span className="text-[11px] text-gray-300 flex-shrink-0 tabular-nums mt-0.5">
+                  {formatDuration(cls.durationMinutes)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-/* ────────────────────────────────────────────────────── Page ── */
+// ─── CLASS SCHEDULE MODAL ─────────────────────────────────────────────────────
+// Dark bottom sheet — overlays the light page, consistent with CompleteItemModal style.
+function ClassScheduleModal({ schedule, onSave, onDelete, onClose }) {
+  const [title,     setTitle]     = useState(schedule?.title           || "");
+  const [days,      setDays]      = useState(schedule?.days            || []);
+  const [startMin,  setStartMin]  = useState(schedule?.startMinutes    ?? 9 * 60);
+  const [duration,  setDuration]  = useState(schedule?.durationMinutes ?? 75);
+  const [customDur, setCustomDur] = useState(
+    schedule && !DURATION_PRESETS.find(p => p.value === schedule.durationMinutes)
+      ? String(schedule.durationMinutes) : ""
+  );
+  const [notes,     setNotes]     = useState(schedule?.notes           || "");
+  const [startDate, setStartDate] = useState(schedule?.startDate       || "");
+  const [endDate,   setEndDate]   = useState(schedule?.endDate         || "");
+  const inputRef = useRef(null);
 
+  useEffect(() => {
+    const fn = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  useEffect(() => {
+    const touch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    if (!touch && inputRef.current) {
+      const t = setTimeout(() => inputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  const effectiveDuration = customDur ? (parseInt(customDur, 10) || 0) : duration;
+  const canSave = title.trim().length > 0 && days.length > 0 && effectiveDuration >= 15;
+
+  const toggleDay = (idx) =>
+    setDays(prev => prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx].sort());
+
+  const daySummary = WEEK_DAYS
+    .filter(d => days.includes(d.idx))
+    .map(d => d.long.slice(0, 3))
+    .join(", ");
+
+  const save = () => {
+    if (!canSave) return;
+    onSave({
+      title:           title.trim(),
+      days,
+      startMinutes:    startMin,
+      durationMinutes: effectiveDuration,
+      notes:           notes.trim(),
+      startDate:       startDate || undefined,
+      endDate:         endDate   || undefined,
+    });
+  };
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="w-full bg-white rounded-t-2xl overflow-hidden"
+        style={{ maxWidth: 560, maxHeight: "92dvh", display: "flex", flexDirection: "column" }}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-8 h-1 bg-gray-200 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-0.5">
+              Class schedule
+            </p>
+            <p className="text-[19px] font-bold text-gray-900 leading-tight" style={{ letterSpacing: "-0.02em" }}>
+              {schedule ? "Edit class" : "Add class"}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Scrollable form */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+
+          {/* Class name */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Class name</label>
+            <input
+              ref={inputRef}
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") save(); }}
+              placeholder="Calculus 201, Sports Psychology, Film Studies..."
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[14px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
+            />
+          </div>
+
+          {/* Days */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Repeats on</label>
+            {daySummary && <p className="text-[12px] text-amber-600 font-semibold mb-2">{daySummary}</p>}
+            <div className="grid grid-cols-7 gap-1.5">
+              {WEEK_DAYS.map(({ idx, short }) => {
+                const active = days.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    className={cx(
+                      "py-2.5 rounded-lg text-[12px] font-bold transition",
+                      active
+                        ? "bg-amber-500 text-white"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    )}
+                  >
+                    {short}
+                  </button>
+                );
+              })}
+            </div>
+            {days.length === 0 && (
+              <p className="text-[11px] text-red-500 mt-1.5">Select at least one day</p>
+            )}
+          </div>
+
+          {/* Start time */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Start time</label>
+            <input
+              type="time"
+              value={minToTimeStr(startMin)}
+              onChange={e => setStartMin(timeStrToMin(e.target.value))}
+              className="px-3 py-2.5 rounded-xl border border-gray-200 text-[14px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
+              style={{ minWidth: 140 }}
+            />
+          </div>
+
+          {/* Duration */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Duration</label>
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              {DURATION_PRESETS.map(({ label, value }) => {
+                const active = !customDur && duration === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => { setDuration(value); setCustomDur(""); }}
+                    className={cx(
+                      "py-2.5 rounded-xl text-[12px] font-bold transition",
+                      active ? "bg-[#1E3A5F] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="15"
+                max="300"
+                value={customDur}
+                onChange={e => { setCustomDur(e.target.value); setDuration(0); }}
+                placeholder="Custom"
+                className="w-24 px-3 py-2 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
+              />
+              {customDur && <span className="text-[12px] text-gray-500">minutes</span>}
+            </div>
+          </div>
+
+          {/* Location / notes */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Location / notes</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Room 204, Johnson Hall · Prof. Williams..."
+              rows={2}
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50 resize-none leading-relaxed"
+            />
+          </div>
+
+          {/* Semester dates */}
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
+              Semester range <span className="text-gray-300 font-normal normal-case tracking-normal">— optional</span>
+            </label>
+            <p className="text-[11px] text-gray-400 mb-2">Leave blank to repeat every week indefinitely.</p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-[10px] text-gray-400 mb-1">Start</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] text-gray-400 mb-1">End</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions — sticky bottom */}
+        <div className="flex flex-shrink-0 border-t border-gray-100" style={{ paddingBottom: "env(safe-area-inset-bottom, 0)" }}>
+          {schedule && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="px-5 py-4 text-[13px] font-semibold text-red-500 hover:bg-red-50 transition border-r border-gray-100"
+            >
+              Remove
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={save}
+            disabled={!canSave}
+            className={cx(
+              "flex-1 py-4 text-[13px] font-bold transition",
+              canSave
+                ? "bg-amber-500 text-white hover:bg-amber-600"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            )}
+          >
+            {schedule ? "Save changes" : "Add to schedule"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function AthleteToday() {
   const router = useRouter();
   const { user, authReady } = useAuthContext();
 
-  /* ── Role ─────────────────────────────────────────────────────────────── */
+  // ── Auth ──────────────────────────────────────────────────────────────────
   const role = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
-    if (!raw) return "";
-    if (raw.includes("ath")) return "athlete";
-    return raw;
+    return raw.includes("ath") ? "athlete" : raw;
   }, [user]);
   const isAthlete = role === "athlete";
 
-  /* ── Tabs ─────────────────────────────────────────────────────────────── */
-  const tabFromUrl = useMemo(() => normalizeTab(router?.query?.tab), [router?.query?.tab]);
-  const [activeTab, setActiveTab] = useState("workout");
+  const athleteToken = useMemo(() =>
+    String(user?.AthleteToken || user?.athleteToken || user?.athlete_token || "").trim(),
+  [user]);
 
-  useEffect(() => { setActiveTab(tabFromUrl); }, [tabFromUrl]);
+  const firstName = String(user?.name || user?.Name || user?.firstName || "").split(" ")[0] || "Athlete";
 
-  const setTab = useCallback((next) => {
-    const t = normalizeTab(next);
-    setActiveTab(t);
-    try {
-      router.replace(
-        { pathname: router.pathname, query: { ...(router.query || {}), tab: t } },
-        undefined,
-        { shallow: true, scroll: false }
-      );
-    } catch {}
-  }, [router]);
-
-  /* ── Workout hook ─────────────────────────────────────────────────────── */
+  // ── Workout hook ──────────────────────────────────────────────────────────
   const {
     selectedDate, setSelectedDate,
     loading, dailyWorkout, items,
@@ -249,145 +534,160 @@ export default function AthleteToday() {
     submitCompletion, quickComplete, acknowledgeCompletion,
   } = useWorkoutCompletion({ selectedDate, reload, setErr });
 
-  /* ── Nutrition hook ───────────────────────────────────────────────────── */
+  // ── Nutrition hook ────────────────────────────────────────────────────────
   const nutrition = useAthleteNutritionToday({ authReady, user, isAthlete, selectedDate });
+  const dailyHydrationOz = nutrition.dailyHydrationOz ?? null;
 
-  const nutritionReload = nutrition.reload;
+  // ── Nutrition completion ──────────────────────────────────────────────────
+  const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyCompletion);
+  const nutritionKey = useMemo(() => {
+    const who = athleteToken || String(user?.Email || user?.email || "").trim().toLowerCase();
+    if (!who) return "";
+    return `checkpeak:nutritionCompletion:${who}:${selectedDate}`;
+  }, [athleteToken, user, selectedDate]);
+  const nutHydRef    = useRef(false);
+  const nutSaveTimer = useRef(null);
 
-  const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyNutritionCompletion);
-
-  // Key uses AthleteToken (the per-athlete unique ID) — never Token/token which is the shared org token.
-  // Checked capital-first to match the cookie field name set by requireAthlete.
-  const nutritionCompletionKey = useMemo(() => {
-    const athleteToken = String(
-      user?.AthleteToken || user?.athleteToken || user?.athlete_token || ""
-    ).trim();
-    const email = String(user?.Email || user?.email || "").trim().toLowerCase();
-    // If neither unique identifier is available, do NOT fall back to Token/token
-    // (that is the org-shared token and would make all athletes share the same key)
-    const who = athleteToken || email || "";
-    if (!who) return "";                        // no key = no read/write until identity is known
-    const day = String(selectedDate || "").trim() || "unknown-date";
-    return `checkpeak:nutritionCompletion:${who}:${day}`;
-  }, [user, selectedDate]);
-
-  const hydratingRef = useRef(false);
-
-  // Load completion: fetch from Airtable (source of truth) on mount.
-  // Fall back to localStorage while the fetch is in flight so the UI isn't empty.
   useEffect(() => {
     if (!authReady || !user || !isAthlete || !selectedDate) return;
-
-    hydratingRef.current = true;
-
-    // Show localStorage immediately while we wait for the API
-    if (nutritionCompletionKey) {
-      const cached = lsSafeGet(nutritionCompletionKey);
-      if (cached) {
-        try {
-          setNutritionCompletion(normalizeNutritionCompletionShape(JSON.parse(cached)));
-        } catch { /* ignore */ }
-      } else {
-        setNutritionCompletion(makeEmptyNutritionCompletion());
-      }
+    nutHydRef.current = true;
+    if (nutritionKey) {
+      const c = lsGet(nutritionKey);
+      setNutritionCompletion(c ? normalizeCompletion(JSON.parse(c)) : makeEmptyCompletion());
     }
-
-    // Fetch authoritative data from Airtable
     fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
-      method:      "GET",
-      credentials: "include",
+      method: "GET", credentials: "include",
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data?.ok) return;
-        // Only overwrite if Airtable actually has a record for today.
-        // If hasRecord is false, the athlete hasn't saved anything yet this session —
-        // keep whatever localStorage has (may include in-flight state from this session).
-        if (!data.hasRecord) return;
-        const normalized = normalizeNutritionCompletionShape(data.completion);
-        setNutritionCompletion(normalized);
-        if (nutritionCompletionKey) {
-          lsSafeSet(nutritionCompletionKey, JSON.stringify(normalized));
-        }
+        if (!data?.ok || !data.hasRecord) return;
+        const n = normalizeCompletion(data.completion);
+        setNutritionCompletion(n);
+        if (nutritionKey) lsSet(nutritionKey, JSON.stringify(n));
       })
-      .catch(() => { /* network error — localStorage value already shown */ })
-      .finally(() => {
-        setTimeout(() => { hydratingRef.current = false; }, 0);
-      });
-
+      .catch(() => {})
+      .finally(() => { setTimeout(() => { nutHydRef.current = false; }, 0); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user, isAthlete, selectedDate]);
 
-  // Write-through: persist to localStorage whenever completion changes (after hydration)
   useEffect(() => {
-    if (!authReady || !user || !isAthlete) return;
-    if (hydratingRef.current || !nutritionCompletionKey) return;
-    lsSafeSet(nutritionCompletionKey, JSON.stringify(normalizeNutritionCompletionShape(nutritionCompletion)));
-  }, [authReady, user, isAthlete, nutritionCompletionKey, nutritionCompletion]);
+    if (!authReady || !user || !isAthlete || !nutritionKey || nutHydRef.current) return;
+    lsSet(nutritionKey, JSON.stringify(nutritionCompletion));
+    clearTimeout(nutSaveTimer.current);
+    nutSaveTimer.current = setTimeout(() => {
+      fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completion: nutritionCompletion }),
+      }).catch(() => {});
+    }, 1000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nutritionCompletion]);
 
-  // hook already resolves this from all field variants (DailyHydration, hydrationOz, etc.)
-  const dailyHydrationOz = nutrition.dailyHydrationOz ?? null;
+  // ── Class schedules ───────────────────────────────────────────────────────
+  const [classSchedules, setClassSchedules] = useState([]);
+  const [classModal, setClassModal]         = useState(null);
+  const classSaveTimer = useRef(null);
 
-  /* ── Navigation ───────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!authReady || !isAthlete || !athleteToken) return;
+    const cached = lsGet(lsClassKey(athleteToken));
+    if (cached) { try { setClassSchedules(JSON.parse(cached)); } catch {} }
+    fetch("/api/athlete/class-schedule", { method: "GET", credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.ok || !Array.isArray(data.schedules)) return;
+        setClassSchedules(data.schedules);
+        lsSet(lsClassKey(athleteToken), JSON.stringify(data.schedules));
+      })
+      .catch(() => {});
+  }, [authReady, isAthlete, athleteToken]);
+
+  const saveClassSchedules = useCallback((schedules) => {
+    if (!athleteToken) return;
+    lsSet(lsClassKey(athleteToken), JSON.stringify(schedules));
+    clearTimeout(classSaveTimer.current);
+    classSaveTimer.current = setTimeout(() => {
+      fetch("/api/athlete/class-schedule", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedules }),
+      }).catch(() => {});
+    }, 800);
+  }, [athleteToken]);
+
+  const handleClassSave = useCallback((data) => {
+    setClassSchedules(prev => {
+      const isEdit = classModal?.schedule?.id;
+      const next = isEdit
+        ? prev.map(c => c.id === classModal.schedule.id ? { ...c, ...data } : c)
+        : [...prev, { id: `cls_${Date.now()}`, ...data }];
+      saveClassSchedules(next);
+      return next;
+    });
+    setClassModal(null);
+  }, [classModal, saveClassSchedules]);
+
+  const handleClassDelete = useCallback(() => {
+    if (!classModal?.schedule?.id) return;
+    setClassSchedules(prev => {
+      const next = prev.filter(c => c.id !== classModal.schedule.id);
+      saveClassSchedules(next);
+      return next;
+    });
+    setClassModal(null);
+  }, [classModal, saveClassSchedules]);
+
+  // ── Navigation ────────────────────────────────────────────────────────────
   const goPrev = useCallback(() =>
-    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))),
+    setSelectedDate(d => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))),
   [setSelectedDate]);
 
   const goNext = useCallback(() =>
-    setSelectedDate((d) => toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1))),
+    setSelectedDate(d => toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1))),
   [setSelectedDate]);
 
   const refresh = useCallback(() => {
     reload(selectedDate);
-    nutritionReload(selectedDate);
-  }, [reload, selectedDate, nutritionReload]);
+    nutrition.reload(selectedDate);
+  }, [reload, selectedDate, nutrition]);
 
-  /* ── Counts ───────────────────────────────────────────────────────────── */
+  // ── Counts ────────────────────────────────────────────────────────────────
   const nutritionCounts = useMemo(() => computeNutritionCounts(nutritionCompletion), [nutritionCompletion]);
-
   const workoutDone  = progress?.done  ?? 0;
   const workoutTotal = progress?.total ?? 0;
+  const totalDone    = workoutDone + nutritionCounts.done;
+  const totalItems   = workoutTotal + nutritionCounts.total;
 
-  /* ── Early returns ────────────────────────────────────────────────────── */
+  // ── Guards ────────────────────────────────────────────────────────────────
   if (!authReady) return null;
   if (!user)      return <div className="p-6 text-sm text-gray-600">Please log in.</div>;
   if (!isAthlete) return <div className="p-6 text-sm text-gray-600">Not authorized.</div>;
 
-  /* ── Derived values ───────────────────────────────────────────────────── */
-  const isSubmittingActiveItem = Boolean(submittingId && activeItem?.id === submittingId);
-  const firstName = String(user?.name || user?.Name || user?.firstName || "").split(" ")[0] || "Athlete";
-
+  // ── Derived ───────────────────────────────────────────────────────────────
   const canonicalItem = items?.find(i => String(i?.id || "") === String(activeItem?.id || ""));
-  const evRaw = String(
-    canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""
-  ).toLowerCase();
+  const evRaw = String(canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? "").toLowerCase();
   const evidenceRequired = evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara";
 
-  const totalDone  = workoutDone  + nutritionCounts.done;
-  const totalItems = workoutTotal + nutritionCounts.total;
-
-  /* ── Render ───────────────────────────────────────────────────────────── */
+  // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
 
-      {/* ── Dark hero header ── */}
-      <div style={{ backgroundColor: "#0F1E2E" }} className="relative overflow-hidden">
-        {/* Subtle diagonal texture */}
+      {/* ── DARK HERO HEADER — identical structure to original today.jsx ── */}
+      <div style={{ backgroundColor: "#0F1E2E" }} className="relative overflow-hidden sticky top-0 z-20">
+        {/* Texture */}
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)",
+            backgroundImage: "repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)",
             backgroundSize: "12px 12px",
           }}
         />
 
-        {/* ── Mobile: Option C — dates in nav bar, identity as secondary line ── */}
+        {/* Mobile layout */}
         <div className="relative sm:hidden">
-
-          {/* Row 1 — nav bar: back | date strip | ring | refresh */}
+          {/* Row 1 — back · date strip · ring · refresh */}
           <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-
-            {/* Back */}
             <button
               type="button"
               onClick={() => router.push("/dashboard")}
@@ -397,7 +697,6 @@ export default function AthleteToday() {
               <ChevronLeft className="w-5 h-5" />
             </button>
 
-            {/* Date strip — flex-1 so it owns the center of the bar */}
             <div className="flex-1 min-w-0">
               <DateStrip
                 loading={loading}
@@ -410,17 +709,10 @@ export default function AthleteToday() {
               />
             </div>
 
-            {/* Progress ring — only when there's something to track */}
             {totalItems > 0 && (
-              <ProgressRing
-                done={totalDone}
-                total={totalItems}
-                size={32}
-                stroke={3}
-              />
+              <ProgressRing done={totalDone} total={totalItems} size={32} stroke={3} />
             )}
 
-            {/* Refresh */}
             <button
               type="button"
               onClick={refresh}
@@ -432,79 +724,55 @@ export default function AthleteToday() {
             </button>
           </div>
 
-          {/* Row 2 — secondary identity line: name · workout title */}
+          {/* Row 2 — name · workout title */}
           <div className="flex items-center gap-1.5 px-4 pb-2.5 min-w-0">
-            <span className="text-[11px] font-black text-white/85 flex-shrink-0">
-              {firstName}
-            </span>
+            <span className="text-[11px] font-black text-white/85 flex-shrink-0">{firstName}</span>
             {dailyWorkout?.Title ? (
               <>
                 <span className="text-[10px] text-white/25 flex-shrink-0">·</span>
-                <span className="text-[11px] text-white/40 font-semibold truncate">
-                  {dailyWorkout.Title}
-                </span>
+                <span className="text-[11px] text-white/40 font-semibold truncate">{dailyWorkout.Title}</span>
               </>
             ) : null}
           </div>
         </div>
 
-        {/* ── Desktop: original spacious layout — unchanged ── */}
+        {/* Desktop layout */}
         <div className="hidden sm:block max-w-3xl mx-auto px-4 pt-6 pb-8">
-          {/* Top nav row */}
           <div className="flex items-center justify-between mb-7">
             <button
               type="button"
               onClick={() => router.push("/dashboard")}
               className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold"
             >
-              <ChevronLeft className="w-4 h-4" />
-              Back
+              <ChevronLeft className="w-4 h-4" /> Back
             </button>
-
             <button
               type="button"
               onClick={refresh}
               disabled={loading}
               className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold disabled:opacity-30"
-              title="Refresh"
             >
               <RefreshCw className={cx("w-4 h-4", loading ? "animate-spin" : "")} />
               {loading ? "Loading…" : "Refresh"}
             </button>
           </div>
 
-          {/* Identity + progress ring */}
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-white/55 text-[11px] font-black uppercase tracking-widest mb-1.5">
-                Today's Session
-              </p>
-              <h1 className="text-white text-2xl sm:text-3xl font-black leading-tight truncate">
-                {firstName}
-              </h1>
-              {dailyWorkout?.Title ? (
-                <p className="text-white/65 text-sm font-semibold mt-1.5 truncate">
-                  {dailyWorkout.Title}
-                </p>
-              ) : null}
+              <p className="text-white/55 text-[11px] font-black uppercase tracking-widest mb-1.5">Today's Session</p>
+              <h1 className="text-white text-2xl sm:text-3xl font-black leading-tight truncate">{firstName}</h1>
+              {dailyWorkout?.Title && (
+                <p className="text-white/65 text-sm font-semibold mt-1.5 truncate">{dailyWorkout.Title}</p>
+              )}
             </div>
-
-            {totalItems > 0 ? (
+            {totalItems > 0 && (
               <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
-                <ProgressRing
-                  done={totalDone}
-                  total={totalItems}
-                  size={60}
-                  stroke={5}
-                />
-                <span className="text-[11px] text-white/50 font-bold uppercase tracking-widest">
-                  Today
-                </span>
+                <ProgressRing done={totalDone} total={totalItems} size={60} stroke={5} />
+                <span className="text-[11px] text-white/50 font-bold uppercase tracking-widest">Today</span>
               </div>
-            ) : null}
+            )}
           </div>
 
-          {/* Date strip */}
           <div className="mt-5">
             <DateStrip
               loading={loading}
@@ -519,94 +787,94 @@ export default function AthleteToday() {
         </div>
       </div>
 
-      {/* ── Content area ── */}
+      {/* ── CONTENT — same max-w / px-4 / space-y pattern as original ── */}
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
 
         {/* Error banner */}
-        {err ? (
+        {err && (
           <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-            <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             <p className="text-sm text-red-700 font-semibold">{err}</p>
           </div>
-        ) : null}
+        )}
 
-        {/* Tab switcher */}
-        <TabBar
-          value={activeTab}
-          onChange={setTab}
-          workoutDone={workoutDone}
-          workoutTotal={workoutTotal}
-          nutritionDone={nutritionCounts.done}
-          nutritionTotal={nutritionCounts.total}
+        {/* Workout */}
+        <WorkoutCard
+          loading={loading}
+          dailyWorkout={dailyWorkout}
+          items={items}
+          onUpload={openModal}
+          onQuickComplete={quickComplete}
+          submittingId={submittingId}
+          acknowledgingId={acknowledgingId}
+          optimisticStatusById={optimisticStatusById}
+          onAcknowledge={({ completionId, workoutItemId }) =>
+            acknowledgeCompletion({ completionId, workoutItemId })
+          }
         />
 
-        {/* Workout tab */}
-        {activeTab === "workout" ? (
-          <>
-            <WorkoutCard
-              loading={loading}
-              dailyWorkout={dailyWorkout}
-              items={items}
-              onUpload={openModal}
-              onQuickComplete={quickComplete}
-              submittingId={submittingId}
-              acknowledgingId={acknowledgingId}
-              optimisticStatusById={optimisticStatusById}
-              onAcknowledge={({ completionId, workoutItemId }) =>
-                acknowledgeCompletion({ completionId, workoutItemId })
-              }
-            />
+        {/* Schedule — card that fits between WorkoutCard and NutritionCard */}
+        <ScheduleSection
+          selectedDate={selectedDate}
+          classSchedules={classSchedules}
+          onEditClass={(cls) => setClassModal({ schedule: cls })}
+          onAddClass={() => setClassModal({ schedule: null })}
+          onOpenPlanner={() => router.push("/athlete/day")}
+        />
 
-            <CompleteItemModal
-              open={modalOpen}
-              item={activeItem}
-              selectedFile={selectedFile}
-              coachNote={coachNote}
-              submitting={isSubmittingActiveItem}
-              onClose={closeModal}
-              onPickFile={setSelectedFile}
-              onChangeNote={setCoachNote}
-              evidenceRequiredOverride={evidenceRequired}
-              onSubmit={() => {
-                if (evidenceRequired && !selectedFile) return;
-                submitCompletion({
-                  workoutItemId:    String(activeItem?.id || ""),
-                  evidenceRequired: String(
-                    canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""
-                  ),
-                  dailyWorkoutId: String(
-                    dailyWorkout?.id || dailyWorkout?.ID || dailyWorkout?.recordId || ""
-                  ),
-                });
-              }}
-            />
-          </>
-        ) : null}
+        {/* Nutrition */}
+        <NutritionCard
+          loading={nutrition.loading}
+          err={nutrition.err}
+          hasPlan={nutrition.hasPlan}
+          daily={nutrition.daily}
+          mealBlocks={nutrition.mealBlocks}
+          planJson={nutrition.planJson}
+          selectedDate={selectedDate}
+          effectiveDate={nutrition.effectiveDate}
+          nextPlan={nutrition.nextPlan}
+          isFuture={nutrition.isFuture}
+          message={nutrition.message}
+          onRefresh={() => nutrition.reload(selectedDate)}
+          onOpenNutrition={() => router.push("/athlete/nutrition")}
+          dailyHydrationOz={dailyHydrationOz}
+          nutritionCompletion={nutritionCompletion}
+          onCompletionChange={(next) => setNutritionCompletion(normalizeCompletion(next))}
+        />
 
-        {/* Nutrition tab */}
-        {activeTab === "nutrition" ? (
-          <NutritionCard
-            loading={nutrition.loading}
-            err={nutrition.err}
-            hasPlan={nutrition.hasPlan}
-            daily={nutrition.daily}
-            mealBlocks={nutrition.mealBlocks}
-            planJson={nutrition.planJson}
-            selectedDate={selectedDate}
-            effectiveDate={nutrition.effectiveDate}
-            nextPlan={nutrition.nextPlan}
-            isFuture={nutrition.isFuture}
-            message={nutrition.message}
-            onRefresh={() => nutritionReload(selectedDate)}
-            onOpenNutrition={() => router.push("/athlete/nutrition")}
-            dailyHydrationOz={dailyHydrationOz}
-            nutritionCompletion={nutritionCompletion}
-            onCompletionChange={(next) =>
-              setNutritionCompletion(normalizeNutritionCompletionShape(next))
-            }
-          />
-        ) : null}
+        {/* Future sections — leaderboard, activity feed, etc. */}
+        {/* <LeaderboardSection selectedDate={selectedDate} /> */}
+
       </div>
+
+      {/* ── MODALS ── */}
+      <CompleteItemModal
+        open={modalOpen}
+        item={activeItem}
+        selectedFile={selectedFile}
+        coachNote={coachNote}
+        submitting={Boolean(submittingId && activeItem?.id === submittingId)}
+        onClose={closeModal}
+        onPickFile={setSelectedFile}
+        onChangeNote={setCoachNote}
+        evidenceRequiredOverride={evidenceRequired}
+        onSubmit={() => {
+          if (evidenceRequired && !selectedFile) return;
+          submitCompletion({
+            workoutItemId:    String(activeItem?.id || ""),
+            evidenceRequired: String(canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? ""),
+            dailyWorkoutId:   String(dailyWorkout?.id || dailyWorkout?.ID || dailyWorkout?.recordId || ""),
+          });
+        }}
+      />
+
+      {classModal !== null && (
+        <ClassScheduleModal
+          schedule={classModal.schedule}
+          onSave={handleClassSave}
+          onDelete={classModal.schedule ? handleClassDelete : undefined}
+          onClose={() => setClassModal(null)}
+        />
+      )}
     </div>
   );
 }

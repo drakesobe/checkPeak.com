@@ -154,7 +154,7 @@ function PilotButton({ source, size = "md" }) {
       onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.15)"; }}
       onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
     >
-      Request a pilot
+      START YOUR PILOT
       <svg width={lg ? 18 : 15} height={lg ? 18 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <line x1="5" y1="12" x2="19" y2="12"/>
         <polyline points="12 5 19 12 12 19"/>
@@ -278,8 +278,8 @@ function Hero() {
             textShadow:    "0 2px 40px rgba(0,0,0,0.6)",
           }}
         >
-          When athletes<br />leave campus,<br />
-          <span style={{ color: ACCENT }}>you still know.</span>
+          Stop guessing<br />
+          <span style={{ color: ACCENT }}></span>
         </motion.h1>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.7 }}>
@@ -290,7 +290,7 @@ function Hero() {
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 1.1 }}
           style={{ marginTop: "1.1rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}
         >
-          30 days free · No credit card required
+          30 days free · No card required
         </motion.p>
       </motion.div>
 

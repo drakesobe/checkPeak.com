@@ -278,7 +278,7 @@ function Hero() {
             textShadow:    "0 2px 40px rgba(0,0,0,0.6)",
           }}
         >
-          Stop guessing<br />
+          Stop guessing.<br />
           <span style={{ color: ACCENT }}></span>
         </motion.h1>
 

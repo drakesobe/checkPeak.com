@@ -6,9 +6,9 @@ import Link from "next/link";
 /* Static data                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const LAST_UPDATED  = "January 15, 2025";
-const EFFECTIVE     = "January 15, 2025";
-const CONTACT_EMAIL = "hello@checkpeak.app";
+const LAST_UPDATED  = "January 15, 2026";
+const EFFECTIVE     = "January 15, 2026";
+const CONTACT_EMAIL = "support@checkpeak.com";
 
 const SECTIONS = [
   {

@@ -1,7 +1,5 @@
 // pages/athlete/today.jsx
 // Athlete command center — workout, schedule, nutrition in one scroll.
-// Body styling matches what WorkoutCard / NutritionCard expect (#F0F4F8 bg,
-// max-w-3xl / px-4 / space-y-4 container). Dark header preserved from original.
 "use client";
 
 import { useEffect, useMemo, useCallback, useState, useRef } from "react";
@@ -85,12 +83,10 @@ function formatDuration(min) {
   return `${min}m`;
 }
 
-// localStorage
 const lsClassKey = (tok) => `cp_classes:${tok}`;
 function lsGet(k) { try { return typeof window !== "undefined" ? localStorage.getItem(k) : null; } catch { return null; } }
 function lsSet(k, v) { try { if (typeof window !== "undefined") localStorage.setItem(k, v); } catch {} }
 
-// Nutrition completion helpers
 function makeEmptyCompletion() {
   return {
     breakfast: { mealDone: false, hydrationDone: false },
@@ -121,7 +117,7 @@ function computeNutritionCounts(comp) {
 
 function cx(...xs) { return xs.filter(Boolean).join(" "); }
 
-// ─── PROGRESS RING (same as original today.jsx) ────────────────────────────────
+// ─── PROGRESS RING ────────────────────────────────────────────────────────────
 function ProgressRing({ done, total, size = 40, stroke = 3.5 }) {
   const r     = (size - stroke) / 2;
   const circ  = 2 * Math.PI * r;
@@ -133,10 +129,8 @@ function ProgressRing({ done, total, size = 40, stroke = 3.5 }) {
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth={stroke} />
         <circle cx={size/2} cy={size/2} r={r} fill="none"
           stroke={allDone ? "#34d399" : "#7eb8e0"}
-          strokeWidth={stroke}
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - pct)}
-          strokeLinecap="round"
+          strokeWidth={stroke} strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - pct)} strokeLinecap="round"
           style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1)" }}
         />
       </svg>
@@ -158,13 +152,10 @@ function ProgressRing({ done, total, size = 40, stroke = 3.5 }) {
 }
 
 // ─── SCHEDULE SECTION ─────────────────────────────────────────────────────────
-// Styled as a card — matches WorkoutCard / NutritionCard visual language.
 function ScheduleSection({ selectedDate, classSchedules, onEditClass, onAddClass, onOpenPlanner }) {
   const classes = useMemo(() => classesToday(classSchedules, selectedDate), [classSchedules, selectedDate]);
-
   return (
     <div className="rounded-2xl overflow-hidden bg-white shadow-sm border border-gray-100">
-      {/* Card header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black uppercase tracking-widest text-gray-400">Schedule</span>
@@ -175,29 +166,18 @@ function ScheduleSection({ selectedDate, classSchedules, onEditClass, onAddClass
           )}
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={onAddClass}
-            className="flex items-center gap-1 text-[12px] font-semibold text-amber-600 hover:text-amber-700 transition"
-          >
+          <button onClick={onAddClass} className="flex items-center gap-1 text-[12px] font-semibold text-amber-600 hover:text-amber-700 transition">
             <Plus className="w-3.5 h-3.5" /> Add class
           </button>
-          <button
-            onClick={onOpenPlanner}
-            className="flex items-center gap-1 text-[12px] font-semibold text-gray-400 hover:text-gray-600 transition"
-          >
+          <button onClick={onOpenPlanner} className="flex items-center gap-1 text-[12px] font-semibold text-gray-400 hover:text-gray-600 transition">
             <Calendar className="w-3.5 h-3.5" /> Plan day
           </button>
         </div>
       </div>
-
-      {/* Class rows */}
       {classes.length === 0 ? (
         <div className="px-4 py-5 text-center">
           <p className="text-sm text-gray-400 mb-2">No classes today</p>
-          <button
-            onClick={onAddClass}
-            className="text-[13px] font-semibold text-amber-600 hover:text-amber-700 transition"
-          >
+          <button onClick={onAddClass} className="text-[13px] font-semibold text-amber-600 hover:text-amber-700 transition">
             Set up your class schedule →
           </button>
         </div>
@@ -206,43 +186,20 @@ function ScheduleSection({ selectedDate, classSchedules, onEditClass, onAddClass
           {classes.map((cls) => {
             const pat = dayPattern(cls.days);
             return (
-              <button
-                key={cls.id}
-                type="button"
-                onClick={() => onEditClass(cls)}
-                className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 transition text-left"
-              >
-                {/* Time */}
+              <button key={cls.id} type="button" onClick={() => onEditClass(cls)}
+                className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 transition text-left">
                 <div className="flex-shrink-0 w-[72px]">
-                  <p className="text-[13px] font-bold text-amber-600 tabular-nums leading-tight">
-                    {formatTime(cls.startMinutes)}
-                  </p>
-                  <p className="text-[11px] text-gray-400 tabular-nums leading-tight mt-0.5">
-                    {formatTime(cls.startMinutes + cls.durationMinutes)}
-                  </p>
+                  <p className="text-[13px] font-bold text-amber-600 tabular-nums leading-tight">{formatTime(cls.startMinutes)}</p>
+                  <p className="text-[11px] text-gray-400 tabular-nums leading-tight mt-0.5">{formatTime(cls.startMinutes + cls.durationMinutes)}</p>
                 </div>
-
-                {/* Title + location */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[14px] font-semibold text-gray-900 truncate leading-tight">
-                      {cls.title}
-                    </span>
-                    {pat && (
-                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">
-                        {pat}
-                      </span>
-                    )}
+                    <span className="text-[14px] font-semibold text-gray-900 truncate leading-tight">{cls.title}</span>
+                    {pat && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">{pat}</span>}
                   </div>
-                  {cls.notes && (
-                    <p className="text-[12px] text-gray-400 truncate">{cls.notes}</p>
-                  )}
+                  {cls.notes && <p className="text-[12px] text-gray-400 truncate">{cls.notes}</p>}
                 </div>
-
-                {/* Duration */}
-                <span className="text-[11px] text-gray-300 flex-shrink-0 tabular-nums mt-0.5">
-                  {formatDuration(cls.durationMinutes)}
-                </span>
+                <span className="text-[11px] text-gray-300 flex-shrink-0 tabular-nums mt-0.5">{formatDuration(cls.durationMinutes)}</span>
               </button>
             );
           })}
@@ -253,7 +210,6 @@ function ScheduleSection({ selectedDate, classSchedules, onEditClass, onAddClass
 }
 
 // ─── CLASS SCHEDULE MODAL ─────────────────────────────────────────────────────
-// Dark bottom sheet — overlays the light page, consistent with CompleteItemModal style.
 function ClassScheduleModal({ schedule, onSave, onDelete, onClose }) {
   const [title,     setTitle]     = useState(schedule?.title           || "");
   const [days,      setDays]      = useState(schedule?.days            || []);
@@ -284,78 +240,46 @@ function ClassScheduleModal({ schedule, onSave, onDelete, onClose }) {
 
   const effectiveDuration = customDur ? (parseInt(customDur, 10) || 0) : duration;
   const canSave = title.trim().length > 0 && days.length > 0 && effectiveDuration >= 15;
-
   const toggleDay = (idx) =>
     setDays(prev => prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx].sort());
-
-  const daySummary = WEEK_DAYS
-    .filter(d => days.includes(d.idx))
-    .map(d => d.long.slice(0, 3))
-    .join(", ");
-
+  const daySummary = WEEK_DAYS.filter(d => days.includes(d.idx)).map(d => d.long.slice(0, 3)).join(", ");
   const save = () => {
     if (!canSave) return;
     onSave({
-      title:           title.trim(),
-      days,
-      startMinutes:    startMin,
-      durationMinutes: effectiveDuration,
-      notes:           notes.trim(),
-      startDate:       startDate || undefined,
-      endDate:         endDate   || undefined,
+      title: title.trim(), days, startMinutes: startMin,
+      durationMinutes: effectiveDuration, notes: notes.trim(),
+      startDate: startDate || undefined, endDate: endDate || undefined,
     });
   };
 
   return (
-    <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       className="fixed inset-0 z-50 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
-    >
-      <div
-        className="w-full bg-white rounded-t-2xl overflow-hidden"
-        style={{ maxWidth: 560, maxHeight: "92dvh", display: "flex", flexDirection: "column" }}
-      >
-        {/* Handle */}
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full bg-white rounded-t-2xl overflow-hidden"
+        style={{ maxWidth: 560, maxHeight: "92dvh", display: "flex", flexDirection: "column" }}>
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-8 h-1 bg-gray-200 rounded-full" />
         </div>
-
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-0.5">
-              Class schedule
-            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-0.5">Class schedule</p>
             <p className="text-[19px] font-bold text-gray-900 leading-tight" style={{ letterSpacing: "-0.02em" }}>
               {schedule ? "Edit class" : "Add class"}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition"
-          >
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition">
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Scrollable form */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-
-          {/* Class name */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Class name</label>
-            <input
-              ref={inputRef}
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+            <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") save(); }}
               placeholder="Calculus 201, Sports Psychology, Film Studies..."
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[14px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
-            />
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[14px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50" />
           </div>
-
-          {/* Days */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Repeats on</label>
             {daySummary && <p className="text-[12px] text-amber-600 font-semibold mb-2">{daySummary}</p>}
@@ -363,87 +287,50 @@ function ClassScheduleModal({ schedule, onSave, onDelete, onClose }) {
               {WEEK_DAYS.map(({ idx, short }) => {
                 const active = days.includes(idx);
                 return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => toggleDay(idx)}
-                    className={cx(
-                      "py-2.5 rounded-lg text-[12px] font-bold transition",
-                      active
-                        ? "bg-amber-500 text-white"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    )}
-                  >
+                  <button key={idx} type="button" onClick={() => toggleDay(idx)}
+                    className={cx("py-2.5 rounded-lg text-[12px] font-bold transition",
+                      active ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
                     {short}
                   </button>
                 );
               })}
             </div>
-            {days.length === 0 && (
-              <p className="text-[11px] text-red-500 mt-1.5">Select at least one day</p>
-            )}
+            {days.length === 0 && <p className="text-[11px] text-red-500 mt-1.5">Select at least one day</p>}
           </div>
-
-          {/* Start time */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Start time</label>
-            <input
-              type="time"
-              value={minToTimeStr(startMin)}
-              onChange={e => setStartMin(timeStrToMin(e.target.value))}
+            <input type="time" value={minToTimeStr(startMin)} onChange={e => setStartMin(timeStrToMin(e.target.value))}
               className="px-3 py-2.5 rounded-xl border border-gray-200 text-[14px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
-              style={{ minWidth: 140 }}
-            />
+              style={{ minWidth: 140 }} />
           </div>
-
-          {/* Duration */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Duration</label>
             <div className="grid grid-cols-4 gap-2 mb-2">
               {DURATION_PRESETS.map(({ label, value }) => {
                 const active = !customDur && duration === value;
                 return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => { setDuration(value); setCustomDur(""); }}
-                    className={cx(
-                      "py-2.5 rounded-xl text-[12px] font-bold transition",
-                      active ? "bg-[#1E3A5F] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    )}
-                  >
+                  <button key={value} type="button" onClick={() => { setDuration(value); setCustomDur(""); }}
+                    className={cx("py-2.5 rounded-xl text-[12px] font-bold transition",
+                      active ? "bg-[#1E3A5F] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
                     {label}
                   </button>
                 );
               })}
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="15"
-                max="300"
-                value={customDur}
+              <input type="number" min="15" max="300" value={customDur}
                 onChange={e => { setCustomDur(e.target.value); setDuration(0); }}
                 placeholder="Custom"
-                className="w-24 px-3 py-2 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
-              />
+                className="w-24 px-3 py-2 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50" />
               {customDur && <span className="text-[12px] text-gray-500">minutes</span>}
             </div>
           </div>
-
-          {/* Location / notes */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Location / notes</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Room 204, Johnson Hall · Prof. Williams..."
-              rows={2}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50 resize-none leading-relaxed"
-            />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Room 204, Johnson Hall · Prof. Williams..." rows={2}
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-[13px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50 resize-none leading-relaxed" />
           </div>
-
-          {/* Semester dates */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
               Semester range <span className="text-gray-300 font-normal normal-case tracking-normal">— optional</span>
@@ -452,48 +339,27 @@ function ClassScheduleModal({ schedule, onSave, onDelete, onClose }) {
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="block text-[10px] text-gray-400 mb-1">Start</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
-                />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50" />
               </div>
               <div className="flex-1">
                 <label className="block text-[10px] text-gray-400 mb-1">End</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50"
-                />
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-900 focus:outline-none focus:border-amber-400 transition bg-gray-50" />
               </div>
             </div>
           </div>
         </div>
-
-        {/* Actions — sticky bottom */}
         <div className="flex flex-shrink-0 border-t border-gray-100" style={{ paddingBottom: "env(safe-area-inset-bottom, 0)" }}>
           {schedule && (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="px-5 py-4 text-[13px] font-semibold text-red-500 hover:bg-red-50 transition border-r border-gray-100"
-            >
+            <button type="button" onClick={onDelete}
+              className="px-5 py-4 text-[13px] font-semibold text-red-500 hover:bg-red-50 transition border-r border-gray-100">
               Remove
             </button>
           )}
-          <button
-            type="button"
-            onClick={save}
-            disabled={!canSave}
-            className={cx(
-              "flex-1 py-4 text-[13px] font-bold transition",
-              canSave
-                ? "bg-amber-500 text-white hover:bg-amber-600"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            )}
-          >
+          <button type="button" onClick={save} disabled={!canSave}
+            className={cx("flex-1 py-4 text-[13px] font-bold transition",
+              canSave ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-gray-100 text-gray-400 cursor-not-allowed")}>
             {schedule ? "Save changes" : "Add to schedule"}
           </button>
         </div>
@@ -507,7 +373,6 @@ export default function AthleteToday() {
   const router = useRouter();
   const { user, authReady } = useAuthContext();
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const role = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
     return raw.includes("ath") ? "athlete" : raw;
@@ -520,7 +385,7 @@ export default function AthleteToday() {
 
   const firstName = String(user?.name || user?.Name || user?.firstName || "").split(" ")[0] || "Athlete";
 
-  // ── Workout hook ──────────────────────────────────────────────────────────
+  // ── Workout ───────────────────────────────────────────────────────────────
   const {
     selectedDate, setSelectedDate,
     loading, dailyWorkout, items,
@@ -534,47 +399,78 @@ export default function AthleteToday() {
     submitCompletion, quickComplete, acknowledgeCompletion,
   } = useWorkoutCompletion({ selectedDate, reload, setErr });
 
-  // ── Nutrition hook ────────────────────────────────────────────────────────
+  // ── Nutrition ─────────────────────────────────────────────────────────────
   const nutrition = useAthleteNutritionToday({ authReady, user, isAthlete, selectedDate });
   const dailyHydrationOz = nutrition.dailyHydrationOz ?? null;
 
   // ── Nutrition completion ──────────────────────────────────────────────────
   const [nutritionCompletion, setNutritionCompletion] = useState(makeEmptyCompletion);
+
   const nutritionKey = useMemo(() => {
     const who = athleteToken || String(user?.Email || user?.email || "").trim().toLowerCase();
     if (!who) return "";
     return `checkpeak:nutritionCompletion:${who}:${selectedDate}`;
   }, [athleteToken, user, selectedDate]);
-  const nutHydRef    = useRef(false);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // nutHydRef (true = hydrating, block all saves)
+  //   Starts TRUE so the save effect cannot fire before the very first GET
+  //   has even started — eliminates the entire class of "empty write on mount"
+  //   race conditions regardless of React StrictMode double-invoke or auth
+  //   re-checks.
+  //
+  // nutHydIdRef (monotonic counter — cancellation token)
+  //   Each hydration cycle claims a unique ID. The .finally block only
+  //   releases the lock when its ID is still current. This prevents a stale
+  //   GET (from a previous selectedDate or a StrictMode ghost run) from
+  //   prematurely setting nutHydRef=false and unblocking the save effect
+  //   while a newer GET is still in flight.
+  // ─────────────────────────────────────────────────────────────────────────
+  const nutHydRef   = useRef(true); // ← TRUE, not false
+  const nutHydIdRef = useRef(0);    // cancellation token
   const nutSaveTimer = useRef(null);
 
+  // Hydration effect — reads cache immediately, then authoritative GET.
   useEffect(() => {
     if (!authReady || !user || !isAthlete || !selectedDate) return;
+
+    // Claim this cycle; any previous in-flight GET becomes stale.
+    const myId = ++nutHydIdRef.current;
     nutHydRef.current = true;
+
     if (nutritionKey) {
       const c = lsGet(nutritionKey);
       setNutritionCompletion(c ? normalizeCompletion(JSON.parse(c)) : makeEmptyCompletion());
     }
+
     fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
       method: "GET", credentials: "include",
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data?.ok || !data.hasRecord) return;
+        if (myId !== nutHydIdRef.current) return; // stale — a newer cycle owns the lock
+        if (!data?.ok || !data.hasRecord) return; // no record yet, keep localStorage state
         const n = normalizeCompletion(data.completion);
         setNutritionCompletion(n);
         if (nutritionKey) lsSet(nutritionKey, JSON.stringify(n));
       })
       .catch(() => {})
-      .finally(() => { setTimeout(() => { nutHydRef.current = false; }, 0); });
+      .finally(() => {
+        if (myId !== nutHydIdRef.current) return; // stale — do NOT release the lock
+        nutHydRef.current = false; // release: saves are now allowed
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user, isAthlete, selectedDate]);
 
+  // Save effect — only runs after hydration completes.
+  // The inner setTimeout guard re-checks nutHydRef so a hydration that
+  // starts during the 1-second debounce window also gets blocked.
   useEffect(() => {
     if (!authReady || !user || !isAthlete || !nutritionKey || nutHydRef.current) return;
     lsSet(nutritionKey, JSON.stringify(nutritionCompletion));
     clearTimeout(nutSaveTimer.current);
     nutSaveTimer.current = setTimeout(() => {
+      if (nutHydRef.current) return; // new hydration started during debounce — abort
       fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -642,11 +538,9 @@ export default function AthleteToday() {
   const goPrev = useCallback(() =>
     setSelectedDate(d => toISODateLocal(addDays(new Date(`${d}T12:00:00`), -1))),
   [setSelectedDate]);
-
   const goNext = useCallback(() =>
     setSelectedDate(d => toISODateLocal(addDays(new Date(`${d}T12:00:00`), 1))),
   [setSelectedDate]);
-
   const refresh = useCallback(() => {
     reload(selectedDate);
     nutrition.reload(selectedDate);
@@ -664,67 +558,35 @@ export default function AthleteToday() {
   if (!user)      return <div className="p-6 text-sm text-gray-600">Please log in.</div>;
   if (!isAthlete) return <div className="p-6 text-sm text-gray-600">Not authorized.</div>;
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const canonicalItem = items?.find(i => String(i?.id || "") === String(activeItem?.id || ""));
   const evRaw = String(canonicalItem?.EvidenceRequired ?? activeItem?.EvidenceRequired ?? "").toLowerCase();
   const evidenceRequired = evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara";
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
 
-      {/* ── DARK HERO HEADER — identical structure to original today.jsx ── */}
       <div style={{ backgroundColor: "#0F1E2E" }} className="relative overflow-hidden sticky top-0 z-20">
-        {/* Texture */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: "repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)",
-            backgroundSize: "12px 12px",
-          }}
-        />
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: "repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)", backgroundSize: "12px 12px" }} />
 
-        {/* Mobile layout */}
+        {/* Mobile */}
         <div className="relative sm:hidden">
-          {/* Row 1 — back · date strip · ring · refresh */}
           <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="flex-shrink-0 flex items-center text-white/55 hover:text-white transition"
-              aria-label="Back to dashboard"
-            >
+            <button type="button" onClick={() => router.push("/dashboard")}
+              className="flex-shrink-0 flex items-center text-white/55 hover:text-white transition" aria-label="Back to dashboard">
               <ChevronLeft className="w-5 h-5" />
             </button>
-
             <div className="flex-1 min-w-0">
-              <DateStrip
-                loading={loading}
-                selectedDate={selectedDate}
-                dateStrip={dateStrip}
-                onPrev={goPrev}
-                onNext={goNext}
-                onSelectDate={setSelectedDate}
-                darkBg
-              />
+              <DateStrip loading={loading} selectedDate={selectedDate} dateStrip={dateStrip}
+                onPrev={goPrev} onNext={goNext} onSelectDate={setSelectedDate} darkBg />
             </div>
-
-            {totalItems > 0 && (
-              <ProgressRing done={totalDone} total={totalItems} size={32} stroke={3} />
-            )}
-
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={loading}
-              className="flex-shrink-0 text-white/50 hover:text-white transition disabled:opacity-30"
-              aria-label="Refresh"
-            >
+            {totalItems > 0 && <ProgressRing done={totalDone} total={totalItems} size={32} stroke={3} />}
+            <button type="button" onClick={refresh} disabled={loading}
+              className="flex-shrink-0 text-white/50 hover:text-white transition disabled:opacity-30" aria-label="Refresh">
               <RefreshCw className={cx("w-4 h-4", loading ? "animate-spin" : "")} />
             </button>
           </div>
-
-          {/* Row 2 — name · workout title */}
           <div className="flex items-center gap-1.5 px-4 pb-2.5 min-w-0">
             <span className="text-[11px] font-black text-white/85 flex-shrink-0">{firstName}</span>
             {dailyWorkout?.Title ? (
@@ -736,27 +598,19 @@ export default function AthleteToday() {
           </div>
         </div>
 
-        {/* Desktop layout */}
+        {/* Desktop */}
         <div className="hidden sm:block max-w-3xl mx-auto px-4 pt-6 pb-8">
           <div className="flex items-center justify-between mb-7">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold"
-            >
+            <button type="button" onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold">
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={loading}
-              className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold disabled:opacity-30"
-            >
+            <button type="button" onClick={refresh} disabled={loading}
+              className="flex items-center gap-1.5 text-white/65 hover:text-white transition text-sm font-semibold disabled:opacity-30">
               <RefreshCw className={cx("w-4 h-4", loading ? "animate-spin" : "")} />
               {loading ? "Loading…" : "Refresh"}
             </button>
           </div>
-
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
               <p className="text-white/55 text-[11px] font-black uppercase tracking-widest mb-1.5">Today's Session</p>
@@ -772,90 +626,54 @@ export default function AthleteToday() {
               </div>
             )}
           </div>
-
           <div className="mt-5">
-            <DateStrip
-              loading={loading}
-              selectedDate={selectedDate}
-              dateStrip={dateStrip}
-              onPrev={goPrev}
-              onNext={goNext}
-              onSelectDate={setSelectedDate}
-              darkBg
-            />
+            <DateStrip loading={loading} selectedDate={selectedDate} dateStrip={dateStrip}
+              onPrev={goPrev} onNext={goNext} onSelectDate={setSelectedDate} darkBg />
           </div>
         </div>
       </div>
 
-      {/* ── CONTENT — same max-w / px-4 / space-y pattern as original ── */}
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
-
-        {/* Error banner */}
         {err && (
           <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
             <p className="text-sm text-red-700 font-semibold">{err}</p>
           </div>
         )}
 
-        {/* Workout */}
         <WorkoutCard
-          loading={loading}
-          dailyWorkout={dailyWorkout}
-          items={items}
-          onUpload={openModal}
-          onQuickComplete={quickComplete}
-          submittingId={submittingId}
-          acknowledgingId={acknowledgingId}
+          loading={loading} dailyWorkout={dailyWorkout} items={items}
+          onUpload={openModal} onQuickComplete={quickComplete}
+          submittingId={submittingId} acknowledgingId={acknowledgingId}
           optimisticStatusById={optimisticStatusById}
           onAcknowledge={({ completionId, workoutItemId }) =>
             acknowledgeCompletion({ completionId, workoutItemId })
           }
         />
 
-        {/* Schedule — card that fits between WorkoutCard and NutritionCard */}
         <ScheduleSection
-          selectedDate={selectedDate}
-          classSchedules={classSchedules}
+          selectedDate={selectedDate} classSchedules={classSchedules}
           onEditClass={(cls) => setClassModal({ schedule: cls })}
           onAddClass={() => setClassModal({ schedule: null })}
           onOpenPlanner={() => router.push("/athlete/day")}
         />
 
-        {/* Nutrition */}
         <NutritionCard
-          loading={nutrition.loading}
-          err={nutrition.err}
-          hasPlan={nutrition.hasPlan}
-          daily={nutrition.daily}
-          mealBlocks={nutrition.mealBlocks}
-          planJson={nutrition.planJson}
-          selectedDate={selectedDate}
-          effectiveDate={nutrition.effectiveDate}
-          nextPlan={nutrition.nextPlan}
-          isFuture={nutrition.isFuture}
-          message={nutrition.message}
+          loading={nutrition.loading} err={nutrition.err} hasPlan={nutrition.hasPlan}
+          daily={nutrition.daily} mealBlocks={nutrition.mealBlocks} planJson={nutrition.planJson}
+          selectedDate={selectedDate} effectiveDate={nutrition.effectiveDate}
+          nextPlan={nutrition.nextPlan} isFuture={nutrition.isFuture} message={nutrition.message}
           onRefresh={() => nutrition.reload(selectedDate)}
           onOpenNutrition={() => router.push("/athlete/nutrition")}
           dailyHydrationOz={dailyHydrationOz}
           nutritionCompletion={nutritionCompletion}
           onCompletionChange={(next) => setNutritionCompletion(normalizeCompletion(next))}
         />
-
-        {/* Future sections — leaderboard, activity feed, etc. */}
-        {/* <LeaderboardSection selectedDate={selectedDate} /> */}
-
       </div>
 
-      {/* ── MODALS ── */}
       <CompleteItemModal
-        open={modalOpen}
-        item={activeItem}
-        selectedFile={selectedFile}
-        coachNote={coachNote}
+        open={modalOpen} item={activeItem} selectedFile={selectedFile} coachNote={coachNote}
         submitting={Boolean(submittingId && activeItem?.id === submittingId)}
-        onClose={closeModal}
-        onPickFile={setSelectedFile}
-        onChangeNote={setCoachNote}
+        onClose={closeModal} onPickFile={setSelectedFile} onChangeNote={setCoachNote}
         evidenceRequiredOverride={evidenceRequired}
         onSubmit={() => {
           if (evidenceRequired && !selectedFile) return;

@@ -31,10 +31,10 @@ function isoMiddayUTCFromISODateOnly(dateISO) {
 
 function makeEmptyCompletion() {
   return {
-    breakfast:  { mealDone: false, hydrationDone: false },
-    lunch:      { mealDone: false, hydrationDone: false },
-    afternoon:  { mealDone: false, hydrationDone: false },
-    dinner:     { mealDone: false, hydrationDone: false },
+    breakfast: { mealDone: false, hydrationDone: false },
+    lunch:     { mealDone: false, hydrationDone: false },
+    afternoon: { mealDone: false, hydrationDone: false },
+    dinner:    { mealDone: false, hydrationDone: false },
   };
 }
 
@@ -74,7 +74,6 @@ export default async function handler(req, res) {
   }
 
   const auth = requireAthlete(req);
-  // Fixed: was returning without a response on auth failure
   if (!auth?.ok) {
     return res.status(401).json({ error: auth?.error || "Unauthorized" });
   }
@@ -115,7 +114,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Athlete session missing token/email." });
     }
 
-    const foundAth   = await athleteBase(ATHLETE_TABLE_NAME)
+    const foundAth = await athleteBase(ATHLETE_TABLE_NAME)
       .select({ filterByFormula: athleteFilter, maxRecords: 1 })
       .firstPage();
     const athleteRec = foundAth?.[0] || null;
@@ -125,16 +124,25 @@ export default async function handler(req, res) {
     }
 
     /* 2) Find existing completion record.
-       Use a date-window filter instead of DATETIME_FORMAT to avoid timezone issues.
-       Records are stored as T12:00:00.000Z so a ±12 hour window safely covers any timezone. */
-    const dayStart = `${date}T00:00:00.000Z`;
-    const dayEnd   = `${date}T23:59:59.999Z`;
-    const aId      = escapeAirtableString(athleteRec.id);
+       
+       FIX: The previous filter used IS_AFTER / IS_BEFORE with datetime strings.
+       When the Airtable field is a Date type (not DateTime), Airtable strips the
+       time component before comparing, so:
+         IS_AFTER({Date}, '2026-04-13T00:00:00.000Z')
+         → IS_AFTER('2026-04-13', '2026-04-13')
+         → FALSE
+       The record was never found, so hasRecord always came back false.
+
+       FIX: Use IS_SAME(..., 'day') which compares only the date portion,
+       regardless of whether the field is Date or DateTime, and regardless
+       of how the stored value's time component was set.
+    */
+    const aId        = escapeAirtableString(athleteRec.id);
+    const isoMidDay  = isoMiddayUTCFromISODateOnly(date); // e.g. "2026-04-13T12:00:00.000Z"
 
     const filter = `AND(
       FIND('${aId}', ARRAYJOIN({${F_ATHLETE_LINK}}&'')) > 0,
-      IS_AFTER({${F_DATE}},  '${dayStart}'),
-      IS_BEFORE({${F_DATE}}, '${dayEnd}')
+      IS_SAME({${F_DATE}}, '${isoMidDay}', 'day')
     )`;
 
     const existing = await nutritionBase(NUTRITION_COMPLETIONS_TABLE)
@@ -158,7 +166,7 @@ export default async function handler(req, res) {
     const completion = normalizeCompletion(req.body?.completion);
     const fields = {
       [F_ATHLETE_LINK]: [athleteRec.id],
-      [F_DATE]:         isoMiddayUTCFromISODateOnly(date),
+      [F_DATE]:         isoMidDay,
       [F_JSON]:         safeJsonStringify(completion),
       [F_UPDATED_AT]:   new Date().toISOString(),
     };

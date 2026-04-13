@@ -52,13 +52,14 @@ const PLAN_FIELDS = [
 ];
 
 // Fields to pull from NutritionCompletions
-// Update these to match your actual field names in the completions table
 const COMPLETION_TOKEN_FIELD    = process.env.NUTRITION_TOKEN_FIELD || "AthleteToken";
-const COMPLETION_WEEK_FIELD     = "WeekStart";   // ISO date "YYYY-MM-DD" — update if different
-const COMPLETION_CALORIES_FIELD = "CaloriesLogged"; // update if different
-const COMPLETION_TARGET_FIELD   = "CaloriesTarget"; // update if different
+const COMPLETION_WEEK_FIELD     = "WeekStart";
+const COMPLETION_CALORIES_FIELD = "CaloriesLogged";
+const COMPLETION_TARGET_FIELD   = "CaloriesTarget";
 
-// Athlete table reminder fields (written by send-reminder.js)
+// ── Athlete table reminder fields ─────────────────────────────────────────────
+// IMPORTANT: These must match exactly what send-reminder.js writes.
+// send-reminder.js writes to "LastReminderSentAt" and "ReminderCount".
 const ATH_LAST_REMINDER  = "LastReminderSentAt";
 const ATH_REMINDER_COUNT = "ReminderCount";
 
@@ -75,7 +76,7 @@ function getWeekStart() {
   const start = new Date(now);
   start.setUTCDate(now.getUTCDate() - now.getUTCDay());
   start.setUTCHours(0, 0, 0, 0);
-  return start.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  return start.toISOString().slice(0, 10);
 }
 
 function escapeAirtable(str = "") {
@@ -86,13 +87,6 @@ async function fetchAllRecords(table, opts = {}) {
   const records = [];
   await table.select(opts).eachPage((page, next) => { records.push(...page); next(); });
   return records;
-}
-
-// A plan exists if the athlete's token is present in the NutritionPlans table.
-// Status = "Active" confirms it — but presence alone is sufficient.
-// No need to filter by status value.
-function hasPlanRecord(fields) {
-  return Boolean(asStr(fields[NUTRITION_TOKEN_FIELD]));
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -108,9 +102,9 @@ export default async function handler(req, res) {
   const weekStart = getWeekStart();
 
   try {
-    // ── 1. Fetch athletes via existing getAthletes endpoint ───────────────────
-    const protocol   = process.env.VERCEL_URL ? "https" : "http";
-    const host       = process.env.VERCEL_URL || `localhost:${process.env.PORT || 3000}`;
+    // ── 1. Fetch athletes ─────────────────────────────────────────────────────
+    const protocol  = process.env.VERCEL_URL ? "https" : "http";
+    const host      = process.env.VERCEL_URL || `localhost:${process.env.PORT || 3000}`;
 
     const athleteRes  = await fetch(`${protocol}://${host}/api/org/getAthletes`, {
       method:  "GET",
@@ -139,7 +133,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Build token → athlete lookup
     const athleteByToken = {};
     for (const a of athletes) {
       const tok = asStr(a.athleteToken);
@@ -148,7 +141,9 @@ export default async function handler(req, res) {
     const tokens = Object.keys(athleteByToken);
 
     // ── 2. Fetch reminder tally from AthleteScans ─────────────────────────────
-    // These two fields are written by send-reminder.js and aren't in getAthletes
+    // Reads LastReminderSentAt and ReminderCount — written by send-reminder.js.
+    // FIX: field name is "LastReminderSentAt" (was previously mismatched as
+    // "ReminderSentAt" in send-reminder.js — that file has been corrected).
     const reminderByToken = {};
 
     if (ATHLETE_API_KEY && ATHLETE_BASE_ID && ATHLETE_TABLE_NAME && tokens.length) {
@@ -169,10 +164,12 @@ export default async function handler(req, res) {
 
           for (const r of recs) {
             const tok = asStr(r.fields["AthleteToken"]);
-            if (tok) reminderByToken[tok] = {
-              lastReminderSentAt: asStr(r.fields[ATH_LAST_REMINDER]) || null,
-              reminderCount:      Number(r.fields[ATH_REMINDER_COUNT] || 0),
-            };
+            if (tok) {
+              reminderByToken[tok] = {
+                lastReminderSentAt: asStr(r.fields[ATH_LAST_REMINDER]) || null,
+                reminderCount:      Number(r.fields[ATH_REMINDER_COUNT] || 0),
+              };
+            }
           }
         }
       } catch (e) {
@@ -180,19 +177,16 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 3. Fetch active nutrition plans from NutritionPlans ───────────────────
-    // Uses same lookup pattern as getByAthlete.js — FIND() on AthleteToken field
+    // ── 3. Fetch active nutrition plans ───────────────────────────────────────
     const plansByToken = {};
     const planTable    = getAirtableTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, PLANS_TABLE);
 
     if (planTable && tokens.length) {
       try {
-        // Batch tokens into groups of 20 — FIND() OR formulas get long fast
         const BATCH = 20;
         for (let i = 0; i < tokens.length; i += BATCH) {
           const batch = tokens.slice(i, i + BATCH);
 
-          // Use FIND() exactly like getByAthlete.js for reliable linked field lookup
           const formula = batch.length === 1
             ? `FIND('${escapeAirtable(batch[0])}', ARRAYJOIN({${PLAN_TOKEN_FIELD}}&''))>0`
             : `OR(${batch.map(t => `FIND('${escapeAirtable(t)}', ARRAYJOIN({${PLAN_TOKEN_FIELD}}&''))>0`).join(",")})`;
@@ -204,14 +198,8 @@ export default async function handler(req, res) {
           });
 
           for (const r of recs) {
-            // AthleteToken may be an array (linked field) or a string
             const rawTok = r.fields[PLAN_TOKEN_FIELD];
-            const tok = Array.isArray(rawTok)
-              ? asStr(rawTok[0])
-              : asStr(rawTok);
-
-            // Token present + athlete in our roster = has a plan
-            // Keep most recent only (sort is desc)
+            const tok = Array.isArray(rawTok) ? asStr(rawTok[0]) : asStr(rawTok);
             if (tok && athleteByToken[tok] && !plansByToken[tok]) {
               plansByToken[tok] = { ...r.fields, _recordId: r.id };
             }
@@ -226,14 +214,12 @@ export default async function handler(req, res) {
       console.warn("[nutrition/queue] NutritionPlans not configured — check NUTRITION_API_KEY, NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE");
     }
 
-    // ── 4. Fetch this week's completions from NutritionCompletions ────────────
+    // ── 4. Fetch this week's completions ──────────────────────────────────────
     const completionsByToken = {};
     const completionsTable   = getAirtableTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, COMPLETIONS_TABLE);
 
     if (completionsTable) {
       try {
-        // Try filtering by week — if COMPLETION_WEEK_FIELD doesn't exist this
-        // will throw and we fall through gracefully
         const safeWeek = escapeAirtable(weekStart);
         const recs     = await fetchAllRecords(completionsTable, {
           filterByFormula: `{${COMPLETION_WEEK_FIELD}} = '${safeWeek}'`,
@@ -255,10 +241,9 @@ export default async function handler(req, res) {
         console.log(`[nutrition/queue] Completions this week (${weekStart}): ${recs.length} records, ${Object.keys(completionsByToken).length} matched athletes`);
       } catch (e) {
         console.warn("[nutrition/queue] NutritionCompletions unavailable:", e?.message);
-        console.warn("  → Check NUTRITION_COMPLETIONS_TABLE and field names (COMPLETION_WEEK_FIELD etc.)");
       }
     } else {
-      console.warn("[nutrition/queue] NutritionCompletions table not configured — check NUTRITION_COMPLETIONS_TABLE");
+      console.warn("[nutrition/queue] NutritionCompletions table not configured");
     }
 
     // ── 5. Build queue rows ───────────────────────────────────────────────────
@@ -271,7 +256,6 @@ export default async function handler(req, res) {
       const hasPlan        = Boolean(plan);
       const missingCheckin = hasPlan && !completion;
 
-      // Adherence: logged calories vs target for the week
       let adherenceAvg = null;
       if (completion) {
         const logged = Number(completion[COMPLETION_CALORIES_FIELD] || 0);
@@ -292,7 +276,6 @@ export default async function handler(req, res) {
         hasPlan,
         missingCheckin,
         adherenceAvg,
-        // Plan details — useful for the assign/edit panel
         plan: plan ? {
           calories: Number(plan[PLAN_CAL_FIELD]     || 0),
           protein:  Number(plan[PLAN_PROTEIN_FIELD] || 0),
@@ -302,6 +285,11 @@ export default async function handler(req, res) {
           status:   asStr(plan[PLAN_STATUS_FIELD]),
           recordId: plan._recordId,
         } : null,
+        // Reminder state — populated from AthleteScans via step 2 above.
+        // On first load after a reminder send, these will reflect what
+        // send-reminder.js persisted. The page also patches these
+        // optimistically in memory immediately after a send so the UI
+        // updates without waiting for a reload.
         lastReminderSentAt: reminder.lastReminderSentAt,
         reminderCount:      reminder.reminderCount,
         lastSeen:           null,

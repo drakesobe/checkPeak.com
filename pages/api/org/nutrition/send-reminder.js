@@ -2,7 +2,7 @@
 //
 // Phase 1: mailto-based reminders.
 // Returns a pre-built mailto: URL the client opens directly.
-// Also persists ReminderSentAt + ReminderCount to Airtable so the
+// Also persists LastReminderSentAt + ReminderCount to Airtable so the
 // queue page can show tally, countdown, and "Send Again" after 12h.
 
 import Airtable from "airtable";
@@ -22,12 +22,12 @@ const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
 const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
 // Add these two fields to your Athlete table in Airtable if not present:
-//   ReminderSentAt  — Date field (date + time)
+//   LastReminderSentAt  — Date field (date + time)
 //   ReminderCount   — Number field (integer, default 0)
 const ATH_TOKEN          = "AthleteToken";
 const ATH_NAME           = "Name";
 const ATH_EMAIL          = "Email";
-const ATH_REMINDER_AT    = "ReminderSentAt";
+const ATH_REMINDER_AT    = "LastReminderSentAt";
 const ATH_REMINDER_COUNT = "ReminderCount";
 
 export default async function handler(req, res) {
@@ -77,9 +77,9 @@ export default async function handler(req, res) {
     const subject = encodeURIComponent(`Nutrition check-in reminder`);
     const body    = encodeURIComponent(
       `Hi ${athleteName},\n\n` +
-      `This is a reminder from ${orgName} to log your nutrition check-in for this week.\n\n` +
-      `Please open the CheckPeak app and complete your check-in when you get a chance.\n\n` +
-      `— ${orgName}`
+      `This is a reminder from ${orgName} to log your nutrition check-in.\n\n` +
+      `Please open the CheckPeak app and complete your check-in as soon as possible.\n\n` +
+      `- ${orgName}`
     );
     const mailto = `mailto:${athleteEmail}?subject=${subject}&body=${body}`;
 

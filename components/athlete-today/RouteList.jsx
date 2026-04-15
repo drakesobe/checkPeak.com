@@ -1,13 +1,13 @@
 // components/athlete-today/RouteList.jsx
 // Skimmer-style route checklist — full design pass.
 //
-// Hierarchy:
-//   Workout row  — visual hero: 4px border, 16px/800, mini completion ring
-//   Meal rows    — collapsed default; expand shows action toggles first, macros second
-//   Class rows   — lightweight: 13px/500, amber dot, swipe = camera, tap = edit
+// Improvements in this version:
+//  1. WorkoutRow visual dominance — 18px/800, 5px border, no visual equals
+//  2. Completion moment — theatrical flash, spring check, ring-expand
+//  3. Active item highlight — nowCtx-driven live badge + tint on current/next item
 //
-// Typography scale:
-//   Workout title  16px / 800
+// Typography hierarchy:
+//   Workout title  18px / 800  — hero
 //   Meal title     14px / 600
 //   Class title    13px / 500
 //   Meta           11px / 400
@@ -23,10 +23,25 @@ function haptic(ms = 10) { try { navigator.vibrate?.(ms); } catch {} }
 
 // ─── Keyframes ────────────────────────────────────────────────────────────────
 const STYLES = `
+  /* Improvement #2 — theatrical completion flash:
+     immediate bright white → green wash → settle to done bg.
+     Feels like a real payoff, not just a color swap. */
   @keyframes completionFlash {
-    0%   { background: #DCFCE7; }
-    60%  { background: #F0FDF4; }
+    0%   { background: #fff;    }
+    12%  { background: #DCFCE7; }
+    45%  { background: #F0FDF4; }
     100% { background: #FAFAFA; }
+  }
+  @keyframes completionFlashWhite {
+    0%   { background: #fff; }
+    18%  { background: #F0FDF4; }
+    100% { background: #fff; }
+  }
+  /* Ring-expand effect — animates the GreenCheck border outward */
+  @keyframes ringExpand {
+    0%   { box-shadow: 0 0 0 0px rgba(134,239,172,0.7); }
+    60%  { box-shadow: 0 0 0 6px rgba(134,239,172,0.15); }
+    100% { box-shadow: 0 0 0 10px rgba(134,239,172,0); }
   }
   @keyframes swipeNudge {
     0%,15% { transform: translateX(0px);  }
@@ -35,8 +50,8 @@ const STYLES = `
     100%   { transform: translateX(0px);  }
   }
   @keyframes popIn {
-    0%   { transform: scale(0.7); opacity: 0; }
-    60%  { transform: scale(1.15); opacity: 1; }
+    0%   { transform: scale(0.5); opacity: 0; }
+    55%  { transform: scale(1.2); opacity: 1; }
     100% { transform: scale(1);   opacity: 1; }
   }
   @keyframes fadeSlideUp {
@@ -48,9 +63,19 @@ const STYLES = `
     to   { background-position:  200% 0; }
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Live pulsing dot for active item */
+  @keyframes livePulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%     { opacity: 0.5; transform: scale(0.85); }
+  }
+  /* Slide-in for active badge */
+  @keyframes badgePop {
+    from { opacity: 0; transform: scale(0.8) translateX(4px); }
+    to   { opacity: 1; transform: scale(1) translateX(0); }
+  }
 `;
 
-// ─── Swipe hook ───────────────────────────────────────────────────────────────
+// ─── Swipe hook — Framer Motion ───────────────────────────────────────────────
 const SWIPE_THRESHOLD = 52;
 
 function useSwipeRight(onFire, disabled) {
@@ -87,26 +112,64 @@ function useSwipeRight(onFire, disabled) {
   return { controls, dragProps, dragX, armed };
 }
 
-// ─── Primitives ───────────────────────────────────────────────────────────────
+// ─── GreenCheck — improvement #2 ─────────────────────────────────────────────
+// When `animate` is true (just completed), plays the ring-expand + popIn spring.
 function GreenCheck({ size = 20, animate = false }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%",
       background: "#DCFCE7", border: "1.5px solid #86EFAC",
       display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      animation: animate ? "popIn 0.4s cubic-bezier(0.16,1,0.3,1)" : "none",
+      animation: animate ? "popIn 0.45s cubic-bezier(0.16,1,0.3,1), ringExpand 0.6s ease-out" : "none",
     }}>
       <Check size={size * 0.48} color="#16A34A" strokeWidth={3} />
     </div>
   );
 }
 
-// Mini completion ring — replaces the text badge in WorkoutRow
+// ─── ActiveBadge — improvement #3 ────────────────────────────────────────────
+// Tiny pill that appears on the current or next item.
+// isNow = solid red. isNext = amber outline.
+function ActiveBadge({ isNow }) {
+  return (
+    <div style={{
+      display:       "flex",
+      alignItems:    "center",
+      gap:           4,
+      padding:       "2px 7px",
+      borderRadius:  20,
+      background:    isNow ? "#EF4444" : "transparent",
+      border:        `1px solid ${isNow ? "#EF4444" : "#F59E0B"}`,
+      animation:     "badgePop 0.25s ease-out",
+      flexShrink:    0,
+    }}>
+      {isNow && (
+        <div style={{
+          width: 5, height: 5, borderRadius: "50%",
+          background: "#fff",
+          animation: "livePulse 1.4s ease-in-out infinite",
+        }} />
+      )}
+      <span style={{
+        fontSize:      8,
+        fontWeight:    800,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color:         isNow ? "#fff" : "#F59E0B",
+        lineHeight:    1,
+      }}>
+        {isNow ? "Now" : "Next"}
+      </span>
+    </div>
+  );
+}
+
+// ─── Mini completion ring ─────────────────────────────────────────────────────
 function MiniRing({ done, total }) {
-  const r     = 9;
-  const circ  = 2 * Math.PI * r;
-  const pct   = total > 0 ? Math.min(done / total, 1) : 0;
-  const all   = total > 0 && done >= total;
+  const r    = 9;
+  const circ = 2 * Math.PI * r;
+  const pct  = total > 0 ? Math.min(done / total, 1) : 0;
+  const all  = total > 0 && done >= total;
   return (
     <svg width={24} height={24} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
       <circle cx={12} cy={12} r={r} fill="none" stroke="#E2E8F0" strokeWidth={2.5} />
@@ -123,7 +186,6 @@ function MiniRing({ done, total }) {
 }
 
 // ─── Section header ───────────────────────────────────────────────────────────
-// Time ranges baked in. Progress as colored X/Y, not a floating bar.
 const TIME_RANGES = {
   Morning:   "until noon",
   Midday:    "12–3pm",
@@ -132,8 +194,8 @@ const TIME_RANGES = {
 };
 
 function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, isReadOnly }) {
-  const allDone = done >= total && total > 0;
-  const pct     = total > 0 ? Math.min(100, (done / total) * 100) : 0;
+  const allDone   = done >= total && total > 0;
+  const pct       = total > 0 ? Math.min(100, (done / total) * 100) : 0;
   const timeRange = TIME_RANGES[label] || "";
 
   return (
@@ -161,9 +223,7 @@ function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, i
           {label}
         </span>
         {timeRange && (
-          <span style={{ fontSize: 10, fontWeight: 400, color: "#C4CADB", letterSpacing: 0 }}>
-            · {timeRange}
-          </span>
+          <span style={{ fontSize: 10, fontWeight: 400, color: "#C4CADB" }}>· {timeRange}</span>
         )}
       </div>
 
@@ -179,8 +239,7 @@ function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, i
           </div>
           <span style={{
             fontSize: 11, fontWeight: 700, minWidth: 26, textAlign: "right",
-            color: allDone ? "#22C55E" : dot,
-            transition: "color 0.3s",
+            color: allDone ? "#22C55E" : dot, transition: "color 0.3s",
           }}>
             {done}/{total}
           </span>
@@ -194,9 +253,11 @@ function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, i
   );
 }
 
-// ─── WORKOUT ROW (hero) ───────────────────────────────────────────────────────
-// 4px border, 16px/800 title, mini completion ring. Single tap → WorkoutSheet.
-function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly }) {
+// ─── WORKOUT ROW — improvement #1 ────────────────────────────────────────────
+// Hero card. Single tap → WorkoutSheet.
+// 18px/800 title. 5px border. No visual equals on the page.
+// Active state: left accent shifts to red, top stripe appears.
+function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive }) {
   const subDone  = item.sub?.filter(s =>
     (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed"
   ).length ?? 0;
@@ -217,21 +278,42 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly }) {
 
   const pct = subTotal > 0 ? (subDone / subTotal) * 100 : 0;
 
+  // Border color: done = green, active = red (live), readonly = muted, default = blue
+  const borderColor = allDone
+    ? "#22C55E"
+    : isReadOnly
+      ? "#D0D5E8"
+      : isActive
+        ? "#EF4444"
+        : "#3B82F6";
+
   return (
     <div
       onClick={() => !isReadOnly && onTap(item)}
       style={{
-        background: allDone ? "#F0FDF4" : "#F5F8FF",
+        background:   allDone ? "#F0FDF4" : isActive ? "#FFF5F5" : "#F0F4FF",
         borderBottom: "0.5px solid #E2E8F0",
-        borderLeft: `4px solid ${allDone ? "#22C55E" : isReadOnly ? "#D0D5E8" : "#3B82F6"}`,
-        cursor: isReadOnly ? "default" : "pointer",
-        animation: flash ? "completionFlash 0.7s ease both" : "none",
-        transition: "border-color 0.4s, background 0.3s",
-        userSelect: "none",
+        borderLeft:   `5px solid ${borderColor}`,
+        cursor:       isReadOnly ? "default" : "pointer",
+        animation:    flash ? "completionFlash 0.7s ease both" : "none",
+        transition:   "border-color 0.4s, background 0.3s",
+        userSelect:   "none",
+        position:     "relative",
       }}
     >
+      {/* Improvement #3 — active indicator: top stripe on isActive */}
+      {isActive && !allDone && (
+        <div style={{
+          position:   "absolute",
+          top:        0, left: 0, right: 0,
+          height:     2,
+          background: "linear-gradient(90deg, #EF4444, #F97316)",
+          borderRadius: "0 2px 0 0",
+        }} />
+      )}
+
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "15px 16px 0" }}>
-        {/* Status indicator */}
+        {/* Status */}
         <div style={{ paddingTop: 3, flexShrink: 0 }}>
           {allDone ? (
             <GreenCheck size={22} animate={flash} />
@@ -248,24 +330,29 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly }) {
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Title — hero size */}
+          {/* Improvement #1 — 18px/800. Largest text on the page. */}
           <div style={{
-            fontSize: 16, fontWeight: 800, letterSpacing: "-0.3px", lineHeight: 1.2,
-            color: allDone ? "#A0A8C0" : isReadOnly ? "#9AA0B4" : "#0F172A",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            transition: "color 0.3s",
+            fontSize:      18,
+            fontWeight:    800,
+            letterSpacing: "-0.4px",
+            lineHeight:    1.15,
+            color:         allDone ? "#A0A8C0" : isReadOnly ? "#9AA0B4" : "#0F172A",
+            overflow:      "hidden",
+            textOverflow:  "ellipsis",
+            whiteSpace:    "nowrap",
+            transition:    "color 0.3s",
           }}>
             {item.title}
           </div>
 
-          {/* Coach tag — compact */}
-          <div style={{ marginTop: 5 }}>
+          {/* Coach tag */}
+          <div style={{ marginTop: 6 }}>
             <span style={{
               fontSize: 9, fontWeight: 800, letterSpacing: "0.1em",
               textTransform: "uppercase",
-              color: isReadOnly ? "#C8CCE0" : "#6366F1",
+              color:      isReadOnly ? "#C8CCE0" : "#6366F1",
               background: isReadOnly ? "#F3F4F6" : "#EEF2FF",
-              border: `1px solid ${isReadOnly ? "#E5E7EB" : "#C7D2FE"}`,
+              border:     `1px solid ${isReadOnly ? "#E5E7EB" : "#C7D2FE"}`,
               borderRadius: 4, padding: "1px 6px",
             }}>
               Coach assigned
@@ -273,8 +360,11 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly }) {
           </div>
         </div>
 
-        {/* Right side: time + mini ring + chevron */}
+        {/* Right: badge + time + ring + chevron */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+          {/* Improvement #3 — active badge */}
+          {isActive && !allDone && <ActiveBadge isNow={true} />}
+
           <div style={{ fontSize: 11, color: "#9AA0B4", fontWeight: 500 }}>
             {formatTime(item.startMinutes)}
           </div>
@@ -285,27 +375,21 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly }) {
         </div>
       </div>
 
-      {/* Thin progress bar below content */}
-      <div style={{ margin: "10px 16px 13px" }}>
-        {subTotal > 0 && (
-          <div style={{ height: 2, borderRadius: 1, background: "#E8EDF8", overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 1,
-              width: `${pct}%`,
-              background: allDone ? "#22C55E" : "#3B82F6",
-              transition: "width 0.5s ease, background 0.4s",
-            }} />
-          </div>
-        )}
+      {/* Progress bar — full bleed, generous height */}
+      <div style={{ margin: "12px 0 0", height: 3, background: "#E8EDF8", overflow: "hidden" }}>
+        <div style={{
+          height: "100%",
+          width:  `${pct}%`,
+          background: allDone ? "#22C55E" : isActive ? "#EF4444" : "#3B82F6",
+          transition: "width 0.5s ease, background 0.4s",
+        }} />
       </div>
     </div>
   );
 }
 
-// ─── MEAL ROW ─────────────────────────────────────────────────────────────────
-// Swipe right = mark both done. Tap = expand.
-// Expanded: action toggles first, macro targets collapsed behind secondary tap.
-function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggleField, isReadOnly, showHint }) {
+// ─── MEAL ROW — improvements #2 + #3 ─────────────────────────────────────────
+function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggleField, isReadOnly, showHint, isActive, isNext }) {
   const comp          = nutritionCompletion?.[item.mealKey] || {};
   const mealDone      = Boolean(comp.mealDone);
   const hydrationDone = Boolean(comp.hydrationDone);
@@ -313,19 +397,21 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   const partialDone   = (mealDone || hydrationDone) && !allDone;
 
   const prevDone = useRef(allDone);
-  const [flash,       setFlash]       = useState(false);
+  const [flash,  setFlash] = useState(false);
+  const [justDone, setJustDone] = useState(false);
 
   useEffect(() => {
     if (!prevDone.current && allDone) {
-      haptic(10); setFlash(true);
-      const t = setTimeout(() => setFlash(false), 700);
+      haptic(10);
+      setFlash(true);
+      setJustDone(true);
+      const t1 = setTimeout(() => setFlash(false), 700);
+      const t2 = setTimeout(() => setJustDone(false), 1200);
       prevDone.current = true;
-      return () => clearTimeout(t);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
     if (!allDone) prevDone.current = false;
   }, [allDone]);
-
-  // Reset on row close handled by expanded prop
 
   const handleSwipe = useCallback(() => {
     haptic(12); onToggleField(item.mealKey, "both");
@@ -335,21 +421,34 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
 
   const hydLabel = item.targets?.hydrationOz
     ? `Hydration · ${item.targets.hydrationOz}oz`
-    : item.hydrationOz
-    ? `Hydration · ${item.hydrationOz}oz`
-    : "Hydration";
+    : item.hydrationOz ? `Hydration · ${item.hydrationOz}oz` : "Hydration";
 
   const hasMacros = item.targets?.calories || item.targets?.protein
     || item.targets?.carbs || item.targets?.fat || item.targets?.hydrationOz;
 
-  const hasNotes  = item.notes || item.diningHallNotes;
+  // Improvement #3 — active meal gets a distinct tint
+  const rowBg = flash
+    ? undefined
+    : allDone
+      ? "#FAFAFA"
+      : isActive
+        ? "#FFFBF0"
+        : "#fff";
 
   return (
-    <div style={{ borderBottom: "0.5px solid #F0F2F7" }}>
+    <div style={{
+      borderBottom: "0.5px solid #F0F2F7",
+      // Improvement #3 — subtle left accent on active/next meal
+      borderLeft: isActive
+        ? "3px solid #F59E0B"
+        : isNext
+          ? "3px solid rgba(245,158,11,0.3)"
+          : "3px solid transparent",
+      transition: "border-left-color 0.3s",
+    }}>
 
-      {/* ── Main swipeable row ── */}
+      {/* Swipeable row */}
       <div style={{ position: "relative", overflow: "hidden" }}>
-        {/* Swipe reveal — invisible at rest, fades in on drag */}
         {!allDone && !isReadOnly && (
           <div style={{
             position: "absolute", right: 0, top: 0, bottom: 0, width: 56,
@@ -375,16 +474,18 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
           style={{
             ...dragProps.style,
             width: "100%", boxSizing: "border-box",
-            display: "flex", alignItems: "center", gap: 12, padding: "13px 18px",
-            background: flash ? undefined : allDone ? "#FAFAFA" : "#fff",
+            display: "flex", alignItems: "center", gap: 12, padding: "13px 16px",
+            background: rowBg,
+            // Improvement #2 — completionFlash plays on swipe done, completionFlashWhite plays on toggle
             animation: flash
               ? "completionFlash 0.7s ease both"
               : (showHint && !allDone ? "swipeNudge 1.2s ease-out 0.9s both" : "none"),
             userSelect: "none",
           }}
         >
+          {/* Status dot / GreenCheck */}
           {allDone
-            ? <GreenCheck size={18} animate={flash} />
+            ? <GreenCheck size={18} animate={justDone} />
             : <div style={{
                 width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
                 background: partialDone ? "#93C5FD" : isReadOnly ? "#D0D5E8" : "#3B82F6",
@@ -402,17 +503,25 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
             </div>
             {allDone ? (
               <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#DCFCE7", border: "1px solid #86EFAC", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{
+                  width: 10, height: 10, borderRadius: "50%",
+                  background: "#DCFCE7", border: "1px solid #86EFAC",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
                   <Check size={5} color="#16A34A" strokeWidth={3} />
                 </div>
                 <span style={{ fontSize: 11, color: "#B0B8D0", fontWeight: 400 }}>Logged</span>
               </div>
             ) : (
-              item.meta && <div style={{ fontSize: 11, color: "#9AA0B4", marginTop: 2, fontWeight: 400 }}>{item.meta}</div>
+              item.meta && <div style={{ fontSize: 11, color: "#9AA0B4", marginTop: 2 }}>{item.meta}</div>
             )}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+            {/* Improvement #3 — active/next badge on meal */}
+            {(isActive || isNext) && !allDone && (
+              <ActiveBadge isNow={isActive} />
+            )}
             <div style={{ fontSize: 11, color: "#9AA0B4" }}>{formatTime(item.startMinutes)}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               {allDone ? (
@@ -424,10 +533,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                     <div style={{ width: 5, height: 5, borderRadius: "50%", background: mealDone ? "#22C55E" : "#E5E7EB", transition: "background 0.2s" }} />
                     <div style={{ width: 5, height: 5, borderRadius: "50%", background: hydrationDone ? "#3B82F6" : "#E5E7EB", transition: "background 0.2s" }} />
                   </div>
-                  {expanded
-                    ? <ChevronDown size={11} color="#C8CCE0" />
-                    : <ChevronRight size={11} color="#C8CCE0" />
-                  }
+                  {expanded ? <ChevronDown size={11} color="#C8CCE0" /> : <ChevronRight size={11} color="#C8CCE0" />}
                 </>
               )}
             </div>
@@ -435,7 +541,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
         </motion.div>
       </div>
 
-      {/* Drag progress bar */}
+      {/* Swipe progress bar */}
       {!allDone && !isReadOnly && dragX > 4 && (
         <div style={{ height: 2, background: "#F0F2F7" }}>
           <motion.div
@@ -446,11 +552,11 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
         </div>
       )}
 
-      {/* ── Expanded panel ── */}
+      {/* Expanded panel */}
       {expanded && (
         <div style={{ background: "#FAFBFF", borderTop: "0.5px solid #EEF4FF", animation: "fadeSlideUp 0.18s ease" }}>
 
-          {/* Action toggles — PRIMARY. Always visible in expanded state. */}
+          {/* Action toggles — primary, always first */}
           {!isReadOnly && (
             <div style={{ padding: "12px 16px 10px", display: "flex", gap: 8 }}>
               {[
@@ -472,14 +578,14 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                     transition: "all 0.15s",
                   }}
                 >
-                  {done && <Check size={12} color={color} strokeWidth={3} />}
+                  {/* Improvement #2 — check springs in on done */}
+                  {done && <Check size={12} color={color} strokeWidth={3} style={{ animation: "popIn 0.35s cubic-bezier(0.16,1,0.3,1)" }} />}
                   {label}
                 </button>
               ))}
             </div>
           )}
 
-          {/* All done confirmation row */}
           {isReadOnly && allDone && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 18px" }}>
               <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#DCFCE7", border: "1.5px solid #86EFAC", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -489,29 +595,26 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
             </div>
           )}
 
-          {/* Notes — show if present */}
-          {hasNotes && (
+          {/* Notes */}
+          {(item.notes || item.diningHallNotes) && (
             <div style={{ padding: "0 16px 10px", borderTop: "0.5px solid #EEF0FA" }}>
               {item.notes && (
-                <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.6, margin: "10px 0 0", fontWeight: 400 }}>
-                  {item.notes}
-                </p>
+                <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.6, margin: "10px 0 0" }}>{item.notes}</p>
               )}
               {item.diningHallNotes && (
                 <div style={{ marginTop: 8, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #EEF0FA" }}>
                   <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C4CADB", marginBottom: 4 }}>
                     Dining hall
                   </div>
-                  <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.6, margin: 0, fontWeight: 400 }}>{item.diningHallNotes}</p>
+                  <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.6, margin: 0 }}>{item.diningHallNotes}</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Nutrition targets — always visible when expanded */}
+          {/* Macro targets */}
           {hasMacros && (
             <div style={{ padding: "4px 16px 14px", borderTop: "0.5px solid #EEF0FA" }}>
-              {/* Macro grid */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 8 }}>
                 {[
                   { label: "Cal",   value: item.targets?.calories, unit: "",  color: "#F59E0B" },
@@ -529,15 +632,13 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                   </div>
                 ))}
               </div>
-
-              {/* Hydration */}
               {(item.targets?.hydrationOz || item.hydrationOz) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", background: "#EFF6FF", borderRadius: 8, border: "1px solid #BFDBFE" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2C6 8 4 13 4 15a8 8 0 0016 0c0-2-2-7-8-13z"/>
                   </svg>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB" }}>
-                    {item.targets?.hydrationOz || item.hydrationOz} oz hydration target
+                    {item.targets?.hydrationOz || item.hydrationOz} oz hydration
                   </span>
                 </div>
               )}
@@ -549,22 +650,24 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   );
 }
 
-// ─── CLASS ROW (lightweight) ──────────────────────────────────────────────────
-// 13px/500 title, amber dot. Swipe right = camera. Tap = expand (edit + photo).
-function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOnly, showHint }) {
+// ─── CLASS ROW — improvement #3 ──────────────────────────────────────────────
+function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOnly, showHint, isNext }) {
   const [expanded,   setExpanded]   = useState(false);
   const [photo,      setPhoto]      = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const fileInputRef = useRef(null);
   const prevDone     = useRef(done);
-  const [flash, setFlash] = useState(false);
+  const [flash, setFlash]   = useState(false);
+  const [justDone, setJustDone] = useState(false);
 
   useEffect(() => {
     if (!prevDone.current && done) {
-      haptic(12); setFlash(true);
-      const t = setTimeout(() => setFlash(false), 700);
-      prevDone.current = true; return () => clearTimeout(t);
+      haptic(12); setFlash(true); setJustDone(true);
+      const t1 = setTimeout(() => setFlash(false), 700);
+      const t2 = setTimeout(() => setJustDone(false), 1200);
+      prevDone.current = true;
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
     if (!done) prevDone.current = false;
   }, [done]);
@@ -586,37 +689,43 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
       await onCompleteWithPhoto(item, photo.file);
       setPhoto(null); setExpanded(false);
     } catch (err) {
-      setPhotoError(err?.message || "Failed to submit. Try again.");
+      setPhotoError(err?.message || "Failed. Try again.");
       setSubmitting(false);
     }
   }
 
-  const { dragProps, dragX: classDragX, armed: classArmed } = useSwipeRight(openCamera, done || isReadOnly);
+  const { dragProps, dragX: cdx, armed: ca } = useSwipeRight(openCamera, done || isReadOnly);
 
   return (
-    <div style={{ borderBottom: "0.5px solid #F5F5F7", animation: flash ? "completionFlash 0.7s ease both" : "none" }}>
+    <div style={{
+      borderBottom: "0.5px solid #F5F5F7",
+      animation: flash ? "completionFlash 0.7s ease both" : "none",
+      // Improvement #3 — next class gets amber accent
+      borderLeft: isNext && !done
+        ? "3px solid rgba(245,158,11,0.4)"
+        : "3px solid transparent",
+      transition: "border-left-color 0.3s",
+    }}>
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
         onChange={handleFileChange} style={{ display: "none" }} aria-hidden="true" />
 
-      {/* Main row */}
       <div style={{ position: "relative", overflow: "hidden" }}>
-        {/* Camera reveal — invisible at rest */}
         {!done && !isReadOnly && (
           <div style={{
             position: "absolute", right: 0, top: 0, bottom: 0, width: 56,
             display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: Math.min(1, classDragX / 18), pointerEvents: "none",
+            opacity: Math.min(1, cdx / 18), pointerEvents: "none",
           }}>
             <div style={{
               width: 28, height: 28, borderRadius: "50%",
-              background: classArmed ? "#FEF3C7" : "#FFFBEB",
-              border: `1.5px solid ${classArmed ? "#FCD34D" : "#FDE68A"}`,
+              background: ca ? "#FEF3C7" : "#FFFBEB",
+              border: `1.5px solid ${ca ? "#FCD34D" : "#FDE68A"}`,
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "background 0.15s, border-color 0.15s",
-              transform: classArmed ? "scale(1.1)" : "scale(1)",
+              transform: ca ? "scale(1.1)" : "scale(1)",
             }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                stroke={classArmed ? "#D97706" : "#FBBF24"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                stroke={ca ? "#D97706" : "#FBBF24"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
@@ -630,19 +739,18 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
           style={{
             ...(!isReadOnly ? dragProps.style : {}),
             width: "100%", boxSizing: "border-box",
-            display: "flex", alignItems: "center", gap: 10, padding: "11px 18px",
+            display: "flex", alignItems: "center", gap: 10, padding: "11px 16px",
             background: expanded ? "#FFFBEB" : done ? "#FAFAFA" : "#fff",
             animation: showHint && !done ? "swipeNudge 1.2s ease-out 0.9s both" : "none",
             userSelect: "none",
           }}
         >
           {done
-            ? <GreenCheck size={17} animate={flash} />
+            ? <GreenCheck size={17} animate={justDone} />
             : <div style={{ width: 6, height: 6, borderRadius: "50%", background: isReadOnly ? "#D0D5E8" : "#F59E0B", flexShrink: 0 }} />
           }
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Lighter title — 13px/500 */}
             <div style={{
               fontSize: 13, fontWeight: 500,
               color: done ? "#B0B8D0" : isReadOnly ? "#9AA0B4" : "#374151",
@@ -653,25 +761,23 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
               {item.title}
             </div>
             {item.meta && (
-              <div style={{ fontSize: 11, color: "#C4CADB", marginTop: 1, fontWeight: 400 }}>{item.meta}</div>
+              <div style={{ fontSize: 11, color: "#C4CADB", marginTop: 1 }}>{item.meta}</div>
             )}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+            {/* Improvement #3 — next badge on upcoming class */}
+            {isNext && !done && <ActiveBadge isNow={false} />}
             <div style={{ fontSize: 11, color: "#B0B8D0" }}>{formatTime(item.startMinutes)}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               {item.badge && (
-                <div style={{
-                  fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
-                  padding: "1px 5px", borderRadius: 3, background: "#FFFBEB", color: "#D97706",
-                }}>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", padding: "1px 5px", borderRadius: 3, background: "#FFFBEB", color: "#D97706" }}>
                   {item.badge}
                 </div>
               )}
-              {!isReadOnly && (
-                expanded
-                  ? <ChevronDown size={11} color="#D97706" />
-                  : <ChevronRight size={11} color="#E2E8F0" />
+              {!isReadOnly && (expanded
+                ? <ChevronDown size={11} color="#D97706" />
+                : <ChevronRight size={11} color="#E2E8F0" />
               )}
             </div>
           </div>
@@ -683,8 +789,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
         <div style={{ background: "#FFFBEB", borderTop: "0.5px solid #FDE68A", animation: "fadeSlideUp 0.18s ease" }}>
           {!photo && (
             <div onClick={() => { setExpanded(false); onTap(item); }}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", borderBottom: "0.5px solid #FDE68A", cursor: "pointer" }}
-            >
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px", borderBottom: "0.5px solid #FDE68A", cursor: "pointer" }}>
               <div style={{ width: 28, height: 28, borderRadius: 7, background: "#FEF3C7", border: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -699,8 +804,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
           )}
           {!photo && !done && (
             <div onClick={openCamera}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", cursor: "pointer" }}
-            >
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px", cursor: "pointer" }}>
               <div style={{ width: 28, height: 28, borderRadius: 7, background: "#DCFCE7", border: "1px solid #86EFAC", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
@@ -714,7 +818,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
             </div>
           )}
           {photo && (
-            <div style={{ padding: "12px 18px", animation: "fadeSlideUp 0.2s ease" }}>
+            <div style={{ padding: "12px 16px", animation: "fadeSlideUp 0.2s ease" }}>
               <div style={{ position: "relative", marginBottom: 10 }}>
                 <img src={photo.preview} alt="Classroom"
                   style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 8, border: "1px solid #FDE68A", display: "block" }} />
@@ -733,7 +837,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
                 </div>
               )}
               <button onClick={handleSubmit} disabled={submitting}
-                style={{ width: "100%", padding: 11, background: submitting ? "#D1FAE5" : "#16A34A", border: "none", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#fff", transition: "background 0.15s" }}>
+                style={{ width: "100%", padding: 11, background: submitting ? "#D1FAE5" : "#16A34A", border: "none", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#fff" }}>
                 {submitting
                   ? <><svg style={{ animation: "spin 1s linear infinite" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>Submitting…</>
                   : <><Check size={14} strokeWidth={2.5} />Submit attendance</>
@@ -783,8 +887,10 @@ function EmptyState({ loading, isPastDay, onAddClass }) {
     <div style={{ padding: "64px 32px", textAlign: "center", animation: "fadeSlideUp 0.3s ease" }}>
       <div style={{ width: 48, height: 48, borderRadius: 12, background: "#F3F4F6", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
-          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
       </div>
       <div style={{ fontSize: 16, fontWeight: 700, color: "#374151", marginBottom: 8, letterSpacing: "-0.2px" }}>
@@ -806,6 +912,9 @@ function EmptyState({ loading, isPastDay, onAddClass }) {
 }
 
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
+// New prop: `activeItemId` — the id of the item that is happening right now
+//           `nextItemId`   — the id of the next upcoming item (within ~75 min)
+// Both come from useNowContext in today.jsx.
 export default function RouteList({
   groups,
   loading,
@@ -820,6 +929,8 @@ export default function RouteList({
   onNutritionToggle,
   onClassTap,
   onAddClass,
+  activeItemId  = null,   // currently happening — red accent
+  nextItemId    = null,   // up next — amber accent
   isReadOnly    = false,
   isPastDay     = false,
   dateLabel     = "",
@@ -833,7 +944,7 @@ export default function RouteList({
     });
   }
 
-  // Auto-collapse a section 900ms after it becomes fully complete
+  // Auto-collapse completed sections after 900ms
   useEffect(() => {
     if (!groups?.length) return;
     groups.forEach(group => {
@@ -853,7 +964,7 @@ export default function RouteList({
     });
   }, [groups, optimisticStatusById, nutritionCompletion, completedIds]);
 
-  // First swipeable non-workout row gets the nudge hint
+  // First swipeable row gets the hint nudge
   let hintTargetKey = null;
   if (showSwipeHint && groups?.length) {
     outer: for (const group of groups) {
@@ -915,6 +1026,7 @@ export default function RouteList({
                             onTap={onWorkoutTap}
                             optimisticStatusById={optimisticStatusById}
                             isReadOnly={isReadOnly}
+                            isActive={item.id === activeItemId}
                           />
                         );
                       }
@@ -929,6 +1041,8 @@ export default function RouteList({
                             onToggleField={onNutritionToggle}
                             isReadOnly={isReadOnly}
                             showHint={item.id === hintTargetKey}
+                            isActive={item.id === activeItemId}
+                            isNext={item.id === nextItemId}
                           />
                         );
                       }
@@ -942,6 +1056,7 @@ export default function RouteList({
                           onTap={onClassTap}
                           isReadOnly={isReadOnly}
                           showHint={item.id === hintTargetKey}
+                          isNext={item.id === nextItemId}
                         />
                       );
                     })}

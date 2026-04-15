@@ -255,31 +255,57 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
     const id = setInterval(() => { const n = new Date(); setNowMin(n.getHours() * 60 + n.getMinutes()); }, 60_000);
     return () => clearInterval(id);
   }, [isToday]);
-
+ 
   return useMemo(() => {
     if (!isToday) return null;
     const all = groups.flatMap(g => g.items);
+ 
     function itemDone(ev) {
       if (ev.type === "meal") { const c = nutritionCompletion?.[ev.mealKey]; return Boolean(c?.mealDone && c?.hydrationDone); }
       if (ev.type === "workout" && ev.sub) return ev.sub.length > 0 && ev.sub.every(s => (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed");
       return false;
     }
+ 
     const current  = all.find(ev => nowMin >= ev.startMinutes && nowMin < ev.startMinutes + (ev.durationMinutes || 60));
     const upcoming = all.find(ev => ev.startMinutes > nowMin);
     const colorMap = { workout: "#EF4444", meal: "#60A5FA", class: "#FBBF24" };
+ 
     if (current && !itemDone(current)) {
-      return { label: "Right now", title: current.title, isNow: true, color: colorMap[current.type] || "#9AA0B4", type: "current" };
+      return {
+        label: "Right now", title: current.title, isNow: true,
+        color: colorMap[current.type] || "#9AA0B4", type: "current",
+        activeItemId: current.id,   // ← NEW: identifies which row is live
+        nextItemId:   null,
+      };
     }
     if (upcoming) {
       const minOut = upcoming.startMinutes - nowMin;
-      if (minOut <= 75) return { label: `Up next · in ${minOut}m`, title: upcoming.title, isNow: false, color: colorMap[upcoming.type] || "#9AA0B4", type: "upcoming" };
+      if (minOut <= 75) {
+        return {
+          label: `Up next · in ${minOut}m`, title: upcoming.title, isNow: false,
+          color: colorMap[upcoming.type] || "#9AA0B4", type: "upcoming",
+          activeItemId: null,
+          nextItemId:   upcoming.id,  // ← NEW: identifies the next row
+        };
+      }
       const h = Math.floor(upcoming.startMinutes / 60) % 24, m = upcoming.startMinutes % 60;
       const ap = h >= 12 ? "pm" : "am", dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
       const timeStr = m === 0 ? `${dh}${ap}` : `${dh}:${String(m).padStart(2,"0")}${ap}`;
-      return { label: "All clear", title: `Next up at ${timeStr} · ${upcoming.title}`, isNow: false, color: "#9AA0B4", type: "clear" };
+      return {
+        label: "All clear", title: `Next up at ${timeStr} · ${upcoming.title}`, isNow: false,
+        color: "#9AA0B4", type: "clear",
+        activeItemId: null,
+        nextItemId:   upcoming.id,  // ← still pass it even when far away
+      };
     }
     const allDone = all.length > 0 && all.every(ev => itemDone(ev));
-    if (allDone) return { label: "Day complete", title: "All items checked off", isNow: false, color: "#4ADE80", type: "done" };
+    if (allDone) {
+      return {
+        label: "Day complete", title: "All items checked off", isNow: false,
+        color: "#4ADE80", type: "done",
+        activeItemId: null, nextItemId: null,
+      };
+    }
     return null;
   }, [groups, nowMin, nutritionCompletion, optimisticStatusById, isToday]);
 }
@@ -709,11 +735,13 @@ export default function AthleteToday() {
             onNutritionToggle={handleNutritionToggle}
             onClassTap={handleClassTap}
             onAddClass={() => setClassModal({ schedule: null })}
+            activeItemId={nowCtx?.activeItemId || null}
+            nextItemId={nowCtx?.nextItemId || null}
             isReadOnly={isPastDay}
             isPastDay={isPastDay}
             dateLabel={dateLabel}
             showSwipeHint={showSwipeHint}
-          />
+            />
         )}
       </div>
 

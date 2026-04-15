@@ -1,278 +1,345 @@
-// components/athlete-today/workout/WorkoutCard.jsx
-"use client";
+// components/athlete-today/WorkoutCard.jsx
+// The primary visual of the athlete's day.
+// Full-width dark card. Always expanded — the athlete sees their full workout
+// the moment they open the page. No accordion. No hiding the most important
+// information behind a tap.
+//
+// Design language: Nike Training Club × YEEZY. High contrast. Typography-forward.
+// Numbers breathe. One accent color. Nothing decorative that isn't functional.
 
-import { useMemo } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  HelpCircle,
-  Dumbbell,
-  ShieldAlert,
-} from "lucide-react";
-import { statusTone } from "./ui";
-import WorkoutItemRow from "./WorkoutItemRow";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Check, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 
-/* ── helpers ── */
-function cx(...xs) { return xs.filter(Boolean).join(" "); }
-function norm(v)    { return String(v ?? "").trim().toLowerCase(); }
-function safeText(v){ return String(v ?? "").trim(); }
+// ─── Design tokens ────────────────────────────────────────────────────────────
+const C = {
+  card:        "#0F0F0F",
+  cardBorder:  "#1E1E1E",
+  cardSurface: "#161616",
+  cardLine:    "#282828",
+  white:       "#FFFFFF",
+  dim:         "rgba(255,255,255,0.35)",
+  muted:       "rgba(255,255,255,0.18)",
+  accent:      "#0057FF",
+  green:       "#00C851",
+  greenDim:    "rgba(0,200,81,0.15)",
+};
 
-function pickNote(dw) {
-  const v = dw?.ReviewedNotes ?? dw?.reviewedNotes ?? "";
-  if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
-  return String(v ?? "").trim();
+// ─── Haptic ───────────────────────────────────────────────────────────────────
+function haptic(ms = 10) { try { navigator.vibrate?.(ms); } catch {} }
+
+// ─── Parse exercise meta into parts ──────────────────────────────────────────
+function parseMeta(meta) {
+  if (!meta) return {};
+  const parts = meta.split(" · ");
+  const sets   = parts.find(p => p.includes("set"))?.replace(" sets","").replace(" set","") || null;
+  const reps   = parts.find(p => p.includes("rep"))?.replace(" reps","").replace(" rep","") || null;
+  const weight = parts.find(p => !p.includes("set") && !p.includes("rep") && !p.includes("rest") && p.length > 0 && parts.indexOf(p) === 2) || null;
+  const rest   = parts.find(p => p.includes("rest"))?.replace(" rest","") || null;
+  return { sets, reps, weight, rest };
 }
 
-function clampPct(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
+// ─── EXERCISE ROW ─────────────────────────────────────────────────────────────
+function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
+  const done     = (optimisticStatusById?.[sub.id] || sub.item?.Status) === "Completed";
+  const prevDone = useRef(done);
+  const [flash,  setFlash] = useState(false);
+  const { sets, reps, weight } = parseMeta(sub.meta);
 
-function isDoneItem(it, optimisticStatus = "") {
-  const st = norm(optimisticStatus || it?.Status || "");
-  const completed = norm(it?.Completed || it?.completed || "") === "true";
-  if (completed)             return true;
-  if (st === "completed")    return true;
-  if (st === "pending_review") return true;
-  if (st === "acknowledged") return true;
-  return false;
-}
+  useEffect(() => {
+    if (!prevDone.current && done) {
+      haptic(10);
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 600);
+      prevDone.current = true;
+      return () => clearTimeout(t);
+    }
+    if (!done) prevDone.current = false;
+  }, [done]);
 
-/* ── Sub-components ── */
-
-function StatusChip({ tone = "neutral", children }) {
-  const cls =
-    tone === "ok"     ? "bg-emerald-50 text-emerald-900 border-emerald-200" :
-    tone === "blue"   ? "bg-blue-50 text-blue-900 border-blue-200" :
-    tone === "warn"   ? "bg-amber-50 text-amber-900 border-amber-200" :
-                        "bg-gray-100 text-gray-700 border-gray-200";
-  return (
-    <span className={cx(
-      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1",
-      "text-[11px] font-semibold leading-none whitespace-nowrap",
-      cls
-    )}>
-      {children}
-    </span>
-  );
-}
-
-function MiniBar({ pct, allDone }) {
-  const p = clampPct(pct);
   return (
     <div
-      className="h-2 w-full rounded-full bg-gray-100 border border-gray-100 overflow-hidden"
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={p}
-      aria-label="Workout completion"
+      onClick={() => !isReadOnly && onTap(sub)}
+      style={{
+        display:       "flex",
+        alignItems:    "center",
+        gap:           16,
+        padding:       "13px 24px",
+        borderBottom:  isLast ? "none" : `1px solid ${C.cardLine}`,
+        cursor:        isReadOnly ? "default" : "pointer",
+        background:    flash ? "rgba(0,200,81,0.06)" : "transparent",
+        transition:    "background 0.3s",
+        userSelect:    "none",
+      }}
     >
-      <div
-        className={cx(
-          "h-full rounded-full transition-all duration-500",
-          allDone ? "bg-emerald-400" : "bg-[#46769B]"
+      {/* Status indicator */}
+      <div style={{
+        width:          22,
+        height:         22,
+        borderRadius:   "50%",
+        flexShrink:     0,
+        border:         `1.5px solid ${done ? C.green : "rgba(255,255,255,0.2)"}`,
+        background:     done ? C.greenDim : "transparent",
+        display:        "flex",
+        alignItems:     "center",
+        justifyContent: "center",
+        transition:     "all 0.25s ease",
+      }}>
+        {done && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+          >
+            <Check size={11} color={C.green} strokeWidth={3} />
+          </motion.div>
         )}
-        style={{ width: `${p}%` }}
-      />
+      </div>
+
+      {/* Exercise name */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize:       14,
+          fontWeight:     done ? 400 : 600,
+          color:          done ? C.dim : C.white,
+          letterSpacing:  "-0.01em",
+          overflow:       "hidden",
+          textOverflow:   "ellipsis",
+          whiteSpace:     "nowrap",
+          textDecoration: done ? "line-through" : "none",
+          textDecorationColor: "rgba(255,255,255,0.2)",
+          transition:     "all 0.2s",
+        }}>
+          {sub.title}
+        </div>
+      </div>
+
+      {/* Sets × Reps / Weight — right side */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        {sets && reps && (
+          <span style={{
+            fontSize:      12,
+            fontWeight:    700,
+            color:         done ? C.muted : "rgba(255,255,255,0.6)",
+            letterSpacing: "0.02em",
+            fontVariantNumeric: "tabular-nums",
+          }}>
+            {sets}×{reps}
+          </span>
+        )}
+        {weight && (
+          <span style={{
+            fontSize:      11,
+            fontWeight:    600,
+            color:         done ? C.muted : C.accent,
+            background:    done ? "rgba(255,255,255,0.04)" : "rgba(0,87,255,0.15)",
+            border:        `1px solid ${done ? "rgba(255,255,255,0.06)" : "rgba(0,87,255,0.3)"}`,
+            borderRadius:  4,
+            padding:       "2px 7px",
+            transition:    "all 0.2s",
+          }}>
+            {weight}
+          </span>
+        )}
+        {/* Evidence required indicator */}
+        {sub.evidenceRequired && !done && (
+          <AlertCircle size={13} color="rgba(255,165,0,0.6)" />
+        )}
+      </div>
     </div>
   );
 }
 
-/* ── Component ── */
-
+// ─── WORKOUT CARD ─────────────────────────────────────────────────────────────
 export default function WorkoutCard({
-  loading = false,
   dailyWorkout,
-  items = [],
-  onUpload,
-  onQuickComplete,
-  submittingId = "",
-  onAcknowledge,
-  acknowledgingId = "",
-  optimisticStatusById = {},
+  exercises,          // array of exercise sub-objects
+  optimisticStatusById,
+  onExerciseTap,
+  loading,
+  isReadOnly,
+  selectedDate,
 }) {
-  const list       = Array.isArray(items) ? items : [];
-  const hasWorkout = Boolean(dailyWorkout);
-  const hasItems   = list.length > 0;
+  const [showAll, setShowAll] = useState(false);
 
-  const workoutStatus    = norm(safeText(dailyWorkout?.Status || "assigned"));
-  const workoutStatusRaw = safeText(dailyWorkout?.Status || "Assigned");
-  const reviewStatus     = norm(dailyWorkout?.ReviewStatus || dailyWorkout?.reviewStatus || "");
-  const reviewedNotes    = pickNote(dailyWorkout);
-
-  const needsInfo        = reviewStatus === "needs_info";
-  const isWorkoutDone    = workoutStatus === "completed";
-
-  const progress = useMemo(() => {
-    const total = list.length;
-    const done  = list.filter((x) => {
-      const id        = String(x?.id || x?.ID || x?.recordId || "").trim();
-      const optimistic = optimisticStatusById?.[id] || "";
-      return isDoneItem(x, optimistic);
-    }).length;
-    const pct   = total ? Math.round((done / total) * 100) : 0;
-    return { total, done, pct, allDone: total > 0 && done >= total };
-  }, [list, optimisticStatusById]);
-
-  // ── Empty: no workout ──
-  if (!loading && !hasWorkout) {
+  if (loading && !dailyWorkout) {
     return (
-      <div className="rounded-2xl border border-dashed border-gray-200 bg-white overflow-hidden">
-        <div className="p-6 flex items-start gap-3">
-          <span className="h-10 w-10 rounded-2xl border border-amber-100 bg-amber-50 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-black text-gray-800">No workout assigned</p>
-            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
-              Nothing scheduled for this day yet — check back or contact your coach.
-            </p>
-          </div>
-        </div>
+      <div style={{ background: C.card, margin: "0 0 2px", padding: "28px 24px" }}>
+        <div style={{ height: 12, width: 80, background: "#222", borderRadius: 3, marginBottom: 16 }} />
+        <div style={{ height: 28, width: "60%", background: "#1A1A1A", borderRadius: 3, marginBottom: 24 }} />
+        {[1,2,3].map(i => (
+          <div key={i} style={{ height: 44, background: "#161616", borderRadius: 2, marginBottom: 1 }} />
+        ))}
       </div>
     );
   }
 
-  // ── Derive status chip tone ──
-  const rawTone = statusTone(dailyWorkout?.Status);
-  const chipTone =
-    rawTone === "good" ? "ok" :
-    rawTone === "warn" ? "warn" :
-    rawTone === "blue" ? "blue" : "neutral";
+  if (!dailyWorkout) return null;
+
+  const doneCount  = exercises.filter(s => (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed").length;
+  const totalCount = exercises.length;
+  const allDone    = totalCount > 0 && doneCount >= totalCount;
+  const pct        = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
+
+  // Show first 5 exercises by default, expand on demand
+  const PREVIEW_COUNT = 5;
+  const hasMore       = exercises.length > PREVIEW_COUNT;
+  const visible       = showAll ? exercises : exercises.slice(0, PREVIEW_COUNT);
 
   return (
-    <div className="rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
-      {/* Top accent — animates to emerald when all done */}
-      <div className={cx(
-        "h-1 w-full transition-colors duration-700",
-        progress.allDone ? "bg-emerald-400" : "bg-[#46769B]"
-      )} />
+    <div style={{ background: C.card, marginBottom: 2 }}>
 
-      <div className="p-5">
+      {/* ── Card header ── */}
+      <div style={{ padding: "24px 24px 0" }}>
 
-        {/* ── Header ── */}
-        <div className="flex items-start gap-4">
-          <span className={cx(
-            "shrink-0 h-11 w-11 rounded-2xl border flex items-center justify-center transition-colors duration-500",
-            progress.allDone
-              ? "border-emerald-200 bg-emerald-50"
-              : "border-blue-100 bg-blue-50"
-          )}>
-            {progress.allDone
-              ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              : <Dumbbell className="w-5 h-5 text-[#46769B]" />
-            }
+        {/* Eyebrow — label + date */}
+        <div style={{
+          display:       "flex",
+          alignItems:    "center",
+          justifyContent: "space-between",
+          marginBottom:  16,
+        }}>
+          <span style={{
+            fontSize:      9,
+            fontWeight:    800,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color:         allDone ? C.green : C.accent,
+            transition:    "color 0.4s",
+          }}>
+            {allDone ? "✓ Training complete" : "Training"}
           </span>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-lg font-extrabold text-gray-900 leading-tight">Workout</p>
-
-              {workoutStatus !== "assigned" ? (
-                <StatusChip tone={chipTone}>
-                  {workoutStatusRaw}
-                </StatusChip>
-              ) : null}
-
-              {needsInfo ? (
-                <StatusChip tone="warn">
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  Needs info
-                </StatusChip>
-              ) : null}
-            </div>
-
-            {safeText(dailyWorkout?.Title) ? (
-              <p className="text-xs text-gray-500 mt-1 leading-snug truncate">
-                {safeText(dailyWorkout?.Title)}
-              </p>
-            ) : null}
-
-            {progress.total > 0 ? (
-              <div className="mt-3 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-                    {progress.allDone ? "All done" : "Progress"}
-                  </span>
-                  <span className={cx(
-                    "text-xs font-black tabular-nums",
-                    progress.allDone ? "text-emerald-600" : "text-gray-600"
-                  )}>
-                    {progress.done}/{progress.total}
-                  </span>
-                </div>
-                <MiniBar pct={progress.pct} allDone={progress.allDone} />
-              </div>
-            ) : null}
-          </div>
+          <span style={{
+            fontSize:      9,
+            fontWeight:    600,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color:         C.dim,
+          }}>
+            {new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}
+          </span>
         </div>
 
-        {/* ── Needs-info coach message ── */}
-        {needsInfo && reviewedNotes ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <div className="flex items-start gap-3">
-              <span className="h-10 w-10 rounded-2xl border border-amber-200 bg-white flex items-center justify-center shrink-0">
-                <ShieldAlert className="w-5 h-5 text-amber-700" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-gray-900">Coach message</p>
-                <p className="text-[12px] text-gray-700 mt-2 whitespace-pre-wrap break-words leading-snug">
-                  {reviewedNotes}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-2">
-                  Re-submit with the requested details.
-                </p>
-              </div>
-            </div>
+        {/* Workout name — the hero element */}
+        <div style={{
+          fontSize:      28,
+          fontWeight:    800,
+          color:         allDone ? "rgba(255,255,255,0.4)" : C.white,
+          letterSpacing: "-0.03em",
+          lineHeight:    1.1,
+          marginBottom:  20,
+          transition:    "color 0.5s",
+        }}>
+          {dailyWorkout.Title || "Team Workout"}
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            height:       2,
+            background:   "#252525",
+            borderRadius: 1,
+            overflow:     "hidden",
+            marginBottom: 8,
+          }}>
+            <motion.div
+              style={{ height: "100%", borderRadius: 1, background: allDone ? C.green : C.accent }}
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+            />
           </div>
-        ) : null}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontSize: 11, color: C.dim, fontWeight: 500 }}>
+              {doneCount} of {totalCount} complete
+            </span>
+            <span style={{
+              fontSize:  11,
+              fontWeight: 800,
+              color:      allDone ? C.green : C.accent,
+              letterSpacing: "0.05em",
+            }}>
+              {Math.round(pct)}%
+            </span>
+          </div>
+        </div>
+      </div>
 
-        {/* ── Items ── */}
-        <div className="mt-5 space-y-3">
-          {loading ? (
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2">
-              {/* Skeleton shimmer */}
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 rounded-xl bg-blue-100/60 animate-pulse" />
-              ))}
-            </div>
-          ) : hasItems ? (
-            list.map((it, idx) => {
-              const id           = String(it?.id || it?.ID || it?.recordId || "").trim();
-              const completionId = safeText(it?.CompletionId || it?.completionId || "");
-              const submitting   = Boolean(submittingId && id && submittingId === id);
-              const acknowledging = Boolean(
-                acknowledgingId &&
-                (acknowledgingId === id || (completionId && acknowledgingId === completionId))
-              );
-              const key = id || `${idx}-${safeText(it?.Title || it?.Name || "item")}`;
+      {/* ── Divider ── */}
+      <div style={{ height: 1, background: C.cardLine, margin: "0 24px" }} />
 
-              return (
-                <WorkoutItemRow
-                  key={key}
-                  item={it}
-                  submitting={submitting}
-                  acknowledging={acknowledging}
-                  optimisticStatus={optimisticStatusById?.[id] || ""}
-                  onUpload={onUpload}
-                  onQuickComplete={onQuickComplete}
-                  onAcknowledge={onAcknowledge}
-                />
-              );
-            })
+      {/* ── Exercise list ── */}
+      <AnimatePresence initial={false}>
+        <div>
+          {visible.map((sub, i) => (
+            <ExerciseRow
+              key={sub.id}
+              sub={sub}
+              optimisticStatusById={optimisticStatusById}
+              onTap={onExerciseTap}
+              isReadOnly={isReadOnly}
+              isLast={i === visible.length - 1 && !hasMore}
+            />
+          ))}
+        </div>
+      </AnimatePresence>
+
+      {/* ── Show more / less ── */}
+      {hasMore && (
+        <div
+          onClick={() => setShowAll(v => !v)}
+          style={{
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+            gap:            6,
+            padding:        "13px 24px",
+            cursor:         "pointer",
+            borderTop:      `1px solid ${C.cardLine}`,
+            color:          C.dim,
+            fontSize:       12,
+            fontWeight:     600,
+            letterSpacing:  "0.05em",
+          }}
+        >
+          {showAll ? (
+            <><ChevronUp size={13} /> Show less</>
           ) : (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
-              <p className="text-sm font-black text-gray-800">Workout assigned — no items found</p>
-              <p className="text-[12px] text-gray-600 mt-1 leading-snug">
-                Your coach assigned a workout but hasn't linked the items yet. Refresh or ask them to check the record.
-              </p>
-            </div>
+            <><ChevronDown size={13} /> {exercises.length - PREVIEW_COUNT} more exercises</>
           )}
         </div>
+      )}
 
-      </div>
+      {/* ── All done state ── */}
+      {allDone && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            display:        "flex",
+            alignItems:     "center",
+            gap:            10,
+            padding:        "16px 24px",
+            borderTop:      `1px solid ${C.cardLine}`,
+            background:     "rgba(0,200,81,0.05)",
+          }}
+        >
+          <div style={{
+            width:          28,
+            height:         28,
+            borderRadius:   "50%",
+            background:     C.greenDim,
+            border:         `1px solid rgba(0,200,81,0.3)`,
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+          }}>
+            <Check size={13} color={C.green} strokeWidth={3} />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.green }}>
+            Workout complete
+          </span>
+        </motion.div>
+      )}
     </div>
   );
 }

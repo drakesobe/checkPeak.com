@@ -57,12 +57,13 @@ const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
 const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
 const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
-const F_ATHLETE_LINK = "Athlete";
-const F_DATE         = "Date";
-const F_JSON         = "CompletionJson";
-const F_UPDATED_AT   = "UpdatedAt";
-const ATH_TOKEN      = "AthleteToken";
-const ATH_EMAIL      = "Email";
+const F_ATHLETE_LINK         = "Athlete";
+const F_ATHLETE_TOKEN_DIRECT = "AthleteToken"; // lookup field — readable for filtering, NOT writable
+const F_DATE                 = "Date";
+const F_JSON                 = "CompletionJson";
+const F_UPDATED_AT           = "UpdatedAt";
+const ATH_TOKEN              = "AthleteToken";
+const ATH_EMAIL              = "Email";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -104,7 +105,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "date is required in YYYY-MM-DD format." });
     }
 
-    /* 1) Find athlete record — token preferred, email fallback */
+    /* ── 1) Find athlete record ── */
     let athleteFilter = "";
     if (athleteToken) {
       athleteFilter = `FIND('${escapeAirtableString(athleteToken)}', ARRAYJOIN({${ATH_TOKEN}}&''))`;
@@ -123,25 +124,20 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Athlete record not found.", athleteEmail, athleteToken });
     }
 
-    /* 2) Find existing completion record.
-       
-       FIX: The previous filter used IS_AFTER / IS_BEFORE with datetime strings.
-       When the Airtable field is a Date type (not DateTime), Airtable strips the
-       time component before comparing, so:
-         IS_AFTER({Date}, '2026-04-13T00:00:00.000Z')
-         → IS_AFTER('2026-04-13', '2026-04-13')
-         → FALSE
-       The record was never found, so hasRecord always came back false.
+    // Resolve the final token from the Airtable record (in case we fell back to email lookup)
+    const resolvedToken = asString(athleteRec.fields?.[ATH_TOKEN]) || athleteToken;
 
-       FIX: Use IS_SAME(..., 'day') which compares only the date portion,
-       regardless of whether the field is Date or DateTime, and regardless
-       of how the stored value's time component was set.
+    /* ── 2) Find existing completion record ──
+       Filter by AthleteToken (a lookup field on NutritionCompletions that reads
+       from the linked Athlete record) + date. Lookup fields are readable for
+       filtering — Airtable only rejects writes to them, not reads.
+       IS_SAME(..., 'day') handles the midday UTC timestamp correctly.
     */
-    const aId        = escapeAirtableString(athleteRec.id);
-    const isoMidDay  = isoMiddayUTCFromISODateOnly(date); // e.g. "2026-04-13T12:00:00.000Z"
+    const isoMidDay = isoMiddayUTCFromISODateOnly(date);
+    const safeToken = escapeAirtableString(resolvedToken);
 
     const filter = `AND(
-      FIND('${aId}', ARRAYJOIN({${F_ATHLETE_LINK}}&'')) > 0,
+      {${F_ATHLETE_TOKEN_DIRECT}} = '${safeToken}',
       IS_SAME({${F_DATE}}, '${isoMidDay}', 'day')
     )`;
 
@@ -150,9 +146,11 @@ export default async function handler(req, res) {
       .firstPage()
       .then(xs => xs?.[0] || null);
 
-    /* GET = read */
+    /* ── GET: read completion ── */
     if (method === "GET") {
-      const completion = normalizeCompletion(safeJsonParse(existing?.fields?.[F_JSON]) || null);
+      const completion = normalizeCompletion(
+        safeJsonParse(existing?.fields?.[F_JSON]) || null
+      );
       return res.status(200).json({
         ok:        true,
         date,
@@ -162,10 +160,10 @@ export default async function handler(req, res) {
       });
     }
 
-    /* POST = upsert */
+    /* ── POST: upsert completion ── */
     const completion = normalizeCompletion(req.body?.completion);
     const fields = {
-      [F_ATHLETE_LINK]: [athleteRec.id],
+      [F_ATHLETE_LINK]: [athleteRec.id], // linked record — AthleteToken lookup populates automatically
       [F_DATE]:         isoMidDay,
       [F_JSON]:         safeJsonStringify(completion),
       [F_UPDATED_AT]:   new Date().toISOString(),

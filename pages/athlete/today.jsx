@@ -10,6 +10,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 
 import CompleteItemModal  from "@/components/athlete-today/CompleteItemModal";
 import ClassScheduleModal from "@/components/athlete-today/ClassScheduleModal";
+import DayPlannerSheet    from "@/components/athlete-today/DayPlannerSheet";
 import RouteList          from "@/components/athlete-today/RouteList";
 import WorkoutSheet       from "@/components/athlete-today/WorkoutSheet";
 
@@ -24,7 +25,7 @@ import {
   lsGet, lsSet,
 } from "@/lib/athlete-today/utils";
 
-import { ChevronLeft, RefreshCw, Check } from "lucide-react";
+import { ChevronLeft, RefreshCw, Check, Calendar, Plus } from "lucide-react";
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function localDateStr(d = new Date()) {
@@ -59,14 +60,14 @@ const DAY_GROUPS = [
 const SWIPE_HINT_KEY = "cp_swipe_hint:shown";
 
 // ─── buildDayRoute ────────────────────────────────────────────────────────────
-// `loading` — skips the workout while a new date is being fetched, preventing
-//             the previous day's workout from flashing on the new day.
-// Date guard — if the workout record carries a date field, verifies it matches
-//             selectedDate before adding it. Common Airtable field names checked.
+// `loading` — skips the workout while a new date is being fetched.
+// `mealTimeOverrides` — { mealKey: startMinutes } set when user drags a meal
+//   block in DayPlannerSheet. Overrides the default MEAL_TIMES constants so
+//   the RouteList reflects the user's customised schedule immediately.
 function buildDayRoute({
   dailyWorkout, items, mealBlocks, hasPlan,
   classSchedules, selectedDate, optimisticStatusById,
-  dailyHydrationOz, loading,
+  dailyHydrationOz, loading, mealTimeOverrides = {},
 }) {
   const events = [];
 
@@ -88,6 +89,12 @@ function buildDayRoute({
     if (dateMatches) {
       const sub = (items || []).map(item => {
         const evRaw = String(item.EvidenceRequired || "").toLowerCase();
+        // Normalise video URL — try common Airtable field name variations
+        const rawVideo = String(
+          item.VideoURL || item.VideoUrl || item.Video ||
+          item.video_url || item.video || item.VideoLink || ""
+        ).trim();
+        const videoUrl = rawVideo.startsWith("http") ? rawVideo : "";
         return {
           id: item.id, title: item.ExerciseName || "Exercise",
           meta: [
@@ -96,6 +103,8 @@ function buildDayRoute({
             item.Weight && item.Weight,
             item.Rest   && `${item.Rest} rest`,
           ].filter(Boolean).join(" · "),
+          instructions: String(item.Instructions || item.instructions || item.Notes || "").trim(),
+          videoUrl,
           evidenceRequired: evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara",
           item,
         };
@@ -113,7 +122,9 @@ function buildDayRoute({
   }
 
   if (hasPlan) {
-    Object.entries(MEAL_TIMES).forEach(([key, startMinutes]) => {
+    Object.entries(MEAL_TIMES).forEach(([key, defaultStart]) => {
+      // Use planner override if the user has moved this meal block
+      const startMinutes = mealTimeOverrides?.[key] ?? defaultStart;
       const block   = mealBlocks?.[key];
       const targets = block?.targets || {};
       const parts   = [];
@@ -423,6 +434,16 @@ export default function AthleteToday() {
   const [workoutSheetOpen, setWorkoutSheetOpen] = useState(false);
   const [workoutSheetItem, setWorkoutSheetItem] = useState(null);
 
+  // ── Day planner sheet ─────────────────────────────────────────────────────
+  const [plannerOpen, setPlannerOpen] = useState(false);
+
+  // When the user drags a meal block in the planner, these overrides replace
+  // the default MEAL_TIMES in buildDayRoute so the RouteList updates instantly.
+  const [plannerMealTimeOverrides, setPlannerMealTimeOverrides] = useState({});
+  const handleNutritionTimesChange = useCallback((times) => {
+    setPlannerMealTimeOverrides(prev => ({ ...prev, ...times }));
+  }, []);
+
   const handleWorkoutTap = useCallback((item) => {
     setWorkoutSheetItem(item);
     setWorkoutSheetOpen(true);
@@ -493,8 +514,8 @@ export default function AthleteToday() {
     dailyWorkout, items,
     mealBlocks: nutrition.mealBlocks, hasPlan: nutrition.hasPlan,
     classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
-    loading,
-  }), [dailyWorkout, items, nutrition.mealBlocks, nutrition.hasPlan, classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz, loading]);
+    loading, mealTimeOverrides: plannerMealTimeOverrides,
+  }), [dailyWorkout, items, nutrition.mealBlocks, nutrition.hasPlan, classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz, loading, plannerMealTimeOverrides]);
 
   const { totalDone, totalItems, workoutDone, workoutTotal, nutritionDone, nutritionTotal } = useMemo(() => {
     let wD = 0, wT = 0, nD = 0, nT = 0;
@@ -598,8 +619,9 @@ export default function AthleteToday() {
           <WeekStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} classSchedules={classSchedules} todayHasContent={groups.length > 0} />
         </div>
 
-        {/* Sub-bar: now context */}
-        <div style={{ display: "flex", alignItems: "center", padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
+        {/* Sub-bar: now context + actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
+          {/* Now context — left side */}
           {nowCtx ? (
             <div style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0 }}>
               <div style={{
@@ -616,8 +638,47 @@ export default function AthleteToday() {
               </div>
             </div>
           ) : (
-            <div style={{ fontSize: 11, fontWeight: 500, color: err ? "#FCA5A5" : "rgba(255,255,255,0.28)", flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: err ? "#FCA5A5" : "rgba(255,255,255,0.28)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {err ? `⚠ ${err}` : isPastDay ? dateLabel : totalItems > 0 ? `${totalDone} of ${totalItems} complete` : "Swipe items right to complete"}
+            </div>
+          )}
+
+          {/* Action buttons — right side, always visible */}
+          {!isPastDay && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {/* Add class */}
+              <button
+                type="button"
+                onClick={() => setClassModal({ schedule: null })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  background: "rgba(255,255,255,0.07)",
+                  border: "0.5px solid rgba(255,255,255,0.14)",
+                  borderRadius: 7, padding: "5px 9px",
+                  cursor: "pointer", color: "rgba(255,255,255,0.55)",
+                  fontSize: 11, fontWeight: 600,
+                }}
+              >
+                <Plus size={11} />
+                Class
+              </button>
+
+              {/* Plan day */}
+              <button
+                type="button"
+                onClick={() => setPlannerOpen(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  background: "rgba(96,165,250,0.12)",
+                  border: "0.5px solid rgba(96,165,250,0.25)",
+                  borderRadius: 7, padding: "5px 9px",
+                  cursor: "pointer", color: "#93C5FD",
+                  fontSize: 11, fontWeight: 600,
+                }}
+              >
+                <Calendar size={11} />
+                Plan day
+              </button>
             </div>
           )}
         </div>
@@ -691,6 +752,21 @@ export default function AthleteToday() {
           onClose={() => setClassModal(null)}
         />
       )}
+
+      {/* ── DAY PLANNER SHEET ── */}
+      <DayPlannerSheet
+        isOpen={plannerOpen}
+        onClose={() => setPlannerOpen(false)}
+        classSchedules={classSchedules}
+        onUpsertClass={(data, existingId) => upsertSchedule(data, existingId)}
+        onRemoveClass={(id) => removeSchedule(id)}
+        authReady={authReady}
+        user={user}
+        isAthlete={isAthlete}
+        athleteToken={athleteToken}
+        firstName={firstName}
+        onNutritionTimesChange={handleNutritionTimesChange}
+      />
     </div>
   );
 }

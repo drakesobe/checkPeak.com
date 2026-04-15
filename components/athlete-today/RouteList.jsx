@@ -314,7 +314,6 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
 
   const prevDone = useRef(allDone);
   const [flash,       setFlash]       = useState(false);
-  const [showTargets, setShowTargets] = useState(false);
 
   useEffect(() => {
     if (!prevDone.current && allDone) {
@@ -326,8 +325,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
     if (!allDone) prevDone.current = false;
   }, [allDone]);
 
-  // Reset target panel when row closes
-  useEffect(() => { if (!expanded) setShowTargets(false); }, [expanded]);
+  // Reset on row close handled by expanded prop
 
   const handleSwipe = useCallback(() => {
     haptic(12); onToggleField(item.mealKey, "both");
@@ -510,59 +508,40 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
             </div>
           )}
 
-          {/* Nutrition targets — SECONDARY, behind a tap */}
+          {/* Nutrition targets — always visible when expanded */}
           {hasMacros && (
-            <>
-              <button
-                onClick={e => { e.stopPropagation(); setShowTargets(v => !v); }}
-                style={{
-                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "9px 16px", borderTop: "0.5px solid #EEF0FA",
-                  background: "none", border: "none", cursor: "pointer",
-                  fontSize: 11, fontWeight: 600, color: "#9CA3AF",
-                  fontFamily: "inherit",
-                }}
-              >
-                <span>Nutrition targets</span>
-                <ChevronDown size={11} color="#C4CADB"
-                  style={{ transform: showTargets ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
-              </button>
-
-              {showTargets && (
-                <div style={{ padding: "4px 16px 14px", animation: "fadeSlideUp 0.18s ease" }}>
-                  {/* Macro grid */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(60px, 1fr))", gap: 6, marginBottom: 8 }}>
-                    {[
-                      { label: "Cal",    value: item.targets?.calories, unit: "",  color: "#F59E0B" },
-                      { label: "Pro",    value: item.targets?.protein,  unit: "g", color: "#EF4444" },
-                      { label: "Carbs",  value: item.targets?.carbs,    unit: "g", color: "#8B5CF6" },
-                      { label: "Fat",    value: item.targets?.fat,      unit: "g", color: "#6B7280" },
-                    ].filter(m => m.value != null && m.value !== "").map(({ label, value, unit, color }) => (
-                      <div key={label} style={{ background: "#fff", border: "1px solid #EEF0FA", borderRadius: 8, padding: "7px 8px", textAlign: "center" }}>
-                        <div style={{ fontSize: 15, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-0.3px" }}>
-                          {value}<span style={{ fontSize: 9, fontWeight: 600, opacity: 0.6, marginLeft: 1 }}>{unit}</span>
-                        </div>
-                        <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C4CADB", marginTop: 3 }}>
-                          {label}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Hydration */}
-                  {(item.targets?.hydrationOz || item.hydrationOz) && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 9px", background: "#EFF6FF", borderRadius: 8, border: "1px solid #BFDBFE" }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2C6 8 4 13 4 15a8 8 0 0016 0c0-2-2-7-8-13z"/>
-                      </svg>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB" }}>
-                        {item.targets?.hydrationOz || item.hydrationOz} oz hydration target
-                      </span>
+            <div style={{ padding: "4px 16px 14px", borderTop: "0.5px solid #EEF0FA" }}>
+              {/* Macro grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 8 }}>
+                {[
+                  { label: "Cal",   value: item.targets?.calories, unit: "",  color: "#F59E0B" },
+                  { label: "Pro",   value: item.targets?.protein,  unit: "g", color: "#EF4444" },
+                  { label: "Carbs", value: item.targets?.carbs,    unit: "g", color: "#8B5CF6" },
+                  { label: "Fat",   value: item.targets?.fat,      unit: "g", color: "#6B7280" },
+                ].filter(m => m.value != null && m.value !== "").map(({ label, value, unit, color }) => (
+                  <div key={label} style={{ background: "#fff", border: "1px solid #EEF0FA", borderRadius: 8, padding: "7px 6px", textAlign: "center" }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-0.3px" }}>
+                      {value}<span style={{ fontSize: 9, fontWeight: 600, opacity: 0.6, marginLeft: 1 }}>{unit}</span>
                     </div>
-                  )}
+                    <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C4CADB", marginTop: 3 }}>
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Hydration */}
+              {(item.targets?.hydrationOz || item.hydrationOz) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", background: "#EFF6FF", borderRadius: 8, border: "1px solid #BFDBFE" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2C6 8 4 13 4 15a8 8 0 0016 0c0-2-2-7-8-13z"/>
+                  </svg>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#2563EB" }}>
+                    {item.targets?.hydrationOz || item.hydrationOz} oz hydration target
+                  </span>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       )}

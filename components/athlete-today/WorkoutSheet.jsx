@@ -58,7 +58,7 @@ function useSwipeRight(onFire, disabled) {
 
   const props = {
     drag:            disabled ? false : "x",
-    dragConstraints: { left: 0, right: 110 },
+    dragConstraints: { left: 0, right: 60 },
     dragElastic:     { left: 0, right: 0.08 },
     dragMomentum:    false,
     onDrag: (_, info) => {
@@ -103,18 +103,25 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast }) {
 
   return (
     <div style={{ position: "relative", overflow: "hidden" }}>
-      {/* Reveal layer */}
-      <div style={{
-        position: "absolute", right: 0, top: 0, bottom: 0, width: 110,
-        background: armed ? C.green : "#00A040",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: 6, transition: "background 0.15s",
-      }}>
-        <Check size={14} color="#fff" strokeWidth={3} />
-        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          Done
-        </span>
-      </div>
+      {/* Reveal — invisible at rest, fades in as row moves */}
+      {!done && (
+        <div style={{
+          position: "absolute", right: 0, top: 0, bottom: 0, width: 56,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          opacity: Math.min(1, dragX / 18), pointerEvents: "none",
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: "50%",
+            background: armed ? "rgba(0,200,81,0.25)" : "rgba(0,200,81,0.12)",
+            border: `1.5px solid ${armed ? C.green : "rgba(0,200,81,0.35)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "background 0.15s, border-color 0.15s",
+            transform: armed ? "scale(1.1)" : "scale(1)",
+          }}>
+            <Check size={13} color={armed ? C.green : "rgba(0,200,81,0.6)"} strokeWidth={3} />
+          </div>
+        </div>
+      )}
 
       {/* Row */}
       <motion.div
@@ -179,6 +186,42 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast }) {
               ))}
             </div>
           )}
+
+          {/* Instructions */}
+          {!done && sub.instructions ? (
+            <div style={{
+              fontSize: 11, color: "rgba(255,255,255,0.38)", marginTop: 7,
+              lineHeight: 1.55, fontWeight: 400,
+            }}>
+              {sub.instructions}
+            </div>
+          ) : null}
+
+          {/* Video link */}
+          {!done && sub.videoUrl ? (
+            <a
+              href={sub.videoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                marginTop: 8,
+                fontSize: 11, fontWeight: 700, color: C.accent,
+                textDecoration: "none",
+                background: "rgba(0,87,255,0.12)",
+                border: "1px solid rgba(0,87,255,0.25)",
+                borderRadius: 5, padding: "3px 9px",
+                letterSpacing: "0.01em",
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
+              </svg>
+              Watch video
+            </a>
+          ) : null}
 
           {done && sub.meta && (
             <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{sub.meta}</div>

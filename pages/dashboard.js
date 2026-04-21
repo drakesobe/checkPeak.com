@@ -125,6 +125,14 @@ const RESPONSIVE_CSS = `
     .cp-greeting-h1 {
       font-size: clamp(32px, 10vw, 52px);
     }
+    /* Today panel: stack workout/class/meal vertically on mobile */
+    .cp-today-row > div {
+      border-left: none !important;
+      border-top: 0.5px solid rgba(255,255,255,0.08);
+    }
+    .cp-today-row > div:first-child {
+      border-top: none;
+    }
   }
 `;
 
@@ -446,57 +454,181 @@ function Header({ user, stats, onNavigate }) {
 }
 
 // ---------------------------------------------------------------------------
-// Today Panel
-// Replace your TodayPanel component with this.
+// Today Panel — Workout · Upcoming Class · Upcoming Meal
+// summary fields come from the expanded useTodaySummary hook.
+// Sections only render if that data exists; the panel hides entirely
+// if nothing at all is available for today.
 // ---------------------------------------------------------------------------
 function TodayPanel({ loading, summary, onOpen }) {
-  if (loading) return <PanelSkeleton height="110px" />;
-  if (!summary?.hasWorkout) return null;
+  if (loading) return <PanelSkeleton height="130px" />;
 
-  const pct = summary.completedSets && summary.totalSets
-    ? Math.round((summary.completedSets / summary.totalSets) * 100)
+  const { hasWorkout, hasClass, hasMeal } = summary || {};
+  if (!hasWorkout && !hasClass && !hasMeal) return null;
+
+  // Workout progress
+  const pct = summary.itemsCount > 0
+    ? Math.round((summary.completedCount / summary.itemsCount) * 100)
     : 0;
+
+  const workoutTitle = summary.title || "Workout Assigned";
+
+  // Reusable sub-section layout
+  const Section = ({ accentColor, eyebrow, children }) => (
+    <div style={{
+      flex:       1,
+      minWidth:   0,
+      padding:    "16px 20px",
+      borderLeft: `0.5px solid ${CP.border}`,
+    }}>
+      <Eyebrow style={{ marginBottom: "8px", color: accentColor ? `${accentColor}99` : undefined }}>
+        {eyebrow}
+      </Eyebrow>
+      {children}
+    </div>
+  );
+
+  const MetaLine = ({ children }) => (
+    <p style={{ fontFamily: CP.fontB, fontSize: "12px", color: CP.dim, lineHeight: 1.5, marginTop: "3px" }}>
+      {children}
+    </p>
+  );
 
   return (
     <div style={{
       background:  CP.surface,
       border:      `0.5px solid ${CP.border}`,
       borderTop:   `2px solid ${CP.accent}`,
-      padding:     "18px 22px",
+      overflow:    "hidden",
     }}>
-      <Eyebrow style={{ marginBottom: "6px" }}>Today's Workout</Eyebrow>
-      <p style={{
-        fontFamily:    CP.fontBC,
-        fontWeight:    900,
-        fontStyle:     "italic",
-        fontSize:      "30px",
-        lineHeight:    0.92,
-        letterSpacing: "-0.01em",
-        textTransform: "uppercase",
-        color:         CP.white,
-        marginBottom:  "14px",
-      }}>
-        {summary.workoutName || "Workout Assigned"}
-      </p>
-      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-        {summary.completedSets != null && (
-          <span style={{
-            fontFamily:    CP.fontBC,
-            fontSize:      "11px",
-            fontWeight:    700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color:         CP.dim,
-            flexShrink:    0,
-          }}>
-            <span style={{ color: CP.accent, marginRight: "4px" }}>{summary.completedSets}</span>
-            of {summary.totalSets} sets
-          </span>
+      {/* Section row */}
+      <div className="cp-today-row" style={{ display: "flex", flexWrap: "wrap" }}>
+
+        {/* ── Workout ── */}
+        {hasWorkout && (
+          <div style={{ flex: "2 1 240px", minWidth: 0, padding: "18px 22px", borderRight: `0.5px solid ${CP.border}` }}>
+            <Eyebrow style={{ marginBottom: "6px" }}>Today's Workout</Eyebrow>
+
+            <p style={{
+              fontFamily:    CP.fontBC,
+              fontWeight:    900,
+              fontStyle:     "italic",
+              fontSize:      "clamp(22px, 3vw, 30px)",
+              lineHeight:    0.95,
+              letterSpacing: "-0.01em",
+              textTransform: "uppercase",
+              color:         CP.white,
+              marginBottom:  "12px",
+              wordBreak:     "break-word",
+            }}>
+              {workoutTitle}
+            </p>
+
+            {/* Progress bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{
+                fontFamily:    CP.fontBC,
+                fontSize:      "11px",
+                fontWeight:    700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color:         CP.dim,
+                flexShrink:    0,
+                whiteSpace:    "nowrap",
+              }}>
+                <span style={{ color: CP.accent }}>{summary.completedCount}</span>
+                {" / "}{summary.itemsCount} done
+              </span>
+              <div style={{ flex: 1, height: "3px", background: CP.border, minWidth: "40px" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: CP.accent, transition: "width 0.6s ease" }} />
+              </div>
+              <CtaButton onClick={onOpen} size="sm" style={{ flexShrink: 0 }}>
+                Open →
+              </CtaButton>
+            </div>
+          </div>
         )}
-        <div style={{ flex: 1, height: "3px", background: CP.border }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: CP.accent, transition: "width 0.6s ease" }} />
-        </div>
-        <CtaButton onClick={onOpen} size="sm">Open Today →</CtaButton>
+
+        {/* ── Upcoming class ── */}
+        {hasClass && (
+          <Section accentColor={CP.amber} eyebrow="Upcoming Class">
+            <p style={{
+              fontFamily:    CP.fontBC,
+              fontWeight:    900,
+              fontStyle:     "italic",
+              fontSize:      "clamp(18px, 2.5vw, 24px)",
+              lineHeight:    1,
+              letterSpacing: "-0.01em",
+              textTransform: "uppercase",
+              color:         CP.white,
+              marginBottom:  "4px",
+              wordBreak:     "break-word",
+            }}>
+              {summary.className || "Class Scheduled"}
+            </p>
+            {summary.classTime     && <MetaLine>🕐 {summary.classTime}</MetaLine>}
+            {summary.classLocation && <MetaLine>📍 {summary.classLocation}</MetaLine>}
+            {summary.classCoach    && <MetaLine>👤 {summary.classCoach}</MetaLine>}
+          </Section>
+        )}
+
+        {/* ── Upcoming meal ── */}
+        {hasMeal && (
+          <Section accentColor={CP.green} eyebrow="Upcoming Meal">
+            <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+              <p style={{
+                fontFamily:    CP.fontBC,
+                fontWeight:    900,
+                fontStyle:     "italic",
+                fontSize:      "clamp(18px, 2.5vw, 24px)",
+                lineHeight:    1,
+                letterSpacing: "-0.01em",
+                textTransform: "uppercase",
+                color:         CP.white,
+                wordBreak:     "break-word",
+              }}>
+                {summary.mealName || "Meal Scheduled"}
+              </p>
+              {summary.mealTime && (
+                <span style={{ fontFamily: CP.fontB, fontSize: "12px", color: CP.dim, flexShrink: 0 }}>
+                  {summary.mealTime}
+                </span>
+              )}
+            </div>
+
+            {/* Macro chips */}
+            {(summary.mealCalories || summary.mealProtein || summary.mealCarbs || summary.mealFat) && (
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "2px" }}>
+                {summary.mealCalories && (
+                  <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: CP.green, background: "rgba(13,154,85,0.1)", border: "0.5px solid rgba(13,154,85,0.25)", padding: "3px 8px" }}>
+                    {summary.mealCalories} cal
+                  </span>
+                )}
+                {summary.mealProtein && (
+                  <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: CP.accent, background: "rgba(79,171,255,0.08)", border: "0.5px solid rgba(79,171,255,0.2)", padding: "3px 8px" }}>
+                    {summary.mealProtein}g pro
+                  </span>
+                )}
+                {summary.mealCarbs && (
+                  <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: CP.amber, background: "rgba(212,144,10,0.08)", border: "0.5px solid rgba(212,144,10,0.2)", padding: "3px 8px" }}>
+                    {summary.mealCarbs}g carbs
+                  </span>
+                )}
+                {summary.mealFat && (
+                  <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.05)", border: `0.5px solid ${CP.border}`, padding: "3px 8px" }}>
+                    {summary.mealFat}g fat
+                  </span>
+                )}
+              </div>
+            )}
+
+            {summary.mealNotes && (
+              <p style={{ fontFamily: CP.fontB, fontSize: "11px", color: CP.dim, marginTop: "6px", lineHeight: 1.5 }}>
+                {summary.mealNotes}
+              </p>
+            )}
+          </Section>
+        )}
+
       </div>
     </div>
   );

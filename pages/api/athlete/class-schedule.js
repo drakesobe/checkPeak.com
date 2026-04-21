@@ -4,6 +4,8 @@ import { requireAthlete } from "@/lib/requireAthlete";
 
 const TABLE = process.env.CLASS_SCHEDULE_TABLE_ID || "ClassSchedules";
 
+console.log("key length:", process.env.CLASS_SCHEDULE_API_KEY?.length);
+
 export default async function handler(req, res) {
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ ok: false, error: auth.error || "Unauthorized" });
@@ -11,7 +13,8 @@ export default async function handler(req, res) {
   const athleteToken = String(auth.athlete?.AthleteToken || "").trim();
   if (!athleteToken) return res.status(400).json({ ok: false, error: "AthleteToken missing" });
 
-  const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
+const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
+  .base(process.env.ATHLETE_BASE_ID);
 
   // ── GET: load schedules ─────────────────────────────────────────────────────
   if (req.method === "GET") {

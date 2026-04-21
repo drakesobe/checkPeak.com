@@ -55,6 +55,7 @@ const DEFAULT = {
   mealProtein:   null,
   mealCarbs:     null,
   mealFat:       null,
+  mealHydration: null,
   mealNotes:     "",
 };
 
@@ -84,12 +85,13 @@ function parseNextMeal(latestPlan) {
     return {
       key,
       startMin,
-      name:     block?.name || MEAL_LABELS[key],
-      calories: targets?.calories  ?? targets?.cal  ?? latestPlan?.daily?.calories  ?? null,
-      protein:  targets?.protein   ?? targets?.pro  ?? latestPlan?.daily?.protein   ?? null,
-      carbs:    targets?.carbs     ?? targets?.carb ?? latestPlan?.daily?.carbs     ?? null,
-      fat:      targets?.fat                        ?? latestPlan?.daily?.fat       ?? null,
-      notes:    block?.notes || block?.coachNotes || "",
+      name:      block?.name || MEAL_LABELS[key],
+      calories:  targets?.calories   ?? targets?.cal  ?? latestPlan?.daily?.calories  ?? null,
+      protein:   targets?.protein    ?? targets?.pro  ?? latestPlan?.daily?.protein   ?? null,
+      carbs:     targets?.carbs      ?? targets?.carb ?? latestPlan?.daily?.carbs     ?? null,
+      fat:       targets?.fat                         ?? latestPlan?.daily?.fat       ?? null,
+      hydration: targets?.hydrationOz ?? targets?.hydration ?? targets?.water ?? latestPlan?.daily?.hydrationOz ?? null,
+      notes:     block?.notes || block?.coachNotes || "",
     };
   });
 
@@ -105,14 +107,15 @@ function parseNextMeal(latestPlan) {
   const timeStr = m === 0 ? `${dh} ${ap}` : `${dh}:${String(m).padStart(2,"0")} ${ap}`;
 
   return {
-    key:         next.key,
-    mealName:    next.name,
-    mealTime:    timeStr,
-    mealCalories:next.calories ? Number(next.calories) : null,
-    mealProtein: next.protein  ? Number(next.protein)  : null,
-    mealCarbs:   next.carbs    ? Number(next.carbs)    : null,
-    mealFat:     next.fat      ? Number(next.fat)      : null,
-    mealNotes:   next.notes,
+    key:          next.key,
+    mealName:     next.name,
+    mealTime:     timeStr,
+    mealCalories: next.calories  ? Number(next.calories)  : null,
+    mealProtein:  next.protein   ? Number(next.protein)   : null,
+    mealCarbs:    next.carbs     ? Number(next.carbs)     : null,
+    mealFat:      next.fat       ? Number(next.fat)       : null,
+    mealHydration:next.hydration ? Number(next.hydration) : null,
+    mealNotes:    next.notes,
   };
 }
 
@@ -233,15 +236,16 @@ export function useTodaySummary({ userEmail }) {
       }
 
       // ── Nutrition — parse next meal from planJson ──────────────────────────
-      let hasMeal      = false;
-      let mealKey      = "";
-      let mealName     = "";
-      let mealTime     = "";
-      let mealCalories = null;
-      let mealProtein  = null;
-      let mealCarbs    = null;
-      let mealFat      = null;
-      let mealNotes    = "";
+      let hasMeal       = false;
+      let mealKey       = "";
+      let mealName      = "";
+      let mealTime      = "";
+      let mealCalories  = null;
+      let mealProtein   = null;
+      let mealCarbs     = null;
+      let mealFat       = null;
+      let mealHydration = null;
+      let mealNotes     = "";
 
       if (nutritionResult.status === "fulfilled" && nutritionResult.value.ok) {
         try {
@@ -250,15 +254,16 @@ export function useTodaySummary({ userEmail }) {
           const nextMeal   = parseNextMeal(latestPlan);
 
           if (nextMeal) {
-            hasMeal      = true;
-            mealKey      = nextMeal.key;
-            mealName     = nextMeal.mealName;
-            mealTime     = nextMeal.mealTime;
-            mealCalories = nextMeal.mealCalories;
-            mealProtein  = nextMeal.mealProtein;
-            mealCarbs    = nextMeal.mealCarbs;
-            mealFat      = nextMeal.mealFat;
-            mealNotes    = nextMeal.mealNotes;
+            hasMeal       = true;
+            mealKey       = nextMeal.key;
+            mealName      = nextMeal.mealName;
+            mealTime      = nextMeal.mealTime;
+            mealCalories  = nextMeal.mealCalories;
+            mealProtein   = nextMeal.mealProtein;
+            mealCarbs     = nextMeal.mealCarbs;
+            mealFat       = nextMeal.mealFat;
+            mealHydration = nextMeal.mealHydration;
+            mealNotes     = nextMeal.mealNotes;
           }
         } catch {}
       }
@@ -273,7 +278,7 @@ export function useTodaySummary({ userEmail }) {
         classLocation: classData?.classLocation || "",
         classCoach:    classData?.classCoach    || "",
         hasMeal, mealKey, mealName, mealTime,
-        mealCalories, mealProtein, mealCarbs, mealFat, mealNotes,
+        mealCalories, mealProtein, mealCarbs, mealFat, mealHydration, mealNotes,
       };
 
       setTodaySummary(next);

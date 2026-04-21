@@ -596,7 +596,7 @@ function TodayPanel({ loading, summary, onOpen }) {
             </div>
 
             {/* Macro chips */}
-            {(summary.mealCalories || summary.mealProtein || summary.mealCarbs || summary.mealFat) && (
+            {(summary.mealCalories || summary.mealProtein || summary.mealCarbs || summary.mealFat || summary.mealHydration) && (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "2px" }}>
                 {summary.mealCalories && (
                   <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: CP.green, background: "rgba(13,154,85,0.1)", border: "0.5px solid rgba(13,154,85,0.25)", padding: "3px 8px" }}>
@@ -616,6 +616,11 @@ function TodayPanel({ loading, summary, onOpen }) {
                 {summary.mealFat && (
                   <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.05)", border: `0.5px solid ${CP.border}`, padding: "3px 8px" }}>
                     {summary.mealFat}g fat
+                  </span>
+                )}
+                {summary.mealHydration && (
+                  <span style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(96,165,250,0.85)", background: "rgba(96,165,250,0.08)", border: "0.5px solid rgba(96,165,250,0.2)", padding: "3px 8px" }}>
+                    💧 {summary.mealHydration} oz
                   </span>
                 )}
               </div>

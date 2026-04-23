@@ -1,22 +1,58 @@
 // pages/api/athlete/class-schedule.js
+//
+// FIX: React Native mangles Cookie headers. Mobile client passes user JSON
+// as _authUser in query string (GET) or request body (POST).
+// Injected into req.cookies before requireAthlete — no changes to requireAthlete.js.
+
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
 const TABLE = process.env.CLASS_SCHEDULE_TABLE_ID || "ClassSchedules";
 
-console.log("key length:", process.env.CLASS_SCHEDULE_API_KEY?.length);
+// ── Auth cookie fallback ──────────────────────────────────────────────────────
+function cookieMissingOrBroken(req) {
+  try {
+    const raw = req?.cookies?.user || "";
+    if (!raw) return true;
+    const decoded = raw.includes("%7B") || raw.includes("%22")
+      ? decodeURIComponent(raw) : raw;
+    JSON.parse(decoded);
+    return false;
+  } catch { return true; }
+}
+
+function injectAuthFromField(req, authUserField) {
+  if (!authUserField) return;
+  req.cookies        = req.cookies || {};
+  req.cookies.user   = authUserField;
+  req.headers        = req.headers || {};
+  req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
+}
 
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+  // ── Auth fallback for React Native ─────────────────────────────────────────
+  if (cookieMissingOrBroken(req)) {
+    const authUserField = String(
+      req.query?._authUser ||
+      req.body?._authUser  ||
+      ""
+    ).trim();
+    if (authUserField) injectAuthFromField(req, authUserField);
+  }
+
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ ok: false, error: auth.error || "Unauthorized" });
 
   const athleteToken = String(auth.athlete?.AthleteToken || "").trim();
   if (!athleteToken) return res.status(400).json({ ok: false, error: "AthleteToken missing" });
 
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
-  .base(process.env.ATHLETE_BASE_ID);
+  const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
+    .base(process.env.ATHLETE_BASE_ID);
 
-  // ── GET: load schedules ─────────────────────────────────────────────────────
+  // ── GET: load schedules ───────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
       const records = await base(TABLE)
@@ -34,10 +70,12 @@ const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
     }
   }
 
-  // ── POST: upsert schedules ──────────────────────────────────────────────────
+  // ── POST: upsert schedules ────────────────────────────────────────────────
   if (req.method === "POST") {
     const { schedules } = req.body || {};
-    if (!Array.isArray(schedules)) return res.status(400).json({ ok: false, error: "schedules must be an array" });
+    if (!Array.isArray(schedules)) {
+      return res.status(400).json({ ok: false, error: "schedules must be an array" });
+    }
 
     const schedulesJSON = JSON.stringify(schedules);
 

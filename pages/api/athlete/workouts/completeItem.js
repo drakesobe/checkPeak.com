@@ -1,4 +1,11 @@
 // pages/api/athlete/workouts/completeItem.js
+//
+// FIX: React Native multipart requests mangle the Cookie header, so
+// requireAthlete(req) was failing with "Invalid auth cookie".
+// Solution: parse the multipart body FIRST, then if req.cookies.user is
+// missing/broken, inject the _authUser form field as req.cookies.user
+// before calling requireAthlete. No changes to requireAthlete.js needed.
+
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 import formidable from "formidable";
@@ -27,15 +34,15 @@ function requiresFileEvidence(rawEvidenceRequired) {
 
 function normalizeItemStatus(v) {
   const s = asString(v).toLowerCase();
-  if (s === "completed") return "completed";
+  if (s === "completed")      return "completed";
   if (s === "pending_review") return "pending_review";
-  if (s === "rejected") return "rejected";
+  if (s === "rejected")       return "rejected";
   return "assigned";
 }
 
 function deriveDailyWorkoutStatus(itemStatuses = []) {
   const statuses = (itemStatuses || []).map(normalizeItemStatus);
-  if (statuses.includes("rejected")) return "rejected";
+  if (statuses.includes("rejected"))       return "rejected";
   if (statuses.includes("pending_review")) return "pending_review";
   if (statuses.length > 0 && statuses.every((s) => s === "completed")) return "completed";
   return "assigned";
@@ -44,12 +51,7 @@ function deriveDailyWorkoutStatus(itemStatuses = []) {
 function unwrapAuth(maybe) {
   if (!maybe) return { ok: false, athlete: null, user: null, raw: null };
   if (typeof maybe === "object" && "ok" in maybe) {
-    return {
-      ok: Boolean(maybe.ok),
-      athlete: maybe.athlete || null,
-      user: maybe.user || null,
-      raw: maybe,
-    };
+    return { ok: Boolean(maybe.ok), athlete: maybe.athlete || null, user: maybe.user || null, raw: maybe };
   }
   return { ok: true, athlete: maybe, user: null, raw: maybe };
 }
@@ -57,10 +59,10 @@ function unwrapAuth(maybe) {
 function mustAthleteToken({ athlete, user, raw, fields }) {
   const candidates = [
     athlete?.AthleteToken, athlete?.athleteToken, athlete?.Token, athlete?.token,
-    user?.AthleteToken, user?.athleteToken, user?.Token, user?.token,
-    raw?.AthleteToken, raw?.athleteToken, raw?.Token, raw?.token,
+    user?.AthleteToken,    user?.athleteToken,    user?.Token,    user?.token,
+    raw?.AthleteToken,     raw?.athleteToken,     raw?.Token,     raw?.token,
     raw?.athlete?.AthleteToken, raw?.athlete?.athleteToken,
-    raw?.user?.AthleteToken, raw?.user?.athleteToken,
+    raw?.user?.AthleteToken,    raw?.user?.athleteToken,
     fields?.AthleteToken, fields?.athleteToken, fields?.token, fields?.Token,
   ];
   return asString(candidates.find((x) => asString(x)));
@@ -81,9 +83,9 @@ const base =
 
 async function parseMultipart(req) {
   const form = formidable({
-    multiples: false,
+    multiples:      false,
     keepExtensions: true,
-    maxFileSize: 15 * 1024 * 1024,
+    maxFileSize:    15 * 1024 * 1024,
   });
   return await new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
@@ -96,36 +98,32 @@ async function parseMultipart(req) {
 /* ---------------- Cloudinary upload ---------------- */
 
 async function uploadToCloudinary({ blob, filename }) {
-  const cloudName  = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey     = process.env.CLOUDINARY_API_KEY;
-  const apiSecret  = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey    = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
-  if (!cloudName || !apiKey || !apiSecret) {
-    throw new Error("Missing Cloudinary env vars");
-  }
+  if (!cloudName || !apiKey || !apiSecret) throw new Error("Missing Cloudinary env vars");
 
   const timestamp = Math.floor(Date.now() / 1000);
   const folder    = "checkpeak/workout-proof";
-
   const crypto    = await import("crypto");
   const toSign    = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
   const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
   const fd = new FormData();
-  fd.append("file", blob, filename || "proof.jpg");
-  fd.append("api_key", apiKey);
+  fd.append("file",      blob, filename || "proof.jpg");
+  fd.append("api_key",   apiKey);
   fd.append("timestamp", String(timestamp));
-  fd.append("folder", folder);
+  fd.append("folder",    folder);
   fd.append("signature", signature);
 
-  const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
-  const res = await fetch(endpoint, { method: "POST", body: fd });
-
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    { method: "POST", body: fd }
+  );
   let json = {};
   try { json = await res.json(); } catch {}
-
   if (!res.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
-
   return { url: json.secure_url || json.url, bytes: json.bytes, public_id: json.public_id };
 }
 
@@ -133,13 +131,13 @@ async function uploadToCloudinary({ blob, filename }) {
 
 async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
   const orgId = asString(
-    auth?.user?.orgId || auth?.user?.OrgId ||
-    auth?.raw?.orgId  || auth?.raw?.OrgId  ||
+    auth?.user?.orgId    || auth?.user?.OrgId    ||
+    auth?.raw?.orgId     || auth?.raw?.OrgId     ||
     auth?.athlete?.orgId || auth?.athlete?.OrgId || ""
   );
   const orgToken = asString(
-    auth?.user?.OrgToken  || auth?.user?.orgToken  ||
-    auth?.raw?.OrgToken   || auth?.raw?.orgToken   ||
+    auth?.user?.OrgToken    || auth?.user?.orgToken    ||
+    auth?.raw?.OrgToken     || auth?.raw?.orgToken     ||
     auth?.athlete?.OrgToken || auth?.athlete?.orgToken || ""
   ).toUpperCase();
 
@@ -152,20 +150,16 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
     } else if (athleteToken) {
       const tok  = escapeAirtableString(athleteToken);
       const rows = await base("AthleteScans")
-        .select({
-          maxRecords: 1,
-          filterByFormula: `{AthleteToken}='${tok}'`,
-          fields: ["Organization", "OrgToken", "AthleteToken"],
-        })
+        .select({ maxRecords: 1, filterByFormula: `{AthleteToken}='${tok}'`, fields: ["Organization", "OrgToken", "AthleteToken"] })
         .firstPage();
       rec = rows?.[0] || null;
     }
     const f        = rec?.fields || {};
     const orgLinks = Array.isArray(f?.Organization) ? f.Organization : [];
     return {
-      orgId:   asString(orgLinks?.[0] || ""),
+      orgId:    asString(orgLinks?.[0] || ""),
       orgToken: asString(f?.OrgToken || "").toUpperCase(),
-      source:  rec ? "athleteScans" : "none",
+      source:   rec ? "athleteScans" : "none",
     };
   } catch {
     return { orgId: "", orgToken: "", source: "error" };
@@ -185,7 +179,7 @@ async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
     return { updated: true, status: "assigned" };
   }
 
-  const orFormula  = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
+  const orFormula   = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
   const itemRecords = await base("WorkoutItems")
     .select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 })
     .all();
@@ -203,17 +197,48 @@ export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    if (!base) {
-      return res.status(500).json({ error: "Missing DAILYWORKOUTS Airtable env vars" });
+    if (!base) return res.status(500).json({ error: "Missing DAILYWORKOUTS Airtable env vars" });
+
+    // ── Parse multipart FIRST ─────────────────────────────────────────────────
+    // Must happen before requireAthlete so we can inject _authUser as a cookie
+    // fallback for React Native clients whose Cookie header gets mangled on
+    // multipart requests.
+    const { fields, files } = await parseMultipart(req);
+
+    // ── Auth cookie fallback for React Native multipart requests ──────────────
+    // RN sends user JSON as _authUser form field when Cookie header is unreliable.
+    const cookieMissingOrBroken = (() => {
+      try {
+        const raw = req?.cookies?.user || "";
+        if (!raw) return true;
+        // Try to decode + parse — if it fails, cookie is broken
+        const decoded = raw.includes("%7B") || raw.includes("%22")
+          ? decodeURIComponent(raw) : raw;
+        JSON.parse(decoded);
+        return false;
+      } catch {
+        return true;
+      }
+    })();
+
+    if (cookieMissingOrBroken) {
+      const authUserField = asString(fields._authUser || fields.authUser || "");
+      if (authUserField) {
+        // Inject as req.cookies.user so requireAthlete picks it up normally
+        req.cookies        = req.cookies || {};
+        req.cookies.user   = authUserField;
+        // Also inject into headers.cookie as a fallback
+        req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
+      }
     }
 
+    // ── Auth ──────────────────────────────────────────────────────────────────
     let authRaw = null;
     try {
       authRaw = requireAthlete.length >= 2 ? await requireAthlete(req, res) : requireAthlete(req);
     } catch (e) {
       return res.status(401).json({ error: e?.message || "Unauthorized" });
     }
-
     if (res.writableEnded) return;
 
     const auth = unwrapAuth(authRaw);
@@ -221,8 +246,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: auth?.raw?.error || "Unauthorized" });
     }
 
-    const { fields, files } = await parseMultipart(req);
-
+    // ── Field extraction ──────────────────────────────────────────────────────
     const workoutItemId  = asString(fields.workoutItemId);
     const evidenceRaw    = asString(fields.evidenceRequired);
     const needsFile      = requiresFileEvidence(evidenceRaw);
@@ -237,20 +261,14 @@ export default async function handler(req, res) {
       });
     }
 
-    const athleteToken = mustAthleteToken({ athlete: auth.athlete, user: auth.user, raw: auth.raw, fields });
+    const athleteToken    = mustAthleteToken({ athlete: auth.athlete, user: auth.user, raw: auth.raw, fields });
+    const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
+
     if (!athleteToken) {
       return res.status(400).json({
         error: "Missing AthleteToken in session. Log out/in after AthleteScans.AthleteToken is populated.",
-        debug: {
-          athleteKeys: Object.keys(auth.athlete || {}),
-          userKeys:    Object.keys(auth.user    || {}),
-          rawKeys:     Object.keys(auth.raw     || {}),
-          fieldsKeys:  Object.keys(fields       || {}),
-        },
       });
     }
-
-    const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
 
     const f = pickFirst(files?.file || files?.photo || files?.image);
 
@@ -261,13 +279,11 @@ export default async function handler(req, res) {
       });
     }
 
-    const orgResolved = await resolveOrgForCompletion({
-      base, auth, athleteToken, athleteRecordId,
-    });
+    const orgResolved = await resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId });
 
-    // Upload file if provided (and not VARA)
-    let uploaded         = null;
-    let attachment       = [];
+    // ── Upload file ───────────────────────────────────────────────────────────
+    let uploaded          = null;
+    let attachment        = [];
     let attachmentSummary = "";
 
     if (f && !isVARA) {
@@ -284,37 +300,29 @@ export default async function handler(req, res) {
       attachmentSummary = kb ? `${filename} (${kb} KB)` : filename;
     }
 
-    // ── Status logic ────────────────────────────────────────────────────────
-    // VARA           → completed immediately (self-report, no photo/review needed)
-    // File uploaded  → pending_review regardless of EvidenceRequired field value.
-    //                  If the athlete submitted a photo, a coach should review it.
-    // No file + no evidence required → completed immediately
+    // ── Status ────────────────────────────────────────────────────────────────
     const completionStatus =
-      isVARA       ? "completed" :
-      uploaded     ? "pending_review" :
-      needsFile    ? "pending_review" :
-                     "completed";
+      isVARA    ? "completed"      :
+      uploaded  ? "pending_review" :
+      needsFile ? "pending_review" :
+                  "completed";
 
-    const created = await base("WorkoutCompletions").create([
-      {
-        fields: {
-          CompletedAt: new Date().toISOString(),
-
-          AthleteToken: athleteToken,
-          ...(athleteRecordId ? { Athlete: [athleteRecordId] } : {}),
-
-          ...(orgResolved?.orgId    ? { Organization: [orgResolved.orgId] } : {}),
-          ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken    } : {}),
-
-          WorkoutItem: [workoutItemId],
-
-          ...(attachment.length ? { Attachment: attachment }                : {}),
-          ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
-
-          Status: completionStatus,
-        },
+    // ── Write WorkoutCompletion ───────────────────────────────────────────────
+    const created = await base("WorkoutCompletions").create([{
+      fields: {
+        CompletedAt:  new Date().toISOString(),
+        AthleteToken: athleteToken,
+        ...(athleteRecordId ? { Athlete:      [athleteRecordId]    } : {}),
+        ...(orgResolved?.orgId    ? { Organization: [orgResolved.orgId] } : {}),
+        ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken    } : {}),
+        WorkoutItem:  [workoutItemId],
+        ...(dailyWorkoutId  ? { DailyWorkout:      [dailyWorkoutId]  } : {}),
+        ...(attachment.length ? { Attachment:       attachment        } : {}),
+        ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
+        ...(athleteNote ? { Note: athleteNote } : {}),
+        Status: completionStatus,
       },
-    ]);
+    }]);
 
     const wcId = created?.[0]?.id || "";
 
@@ -338,7 +346,6 @@ export default async function handler(req, res) {
       athleteTokenSent:    athleteToken,
       athleteLinked:       Boolean(athleteRecordId),
       orgLinked:           Boolean(orgResolved?.orgId),
-      orgTokenSet:         Boolean(orgResolved?.orgToken),
       orgSource:           orgResolved?.source || "",
     });
   } catch (e) {

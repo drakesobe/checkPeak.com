@@ -1,10 +1,4 @@
 // pages/api/athlete/workouts/completeItem.js
-//
-// FIX: React Native multipart requests mangle the Cookie header, so
-// requireAthlete(req) was failing with "Invalid auth cookie".
-// Solution: parse the multipart body FIRST, then if req.cookies.user is
-// missing/broken, inject the _authUser form field as req.cookies.user
-// before calling requireAthlete. No changes to requireAthlete.js needed.
 
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
@@ -13,8 +7,6 @@ import formidable from "formidable";
 export const config = {
   api: { bodyParser: false },
 };
-
-/* ---------------- tiny helpers ---------------- */
 
 function pickFirst(v) {
   return Array.isArray(v) ? v[0] : v;
@@ -72,21 +64,13 @@ function escapeAirtableString(str = "") {
   return String(str).replace(/'/g, "\\'");
 }
 
-/* ---------------- Airtable base ---------------- */
-
 const base =
   process.env.DAILYWORKOUTS_API_KEY && process.env.DAILYWORKOUTS_BASE_ID
     ? new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID)
     : null;
 
-/* ---------------- multipart parsing ---------------- */
-
 async function parseMultipart(req) {
-  const form = formidable({
-    multiples:      false,
-    keepExtensions: true,
-    maxFileSize:    15 * 1024 * 1024,
-  });
+  const form = formidable({ multiples: false, keepExtensions: true, maxFileSize: 15 * 1024 * 1024 });
   return await new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
       if (err) return reject(err);
@@ -95,39 +79,32 @@ async function parseMultipart(req) {
   });
 }
 
-/* ---------------- Cloudinary upload ---------------- */
-
 async function uploadToCloudinary({ blob, filename }) {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const apiKey    = process.env.CLOUDINARY_API_KEY;
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
   if (!cloudName || !apiKey || !apiSecret) throw new Error("Missing Cloudinary env vars");
 
   const timestamp = Math.floor(Date.now() / 1000);
   const folder    = "checkpeak/workout-proof";
   const crypto    = await import("crypto");
-  const toSign    = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
-  const signature = crypto.createHash("sha1").update(toSign).digest("hex");
+  const signature = crypto.createHash("sha1")
+    .update(`folder=${folder}&timestamp=${timestamp}${apiSecret}`)
+    .digest("hex");
 
   const fd = new FormData();
-  fd.append("file",      blob, filename || "proof.jpg");
-  fd.append("api_key",   apiKey);
+  fd.append("file", blob, filename || "proof.jpg");
+  fd.append("api_key", apiKey);
   fd.append("timestamp", String(timestamp));
-  fd.append("folder",    folder);
+  fd.append("folder", folder);
   fd.append("signature", signature);
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    { method: "POST", body: fd }
-  );
+  const res  = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
   let json = {};
   try { json = await res.json(); } catch {}
   if (!res.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
-  return { url: json.secure_url || json.url, bytes: json.bytes, public_id: json.public_id };
+  return { url: json.secure_url || json.url, bytes: json.bytes };
 }
-
-/* ---------------- Org resolve ---------------- */
 
 async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
   const orgId = asString(
@@ -148,16 +125,14 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
     if (athleteRecordId) {
       rec = await base("AthleteScans").find(athleteRecordId);
     } else if (athleteToken) {
-      const tok  = escapeAirtableString(athleteToken);
       const rows = await base("AthleteScans")
-        .select({ maxRecords: 1, filterByFormula: `{AthleteToken}='${tok}'`, fields: ["Organization", "OrgToken", "AthleteToken"] })
+        .select({ maxRecords: 1, filterByFormula: `{AthleteToken}='${escapeAirtableString(athleteToken)}'`, fields: ["Organization", "OrgToken", "AthleteToken"] })
         .firstPage();
       rec = rows?.[0] || null;
     }
-    const f        = rec?.fields || {};
-    const orgLinks = Array.isArray(f?.Organization) ? f.Organization : [];
+    const f = rec?.fields || {};
     return {
-      orgId:    asString(orgLinks?.[0] || ""),
+      orgId:    asString((Array.isArray(f?.Organization) ? f.Organization : [])?.[0] || ""),
       orgToken: asString(f?.OrgToken || "").toUpperCase(),
       source:   rec ? "athleteScans" : "none",
     };
@@ -166,73 +141,51 @@ async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecord
   }
 }
 
-/* ---------------- DailyWorkouts status recompute ---------------- */
-
 async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
   if (!dailyWorkoutId) return { updated: false, status: "" };
-
   const dw      = await base("DailyWorkouts").find(dailyWorkoutId);
   const itemIds = Array.isArray(dw?.fields?.WorkoutItems) ? dw.fields.WorkoutItems : [];
-
   if (!itemIds.length) {
     await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: "assigned" } }]);
     return { updated: true, status: "assigned" };
   }
-
   const orFormula   = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
-  const itemRecords = await base("WorkoutItems")
-    .select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 })
-    .all();
-
-  const statuses = itemRecords.map((r) => r?.fields?.Status || "assigned");
-  const next     = deriveDailyWorkoutStatus(statuses);
-
+  const itemRecords = await base("WorkoutItems").select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 }).all();
+  const statuses    = itemRecords.map((r) => r?.fields?.Status || "assigned");
+  const next        = deriveDailyWorkoutStatus(statuses);
   await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: next } }]);
   return { updated: true, status: next };
 }
 
-/* ---------------- handler ---------------- */
-
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
     if (!base) return res.status(500).json({ error: "Missing DAILYWORKOUTS Airtable env vars" });
 
-    // ── Parse multipart FIRST ─────────────────────────────────────────────────
-    // Must happen before requireAthlete so we can inject _authUser as a cookie
-    // fallback for React Native clients whose Cookie header gets mangled on
-    // multipart requests.
+    // Parse multipart FIRST so we can use _authUser as cookie fallback
     const { fields, files } = await parseMultipart(req);
 
-    // ── Auth cookie fallback for React Native multipart requests ──────────────
-    // RN sends user JSON as _authUser form field when Cookie header is unreliable.
+    // Auth fallback: RN multipart requests mangle the Cookie header.
+    // Mobile client sends user JSON as _authUser form field instead.
     const cookieMissingOrBroken = (() => {
       try {
         const raw = req?.cookies?.user || "";
         if (!raw) return true;
-        // Try to decode + parse — if it fails, cookie is broken
-        const decoded = raw.includes("%7B") || raw.includes("%22")
-          ? decodeURIComponent(raw) : raw;
+        const decoded = raw.includes("%7B") || raw.includes("%22") ? decodeURIComponent(raw) : raw;
         JSON.parse(decoded);
         return false;
-      } catch {
-        return true;
-      }
+      } catch { return true; }
     })();
 
     if (cookieMissingOrBroken) {
       const authUserField = asString(fields._authUser || fields.authUser || "");
       if (authUserField) {
-        // Inject as req.cookies.user so requireAthlete picks it up normally
         req.cookies        = req.cookies || {};
         req.cookies.user   = authUserField;
-        // Also inject into headers.cookie as a fallback
         req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
       }
     }
 
-    // ── Auth ──────────────────────────────────────────────────────────────────
     let authRaw = null;
     try {
       authRaw = requireAthlete.length >= 2 ? await requireAthlete(req, res) : requireAthlete(req);
@@ -242,57 +195,42 @@ export default async function handler(req, res) {
     if (res.writableEnded) return;
 
     const auth = unwrapAuth(authRaw);
-    if (!auth.ok) {
-      return res.status(401).json({ error: auth?.raw?.error || "Unauthorized" });
-    }
+    if (!auth.ok) return res.status(401).json({ error: auth?.raw?.error || "Unauthorized" });
 
-    // ── Field extraction ──────────────────────────────────────────────────────
     const workoutItemId  = asString(fields.workoutItemId);
     const evidenceRaw    = asString(fields.evidenceRequired);
     const needsFile      = requiresFileEvidence(evidenceRaw);
     const isVARA         = evidenceRaw.toLowerCase() === "voluntary_activity_vara";
     const dailyWorkoutId = asString(fields.dailyWorkoutId);
-    const athleteNote    = asString(fields.athleteNote || fields.note || "");
 
     if (!workoutItemId) {
-      return res.status(400).json({
-        error: "Missing workoutItemId",
-        debug: { fieldsKeys: Object.keys(fields || {}) },
-      });
+      return res.status(400).json({ error: "Missing workoutItemId", debug: { fieldsKeys: Object.keys(fields || {}) } });
     }
 
     const athleteToken    = mustAthleteToken({ athlete: auth.athlete, user: auth.user, raw: auth.raw, fields });
     const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
 
     if (!athleteToken) {
-      return res.status(400).json({
-        error: "Missing AthleteToken in session. Log out/in after AthleteScans.AthleteToken is populated.",
-      });
+      return res.status(400).json({ error: "Missing AthleteToken in session." });
     }
 
     const f = pickFirst(files?.file || files?.photo || files?.image);
-
     if (needsFile && !isVARA && !f) {
-      return res.status(400).json({
-        error: "Photo required",
-        debug: { evidenceRaw, needsFile, filesKeys: Object.keys(files || {}) },
-      });
+      return res.status(400).json({ error: "Photo required", debug: { evidenceRaw, filesKeys: Object.keys(files || {}) } });
     }
 
     const orgResolved = await resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId });
 
-    // ── Upload file ───────────────────────────────────────────────────────────
+    // Upload to Cloudinary
     let uploaded          = null;
     let attachment        = [];
     let attachmentSummary = "";
 
     if (f && !isVARA) {
       const fs       = await import("fs");
-      const path     = f.filepath || f.path;
-      const buff     = fs.readFileSync(path);
-      const mime     = f.mimetype || "image/jpeg";
+      const buff     = fs.readFileSync(f.filepath || f.path);
+      const blob     = new Blob([buff], { type: f.mimetype || "image/jpeg" });
       const filename = f.originalFilename || "proof.jpg";
-      const blob     = new Blob([buff], { type: mime });
 
       uploaded          = await uploadToCloudinary({ blob, filename });
       attachment        = [{ url: uploaded.url, filename }];
@@ -300,26 +238,23 @@ export default async function handler(req, res) {
       attachmentSummary = kb ? `${filename} (${kb} KB)` : filename;
     }
 
-    // ── Status ────────────────────────────────────────────────────────────────
     const completionStatus =
       isVARA    ? "completed"      :
       uploaded  ? "pending_review" :
       needsFile ? "pending_review" :
                   "completed";
 
-    // ── Write WorkoutCompletion ───────────────────────────────────────────────
+    // Write to WorkoutCompletions — only fields that exist in the table
     const created = await base("WorkoutCompletions").create([{
       fields: {
         CompletedAt:  new Date().toISOString(),
         AthleteToken: athleteToken,
-        ...(athleteRecordId ? { Athlete:      [athleteRecordId]    } : {}),
-        ...(orgResolved?.orgId    ? { Organization: [orgResolved.orgId] } : {}),
-        ...(orgResolved?.orgToken ? { OrgToken: orgResolved.orgToken    } : {}),
+        ...(athleteRecordId     ? { Athlete:           [athleteRecordId]    } : {}),
+        ...(orgResolved?.orgId  ? { Organization:      [orgResolved.orgId]  } : {}),
+        ...(orgResolved?.orgToken ? { OrgToken:         orgResolved.orgToken } : {}),
         WorkoutItem:  [workoutItemId],
-        ...(dailyWorkoutId  ? { DailyWorkout:      [dailyWorkoutId]  } : {}),
-        ...(attachment.length ? { Attachment:       attachment        } : {}),
-        ...(attachmentSummary ? { AttachmentSummary: attachmentSummary } : {}),
-        ...(athleteNote ? { Note: athleteNote } : {}),
+        ...(attachment.length   ? { Attachment:         attachment           } : {}),
+        ...(attachmentSummary   ? { AttachmentSummary:  attachmentSummary    } : {}),
         Status: completionStatus,
       },
     }]);
@@ -342,11 +277,9 @@ export default async function handler(req, res) {
       isVARA,
       attachmentUrl:       uploaded?.url || "",
       dailyWorkoutStatus:  daily?.status || "",
-      noteReceived:        Boolean(athleteNote),
       athleteTokenSent:    athleteToken,
       athleteLinked:       Boolean(athleteRecordId),
       orgLinked:           Boolean(orgResolved?.orgId),
-      orgSource:           orgResolved?.source || "",
     });
   } catch (e) {
     console.error("completeItem error:", e);

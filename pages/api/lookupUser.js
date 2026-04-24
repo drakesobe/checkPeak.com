@@ -230,6 +230,7 @@ export default async function handler(req, res) {
       ) {
         const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
         orgName = await resolveAthleteOrgName(orgLinks, orgBase, ORGANIZATIONS_TABLE_NAME);
+          console.log("[lookupUser] resolved orgName:", orgName, "from ids:", orgLinks);
       }
 
       const userOut = {

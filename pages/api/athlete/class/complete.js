@@ -1,8 +1,4 @@
 // pages/api/athlete/class/complete.js
-//
-// FIX: added _authUser multipart field fallback for React Native clients
-// whose Cookie header gets mangled on multipart/FormData requests.
-// Parse multipart FIRST, then inject _authUser into req.cookies if needed.
 
 import Airtable   from "airtable";
 import formidable from "formidable";
@@ -32,6 +28,7 @@ const F_DATE        = "Date";
 const F_PHOTO_URL   = "PhotoUrl";
 const F_PUBLIC_ID   = "PublicId";
 const F_ATTENDED_AT = "AttendedAt";
+const F_COACH_NOTES = "CoachNotes";
 const ATH_TOKEN     = "AthleteToken";
 const ATH_EMAIL     = "Email";
 
@@ -66,7 +63,6 @@ function deleteTempFile(filePath) {
   try { if (filePath) fs.unlinkSync(filePath); } catch {}
 }
 
-// ── Auth cookie fallback ──────────────────────────────────────────────────────
 function cookieMissingOrBroken(req) {
   try {
     const raw = req?.cookies?.user || "";
@@ -94,7 +90,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  // ── Parse multipart FIRST so we can read _authUser field ─────────────────
+  // Parse multipart FIRST so we can read _authUser field
   let fields, files;
   try {
     ({ fields, files } = await parseForm(req));
@@ -111,13 +107,12 @@ export default async function handler(req, res) {
     return Array.isArray(v) ? v[0] : (v ?? null);
   };
 
-  // ── Auth fallback for React Native multipart ──────────────────────────────
+  // Auth fallback for React Native multipart
   if (cookieMissingOrBroken(req)) {
     const authUserField = asString(getValue("_authUser") || getValue("authUser"));
     if (authUserField) injectAuthFromField(req, authUserField);
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const auth = requireAthlete(req);
   if (!auth?.ok) {
     return res.status(401).json({ ok: false, error: auth?.error || "Unauthorized" });
@@ -133,21 +128,20 @@ export default async function handler(req, res) {
     asString(auth?.athlete?.Email || auth?.athlete?.email ||
              auth?.user?.Email   || auth?.user?.email);
 
-  // ── Form fields ───────────────────────────────────────────────────────────
+  // Form fields
   const classId    = asString(getValue("classId"));
   const classTitle = asString(getValue("classTitle"));
   const date       = asString(getValue("date"));
+  const note       = asString(getValue("note"));   // coach note from EvidenceModal
   const photoFile  = getFile("photo");
 
   if (!isISODateOnly(date)) {
     return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" });
   }
   if (!photoFile?.filepath) {
-    deleteTempFile(photoFile?.filepath);
     return res.status(400).json({ ok: false, error: "photo is required" });
   }
 
-  // ── Airtable setup ────────────────────────────────────────────────────────
   if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
     deleteTempFile(photoFile.filepath);
     return res.status(500).json({ ok: false, error: "Athlete Airtable not configured." });
@@ -156,7 +150,7 @@ export default async function handler(req, res) {
   const athleteBase     = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
   const attendanceTable = athleteBase(ATTENDANCE_TABLE);
 
-  // ── 1. Resolve athlete record ─────────────────────────────────────────────
+  // 1. Resolve athlete record
   let athleteRec = null;
   try {
     const filter = athleteToken
@@ -179,7 +173,7 @@ export default async function handler(req, res) {
 
   const resolvedToken = asString(athleteRec.fields?.[ATH_TOKEN]) || athleteToken;
 
-  // ── 2. Upload photo to Cloudinary ─────────────────────────────────────────
+  // 2. Upload photo to Cloudinary
   let cloudResult;
   try {
     const safeToken = resolvedToken.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -205,7 +199,7 @@ export default async function handler(req, res) {
     deleteTempFile(photoFile.filepath);
   }
 
-  // ── 3. Upsert attendance record ───────────────────────────────────────────
+  // 3. Upsert attendance record in Airtable
   const isoMidDay   = `${date}T12:00:00.000Z`;
   const safeToken   = escapeAirtable(resolvedToken);
   const safeClassId = escapeAirtable(classId);
@@ -231,6 +225,7 @@ export default async function handler(req, res) {
       [F_PHOTO_URL]:   cloudResult.secure_url,
       [F_PUBLIC_ID]:   cloudResult.public_id,
       [F_ATTENDED_AT]: new Date().toISOString(),
+      ...(note ? { [F_COACH_NOTES]: note } : {}),
     };
 
     const saved = existing?.id
@@ -242,6 +237,7 @@ export default async function handler(req, res) {
       date,
       classId,
       classTitle,
+      noteReceived: Boolean(note),
       recordId:  saved?.id,
       photoUrl:  cloudResult.secure_url,
       athleteId: athleteRec.id,

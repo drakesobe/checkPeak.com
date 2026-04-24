@@ -1,40 +1,17 @@
 // pages/api/athlete/class/complete.js
 //
-// Records class attendance with a photo proof.
-//
-// Flow:
-//   1. Parse multipart form (photo file + metadata)
-//   2. Upload photo to Cloudinary (athlete-class-attendance folder)
-//   3. Upsert attendance record in Airtable ClassAttendance table
-//
-// ── Airtable: ClassAttendance table ──────────────────────────────────────────
-// Create this table in your Athlete base (same base as AthleteScans) with
-// the following fields:
-//
-//   AthleteToken  — Single line text        (for filtering — same pattern as NutritionCompletions)
-//   Athlete       — Link to AthleteScans    (relational integrity)
-//   ClassId       — Single line text        (the class schedule ID from useClassSchedules)
-//   ClassTitle    — Single line text
-//   Date          — Date                    (the YYYY-MM-DD date of attendance)
-//   PhotoUrl      — URL                     (Cloudinary secure_url)
-//   PublicId      — Single line text        (Cloudinary public_id — for deletion/replacement)
-//   AttendedAt    — Date with time          (server timestamp of submission)
-//
-// Set env var:
-//   CLASS_ATTENDANCE_TABLE=ClassAttendance   (or your Airtable table ID)
-//
-// ─────────────────────────────────────────────────────────────────────────────
+// FIX: added _authUser multipart field fallback for React Native clients
+// whose Cookie header gets mangled on multipart/FormData requests.
+// Parse multipart FIRST, then inject _authUser into req.cookies if needed.
 
-import Airtable  from "airtable";
+import Airtable   from "airtable";
 import formidable from "formidable";
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import { requireAthlete } from "@/lib/requireAthlete";
 
-// ── Next.js: disable built-in body parser so formidable can handle the stream
 export const config = { api: { bodyParser: false } };
 
-// ── Cloudinary config ─────────────────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -42,41 +19,30 @@ cloudinary.config({
   secure:     true,
 });
 
-// ── Airtable config ───────────────────────────────────────────────────────────
 const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
 const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
 const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 const ATTENDANCE_TABLE   = process.env.CLASS_ATTENDANCE_TABLE || "ClassAttendance";
 
-// Field names — must match your Airtable columns exactly
-const F_TOKEN      = "AthleteToken";
-const F_ATHLETE    = "Athlete";       // linked record
-const F_CLASS_ID   = "ClassId";
-const F_CLASS_TITLE= "ClassTitle";
-const F_DATE       = "Date";
-const F_PHOTO_URL  = "PhotoUrl";
-const F_PUBLIC_ID  = "PublicId";
-const F_ATTENDED_AT= "AttendedAt";
+const F_TOKEN       = "AthleteToken";
+const F_ATHLETE     = "Athlete";
+const F_CLASS_ID    = "ClassId";
+const F_CLASS_TITLE = "ClassTitle";
+const F_DATE        = "Date";
+const F_PHOTO_URL   = "PhotoUrl";
+const F_PUBLIC_ID   = "PublicId";
+const F_ATTENDED_AT = "AttendedAt";
+const ATH_TOKEN     = "AthleteToken";
+const ATH_EMAIL     = "Email";
 
-const ATH_TOKEN    = "AthleteToken";
-const ATH_EMAIL    = "Email";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function asString(v) { return String(v ?? "").trim(); }
+function escapeAirtable(str = "") { return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
+function isISODateOnly(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim()); }
 
-function escapeAirtable(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function isISODateOnly(s) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
-}
-
-// Parse multipart form using formidable
 function parseForm(req) {
   return new Promise((resolve, reject) => {
     const form = formidable({
-      maxFileSize: 10 * 1024 * 1024, // 10MB limit
+      maxFileSize: 10 * 1024 * 1024,
       keepExtensions: true,
       filter: ({ mimetype }) => Boolean(mimetype?.startsWith("image/")),
     });
@@ -87,7 +53,6 @@ function parseForm(req) {
   });
 }
 
-// Upload a local temp file to Cloudinary and return the result
 function uploadToCloudinary(filePath, options) {
   return new Promise((resolve, reject) => {
     cloudinary.uploader.upload(filePath, options, (err, result) => {
@@ -97,18 +62,59 @@ function uploadToCloudinary(filePath, options) {
   });
 }
 
-// Clean up formidable temp file — non-fatal
 function deleteTempFile(filePath) {
   try { if (filePath) fs.unlinkSync(filePath); } catch {}
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── Auth cookie fallback ──────────────────────────────────────────────────────
+function cookieMissingOrBroken(req) {
+  try {
+    const raw = req?.cookies?.user || "";
+    if (!raw) return true;
+    const decoded = raw.includes("%7B") || raw.includes("%22")
+      ? decodeURIComponent(raw) : raw;
+    JSON.parse(decoded);
+    return false;
+  } catch { return true; }
+}
+
+function injectAuthFromField(req, authUserField) {
+  if (!authUserField) return;
+  req.cookies        = req.cookies || {};
+  req.cookies.user   = authUserField;
+  req.headers        = req.headers || {};
+  req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+
+  // ── Parse multipart FIRST so we can read _authUser field ─────────────────
+  let fields, files;
+  try {
+    ({ fields, files } = await parseForm(req));
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: `Could not parse upload: ${e.message}` });
+  }
+
+  const getValue = (key) => {
+    const v = fields[key];
+    return Array.isArray(v) ? v[0] : (v ?? "");
+  };
+  const getFile = (key) => {
+    const v = files[key];
+    return Array.isArray(v) ? v[0] : (v ?? null);
+  };
+
+  // ── Auth fallback for React Native multipart ──────────────────────────────
+  if (cookieMissingOrBroken(req)) {
+    const authUserField = asString(getValue("_authUser") || getValue("authUser"));
+    if (authUserField) injectAuthFromField(req, authUserField);
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -127,24 +133,7 @@ export default async function handler(req, res) {
     asString(auth?.athlete?.Email || auth?.athlete?.email ||
              auth?.user?.Email   || auth?.user?.email);
 
-  // ── Parse multipart form ───────────────────────────────────────────────────
-  let fields, files;
-  try {
-    ({ fields, files } = await parseForm(req));
-  } catch (e) {
-    return res.status(400).json({ ok: false, error: `Could not parse upload: ${e.message}` });
-  }
-
-  // formidable v3 returns arrays for all values
-  const getValue = (key) => {
-    const v = fields[key];
-    return Array.isArray(v) ? v[0] : (v ?? "");
-  };
-  const getFile = (key) => {
-    const v = files[key];
-    return Array.isArray(v) ? v[0] : (v ?? null);
-  };
-
+  // ── Form fields ───────────────────────────────────────────────────────────
   const classId    = asString(getValue("classId"));
   const classTitle = asString(getValue("classTitle"));
   const date       = asString(getValue("date"));
@@ -154,19 +143,20 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" });
   }
   if (!photoFile?.filepath) {
+    deleteTempFile(photoFile?.filepath);
     return res.status(400).json({ ok: false, error: "photo is required" });
   }
 
-  // ── Airtable setup ─────────────────────────────────────────────────────────
+  // ── Airtable setup ────────────────────────────────────────────────────────
   if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
     deleteTempFile(photoFile.filepath);
     return res.status(500).json({ ok: false, error: "Athlete Airtable not configured." });
   }
 
-  const athleteBase    = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
+  const athleteBase     = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
   const attendanceTable = athleteBase(ATTENDANCE_TABLE);
 
-  // ── 1. Resolve athlete record ──────────────────────────────────────────────
+  // ── 1. Resolve athlete record ─────────────────────────────────────────────
   let athleteRec = null;
   try {
     const filter = athleteToken
@@ -189,27 +179,24 @@ export default async function handler(req, res) {
 
   const resolvedToken = asString(athleteRec.fields?.[ATH_TOKEN]) || athleteToken;
 
-  // ── 2. Upload photo to Cloudinary ──────────────────────────────────────────
+  // ── 2. Upload photo to Cloudinary ─────────────────────────────────────────
   let cloudResult;
   try {
-    // Folder: athlete-class-attendance/{athleteToken}/{YYYY-MM}/
-    // public_id: {athleteToken}_{classId}_{date} — deterministic so re-submitting
-    // the same class on the same day replaces the photo rather than duplicating
     const safeToken = resolvedToken.replace(/[^a-zA-Z0-9_-]/g, "_");
     const safeClass = (classId || "class").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const monthDir  = date.slice(0, 7); // "YYYY-MM"
+    const monthDir  = date.slice(0, 7);
 
     cloudResult = await uploadToCloudinary(photoFile.filepath, {
-      folder:             `athlete-class-attendance/${safeToken}/${monthDir}`,
-      public_id:          `${safeToken}_${safeClass}_${date}`,
-      overwrite:          true,     // replace if same class re-submitted same day
-      resource_type:      "image",
-      transformation:     [
-        { width: 1280, height: 960, crop: "limit" }, // cap size — full res unnecessary
+      folder:         `athlete-class-attendance/${safeToken}/${monthDir}`,
+      public_id:      `${safeToken}_${safeClass}_${date}`,
+      overwrite:      true,
+      resource_type:  "image",
+      transformation: [
+        { width: 1280, height: 960, crop: "limit" },
         { quality: "auto:good" },
         { fetch_format: "auto" },
       ],
-      tags:               ["class-attendance", safeToken, date],
+      tags: ["class-attendance", safeToken, date],
     });
   } catch (e) {
     deleteTempFile(photoFile.filepath);
@@ -218,16 +205,13 @@ export default async function handler(req, res) {
     deleteTempFile(photoFile.filepath);
   }
 
-  // ── 3. Upsert attendance record in Airtable ────────────────────────────────
-  // FIX: Filter by AthleteToken text field (not linked record FIND) —
-  // same pattern as the NutritionCompletions fix. ARRAYJOIN on a linked
-  // record returns display names, not IDs, so FIND would never match.
+  // ── 3. Upsert attendance record ───────────────────────────────────────────
   const isoMidDay   = `${date}T12:00:00.000Z`;
   const safeToken   = escapeAirtable(resolvedToken);
   const safeClassId = escapeAirtable(classId);
 
   const filter = `AND(
-    {${F_TOKEN}}  = '${safeToken}',
+    {${F_TOKEN}}    = '${safeToken}',
     {${F_CLASS_ID}} = '${safeClassId}',
     IS_SAME({${F_DATE}}, '${isoMidDay}', 'day')
   )`;
@@ -238,7 +222,7 @@ export default async function handler(req, res) {
       .firstPage()
       .then(xs => xs?.[0] || null);
 
-    const fields = {
+    const recordFields = {
       [F_TOKEN]:       resolvedToken,
       [F_ATHLETE]:     [athleteRec.id],
       [F_CLASS_ID]:    classId,
@@ -250,27 +234,24 @@ export default async function handler(req, res) {
     };
 
     const saved = existing?.id
-      ? await attendanceTable.update(existing.id, fields)
-      : await attendanceTable.create(fields);
+      ? await attendanceTable.update(existing.id, recordFields)
+      : await attendanceTable.create(recordFields);
 
     return res.status(200).json({
-      ok:         true,
+      ok:        true,
       date,
       classId,
       classTitle,
-      recordId:   saved?.id,
-      photoUrl:   cloudResult.secure_url,
-      athleteId:  athleteRec.id,
+      recordId:  saved?.id,
+      photoUrl:  cloudResult.secure_url,
+      athleteId: athleteRec.id,
     });
-
   } catch (e) {
-    // Attendance recorded if Cloudinary succeeded — log but don't fail hard
     console.error("[class/complete] Airtable write failed:", e?.message);
     return res.status(500).json({
       ok:       false,
       error:    `Attendance photo uploaded but database write failed: ${e.message}`,
       photoUrl: cloudResult?.secure_url,
-      airtable: { statusCode: e?.statusCode },
     });
   }
 }

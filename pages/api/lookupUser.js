@@ -14,10 +14,6 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
-/**
- * ✅ Updated role normalization
- * Accepts: athlete | organization | admin | trainer
- */
 function normalizeRole(role) {
   const r = String(role || "").trim().toLowerCase();
   if (r === "organization" || r === "org" || r === "owner") return "organization";
@@ -30,12 +26,11 @@ function stripPassword(fields = {}) {
   const out = { ...fields };
   delete out.Password;
   delete out.password;
-  delete out.PasswordHash; // OrgMembers
+  delete out.PasswordHash;
   return out;
 }
 
 function pickAthleteToken(fields = {}) {
-  // Supports exact field name OR spaced variant
   const v =
     fields.AthleteToken ||
     fields["AthleteToken"] ||
@@ -45,9 +40,6 @@ function pickAthleteToken(fields = {}) {
   return String(v || "").trim();
 }
 
-/**
- * ✅ Session cookie payload for HttpOnly cookie
- */
 function toSessionUser(user) {
   const rawRole = String(user?.role || user?.Role || "").trim();
   const roleLower = rawRole.toLowerCase();
@@ -72,15 +64,16 @@ function toSessionUser(user) {
   if (role === "Athlete") {
     session.athleteId = user?.athleteId || user?.AthleteId || user?.id || "";
     if (user?.AthleteToken) session.AthleteToken = String(user.AthleteToken).trim();
-    // Optional: keep org Token if athlete has one (org join code). Not used for workouts.
-    if (user?.Token) session.Token = String(user.Token).trim();
+    if (user?.Token)        session.Token        = String(user.Token).trim();
+    // ✅ Include resolved org name so mobile app can display it
+    if (user?.OrgName)      session.OrgName      = String(user.OrgName).trim();
   }
 
   // ✅ Org-side extras
   if (role !== "Athlete") {
-    if (user?.Token) session.Token = String(user.Token).trim();
-    if (user?.orgId) session.orgId = user.orgId;
-    if (user?.memberId) session.memberId = user.memberId;
+    if (user?.Token)   session.Token   = String(user.Token).trim();
+    if (user?.orgId)   session.orgId   = user.orgId;
+    if (user?.memberId)session.memberId= user.memberId;
     if (user?.OrgName) session.OrgName = user.OrgName;
   }
 
@@ -101,33 +94,22 @@ function setUserCookie(res, sessionUser) {
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    "Max-Age=604800", // 7 days
+    "Max-Age=604800",
   ];
 
   if (isProd) parts.push("Secure");
-
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
-/**
- * ✅ Ensures the ORG OWNER also has an OrgMembers record
- * IMPORTANT: your OrgMembers Role single-select uses "admin" for the owner
- */
 async function ensureOrgMemberForOrgOwner({
-  orgBase,
-  orgId,
-  orgEmail,
-  orgName,
-  orgMembersTableId,
+  orgBase, orgId, orgEmail, orgName, orgMembersTableId,
 }) {
   const emailLower = normalizeEmail(orgEmail);
-  const safeEmail = escapeAirtableString(emailLower);
+  const safeEmail  = escapeAirtableString(emailLower);
 
   const existing = await orgBase(orgMembersTableId)
     .select({
-      filterByFormula: `AND(LOWER({Email})='${safeEmail}', FIND('${escapeAirtableString(
-        orgId
-      )}', ARRAYJOIN({Organization}&'')) > 0)`,
+      filterByFormula: `AND(LOWER({Email})='${safeEmail}', FIND('${escapeAirtableString(orgId)}', ARRAYJOIN({Organization}&'')) > 0)`,
       maxRecords: 1,
     })
     .firstPage();
@@ -135,14 +117,34 @@ async function ensureOrgMemberForOrgOwner({
   if (existing?.length) return existing[0];
 
   const created = await orgBase(orgMembersTableId).create({
-    Email: emailLower,
-    Name: String(orgName || "Organization Owner").trim(),
-    Role: "admin", // ✅ IMPORTANT: matches your single select options
-    Active: true,
+    Email:        emailLower,
+    Name:         String(orgName || "Organization Owner").trim(),
+    Role:         "admin",
+    Active:       true,
     Organization: [orgId],
   });
 
   return created;
+}
+
+/**
+ * ✅ Resolve org name for an athlete from their linked Organization record IDs.
+ * Returns the org name string, or "" if unresolvable.
+ */
+async function resolveAthleteOrgName(orgRecordIds, orgBase, orgsTableName) {
+  if (!Array.isArray(orgRecordIds) || !orgRecordIds.length) return "";
+  const firstId = String(orgRecordIds[0] || "").trim();
+  if (!firstId || !firstId.startsWith("rec")) return "";
+  try {
+    const orgRecord = await orgBase(orgsTableName).find(firstId);
+    return String(
+      orgRecord?.fields?.Name ||
+      orgRecord?.fields?.["Organization Name"] ||
+      ""
+    ).trim();
+  } catch {
+    return "";
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -164,52 +166,36 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Email and password required" });
   }
 
-  const roleNorm = normalizeRole(role);
+  const roleNorm   = normalizeRole(role);
   const emailLower = normalizeEmail(email);
-  const safeEmail = escapeAirtableString(emailLower);
+  const safeEmail  = escapeAirtableString(emailLower);
 
-  // ---- Athletes config
-  const ATHLETE_API_KEY = process.env.ATHLETE_API_KEY;
-  const ATHLETE_BASE_ID = process.env.ATHLETE_BASE_ID;
-  const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
-
-  // ---- Organizations config
+  const ATHLETE_API_KEY       = process.env.ATHLETE_API_KEY;
+  const ATHLETE_BASE_ID       = process.env.ATHLETE_BASE_ID;
+  const ATHLETE_TABLE_NAME    = process.env.ATHLETE_TABLE_NAME;
   const ORGANIZATIONS_API_KEY = process.env.ORGANIZATIONS_API_KEY;
   const ORGANIZATIONS_BASE_ID = process.env.ORGANIZATIONS_BASE_ID;
   const ORGANIZATIONS_TABLE_NAME = process.env.ORGANIZATIONS_TABLE_NAME;
-
-  // ---- OrgMembers table
-  const ORG_MEMBERS_TABLE_ID =
-    process.env.ORG_MEMBERS_TABLE_ID || "tblRvpw7XeVZfdKIq";
+  const ORG_MEMBERS_TABLE_ID  = process.env.ORG_MEMBERS_TABLE_ID || "tblRvpw7XeVZfdKIq";
 
   if (roleNorm === "athlete") {
     if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
-      return res.status(500).json({
-        error:
-          "Athletes Airtable not configured. Check ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME.",
-      });
+      return res.status(500).json({ error: "Athletes Airtable not configured." });
     }
   } else {
-    if (
-      !ORGANIZATIONS_API_KEY ||
-      !ORGANIZATIONS_BASE_ID ||
-      !ORGANIZATIONS_TABLE_NAME
-    ) {
-      return res.status(500).json({
-        error:
-          "Organizations Airtable not configured. Check ORGANIZATIONS_API_KEY, ORGANIZATIONS_BASE_ID, ORGANIZATIONS_TABLE_NAME.",
-      });
+    if (!ORGANIZATIONS_API_KEY || !ORGANIZATIONS_BASE_ID || !ORGANIZATIONS_TABLE_NAME) {
+      return res.status(500).json({ error: "Organizations Airtable not configured." });
     }
   }
 
   try {
-    /* ----------------------- */
-    /* ATHLETE LOGIN           */
-    /* ----------------------- */
+    /* ------------------------------------------------------------------ */
+    /* ATHLETE LOGIN                                                       */
+    /* ------------------------------------------------------------------ */
     if (roleNorm === "athlete") {
-      const base = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
+      const athleteBase = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
 
-      const records = await base(ATHLETE_TABLE_NAME)
+      const records = await athleteBase(ATHLETE_TABLE_NAME)
         .select({
           filterByFormula: `LOWER({Email})='${safeEmail}'`,
           maxRecords: 1,
@@ -220,32 +206,42 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const record = records[0];
-      const fields = record.fields || {};
+      const record     = records[0];
+      const fields     = record.fields || {};
       const storedHash = fields.Password || "";
 
       if (!storedHash) {
-        return res.status(500).json({
-          error: "Athlete record missing Password hash.",
-        });
+        return res.status(500).json({ error: "Athlete record missing Password hash." });
       }
 
       const match = await bcrypt.compare(String(password), String(storedHash));
       if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
-      const safeFields = stripPassword(fields);
-
-      // ✅ Pull AthleteToken from Airtable (ATH-XXXX)
+      const safeFields   = stripPassword(fields);
       const athleteToken = pickAthleteToken(fields);
 
+      // ✅ Resolve org name from linked Organization field
+      // We need the org base to look up the org record by ID
+      let orgName = "";
+      const orgLinks = fields.Organization; // linked record field → array of rec IDs
+      if (
+        Array.isArray(orgLinks) && orgLinks.length &&
+        ORGANIZATIONS_API_KEY && ORGANIZATIONS_BASE_ID && ORGANIZATIONS_TABLE_NAME
+      ) {
+        const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
+        orgName = await resolveAthleteOrgName(orgLinks, orgBase, ORGANIZATIONS_TABLE_NAME);
+      }
+
       const userOut = {
-        id: record.id,
-        athleteId: record.id, // ✅ explicit + stable
+        id:           record.id,
+        athleteId:    record.id,
         ...safeFields,
-        role: "Athlete",
-        Role: "Athlete",
-        Email: safeFields.Email || emailLower,
-        AthleteToken: athleteToken || "", // ✅ must be present for workout/nutrition matching
+        role:         "Athlete",
+        Role:         "Athlete",
+        Email:        safeFields.Email || emailLower,
+        AthleteToken: athleteToken || "",
+        // ✅ Resolved org name — now available in the session for mobile + web
+        ...(orgName ? { OrgName: orgName } : {}),
       };
 
       const sessionUser = toSessionUser(userOut);
@@ -255,26 +251,20 @@ export default async function handler(req, res) {
         user: userOut,
         debug: {
           athleteTokenPresent: Boolean(athleteToken),
-          athleteToken: athleteToken ? athleteToken : null,
-          athleteTokenFieldHints: {
-            AthleteToken: fields.AthleteToken ?? null,
-            "Athlete Token": fields["Athlete Token"] ?? null,
-          },
+          athleteToken:        athleteToken ? athleteToken : null,
+          orgName:             orgName || null,
         },
       });
     }
 
-    /* -------------------------------------------- */
-    /* ORG-SIDE LOGIN (Organization/Admin/Trainer)  */
-    /* -------------------------------------------- */
+    /* ------------------------------------------------------------------ */
+    /* ORG-SIDE LOGIN (Organization / Admin / Trainer)                    */
+    /* ------------------------------------------------------------------ */
 
-    const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(
-      ORGANIZATIONS_BASE_ID
-    );
-
+    const orgBase        = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
     const wantsMemberOnly = roleNorm === "admin" || roleNorm === "trainer";
 
-    // 1) Try Organization primary account (only when role isn't admin/trainer)
+    // 1) Try Organization primary account
     if (!wantsMemberOnly) {
       const orgAccount = await orgBase(ORGANIZATIONS_TABLE_NAME)
         .select({
@@ -284,64 +274,50 @@ export default async function handler(req, res) {
         .firstPage();
 
       if (orgAccount.length) {
-        const record = orgAccount[0];
-        const fields = record.fields || {};
+        const record     = orgAccount[0];
+        const fields     = record.fields || {};
         const storedHash = fields.Password || "";
 
         if (!storedHash) {
-          return res.status(500).json({
-            error: "Organization record missing Password hash.",
-          });
+          return res.status(500).json({ error: "Organization record missing Password hash." });
         }
 
         const match = await bcrypt.compare(String(password), String(storedHash));
         if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
         const safeFields = stripPassword(fields);
-
-        const orgToken =
-          safeFields.Token ||
-          safeFields["Organization Token"] ||
-          fields.Token ||
-          "";
-
-        const orgName =
-          safeFields.Name ||
-          safeFields["Organization Name"] ||
-          "Organization";
+        const orgToken   = safeFields.Token || safeFields["Organization Token"] || fields.Token || "";
+        const orgName    = safeFields.Name  || safeFields["Organization Name"]  || "Organization";
 
         let ownerMemberId = null;
         try {
           const ownerMember = await ensureOrgMemberForOrgOwner({
-            orgBase,
-            orgId: record.id,
+            orgBase, orgId: record.id,
             orgEmail: safeFields.Email || emailLower,
-            orgName,
-            orgMembersTableId: ORG_MEMBERS_TABLE_ID,
+            orgName, orgMembersTableId: ORG_MEMBERS_TABLE_ID,
           });
           ownerMemberId = ownerMember?.id || null;
         } catch {}
 
         const userOut = {
-          id: record.id,
+          id:       record.id,
           ...safeFields,
-          role: "Organization",
-          Role: "Organization",
-          Email: safeFields.Email || emailLower,
-          Token: orgToken,
-          orgId: record.id,
+          role:     "Organization",
+          Role:     "Organization",
+          Email:    safeFields.Email || emailLower,
+          Token:    orgToken,
+          orgId:    record.id,
           memberId: ownerMemberId || undefined,
-          OrgName: String(orgName || "").trim(),
+          OrgName:  String(orgName || "").trim(),
         };
 
         const sessionUser = toSessionUser(userOut);
         setUserCookie(res, sessionUser);
-
         return res.status(200).json({ user: userOut });
       }
     }
 
-    // 2) OrgMembers (admin/trainer + (optionally) org-owner as admin in OrgMembers)
+    // 2) OrgMembers (admin / trainer)
     const memberRecords = await orgBase(ORG_MEMBERS_TABLE_ID)
       .select({
         filterByFormula: `AND(LOWER({Email})='${safeEmail}', {Active}=TRUE())`,
@@ -355,80 +331,70 @@ export default async function handler(req, res) {
 
     if (memberRecords.length > 1) {
       const orgIds = memberRecords
-        .map((m) =>
-          Array.isArray(m.fields?.Organization) ? m.fields.Organization[0] : null
-        )
+        .map((m) => Array.isArray(m.fields?.Organization) ? m.fields.Organization[0] : null)
         .filter(Boolean);
-
       return res.status(409).json({
-        error:
-          "This email belongs to multiple organizations. Please select your organization.",
+        error: "This email belongs to multiple organizations. Please select your organization.",
         orgIds,
       });
     }
 
-    const member = memberRecords[0];
-    const fields = member.fields || {};
+    const member     = memberRecords[0];
+    const fields     = member.fields || {};
     const storedHash = fields.PasswordHash || "";
 
     if (!storedHash) {
-      return res.status(500).json({
-        error: "OrgMember record missing PasswordHash.",
-      });
+      return res.status(500).json({ error: "OrgMember record missing PasswordHash." });
     }
 
     const match = await bcrypt.compare(String(password), String(storedHash));
     if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
     const roleField = String(fields.Role || "").trim().toLowerCase();
-
     if (wantsMemberOnly && roleNorm !== roleField) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
     let outRole = "Trainer";
-    if (roleField === "admin") outRole = "Admin";
-    if (roleField === "organization" || roleField === "org") outRole = "Organization";
+    if (roleField === "admin")                                    outRole = "Admin";
+    if (roleField === "organization" || roleField === "org")      outRole = "Organization";
 
     const orgLinks = fields.Organization;
-    const orgId = Array.isArray(orgLinks) && orgLinks.length ? orgLinks[0] : null;
+    const orgId    = Array.isArray(orgLinks) && orgLinks.length ? orgLinks[0] : null;
     if (!orgId) {
-      return res.status(500).json({
-        error: "OrgMember missing Organization link.",
-      });
+      return res.status(500).json({ error: "OrgMember missing Organization link." });
     }
 
     const orgRecord = await orgBase(ORGANIZATIONS_TABLE_NAME).find(orgId);
-    const orgToken = String(orgRecord?.fields?.Token || "").trim();
-    const orgName = String(orgRecord?.fields?.Name || "Organization").trim();
-
+    const orgToken  = String(orgRecord?.fields?.Token || "").trim();
+    const orgName   = String(orgRecord?.fields?.Name  || "Organization").trim();
     const safeFields = stripPassword(fields);
 
     const userOut = {
-      id: member.id,
+      id:       member.id,
       ...safeFields,
-      role: outRole,
-      Role: outRole,
-      Email: safeFields.Email || emailLower,
-      Name: safeFields.Name || outRole,
-      Token: orgToken,
+      role:     outRole,
+      Role:     outRole,
+      Email:    safeFields.Email || emailLower,
+      Name:     safeFields.Name  || outRole,
+      Token:    orgToken,
       orgId,
       memberId: member.id,
-      OrgName: orgName,
+      OrgName:  orgName,
     };
 
     const sessionUser = toSessionUser(userOut);
     setUserCookie(res, sessionUser);
-
     return res.status(200).json({ user: userOut });
+
   } catch (err) {
     console.error("[lookupUser] error:", err);
     return res.status(500).json({
       error: "Failed to lookup user",
       airtable: {
         statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
+        message:    err?.message,
+        error:      err?.error,
       },
     });
   }

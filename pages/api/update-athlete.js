@@ -12,6 +12,9 @@ export default async function handler(req, res) {
 
   const { athleteId, updates } = req.body;
 
+  console.log("athleteId received:", athleteId);
+  console.log("updates received:", updates);
+
   if (!athleteId || !updates) {
     return res.status(400).json({ error: "Missing athleteId or updates" });
   }
@@ -30,6 +33,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("Update athlete error:", err);
-    return res.status(500).json({ error: "Failed to update athlete." });
+    return res.status(500).json({ error: err.message || "Failed to update athlete." });
   }
 }

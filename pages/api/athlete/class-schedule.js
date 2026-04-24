@@ -1,13 +1,17 @@
 // pages/api/athlete/class-schedule.js
 //
-// FIX: React Native mangles Cookie headers. Mobile client passes user JSON
-// as _authUser in query string (GET) or request body (POST).
-// Injected into req.cookies before requireAthlete — no changes to requireAthlete.js.
+// CHANGED: now reads/writes SchedulesJSON in DayPlannerBlocks table
+// (same table the day planner uses) instead of a separate ClassSchedules table.
+// Recurring schedules are stored on a sentinel record with Date = "recurring"
+// so they don't collide with day-specific EventsJSON records.
+//
+// Auth: same _authUser cookie fallback for React Native multipart/JSON requests.
 
 import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
-const TABLE = process.env.CLASS_SCHEDULE_TABLE_ID || "ClassSchedules";
+const TABLE          = process.env.DAYPLANNER_TABLE_ID || "DayPlannerBlocks";
+const RECURRING_DATE = "recurring"; // sentinel — no real date, just schedules
 
 // ── Auth cookie fallback ──────────────────────────────────────────────────────
 function cookieMissingOrBroken(req) {
@@ -52,11 +56,14 @@ export default async function handler(req, res) {
   const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
     .base(process.env.ATHLETE_BASE_ID);
 
+  // Find the recurring schedules record for this athlete
+  const filter = `AND({AthleteToken}="${athleteToken}", {Date}="${RECURRING_DATE}")`;
+
   // ── GET: load schedules ───────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
       const records = await base(TABLE)
-        .select({ filterByFormula: `{AthleteToken}="${athleteToken}"`, maxRecords: 1 })
+        .select({ filterByFormula: filter, maxRecords: 1 })
         .firstPage();
 
       if (!records.length) return res.json({ ok: true, schedules: [] });
@@ -81,13 +88,17 @@ export default async function handler(req, res) {
 
     try {
       const existing = await base(TABLE)
-        .select({ filterByFormula: `{AthleteToken}="${athleteToken}"`, maxRecords: 1 })
+        .select({ filterByFormula: filter, maxRecords: 1 })
         .firstPage();
 
       if (existing.length) {
         await base(TABLE).update(existing[0].id, { SchedulesJSON: schedulesJSON });
       } else {
-        await base(TABLE).create({ AthleteToken: athleteToken, SchedulesJSON: schedulesJSON });
+        await base(TABLE).create({
+          AthleteToken:  athleteToken,
+          Date:          RECURRING_DATE,
+          SchedulesJSON: schedulesJSON,
+        });
       }
 
       return res.json({ ok: true });

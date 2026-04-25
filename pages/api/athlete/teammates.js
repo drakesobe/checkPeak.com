@@ -1,0 +1,107 @@
+// pages/api/athlete/teammates.js
+// Returns all athletes in the same organization (matched by Token field).
+// Used by the mobile app to sync teammates to Firestore once per day.
+// Auth: reads session from cookie (same as all other athlete endpoints).
+
+import Airtable from "airtable";
+
+function asString(v) {
+  return String(v ?? "").trim();
+}
+
+function parseCookies(cookieHeader = "") {
+  const cookies = {};
+  cookieHeader.split(";").forEach((part) => {
+    const [key, ...rest] = part.trim().split("=");
+    if (key) cookies[key.trim()] = decodeURIComponent(rest.join("="));
+  });
+  return cookies;
+}
+
+function getSessionUser(req) {
+  try {
+    const cookies = parseCookies(req.headers.cookie || "");
+    const raw = cookies.user;
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const session = getSessionUser(req);
+  if (!session) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  // Get the org token from the session — this is the shared token
+  // that links all athletes to the same organization
+  const orgToken = asString(
+    session.Token || session.token ||
+    session.OrgToken || session.orgToken || ""
+  );
+
+  if (!orgToken) {
+    return res.status(400).json({ error: "No organization token in session" });
+  }
+
+  const apiKey    = process.env.ATHLETE_API_KEY;
+  const baseId    = process.env.ATHLETE_BASE_ID;
+  const tableName = process.env.ATHLETE_TABLE_NAME;
+
+  if (!apiKey || !baseId || !tableName) {
+    return res.status(500).json({ error: "Athlete Airtable not configured." });
+  }
+
+  try {
+    const base    = new Airtable({ apiKey }).base(baseId);
+    const records = [];
+
+    // Pull all athletes with matching Token — paginate through all pages
+    await base(tableName)
+      .select({
+        filterByFormula: `{Token} = '${orgToken.replace(/'/g, "\\'")}'`,
+        fields: ['Name', 'Email', 'Phone', 'sport', 'Token', 'AthleteToken', 'Role', 'Title', 'Organization'],
+        pageSize: 100,
+      })
+      .eachPage((page, fetchNext) => {
+        page.forEach(record => {
+          const f = record.fields || {};
+          // Exclude the requesting athlete themselves
+          if (record.id === (session.id || session.athleteId)) return;
+          records.push({
+            id:           record.id,
+            name:         asString(f.Name),
+            email:        asString(f.Email).toLowerCase(),
+            phone:        asString(f.Phone),
+            sport:        asString(f.sport).toLowerCase(),
+            role:         asString(f.Role) || 'Athlete',
+            title:        asString(f.Title),
+            athleteToken: asString(f.AthleteToken),
+            orgToken:     asString(f.Token),
+          });
+        });
+        fetchNext();
+      });
+
+    return res.status(200).json({
+      ok:        true,
+      teammates: records,
+      count:     records.length,
+    });
+  } catch (err) {
+    console.error("[teammates] error:", err);
+    return res.status(500).json({
+      error:   "Failed to fetch teammates",
+      details: asString(err?.message || err),
+    });
+  }
+}

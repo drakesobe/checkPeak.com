@@ -9,19 +9,18 @@ function asString(v) {
   return String(v ?? "").trim();
 }
 
-function parseCookies(cookieHeader = "") {
-  const cookies = {};
-  cookieHeader.split(";").forEach((part) => {
-    const [key, ...rest] = part.trim().split("=");
-    if (key) cookies[key.trim()] = decodeURIComponent(rest.join("="));
-  });
-  return cookies;
-}
-
 function getSessionUser(req) {
   try {
-    const cookies = parseCookies(req.headers.cookie || "");
-    const raw = cookies.user;
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = {};
+    cookieHeader.split(';').forEach(part => {
+      const eqIdx = part.indexOf('=');
+      if (eqIdx === -1) return;
+      const key = part.slice(0, eqIdx).trim();
+      const val = part.slice(eqIdx + 1).trim();
+      cookies[key] = decodeURIComponent(val);
+    });
+    const raw = cookies['user'];
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {

@@ -13,6 +13,7 @@
 //   NUTRITION_STATUS_FIELD      — "Status" (active/inactive plan status)
 //   NUTRITION_CREATEDAT_FIELD   — "CreatedAt"
 //   NUTRITION_COMPLETIONS_TABLE — NutritionCompletions table ID
+//   NEXT_PUBLIC_SITE_URL        — your production domain e.g. https://checkpeak.com
 
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
@@ -58,8 +59,6 @@ const COMPLETION_CALORIES_FIELD = "CaloriesLogged";
 const COMPLETION_TARGET_FIELD   = "CaloriesTarget";
 
 // ── Athlete table reminder fields ─────────────────────────────────────────────
-// IMPORTANT: These must match exactly what send-reminder.js writes.
-// send-reminder.js writes to "LastReminderSentAt" and "ReminderCount".
 const ATH_LAST_REMINDER  = "LastReminderSentAt";
 const ATH_REMINDER_COUNT = "ReminderCount";
 
@@ -89,6 +88,25 @@ async function fetchAllRecords(table, opts = {}) {
   return records;
 }
 
+// ── Resolve the internal base URL for server-side self-calls ──────────────────
+// Priority:
+//   1. NEXT_PUBLIC_SITE_URL  — your custom domain (most reliable)
+//   2. VERCEL_URL            — Vercel's auto-generated deployment URL
+//   3. localhost fallback    — local dev
+//
+// IMPORTANT: VERCEL_URL does not include the protocol and may not match
+// your auth cookie domain if you're using a custom domain. Always set
+// NEXT_PUBLIC_SITE_URL=https://yourdomain.com in your Vercel env vars.
+function getInternalBaseUrl() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return `http://localhost:${process.env.PORT || 3000}`;
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -103,10 +121,12 @@ export default async function handler(req, res) {
 
   try {
     // ── 1. Fetch athletes ─────────────────────────────────────────────────────
-    const protocol  = process.env.VERCEL_URL ? "https" : "http";
-    const host      = process.env.VERCEL_URL || `localhost:${process.env.PORT || 3000}`;
+    const baseUrl    = getInternalBaseUrl();
+    const athleteUrl = `${baseUrl}/api/org/getAthletes`;
 
-    const athleteRes  = await fetch(`${protocol}://${host}/api/org/getAthletes`, {
+    console.log("[nutrition/queue] fetching athletes from:", athleteUrl);
+
+    const athleteRes  = await fetch(athleteUrl, {
       method:  "GET",
       headers: {
         cookie: req.headers.cookie || "",
@@ -115,6 +135,13 @@ export default async function handler(req, res) {
     });
 
     const athleteJson = await athleteRes.json().catch(() => ({}));
+
+    console.log(
+      "[nutrition/queue] getAthletes →",
+      "status:", athleteRes.status,
+      "athletes:", athleteJson?.athletes?.length ?? "missing key",
+      "error:", athleteJson?.error ?? "none"
+    );
 
     if (!athleteRes.ok) {
       return res.status(athleteRes.status).json({
@@ -126,6 +153,7 @@ export default async function handler(req, res) {
     const athletes = Array.isArray(athleteJson?.athletes) ? athleteJson.athletes : [];
 
     if (!athletes.length) {
+      console.warn("[nutrition/queue] getAthletes returned 0 athletes — check org scoping and auth cookie domain");
       return res.status(200).json({
         rows:   [],
         meta:   { weekStartISO: weekStart, sports: [], teams: [] },
@@ -140,10 +168,9 @@ export default async function handler(req, res) {
     }
     const tokens = Object.keys(athleteByToken);
 
+    console.log(`[nutrition/queue] ${tokens.length} athletes loaded`);
+
     // ── 2. Fetch reminder tally from AthleteScans ─────────────────────────────
-    // Reads LastReminderSentAt and ReminderCount — written by send-reminder.js.
-    // FIX: field name is "LastReminderSentAt" (was previously mismatched as
-    // "ReminderSentAt" in send-reminder.js — that file has been corrected).
     const reminderByToken = {};
 
     if (ATHLETE_API_KEY && ATHLETE_BASE_ID && ATHLETE_TABLE_NAME && tokens.length) {
@@ -285,11 +312,6 @@ export default async function handler(req, res) {
           status:   asStr(plan[PLAN_STATUS_FIELD]),
           recordId: plan._recordId,
         } : null,
-        // Reminder state — populated from AthleteScans via step 2 above.
-        // On first load after a reminder send, these will reflect what
-        // send-reminder.js persisted. The page also patches these
-        // optimistically in memory immediately after a send so the UI
-        // updates without waiting for a reload.
         lastReminderSentAt: reminder.lastReminderSentAt,
         reminderCount:      reminder.reminderCount,
         lastSeen:           null,
@@ -306,6 +328,8 @@ export default async function handler(req, res) {
       r.hasPlan && !r.missingCheckin &&
       (r.adherenceAvg == null || r.adherenceAvg >= 65)
     ).length;
+
+    console.log(`[nutrition/queue] Built ${rows.length} rows — withPlan:${withPlan} noCheckin:${noCheckin} lowAdherence:${lowAdherence} onTrack:${onTrack}`);
 
     return res.status(200).json({
       rows,

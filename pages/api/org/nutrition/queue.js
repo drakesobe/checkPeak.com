@@ -53,10 +53,9 @@ const PLAN_FIELDS = [
 ];
 
 // Fields to pull from NutritionCompletions
-const COMPLETION_TOKEN_FIELD    = process.env.NUTRITION_TOKEN_FIELD || "AthleteToken";
-const COMPLETION_WEEK_FIELD     = "WeekStart";
-const COMPLETION_CALORIES_FIELD = "CaloriesLogged";
-const COMPLETION_TARGET_FIELD   = "CaloriesTarget";
+const COMPLETION_TOKEN_FIELD = process.env.NUTRITION_TOKEN_FIELD || "AthleteToken";
+const COMPLETION_DATE_FIELD  = "Date";
+const COMPLETION_JSON_FIELD  = "CompletionJson";
 
 // ── Athlete table reminder fields ─────────────────────────────────────────────
 const ATH_LAST_REMINDER  = "LastReminderSentAt";
@@ -242,30 +241,33 @@ export default async function handler(req, res) {
     }
 
     // ── 4. Fetch this week's completions ──────────────────────────────────────
+    // CompletionJson shape: { breakfast: { mealDone, hydrationDone }, lunch: ... }
+    // Adherence = (total toggles checked / 8 possible) * 100
+    // We fetch all completions from this week (Sun–today) and pick the
+    // most recent per athlete.
     const completionsByToken = {};
     const completionsTable   = getAirtableTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, COMPLETIONS_TABLE);
 
     if (completionsTable) {
       try {
-        const safeWeek = escapeAirtable(weekStart);
-        const recs     = await fetchAllRecords(completionsTable, {
-          filterByFormula: `{${COMPLETION_WEEK_FIELD}} = '${safeWeek}'`,
-          fields: [
-            COMPLETION_TOKEN_FIELD,
-            COMPLETION_WEEK_FIELD,
-            COMPLETION_CALORIES_FIELD,
-            COMPLETION_TARGET_FIELD,
-          ].filter(Boolean),
+        // Date filter: anything >= this week's Sunday
+        // Airtable Date field is stored as ISO datetime so IS_AFTER works
+        const weekSunday = `${weekStart}T00:00:00.000Z`;
+        const recs = await fetchAllRecords(completionsTable, {
+          filterByFormula: `IS_AFTER({${COMPLETION_DATE_FIELD}}, '${escapeAirtable(weekSunday)}')`,
+          fields: [COMPLETION_TOKEN_FIELD, COMPLETION_DATE_FIELD, COMPLETION_JSON_FIELD].filter(Boolean),
+          sort: [{ field: COMPLETION_DATE_FIELD, direction: "desc" }],
         });
 
         for (const r of recs) {
           const tok = asStr(r.fields[COMPLETION_TOKEN_FIELD]);
-          if (tok && athleteByToken[tok]) {
+          if (tok && athleteByToken[tok] && !completionsByToken[tok]) {
+            // Take only the most recent record per athlete (already sorted desc)
             completionsByToken[tok] = { ...r.fields, _recordId: r.id };
           }
         }
 
-        console.log(`[nutrition/queue] Completions this week (${weekStart}): ${recs.length} records, ${Object.keys(completionsByToken).length} matched athletes`);
+        console.log(`[nutrition/queue] Completions this week: ${recs.length} records, ${Object.keys(completionsByToken).length} matched athletes`);
       } catch (e) {
         console.warn("[nutrition/queue] NutritionCompletions unavailable:", e?.message);
       }
@@ -283,15 +285,24 @@ export default async function handler(req, res) {
       const hasPlan        = Boolean(plan);
       const missingCheckin = hasPlan && !completion;
 
+      // Adherence = checked toggles / 8 possible (4 meals × mealDone + hydrationDone)
       let adherenceAvg = null;
       if (completion) {
-        const logged = Number(completion[COMPLETION_CALORIES_FIELD] || 0);
-        const target = Number(
-          completion[COMPLETION_TARGET_FIELD] ||
-          plan?.[PLAN_CAL_FIELD] ||
-          0
-        );
-        adherenceAvg = target > 0 ? Math.min(100, Math.round((logged / target) * 100)) : null;
+        try {
+          const raw  = asStr(completion[COMPLETION_JSON_FIELD]);
+          const json = raw ? JSON.parse(raw) : null;
+          if (json && typeof json === "object") {
+            const MEALS = ["breakfast", "lunch", "afternoon", "dinner"];
+            let checked = 0;
+            for (const meal of MEALS) {
+              if (json[meal]?.mealDone)      checked++;
+              if (json[meal]?.hydrationDone) checked++;
+            }
+            adherenceAvg = Math.round((checked / 8) * 100);
+          }
+        } catch {
+          adherenceAvg = null;
+        }
       }
 
       return {

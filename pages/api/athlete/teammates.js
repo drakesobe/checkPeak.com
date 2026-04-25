@@ -36,20 +36,23 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const session = getSessionUser(req);
-  if (!session) {
-    return res.status(401).json({ error: "Not authenticated" });
+  // Accept token from query param (mobile) or session cookie (web)
+  let orgToken = asString(req.query?.token || req.query?.orgToken || "");
+
+  // Fallback to session cookie if no query param
+  if (!orgToken) {
+    const session = getSessionUser(req);
+    if (!session) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    orgToken = asString(
+      session.Token || session.token ||
+      session.OrgToken || session.orgToken || ""
+    );
   }
 
-  // Get the org token from the session — this is the shared token
-  // that links all athletes to the same organization
-  const orgToken = asString(
-    session.Token || session.token ||
-    session.OrgToken || session.orgToken || ""
-  );
-
   if (!orgToken) {
-    return res.status(400).json({ error: "No organization token in session" });
+    return res.status(400).json({ error: "No organization token found" });
   }
 
   const apiKey    = process.env.ATHLETE_API_KEY;

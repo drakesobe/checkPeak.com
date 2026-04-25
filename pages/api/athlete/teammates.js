@@ -67,32 +67,29 @@ export default async function handler(req, res) {
     const base    = new Airtable({ apiKey }).base(baseId);
     const records = [];
 
-    // Pull all athletes with matching Token — paginate through all pages
-    await base(tableName)
+    // Use .all() instead of .eachPage() — compatible with Vercel serverless
+    const pages = await base(tableName)
       .select({
         filterByFormula: `{Token} = '${orgToken.replace(/'/g, "\\'")}'`,
-        fields: ['Name', 'Email', 'Phone', 'sport', 'Token', 'AthleteToken', 'Role', 'Title', 'Organization'],
+        fields: ['Name', 'Email', 'Phone', 'sport', 'Token', 'AthleteToken', 'Role', 'Title'],
         pageSize: 100,
       })
-      .eachPage((page, fetchNext) => {
-        page.forEach(record => {
-          const f = record.fields || {};
-          // Exclude the requesting athlete themselves
-          if (record.id === (session.id || session.athleteId)) return;
-          records.push({
-            id:           record.id,
-            name:         asString(f.Name),
-            email:        asString(f.Email).toLowerCase(),
-            phone:        asString(f.Phone),
-            sport:        asString(f.sport).toLowerCase(),
-            role:         asString(f.Role) || 'Athlete',
-            title:        asString(f.Title),
-            athleteToken: asString(f.AthleteToken),
-            orgToken:     asString(f.Token),
-          });
-        });
-        fetchNext();
+      .all();
+
+    pages.forEach(record => {
+      const f = record.fields || {};
+      records.push({
+        id:           record.id,
+        name:         asString(f.Name),
+        email:        asString(f.Email).toLowerCase(),
+        phone:        asString(f.Phone),
+        sport:        asString(f.sport).toLowerCase(),
+        role:         asString(f.Role) || 'Athlete',
+        title:        asString(f.Title),
+        athleteToken: asString(f.AthleteToken),
+        orgToken:     asString(f.Token),
       });
+    });
 
     return res.status(200).json({
       ok:        true,

@@ -144,7 +144,7 @@ export default function AthletesToolbar({
           <input
             ref={searchRef}
             style={{ ...inputStyle, padding: "10px 14px 10px 38px", width: "100%" }}
-            placeholder="Search name, email, title… (press /)"
+            placeholder="Search name, email, sport, team…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onFocus={e => { e.currentTarget.style.border = `1px solid ${DS.brand}`; }}

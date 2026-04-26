@@ -1,62 +1,76 @@
 // pages/api/org/updateAthleteMeta.js
+// PATCH /api/org/updateAthleteMeta
+// Body: { athleteId: string, sport?: string }
+//
+// Updates a single record in the AthleteScans table.
+// athleteId must be the Airtable record ID (rec…).
+
 import Airtable from "airtable";
-import { requireOrg } from "@/lib/requireOrg";
 
-const base =
-  process.env.ATHLETE_API_KEY && process.env.ATHLETE_BASE_ID
-    ? new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID)
-    : null;
+// ── AthleteScans table credentials ───────────────────────────────────────────
+// Matches the env vars in your .env for the AthleteScans DB
+const API_KEY = process.env.ATHLETE_API_KEY;
+const BASE_ID = process.env.ATHLETE_BASE_ID;   // appspE640Pggw1VP9
+const TABLE   = process.env.ATHLETE_TABLE_NAME; // tblyfqbVBXKR7jPEz
 
+// ── Airtable field name map ───────────────────────────────────────────────────
+// Right-hand side must exactly match the column name in Airtable (case-sensitive).
+// Your "sport" column is a Single Select field called "sport".
+const FIELD_MAP = {
+  sport: "sport",
+};
+
+function getBase() {
+  if (!API_KEY || !BASE_ID || !TABLE) {
+    throw new Error(
+      "Missing AthleteScans credentials. Check ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME in .env."
+    );
+  }
+  return new Airtable({ apiKey: API_KEY }).base(BASE_ID);
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
-
   if (req.method !== "PATCH") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed. Use PATCH." });
   }
 
-  if (!base || !process.env.ATHLETE_TABLE_NAME) {
-    return res.status(500).json({ error: "Athletes Airtable not configured." });
+  const { athleteId, sport } = req.body || {};
+
+  // Validate
+  if (!athleteId || typeof athleteId !== "string" || !athleteId.startsWith("rec")) {
+    return res.status(400).json({
+      error: "athleteId is required and must be a valid Airtable record ID (rec…).",
+    });
   }
 
-  const auth = requireOrg(req);
-  if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
-
-  const { athleteId, status, tags, notes, sport } = req.body || {};
-
-  if (!athleteId || typeof athleteId !== "string" || !athleteId.trim()) {
-    return res.status(400).json({ error: "athleteId is required" });
+  if (sport === undefined) {
+    return res.status(400).json({ error: "No fields provided to update." });
   }
 
-  const fields = {};
-  if (typeof status === "string") fields.Status = status.trim();
-  if (Array.isArray(tags))        fields.Tags   = tags.filter(Boolean).map(t => String(t).trim());
-  if (typeof notes  === "string") fields.Notes  = notes;
-  if (typeof sport  === "string") fields.sport  = sport.trim();
-
-  if (Object.keys(fields).length === 0) {
-    return res.status(400).json({ error: "No fields provided to update" });
+  if (typeof sport !== "string") {
+    return res.status(400).json({ error: "sport must be a string." });
   }
+
+  // Build Airtable fields — empty string clears the single-select cell
+  const fields = {
+    [FIELD_MAP.sport]: sport.trim() || null,
+  };
 
   try {
-    const updated = await base(process.env.ATHLETE_TABLE_NAME).update(athleteId.trim(), fields);
+    const base = getBase();
+    await base(TABLE).update([{ id: athleteId, fields }]);
 
-    return res.status(200).json({
-      ok:      true,
-      athlete: {
-        id:     updated.id,
-        email:  updated.fields?.Email  || "",
-        name:   updated.fields?.Name   || "",
-        status: updated.fields?.Status || "Active",
-        tags:   updated.fields?.Tags   || [],
-        notes:  updated.fields?.Notes  || "",
-        sport:  updated.fields?.sport  || "",
-      },
-    });
+    return res.status(200).json({ ok: true, athleteId, sport: sport.trim() });
   } catch (err) {
-    console.error("[updateAthleteMeta] error:", err);
-    return res.status(500).json({
-      error:    "Failed to update athlete",
-      airtable: { statusCode: err?.statusCode, message: err?.message },
-    });
+    console.error("[updateAthleteMeta] Airtable error:", err);
+
+    const message =
+      err?.message ||
+      err?.error   ||
+      "Failed to update athlete record.";
+
+    const status = message.toLowerCase().includes("not found") ? 422 : 500;
+    return res.status(status).json({ error: message });
   }
 }

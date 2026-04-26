@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Mail, Clipboard, Star, CheckCircle2,
-  ExternalLink, Trash2, AlertTriangle,
+  ExternalLink, Trash2, AlertTriangle, Trophy,
 } from "lucide-react";
 import { formatDateTime, cleanString } from "@/lib/org/athletes/utils";
 
@@ -38,6 +38,31 @@ const DS = {
   dimText:      "#9BA8B4",
 };
 
+// Matches the option values in the select below — used to derive a display label
+const SPORT_LABELS = {
+  baseball:       "Baseball",
+  basketball:     "Basketball",
+  "cross country":"Cross Country",
+  football:       "Football",
+  golf:           "Golf",
+  hockey:         "Hockey",
+  lacrosse:       "Lacrosse",
+  soccer:         "Soccer",
+  softball:       "Softball",
+  swimming:       "Swimming",
+  tennis:         "Tennis",
+  track:          "Track & Field",
+  volleyball:     "Volleyball",
+  wrestling:      "Wrestling",
+  other:          "Other",
+};
+
+function getSportLabel(val) {
+  if (!val) return null;
+  const k = String(val).trim().toLowerCase();
+  return SPORT_LABELS[k] ?? String(val).trim();
+}
+
 function Section({ title, subtitle, children }) {
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: DS.pageBg, border: `1px solid ${DS.border}` }}>
@@ -60,42 +85,12 @@ function Section({ title, subtitle, children }) {
 
 function DrawerBtn({ onClick, disabled = false, children, variant = "default" }) {
   const variants = {
-    default: {
-      bg:      DS.cardBg,
-      border:  DS.border,
-      color:   DS.labelText,
-      hover:   DS.brandBg,
-    },
-    primary: {
-      bg:      DS.brand,
-      border:  DS.brand,
-      color:   "#fff",
-      hover:   "#162d4a",
-    },
-    danger: {
-      bg:      DS.bannedBg,
-      border:  DS.bannedBorder,
-      color:   DS.banned,
-      hover:   "#ffe0e0",
-    },
-    dangerSolid: {
-      bg:      DS.banned,
-      border:  DS.banned,
-      color:   "#fff",
-      hover:   "#a00d23",
-    },
-    safe: {
-      bg:      DS.safeBg,
-      border:  DS.safeBorder,
-      color:   DS.safe,
-      hover:   "#d0f5dc",
-    },
-    ghost: {
-      bg:      DS.pageBg,
-      border:  DS.border,
-      color:   DS.labelText,
-      hover:   DS.brandBg,
-    },
+    default:     { bg: DS.cardBg,   border: DS.border,       color: DS.labelText, hover: DS.brandBg    },
+    primary:     { bg: DS.brand,    border: DS.brand,         color: "#fff",       hover: "#162d4a"     },
+    danger:      { bg: DS.bannedBg, border: DS.bannedBorder,  color: DS.banned,    hover: "#ffe0e0"     },
+    dangerSolid: { bg: DS.banned,   border: DS.banned,         color: "#fff",       hover: "#a00d23"     },
+    safe:        { bg: DS.safeBg,   border: DS.safeBorder,    color: DS.safe,      hover: "#d0f5dc"     },
+    ghost:       { bg: DS.pageBg,   border: DS.border,        color: DS.labelText, hover: DS.brandBg    },
   };
   const v = variants[variant] || variants.default;
 
@@ -106,10 +101,10 @@ function DrawerBtn({ onClick, disabled = false, children, variant = "default" })
       disabled={disabled}
       className="flex-1 flex items-center justify-center gap-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
-        padding:    "10px 14px",
-        background:  v.bg,
-        border:      `1px solid ${v.border}`,
-        color:       v.color,
+        padding:       "10px 14px",
+        background:    v.bg,
+        border:        `1px solid ${v.border}`,
+        color:         v.color,
         letterSpacing: "0.01em",
       }}
       onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = v.hover; }}
@@ -156,9 +151,7 @@ function DeleteConfirm({ athlete, onConfirm, onCancel, deleting, deleteError }) 
         )}
 
         <div className="flex gap-2">
-          <DrawerBtn onClick={onCancel} variant="ghost" disabled={deleting}>
-            Cancel
-          </DrawerBtn>
+          <DrawerBtn onClick={onCancel} variant="ghost" disabled={deleting}>Cancel</DrawerBtn>
           <DrawerBtn onClick={onConfirm} variant="dangerSolid" disabled={deleting}>
             <Trash2 className="w-3.5 h-3.5" />
             {deleting ? "Deleting…" : "Yes, delete"}
@@ -175,7 +168,6 @@ export default function AthleteDrawer({
   open,
   athlete,
   onClose,
-  batchProgress,
   isDone,
   isStarred,
   onOpenPrescriptions,
@@ -185,7 +177,9 @@ export default function AthleteDrawer({
   noteDirty,
   noteValue,
   onNoteChange,
-  onDeleteAthlete,  // (athleteId) => Promise — called after confirmed
+  onDeleteAthlete,
+  // Optional: called after a successful sport save so parent can update its list
+  onSportSaved,
 }) {
   const [deleteMode,  setDeleteMode]  = useState(false);
   const [deleting,    setDeleting]    = useState(false);
@@ -193,6 +187,7 @@ export default function AthleteDrawer({
   const [sport,       setSport]       = useState("");
   const [sportSaving, setSportSaving] = useState(false);
   const [sportError,  setSportError]  = useState("");
+  const [sportSaved,  setSportSaved]  = useState(false); // brief success flash
 
   // Lock background scroll
   useEffect(() => {
@@ -202,14 +197,16 @@ export default function AthleteDrawer({
     return () => { document.documentElement.style.overflow = prev; };
   }, [open]);
 
-  // Reset delete + sport state when athlete changes or drawer closes
+  // Reset state when athlete changes or drawer closes
   useEffect(() => {
     setDeleteMode(false);
     setDeleting(false);
     setDeleteError("");
-    setSport(String(athlete?.sport || "").trim());
+    // Normalise the sport value: lowercase trim to match the <option> values
+    setSport(String(athlete?.sport || "").trim().toLowerCase());
     setSportSaving(false);
     setSportError("");
+    setSportSaved(false);
   }, [athlete?.id, open]);
 
   const athleteId = String(athlete?.id || "");
@@ -217,11 +214,6 @@ export default function AthleteDrawer({
   const done      = athleteId ? !!isDone?.(athleteId)    : false;
   const starred   = athleteId ? !!isStarred?.(athleteId) : false;
 
-  const doneN  = Number(batchProgress?.done  || 0);
-  const totalN = Number(batchProgress?.total || 0);
-  const pct    = clampPct(batchProgress?.pct);
-
-  const pctColor = pct >= 100 ? DS.safe : pct >= 50 ? DS.brand : DS.caution;
   const topPad   = "calc(env(safe-area-inset-top, 0px) + var(--app-header-h, 0px))";
 
   const handleConfirmDelete = async () => {
@@ -230,7 +222,6 @@ export default function AthleteDrawer({
     setDeleteError("");
     try {
       await onDeleteAthlete?.(athleteId);
-      // Parent closes drawer + removes from list
     } catch (err) {
       setDeleteError(String(err?.message || "Delete failed. Try again."));
       setDeleting(false);
@@ -238,25 +229,50 @@ export default function AthleteDrawer({
   };
 
   const handleSportSave = async (newSport) => {
-    if (!athleteId) return;
+    // Guard: need a valid Airtable record ID
+    if (!athleteId) {
+      setSportError("No athlete ID — cannot save.");
+      return;
+    }
+    if (!athleteId.startsWith("rec")) {
+      // The ID isn't an Airtable record ID. This is the most common cause
+      // of "Failed to save sport" — the athlete object uses a different ID
+      // field than what Airtable expects. Log it so it's easy to trace.
+      console.warn("[AthleteDrawer] athleteId doesn't look like an Airtable record ID:", athleteId);
+    }
+
     setSportSaving(true);
     setSportError("");
+    setSportSaved(false);
+
     try {
-      const res  = await fetch("/api/org/updateAthleteMeta", {
+      const res = await fetch("/api/org/updateAthleteMeta", {
         method:      "PATCH",
         credentials: "include",
         headers:     { "Content-Type": "application/json" },
         body:        JSON.stringify({ athleteId, sport: newSport }),
       });
+
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to save sport.");
-      setSport(newSport);
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Server error ${res.status}`);
+      }
+
+      // Success
+      setSportSaved(true);
+      onSportSaved?.(athleteId, newSport); // let parent update its list
+
+      // Clear the success flash after 2 s
+      setTimeout(() => setSportSaved(false), 2000);
     } catch (err) {
       setSportError(String(err?.message || "Save failed."));
     } finally {
       setSportSaving(false);
     }
   };
+
+  const sportLabel = getSportLabel(sport);
 
   return (
     <AnimatePresence>
@@ -275,7 +291,11 @@ export default function AthleteDrawer({
           {/* Panel */}
           <motion.div
             className="absolute right-0 top-0 h-screen w-full sm:w-[480px] flex flex-col overflow-hidden"
-            style={{ background: DS.cardBg, borderLeft: `1px solid ${DS.border}`, boxShadow: "-8px 0 32px rgba(26,37,53,0.12)" }}
+            style={{
+              background:  DS.cardBg,
+              borderLeft:  `1px solid ${DS.border}`,
+              boxShadow:   "-8px 0 32px rgba(26,37,53,0.12)",
+            }}
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
@@ -283,7 +303,10 @@ export default function AthleteDrawer({
             onClick={e => e.stopPropagation()}
           >
             {/* Top accent */}
-            <div className="h-1 shrink-0" style={{ background: `linear-gradient(to right, ${DS.brand}, #4A7FA5, transparent)` }} />
+            <div
+              className="h-1 shrink-0"
+              style={{ background: `linear-gradient(to right, ${DS.brand}, #4A7FA5, transparent)` }}
+            />
 
             {/* Sticky header */}
             <div
@@ -293,7 +316,10 @@ export default function AthleteDrawer({
               <div style={{ paddingTop: topPad }}>
                 <div className="px-5 py-4 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: DS.dimText }}>
+                    <p
+                      className="text-[10px] font-semibold uppercase tracking-widest mb-1"
+                      style={{ color: DS.dimText }}
+                    >
                       Quick View
                     </p>
                     <h3
@@ -310,12 +336,30 @@ export default function AthleteDrawer({
                         style={{
                           background: hasEmail ? DS.safeBg     : DS.cautionBg,
                           border:     hasEmail ? `1px solid ${DS.safeBorder}` : `1px solid ${DS.cautionBorder}`,
-                          color:      hasEmail ? DS.safe       : DS.caution,
+                          color:      hasEmail ? DS.safe        : DS.caution,
                         }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasEmail ? DS.safe : DS.caution }} />
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: hasEmail ? DS.safe : DS.caution }}
+                        />
                         {hasEmail ? "Ready" : "Incomplete"}
                       </span>
+
+                      {/* Sport chip — shown in header once set */}
+                      {sportLabel && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                          style={{
+                            background: DS.brandBg,
+                            border:     `1px solid ${DS.brandBorder}`,
+                            color:      DS.brand,
+                          }}
+                        >
+                          <Trophy className="w-2.5 h-2.5" />
+                          {sportLabel}
+                        </span>
+                      )}
 
                       {done && (
                         <span
@@ -331,14 +375,6 @@ export default function AthleteDrawer({
                           style={{ background: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, color: DS.caution }}
                         >
                           ★ Priority
-                        </span>
-                      )}
-                      {totalN > 0 && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold"
-                          style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}
-                        >
-                          {doneN}/{totalN} · {pct}%
                         </span>
                       )}
                     </div>
@@ -368,39 +404,38 @@ export default function AthleteDrawer({
                     <div className="flex items-center gap-2">
                       <Mail className="w-3.5 h-3.5 shrink-0" style={{ color: DS.dimText }} />
                       {athlete?.email ? (
-                        <span className="text-sm truncate" style={{ color: DS.labelText }}>{athlete.email}</span>
+                        <span className="text-sm truncate" style={{ color: DS.labelText }}>
+                          {athlete.email}
+                        </span>
                       ) : (
-                        <span className="text-sm font-semibold" style={{ color: DS.banned }}>Missing email</span>
+                        <span className="text-sm font-semibold" style={{ color: DS.banned }}>
+                          Missing email
+                        </span>
                       )}
                     </div>
                     {athlete?.createdAt && (
                       <p className="text-xs" style={{ color: DS.dimText }}>
-                        Created: <span style={{ color: DS.labelText }}>{formatDateTime(athlete.createdAt)}</span>
+                        Created:{" "}
+                        <span style={{ color: DS.labelText }}>{formatDateTime(athlete.createdAt)}</span>
                       </p>
                     )}
                   </div>
                 </Section>
 
-                {/* Batch progress */}
-                {totalN > 0 && (
-                  <Section title="Batch progress">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-bold" style={{ color: DS.bodyText }}>{doneN}/{totalN} done</span>
-                      <span className="text-sm font-bold" style={{ color: pctColor }}>{pct}%</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: DS.border }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pctColor }} />
-                    </div>
-                  </Section>
-                )}
-
                 {/* Primary actions */}
                 <div className="grid grid-cols-2 gap-2">
-                  <DrawerBtn onClick={() => onOpenPrescriptions?.(athlete?.email)} disabled={!hasEmail} variant="primary">
+                  <DrawerBtn
+                    onClick={() => onOpenPrescriptions?.(athlete?.email)}
+                    disabled={!hasEmail}
+                    variant="primary"
+                  >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Prescriptions
                   </DrawerBtn>
-                  <DrawerBtn onClick={() => onCopyEmail?.(athlete?.email)} disabled={!hasEmail}>
+                  <DrawerBtn
+                    onClick={() => onCopyEmail?.(athlete?.email)}
+                    disabled={!hasEmail}
+                  >
                     <Clipboard className="w-3.5 h-3.5" />
                     Copy Email
                   </DrawerBtn>
@@ -467,59 +502,86 @@ export default function AthleteDrawer({
                 </Section>
 
                 {/* Sport */}
-                <Section title="Sport" subtitle="Updates the athlete's sport in Airtable">
+                <Section
+                  title="Sport"
+                  subtitle="Updates the athlete's sport in Airtable"
+                >
                   <div className="space-y-2">
                     <select
                       value={sport}
-                     onChange={e => {
-                      const val = e.target.value;
-                      console.log("sport change — athleteId:", athleteId, "val:", val);
-                      setSport(val);
-                      handleSportSave(val);
-                    }}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSport(val);
+                        handleSportSave(val);
+                      }}
                       disabled={!athleteId || sportSaving}
                       className="w-full text-sm rounded-xl outline-none transition-all disabled:opacity-50"
                       style={{
                         background:  DS.cardBg,
-                        border:      `1px solid ${DS.border}`,
+                        border:      `1px solid ${sportError ? DS.bannedBorder : DS.border}`,
                         color:       DS.bodyText,
                         padding:     "9px 12px",
                         fontFamily:  "inherit",
+                        cursor:      "pointer",
                       }}
                       onFocus={e  => { e.currentTarget.style.border = `1px solid ${DS.brand}`; }}
-                      onBlur={e   => { e.currentTarget.style.border = `1px solid ${DS.border}`; }}
+                      onBlur={e   => { e.currentTarget.style.border = `1px solid ${sportError ? DS.bannedBorder : DS.border}`; }}
                     >
                       <option value="">— No sport selected —</option>
                       {[
-                        ["baseball",      "Baseball"],
-                        ["basketball",    "Basketball"],
-                        ["cross country", "Cross Country"],
-                        ["football",      "Football"],
-                        ["golf",          "Golf"],
-                        ["hockey",        "Hockey"],
-                        ["lacrosse",      "Lacrosse"],
-                        ["soccer",        "Soccer"],
-                        ["softball",      "Softball"],
-                        ["swimming",      "Swimming"],
-                        ["tennis",        "Tennis"],
-                        ["track",         "Track & Field"],
-                        ["volleyball",    "Volleyball"],
-                        ["wrestling",     "Wrestling"],
-                        ["other",         "Other"],
+                        ["baseball",       "Baseball"],
+                        ["basketball",     "Basketball"],
+                        ["cross country",  "Cross Country"],
+                        ["football",       "Football"],
+                        ["golf",           "Golf"],
+                        ["hockey",         "Hockey"],
+                        ["lacrosse",       "Lacrosse"],
+                        ["soccer",         "Soccer"],
+                        ["softball",       "Softball"],
+                        ["swimming",       "Swimming"],
+                        ["tennis",         "Tennis"],
+                        ["track",          "Track & Field"],
+                        ["volleyball",     "Volleyball"],
+                        ["wrestling",      "Wrestling"],
+                        ["other",          "Other"],
                       ].map(([val, label]) => (
                         <option key={val} value={val}>{label}</option>
                       ))}
                     </select>
+
+                    {/* Feedback row */}
                     {sportSaving && (
-                      <p className="text-xs" style={{ color: DS.dimText }}>Saving…</p>
+                      <p className="text-xs flex items-center gap-1.5" style={{ color: DS.dimText }}>
+                        <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Saving…
+                      </p>
                     )}
-                    {sportError && (
-                      <p className="text-xs font-semibold" style={{ color: DS.banned }}>{sportError}</p>
+                    {sportSaved && !sportSaving && (
+                      <p className="text-xs flex items-center gap-1.5" style={{ color: DS.safe }}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        Saved
+                      </p>
+                    )}
+                    {sportError && !sportSaving && (
+                      <div
+                        className="rounded-lg px-3 py-2 text-xs font-semibold"
+                        style={{ background: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned }}
+                      >
+                        {sportError}
+                        <button
+                          type="button"
+                          onClick={() => handleSportSave(sport)}
+                          className="ml-2 underline"
+                          style={{ color: DS.banned, background: "none", border: "none", cursor: "pointer" }}
+                        >
+                          Retry
+                        </button>
+                      </div>
                     )}
                   </div>
                 </Section>
 
-                {/* ── Delete zone ──────────────────────────────────────────── */}
+                {/* Delete zone */}
                 <div>
                   <AnimatePresence mode="wait">
                     {!deleteMode ? (
@@ -534,20 +596,16 @@ export default function AthleteDrawer({
                           type="button"
                           onClick={() => setDeleteMode(true)}
                           className="flex items-center gap-2 text-xs font-semibold transition-all rounded-xl px-3 py-2.5 w-full"
-                          style={{
-                            background: DS.pageBg,
-                            border:     `1px solid ${DS.border}`,
-                            color:      DS.dimText,
-                          }}
+                          style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.dimText }}
                           onMouseEnter={e => {
-                            e.currentTarget.style.background = DS.bannedBg;
-                            e.currentTarget.style.borderColor = DS.bannedBorder;
-                            e.currentTarget.style.color = DS.banned;
+                            e.currentTarget.style.background    = DS.bannedBg;
+                            e.currentTarget.style.borderColor   = DS.bannedBorder;
+                            e.currentTarget.style.color         = DS.banned;
                           }}
                           onMouseLeave={e => {
-                            e.currentTarget.style.background = DS.pageBg;
-                            e.currentTarget.style.borderColor = DS.border;
-                            e.currentTarget.style.color = DS.dimText;
+                            e.currentTarget.style.background    = DS.pageBg;
+                            e.currentTarget.style.borderColor   = DS.border;
+                            e.currentTarget.style.color         = DS.dimText;
                           }}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -577,7 +635,6 @@ export default function AthleteDrawer({
                 <div style={{ height: "calc(16px + env(safe-area-inset-bottom, 0px))" }} />
               </div>
             </div>
-
           </motion.div>
         </div>
       )}

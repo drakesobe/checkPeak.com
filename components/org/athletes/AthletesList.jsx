@@ -1,44 +1,59 @@
 // components/org/athletes/AthletesList.jsx
 "use client";
 
-import { Star, CheckCircle2, ExternalLink, Copy, ChevronRight, Mail } from "lucide-react";
+import { Star, CheckCircle2, ExternalLink, Copy, ChevronRight, Mail, Trophy } from "lucide-react";
 import { formatDateTime } from "@/lib/org/athletes/utils";
 
 const DS = {
-  brand:       "#1E3A5F",
-  brandBg:     "#EEF3F9",
-  brandBorder: "#C0D0E0",
-  safe:        "#00873E",
-  safeBg:      "#F0FBF4",
-  safeBorder:  "#A8DFB8",
-  caution:     "#B86000",
-  cautionBg:   "#FFFBF0",
+  brand:        "#1E3A5F",
+  brandBg:      "#EEF3F9",
+  brandBorder:  "#C0D0E0",
+  safe:         "#00873E",
+  safeBg:       "#F0FBF4",
+  safeBorder:   "#A8DFB8",
+  caution:      "#B86000",
+  cautionBg:    "#FFFBF0",
   cautionBorder:"#FFD580",
-  banned:      "#C8102E",
-  border:      "#E8ECF0",
-  cardBg:      "#FFFFFF",
-  rowHover:    "#F8FAFD",
-  rowActive:   "#EEF3F9",
-  bodyText:    "#1A2535",
-  labelText:   "#5A6A7D",
-  dimText:     "#9BA8B4",
+  banned:       "#C8102E",
+  border:       "#E8ECF0",
+  cardBg:       "#FFFFFF",
+  rowHover:     "#F8FAFD",
+  rowActive:    "#EEF3F9",
+  bodyText:     "#1A2535",
+  labelText:    "#5A6A7D",
+  dimText:      "#9BA8B4",
 };
 
-function StatusChip({ hasEmail }) {
+// Derive a clean display label from whatever sport string Airtable returns.
+// Handles "football", "Football", "FOOTBALL" → "Football"
+function formatSportLabel(val) {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+  // Title-case single words; leave multi-word as-is but capitalise first letter
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+/* ── Sport chip ──────────────────────────────────────────────────────────── */
+function SportChip({ sport }) {
+  const label = formatSportLabel(sport);
+  if (!label) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
+        style={{ background: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, color: DS.caution }}
+      >
+        No sport
+      </span>
+    );
+  }
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
-      style={{
-        background: hasEmail ? DS.safeBg     : DS.cautionBg,
-        border:     hasEmail ? `1px solid ${DS.safeBorder}` : `1px solid ${DS.cautionBorder}`,
-        color:      hasEmail ? DS.safe       : DS.caution,
-      }}
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
+      style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}
     >
-      <span
-        className="w-1.5 h-1.5 rounded-full"
-        style={{ background: hasEmail ? DS.safe : DS.caution }}
-      />
-      {hasEmail ? "Ready" : "Incomplete"}
+      <Trophy className="w-2.5 h-2.5" />
+      {label}
     </span>
   );
 }
@@ -71,7 +86,11 @@ function RowBtn({ onClick, disabled, children, primary = false }) {
 
 /* ── Mobile card ─────────────────────────────────────────────────────────── */
 
-function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred, toggleStarred, toggleDone, openPrescriptions, copyEmail }) {
+function AthleteCard({
+  a, selectedIds, toggleSelect, openDrawer,
+  isDone, isStarred, toggleStarred, toggleDone,
+  openPrescriptions, copyEmail,
+}) {
   const done     = isDone(a.id);
   const starred  = isStarred(a.id);
   const selected = selectedIds.has(a.id);
@@ -100,8 +119,10 @@ function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarr
               <p className="text-xs truncate mt-0.5" style={{ color: DS.dimText }}>{a.title}</p>
             )}
           </button>
+
+          {/* Sport + status badges */}
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            <StatusChip hasEmail={!!a.email} />
+            <SportChip sport={a.sport} />
             {done && (
               <span
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider"
@@ -119,6 +140,7 @@ function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarr
               </span>
             )}
           </div>
+
           {a.email && (
             <p className="text-xs mt-1.5 flex items-center gap-1" style={{ color: DS.dimText }}>
               <Mail className="w-3 h-3" />
@@ -126,6 +148,7 @@ function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarr
             </p>
           )}
         </div>
+
         <button
           type="button"
           onClick={e => { e.stopPropagation(); toggleStarred(a.id); }}
@@ -136,7 +159,10 @@ function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarr
         </button>
       </div>
 
-      <div className="px-3.5 pb-3 flex items-center gap-1.5 flex-wrap" style={{ borderTop: `1px solid ${DS.border}` }}>
+      <div
+        className="px-3.5 pb-3 flex items-center gap-1.5 flex-wrap"
+        style={{ borderTop: `1px solid ${DS.border}` }}
+      >
         <RowBtn onClick={() => openPrescriptions(a.email)} disabled={!a.email} primary>
           <ExternalLink className="w-3 h-3" />
           Prescriptions
@@ -160,7 +186,12 @@ function AthleteCard({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarr
 
 /* ── Desktop table row ───────────────────────────────────────────────────── */
 
-function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred, toggleStarred, toggleDone, openPrescriptions, copyEmail, activeRowId, setActiveRowId }) {
+function TableRow({
+  a, selectedIds, toggleSelect, openDrawer,
+  isDone, isStarred, toggleStarred, toggleDone,
+  openPrescriptions, copyEmail,
+  activeRowId, setActiveRowId,
+}) {
   const done     = isDone(a.id);
   const starred  = isStarred(a.id);
   const selected = selectedIds.has(a.id);
@@ -179,6 +210,7 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
       onMouseEnter={e => { if (!active && !selected) e.currentTarget.style.background = DS.rowHover; }}
       onMouseLeave={e => { if (!active && !selected) e.currentTarget.style.background = "transparent"; }}
     >
+      {/* Checkbox */}
       <td className="py-3 px-3 w-10">
         <input
           type="checkbox"
@@ -189,6 +221,7 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
         />
       </td>
 
+      {/* Star */}
       <td className="py-3 px-2 w-10">
         <button
           type="button"
@@ -201,6 +234,7 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
         </button>
       </td>
 
+      {/* Name */}
       <td className="py-3 px-3">
         <button
           type="button"
@@ -217,6 +251,7 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
         )}
       </td>
 
+      {/* Email */}
       <td className="py-3 px-3 max-w-[200px]">
         {a.email ? (
           <div className="flex items-center gap-2">
@@ -224,9 +259,8 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
             <button
               type="button"
               onClick={e => { e.stopPropagation(); copyEmail(a.email); }}
-              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-all opacity-0 group-hover:opacity-100"
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-all"
               style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
             >
               Copy
             </button>
@@ -236,14 +270,17 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
         )}
       </td>
 
+      {/* Sport — replaces the old Status/Ready column */}
       <td className="py-3 px-3">
-        <StatusChip hasEmail={!!a.email} />
+        <SportChip sport={a.sport} />
       </td>
 
+      {/* Created */}
       <td className="py-3 px-3 text-xs" style={{ color: DS.dimText }}>
         {formatDateTime(a.createdAt)}
       </td>
 
+      {/* Done */}
       <td className="py-3 px-3">
         <button
           type="button"
@@ -262,6 +299,7 @@ function TableRow({ a, selectedIds, toggleSelect, openDrawer, isDone, isStarred,
         </button>
       </td>
 
+      {/* Actions */}
       <td className="py-3 px-3">
         <div className="flex items-center gap-1.5">
           <RowBtn onClick={() => openPrescriptions(a.email)} disabled={!a.email} primary>
@@ -336,13 +374,19 @@ export default function AthletesList({
         <table className="w-full text-sm group">
           <thead>
             <tr style={{ borderBottom: `1px solid ${DS.border}` }}>
-              {["", "", "Name", "Email", "Status", "Created", "Done", "Actions"].map((h, i) => (
+              {/* Sport replaces the old "Status" header */}
+              {["", "", "Name", "Email", "Sport", "Created", "Done", "Actions"].map((h, i) => (
                 <th
                   key={i}
                   className="py-2.5 px-3 text-left text-[10px] font-bold uppercase tracking-widest"
                   style={{ color: DS.dimText }}
                 >
-                  {h}
+                  {h === "Sport" ? (
+                    <span className="flex items-center gap-1">
+                      <Trophy className="w-3 h-3" />
+                      {h}
+                    </span>
+                  ) : h}
                 </th>
               ))}
             </tr>

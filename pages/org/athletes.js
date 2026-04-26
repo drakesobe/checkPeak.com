@@ -19,7 +19,6 @@ import AthletesList      from "@/components/org/athletes/AthletesList";
 import AthletesBulkBar   from "@/components/org/athletes/AthletesBulkBar";
 import AthletesHeader    from "@/components/org/athletes/AthletesHeader";
 import AthletesStats     from "@/components/org/athletes/AthletesStats";
-import QueueBar          from "@/components/org/athletes/QueueBar";
 
 // Absorbed stubs (imports kept so nothing breaks if referenced elsewhere)
 import BatchProgressCard from "@/components/org/athletes/BatchProgressCard"; // noop
@@ -42,7 +41,7 @@ export default function OrgAthletesPage() {
   const [coachState, setCoachState] = useLocalStorageState(LS_COACH, { done: {}, starred: {}, notes: {} });
   const [savedViews, setSavedViews] = useLocalStorageState(LS_VIEWS, []);
 
-  const { loading, error, athletes, athletesMap, fetchAthletes } = useOrgAthletes({
+  const { loading, error, athletes, athletesMap, fetchAthletes, setAthletesRaw } = useOrgAthletes({
     enabled: !!user && isOrgSide,
   });
 
@@ -100,7 +99,15 @@ export default function OrgAthletesPage() {
         const name  = String(a.name  || "").toLowerCase();
         const email = String(a.email || "").toLowerCase();
         const title = String(a.title || "").toLowerCase();
-        return name.includes(q) || email.includes(q) || title.includes(q);
+        const sport = String(a.sport || "").toLowerCase();
+        const team  = String(a.team  || "").toLowerCase();
+        return (
+          name.includes(q)  ||
+          email.includes(q) ||
+          title.includes(q) ||
+          sport.includes(q) ||
+          team.includes(q)
+        );
       });
     }
     if (filter === "ready")      list = list.filter(a =>  !!a.email);
@@ -130,13 +137,6 @@ export default function OrgAthletesPage() {
     return filtered.slice(start, start + pageSize);
   }, [filtered, safePage, pageSize]);
 
-  const batchProgress = useMemo(() => {
-    const total = filtered.length;
-    const done  = filtered.reduce((acc, a) => acc + (coachState?.done?.[a.id] ? 1 : 0), 0);
-    const pct   = total ? Math.round((done / total) * 100) : 0;
-    return { total, done, pct };
-  }, [filtered, coachState]);
-
   const selectedList = useMemo(() => {
     if (!selectedIds || selectedIds.size === 0) return [];
     return Array.from(selectedIds).map(id => athletesMap.get(id)).filter(Boolean);
@@ -152,17 +152,6 @@ export default function OrgAthletesPage() {
   const openDrawer  = id => { setDrawerAthleteId(id); setDrawerOpen(true); setActiveRowId(id); };
   const closeDrawer = ()  => setDrawerOpen(false);
 
-  const getNextUpId = () => {
-    if (!filtered.length) return "";
-    for (const a of filtered) if (!coachState?.done?.[a.id]) return a.id;
-    return filtered[0]?.id || "";
-  };
-
-  const goNextUp = () => {
-    const id = getNextUpId();
-    if (id) openDrawer(id);
-  };
-
   const goNextAfter = currentId => {
     if (!filtered.length) return;
     const idx = filtered.findIndex(a => a.id === currentId);
@@ -174,15 +163,6 @@ export default function OrgAthletesPage() {
     const next = filtered[(idx + 1) % filtered.length];
     if (next) openDrawer(next.id);
   };
-
-
-  // Next athlete preview for QueueBar
-  const nextUpName = useMemo(() => {
-    for (const a of filtered) {
-      if (!coachState?.done?.[a.id]) return a.name || "";
-    }
-    return "";
-  }, [filtered, coachState]);
 
   const actions = useAthletesRosterActions({
     router, coachState, setCoachState, selectedIds, setSelectedIds,
@@ -213,15 +193,15 @@ export default function OrgAthletesPage() {
   };
 
   useAthletesShortcuts({
-    enabled: !!user && isOrgSide,
-    drawerOpen, drawerAthlete, filtered, paged, activeRowId, searchRef,
-    closeDrawer, openDrawer, setActiveRowId,
-    toggleSelect: actions.toggleSelect,
-    openPrescriptions: actions.openPrescriptions,
-    toggleDoneAndMaybeAdvance: actions.toggleDoneAndMaybeAdvance,
-    toggleStarred: actions.toggleStarred,
-    athletesMap, goNextUp,
-  });
+  enabled: !!user && isOrgSide,
+  drawerOpen, drawerAthlete, filtered, paged, activeRowId, searchRef,
+  closeDrawer, openDrawer, setActiveRowId,
+  toggleSelect: actions.toggleSelect,
+  openPrescriptions: actions.openPrescriptions,
+  toggleDoneAndMaybeAdvance: actions.toggleDoneAndMaybeAdvance,
+  toggleStarred: actions.toggleStarred,
+  athletesMap,
+});
 
   useEffect(() => {
     setPage(1);
@@ -270,7 +250,6 @@ export default function OrgAthletesPage() {
         open={drawerOpen}
         athlete={drawerAthlete}
         onClose={closeDrawer}
-        batchProgress={batchProgress}
         isDone={isDone}
         isStarred={isStarred}
         onOpenPrescriptions={actions.openPrescriptions}
@@ -286,6 +265,13 @@ export default function OrgAthletesPage() {
           setDrawerAthleteId("");
           await fetchAthletes();
         }}
+        onSportSaved={(athleteId, newSport) => {         // ← new
+          setAthletesRaw(prev =>                          // ← new
+            prev.map(a =>                                 // ← new
+              a.id === athleteId ? { ...a, sport: newSport } : a  // ← new
+            )                                             // ← new
+          );                                              // ← new
+        }}                                                // ← new
       />
 
       <main className="max-w-6xl mx-auto px-4 py-6 pb-28 space-y-4">
@@ -299,15 +285,6 @@ export default function OrgAthletesPage() {
           savedViews={savedViews}
           onApplyView={applyView}
           onDeleteView={deleteView}
-        />
-
-        {/* ── 2. QueueBar — prominent Next Up + batch progress ─────────────── */}
-        <QueueBar
-          onNextUp={goNextUp}
-          disabled={loading || filtered.length === 0}
-          batchProgress={batchProgress}
-          filteredCount={filtered.length}
-          nextUpName={nextUpName}
         />
 
         {/* ── 3. Toolbar — search + filters primary, sort/export secondary ──── */}

@@ -12,7 +12,10 @@ export function useOrgAthletes({ enabled }) {
   const [athletesRaw, setAthletesRaw] = useState([]);
 
   const athletes = useMemo(() => {
-    return (Array.isArray(athletesRaw) ? athletesRaw : []).map(normalizeAthleteRecord);
+    return (Array.isArray(athletesRaw) ? athletesRaw : []).map(raw => ({
+      ...normalizeAthleteRecord(raw),
+      sport: String(raw.sport || "").trim(), // re-attach after normalize strips it
+    }));
   }, [athletesRaw]);
 
   const athletesMap = useMemo(() => {

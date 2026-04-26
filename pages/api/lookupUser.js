@@ -63,10 +63,12 @@ function toSessionUser(user) {
   // ✅ Athlete keys
   if (role === "Athlete") {
     session.athleteId = user?.athleteId || user?.AthleteId || user?.id || "";
-    if (user?.AthleteToken) session.AthleteToken = String(user.AthleteToken).trim();
-    if (user?.Token)        session.Token        = String(user.Token).trim();
-    // ✅ Include resolved org name so mobile app can display it
-    if (user?.OrgName)      session.OrgName      = String(user.OrgName).trim();
+    if (user?.AthleteToken)    session.AthleteToken    = String(user.AthleteToken).trim();
+    if (user?.Token)           session.Token           = String(user.Token).trim();
+    if (user?.OrgName)         session.OrgName         = String(user.OrgName).trim();
+    // ✅ Include org record ID so mobile Feed query matches Firestore posts
+    if (user?.organizationId)  session.organizationId  = String(user.organizationId).trim();
+    if (user?.OrganizationId)  session.OrganizationId  = String(user.OrganizationId).trim();
   }
 
   // ✅ Org-side extras
@@ -131,19 +133,20 @@ async function ensureOrgMemberForOrgOwner({
  * ✅ Resolve org name for an athlete from their linked Organization record IDs.
  * Returns the org name string, or "" if unresolvable.
  */
-async function resolveAthleteOrgName(orgRecordIds, orgBase, orgsTableName) {
-  if (!Array.isArray(orgRecordIds) || !orgRecordIds.length) return "";
+async function resolveAthleteOrg(orgRecordIds, orgBase, orgsTableName) {
+  if (!Array.isArray(orgRecordIds) || !orgRecordIds.length) return { name: "", id: "" };
   const firstId = String(orgRecordIds[0] || "").trim();
-  if (!firstId || !firstId.startsWith("rec")) return "";
+  if (!firstId || !firstId.startsWith("rec")) return { name: "", id: "" };
   try {
     const orgRecord = await orgBase(orgsTableName).find(firstId);
-    return String(
+    const name = String(
       orgRecord?.fields?.Name ||
       orgRecord?.fields?.["Organization Name"] ||
       ""
     ).trim();
+    return { name, id: firstId };
   } catch {
-    return "";
+    return { name: "", id: "" };
   }
 }
 
@@ -220,17 +223,18 @@ export default async function handler(req, res) {
       const safeFields   = stripPassword(fields);
       const athleteToken = pickAthleteToken(fields);
 
-      // ✅ Resolve org name from linked Organization field
-      // We need the org base to look up the org record by ID
+      // ✅ Resolve org name + record ID from linked Organization field
       let orgName = "";
-      const orgLinks = fields.Organization; // linked record field → array of rec IDs
+      let orgRecordId = "";
+      const orgLinks = fields.Organization;
       if (
         Array.isArray(orgLinks) && orgLinks.length &&
         ORGANIZATIONS_API_KEY && ORGANIZATIONS_BASE_ID && ORGANIZATIONS_TABLE_NAME
       ) {
         const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
-        orgName = await resolveAthleteOrgName(orgLinks, orgBase, ORGANIZATIONS_TABLE_NAME);
-          console.log("[lookupUser] resolved orgName:", orgName, "from ids:", orgLinks);
+        const resolved = await resolveAthleteOrg(orgLinks, orgBase, ORGANIZATIONS_TABLE_NAME);
+        orgName     = resolved.name;
+        orgRecordId = resolved.id;
       }
 
       const userOut = {
@@ -241,8 +245,10 @@ export default async function handler(req, res) {
         Role:         "Athlete",
         Email:        safeFields.Email || emailLower,
         AthleteToken: athleteToken || "",
-        // ✅ Resolved org name — now available in the session for mobile + web
-        ...(orgName ? { OrgName: orgName } : {}),
+        // ✅ Org name + record ID — both available in session for mobile + web
+        ...(orgName     ? { OrgName: orgName }                     : {}),
+        ...(orgRecordId ? { organizationId: orgRecordId,
+                            OrganizationId: orgRecordId }          : {}),
       };
 
       const sessionUser = toSessionUser(userOut);
@@ -253,7 +259,8 @@ export default async function handler(req, res) {
         debug: {
           athleteTokenPresent: Boolean(athleteToken),
           athleteToken:        athleteToken ? athleteToken : null,
-          orgName:             orgName || null,
+          orgName:             orgName     || null,
+          orgRecordId:         orgRecordId || null,
         },
       });
     }

@@ -109,6 +109,7 @@ function RoleLinks({ isOrgSide, isAthlete, isAdmin, role, isActive, compact, onN
         <L href="/org/review-queue">Review Queue</L>
         <L href="/org/workouts-calendar">Workouts Calendar</L>
         <L href="/org/nutrition">Nutrition</L>
+        <L href="/org/messaging">Messaging</L>
         {(isAdmin || role === "organization") && (
           <>
             <L href="/org/athletes">Athletes</L>

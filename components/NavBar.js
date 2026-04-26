@@ -13,13 +13,12 @@ import NavBarLoginModal from "@/components/NavBarLoginModal";
 /* Utilities                                                                   */
 /* -------------------------------------------------------------------------- */
 
-// Consistent className helper — used throughout instead of ad-hoc .join(" ")
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
 /* -------------------------------------------------------------------------- */
-/* Static data — outside component so they're never recreated on render       */
+/* Static data                                                                 */
 /* -------------------------------------------------------------------------- */
 
 const ALL_TABS = [
@@ -34,7 +33,6 @@ const DESKTOP_LEFT_TABS  = ALL_TABS.filter((t) => ["Scan", "Search", "Info", "NC
 const DESKTOP_RIGHT_TABS = ALL_TABS.filter((t) => ["SmartStack"].includes(t.name));
 const MOBILE_TABS        = ALL_TABS;
 
-// Mountain SVG fallback — inline so it never depends on a network request
 const MountainIconFallback = (
   <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
     <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
@@ -42,11 +40,11 @@ const MountainIconFallback = (
 );
 
 /* -------------------------------------------------------------------------- */
-/* NavItem — extracted from component so React doesn't remount on each render */
+/* NavItem                                                                     */
 /* -------------------------------------------------------------------------- */
 function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) {
-  const active         = isActive(tab.href);
-  const isMountainTab  = tab.icon === "mountain"; // FIX: was checking tab.name === "mountain"
+  const active        = isActive(tab.href);
+  const isMountainTab = tab.icon === "mountain";
 
   return (
     <Link
@@ -79,7 +77,7 @@ function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) 
 }
 
 /* -------------------------------------------------------------------------- */
-/* RoleLinks — extracted from component, receives everything it needs as props */
+/* RoleLinks                                                                   */
 /* -------------------------------------------------------------------------- */
 function RoleLinks({ isOrgSide, isAthlete, isAdmin, role, isActive, compact, onNavigate }) {
   const L = useCallback(
@@ -144,12 +142,12 @@ export default function NavBar() {
   const router   = useRouter();
   const { user, logout } = useAuthContext();
 
-  const [isMounted,        setIsMounted]        = useState(false);
-  const [menuOpen,         setMenuOpen]          = useState(false);
-  const [profileOpen,      setProfileOpen]       = useState(false);
-  const [loginModalOpen,   setLoginModalOpen]    = useState(false);
-  const [defaultAuthTab,   setDefaultAuthTab]    = useState("login");
-  const [stackIconBroken,  setStackIconBroken]   = useState(false);
+  const [isMounted,       setIsMounted]       = useState(false);
+  const [menuOpen,        setMenuOpen]        = useState(false);
+  const [profileOpen,     setProfileOpen]     = useState(false);
+  const [loginModalOpen,  setLoginModalOpen]  = useState(false);
+  const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
+  const [stackIconBroken, setStackIconBroken] = useState(false);
 
   const navRef = useRef(null);
 
@@ -157,8 +155,7 @@ export default function NavBar() {
   useEffect(() => setIsMounted(true), []);
 
   /* ── Nav height → CSS variable ────────────────────────────────────────────
-     Sets --app-header-h on <html> so drawers/modals can offset correctly
-     without hardcoding 64px/80px.
+     Sets --app-header-h on <html> so drawers/modals can offset correctly.
   ──────────────────────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!isMounted || !navRef.current) return;
@@ -182,6 +179,27 @@ export default function NavBar() {
       ro?.disconnect();
     };
   }, [isMounted]);
+
+  /* ── Lock body scroll when mobile menu is open ────────────────────────────
+     Compensates for scrollbar width before setting overflow:hidden so the
+     page layout doesn't shift. A shift would trigger the ResizeObserver on
+     the nav → update --app-header-h → menu max-h recalculates → observer
+     fires again → flicker loop. Padding compensation kills the shift.
+     On mobile, overlay scrollbars take no space so scrollbarWidth = 0
+     and the paddingRight line is a safe no-op.
+  ──────────────────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow     = "hidden";
+    document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : "";
+
+    return () => {
+      document.body.style.overflow     = "";
+      document.body.style.paddingRight = "";
+    };
+  }, [menuOpen]);
 
   /* ── Role normalisation ───────────────────────────────────────────────────*/
   const role = useMemo(() => {
@@ -220,13 +238,11 @@ export default function NavBar() {
   );
 
   /* ── Auth modal openers ───────────────────────────────────────────────────*/
-
   const openAuthModal = useCallback((tab = "login") => {
     setDefaultAuthTab(tab);
     setLoginModalOpen(true);
   }, []);
 
-  // Bridge for NavBarLoginModal's global "auth:open" CustomEvent
   const onRequestOpen = useCallback((detail = {}) => {
     openAuthModal(detail?.tab === "signup" ? "signup" : "login");
   }, [openAuthModal]);
@@ -242,7 +258,6 @@ export default function NavBar() {
         try {
           window.localStorage.setItem("cp_prefill_login_email", email);
         } catch (err) {
-          // localStorage may be unavailable (private browsing, storage full, etc.)
           if (process.env.NODE_ENV === "development") {
             console.warn("[NavBar] Could not write to localStorage:", err);
           }
@@ -297,23 +312,24 @@ export default function NavBar() {
   const logoutAndClose = useCallback(async () => {
     try {
       await logout?.();
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("[NavBar] Logout error:", err);
+      }
     } finally {
       setProfileOpen(false);
       setMenuOpen(false);
-      // router.refresh() omitted — push to /login is sufficient and avoids
-      // a visible flash on Next.js app router.
       router.push("/login");
     }
   }, [logout, router]);
 
-  /* ── Shared props for NavItem ─────────────────────────────────────────────*/
+  /* ── Shared props ─────────────────────────────────────────────────────────*/
   const navItemSharedProps = {
     isActive,
     stackIconBroken,
     onStackIconError: handleStackIconError,
   };
 
-  /* ── Shared props for RoleLinks ───────────────────────────────────────────*/
   const roleLinksSharedProps = {
     isOrgSide,
     isAthlete,
@@ -327,6 +343,7 @@ export default function NavBar() {
   /* ------------------------------------------------------------------------ */
   return (
     <>
+      {/* z-[150]: above internal page navs (e.g. Nutrition Queue at z-90) */}
       <nav
         ref={navRef}
         className="sticky top-0 z-[150] bg-white/90 backdrop-blur-md border-b border-gray-200"
@@ -334,12 +351,7 @@ export default function NavBar() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
 
-          {/* ── Top bar ──
-               Logo is position:absolute centered on the nav so it always
-               sits at true horizontal center regardless of how many items
-               are on the left or right. Left/right groups use flex-1 each
-               so they each consume equal space and never crowd the logo.
-          ── */}
+          {/* ── Top bar ── */}
           <div className="relative h-16 md:h-20 flex items-center justify-between">
 
             {/* Desktop left tabs */}
@@ -349,10 +361,10 @@ export default function NavBar() {
               ))}
             </div>
 
-            {/* Mobile spacer — mirrors hamburger width to balance logo */}
+            {/* Mobile spacer — mirrors hamburger width to keep logo centered */}
             <div className="md:hidden h-10 w-10" aria-hidden="true" />
 
-            {/* Logo — absolutely centered in the nav bar, never shifts */}
+            {/* Logo — absolutely centered, never shifts */}
             <div className="absolute left-1/2 -translate-x-1/2">
               <Link href="/" aria-label="CheckPeak Home" className="inline-flex items-center">
                 <span className="block md:hidden">
@@ -370,7 +382,7 @@ export default function NavBar() {
                 <NavItem key={tab.href} tab={tab} {...navItemSharedProps} />
               ))}
 
-              {/* Profile / Login button — only rendered after hydration */}
+              {/* Profile / Login — only rendered after hydration */}
               {isMounted && (
                 <div className="relative">
                   <button
@@ -390,6 +402,8 @@ export default function NavBar() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: 0.15, ease: "easeOut" }}
+                        // z-[200]: above the sticky nav (z-150) and any internal
+                        // page navs so the dropdown is never clipped
                         className="absolute right-0 mt-2 w-64 rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden z-[200]"
                         role="menu"
                         aria-label="Profile menu"
@@ -441,33 +455,23 @@ export default function NavBar() {
                 aria-label={menuOpen ? "Close menu" : "Open menu"}
                 className="h-10 w-10 rounded-xl border border-gray-200 text-gray-900 grid place-items-center"
               >
-                {/* Animated hamburger → X */}
                 <div className="flex flex-col gap-[5px]" aria-hidden="true">
-                  <span
-                    className={cx(
-                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
-                      menuOpen ? "rotate-45 translate-y-[7px]" : ""
-                    )}
-                  />
-                  <span
-                    className={cx(
-                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
-                      menuOpen ? "opacity-0 scale-x-0" : ""
-                    )}
-                  />
-                  <span
-                    className={cx(
-                      "w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out",
-                      menuOpen ? "-rotate-45 -translate-y-[7px]" : ""
-                    )}
-                  />
+                  <span className={cx("w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out", menuOpen ? "rotate-45 translate-y-[7px]" : "")} />
+                  <span className={cx("w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out", menuOpen ? "opacity-0 scale-x-0" : "")} />
+                  <span className={cx("w-5 h-0.5 bg-gray-700 block transition-all duration-200 ease-in-out", menuOpen ? "-rotate-45 -translate-y-[7px]" : "")} />
                 </div>
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── Mobile menu ── */}
+        {/* ── Mobile menu ──
+             max-h uses plain 100vh (not dvh) so it never recalculates while
+             the menu is open. dvh changes as the iOS browser chrome animates
+             in/out, which fed the ResizeObserver → --app-header-h → max-h
+             → ResizeObserver flicker loop. 4rem = 64px = h-16 mobile nav
+             height. If your mobile nav is h-20 change 4rem → 5rem.
+        ── */}
         <AnimatePresence>
           {menuOpen && (
             <motion.div
@@ -478,7 +482,7 @@ export default function NavBar() {
               transition={{ duration: 0.2, ease: "easeInOut" }}
               className="md:hidden bg-white border-t border-gray-200 text-gray-900 overflow-hidden"
             >
-              <div className="px-4 py-4 space-y-2">
+              <div className="px-4 py-4 space-y-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
 
                 {/* Nav links */}
                 {MOBILE_TABS.map((tab) => (
@@ -505,20 +509,14 @@ export default function NavBar() {
                   <div className="grid gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        openAuthModal("login");
-                        setMenuOpen(false);
-                      }}
+                      onClick={() => { openAuthModal("login"); setMenuOpen(false); }}
                       className="rounded-xl bg-[#46769B] text-white py-3 text-sm font-semibold transition hover:brightness-110"
                     >
                       Log in
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        openAuthModal("signup");
-                        setMenuOpen(false);
-                      }}
+                      onClick={() => { openAuthModal("signup"); setMenuOpen(false); }}
                       className="rounded-xl border border-gray-200 py-3 text-sm font-semibold transition hover:bg-gray-50"
                     >
                       Sign up

@@ -375,7 +375,7 @@ function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
       padding: isMobile ? "0 12px" : "0 20px",
       height: 48,
       background: "var(--deep)", borderBottom: "1px solid var(--rim)",
-      position: "sticky", top: 0, zIndex: 100,
+      position: "sticky", top: 0, zIndex: 90,
     }}>
       {/* Wordmark */}
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 16, flexShrink: 0 }}>

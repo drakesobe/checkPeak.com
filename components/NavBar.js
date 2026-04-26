@@ -329,7 +329,7 @@ export default function NavBar() {
     <>
       <nav
         ref={navRef}
-        className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
+        className="sticky top-0 z-[150] bg-white/90 backdrop-blur-md border-b border-gray-200"
         aria-label="Main navigation"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -390,7 +390,7 @@ export default function NavBar() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: 0.15, ease: "easeOut" }}
-                        className="absolute right-0 mt-2 w-64 rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden"
+                        className="absolute right-0 mt-2 w-64 rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-lg overflow-hidden z-[200]"
                         role="menu"
                         aria-label="Profile menu"
                       >

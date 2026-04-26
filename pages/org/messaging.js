@@ -854,7 +854,7 @@ function ConversationRow({ conv, myId, isActive, onClick }) {
 }
 
 /* ── New conversation modal ────────────────────────────────────────────────── */
-function NewConversationModal({ onClose, myId, myName, orgId, onCreated }) {
+function NewConversationModal({ onClose, myId, myName, orgId, orgToken, onCreated }) {
   const [members,   setMembers]   = useState([]);
   const [selected,  setSelected]  = useState([]);
   const [groupName, setGroupName] = useState("");
@@ -864,16 +864,23 @@ function NewConversationModal({ onClose, myId, myName, orgId, onCreated }) {
   const [error,     setError]     = useState("");
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return; }
-    getDocs(query(collection(db, "users"), where("orgId", "==", orgId)))
-      .then(snap => {
-        const list = [];
-        snap.forEach(d => { if (d.id !== myId) list.push({ id: d.id, ...d.data() }); });
-        setMembers(list);
-      })
-      .catch(err => setError(err?.message || "Failed to load members."))
-      .finally(() => setLoading(false));
-  }, [orgId, myId]);
+  if (!orgToken) { setLoading(false); return; }
+  fetch(`/api/athlete/teammates?token=${encodeURIComponent(orgToken)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) throw new Error(data.error || "Failed to load athletes.");
+      const list = (data.teammates || []).map(t => ({
+        id:    t.id,
+        name:  t.name,
+        role:  t.role  || "Athlete",
+        sport: t.sport || "",
+        orgId,
+      }));
+      setMembers(list);
+    })
+    .catch(err => setError(err?.message || "Failed to load athletes."))
+    .finally(() => setLoading(false));
+}, [orgToken, myId]);
 
   const toggle = id => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -1287,6 +1294,7 @@ console.log("DEBUG user.OrgId:", user?.OrgId);
           <NewConversationModal
             onClose={() => setShowNewConv(false)}
             myId={myId} myName={myName} orgId={orgId}
+            orgToken={String(user?.Token || "")}
             onCreated={convId => { setShowNewConv(false); setActiveConvId(convId); setActiveTab("messages"); }}
           />
         )}

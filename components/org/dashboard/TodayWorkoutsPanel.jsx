@@ -46,9 +46,9 @@ function toneForPct(p) {
 }
 
 function MetricTile({ label, value, sub, tone = "neutral" }) {
-  const bg = tone === "warn" ? DS.cautionBg : tone === "good" ? DS.safeBg : DS.pageBg;
+  const bg     = tone === "warn" ? DS.cautionBg : tone === "good" ? DS.safeBg : DS.pageBg;
   const border = tone === "warn" ? DS.cautionBorder : tone === "good" ? DS.safeBorder : DS.border;
-  const vc = tone === "warn" ? DS.caution : tone === "good" ? DS.safe : DS.bodyText;
+  const vc     = tone === "warn" ? DS.caution : tone === "good" ? DS.safe : DS.bodyText;
 
   return (
     <div className="p-3" style={{ backgroundColor: bg, border: `1px solid ${border}` }}>
@@ -84,18 +84,8 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
 
   const defaultSports = useMemo(
     () => [
-      "Football",
-      "Basketball",
-      "Baseball",
-      "Soccer",
-      "Hockey",
-      "Lacrosse",
-      "Tennis",
-      "Golf",
-      "Track",
-      "Swimming",
-      "Volleyball",
-      "Wrestling",
+      "Football", "Basketball", "Baseball", "Soccer", "Hockey",
+      "Lacrosse", "Tennis", "Golf", "Track", "Swimming", "Volleyball", "Wrestling",
     ],
     []
   );
@@ -104,19 +94,16 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
     return uniqStrings([...(sports || []), ...(availableSports || []), ...defaultSports]);
   }, [sports, availableSports, defaultSports]);
 
-  // Force default to All Sports if hook doesn't already do it.
   useEffect(() => {
-  if (!isOrgSide) return;
-  if (sport == null) {
-    setSport("");
-  }
-}, [sport, setSport, isOrgSide]);
+    if (!isOrgSide) return;
+    if (sport == null) setSport("");
+  }, [sport, setSport, isOrgSide]);
 
   const displaySport = isAllSportsValue(sport) || !sport ? "All Sports" : String(sport);
 
-  const CHIP_COUNT = 6;
-  const chosenScoreRef = useRef(new Map());
-  const chosenTickRef = useRef(1);
+  const CHIP_COUNT       = 6;
+  const chosenScoreRef   = useRef(new Map());
+  const chosenTickRef    = useRef(1);
 
   const seedNeverChosen = (chipList) => {
     const m = chosenScoreRef.current;
@@ -127,13 +114,11 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
   };
 
   const { chipSports, moreSports } = useMemo(() => {
-    const allOption = "All Sports";
+    const allOption  = "All Sports";
     const baseSports = Array.isArray(allSports) ? [...allSports] : [];
-    const base = [allOption, ...baseSports.filter((s) => !isAllSportsValue(s))];
+    const base       = [allOption, ...baseSports.filter((s) => !isAllSportsValue(s))];
 
     const selectedValue = isAllSportsValue(sport) || !sport ? allOption : String(sport);
-    const selectedKey = normKey(selectedValue);
-
     let chips = base.slice(0, CHIP_COUNT);
     seedNeverChosen(chips);
 
@@ -141,23 +126,19 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
       const idx = base.findIndex((s) => equalsCI(s, selectedValue));
       if (idx >= 0) {
         const sel = base[idx];
-        const m = chosenScoreRef.current;
+        const m   = chosenScoreRef.current;
 
         let replaceIdx = chips.length - 1;
-        let bestScore = Infinity;
+        let bestScore  = Infinity;
 
         chips.forEach((c, i) => {
           const ck = normKey(c);
-          if (ck === selectedKey) return;
-          if (isAllSportsValue(c)) return; // never bump All Sports out of chips
+          if (ck === normKey(selectedValue)) return;
+          if (isAllSportsValue(c)) return;
           const sc = Number(m.get(ck) ?? 0);
-          if (sc < bestScore) {
-            bestScore = sc;
-            replaceIdx = i;
-          }
+          if (sc < bestScore) { bestScore = sc; replaceIdx = i; }
         });
 
-        // If all visible chips are protected somehow, replace last non-all chip
         if (isAllSportsValue(chips[replaceIdx])) {
           const fallback = chips.findIndex((c) => !isAllSportsValue(c));
           if (fallback >= 0) replaceIdx = fallback;
@@ -165,14 +146,11 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
 
         const bumped = chips[replaceIdx];
         chips = chips.map((c, i) => (i === replaceIdx ? sel : c));
-
         const chipSet = new Set(chips.map((s) => normKey(s)));
         let more = base.filter((s) => !chipSet.has(normKey(s)));
-
         if (bumped && !more.some((s) => equalsCI(s, bumped)) && !chipSet.has(normKey(bumped))) {
           more = [bumped, ...more];
         }
-
         seedNeverChosen(chips);
         return { chipSports: chips, moreSports: uniqStrings(more) };
       }
@@ -180,23 +158,18 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
 
     const chipSet = new Set(chips.map((s) => normKey(s)));
     seedNeverChosen(chips);
-
     return {
       chipSports: chips,
       moreSports: uniqStrings(base.filter((s) => !chipSet.has(normKey(s)))),
     };
   }, [allSports, sport]);
 
-  useEffect(() => {
-    seedNeverChosen(chipSports);
-  }, [chipSports]);
+  useEffect(() => { seedNeverChosen(chipSports); }, [chipSports]);
 
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef(null);
 
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [sport]);
+  useEffect(() => { setMoreOpen(false); }, [sport]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -208,25 +181,21 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
   }, [moreOpen]);
 
   const onSelectSport = (s) => {
-  const nextValue = isAllSportsValue(s) ? "" : s;
-  chosenScoreRef.current.set(normKey(s), chosenTickRef.current++);
-  setSport(nextValue);
-  setMoreOpen(false);
-};
+    const nextValue = isAllSportsValue(s) ? "" : s;
+    chosenScoreRef.current.set(normKey(s), chosenTickRef.current++);
+    setSport(nextValue);
+    setMoreOpen(false);
+  };
 
-  const workoutCount = Number(summary?.workoutCount ?? 0);
-  const itemCount = Number(summary?.itemCount ?? 0);
-  const completedCount = Number(summary?.completedCount ?? 0);
-  const completionPct = Number(summary?.completionPct ?? 0);
+  const workoutCount       = Number(summary?.workoutCount       ?? 0);
+  const itemCount          = Number(summary?.itemCount          ?? 0);
+  const completedCount     = Number(summary?.completedCount     ?? 0);
+  const completionPct      = Number(summary?.completionPct      ?? 0);
   const pendingReviewCount = Number(summary?.pendingReviewCount ?? 0);
-  const rejectedCount = Number(summary?.rejectedCount ?? 0);
+  const rejectedCount      = Number(summary?.rejectedCount      ?? 0);
 
   const allClear =
-    !loading &&
-    !err &&
-    workoutCount > 0 &&
-    completionPct >= 100 &&
-    pendingReviewCount === 0;
+    !loading && !err && workoutCount > 0 && completionPct >= 100 && pendingReviewCount === 0;
 
   const scheduledSub =
     isAllSportsValue(sport) || !sport ? "All sports today" : `${displaySport} today`;
@@ -235,33 +204,35 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
     <section
       style={{
         backgroundColor: DS.cardBg,
-        border: `1px solid ${DS.border}`,
+        border:    `1px solid ${DS.border}`,
         borderTop: `3px solid ${DS.brand}`,
       }}
     >
-      {/* Header */}
+      {/* ── Header ── */}
       <div
-        className="px-4 py-3 flex items-center justify-between gap-3"
+        className="px-4 py-3 flex items-center justify-between gap-2"
         style={{ borderBottom: `1px solid ${DS.border}` }}
       >
-        <div className="flex items-center gap-2">
+        {/* Title + date badge */}
+        <div className="flex items-center gap-2 min-w-0">
           <CalendarDays className="w-4 h-4 shrink-0" style={{ color: DS.brand }} />
           <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
             Workouts
           </span>
           <span
-            className="text-xs font-bold px-1.5 py-0.5"
+            className="text-xs font-bold px-1.5 py-0.5 shrink-0"
             style={{
               backgroundColor: DS.brandBg,
-              color: DS.labelText,
-              border: `1px solid ${DS.brandBorder}`,
+              color:           DS.labelText,
+              border:          `1px solid ${DS.brandBorder}`,
             }}
           >
             {todayISO}
           </span>
         </div>
 
-        <div className="flex gap-1.5 shrink-0">
+        {/* Action buttons — hidden on mobile, visible sm+ */}
+        <div className="hidden sm:flex gap-1.5 shrink-0">
           <Button variant="secondary" onClick={fetchToday} disabled={loading}>
             <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
@@ -269,16 +240,30 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
             <ClipboardList className="w-3.5 h-3.5" /> Calendar <ArrowRight className="w-3.5 h-3.5" />
           </Button>
         </div>
+
+        {/* Mobile-only: single icon refresh button */}
+        <button
+          type="button"
+          onClick={fetchToday}
+          disabled={loading}
+          className="sm:hidden p-1.5 shrink-0"
+          style={{
+            border:          `1px solid ${DS.border}`,
+            backgroundColor: DS.cardBg,
+            color:           DS.labelText,
+            opacity:         loading ? 0.5 : 1,
+          }}
+          aria-label="Refresh workouts"
+        >
+          <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
       </div>
 
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         {/* Sport chips */}
         <div className="flex flex-wrap gap-1.5">
           {chipSports.map((s) => {
-            const active = isAllSportsValue(sport)
-              ? isAllSportsValue(s)
-              : equalsCI(s, sport);
-
+            const active = isAllSportsValue(sport) ? isAllSportsValue(s) : equalsCI(s, sport);
             return (
               <button
                 key={s}
@@ -287,21 +272,21 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
                 className="px-2.5 py-1.5 text-xs font-black uppercase tracking-wide transition-all"
                 style={{
                   backgroundColor: active ? DS.brand : DS.cardBg,
-                  color: active ? "#fff" : DS.labelText,
-                  border: `1px solid ${active ? DS.brand : DS.border}`,
+                  color:           active ? "#fff"  : DS.labelText,
+                  border:          `1px solid ${active ? DS.brand : DS.border}`,
                 }}
                 onMouseEnter={(e) => {
                   if (!active) {
                     e.currentTarget.style.backgroundColor = DS.brandBg;
-                    e.currentTarget.style.borderColor = DS.brandBorder;
-                    e.currentTarget.style.color = DS.brand;
+                    e.currentTarget.style.borderColor     = DS.brandBorder;
+                    e.currentTarget.style.color           = DS.brand;
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!active) {
                     e.currentTarget.style.backgroundColor = DS.cardBg;
-                    e.currentTarget.style.borderColor = DS.border;
-                    e.currentTarget.style.color = DS.labelText;
+                    e.currentTarget.style.borderColor     = DS.border;
+                    e.currentTarget.style.color           = DS.labelText;
                   }
                 }}
               >
@@ -318,8 +303,8 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
                 className="px-2.5 py-1.5 text-xs font-black uppercase tracking-wide inline-flex items-center gap-1 transition-all"
                 style={{
                   backgroundColor: moreOpen ? DS.bodyText : DS.cardBg,
-                  color: moreOpen ? "#fff" : DS.labelText,
-                  border: `1px solid ${moreOpen ? DS.bodyText : DS.border}`,
+                  color:           moreOpen ? "#fff"      : DS.labelText,
+                  border:          `1px solid ${moreOpen ? DS.bodyText : DS.border}`,
                 }}
               >
                 More <ChevronDown className={`w-3 h-3 transition ${moreOpen ? "rotate-180" : ""}`} />
@@ -330,8 +315,8 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
                   className="absolute left-0 mt-1 w-44 z-50 p-1"
                   style={{
                     backgroundColor: DS.cardBg,
-                    border: `1px solid ${DS.border}`,
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+                    border:          `1px solid ${DS.border}`,
+                    boxShadow:       "0 4px 16px rgba(0,0,0,0.1)",
                   }}
                 >
                   <div className="max-h-64 overflow-auto">
@@ -339,7 +324,6 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
                       const active = isAllSportsValue(sport)
                         ? isAllSportsValue(s)
                         : equalsCI(s, sport);
-
                       return (
                         <button
                           key={s}
@@ -348,14 +332,10 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
                           className="w-full text-left px-2.5 py-2 text-xs font-bold transition-all"
                           style={{
                             backgroundColor: active ? DS.brandBg : "transparent",
-                            color: active ? DS.brand : DS.bodyText,
+                            color:           active ? DS.brand   : DS.bodyText,
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = DS.brandBg;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = active ? DS.brandBg : "transparent";
-                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = active ? DS.brandBg : "transparent"; }}
                         >
                           {s}
                         </button>
@@ -368,7 +348,7 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
           )}
         </div>
 
-        {/* Loading / error */}
+        {/* Loading */}
         {loading && (
           <div
             className="mt-3 p-3 text-xs"
@@ -378,6 +358,7 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
           </div>
         )}
 
+        {/* Error */}
         {err && (
           <div
             className="mt-3 p-3 text-xs font-bold"
@@ -387,14 +368,14 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
           </div>
         )}
 
-        {/* All clear state */}
+        {/* All clear */}
         {allClear && (
           <div
             className="mt-3 flex items-center gap-2 px-3 py-3"
             style={{
               backgroundColor: DS.safeBg,
-              border: `1px solid ${DS.safeBorder}`,
-              borderLeft: `3px solid ${DS.safe}`,
+              border:          `1px solid ${DS.safeBorder}`,
+              borderLeft:      `3px solid ${DS.safe}`,
             }}
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: DS.safe }} />
@@ -404,7 +385,7 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }
           </div>
         )}
 
-        {/* Metric tiles */}
+        {/* Metric tiles — 2-col on mobile, 4-col on lg+ */}
         <div
           className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-px"
           style={{ backgroundColor: DS.border }}

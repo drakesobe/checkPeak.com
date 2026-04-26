@@ -853,7 +853,6 @@ function ConversationRow({ conv, myId, isActive, onClick }) {
   );
 }
 
-/* ── New conversation modal ────────────────────────────────────────────────── */
 function NewConversationModal({ onClose, myId, myName, orgId, orgToken, onCreated }) {
   const [members,   setMembers]   = useState([]);
   const [selected,  setSelected]  = useState([]);
@@ -864,23 +863,23 @@ function NewConversationModal({ onClose, myId, myName, orgId, orgToken, onCreate
   const [error,     setError]     = useState("");
 
   useEffect(() => {
-  if (!orgToken) { setLoading(false); return; }
-  fetch(`/api/athlete/teammates?token=${encodeURIComponent(orgToken)}`)
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok) throw new Error(data.error || "Failed to load athletes.");
-      const list = (data.teammates || []).map(t => ({
-        id:    t.id,
-        name:  t.name,
-        role:  t.role  || "Athlete",
-        sport: t.sport || "",
-        orgId,
-      }));
-      setMembers(list);
-    })
-    .catch(err => setError(err?.message || "Failed to load athletes."))
-    .finally(() => setLoading(false));
-}, [orgToken, myId]);
+    if (!orgToken) { setLoading(false); return; }
+    fetch(`/api/athlete/teammates?token=${encodeURIComponent(orgToken)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.error || "Failed to load athletes.");
+        const list = (data.teammates || []).map(t => ({
+          id:    t.id,
+          name:  t.name,
+          role:  t.role  || "Athlete",
+          sport: t.sport || "",
+          orgId,
+        }));
+        setMembers(list);
+      })
+      .catch(err => setError(err?.message || "Failed to load athletes."))
+      .finally(() => setLoading(false));
+  }, [orgToken, myId]);
 
   const toggle = id => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -926,68 +925,91 @@ function NewConversationModal({ onClose, myId, myName, orgId, orgToken, onCreate
         onClick={onClose}
         style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(26,37,53,0.45)", backdropFilter: "blur(3px)" }}
       />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        onClick={e => e.stopPropagation()}
-        style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 51, width: "min(480px, 92vw)", maxHeight: "80vh", background: DS.cardBg, borderRadius: 16, border: `1px solid ${DS.border}`, boxShadow: "0 20px 60px rgba(26,37,53,0.2)", display: "flex", flexDirection: "column", overflow: "hidden" }}
-      >
-        <div style={{ padding: "18px 20px", borderBottom: `1px solid ${DS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", color: DS.dimText, marginBottom: 4 }}>New</p>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: DS.bodyText, margin: 0 }}>
-              {selected.length > 1 ? "Group Message" : "New Message"}
-            </h2>
-          </div>
-          <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText, cursor: "pointer" }}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-          {selected.length > 1 && (
-            <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)}
-              placeholder="Group name (optional)" maxLength={40}
-              style={{ width: "100%", padding: "9px 12px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, color: DS.bodyText, fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 14, boxSizing: "border-box" }} />
-          )}
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search members…"
-            style={{ width: "100%", padding: "9px 12px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, color: DS.bodyText, fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 12, boxSizing: "border-box" }} />
-
-          {loading ? (
-            <div style={{ padding: "20px 0", textAlign: "center", color: DS.dimText, fontSize: 13 }}>Loading members…</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: "20px 0", textAlign: "center", color: DS.dimText, fontSize: 13 }}>
-              {members.length === 0 ? "No members found in your org yet." : "No results."}
+      {/* Centering wrapper — separate from motion so transforms don't conflict */}
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 51, width: "min(480px, 92vw)",
+      }}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 12 }}
+          onClick={e => e.stopPropagation()}
+          style={{
+            maxHeight: "min(80vh, 600px)",
+            background: DS.cardBg,
+            borderRadius: 16,
+            border: `1px solid ${DS.border}`,
+            boxShadow: "0 20px 60px rgba(26,37,53,0.2)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <div style={{ padding: "18px 20px", borderBottom: `1px solid ${DS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", color: DS.dimText, marginBottom: 4 }}>New</p>
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: DS.bodyText, margin: 0 }}>
+                {selected.length > 1 ? "Group Message" : "New Message"}
+              </h2>
             </div>
-          ) : filtered.map((m, i) => {
-            const isSel = selected.includes(m.id);
-            const color = avatarColor(m.id);
-            return (
-              <button key={m.id} type="button" onClick={() => toggle(m.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "10px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${DS.border}` : "none", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                <div style={{ width: 38, height: 38, borderRadius: "50%", background: color + "22", border: `1px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color }}>{getInitials(m.name || "?")}</span>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: DS.bodyText }}>{m.name || "Unknown"}</div>
-                  {m.role && <div style={{ fontSize: 11, color: DS.dimText }}>{m.role}</div>}
-                </div>
-                <div style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${isSel ? DS.brand : DS.border}`, background: isSel ? DS.brand : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s ease" }}>
-                  {isSel && <span style={{ fontSize: 11, color: "#fff", fontWeight: 800 }}>✓</span>}
-                </div>
-              </button>
-            );
-          })}
-
-          {error && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned, fontSize: 13 }}>{error}</div>}
-        </div>
-
-        {selected.length > 0 && (
-          <div style={{ padding: "14px 20px", borderTop: `1px solid ${DS.border}`, flexShrink: 0 }}>
-            <button type="button" onClick={create} disabled={creating} style={{ width: "100%", padding: "12px 20px", borderRadius: 10, border: "none", background: DS.brand, color: "#fff", fontSize: 14, fontWeight: 800, cursor: creating ? "not-allowed" : "pointer", opacity: creating ? 0.6 : 1 }}>
-              {creating ? "Creating…" : selected.length > 1 ? `Create Group · ${selected.length + 1} people` : "Start Conversation"}
+            <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText, cursor: "pointer" }}>
+              <X className="w-4 h-4" />
             </button>
           </div>
-        )}
-      </motion.div>
+
+          {/* Scrollable body */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+            {selected.length > 1 && (
+              <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)}
+                placeholder="Group name (optional)" maxLength={40}
+                style={{ width: "100%", padding: "9px 12px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, color: DS.bodyText, fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 14, boxSizing: "border-box" }} />
+            )}
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search athletes…"
+              style={{ width: "100%", padding: "9px 12px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, color: DS.bodyText, fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 12, boxSizing: "border-box" }} />
+
+            {loading ? (
+              <div style={{ padding: "20px 0", textAlign: "center", color: DS.dimText, fontSize: 13 }}>Loading athletes…</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: "20px 0", textAlign: "center", color: DS.dimText, fontSize: 13 }}>
+                {members.length === 0 ? "No athletes found in your org." : "No results."}
+              </div>
+            ) : filtered.map((m, i) => {
+              const isSel = selected.includes(m.id);
+              const color = avatarColor(m.id);
+              return (
+                <button key={m.id} type="button" onClick={() => toggle(m.id)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "10px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${DS.border}` : "none", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: color + "22", border: `1px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color }}>{getInitials(m.name || "?")}</span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: DS.bodyText }}>{m.name || "Unknown"}</div>
+                    {m.sport && <div style={{ fontSize: 11, color: DS.dimText }}>{m.role} · {m.sport}</div>}
+                    {!m.sport && m.role && <div style={{ fontSize: 11, color: DS.dimText }}>{m.role}</div>}
+                  </div>
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${isSel ? DS.brand : DS.border}`, background: isSel ? DS.brand : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s ease" }}>
+                    {isSel && <span style={{ fontSize: 11, color: "#fff", fontWeight: 800 }}>✓</span>}
+                  </div>
+                </button>
+              );
+            })}
+
+            {error && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, color: DS.banned, fontSize: 13 }}>{error}</div>}
+          </div>
+
+          {/* Footer — only shown when someone is selected */}
+          {selected.length > 0 && (
+            <div style={{ padding: "14px 20px", borderTop: `1px solid ${DS.border}`, flexShrink: 0 }}>
+              <button type="button" onClick={create} disabled={creating} style={{ width: "100%", padding: "12px 20px", borderRadius: 10, border: "none", background: DS.brand, color: "#fff", fontSize: 14, fontWeight: 800, cursor: creating ? "not-allowed" : "pointer", opacity: creating ? 0.6 : 1 }}>
+                {creating ? "Creating…" : selected.length > 1 ? `Create Group · ${selected.length + 1} people` : "Start Conversation"}
+              </button>
+            </div>
+          )}
+        </motion.div>
+      </div>
     </>
   );
 }

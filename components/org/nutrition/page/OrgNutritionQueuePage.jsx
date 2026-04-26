@@ -43,18 +43,6 @@ function normaliseSummaryResponse(json) {
   };
 }
 
-/**
- * useNutritionQueue
- *
- * FIX: now returns patchRow() so the page can optimistically update
- * a single row's reminder state immediately after a send — without
- * waiting for a full Airtable reload.
- *
- * Data strategy (tried in order):
- *   1. /api/org/nutrition/queue
- *   2. /api/org/nutrition/todaySummary
- *   3. MOCK_ATHLETES
- */
 function useNutritionQueue({ enabled } = {}) {
   const [loading,          setLoading]          = useState(true);
   const [rows,             setRows]             = useState([]);
@@ -67,7 +55,6 @@ function useNutritionQueue({ enabled } = {}) {
     setLoading(true);
     setError(null);
 
-    // ── 1. Try dedicated queue endpoint ──────────────────────────────────────
     try {
       const res  = await fetch("/api/org/nutrition/queue", { credentials: "include" });
       const json = await res.json().catch(() => null);
@@ -80,7 +67,6 @@ function useNutritionQueue({ enabled } = {}) {
       }
     } catch (_) { /* fall through */ }
 
-    // ── 2. Try todaySummary ───────────────────────────────────────────────────
     try {
       const res  = await fetch("/api/org/nutrition/todaySummary", { credentials: "include" });
       const json = await res.json().catch(() => null);
@@ -94,7 +80,6 @@ function useNutritionQueue({ enabled } = {}) {
       }
     } catch (_) { /* fall through */ }
 
-    // ── 3. Fallback mock ──────────────────────────────────────────────────────
     console.warn("[useNutritionQueue] Both API endpoints unavailable — using mock data.");
     setRows(MOCK_ATHLETES);
     setMeta({
@@ -108,14 +93,6 @@ function useNutritionQueue({ enabled } = {}) {
 
   useEffect(() => { load(); }, [load]);
 
-  /**
-   * patchRow — optimistically update a single row's fields in memory.
-   * Called immediately after a reminder send so getReminderState()
-   * shows "sent X minutes ago" without waiting for a full page reload.
-   *
-   * @param {string} athleteToken
-   * @param {object} patch — partial row fields to merge
-   */
   const patchRow = useCallback((athleteToken, patch) => {
     setRows(prev => prev.map(r =>
       r.athleteToken === athleteToken ? { ...r, ...patch } : r
@@ -125,6 +102,19 @@ function useNutritionQueue({ enabled } = {}) {
   return { loading, error, rows, meta, lastUpdatedLabel, refresh: load, patchRow };
 }
 // ─── STUB END ─────────────────────────────────────────────────────────────────
+
+// ─── Mobile hook ──────────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 640) {
+  const [mobile, setMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, [breakpoint]);
+  return mobile;
+}
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const MOCK_ATHLETES = [
@@ -172,16 +162,16 @@ function avgAdh(rows) {
 }
 
 // ─── Reminder helpers ─────────────────────────────────────────────────────────
-const REMINDER_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+const REMINDER_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 function getReminderState(row) {
   const sentAt = row?.lastReminderSentAt ? new Date(row.lastReminderSentAt) : null;
   const count  = Number(row?.reminderCount || 0);
   if (!sentAt || isNaN(sentAt.getTime())) return { sent: false, canResend: false, hoursAgo: null, minutesAgo: null, count };
-  const msAgo     = Date.now() - sentAt.getTime();
+  const msAgo      = Date.now() - sentAt.getTime();
   const minutesAgo = Math.floor(msAgo / (1000 * 60));
-  const hoursAgo  = Math.floor(msAgo / (1000 * 60 * 60));
-  const canResend = msAgo >= REMINDER_WINDOW_MS;
+  const hoursAgo   = Math.floor(msAgo / (1000 * 60 * 60));
+  const canResend  = msAgo >= REMINDER_WINDOW_MS;
   return { sent: true, canResend, hoursAgo, minutesAgo, count };
 }
 
@@ -314,6 +304,14 @@ const GLOBAL_STYLE = `
   .delay-3 { animation-delay: 0.15s; }
   .delay-4 { animation-delay: 0.20s; }
   .delay-5 { animation-delay: 0.25s; }
+
+  /* ── Mobile utilities ── */
+  @media (max-width: 639px) {
+    .onq-hide-mobile { display: none !important; }
+  }
+  @media (min-width: 640px) {
+    .onq-hide-desktop { display: none !important; }
+  }
 `;
 
 // ─── Tiny primitives ──────────────────────────────────────────────────────────
@@ -367,34 +365,54 @@ function ProgressBar({ value, max, color = "var(--brand)", height = 3, animate =
 }
 
 // ─── Nav bar ──────────────────────────────────────────────────────────────────
+// Mobile: hides Dashboard/Plans links, shrinks the wordmark, compresses tab labels.
 function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
+  const isMobile = useIsMobile();
+
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0 20px", height: 48,
+      padding: isMobile ? "0 12px" : "0 20px",
+      height: 48,
       background: "var(--deep)", borderBottom: "1px solid var(--rim)",
       position: "sticky", top: 0, zIndex: 100,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 15, letterSpacing: "0.12em", color: "var(--brand)", textTransform: "uppercase" }}>
+      {/* Wordmark */}
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 16, flexShrink: 0 }}>
+        <div style={{
+          fontFamily: "var(--font-display)", fontWeight: 900,
+          fontSize: isMobile ? 13 : 15,
+          letterSpacing: "0.12em", color: "var(--brand)", textTransform: "uppercase",
+        }}>
           PEAK
         </div>
-        <div style={{ width: 1, height: 20, background: "var(--rim)" }} />
-        <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>
-          Nutrition Queue
-        </span>
+        {!isMobile && (
+          <>
+            <div style={{ width: 1, height: 20, background: "var(--rim)" }} />
+            <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>
+              Nutrition Queue
+            </span>
+          </>
+        )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, padding: 3, gap: 2 }}>
+      {/* Tab switcher */}
+      <div style={{
+        display: "flex", alignItems: "center",
+        background: "var(--surface)", border: "1px solid var(--rim)",
+        borderRadius: 4, padding: 3, gap: 2,
+      }}>
         {[
-          { key: "queue",  label: "Queue"   },
-          { key: "list",   label: "Actions" },
-          { key: "roster", label: "Roster"  },
+          { key: "queue",  label: isMobile ? "Queue"   : "Queue"   },
+          { key: "list",   label: isMobile ? "Actions" : "Actions" },
+          { key: "roster", label: isMobile ? "Roster"  : "Roster"  },
         ].map(({ key, label }) => (
           <button key={key} onClick={() => onMode(key)} style={{
-            fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12,
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: isMobile ? 11 : 12,
             letterSpacing: "0.06em", textTransform: "uppercase",
-            padding: "5px 12px", borderRadius: 3, border: "none", cursor: "pointer",
+            padding: isMobile ? "5px 10px" : "5px 12px",
+            borderRadius: 3, border: "none", cursor: "pointer",
             transition: "all 0.15s ease",
             background: mode === key ? "var(--brand)" : "transparent",
             color: mode === key ? "var(--void)" : "var(--ghost)",
@@ -402,7 +420,7 @@ function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
             {label}
             {key === "queue" && actCount > 0 && (
               <span style={{
-                marginLeft: 6,
+                marginLeft: 5,
                 background: mode === key ? "rgba(0,0,0,0.25)" : "var(--red)",
                 color: mode === key ? "rgba(0,0,0,0.7)" : "#fff",
                 borderRadius: 10, padding: "0 5px", fontSize: 10,
@@ -415,28 +433,47 @@ function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {[{ label: "Dashboard", fn: onDashboard }, { label: "Plans", fn: onPlans }].map(({ label, fn }) => (
-          <button key={label} onClick={fn} style={{
-            fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 12,
-            letterSpacing: "0.06em", textTransform: "uppercase",
-            padding: "6px 12px", background: "transparent",
-            border: "1px solid transparent", borderRadius: 3,
-            color: "var(--ghost)", cursor: "pointer", transition: "all 0.15s ease",
+      {/* Dashboard / Plans — hidden on mobile */}
+      {!isMobile && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {[{ label: "Dashboard", fn: onDashboard }, { label: "Plans", fn: onPlans }].map(({ label, fn }) => (
+            <button key={label} onClick={fn} style={{
+              fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 12,
+              letterSpacing: "0.06em", textTransform: "uppercase",
+              padding: "6px 12px", background: "transparent",
+              border: "1px solid transparent", borderRadius: 3,
+              color: "var(--ghost)", cursor: "pointer", transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "var(--chalk)"; e.currentTarget.style.borderColor = "var(--wire)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--ghost)"; e.currentTarget.style.borderColor = "transparent"; }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* On mobile: show a compact overflow menu placeholder (⋯) aligned right */}
+      {isMobile && (
+        <button
+          onClick={onDashboard}
+          style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            color: "var(--ghost)", fontSize: 18, padding: "0 4px", lineHeight: 1,
           }}
-          onMouseEnter={e => { e.currentTarget.style.color = "var(--chalk)"; e.currentTarget.style.borderColor = "var(--wire)"; }}
-          onMouseLeave={e => { e.currentTarget.style.color = "var(--ghost)"; e.currentTarget.style.borderColor = "transparent"; }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+          title="Dashboard"
+        >
+          ⋯
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── Program Readiness Strip ──────────────────────────────────────────────────
+// Mobile: stacks into two rows instead of side-by-side.
 function ReadinessStrip({ rows, actionCount }) {
+  const isMobile = useIsMobile();
   const total = rows.length;
   const ready = rows.filter(r => getSubGroup(r) === "onTrack").length;
   const pct   = total ? Math.round((ready / total) * 100) : 0;
@@ -445,13 +482,22 @@ function ReadinessStrip({ rows, actionCount }) {
 
   return (
     <div className="anim-slide-up" style={{
-      display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "center",
-      padding: "16px 20px", background: "var(--surface)",
+      display: "flex",
+      flexDirection: isMobile ? "column" : "row",
+      gap: isMobile ? 14 : 24,
+      alignItems: isMobile ? "stretch" : "center",
+      padding: isMobile ? "14px 16px" : "16px 20px",
+      background: "var(--surface)",
       border: "1px solid var(--rim)", borderLeft: `3px solid ${color}`, borderRadius: 4,
     }}>
-      <div>
+      {/* Left: readiness % */}
+      <div style={{ flex: 1 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-          <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 42, lineHeight: 1, color, letterSpacing: "-0.02em" }}>
+          <span style={{
+            fontFamily: "var(--font-display)", fontWeight: 900,
+            fontSize: isMobile ? 34 : 42,
+            lineHeight: 1, color, letterSpacing: "-0.02em",
+          }}>
             {pct}%
           </span>
           <div>
@@ -465,14 +511,23 @@ function ReadinessStrip({ rows, actionCount }) {
         </div>
         <ProgressBar value={ready} max={total} color={color} height={4} />
       </div>
-      <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
+
+      {/* Right: stat pills — row on desktop, 3-col grid on mobile */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "auto auto auto",
+        gap: isMobile ? 0 : 20,
+        flexShrink: 0,
+        borderTop: isMobile ? "1px solid var(--rim)" : "none",
+        paddingTop: isMobile ? 12 : 0,
+      }}>
         {[
           { label: "Need Action",   value: actionCount,               color: actionCount > 0 ? "var(--red)" : "var(--green)" },
           { label: "Avg Adherence", value: adh != null ? `${adh}%` : "—", color: adh == null ? "var(--ghost)" : adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)" },
-          { label: "Week",          value: getWeekLabel(),            color: "var(--ghost)" },
+          { label: "Week",          value: isMobile ? getWeekLabel().split("–")[0].trim() : getWeekLabel(), color: "var(--ghost)" },
         ].map(({ label, value, color: c }) => (
-          <div key={label} style={{ textAlign: "right" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, color: c, lineHeight: 1.1 }}>{value}</div>
+          <div key={label} style={{ textAlign: isMobile ? "center" : "right" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: isMobile ? 15 : 18, color: c, lineHeight: 1.1 }}>{value}</div>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginTop: 2 }}>{label}</div>
           </div>
         ))}
@@ -482,7 +537,9 @@ function ReadinessStrip({ rows, actionCount }) {
 }
 
 // ─── Plan assign slide-over ───────────────────────────────────────────────────
+// Already uses min(480px, 100vw) — adds safe bottom padding for mobile.
 function AssignSlideOver({ row, onClose, onSaved }) {
+  const isMobile = useIsMobile();
   const [values, setValues] = useState({ calories: "", protein: "", carbs: "", fat: "", phase: "Maintain", notes: "" });
   const [preset, setPreset] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -528,12 +585,17 @@ function AssignSlideOver({ row, onClose, onSaved }) {
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,30,50,0.4)", backdropFilter: "blur(2px)", zIndex: 200, animation: "fadeIn 0.2s ease" }} />
-      <div className="anim-slide-right" style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(480px, 100vw)", background: "var(--deep)", borderLeft: "1px solid var(--rim)", zIndex: 201, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--rim)", background: "var(--surface)" }}>
+      <div className="anim-slide-right" style={{
+        position: "fixed", top: 0, right: 0, bottom: 0,
+        width: "min(480px, 100vw)",
+        background: "var(--deep)", borderLeft: "1px solid var(--rim)",
+        zIndex: 201, display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{ padding: isMobile ? "16px 16px" : "20px 24px", borderBottom: "1px solid var(--rim)", background: "var(--surface)" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
             <div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--brand)", marginBottom: 4 }}>Assign Nutrition Plan</div>
-              <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, color: "var(--ink)", lineHeight: 1.1 }}>{row?.athleteName || "Athlete"}</div>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 20 : 24, color: "var(--ink)", lineHeight: 1.1 }}>{row?.athleteName || "Athlete"}</div>
               <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                 {row?.position && <Tag color="ghost">{row.position}</Tag>}
                 {row?.team && <Tag color="ghost">{row.team}</Tag>}
@@ -543,12 +605,12 @@ function AssignSlideOver({ row, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 16px" : "20px 24px" }}>
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ghost)", marginBottom: 10 }}>Quick Fill</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {PLAN_PRESETS.map(p => (
-                <button key={p.label} onClick={() => applyPreset(p)} style={{ padding: "10px 12px", background: preset === p.label ? "var(--brand)" : "var(--raised)", border: `1px solid ${preset === p.label ? "var(--brand)" : "var(--rim)"}`, borderRadius: 3, cursor: "pointer", textAlign: "left", transition: "all 0.15s ease" }}>
+                <button key={p.label} onClick={() => applyPreset(p)} style={{ padding: isMobile ? "8px 10px" : "10px 12px", background: preset === p.label ? "var(--brand)" : "var(--raised)", border: `1px solid ${preset === p.label ? "var(--brand)" : "var(--rim)"}`, borderRadius: 3, cursor: "pointer", textAlign: "left", transition: "all 0.15s ease" }}>
                   <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: preset === p.label ? "var(--void)" : "var(--ink)", marginBottom: 2 }}>{p.label}</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: preset === p.label ? "rgba(0,0,0,0.55)" : "var(--ghost)" }}>{p.calories} cal · {p.protein}g protein</div>
                   <div style={{ fontSize: 10, fontFamily: "var(--font-body)", color: preset === p.label ? "rgba(0,0,0,0.45)" : "var(--muted)", marginTop: 2 }}>{p.desc}</div>
@@ -600,7 +662,12 @@ function AssignSlideOver({ row, onClose, onSaved }) {
           {err && <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderRadius: 3, color: "var(--red)", fontSize: 13 }}>{err}</div>}
         </div>
 
-        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--rim)", display: "flex", gap: 10, background: "var(--surface)" }}>
+        <div style={{
+          padding: isMobile ? "12px 16px" : "16px 24px",
+          paddingBottom: isMobile ? "max(12px, env(safe-area-inset-bottom))" : undefined,
+          borderTop: "1px solid var(--rim)", display: "flex", gap: 10,
+          background: "var(--surface)",
+        }}>
           <button onClick={save} disabled={saving} style={{ flex: 1, padding: "12px 20px", background: saving ? "var(--muted)" : "var(--brand)", border: "none", borderRadius: 3, cursor: saving ? "not-allowed" : "pointer", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase", color: saving ? "var(--chalk)" : "var(--void)", transition: "all 0.15s ease" }}>
             {saving ? "Saving…" : "Save Plan"}
           </button>
@@ -626,13 +693,6 @@ async function sendReminderAPI(athleteToken) {
 }
 
 // ─── Reminder control ─────────────────────────────────────────────────────────
-//
-// FIX: Now shows exact time since last send ("sent 23m ago") and
-// the countdown until resend is unlocked ("Send Again in 11h").
-// Uses the row's lastReminderSentAt directly so it reflects both
-// the persisted Airtable value on load AND the optimistic patch
-// applied immediately after a send.
-//
 function ReminderControl({ row, sending, onRemind }) {
   const rs = getReminderState(row);
 
@@ -660,19 +720,16 @@ function ReminderControl({ row, sending, onRemind }) {
   if (!rs.canResend) {
     return (
       <div style={{ textAlign: "right" }}>
-        {/* FIX: Shows "sent Xm ago" using minutesAgo for recent sends */}
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
           {rs.count}× sent · {formatTimeAgo(rs.minutesAgo)}
         </div>
         <div style={{ padding: "6px 10px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" }}>
-          {/* FIX: Shows exact hours remaining until unlock */}
           Send Again in {formatCountdown(rs.hoursAgo)}
         </div>
       </div>
     );
   }
 
-  // Unlocked resend
   return (
     <div style={{ textAlign: "right" }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--amber)", marginBottom: 3 }}>
@@ -689,7 +746,9 @@ function ReminderControl({ row, sending, onRemind }) {
 }
 
 // ─── Queue card ───────────────────────────────────────────────────────────────
+// Mobile: reduced horizontal padding so content breathes.
 function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
+  const isMobile = useIsMobile();
   const [animating, setAnimating] = useState(false);
   const sg = getSubGroup(row);
 
@@ -712,12 +771,15 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
     setTimeout(() => { onAction(row, "skip"); setAnimating(false); }, 380);
   }
 
+  const hPad = isMobile ? "16px 16px" : "24px 28px 20px";
+
   return (
     <div style={{ position: "relative", animation: animating ? "cardFlip 0.42s var(--ease-snap)" : "slideUp 0.4s var(--ease-snap) both" }}>
+      {/* Progress indicator */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>{index + 1} / {total}</span>
-          <div style={{ width: 80, height: 2, background: "var(--rim)", borderRadius: 1, overflow: "hidden" }}>
+          <div style={{ width: isMobile ? 60 : 80, height: 2, background: "var(--rim)", borderRadius: 1, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${((index + 1) / total) * 100}%`, background: "var(--brand)", transition: "width 0.4s var(--ease-snap)" }} />
           </div>
         </div>
@@ -725,10 +787,11 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
       </div>
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderTop: `3px solid ${s.color}`, borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ padding: "24px 28px 20px", position: "relative" }}>
-          <div style={{ position: "absolute", top: 20, right: 24, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 48, color: s.color, opacity: 0.12, lineHeight: 1, userSelect: "none" }}>{s.icon}</div>
+        {/* Header */}
+        <div style={{ padding: hPad, position: "relative" }}>
+          <div style={{ position: "absolute", top: 16, right: isMobile ? 14 : 24, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 36 : 48, color: s.color, opacity: 0.12, lineHeight: 1, userSelect: "none" }}>{s.icon}</div>
           <div style={{ marginBottom: 8 }}><Tag color={s.tag}>{s.label}</Tag></div>
-          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, color: "var(--ink)", lineHeight: 1.05, marginBottom: 8 }}>{row.athleteName}</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 26 : 32, color: "var(--ink)", lineHeight: 1.05, marginBottom: 8 }}>{row.athleteName}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {row.position && <Tag color="ghost">{row.position}</Tag>}
             {row.team && <Tag color="ghost">{row.team}</Tag>}
@@ -737,12 +800,12 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
         </div>
 
         <Divider my={0} />
-        <div style={{ padding: "16px 28px" }}>
+        <div style={{ padding: isMobile ? "12px 16px" : "16px 28px" }}>
           <p style={{ fontSize: 14, color: "var(--chalk)", lineHeight: 1.6, fontFamily: "var(--font-body)" }}>{s.desc}</p>
         </div>
 
         {sg === "lowAdherence" && row.adherenceAvg != null && (
-          <div style={{ padding: "0 28px 16px" }}>
+          <div style={{ padding: isMobile ? "0 16px 12px" : "0 28px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontSize: 11, fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ghost)" }}>Weekly Adherence</span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--amber)" }}>{Math.round(row.adherenceAvg)}%</span>
@@ -752,22 +815,41 @@ function QueueCard({ row, index, total, onAction, onAssign, onOpenProfile }) {
         )}
 
         <Divider my={0} />
-        <div style={{ padding: "16px 28px", display: "flex", gap: 10 }}>
-          <button onClick={handleAction} style={{ flex: 1, padding: "13px 20px", background: s.color, border: "none", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--void)", transition: "all 0.15s ease" }}
+        {/* Actions */}
+        <div style={{ padding: isMobile ? "12px 16px" : "16px 28px", display: "flex", gap: 8 }}>
+          <button onClick={handleAction} style={{
+            flex: 1, padding: isMobile ? "11px 12px" : "13px 20px",
+            background: s.color, border: "none", borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 800,
+            fontSize: isMobile ? 13 : 14, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: "var(--void)", transition: "all 0.15s ease",
+          }}
             onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
             onMouseLeave={e => e.currentTarget.style.filter = "none"}
           >
             {s.action}
           </button>
           {sg !== "lowAdherence" && (
-            <button onClick={() => onOpenProfile(row)} style={{ padding: "13px 16px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ghost)", transition: "all 0.15s ease" }}
+            <button onClick={() => onOpenProfile(row)} style={{
+              padding: isMobile ? "11px 12px" : "13px 16px",
+              background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer",
+              fontFamily: "var(--font-display)", fontWeight: 700,
+              fontSize: isMobile ? 12 : 13, letterSpacing: "0.06em", textTransform: "uppercase",
+              color: "var(--ghost)", transition: "all 0.15s ease",
+            }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
             >
               Profile
             </button>
           )}
-          <button onClick={handleSkip} style={{ padding: "13px 16px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", transition: "all 0.15s ease" }}
+          <button onClick={handleSkip} style={{
+            padding: isMobile ? "11px 12px" : "13px 16px",
+            background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: isMobile ? 12 : 13, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: "var(--muted)", transition: "all 0.15s ease",
+          }}
             onMouseEnter={e => { e.currentTarget.style.color = "var(--ghost)"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "var(--muted)"; }}
           >
@@ -796,11 +878,6 @@ function QueueClear({ onViewAll }) {
 }
 
 // ─── Queue mode ───────────────────────────────────────────────────────────────
-//
-// FIX: Accepts onReminderSent prop. After a successful reminder send,
-// calls onReminderSent(athleteToken, { lastReminderSentAt, reminderCount })
-// so the parent can patch the row in memory immediately — no reload needed.
-//
 function QueueMode({ rows, onRefresh, onViewAll, onReminderSent }) {
   const queue = useMemo(
     () => [...rows].filter(r => getUrgency(r) < 3).sort((a, b) => getUrgency(a) - getUrgency(b)),
@@ -826,10 +903,6 @@ function QueueMode({ rows, onRefresh, onViewAll, onReminderSent }) {
     if (type === "noCheckin") {
       try {
         const result = await sendReminderAPI(row.athleteToken);
-
-        // FIX: Optimistically patch the row in the parent rows array
-        // so getReminderState() immediately shows "sent X minutes ago"
-        // and the 12h countdown — without needing a page reload.
         if (result?.sentAt) {
           onReminderSent?.(row.athleteToken, {
             lastReminderSentAt: result.sentAt,
@@ -838,7 +911,7 @@ function QueueMode({ rows, onRefresh, onViewAll, onReminderSent }) {
         }
       } catch (e) {
         setActionError(`Reminder not sent: ${e.message}`);
-        return; // Leave in queue so coach can retry
+        return;
       }
 
       setReminderSent(r => [...r, row.athleteToken]);
@@ -914,16 +987,12 @@ function QueueMode({ rows, onRefresh, onViewAll, onReminderSent }) {
 }
 
 // ─── List row ─────────────────────────────────────────────────────────────────
-//
-// FIX: No longer needs local optimistic reminder state — it reads
-// directly from row.lastReminderSentAt which is patched in the parent
-// rows array by handleReminderSent in the root page component.
-// This means reload and in-session state are always consistent.
-//
+// Mobile: collapses the adherence column; action sits under the name.
 function ListRow({ row, onAssign, onRemind, index }) {
-  const sg      = getSubGroup(row);
-  const [sending,  setSending]  = useState(false);
-  const [sendErr,  setSendErr]  = useState("");
+  const isMobile = useIsMobile();
+  const sg       = getSubGroup(row);
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState("");
 
   const statusConfig = {
     noPlan:       { dot: "red",   label: "No Plan",       color: "var(--red)"   },
@@ -938,13 +1007,75 @@ function ListRow({ row, onAssign, onRemind, index }) {
     setSending(true); setSendErr("");
     try {
       const result = await sendReminderAPI(row.athleteToken);
-      // FIX: call onRemind with the full result so the parent can patch
       onRemind?.(row, result);
     } catch (e) {
       setSendErr(e?.message || "Failed to send.");
     } finally { setSending(false); }
   }
 
+  // ── Mobile layout: vertical card-like row ──
+  if (isMobile) {
+    return (
+      <div className="anim-slide-up" style={{
+        display: "flex", gap: 12, padding: "12px 0",
+        borderBottom: "1px solid var(--rim)",
+        animationDelay: `${index * 0.03}s`,
+        alignItems: "flex-start",
+      }}>
+        {/* Accent bar */}
+        <div style={{ width: 4, height: "100%", minHeight: 44, background: sc.color, borderRadius: 2, flexShrink: 0, alignSelf: "stretch" }} />
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Name + status */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {row.athleteName}
+            </div>
+            <span style={{ fontSize: 11, color: sc.color, fontFamily: "var(--font-display)", fontWeight: 700, flexShrink: 0 }}>{sc.label}</span>
+          </div>
+
+          {/* Tags + adherence */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+            {row.position && <Tag color="ghost">{row.position}</Tag>}
+            {row.team && <Tag color="ghost">{row.team}</Tag>}
+            {row.adherenceAvg != null && (
+              <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>{Math.round(row.adherenceAvg)}%</span>
+            )}
+          </div>
+
+          {/* Adherence bar (only if has data) */}
+          {row.adherenceAvg != null && (
+            <div style={{ marginBottom: 8 }}>
+              <ProgressBar
+                value={row.adherenceAvg} max={100}
+                color={row.adherenceAvg >= 80 ? "var(--green)" : row.adherenceAvg >= 65 ? "var(--amber)" : "var(--red)"}
+                height={3}
+              />
+            </div>
+          )}
+
+          {sendErr && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6, fontFamily: "var(--font-body)" }}>⚠ {sendErr}</div>}
+
+          {/* Action button inline */}
+          <div>
+            {sg === "noPlan" && (
+              <button onClick={() => onAssign(row)} style={{ padding: "6px 14px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--red)", transition: "all 0.15s ease" }}>
+                Assign Plan
+              </button>
+            )}
+            {sg === "noCheckin" && <ReminderControl row={row} sending={sending} onRemind={handleRemind} />}
+            {(sg === "lowAdherence" || sg === "onTrack") && (
+              <button style={{ padding: "6px 14px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ghost)" }}>
+                Profile ↗
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop layout: original grid ──
   return (
     <div className="anim-slide-up" style={{
       display: "grid", gridTemplateColumns: "4px 1fr auto auto",
@@ -982,7 +1113,6 @@ function ListRow({ row, onAssign, onRemind, index }) {
             Assign Plan
           </button>
         )}
-        {/* FIX: ReminderControl reads from row directly — no local state needed */}
         {sg === "noCheckin" && <ReminderControl row={row} sending={sending} onRemind={handleRemind} />}
         {(sg === "lowAdherence" || sg === "onTrack") && (
           <button style={{ padding: "7px 14px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ghost)" }}
@@ -999,6 +1129,7 @@ function ListRow({ row, onAssign, onRemind, index }) {
 
 // ─── List mode ────────────────────────────────────────────────────────────────
 function ListMode({ rows, onReminderSent }) {
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [assignRow, setAssignRow] = useState(null);
@@ -1024,34 +1155,35 @@ function ListMode({ rows, onReminderSent }) {
   }), [rows]);
 
   const filters = [
-    { key: "all",          label: "All",          count: counts.all          },
-    { key: "noPlan",       label: "No Plan",       count: counts.noPlan       },
-    { key: "noCheckin",    label: "No Check-In",   count: counts.noCheckin    },
-    { key: "lowAdherence", label: "Low Adherence", count: counts.lowAdherence },
-    { key: "onTrack",      label: "On Track",      count: counts.onTrack      },
+    { key: "all",          label: "All",     count: counts.all          },
+    { key: "noPlan",       label: "No Plan", count: counts.noPlan       },
+    { key: "noCheckin",    label: "No CI",   count: counts.noCheckin    },
+    { key: "lowAdherence", label: "Low Adh", count: counts.lowAdherence },
+    { key: "onTrack",      label: isMobile ? "OK" : "On Track", count: counts.onTrack },
   ];
 
   return (
     <div>
-      <div className="anim-slide-up" style={{ padding: "16px 20px", background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, marginBottom: 12 }}>
-        <div style={{ position: "relative", marginBottom: 14 }}>
+      <div className="anim-slide-up" style={{ padding: isMobile ? "12px 14px" : "16px 20px", background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, marginBottom: 12 }}>
+        <div style={{ position: "relative", marginBottom: 12 }}>
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 14, pointerEvents: "none" }}>⌕</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search athletes, position, team…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search athletes…"
             style={{ width: "100%", padding: "9px 12px 9px 34px", background: "var(--raised)", border: "1px solid var(--rim)", borderRadius: 3, color: "var(--ink)", fontFamily: "var(--font-body)", fontSize: 13, outline: "none", transition: "border-color 0.15s ease" }}
             onFocus={e => e.target.style.borderColor = "var(--brand)"}
             onBlur={e => e.target.style.borderColor = "var(--rim)"}
           />
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {/* Filter chips — scroll horizontally on mobile */}
+        <div style={{ display: "flex", gap: 6, overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0, WebkitOverflowScrolling: "touch" }}>
           {filters.map(({ key, label, count }) => (
-            <button key={key} onClick={() => setFilter(key)} style={{ padding: "5px 12px", background: filter === key ? "var(--brand)" : "var(--raised)", border: `1px solid ${filter === key ? "var(--brand)" : "var(--rim)"}`, borderRadius: 20, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", color: filter === key ? "var(--void)" : "var(--ghost)", transition: "all 0.15s ease" }}>
+            <button key={key} onClick={() => setFilter(key)} style={{ padding: "5px 10px", background: filter === key ? "var(--brand)" : "var(--raised)", border: `1px solid ${filter === key ? "var(--brand)" : "var(--rim)"}`, borderRadius: 20, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: isMobile ? 11 : 12, letterSpacing: "0.04em", color: filter === key ? "var(--void)" : "var(--ghost)", transition: "all 0.15s ease", flexShrink: 0 }}>
               {label}<span style={{ marginLeft: 5, fontFamily: "var(--font-mono)", fontSize: 10, opacity: filter === key ? 0.6 : 0.5 }}>{count}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="anim-slide-up delay-1" style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, padding: "0 20px" }}>
+      <div className="anim-slide-up delay-1" style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, padding: isMobile ? "0 14px" : "0 20px" }}>
         {filtered.length === 0 ? (
           <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--font-body)", fontSize: 14, color: "var(--ghost)" }}>No athletes match your filters.</div>
         ) : (
@@ -1061,7 +1193,6 @@ function ListMode({ rows, onReminderSent }) {
               row={row}
               index={i}
               onAssign={setAssignRow}
-              // FIX: pass result up to parent patchRow via onReminderSent
               onRemind={(r, result) => {
                 if (result?.sentAt) {
                   onReminderSent?.(r.athleteToken, {
@@ -1082,33 +1213,48 @@ function ListMode({ rows, onReminderSent }) {
 
 // ─── Summary hero ─────────────────────────────────────────────────────────────
 function SummaryHero({ rows, onEnterQueue }) {
+  const isMobile    = useIsMobile();
   const actionCount = rows.filter(r => getUrgency(r) < 3).length;
   const urgent      = rows.filter(r => getSubGroup(r) === "noPlan").length;
   const noCheckin   = rows.filter(r => getSubGroup(r) === "noCheckin").length;
 
   return (
-    <div className="anim-slide-up" style={{ padding: "28px 28px 24px", background: "var(--surface)", border: "1px solid var(--rim)", borderTop: actionCount > 0 ? "3px solid var(--red)" : "3px solid var(--green)", borderRadius: 4, position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: -20, right: -20, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 160, lineHeight: 1, color: actionCount > 0 ? "var(--red)" : "var(--green)", opacity: 0.04, userSelect: "none", pointerEvents: "none" }}>{actionCount}</div>
+    <div className="anim-slide-up" style={{
+      padding: isMobile ? "20px 18px 18px" : "28px 28px 24px",
+      background: "var(--surface)",
+      border: "1px solid var(--rim)",
+      borderTop: actionCount > 0 ? "3px solid var(--red)" : "3px solid var(--green)",
+      borderRadius: 4, position: "relative", overflow: "hidden",
+    }}>
+      <div style={{ position: "absolute", top: -20, right: -20, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 100 : 160, lineHeight: 1, color: actionCount > 0 ? "var(--red)" : "var(--green)", opacity: 0.04, userSelect: "none", pointerEvents: "none" }}>{actionCount}</div>
       <div style={{ position: "relative" }}>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ghost)", marginBottom: 6 }}>
           {getDayGreeting()} · {getWeekLabel()}
         </div>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 38, lineHeight: 1.05, color: "var(--ink)", marginBottom: 6 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 26 : 38, lineHeight: 1.1, color: "var(--ink)", marginBottom: 6 }}>
           {actionCount > 0
             ? <><span style={{ color: "var(--red)" }}>{actionCount} athletes</span> need your attention.</>
             : <>Program is <span style={{ color: "var(--green)" }}>locked in</span> this week.</>
           }
         </div>
         {actionCount > 0 && (
-          <div style={{ fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)", marginBottom: 24, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)", marginBottom: 20, lineHeight: 1.5 }}>
             {urgent > 0 && `${urgent} without a plan`}
             {urgent > 0 && noCheckin > 0 && " · "}
             {noCheckin > 0 && `${noCheckin} missed their check-in`}
           </div>
         )}
-        {actionCount === 0 && <div style={{ fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)", marginBottom: 24 }}>All athletes have plans and have checked in.</div>}
+        {actionCount === 0 && <div style={{ fontSize: 14, color: "var(--ghost)", fontFamily: "var(--font-body)", marginBottom: 20 }}>All athletes have plans and have checked in.</div>}
         {actionCount > 0 && (
-          <button onClick={onEnterQueue} style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "13px 28px", background: "var(--brand)", border: "none", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--void)", transition: "all 0.15s ease" }}
+          <button onClick={onEnterQueue} style={{
+            display: "inline-flex", alignItems: "center", gap: 10,
+            padding: isMobile ? "11px 20px" : "13px 28px",
+            background: "var(--brand)", border: "none", borderRadius: 3, cursor: "pointer",
+            fontFamily: "var(--font-display)", fontWeight: 800,
+            fontSize: isMobile ? 13 : 15,
+            letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--void)", transition: "all 0.15s ease",
+            width: isMobile ? "100%" : "auto", justifyContent: isMobile ? "center" : "flex-start",
+          }}
             onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.1)"}
             onMouseLeave={e => e.currentTarget.style.filter = "none"}
           >
@@ -1121,7 +1267,9 @@ function SummaryHero({ rows, onEnterQueue }) {
 }
 
 // ─── Roster mode ──────────────────────────────────────────────────────────────
+// Mobile: replaces the 5-column table with a compact card list.
 function RosterMode({ rows, onAssign, onReminderSent }) {
+  const isMobile       = useIsMobile();
   const [search,       setSearch]       = useState("");
   const [sortKey,      setSortKey]      = useState("status");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -1160,11 +1308,11 @@ function RosterMode({ rows, onAssign, onReminderSent }) {
   };
 
   const filterTabs = [
-    { key: "all",          label: "All",          count: counts.all          },
-    { key: "noPlan",       label: "No Plan",       count: counts.noPlan,       color: "var(--red)"   },
-    { key: "noCheckin",    label: "No Check-In",   count: counts.noCheckin,    color: "var(--amber)" },
-    { key: "lowAdherence", label: "Low Adherence", count: counts.lowAdherence, color: "var(--amber)" },
-    { key: "onTrack",      label: "On Track",      count: counts.onTrack,      color: "var(--green)" },
+    { key: "all",          label: "All",     count: counts.all          },
+    { key: "noPlan",       label: "No Plan", count: counts.noPlan,       color: "var(--red)"   },
+    { key: "noCheckin",    label: "No CI",   count: counts.noCheckin,    color: "var(--amber)" },
+    { key: "lowAdherence", label: "Low",     count: counts.lowAdherence, color: "var(--amber)" },
+    { key: "onTrack",      label: isMobile ? "OK" : "On Track", count: counts.onTrack, color: "var(--green)" },
   ];
 
   async function handleRosterRemind(row) {
@@ -1172,42 +1320,41 @@ function RosterMode({ rows, onAssign, onReminderSent }) {
     setSendingToken(row.athleteToken);
     try {
       const result = await sendReminderAPI(row.athleteToken);
-      // FIX: patch optimistically so UI updates without reload
       if (result?.sentAt) {
         onReminderSent?.(row.athleteToken, {
           lastReminderSentAt: result.sentAt,
           reminderCount:      result.reminderCount ?? 1,
         });
       }
-    } catch (_) {
-      // Silent in compact roster view — user can switch to Actions for full state
-    } finally { setSendingToken(null); }
+    } catch (_) {}
+    finally { setSendingToken(null); }
   }
 
   return (
     <div className="anim-slide-up">
       {/* Toolbar */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, marginBottom: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: isMobile ? "12px 12px" : "14px 16px", background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, marginBottom: 10 }}>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ position: "relative", flex: 1 }}>
             <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: 13, pointerEvents: "none" }}>⌕</span>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, position, team…"
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
               style={{ width: "100%", padding: "8px 10px 8px 30px", background: "var(--raised)", border: "1px solid var(--rim)", borderRadius: 3, color: "var(--ink)", fontFamily: "var(--font-body)", fontSize: 13, outline: "none" }}
               onFocus={e => e.target.style.borderColor = "var(--brand)"}
               onBlur={e => e.target.style.borderColor = "var(--rim)"}
             />
           </div>
           <select value={sortKey} onChange={e => setSortKey(e.target.value)}
-            style={{ padding: "8px 10px", background: "var(--raised)", border: "1px solid var(--rim)", borderRadius: 3, color: "var(--ghost)", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", outline: "none", cursor: "pointer" }}
+            style={{ padding: "8px 8px", background: "var(--raised)", border: "1px solid var(--rim)", borderRadius: 3, color: "var(--ghost)", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", outline: "none", cursor: "pointer", flexShrink: 0 }}
           >
-            <option value="status">Sort: Status</option>
-            <option value="name">Sort: Name</option>
-            <option value="adherence">Sort: Adherence</option>
+            <option value="status">{isMobile ? "Status" : "Sort: Status"}</option>
+            <option value="name">{isMobile ? "Name" : "Sort: Name"}</option>
+            <option value="adherence">{isMobile ? "Adh%" : "Sort: Adherence"}</option>
           </select>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {/* Filter chips — horizontally scrollable on mobile */}
+        <div style={{ display: "flex", gap: 6, overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch", paddingBottom: isMobile ? 2 : 0 }}>
           {filterTabs.map(({ key, label, count, color }) => (
-            <button key={key} onClick={() => setFilterStatus(key)} style={{ padding: "4px 10px", background: filterStatus === key ? (color || "var(--brand)") : "var(--raised)", border: `1px solid ${filterStatus === key ? (color || "var(--brand)") : "var(--rim)"}`, borderRadius: 20, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", color: filterStatus === key ? (key === "all" ? "var(--void)" : "#fff") : "var(--ghost)", transition: "all 0.15s ease" }}>
+            <button key={key} onClick={() => setFilterStatus(key)} style={{ padding: "4px 10px", flexShrink: 0, background: filterStatus === key ? (color || "var(--brand)") : "var(--raised)", border: `1px solid ${filterStatus === key ? (color || "var(--brand)") : "var(--rim)"}`, borderRadius: 20, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", color: filterStatus === key ? (key === "all" ? "var(--void)" : "#fff") : "var(--ghost)", transition: "all 0.15s ease" }}>
               {label}<span style={{ marginLeft: 5, fontFamily: "var(--font-mono)", fontSize: 10, opacity: 0.7 }}>{count}</span>
             </button>
           ))}
@@ -1219,112 +1366,183 @@ function RosterMode({ rows, onAssign, onReminderSent }) {
         {[
           { label: "Total",       value: counts.all,       color: "var(--brand)" },
           { label: "No Plan",     value: counts.noPlan,    color: counts.noPlan > 0    ? "var(--red)"   : "var(--ghost)" },
-          { label: "No Check-In", value: counts.noCheckin, color: counts.noCheckin > 0 ? "var(--amber)" : "var(--ghost)" },
+          { label: isMobile ? "No CI" : "No Check-In", value: counts.noCheckin, color: counts.noCheckin > 0 ? "var(--amber)" : "var(--ghost)" },
           { label: "On Track",    value: counts.onTrack,   color: counts.onTrack > 0   ? "var(--green)" : "var(--ghost)" },
         ].map(({ label, value, color }) => (
-          <div key={label} style={{ padding: "10px 14px", background: "var(--surface)", textAlign: "center" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, color, lineHeight: 1 }}>{value}</div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginTop: 3 }}>{label}</div>
+          <div key={label} style={{ padding: isMobile ? "8px 6px" : "10px 14px", background: "var(--surface)", textAlign: "center" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: isMobile ? 18 : 22, color, lineHeight: 1 }}>{value}</div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: isMobile ? 9 : 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginTop: 3 }}>{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Roster table */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 90px 120px", gap: 0, padding: "8px 16px", background: "var(--raised)", borderBottom: "1px solid var(--rim)" }}>
-          {["Athlete", "Pos", "Status", "Adherence", "Action"].map((h, i) => (
-            <div key={h} style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", textAlign: i >= 3 ? "center" : "left" }}>{h}</div>
-          ))}
-        </div>
-
-        {filtered.length === 0 ? (
-          <div style={{ padding: "32px 16px", textAlign: "center", fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ghost)" }}>No athletes match your filters.</div>
-        ) : (
-          filtered.map((row, i) => {
-            const sg  = getSubGroup(row);
-            const sc  = statusConfig[sg];
-            const adh = row.adherenceAvg != null ? Math.round(row.adherenceAvg) : null;
+      {/* ── MOBILE: card list ── */}
+      {isMobile ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, overflow: "hidden" }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ghost)" }}>No athletes match your filters.</div>
+          ) : filtered.map((row, i) => {
+            const sg       = getSubGroup(row);
+            const sc       = statusConfig[sg];
+            const adh      = row.adherenceAvg != null ? Math.round(row.adherenceAvg) : null;
             const adhColor = adh == null ? "var(--muted)" : adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)";
             const isSending = sendingToken === row.athleteToken;
-            // FIX: read reminder state directly from row — patched optimistically by parent
             const rs = getReminderState(row);
 
             return (
-              <div key={row.athleteToken} className="anim-slide-up" style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 90px 120px", alignItems: "center", gap: 0, padding: "10px 16px", borderBottom: i < filtered.length - 1 ? "1px solid var(--rim)" : "none", background: i % 2 === 0 ? "var(--surface)" : "var(--raised)", animationDelay: `${Math.min(i * 0.02, 0.3)}s`, transition: "background 0.1s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = "var(--panel)"}
-                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "var(--surface)" : "var(--raised)"}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <div style={{ width: 3, height: 32, borderRadius: 2, background: sc.color, flexShrink: 0 }} />
+              <div key={row.athleteToken} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 14px",
+                borderBottom: i < filtered.length - 1 ? "1px solid var(--rim)" : "none",
+                background: i % 2 === 0 ? "var(--surface)" : "var(--raised)",
+              }}>
+                {/* Left accent + name */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                  <div style={{ width: 3, height: 36, borderRadius: 2, background: sc.color, flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.athleteName}</div>
-                    {row.team && <div style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--ghost)", marginTop: 1 }}>{row.team}</div>}
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {row.athleteName}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      {row.position && <Tag color="ghost">{row.position}</Tag>}
+                      <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, color: sc.color }}>{sc.label}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div>{row.position ? <Tag color="ghost">{row.position}</Tag> : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>}</div>
+                {/* Adherence % */}
+                {adh != null && (
+                  <div style={{ textAlign: "right", flexShrink: 0, width: 32 }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 12, color: adhColor }}>{adh}%</div>
+                  </div>
+                )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <StatusDot color={sc.dot} pulse={sg === "noPlan"} />
-                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, color: sc.color }}>{sc.label}</span>
-                </div>
-
-                <div style={{ textAlign: "center" }}>
-                  {adh != null ? (
-                    <div>
-                      <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color: adhColor, marginBottom: 3 }}>{adh}%</div>
-                      <ProgressBar value={adh} max={100} color={adhColor} height={3} animate={false} />
-                    </div>
-                  ) : (
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>{sg === "noPlan" ? "—" : "Pending"}</span>
-                  )}
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "center" }}>
+                {/* Action */}
+                <div style={{ flexShrink: 0 }}>
                   {sg === "noPlan" && (
-                    <button onClick={() => onAssign(row)} style={{ padding: "5px 10px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--red)", whiteSpace: "nowrap", transition: "all 0.15s ease" }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "var(--red)"; e.currentTarget.style.color = "#fff"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = "var(--red-bg)"; e.currentTarget.style.color = "var(--red)"; }}
-                    >
-                      Assign Plan
+                    <button onClick={() => onAssign(row)} style={{ padding: "5px 10px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, textTransform: "uppercase", color: "var(--red)", whiteSpace: "nowrap" }}>
+                      Assign
                     </button>
                   )}
                   {sg === "noCheckin" && (
-                    // FIX: show countdown if recently sent, otherwise show Remind button
                     rs.sent && !rs.canResend ? (
                       <div style={{ textAlign: "center" }}>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted)", marginBottom: 2 }}>
-                          {formatTimeAgo(rs.minutesAgo)}
-                        </div>
-                        <div style={{ padding: "4px 8px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                          in {formatCountdown(rs.hoursAgo)}
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted)", marginBottom: 2 }}>{formatTimeAgo(rs.minutesAgo)}</div>
+                        <div style={{ padding: "3px 6px", border: "1px solid var(--rim)", borderRadius: 3, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                          {formatCountdown(rs.hoursAgo)}
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => handleRosterRemind(row)} disabled={!!sendingToken}
-                        style={{ padding: "5px 10px", background: "var(--amber-bg)", border: "1px solid var(--amber-rim)", borderRadius: 3, cursor: sendingToken ? "not-allowed" : "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--amber)", whiteSpace: "nowrap", transition: "all 0.15s ease", opacity: sendingToken && !isSending ? 0.5 : 1 }}
-                        onMouseEnter={e => { if (!sendingToken) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
-                        onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
-                      >
-                        {isSending ? "Sending…" : rs.sent ? "Send Again" : "Remind"}
+                      <button onClick={() => handleRosterRemind(row)} disabled={!!sendingToken} style={{ padding: "5px 10px", background: "var(--amber-bg)", border: "1px solid var(--amber-rim)", borderRadius: 3, cursor: sendingToken ? "not-allowed" : "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, textTransform: "uppercase", color: "var(--amber)", whiteSpace: "nowrap", opacity: sendingToken && !isSending ? 0.5 : 1 }}>
+                        {isSending ? "…" : rs.sent ? "Again" : "Remind"}
                       </button>
                     )
                   )}
                   {sg === "lowAdherence" && (
-                    <button style={{ padding: "5px 10px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--ghost)", whiteSpace: "nowrap" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
-                    >
+                    <button style={{ padding: "5px 10px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, textTransform: "uppercase", color: "var(--ghost)", whiteSpace: "nowrap" }}>
                       Review
                     </button>
                   )}
-                  {sg === "onTrack" && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--green)" }}>✓</span>}
+                  {sg === "onTrack" && <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--green)" }}>✓</span>}
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      ) : (
+        /* ── DESKTOP: original 5-column table ── */
+        <div style={{ background: "var(--surface)", border: "1px solid var(--rim)", borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 90px 120px", gap: 0, padding: "8px 16px", background: "var(--raised)", borderBottom: "1px solid var(--rim)" }}>
+            {["Athlete", "Pos", "Status", "Adherence", "Action"].map((h, i) => (
+              <div key={h} style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", textAlign: i >= 3 ? "center" : "left" }}>{h}</div>
+            ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ghost)" }}>No athletes match your filters.</div>
+          ) : (
+            filtered.map((row, i) => {
+              const sg       = getSubGroup(row);
+              const sc       = statusConfig[sg];
+              const adh      = row.adherenceAvg != null ? Math.round(row.adherenceAvg) : null;
+              const adhColor = adh == null ? "var(--muted)" : adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)";
+              const isSending = sendingToken === row.athleteToken;
+              const rs = getReminderState(row);
+
+              return (
+                <div key={row.athleteToken} className="anim-slide-up" style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 90px 120px", alignItems: "center", gap: 0, padding: "10px 16px", borderBottom: i < filtered.length - 1 ? "1px solid var(--rim)" : "none", background: i % 2 === 0 ? "var(--surface)" : "var(--raised)", animationDelay: `${Math.min(i * 0.02, 0.3)}s`, transition: "background 0.1s ease" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "var(--panel)"}
+                  onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "var(--surface)" : "var(--raised)"}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <div style={{ width: 3, height: 32, borderRadius: 2, background: sc.color, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.athleteName}</div>
+                      {row.team && <div style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--ghost)", marginTop: 1 }}>{row.team}</div>}
+                    </div>
+                  </div>
+
+                  <div>{row.position ? <Tag color="ghost">{row.position}</Tag> : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>}</div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <StatusDot color={sc.dot} pulse={sg === "noPlan"} />
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, color: sc.color }}>{sc.label}</span>
+                  </div>
+
+                  <div style={{ textAlign: "center" }}>
+                    {adh != null ? (
+                      <div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color: adhColor, marginBottom: 3 }}>{adh}%</div>
+                        <ProgressBar value={adh} max={100} color={adhColor} height={3} animate={false} />
+                      </div>
+                    ) : (
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>{sg === "noPlan" ? "—" : "Pending"}</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    {sg === "noPlan" && (
+                      <button onClick={() => onAssign(row)} style={{ padding: "5px 10px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--red)", whiteSpace: "nowrap", transition: "all 0.15s ease" }}
+                        onMouseEnter={e => { e.currentTarget.style.background = "var(--red)"; e.currentTarget.style.color = "#fff"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "var(--red-bg)"; e.currentTarget.style.color = "var(--red)"; }}
+                      >
+                        Assign Plan
+                      </button>
+                    )}
+                    {sg === "noCheckin" && (
+                      rs.sent && !rs.canResend ? (
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--muted)", marginBottom: 2 }}>{formatTimeAgo(rs.minutesAgo)}</div>
+                          <div style={{ padding: "4px 8px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                            in {formatCountdown(rs.hoursAgo)}
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => handleRosterRemind(row)} disabled={!!sendingToken}
+                          style={{ padding: "5px 10px", background: "var(--amber-bg)", border: "1px solid var(--amber-rim)", borderRadius: 3, cursor: sendingToken ? "not-allowed" : "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--amber)", whiteSpace: "nowrap", transition: "all 0.15s ease", opacity: sendingToken && !isSending ? 0.5 : 1 }}
+                          onMouseEnter={e => { if (!sendingToken) { e.currentTarget.style.background = "var(--amber)"; e.currentTarget.style.color = "#fff"; }}}
+                          onMouseLeave={e => { e.currentTarget.style.background = "var(--amber-bg)"; e.currentTarget.style.color = "var(--amber)"; }}
+                        >
+                          {isSending ? "Sending…" : rs.sent ? "Send Again" : "Remind"}
+                        </button>
+                      )
+                    )}
+                    {sg === "lowAdherence" && (
+                      <button style={{ padding: "5px 10px", background: "transparent", border: "1px solid var(--rim)", borderRadius: 3, cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--ghost)", whiteSpace: "nowrap" }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--wire)"; e.currentTarget.style.color = "var(--chalk)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--rim)"; e.currentTarget.style.color = "var(--ghost)"; }}
+                      >
+                        Review
+                      </button>
+                    )}
+                    {sg === "onTrack" && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--green)" }}>✓</span>}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {filtered.length > 0 && (
         <div style={{ marginTop: 8, textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)" }}>
@@ -1337,20 +1555,18 @@ function RosterMode({ rows, onAssign, onReminderSent }) {
 
 // ─── Root page ────────────────────────────────────────────────────────────────
 export default function OrgNutritionQueuePage() {
+  const isMobile = useIsMobile();
   const [mode, setMode] = useState("summary");
   const [key,  setKey]  = useState(0);
 
   const router = useRouter();
   const { user, authReady } = useAuthContext();
 
-  // FIX: pull patchRow out of the hook so we can call it from
-  // handleReminderSent — updating a single row in memory immediately
-  // after a send without a full re-fetch.
   const { loading, error, rows, lastUpdatedLabel, refresh: reloadRows, patchRow } = useNutritionQueue({
     enabled: Boolean(authReady && user),
   });
 
-  const actionCount    = useMemo(() => rows.filter(r => getUrgency(r) < 3).length, [rows]);
+  const actionCount        = useMemo(() => rows.filter(r => getUrgency(r) < 3).length, [rows]);
   const [rosterAssignRow, setRosterAssignRow] = useState(null);
 
   function refresh() {
@@ -1358,18 +1574,6 @@ export default function OrgNutritionQueuePage() {
     reloadRows();
   }
 
-  /**
-   * handleReminderSent
-   *
-   * FIX: This is the central handler for all reminder sends across
-   * QueueMode, ListMode, and RosterMode. It patches the row in the
-   * shared rows array via patchRow() so every view reflects the new
-   * reminder state immediately — no reload, no stale UI.
-   *
-   * On the next page reload, queue.js reads LastReminderSentAt from
-   * Airtable (written by send-reminder.js) and returns the same state
-   * server-side, so reload and in-session state are always consistent.
-   */
   const handleReminderSent = useCallback((athleteToken, reminderData) => {
     patchRow(athleteToken, {
       lastReminderSentAt: reminderData.lastReminderSentAt,
@@ -1378,7 +1582,14 @@ export default function OrgNutritionQueuePage() {
   }, [patchRow]);
 
   const backBtn = (
-    <button onClick={() => setMode("summary")} style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20, background: "transparent", border: "none", cursor: "pointer", fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ghost)", transition: "color 0.15s ease" }}
+    <button onClick={() => setMode("summary")} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      marginBottom: 16,
+      background: "transparent", border: "none", cursor: "pointer",
+      fontFamily: "var(--font-display)", fontWeight: 600,
+      fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
+      color: "var(--ghost)", transition: "color 0.15s ease",
+    }}
       onMouseEnter={e => e.currentTarget.style.color = "var(--chalk)"}
       onMouseLeave={e => e.currentTarget.style.color = "var(--ghost)"}
     >
@@ -1398,7 +1609,11 @@ export default function OrgNutritionQueuePage() {
           onPlans={() => router.push("/org/prescriptions")}
         />
 
-        <main style={{ maxWidth: 680, margin: "0 auto", padding: "24px 20px 60px" }}>
+        <main style={{
+          maxWidth: 680,
+          margin: "0 auto",
+          padding: isMobile ? "16px 12px 80px" : "24px 20px 60px",
+        }}>
 
           {/* Loading */}
           {loading && (
@@ -1411,7 +1626,7 @@ export default function OrgNutritionQueuePage() {
 
           {/* Hard error */}
           {!loading && error && rows.length === 0 && (
-            <div style={{ padding: "16px 20px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderLeft: "3px solid var(--red)", borderRadius: 4, display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div style={{ padding: "16px", background: "var(--red-bg)", border: "1px solid var(--red-rim)", borderLeft: "3px solid var(--red)", borderRadius: 4, display: "flex", alignItems: "flex-start", gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--red)", marginBottom: 4 }}>Failed to load queue</div>
                 <div style={{ fontSize: 13, color: "var(--ghost)", fontFamily: "var(--font-body)" }}>{error}</div>
@@ -1430,7 +1645,7 @@ export default function OrgNutritionQueuePage() {
             </div>
           )}
 
-          {/* Queue — FIX: onReminderSent wired to handleReminderSent */}
+          {/* Queue */}
           {!loading && mode === "queue" && (
             <div>
               {backBtn}
@@ -1444,7 +1659,7 @@ export default function OrgNutritionQueuePage() {
             </div>
           )}
 
-          {/* Actions / List — FIX: onReminderSent wired */}
+          {/* Actions / List */}
           {!loading && mode === "list" && (
             <div>
               {backBtn}
@@ -1452,7 +1667,7 @@ export default function OrgNutritionQueuePage() {
             </div>
           )}
 
-          {/* Roster — FIX: onReminderSent wired */}
+          {/* Roster */}
           {!loading && mode === "roster" && (
             <div>
               {backBtn}
@@ -1471,7 +1686,6 @@ export default function OrgNutritionQueuePage() {
           )}
         </main>
 
-        {/* Roster plan assignment slide-over */}
         {rosterAssignRow && (
           <AssignSlideOver
             row={rosterAssignRow}

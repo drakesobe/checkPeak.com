@@ -223,19 +223,25 @@ export default async function handler(req, res) {
       const safeFields   = stripPassword(fields);
       const athleteToken = pickAthleteToken(fields);
 
-      // ✅ Resolve org name + record ID from linked Organization field
-      let orgName = "";
-      let orgRecordId = "";
-      const orgLinks = fields.Organization;
-      if (
-        Array.isArray(orgLinks) && orgLinks.length &&
-        ORGANIZATIONS_API_KEY && ORGANIZATIONS_BASE_ID && ORGANIZATIONS_TABLE_NAME
-      ) {
-        const orgBase = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
-        const resolved = await resolveAthleteOrg(orgLinks, orgBase, ORGANIZATIONS_TABLE_NAME);
-        orgName     = resolved.name;
-        orgRecordId = resolved.id;
-      }
+    let orgName = "";
+
+    let orgRecordId = "";
+    const orgLinks = fields.Organization;
+
+    // Use the linked record ID directly — no extra API call needed
+    if (Array.isArray(orgLinks) && orgLinks.length) {
+      const firstId = String(orgLinks[0] || "").trim();
+      if (firstId.startsWith("rec")) orgRecordId = firstId;
+    }
+
+    // Try to resolve org name if org env vars are available
+    if (orgRecordId && ORGANIZATIONS_API_KEY && ORGANIZATIONS_BASE_ID && ORGANIZATIONS_TABLE_NAME) {
+      try {
+        const orgBase   = new Airtable({ apiKey: ORGANIZATIONS_API_KEY }).base(ORGANIZATIONS_BASE_ID);
+        const orgRecord = await orgBase(ORGANIZATIONS_TABLE_NAME).find(orgRecordId);
+        orgName = String(orgRecord?.fields?.Name || orgRecord?.fields?.["Organization Name"] || "").trim();
+      } catch {}
+    }
 
       const userOut = {
         id:           record.id,

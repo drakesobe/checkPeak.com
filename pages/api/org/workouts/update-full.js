@@ -1,5 +1,5 @@
 // pages/api/org/workouts/update-full.js
-// POST { id, ids?, title?, date?, status?, sport?, items? }
+// POST { id, ids?, title?, date?, status?, sport?, items?, athleteIds? }
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
@@ -12,16 +12,24 @@ function assertNoUndefinedKeys(obj) {
     if (!k || k === "undefined") throw new Error("Airtable field mapping error: undefined key. Check F.* in airtableOrgWorkoutConfig.js");
   }
 }
+function escapeAirtableString(str = "") {
+  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+function looksLikeAirtableRecordId(v) {
+  const s = String(v || "").trim();
+  return s.startsWith("rec") && s.length >= 10;
+}
+function isAthleteToken(v) {
+  return /^ATH-/i.test(String(v || "").trim());
+}
 
 function normalizeStatus(v) {
   const s = String(v || "").trim().toLowerCase();
-
   if (!s) return "";
   if (s === "assigned") return "assigned";
   if (s === "complete" || s === "completed") return "completed";
   if (s === "reject" || s === "rejected") return "rejected";
   if (s === "pending" || s === "pending_review" || s === "pending review") return "pending_review";
-
   return s;
 }
 
@@ -30,6 +38,7 @@ const VALID_SPORTS   = ["soccer", "basketball", "xc", "football", "track", "swim
 
 const DW = {
   ORG:          F?.DW_ORG          || "Organization",
+  ATHLETE:      F?.DW_ATHLETE      || "Athlete",
   TITLE:        F?.DW_TITLE        || "Title",
   STATUS:       F?.DW_STATUS       || "Status",
   SPORT:        F?.DW_SPORT        || "Sport",
@@ -53,6 +62,51 @@ const WI = {
   ATHTOKEN: F?.WI_ATHTOKEN || "AthleteToken",
 };
 
+async function resolveAthletes(b, incoming = []) {
+  const raw        = (incoming || []).map(x => String(x || "").trim()).filter(Boolean);
+  const recordIds  = raw.filter(looksLikeAirtableRecordId);
+  const tokens     = raw.filter(x => !looksLikeAirtableRecordId(x));
+  const tokenField = F?.ATH_TOKEN || "AthleteToken";
+  const Athletes   = b(AT.tables.athletes);
+  const found      = [];
+
+  if (tokens.length) {
+    for (const tkChunk of chunk(tokens, 30)) {
+      const orParts = tkChunk.map(t => `{${tokenField}}='${escapeAirtableString(t)}'`).join(",");
+      const rows = await Athletes.select({
+        filterByFormula: `OR(${orParts})`,
+        maxRecords: 100,
+      }).firstPage();
+      for (const r of rows || []) {
+        const t = String(r?.fields?.[tokenField] || "").trim();
+        found.push({ athleteRecordId: r.id, athleteToken: t });
+      }
+    }
+  }
+
+  if (recordIds.length) {
+    for (const ids of chunk(recordIds, 50)) {
+      const orParts = ids.map(id => `RECORD_ID()='${escapeAirtableString(id)}'`).join(",");
+      const rows = await Athletes.select({
+        filterByFormula: `OR(${orParts})`,
+        maxRecords: 100,
+      }).firstPage();
+      for (const r of rows || []) {
+        const t = String(r?.fields?.[tokenField] || "").trim();
+        found.push({ athleteRecordId: r.id, athleteToken: t });
+      }
+    }
+  }
+
+  const map = new Map();
+  for (const a of found) {
+    if (!a?.athleteRecordId) continue;
+    const prev = map.get(a.athleteRecordId);
+    if (!prev || (!prev.athleteToken && a.athleteToken)) map.set(a.athleteRecordId, a);
+  }
+  return Array.from(map.values());
+}
+
 async function deleteExistingItems(b, itemIds = []) {
   if (!itemIds.length) return;
   for (const batch of chunk(itemIds, 10)) {
@@ -69,12 +123,12 @@ async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, item
       [WI.DW]:       [dailyWorkoutId],
       [WI.ORDER]:    Number.isFinite(Number(it.Order)) ? Number(it.Order) : idx + 1,
       [WI.NAME]:     toTrimmed(it.ExerciseName),
-      ...(toNumOrNull(it.Sets) != null       ? { [WI.SETS]:   Number(it.Sets) }             : {}),
-      ...(toTrimmed(it.Reps)                 ? { [WI.REPS]:   toTrimmed(it.Reps) }          : {}),
-      ...(toTrimmed(it.Weight)               ? { [WI.WEIGHT]: toTrimmed(it.Weight) }        : {}),
-      ...(toTrimmed(it.Rest)                 ? { [WI.REST]:   toTrimmed(it.Rest) }          : {}),
-      ...(toTrimmed(it.Instructions)         ? { [WI.INSTR]:  toTrimmed(it.Instructions) }  : {}),
-      ...(toTrimmed(it.VideoURL)             ? { [WI.VIDEO]:  toTrimmed(it.VideoURL) }      : {}),
+      ...(toNumOrNull(it.Sets) != null   ? { [WI.SETS]:   Number(it.Sets) }            : {}),
+      ...(toTrimmed(it.Reps)             ? { [WI.REPS]:   toTrimmed(it.Reps) }         : {}),
+      ...(toTrimmed(it.Weight)           ? { [WI.WEIGHT]: toTrimmed(it.Weight) }       : {}),
+      ...(toTrimmed(it.Rest)             ? { [WI.REST]:   toTrimmed(it.Rest) }         : {}),
+      ...(toTrimmed(it.Instructions)     ? { [WI.INSTR]:  toTrimmed(it.Instructions) } : {}),
+      ...(toTrimmed(it.VideoURL)         ? { [WI.VIDEO]:  toTrimmed(it.VideoURL) }     : {}),
       [WI.EVIDENCE]: it.EvidenceRequired || "none",
       ...(WI.ATHTOKEN && athleteToken ? { [WI.ATHTOKEN]: String(athleteToken) } : {}),
     };
@@ -98,7 +152,7 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const { id, ids, title, date, status, sport, items } = req.body || {};
+  const { id, ids, title, date, status, sport, items, athleteIds } = req.body || {};
 
   if (!id || !String(id).trim()) return res.status(400).json({ error: "id is required" });
 
@@ -116,22 +170,23 @@ export default async function handler(req, res) {
   const orgId = user.orgId;
   if (!orgId) return res.status(400).json({ error: "Missing orgId on session." });
 
-  const primaryId  = String(id).trim();
-  const allIds     = Array.isArray(ids) && ids.length
+  const primaryId = String(id).trim();
+  const allIds    = Array.isArray(ids) && ids.length
     ? [...new Set([primaryId, ...ids.map(x => String(x).trim()).filter(Boolean)])]
     : [primaryId];
 
   try {
-    const b = base();
+    const b     = base();
     const table = AT.tables.dailyWorkouts;
 
     const primary = await b(table).find(primaryId);
-    const pf = primary?.fields || {};
+    const pf      = primary?.fields || {};
     const recordOrgId = (pf[DW.ORG] || [])[0] || pf.OrgId || pf.orgId || "";
     if (recordOrgId && String(recordOrgId) !== String(orgId)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
+    // ── Scalar patch (title, date, status, sport) ─────────────────────────
     const scalarPatch = {};
     if (title  !== undefined) scalarPatch[DW.TITLE]  = toTrimmed(title) || "Daily Workout";
     if (date   !== undefined) scalarPatch[DW.DATE]   = String(date).trim();
@@ -146,6 +201,7 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Items replace ─────────────────────────────────────────────────────
     let newItemIds = null;
     if (Array.isArray(items)) {
       const existingItemIds = (pf[DW.WORKOUTITEMS] || []).filter(Boolean);
@@ -165,19 +221,116 @@ export default async function handler(req, res) {
         assertNoUndefinedKeys(linkPatch);
         await b(table).update([{ id: primaryId, fields: linkPatch }]);
       } else {
-        assertNoUndefinedKeys({ [DW.WORKOUTITEMS]: [] });
         await b(table).update([{ id: primaryId, fields: { [DW.WORKOUTITEMS]: [] } }]);
         newItemIds = [];
       }
     }
 
+    // ── Athlete reassignment ──────────────────────────────────────────────
+    let athleteReassignResult = null;
+    if (Array.isArray(athleteIds) && athleteIds.length) {
+      const resolvedIncoming = await resolveAthletes(b, athleteIds);
+      const usableIncoming   = resolvedIncoming.filter(a => a.athleteToken && isAthleteToken(a.athleteToken));
+
+      if (!usableIncoming.length) {
+        return res.status(400).json({
+          error: "No selected athletes have a valid AthleteToken (ATH-XXXX).",
+          debug: { athleteIds },
+        });
+      }
+
+      // Find all sibling DailyWorkout records (same title + date + org)
+      const existingTitle = toTrimmed(title) || toTrimmed(pf[DW.TITLE]) || "";
+      const existingDate  = date ? String(date).trim() : toTrimmed(pf[DW.DATE]);
+
+      const siblingsPage = await b(table).select({
+        filterByFormula: `AND({${DW.TITLE}}='${escapeAirtableString(existingTitle)}', {${DW.DATE}}='${existingDate}')`,
+        fields: [DW.ATHTOKEN, DW.WORKOUTITEMS, DW.ORG],
+        maxRecords: 200,
+      }).firstPage();
+
+      // Only siblings that belong to this org
+      const siblings = (siblingsPage || []).filter(r => {
+        const rOrg = ((r?.fields?.[DW.ORG] || [])[0] || "");
+        return String(rOrg) === String(orgId);
+      });
+
+      const existingTokens = new Set(
+        siblings.map(r => String(r?.fields?.[DW.ATHTOKEN] || "").trim()).filter(Boolean)
+      );
+      const incomingTokens = new Set(usableIncoming.map(a => a.athleteToken));
+
+      // Athletes to add
+      const toAdd = usableIncoming.filter(a => !existingTokens.has(a.athleteToken));
+
+      // Athletes to remove
+      const toRemove = siblings.filter(r => {
+        const t = String(r?.fields?.[DW.ATHTOKEN] || "").trim();
+        return t && !incomingTokens.has(t);
+      });
+
+      // Delete removed athlete records + their items
+      for (const r of toRemove) {
+        const itemIds = (r?.fields?.[DW.WORKOUTITEMS] || []).filter(Boolean);
+        await deleteExistingItems(b, itemIds);
+        try { await b(table).destroy([r.id]); }
+        catch (e) { console.warn("[update-full] remove athlete warning:", e?.message); }
+      }
+
+      // Create new DailyWorkout records for added athletes
+      const addedWorkouts = [];
+      const meaningfulItems = Array.isArray(items)
+        ? items.filter(it => toTrimmed(it?.ExerciseName))
+        : [];
+
+      for (const a of toAdd) {
+        const dwFields = {
+          [DW.ORG]:      [orgId],
+          [DW.ATHLETE]:  [a.athleteRecordId],
+          [DW.DATE]:     existingDate,
+          [DW.TITLE]:    existingTitle,
+          [DW.STATUS]:   normalizedStatus || toTrimmed(pf[DW.STATUS]) || "assigned",
+          [DW.ATHTOKEN]: a.athleteToken,
+        };
+        const sportVal = sport ? String(sport).toLowerCase() : toTrimmed(pf[DW.SPORT]);
+        if (sportVal) dwFields[DW.SPORT] = sportVal;
+        assertNoUndefinedKeys(dwFields);
+
+        const created = await b(table).create([{ fields: dwFields }]);
+        const newDWId = created?.[0]?.id;
+        if (!newDWId) continue;
+
+        // Copy items to new athlete's workout record
+        if (meaningfulItems.length) {
+          const copiedIds = await createWorkoutItems(b, {
+            orgId,
+            dailyWorkoutId: newDWId,
+            athleteToken:   a.athleteToken,
+            items:          meaningfulItems,
+          });
+          if (copiedIds.length) {
+            await b(table).update([{ id: newDWId, fields: { [DW.WORKOUTITEMS]: copiedIds } }]);
+          }
+        }
+
+        addedWorkouts.push({ id: newDWId, athleteToken: a.athleteToken });
+      }
+
+      athleteReassignResult = {
+        added:   addedWorkouts.length,
+        removed: toRemove.length,
+        total:   incomingTokens.size,
+      };
+    }
+
     return res.status(200).json({
-      ok:            true,
-      id:            primaryId,
-      updatedIds:    allIds,
-      updatedFields: Object.keys(scalarPatch),
-      itemsReplaced: Array.isArray(items),
-      newItemCount:  newItemIds?.length ?? null,
+      ok:             true,
+      id:             primaryId,
+      updatedIds:     allIds,
+      updatedFields:  Object.keys(scalarPatch),
+      itemsReplaced:  Array.isArray(items),
+      newItemCount:   newItemIds?.length ?? null,
+      athleteChanges: athleteReassignResult,
     });
 
   } catch (e) {

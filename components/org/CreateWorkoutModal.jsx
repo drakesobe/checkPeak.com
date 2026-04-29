@@ -2,6 +2,7 @@
 // Create OR Edit mode.
 // Edit mode: pass editWorkout={{ id, title, dateISO, sport, status, items, athleteIds }}
 // In edit mode the modal pre-fills all fields and calls /api/org/workouts/update-full on save.
+// Athlete reassignment is now fully supported in edit mode.
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -46,11 +47,11 @@ const SPORT_OPTIONS = ["soccer","basketball","xc","football","track","swim","ten
 
 // EvidenceRequired options — must match Airtable single-select exactly
 const EVIDENCE_OPTIONS = [
-  { value: "none",                   label: "None" },
-  { value: "photo",                  label: "Photo" },
-  { value: "video",                  label: "Video" },
-  { value: "photo_or_video",         label: "Photo or Video" },
-  { value: "voluntary_activity_vara",label: "Voluntary Activity (VARA)" },
+  { value: "none",                    label: "None" },
+  { value: "photo",                   label: "Photo" },
+  { value: "video",                   label: "Video" },
+  { value: "photo_or_video",          label: "Photo or Video" },
+  { value: "voluntary_activity_vara", label: "Voluntary Activity (VARA)" },
 ];
 const VALID_EVIDENCE_VALUES = new Set(EVIDENCE_OPTIONS.map(o => o.value));
 
@@ -253,12 +254,10 @@ export default function CreateWorkoutModal({
     if (!open) return;
     setErr(""); setOkMsg("");
     if (isEditMode) {
-      // Pre-fill from editWorkout
       setTitle(editWorkout.title || "");
       setEditDate(String(editWorkout.dateISO || "").slice(0,10));
       setEditSport(editWorkout.sport || "");
       setStatus(editWorkout.status || "assigned");
-      // Pre-fill items
       const rawItems = Array.isArray(editWorkout.items) && editWorkout.items.length
         ? editWorkout.items
         : [newItem(1)];
@@ -273,8 +272,7 @@ export default function CreateWorkoutModal({
         VideoURL:         String(it?.VideoURL || it?.videoUrl || ""),
         EvidenceRequired: String(it?.EvidenceRequired || it?.evidenceRequired || "none"),
       })));
-      setItemsOpen(true); // show items in edit mode by default
-      // Pre-select athletes that were passed in
+      setItemsOpen(true);
       const incoming = Array.isArray(editWorkout.athleteIds) ? editWorkout.athleteIds : [];
       if (incoming.length) {
         const sel = {};
@@ -286,7 +284,6 @@ export default function CreateWorkoutModal({
         setShowSelectedOnly(false);
       }
     } else {
-      // Create mode defaults
       setTitle((prev) => prev || `${sport || "Workout"} — ${dateISO || ""}`);
       setStatus("assigned"); setSelected({});
       setSearch(""); setTeamFilter("all"); setShowSelectedOnly(false);
@@ -295,7 +292,7 @@ export default function CreateWorkoutModal({
       setEditDate(""); setEditSport("");
     }
     setTimeout(() => { try { titleRef.current?.focus?.(); } catch {} }, 60);
-  }, [open, isEditMode]);  // intentionally not re-running on editWorkout fields change
+  }, [open, isEditMode]);
 
   const fetchAthletes = useCallback(async () => {
     setLoadingAthletes(true); setErr("");
@@ -401,9 +398,10 @@ export default function CreateWorkoutModal({
       setSaving(true);
       try {
         const body = {
-          id:     editWorkout.id,
-          title:  String(title).trim(),
+          id:         editWorkout.id,
+          title:      String(title).trim(),
           status,
+          athleteIds: selectedTokens,   // ← send reassignment to server
           ...(editDate  ? { date:  String(editDate).slice(0,10)  } : {}),
           ...(editSport ? { sport: String(editSport).toLowerCase() } : {}),
           items: itemsCheck.items,
@@ -422,7 +420,7 @@ export default function CreateWorkoutModal({
       finally     { setSaving(false); }
     } else {
       // ── CREATE PATH ──
-      if (!activeDate)        return setErr("Missing date.");
+      if (!activeDate)            return setErr("Missing date.");
       if (!selectedTokens.length) return setErr("Select at least one athlete.");
       setSaving(true);
       try {
@@ -492,7 +490,7 @@ export default function CreateWorkoutModal({
           </div>
         )}
 
-        {/* Title + Status (+ Date/Sport in edit mode) */}
+        {/* Title + Status */}
         <div style={{ display: "grid", gridTemplateColumns: isEditMode ? "1fr 160px" : "1fr 200px", gap: "12px" }}>
           <div>
             <span style={labelStyle}>Workout title</span>
@@ -516,7 +514,7 @@ export default function CreateWorkoutModal({
           </DSSelect>
         </div>
 
-        {/* Date + Sport (edit mode only — in create mode these come from the calendar) */}
+        {/* Date + Sport (edit mode only) */}
         {isEditMode && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <DSInput label="Date" type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
@@ -576,7 +574,7 @@ export default function CreateWorkoutModal({
                     onChange={e => updateItem(idx,{EvidenceRequired:e.target.value})}
                     helper={
                       it?.EvidenceRequired === "voluntary_activity_vara"
-                        ? "VARA: athlete self-reports - no coach tracking."
+                        ? "VARA: athlete self-reports — no coach tracking."
                         : "Must match Airtable single select."
                     }
                   >
@@ -598,12 +596,12 @@ export default function CreateWorkoutModal({
                   </div>
                 </div>
 
-                {/* VARA notice — shown inline when selected */}
+                {/* VARA notice */}
                 {it?.EvidenceRequired === "voluntary_activity_vara" && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "10px 14px", marginBottom: "10px", backgroundColor: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, borderLeft: `3px solid ${DS.caution}` }}>
                     <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: DS.caution }} />
                     <p style={{ fontSize: "11px", fontWeight: 700, color: DS.caution, lineHeight: 1.5 }}>
-                      Voluntary Activity (VARA) - this item will not be tracked by coaching staff.
+                      Voluntary Activity (VARA) — this item will not be tracked by coaching staff.
                       Athletes self-report completion only.
                     </p>
                   </div>
@@ -615,36 +613,25 @@ export default function CreateWorkoutModal({
           </div>
         </Section>
 
-        {/* Athlete picker */}
+        {/* Athlete picker — fully enabled in both create and edit mode */}
         <Section
-          title={isEditMode ? "Athlete assignment (view only in edit mode)" : "Assign athletes"}
+          title={isEditMode ? "Reassign athletes" : "Assign athletes"}
           label={selectedCount ? `${selectedCount} selected` : "required"}
           open={true}
           onToggle={() => {}}
         >
-          {isEditMode && (
-            <div style={{ padding: "10px 14px", marginBottom: "12px", backgroundColor: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, borderLeft: `3px solid ${DS.caution}` }}>
-              <p style={{ fontSize: "12px", fontWeight: 700, color: DS.caution }}>
-                Athlete re-assignment is not supported in edit mode. To reassign, delete this workout and create a new one.
-                Existing athlete assignments are preserved automatically.
-              </p>
-            </div>
-          )}
-
           {/* Toolbar */}
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <Tag tone={selectedCount ? "good" : "warn"}><Users className="w-3 h-3" /> {selectedCount} selected</Tag>
               <Tag tone="neutral">{loadingAthletes ? "Loading…" : `${filteredAthletes.length} shown`}</Tag>
             </div>
-            {!isEditMode && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                <Btn onClick={() => toggleAllShown(true)}  disabled={loadingAthletes || !filteredAthletes.length}>Select shown</Btn>
-                <Btn onClick={() => toggleAllShown(false)} disabled={loadingAthletes || !filteredAthletes.length}>Clear shown</Btn>
-                <Btn onClick={() => setSelected({})}       disabled={!selectedCount}>Clear all</Btn>
-                <Btn onClick={fetchAthletes}               disabled={loadingAthletes}>Refresh</Btn>
-              </div>
-            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              <Btn onClick={() => toggleAllShown(true)}  disabled={loadingAthletes || !filteredAthletes.length}>Select shown</Btn>
+              <Btn onClick={() => toggleAllShown(false)} disabled={loadingAthletes || !filteredAthletes.length}>Clear shown</Btn>
+              <Btn onClick={() => setSelected({})}       disabled={!selectedCount}>Clear all</Btn>
+              <Btn onClick={fetchAthletes}               disabled={loadingAthletes}>Refresh</Btn>
+            </div>
           </div>
 
           {/* Filters */}
@@ -665,11 +652,11 @@ export default function CreateWorkoutModal({
             </div>
             <div>
               <span style={labelStyle}>View</span>
-              <button type="button" onClick={() => setShowSelectedOnly(v => !v)} disabled={!selectedCount && !isEditMode}
+              <button type="button" onClick={() => setShowSelectedOnly(v => !v)} disabled={!selectedCount}
                 style={{
                   ...inputStyle, fontWeight: 900, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em",
-                  cursor: (!selectedCount && !isEditMode) ? "not-allowed" : "pointer",
-                  opacity: (!selectedCount && !isEditMode) ? 0.45 : 1,
+                  cursor: !selectedCount ? "not-allowed" : "pointer",
+                  opacity: !selectedCount ? 0.45 : 1,
                   backgroundColor: showSelectedOnly ? DS.brand : DS.cardBg,
                   borderColor:     showSelectedOnly ? DS.brand : DS.border,
                   color:           showSelectedOnly ? "#fff"   : DS.labelText,
@@ -695,13 +682,11 @@ export default function CreateWorkoutModal({
                   const team    = titleTeam(getAthleteTeam(a));
                   return (
                     <li key={token} style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: checked ? DS.brandBg : DS.cardBg }}>
-                      <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 14px", cursor: isEditMode ? "default" : "pointer" }}
-                        onMouseEnter={e => { if (!checked && !isEditMode) e.currentTarget.parentElement.style.backgroundColor = DS.pageBg; }}
-                        onMouseLeave={e => { if (!checked && !isEditMode) e.currentTarget.parentElement.style.backgroundColor = DS.cardBg; }}>
+                      <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 14px", cursor: "pointer" }}
+                        onMouseEnter={e => { if (!checked) e.currentTarget.parentElement.style.backgroundColor = DS.pageBg; }}
+                        onMouseLeave={e => { if (!checked) e.currentTarget.parentElement.style.backgroundColor = DS.cardBg; }}>
                         <input type="checkbox" checked={checked}
-                          disabled={isEditMode}
                           onChange={() => {
-                            if (isEditMode) return;
                             const key = String(token||"").trim();
                             if (key) setSelected(prev => ({ ...prev, [key]: !prev[key] }));
                           }}
@@ -733,11 +718,12 @@ export default function CreateWorkoutModal({
             <Tag tone="neutral">{filteredAthletes.length} shown</Tag>
             {teamFilter !== "all" && <Tag tone="brand">Team: {titleTeam(teamFilter)}</Tag>}
             {search && <Tag tone="brand">Search: "{search}"</Tag>}
-            {!isEditMode && (
-              <p style={{ fontSize: "11px", color: DS.dimText, marginLeft: "auto" }}>
-                At least one athlete required to save.
-              </p>
-            )}
+            <p style={{ fontSize: "11px", color: DS.dimText, marginLeft: "auto" }}>
+              {isEditMode
+                ? "Changes to athlete selection will be applied on save."
+                : "At least one athlete required to save."
+              }
+            </p>
           </div>
         </Section>
 

@@ -82,7 +82,7 @@ function normalizeItem(it = {}, idx = 0) {
     evidenceRequired: toTrimmed(it?.EvidenceRequired) || toTrimmed(it?.evidenceRequired) || "none",
   };
 
-  const allowed = new Set(["none", "photo", "video", "photo_or_video"]);
+  const allowed = new Set(["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"]);
   if (!allowed.has(out.evidenceRequired)) out.evidenceRequired = "none";
   return out;
 }

@@ -783,7 +783,7 @@ export default function OrgMessagingPage() {
   const myName  = String(user?.Name || user?.name || "Coach");
   const myRole  = String(user?.role || user?.Role || "");
   const mySport = String(user?.sport || "").trim().toLowerCase();
-  const orgId   = String(user?.orgId || user?.OrgId || user?.organizationId || user?.OrganizationId || "");
+  const orgId   = String(user?.orgId || user?.OrgId || user?.organizationId || user?.OrganizationId || user?.id ||"");
   const orgToken = String(user?.Token || "");
 
   const isStaff = normalizeRole(myRole) === "staff";
@@ -807,16 +807,6 @@ export default function OrgMessagingPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [lbLoading,   setLbLoading]   = useState(false);
   const [lbSport,     setLbSport]     = useState("all");
-
-  // ── Auth loading gate ─────────────────────────────────────────────────────
-  if (!user || !myId) {
-    return (
-      <div style={{ minHeight: "100vh", background: DS.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: 32, height: 32, border: `3px solid ${DS.brandBorder}`, borderTopColor: DS.brand, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
 
   // ── Sync coach profile to Firestore ───────────────────────────────────────
   useEffect(() => {
@@ -891,9 +881,18 @@ export default function OrgMessagingPage() {
     { key: "leaderboard", label: "Leaderboard", icon: Trophy,       accent: DS.rankAccent,  count: leaderboard.length },
   ];
 
+  if (!user || !myId) {
+    return (
+      <div style={{ minHeight: "100vh", background: DS.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 32, height: 32, border: `3px solid ${DS.brandBorder}`, borderTopColor: DS.brand, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: DS.pageBg, color: DS.bodyText, display: "flex", flexDirection: "column" }}>
-
+    
       {/* ── Page header ───────────────────────────────────────────────────── */}
       <div style={{ background: DS.brand, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", flexShrink: 0 }}>
         <div>

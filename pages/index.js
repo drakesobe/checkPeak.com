@@ -214,15 +214,6 @@ function Hero() {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to bottom, transparent, ${BLACK})` }} />
       </motion.div>
 
-      {/* Wordmark top-left */}
-      <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7, delay: 0.2 }}
-        style={{ position: "absolute", top: "clamp(1.25rem, 3vw, 2rem)", left: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 10 }}
-      >
-        <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "clamp(1rem, 2vw, 1.35rem)", fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: WHITE }}>
-          Check<span style={{ color: ACCENT }}>Peak</span>
-        </p>
-      </motion.div>
-
       {/* Nav — hidden on mobile via .hero-nav */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.6 }}
         className="hero-nav"

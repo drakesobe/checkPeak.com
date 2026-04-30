@@ -6,20 +6,48 @@ import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
-import NavBar from "@/components/NavBar";
-import Footer from "@/components/Footer";
-import CookieBanner from "@/components/CookieBanner";
+import NavBar        from "@/components/NavBar";
+import MarketingNav  from "@/components/MarketingNav";
+import Footer        from "@/components/Footer";
+import CookieBanner  from "@/components/CookieBanner";
 import { getConsent, setConsent } from "@/lib/consent";
 import { usePageView } from "@/hooks/usePageView";
 
-const GA_ID     = "G-0HXXN1SJ9K";
-const ADS_ID    = "AW-17990566633";
+const GA_ID      = "G-0HXXN1SJ9K";
+const ADS_ID     = "AW-17990566633";
 const CLARITY_ID = "u244y5muc2";
 
 function isDoNotTrackEnabled() {
   if (typeof navigator === "undefined") return false;
   const dnt = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack || "";
   return String(dnt) === "1" || String(dnt).toLowerCase() === "yes";
+}
+
+// ── Route → nav type ──────────────────────────────────────────────────────────
+// "marketing" → transparent-to-dark frosted (MarketingNav)
+// "app"       → white professional (NavBar)
+// "none"      → no nav rendered (auth / onboarding pages)
+
+const MARKETING_ROUTES = [
+  "/",
+  "/info",
+  "/smartstack-compare",
+  "/compliance/ncaa",
+  "/nutrition-label-scanner",
+  "/search",
+];
+
+const NO_NAV_ROUTES = [
+  "/login",
+  "/signup",
+  "/onboarding",
+];
+
+function getNavType(pathname) {
+  if (!pathname) return "app";
+  if (NO_NAV_ROUTES.some(r => pathname === r || pathname.startsWith(r + "/"))) return "none";
+  if (MARKETING_ROUTES.some(r => pathname === r)) return "marketing";
+  return "app";
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -30,20 +58,27 @@ function isDoNotTrackEnabled() {
 ───────────────────────────────────────────────────────────────────────────── */
 function AppCore({ Component, pageProps, analyticsEnabled }) {
   const { user } = useAuthContext();
+  const router   = useRouter();
+  const navType  = getNavType(router.pathname);
 
   // ── Fire page_view + scroll/time milestones on every route change ───────
-  // userEmail is optional — enriches events for logged-in users,
-  // falls back to anonId for visitors.
   usePageView({
     userEmail: user?.Email || user?.email || "",
   });
 
   return (
     <div className="flex flex-col min-h-screen">
-      <NavBar />
-      <main className="flex-grow">
+      {/* Route-aware nav:
+          marketing pages → transparent hero nav that frosts on scroll
+          app/org pages   → white professional nav
+          auth pages      → no nav                                     */}
+      {navType === "marketing" && <MarketingNav />}
+      {navType === "app"       && <NavBar />}
+
+      <main className="flex-grow" style={navType === "marketing" && router.pathname !== "/" ? { paddingTop: 72 } : {}}>
         <Component {...pageProps} />
       </main>
+
       <Footer />
     </div>
   );

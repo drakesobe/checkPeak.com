@@ -29,7 +29,7 @@ import { normalizeRole, getOrgName } from "@/components/org/dashboard/format";
 
 export default function OrgDashboard() {
   const router = useRouter();
-  const { user, logout } = useAuthContext();
+  const { user, logout, authReady } = useAuthContext();
 
   /* ── identity ── */
   const role      = useMemo(() => normalizeRole(user?.role || user?.Role), [user]);
@@ -43,9 +43,10 @@ export default function OrgDashboard() {
 
   /* ── route gate ── */
   useEffect(() => {
+    if (!authReady) return;                              // ← wait for localStorage hydration
     if (!user)              { router.push("/");          return; }
     if (role && !isOrgSide) { router.push("/dashboard"); return; }
-  }, [user, role, isOrgSide, router]);
+  }, [authReady, user, role, isOrgSide, router]);
 
   /* ── billing ── */
   const { loading: billingLoading, error: billingErr, billing, isPaidOk } =
@@ -187,7 +188,7 @@ export default function OrgDashboard() {
   }, [editAthlete, setAthletes, closeEdit]);
 
   /* ── billing gate ── */
-  if (billingLoading) {
+  if (!authReady || billingLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: DS.pageBg }}>
         <p className="text-xs font-bold" style={{ color: DS.dimText }}>Loading…</p>

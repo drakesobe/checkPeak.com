@@ -2,15 +2,17 @@
 // Transparent on load → dark frosted on scroll.
 // On non-home pages: always frosted (no transparent state).
 // Includes NavBarLoginModal so auth works on marketing pages.
+// Auth-aware: shows Dashboard button when user is already logged in.
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
+import { useAuthContext } from "@/hooks/useAuth";
 
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
@@ -70,15 +72,29 @@ function NavTab({ tab, stackIconBroken, onStackIconError }) {
 
 export default function MarketingNav() {
   const pathname = usePathname();
+  const router   = useRouter();
+  const { user } = useAuthContext();
+
+  // Derive role + dashboard destination from the logged-in user
+  const role = useMemo(() => {
+    const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (raw.includes("org") || raw === "organization") return "organization";
+    if (raw.includes("admin"))  return "admin";
+    if (raw.includes("train"))  return "trainer";
+    return raw;
+  }, [user]);
+
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+  const dashHref  = isOrgSide ? "/org/dashboard" : "/dashboard";
 
   // Only hero pages start transparent — all others start frosted
   const isHeroPage = HERO_PAGES.includes(pathname);
 
-  const [scrolled,         setScrolled]        = useState(!isHeroPage);
-  const [menuOpen,         setMenuOpen]         = useState(false);
-  const [stackIconBroken,  setStackIconBroken]  = useState(false);
-  const [loginModalOpen,   setLoginModalOpen]   = useState(false);
-  const [defaultAuthTab,   setDefaultAuthTab]   = useState("login");
+  const [scrolled,        setScrolled]       = useState(!isHeroPage);
+  const [menuOpen,        setMenuOpen]        = useState(false);
+  const [stackIconBroken, setStackIconBroken] = useState(false);
+  const [loginModalOpen,  setLoginModalOpen]  = useState(false);
+  const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
 
   // Scroll detection — only matters on hero pages
   useEffect(() => {
@@ -174,10 +190,10 @@ export default function MarketingNav() {
         height:72, display:"flex", alignItems:"center", justifyContent:"space-between",
         padding:"8px clamp(1rem,4vw,2.5rem) 0",
         transition:"background 0.35s ease, border-color 0.35s ease, backdrop-filter 0.35s ease",
-        background:           scrolled ? "rgba(6,8,16,0.92)"                    : "transparent",
-        backdropFilter:       scrolled ? "blur(16px)"                            : "none",
-        WebkitBackdropFilter: scrolled ? "blur(16px)"                            : "none",
-        borderBottom:         scrolled ? "1px solid rgba(255,255,255,0.07)"      : "1px solid transparent",
+        background:           scrolled ? "rgba(6,8,16,0.92)"               : "transparent",
+        backdropFilter:       scrolled ? "blur(16px)"                       : "none",
+        WebkitBackdropFilter: scrolled ? "blur(16px)"                       : "none",
+        borderBottom:         scrolled ? "1px solid rgba(255,255,255,0.07)" : "1px solid transparent",
       }}>
 
         {/* Desktop left tabs */}
@@ -202,33 +218,82 @@ export default function MarketingNav() {
         <div className="mkt-right" style={{ display:"none", alignItems:"center", gap:"clamp(0.75rem,2vw,1.5rem)", flex:1, justifyContent:"flex-end" }}>
           {DESKTOP_RIGHT_TABS.map(t => <NavTab key={t.href} tab={t} {...tabProps} />)}
           <div style={{ width:1, height:18, background:"rgba(255,255,255,0.15)", flexShrink:0 }} />
-          <button type="button" onClick={handleLogin}
-            style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.78rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.55)", background:"none", border:"none", cursor:"pointer", padding:"6px 4px", transition:"color 0.18s", flexShrink:0 }}
-            onMouseEnter={e => { e.currentTarget.style.color="#fff"; }}
-            onMouseLeave={e => { e.currentTarget.style.color="rgba(255,255,255,0.55)"; }}>
-            Log in
-          </button>
-          <button type="button" onClick={handleSignup}
-            style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"8px 18px", background:ACCENT, color:BLACK, fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.78rem", fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase", border:"none", cursor:"pointer", flexShrink:0, transition:"filter 0.2s" }}
-            onMouseEnter={e => { e.currentTarget.style.filter="brightness(1.12)"; }}
-            onMouseLeave={e => { e.currentTarget.style.filter="none"; }}>
-            Start Your Pilot
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-            </svg>
-          </button>
+
+          {user ? (
+            /* ── Logged-in: show Dashboard button ── */
+            <button
+              type="button"
+              onClick={() => router.push(dashHref)}
+              style={{
+                display:"inline-flex", alignItems:"center", gap:7,
+                padding:"8px 18px", background:ACCENT, color:BLACK,
+                fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.78rem",
+                fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase",
+                border:"none", cursor:"pointer", flexShrink:0, transition:"filter 0.2s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.filter="brightness(1.12)"; }}
+              onMouseLeave={e => { e.currentTarget.style.filter="none"; }}
+            >
+              Dashboard
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+              </svg>
+            </button>
+          ) : (
+            /* ── Logged-out: show Log in + Start Your Pilot ── */
+            <>
+              <button
+                type="button"
+                onClick={handleLogin}
+                style={{
+                  fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.78rem", fontWeight:700,
+                  letterSpacing:"0.12em", textTransform:"uppercase",
+                  color:"rgba(255,255,255,0.55)", background:"none", border:"none",
+                  cursor:"pointer", padding:"6px 4px", transition:"color 0.18s", flexShrink:0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color="#fff"; }}
+                onMouseLeave={e => { e.currentTarget.style.color="rgba(255,255,255,0.55)"; }}
+              >
+                Log in
+              </button>
+              <button
+                type="button"
+                onClick={handleSignup}
+                style={{
+                  display:"inline-flex", alignItems:"center", gap:7,
+                  padding:"8px 18px", background:ACCENT, color:BLACK,
+                  fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.78rem",
+                  fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase",
+                  border:"none", cursor:"pointer", flexShrink:0, transition:"filter 0.2s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.filter="brightness(1.12)"; }}
+                onMouseLeave={e => { e.currentTarget.style.filter="none"; }}
+              >
+                Start Your Pilot
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Mobile hamburger */}
-        <button type="button" onClick={() => setMenuOpen(v => !v)}
-          aria-expanded={menuOpen} aria-label={menuOpen ? "Close menu" : "Open menu"}
+        <button
+          type="button"
+          onClick={() => setMenuOpen(v => !v)}
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
           className="mkt-ham"
-          style={{ display:"flex", flexDirection:"column", gap:5, background:"none", border:"none", cursor:"pointer", padding:"8px 4px", flexShrink:0, width:40, alignItems:"center" }}>
+          style={{ display:"flex", flexDirection:"column", gap:5, background:"none", border:"none", cursor:"pointer", padding:"8px 4px", flexShrink:0, width:40, alignItems:"center" }}
+        >
           {[0,1,2].map(i => (
             <span key={i} style={{
               display:"block", width:22, height:2, borderRadius:1, background:"#fff",
               transition:"all 0.22s ease",
-              transform: menuOpen ? (i===0 ? "rotate(45deg) translate(5px,5px)" : i===1 ? "scaleX(0)" : "rotate(-45deg) translate(5px,-5px)") : "none",
+              transform: menuOpen
+                ? (i===0 ? "rotate(45deg) translate(5px,5px)" : i===1 ? "scaleX(0)" : "rotate(-45deg) translate(5px,-5px)")
+                : "none",
               opacity: menuOpen && i===1 ? 0 : 1,
             }} />
           ))}
@@ -242,32 +307,87 @@ export default function MarketingNav() {
             <motion.div
               initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.2}}
               onClick={() => setMenuOpen(false)}
-              style={{ position:"fixed", inset:0, zIndex:140, background:"rgba(6,8,16,0.7)", backdropFilter:"blur(4px)" }} />
+              style={{ position:"fixed", inset:0, zIndex:140, background:"rgba(6,8,16,0.7)", backdropFilter:"blur(4px)" }}
+            />
 
             <motion.div
               initial={{opacity:0,y:-12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-12}} transition={{duration:0.2,ease:"easeOut"}}
-              style={{ position:"fixed", top:72, left:0, right:0, zIndex:149, background:"rgba(6,8,16,0.97)", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)", borderBottom:"1px solid rgba(255,255,255,0.08)", padding:"20px clamp(1.25rem,5vw,2.5rem) 28px", display:"flex", flexDirection:"column", gap:2 }}>
-
+              style={{
+                position:"fixed", top:72, left:0, right:0, zIndex:149,
+                background:"rgba(6,8,16,0.97)", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)",
+                borderBottom:"1px solid rgba(255,255,255,0.08)",
+                padding:"20px clamp(1.25rem,5vw,2.5rem) 28px",
+                display:"flex", flexDirection:"column", gap:2,
+              }}
+            >
               {MOBILE_TABS.map((tab,i) => (
                 <motion.div key={tab.href} initial={{opacity:0,x:-10}} animate={{opacity:1,x:0}} transition={{delay:i*0.04,duration:0.18}}>
-                  <Link href={tab.href} onClick={() => setMenuOpen(false)}
-                    style={{ display:"flex", alignItems:"center", gap:8, fontFamily:"'Barlow Condensed',sans-serif", fontSize:"clamp(1.5rem,6vw,2rem)", fontWeight:900, fontStyle:"italic", letterSpacing:"-0.01em", textTransform:"uppercase", color:"rgba(255,255,255,0.7)", textDecoration:"none", padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
-                    {/* Mountain icon hidden on mobile to keep symmetry */}
+                  <Link
+                    href={tab.href}
+                    onClick={() => setMenuOpen(false)}
+                    style={{
+                      display:"flex", alignItems:"center", gap:8,
+                      fontFamily:"'Barlow Condensed',sans-serif",
+                      fontSize:"clamp(1.5rem,6vw,2rem)", fontWeight:900,
+                      fontStyle:"italic", letterSpacing:"-0.01em", textTransform:"uppercase",
+                      color:"rgba(255,255,255,0.7)", textDecoration:"none",
+                      padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
                     {tab.name}
                   </Link>
                 </motion.div>
               ))}
 
-              <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} transition={{delay:MOBILE_TABS.length*0.04+0.04,duration:0.18}}
-                style={{ display:"flex", flexDirection:"column", gap:8, marginTop:16 }}>
-                <button type="button" onClick={handleSignup}
-                  style={{ padding:"13px 20px", background:ACCENT, color:BLACK, fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.95rem", fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase", border:"none", cursor:"pointer", textAlign:"center" }}>
-                  Start Your Pilot — 30 Days Free
-                </button>
-                <button type="button" onClick={handleLogin}
-                  style={{ padding:"12px 20px", background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.65)", fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.88rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", textAlign:"center" }}>
-                  Log in
-                </button>
+              <motion.div
+                initial={{opacity:0,y:8}} animate={{opacity:1,y:0}}
+                transition={{delay:MOBILE_TABS.length*0.04+0.04,duration:0.18}}
+                style={{ display:"flex", flexDirection:"column", gap:8, marginTop:16 }}
+              >
+                {user ? (
+                  /* ── Logged-in mobile: Dashboard button only ── */
+                  <button
+                    type="button"
+                    onClick={() => { router.push(dashHref); setMenuOpen(false); }}
+                    style={{
+                      padding:"13px 20px", background:ACCENT, color:BLACK,
+                      fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.95rem",
+                      fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase",
+                      border:"none", cursor:"pointer", textAlign:"center",
+                    }}
+                  >
+                    Go to Dashboard →
+                  </button>
+                ) : (
+                  /* ── Logged-out mobile: Sign up + Log in ── */
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSignup}
+                      style={{
+                        padding:"13px 20px", background:ACCENT, color:BLACK,
+                        fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.95rem",
+                        fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase",
+                        border:"none", cursor:"pointer", textAlign:"center",
+                      }}
+                    >
+                      Start Your Pilot — 30 Days Free
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogin}
+                      style={{
+                        padding:"12px 20px",
+                        background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.65)",
+                        fontFamily:"'Barlow Condensed',sans-serif", fontSize:"0.88rem",
+                        fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase",
+                        border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", textAlign:"center",
+                      }}
+                    >
+                      Log in
+                    </button>
+                  </>
+                )}
               </motion.div>
             </motion.div>
           </>

@@ -46,9 +46,9 @@ function envMissing() {
 }
 
 function buildOrgCandidates(user) {
-  const orgId = String(user?.org?.id || user?.orgId || user?.OrgId || "").trim();
-  const orgToken = String(user?.org?.token || user?.Token || user?.token || "").trim();
-  const orgName = String(
+  const orgId    = String(user?.org?.id    || user?.orgId    || user?.OrgId    || "").trim();
+  const orgToken = String(user?.org?.token || user?.Token    || user?.token    || "").trim();
+  const orgName  = String(
     user?.org?.name || user?.org?.Name || user?.orgName ||
     user?.OrgName   || user?.organizationName ||
     user?.["Organization Name"] || ""
@@ -58,7 +58,7 @@ function buildOrgCandidates(user) {
 }
 
 function uniqCI(list) {
-  const out = [];
+  const out  = [];
   const seen = new Set();
   (Array.isArray(list) ? list : []).forEach((x) => {
     const s = String(x || "").trim();
@@ -147,16 +147,15 @@ export default async function handler(req, res) {
       const f       = rec.fields || {};
       const itemIds = safeArray(f.WorkoutItems).filter(Boolean);
       return {
-        id:            rec.id,
-        Title:         f.Title || "Workout",
-        Date:          f.Date ? String(f.Date).slice(0, 10) : date,
-        Status:        f.Status || "assigned",
-        Sport:         f.Sport  || "",
-        athleteCount:  safeArray(f.Athlete).length,
-        athleteToken:  String(f.AthleteToken || "").trim(),
-        itemCount:     itemIds.length,
+        id:           rec.id,
+        Title:        f.Title  || "Workout",
+        Date:         f.Date   ? String(f.Date).slice(0, 10) : date,
+        Status:       f.Status || "assigned",
+        athleteCount: safeArray(f.Athlete).length,
+        athleteToken: String(f.AthleteToken || "").trim(),
+        itemCount:    itemIds.length,
         itemIds,
-        _orgLink:      f.Organization,
+        _orgLink:     f.Organization,
       };
     });
 
@@ -170,13 +169,89 @@ export default async function handler(req, res) {
     });
   }
 
+  /* ── 2. Athletes — load BEFORE sport filter so we can key by AthleteScans.sport ──
+     The `sport` single-select lives on AthleteScans, not on DailyWorkouts.
+     We build tokenToSport and tokenToName here, then use them to:
+       • derive availableSports (sports of athletes who have a workout today)
+       • filter workoutsAll by athlete sport when sportQ is set
+  ── */
+  let athletes    = [];
+  const tokenToSport = new Map(); // athleteToken → sport string
+  const tokenToName  = new Map(); // athleteToken → name string
+
+  if (!(missing.ATHLETE_API_KEY || missing.ATHLETE_BASE_ID || missing.ATHLETE_TABLE_NAME)) {
+    try {
+      const athleteBase = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
+
+      const safeToken    = escFormulaString(orgToken);
+      const athleteFilter = orgToken
+        ? `FIND("${safeToken}", ARRAYJOIN({Token}&""))>0`
+        : "";
+
+      if (!athleteFilter) {
+        debug.athletesError = { message: "No orgToken to filter athletes" };
+      } else {
+        debug.formulas.athletes = athleteFilter;
+
+        const atRecs = await athleteBase(process.env.ATHLETE_TABLE_NAME)
+          .select({
+            filterByFormula: athleteFilter,
+            fields: ["Name", "Email", "AthleteToken", "CreatedAt", "sport", "Status"],
+            maxRecords: 2000,
+          })
+          .all();
+
+        athletes = (atRecs || []).map(r => {
+          const f = r.fields || {};
+          return {
+            id:           r.id,
+            name:         String(f.Name         || "").trim(),
+            email:        String(f.Email        || "").trim(),
+            athleteToken: String(f.AthleteToken || "").trim(),
+            createdAt:    String(f.CreatedAt    || "").trim(),
+            sport:        String(f.sport        || "").trim(), // lowercase single-select on AthleteScans
+            status:       String(f.Status       || "").trim(),
+          };
+        });
+
+        athletes.forEach(a => {
+          if (a.athleteToken) {
+            if (a.sport) tokenToSport.set(a.athleteToken, a.sport);
+            if (a.name)  tokenToName.set(a.athleteToken,  a.name);
+          }
+        });
+
+        debug.counts.athletes = athletes.length;
+      }
+    } catch (e) {
+      console.error("[api/org/workouts/day] athletes query error:", e);
+      debug.athletesError = { message: e?.message || String(e) };
+    }
+  }
+
+  /* ── Enrich workoutsAll with athleteSport + athleteName from AthleteScans ── */
+  const enrichedWorkoutsAll = workoutsAll.map(w => ({
+    ...w,
+    athleteSport: (w.athleteToken ? tokenToSport.get(w.athleteToken) : null) || "",
+    athleteName:  (w.athleteToken ? tokenToName.get(w.athleteToken)  : null) || null,
+  }));
+
+  /*
+   * availableSports — derived from AthleteScans.sport for athletes
+   * who have at least one workout scheduled today.
+   */
+  
   const availableSports = uniqCI(
-    workoutsAll.map(w => String(w?.Sport || "").trim()).filter(Boolean)
+  athletes.map(a => a.sport).filter(Boolean)
   ).sort((a, b) => a.localeCompare(b));
 
+  /*
+   * Sport filter — match against the athlete's sport from AthleteScans,
+   * not a Sport field on the workout record itself.
+   */
   const workouts = sportQ
-    ? workoutsAll.filter(w => normLower(w?.Sport) === sportQ)
-    : workoutsAll;
+    ? enrichedWorkoutsAll.filter(w => normLower(w.athleteSport) === sportQ)
+    : enrichedWorkoutsAll;
 
   debug.counts.workouts = workouts.length;
 
@@ -200,13 +275,12 @@ export default async function handler(req, res) {
         }).firstPage();
 
         (rows || []).forEach((rec) => {
-          const f              = rec.fields || {};
+          const f               = rec.fields || {};
           const linkedWorkoutId =
             safeArray(f.DailyWorkout)[0]      ||
             safeArray(f["Daily Workouts"])[0] ||
             safeArray(f["Workout"])[0]        || "";
 
-          // Initial status from WorkoutItems — will be overridden by completions below
           const status = String(
             f.Status || f["Completion Status"] || f["Review Status"] || ""
           ).trim();
@@ -235,17 +309,10 @@ export default async function handler(req, res) {
     debug.workoutItemsError = { message: e?.message || String(e) };
   }
 
-  /* ── 1c. WorkoutCompletions — authoritative source for review queue ────────
-     WorkoutItems.Status can be stale or incorrect (especially before the
-     completeItem.js fix). The WorkoutCompletions table is written atomically
-     on every submission and is always up to date.
-     We fetch all completions for today, then overlay onto completionByItemId
-     so the hook's pendingReviewCount reflects reality.
-  ── */
+  /* ── 1c. WorkoutCompletions — authoritative source for review queue ── */
   try {
     const WorkoutCompletions = base("WorkoutCompletions");
 
-    // All item IDs we care about (from workouts returned)
     const trackedItemIds = new Set([
       ...Object.keys(completionByItemId),
       ...workouts.flatMap(w => safeArray(w.itemIds).map(String)),
@@ -261,15 +328,13 @@ export default async function handler(req, res) {
         maxRecords:      500,
       }).firstPage();
 
-      // Keep only the most recent completion per WorkoutItem
-      // (edge case: athlete re-submitted after rejection)
       const latestByItemId = new Map();
 
       for (const r of wcRows || []) {
-        const f       = r.fields || {};
-        const iids    = safeArray(f.WorkoutItem).map(String);
-        const status  = String(f.Status || "").toLowerCase();
-        const ts      = new Date(f.CompletedAt || 0).getTime();
+        const f      = r.fields || {};
+        const iids   = safeArray(f.WorkoutItem).map(String);
+        const status = String(f.Status || "").toLowerCase();
+        const ts     = new Date(f.CompletedAt || 0).getTime();
 
         for (const iid of iids) {
           if (!trackedItemIds.has(iid)) continue;
@@ -280,7 +345,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Overlay completions table status — wins over WorkoutItems.Status
       for (const [iid, { status }] of latestByItemId.entries()) {
         completionByItemId[iid] = { Status: status };
       }
@@ -288,75 +352,12 @@ export default async function handler(req, res) {
       debug.counts.completions = latestByItemId.size;
     }
   } catch (wcErr) {
-    // Non-fatal — hook falls back to WorkoutItems.Status already populated
     console.warn("[api/org/workouts/day] WorkoutCompletions query failed:", wcErr?.message);
     debug.completionsError = { message: wcErr?.message };
   }
 
-  /* ── 2. Athletes roster (optional) ── */
-  let athletes = [];
-  if (!(missing.ATHLETE_API_KEY || missing.ATHLETE_BASE_ID || missing.ATHLETE_TABLE_NAME)) {
-    try {
-      const athleteBase  = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
-      const AthleteTable = athleteBase(process.env.ATHLETE_TABLE_NAME);
-
-      // Athletes table links to org via {Token} — NOT via {Organization}
-      const safeToken    = escFormulaString(orgToken);
-      const athleteFilter = orgToken
-        ? `FIND("${safeToken}", ARRAYJOIN({Token}&""))>0`
-        : "";
-
-      if (!athleteFilter) {
-        debug.athletesError = { message: "No orgToken to filter athletes" };
-      } else {
-        debug.formulas.athletes = athleteFilter;
-
-        const atRecs = await athleteBase(process.env.ATHLETE_TABLE_NAME)
-          .select({
-            filterByFormula: athleteFilter,
-            fields: ["Name", "Email", "AthleteToken", "CreatedAt", "sport", "Team", "Status"],
-            maxRecords: 2000,
-          })
-          .all();
-
-        athletes = (atRecs || []).map(r => {
-          const f = r.fields || {};
-          return {
-            id:           r.id,
-            name:         String(f.Name         || "").trim(),
-            email:        String(f.Email        || "").trim(),
-            athleteToken: String(f.AthleteToken || "").trim(),
-            createdAt:    String(f.CreatedAt    || "").trim(),
-            sport:        String(f.sport        || "").trim(),
-            team:         String(f.Team         || "").trim(),
-            status:       String(f.Status       || "").trim(),
-          };
-        });
-        debug.counts.athletes = athletes.length;
-      }
-    } catch (e) {
-      console.error("[api/org/workouts/day] athletes query error:", e);
-      debug.athletesError = { message: e?.message || String(e) };
-    }
-  }
-
-  // Cross-reference: add athleteName to each workout using AthleteToken
-  const tokenToName = new Map(
-    athletes
-      .filter(a => a.athleteToken && a.name)
-      .map(a => [a.athleteToken, a.name])
-  );
-
-  const enrichWorkout = (w) => ({
-    ...w,
-    athleteName: (w.athleteToken ? tokenToName.get(w.athleteToken) : null) || null,
-  });
-
-  const enrichedWorkouts        = workouts.map(enrichWorkout);
-  const enrichedWorkoutsAll     = workoutsAll.map(enrichWorkout);
-
   return res.status(200).json({
-    workouts:           enrichedWorkouts,
+    workouts:           workouts,
     athletes,
     itemsByWorkoutId,
     completionByItemId,

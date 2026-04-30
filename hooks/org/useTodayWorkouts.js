@@ -50,16 +50,8 @@ export function useTodayWorkouts({ isOrgSide }) {
       const sports = Array.isArray(data?.availableSports) ? data.availableSports : [];
       setAvailableSports(sports);
 
-      if (sports.length > 0) {
-        const current    = normKey(sport);
-        const hasCurrent = sports.some(s => normKey(s) === current);
-
-        if (current && !hasCurrent) {
-          const next = sports[0];
-          if (normKey(next) !== current) setSport(next);
-        }
-
-        if (!didInitSportRef.current) didInitSportRef.current = true;
+      if (sports.length > 0 && !didInitSportRef.current) {
+        didInitSportRef.current = true;
       }
 
       setDay({

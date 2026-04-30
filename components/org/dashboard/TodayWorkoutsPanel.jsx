@@ -70,17 +70,9 @@ function MetricTile({ label, value, sub, tone = "neutral" }) {
   );
 }
 
-export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports }) {
-  const {
-    sport,
-    setSport,
-    availableSports,
-    loading,
-    err,
-    todayISO,
-    fetchToday,
-    summary,
-  } = useTodayWorkouts({ isOrgSide });
+export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports, todayWorkouts }) {
+  const { sport, setSport, availableSports, loading, err,
+          todayISO, fetchToday, summary } = todayWorkouts;
 
   const defaultSports = useMemo(
     () => [

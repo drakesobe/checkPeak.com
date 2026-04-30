@@ -10,6 +10,7 @@ import { normalizeEmail, toCSV, downloadTextFile, safeJson } from "@/lib/org/das
 import { useBillingStatus }  from "@/hooks/org/useBillingStatus";
 import { useOrgOverview }    from "@/hooks/org/useOrgOverview";
 import { usePlanTemplates }  from "@/hooks/org/usePlanTemplates";
+import { useTodayWorkouts }  from "@/hooks/org/useTodayWorkouts";
 
 import BillingGateScreen     from "@/components/org/dashboard/BillingGateScreen";
 import DashboardHeader       from "@/components/org/dashboard/DashboardHeader";
@@ -57,6 +58,21 @@ export default function OrgDashboard() {
   } = useOrgOverview();
 
   const { templates, refresh: refreshTemplates, abort: abortTemplates } = usePlanTemplates();
+
+  /* ── today workouts — single source of truth for both the stat card and the panel ── */
+  const todayWorkouts = useTodayWorkouts({ isOrgSide });
+
+  /*
+   * Merge the live workout numbers from useTodayWorkouts into the stats object
+   * so DashboardStatsGrid shows the exact same figures as TodayWorkoutsPanel.
+   * getOrgOverview's own workout fields are intentionally overwritten here.
+   */
+  const mergedStats = useMemo(() => ({
+    ...stats,
+    workoutsTodayPercent:   todayWorkouts.summary?.completionPct  ?? 0,
+    workoutsTodayCompleted: todayWorkouts.summary?.completedCount  ?? 0,
+    workoutsTodayTotal:     todayWorkouts.summary?.itemCount       ?? 0,
+  }), [stats, todayWorkouts.summary]);
 
   const didInitialLoadRef = useRef(false);
   useEffect(() => {
@@ -215,14 +231,13 @@ export default function OrgDashboard() {
           title="Program Pulse"
           subtitle="Coverage and today's activity. The directive line tells you what to do first."
         >
-          <DashboardStatsGrid stats={stats} />
+          {/* mergedStats overwrites getOrgOverview's workout numbers with the
+              live figures from useTodayWorkouts so this card always matches
+              the Workouts panel below. */}
+          <DashboardStatsGrid stats={mergedStats} />
         </DashboardSection>
 
-        {/*
-          3. Today — workouts + nutrition side by side.
-          Useful for a daily check-in but not the primary action surface.
-          Below roster intentionally.
-        */}
+        {/* 2. Today — workouts + nutrition side by side */}
         <div>
           <p
             className="text-xs font-black uppercase tracking-wider mb-3"
@@ -231,9 +246,11 @@ export default function OrgDashboard() {
             Today
           </p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Pass the already-running hook result down — no second fetch */}
             <TodayWorkoutsPanel
               onOpenCalendar={openWorkoutsCalendar}
               isOrgSide={isOrgSide}
+              todayWorkouts={todayWorkouts}
             />
             <TodayNutritionPanel
               onGoNutrition={() => router.push("/org/nutrition")}
@@ -243,11 +260,7 @@ export default function OrgDashboard() {
           </div>
         </div>
 
-        {/*
-          4. Activity + Templates — open by default.
-          Audit trail and template shortcuts. Low urgency.
-          Coach expands it when they need it.
-        */}
+        {/* 3. Activity + Templates */}
         <ActivityTemplatesPanel
           loading={loading}
           recentActivity={recentActivity}

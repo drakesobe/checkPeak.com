@@ -4,35 +4,37 @@
  * Import from both ScanSummaryCard and SubstanceCard to keep them in sync.
  */
 
+// components/scanResultsTokens.js
+
 export const DS = {
-  brand:        "#1E3A5F",
-  brandLight:   "#5B9EC9",
-  brandBg:      "#EEF3F9",
-  brandBorder:  "#C0D0E0",
-  safe:         "#00873E",
-  safeBg:       "#F0FBF4",
-  safeBorder:   "#A8E6BC",
-  caution:      "#E87722",
-  cautionBg:    "#FFFBF0",
-  cautionBorder:"#FFE0A8",
-  cautionText:  "#7A4A0A",
-  banned:       "#C8102E",
-  bannedBg:     "#FFF0F0",
-  bannedBorder: "#FFC8C8",
-  ingredient:   "#6D3FBB",  // purple — distinct from banned/safe/caution
-  ingredientBg: "#F5F0FD",
-  ingredientBorder: "#D9C8F5",
+  brand:        "#4FABFF",
+  brandLight:   "#4FABFF",
+  brandBg:      "rgba(79,171,255,0.07)",
+  brandBorder:  "rgba(79,171,255,0.18)",
+  safe:         "#059669",
+  safeBg:       "#ECFDF5",
+  safeBorder:   "#A7F3D0",
+  caution:      "#B45309",
+  cautionBg:    "#FFFBEB",
+  cautionBorder:"#FDE68A",
+  cautionText:  "#92400E",
+  banned:       "#DC2626",
+  bannedBg:     "#FEF2F2",
+  bannedBorder: "#FECACA",
+  ingredient:   "#4FABFF",   // matches accent — distinct enough from banned/safe
+  ingredientBg: "rgba(79,171,255,0.07)",
+  ingredientBorder: "rgba(79,171,255,0.18)",
   cardBg:       "#FFFFFF",
-  pageBg:       "#F7F9FC",
-  border:       "#E8ECF0",
-  labelText:    "#6B7A8D",
-  bodyText:     "#2D3748",
-  dimText:      "#9BA8B4",
-  hoverBg:      "#EDF1F7",
+  pageBg:       "#F4F7FB",
+  border:       "#E2E8F0",
+  labelText:    "#64748B",
+  bodyText:     "#0D1B2A",
+  dimText:      "#94A3B8",
+  hoverBg:      "#F1F5F9",
 };
 
 export const FONT_STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,700;1,900&family=Barlow:wght@400;500;600;700&display=swap');
   .sr-display { font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.03em; }
   .sr-body    { font-family: 'Barlow', sans-serif; }
 `;

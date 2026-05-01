@@ -12,6 +12,7 @@ import {
   Link as LinkIcon, Filter, Search, CheckCircle2, Info, Edit2,
 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
+import { loadPeriods, getActivePeriod, getVaraRequirement } from "@/lib/org/seasonCalendar";
 
 // ---------- pure helpers ----------
 async function safeJson(res) { try { return await res.json(); } catch { return {}; } }
@@ -218,6 +219,61 @@ function Section({ title, label, open, onToggle, children }) {
   );
 }
 
+function VaraWarningBanner({ level, periodName, onSetAllVara }) {
+  if (!level) return null;
+ 
+  const isHard = level === "hard";
+  const bg     = isHard ? DS.bannedBg  : DS.cautionBg;
+  const border = isHard ? DS.bannedBorder : DS.cautionBorder;
+  const accent = isHard ? DS.banned    : DS.caution;
+  const icon   = isHard ? "🚫" : "⚠️";
+ 
+  return (
+    <div style={{
+      padding: "14px 16px",
+      background: bg,
+      border: `1px solid ${border}`,
+      borderLeft: `4px solid ${accent}`,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>{icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900,
+            fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase",
+            color: accent, margin: "0 0 4px",
+          }}>
+            {isHard ? "VARA Required — Break Period" : "Out of Season — VARA Preferred"}
+          </p>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, lineHeight: 1.6, color: accent, margin: "0 0 10px" }}>
+            {periodName && <strong>{periodName}: </strong>}
+            {isHard
+              ? "Coach-directed workouts are NOT permitted during this break. All items must be Voluntary Activity (VARA) — athlete-initiated, no coach presence or pressure."
+              : "This is an out-of-season period. Required activities are limited to 8 hrs/week. Consider marking workout items as Voluntary Activity (VARA)."
+            }
+          </p>
+          <button
+            type="button"
+            onClick={onSetAllVara}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 14px",
+              background: accent, color: "#fff",
+              fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11,
+              fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase",
+              border: "none", cursor: "pointer", transition: "filter 0.12s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+          >
+            Set All Items to Voluntary Activity (VARA)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
 export default function CreateWorkoutModal({
   open, onClose,
@@ -386,6 +442,35 @@ export default function CreateWorkoutModal({
     return Boolean(activeDate && String(title||"").trim() && selectedCount && !saving);
   }, [isEditMode, activeDate, title, selectedCount, saving]);
 
+  // ── Season calendar VARA check ──
+  const varaCheck = useMemo(() => {
+    const date = isEditMode ? editDate : dateISO;
+    if (!date) return null;
+    const periods = loadPeriods();
+    const period  = getActivePeriod(date, periods);
+    const level   = getVaraRequirement(period);
+    return level ? { level, period } : null;
+  }, [isEditMode, editDate, dateISO]);
+ 
+  const hasNonVaraItems = useMemo(() => {
+    return (Array.isArray(items) ? items : []).some(
+      it => String(it?.EvidenceRequired || "none") !== "voluntary_activity_vara"
+    );
+  }, [items]);
+ 
+  // Only show the banner when the period requires/prefers VARA AND there are non-VARA items
+  const showVaraWarning = varaCheck !== null && hasNonVaraItems;
+ 
+  const handleSetAllVara = useCallback(() => {
+    setItems(prev =>
+      (Array.isArray(prev) ? prev : []).map(it => ({
+        ...it,
+        EvidenceRequired: "voluntary_activity_vara",
+      }))
+    );
+    setItemsOpen(true); // open the items section so coach can see the change
+  }, []);
+
   /* ── Submit ── */
   const submit = async () => {
     setErr(""); setOkMsg("");
@@ -475,6 +560,15 @@ export default function CreateWorkoutModal({
             <Dumbbell className="w-3 h-3" /> {hasAnyMeaningfulItem ? `${items.length} items` : "Items optional"}
           </Tag>
         </div>
+
+        {/* VARA period warning — shown when date falls in a break/out-of-season window */}
+        {showVaraWarning && (
+          <VaraWarningBanner
+            level={varaCheck.level}
+            periodName={varaCheck.period?.name || ""}
+            onSetAllVara={handleSetAllVara}
+          />
+        )}
 
         {/* Errors / success */}
         {err && (

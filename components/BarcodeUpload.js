@@ -13,25 +13,13 @@ import ProgressBar from "./ProgressBar";
 // ---------------------------------------------------------------------------
 
 const DS = {
-  brand:         "#1E3A5F",
-  brandLight:    "#5B9EC9",
-  brandBg:       "#EEF3F9",
-  brandBorder:   "#C0D0E0",
-  safe:          "#00873E",
-  safeBg:        "#F0FBF4",
-  safeBorder:    "#A8E6BC",
-  caution:       "#E87722",
-  cautionBg:     "#FFFBF0",
-  cautionBorder: "#FFE0A8",
-  banned:        "#C8102E",
-  bannedBg:      "#FFF0F0",
-  bannedBorder:  "#FFC8C8",
-  cardBg:        "#FFFFFF",
-  pageBg:        "#F7F9FC",
-  border:        "#E8ECF0",
-  labelText:     "#6B7A8D",
-  bodyText:      "#2D3748",
-  dimText:       "#9BA8B4",
+  brand: "#4FABFF", brandLight: "#4FABFF",
+  brandBg: "rgba(79,171,255,0.07)", brandBorder: "rgba(79,171,255,0.18)",
+  safe: "#059669", safeBg: "#ECFDF5", safeBorder: "#A7F3D0",
+  caution: "#B45309", cautionBg: "#FFFBEB", cautionBorder: "#FDE68A",
+  banned: "#DC2626", bannedBg: "#FEF2F2", bannedBorder: "#FECACA",
+  cardBg: "#FFFFFF", pageBg: "#F4F7FB", border: "#E2E8F0",
+  labelText: "#64748B", bodyText: "#0D1B2A", dimText: "#94A3B8",
 };
 
 const BARCODE_FONTS = `

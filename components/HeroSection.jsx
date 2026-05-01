@@ -130,6 +130,21 @@ const SCAN_STYLE = `
     pointer-events: none;
   }
 
+  /* Headline */
+  .cp-headline {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900;
+    font-size: clamp(3.6rem, 10vw, 8.5rem);
+    line-height: 0.92;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: var(--cp-text-primary);
+  }
+
+  .cp-headline .accent {
+    color: var(--cp-accent);
+  }
+
   /*
     Stat pills
     FIX: was rgba(255,255,255,0.45) at 0.65rem — unreadable on mobile.

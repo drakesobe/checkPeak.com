@@ -151,7 +151,7 @@ export default function FinishSetupModal({
               ✕
             </button>
 
-            <p className="text-xs font-semibold text-[#46769B]">Finish setup</p>
+            <p className="text-xs font-semibold text-[#4FABFF]">Finish setup</p>
             <h2 className="text-xl font-bold text-gray-900 mt-1">Create your password</h2>
             <p className="text-sm text-gray-600 mt-2">
               Save scans, unlock history, and access your dashboard.
@@ -163,7 +163,7 @@ export default function FinishSetupModal({
                 placeholder="Full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FABFF]"
                 autoComplete="name"
                 required
               />
@@ -174,7 +174,7 @@ export default function FinishSetupModal({
                 value={email}
                 readOnly={emailLocked}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B] ${
+                className={`w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FABFF] ${
                   emailLocked ? "bg-gray-50 text-gray-600" : ""
                 }`}
                 autoComplete="email"
@@ -187,7 +187,7 @@ export default function FinishSetupModal({
                   placeholder="Create password (min 6 chars)"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B] pr-16"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FABFF] pr-16"
                   autoComplete="new-password"
                   required
                 />
@@ -209,7 +209,7 @@ export default function FinishSetupModal({
                     aria-pressed={normalizeRole(role) === "Athlete"}
                     className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
                       normalizeRole(role) === "Athlete"
-                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#46769B]/30"
+                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#4FABFF]/30"
                         : "text-gray-600 hover:bg-white/70"
                     }`}
                   >
@@ -225,7 +225,7 @@ export default function FinishSetupModal({
                     aria-pressed={normalizeRole(role) === "Organization"}
                     className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
                       normalizeRole(role) === "Organization"
-                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#46769B]/30"
+                        ? "bg-white text-gray-900 shadow-sm ring-2 ring-[#4FABFF]/30"
                         : "text-gray-600 hover:bg-white/70"
                     }`}
                   >
@@ -244,7 +244,7 @@ export default function FinishSetupModal({
                   value={orgToken}
                   onChange={(e) => setOrgToken(e.target.value)}
                   placeholder="Organization Token (optional)"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FABFF]"
                 />
                 <p className="text-[11px] text-gray-500 leading-snug">
                   {normalizeRole(role) === "Athlete"
@@ -258,7 +258,7 @@ export default function FinishSetupModal({
               <button
                 type="submit"
                 disabled={loading || !canSubmit}
-                className={`w-full px-4 py-3 rounded-xl bg-[#46769B] text-white font-semibold text-sm shadow-sm hover:brightness-110 transition ${
+                className={`w-full px-4 py-3 rounded-xl bg-[#4FABFF] text-white font-semibold text-sm shadow-sm hover:brightness-110 transition ${
                   loading || !canSubmit ? "opacity-70 cursor-not-allowed" : ""
                 }`}
               >

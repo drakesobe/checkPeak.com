@@ -2,247 +2,249 @@
 "use client";
 
 import { useMemo } from "react";
-import { ArrowRight, Plus, CheckCircle2 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import WorkoutCard from "./WorkoutCard";
 import { isSameISO, isoToDate } from "@/lib/org/workoutsCalendar/date";
 
-function sumCounts(list) {
-  const ws = Array.isArray(list) ? list : [];
-  let wc = ws.length, ac = 0, ic = 0;
-  ws.forEach((w) => { ac += Number(w?.athleteCount || 0); ic += Number(w?.itemCount || 0); });
-  return { workoutsCount: wc, athleteCount: ac, itemCount: ic };
-}
+const COND = {
+  fontFamily: "'Arial Narrow', Arial, sans-serif",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+};
 
-function safeLabels(iso) {
-  const d  = isoToDate(iso);
-  const ok = d instanceof Date && !Number.isNaN(d.getTime());
-  const dt = ok ? d : new Date();
-  return {
-    labelLong:    dt.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" }),
-    labelWeekday: dt.toLocaleString(undefined, { weekday: "short" }),
-    labelDate:    dt.toLocaleString(undefined, { month: "short", day: "numeric" }),
-  };
-}
+const WL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function SmBtn({ children, onClick, disabled, variant = "secondary", style = {} }) {
-  const base = {
-    display:       "inline-flex",
-    alignItems:    "center",
-    gap:           "4px",
-    padding:       "5px 10px",
-    fontSize:      "11px",
-    fontWeight:    900,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    cursor:        disabled ? "not-allowed" : "pointer",
-    opacity:       disabled ? 0.4 : 1,
-    transition:    "background-color 0.12s",
-    border:        `1px solid ${variant === "primary" ? DS.brand : DS.border}`,
-    backgroundColor: variant === "primary" ? DS.brand : DS.cardBg,
-    color:         variant === "primary" ? "#fff" : DS.labelText,
-    ...style,
-  };
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      style={base}
-      onMouseEnter={(e) => {
-        if (disabled) return;
-        if (variant === "primary") { e.currentTarget.style.backgroundColor = DS.brandLight; }
-        else { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }
-      }}
-      onMouseLeave={(e) => {
-        if (disabled) return;
-        e.currentTarget.style.backgroundColor = variant === "primary" ? DS.brand : DS.cardBg;
-        e.currentTarget.style.borderColor      = variant === "primary" ? DS.brand : DS.border;
-        e.currentTarget.style.color            = variant === "primary" ? "#fff" : DS.labelText;
-      }}
-    >
-      {children}
-    </button>
-  );
-}
+const WEEK_CSS = `
+  /* Mobile: stacked list */
+  .wv-mobile { display: flex; flex-direction: column; gap: 1px; background-color: var(--wv-border); }
+  .wv-desktop { display: none; }
 
-export default function WeekView({ weekDays = [], todayISO = "", loading = false, workoutsByDate = {}, onOpenDay, onCreateForDay }) {
-  const DESKTOP_MAX = 5;
+  @media (min-width: 700px) {
+    .wv-mobile  { display: none; }
+    .wv-desktop {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1px;
+      background-color: var(--wv-border);
+    }
+  }
+`;
 
+export default function WeekView({
+  weekDays = [], todayISO = "", loading = false,
+  workoutsByDate = {}, onOpenDay, onCreateForDay,
+}) {
   const days = useMemo(() => {
     const byDate = workoutsByDate && typeof workoutsByDate === "object" ? workoutsByDate : {};
-    return (Array.isArray(weekDays) ? weekDays : []).map((iso) => ({
-      iso,
+    return (Array.isArray(weekDays) ? weekDays : []).map((iso, idx) => ({
+      iso, idx,
+      d:       isoToDate(iso),
       list:    Array.isArray(byDate?.[iso]) ? byDate[iso] : [],
       isToday: isSameISO(iso, todayISO),
-      ...safeLabels(iso),
     }));
   }, [weekDays, workoutsByDate, todayISO]);
 
-  /* ── Mobile ── */
+  // ── Mobile: stacked rows ──────────────────────────────────────────────────
   const renderMobile = () => (
-    <div className="lg:hidden space-y-3">
-      {days.map(({ iso, list, isToday, labelLong }) => {
-        const counts = sumCounts(list);
+    <div className="wv-mobile">
+      {days.map(({ iso, idx, d, list, isToday }) => {
+        const dateLabel = d.toLocaleString(undefined, { weekday: "long", month: "short", day: "numeric" });
         return (
           <div
             key={iso}
             style={{
               backgroundColor: DS.cardBg,
-              border:          `1px solid ${isToday ? DS.safe : DS.border}`,
-              borderLeft:      `3px solid ${isToday ? DS.safe : DS.border}`,
+              borderLeft: `3px solid ${isToday ? DS.safe : DS.border}`,
+              opacity: loading ? 0.6 : 1,
             }}
           >
-            {/* Day header */}
-            <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${DS.border}` }}>
-              <div className="flex items-center gap-2 min-w-0">
-                <p className="text-sm font-black truncate" style={{ color: DS.bodyText }}>{labelLong}</p>
-                {isToday && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold" style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}>
-                    <CheckCircle2 className="w-3 h-3" /> Today
+            {/* Row header */}
+            <button
+              type="button"
+              onClick={() => onOpenDay?.(iso)}
+              disabled={loading}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 14px",
+                backgroundColor: isToday ? "rgba(21,128,61,0.04)" : DS.pageBg,
+                border: "none",
+                borderBottom: `1px solid ${DS.border}`,
+                cursor: loading ? "default" : "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <span style={{
+                  fontSize: 20, fontWeight: 900, lineHeight: 1,
+                  color: isToday ? DS.safe : DS.bodyText,
+                }}>
+                  {d.getDate()}
+                </span>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, ...COND,
+                  color: isToday ? DS.safe : DS.dimText,
+                }}>
+                  {WL[idx]} · {d.toLocaleString(undefined, { month: "short" })}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {list.length > 0 && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 900, ...COND,
+                    color: DS.brand, backgroundColor: DS.brandBg,
+                    border: `1px solid ${DS.brandBorder}`, padding: "1px 6px",
+                  }}>
+                    {list.length}
                   </span>
                 )}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); !loading && onCreateForDay?.(iso); }}
+                  disabled={loading}
+                  style={{
+                    fontSize: 10, fontWeight: 900, ...COND, color: DS.brand,
+                    background: "none", border: `1px solid ${DS.brandBorder}`,
+                    padding: "3px 8px", cursor: loading ? "default" : "pointer",
+                  }}
+                >
+                  + Create
+                </button>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-xs font-bold tabular-nums px-1.5 py-0.5" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
-                  {counts.workoutsCount}
-                </span>
-                <SmBtn onClick={() => onOpenDay?.(iso)} disabled={loading}>
-                  Open <ArrowRight className="w-3 h-3" />
-                </SmBtn>
-                <SmBtn onClick={() => !loading && onCreateForDay?.(iso)} disabled={loading} variant="primary">
-                  <Plus className="w-3 h-3" />
-                </SmBtn>
-              </div>
-            </div>
+            </button>
 
             {/* Workout list */}
-            <div className="p-3 space-y-2">
-              {loading ? (
-                <p className="text-xs py-2" style={{ color: DS.dimText }}>Loading…</p>
-              ) : list.length === 0 ? (
-                <div className="flex items-center justify-between py-2 px-1">
-                  <p className="text-xs" style={{ color: DS.dimText }}>No workouts scheduled.</p>
+            {list.length > 0 && (
+              <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                {list.slice(0, 5).map((w, i) => (
+                  <WorkoutCard key={w?.id || `${iso}-${i}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
+                ))}
+                {list.length > 5 && (
                   <button
                     type="button"
-                    className="text-xs font-black uppercase tracking-wide hover:underline"
-                    style={{ color: DS.brand }}
-                    onClick={() => onCreateForDay?.(iso)}
+                    onClick={() => onOpenDay?.(iso)}
+                    style={{
+                      fontSize: 10, fontWeight: 900, ...COND, color: DS.brand,
+                      background: "none", border: "none", cursor: "pointer",
+                      textAlign: "left", padding: "2px 0",
+                    }}
                   >
-                    + Create
+                    +{list.length - 5} more
                   </button>
-                </div>
-              ) : (
-                <>
-                  {list.slice(0, 4).map((w, idx) => (
-                    <WorkoutCard key={w?.id || `${iso}-${idx}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
-                  ))}
-                  {list.length > 4 && (
-                    <button type="button" className="text-xs font-bold hover:underline" style={{ color: DS.brand }} onClick={() => onOpenDay?.(iso)}>
-                      View all ({list.length}) →
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
     </div>
   );
 
-  /* ── Desktop ── */
+  // ── Desktop: 7-column grid (prototype style) ──────────────────────────────
   const renderDesktop = () => (
-    <div className="hidden lg:block">
-      <div className="grid grid-cols-7 gap-px" style={{ backgroundColor: DS.border }}>
-        {days.map(({ iso, list, isToday, labelWeekday, labelDate }) => {
-          const counts     = sumCounts(list);
-          const desktopList = list.slice(0, DESKTOP_MAX);
-          const hasMore    = list.length > DESKTOP_MAX;
+    <div className="wv-desktop">
+      {days.map(({ iso, idx, d, list, isToday }) => (
+        <div
+          key={iso}
+          style={{
+            backgroundColor: DS.cardBg,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 320,
+            borderTop: `3px solid ${isToday ? DS.safe : DS.border}`,
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {/* Column header */}
+          <button
+            type="button"
+            onClick={() => onOpenDay?.(iso)}
+            disabled={loading}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              padding: "10px 10px 8px",
+              backgroundColor: isToday ? "rgba(21,128,61,0.04)" : DS.pageBg,
+              border: "none",
+              cursor: loading ? "default" : "pointer",
+              borderBottom: `1px solid ${DS.border}`,
+            }}
+          >
+            <p style={{ fontSize: 9, fontWeight: 900, ...COND, color: isToday ? DS.safe : DS.dimText, marginBottom: 2 }}>
+              {WL[idx]}
+            </p>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 4 }}>
+              <p style={{ fontSize: 20, fontWeight: 900, color: isToday ? DS.safe : DS.bodyText, lineHeight: 1 }}>
+                {d.getDate()}
+              </p>
+              {list.length > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 900, ...COND,
+                  color: DS.brand, backgroundColor: DS.brandBg,
+                  border: `1px solid ${DS.brandBorder}`, padding: "1px 5px",
+                }}>
+                  {list.length}
+                </span>
+              )}
+            </div>
+          </button>
 
-          return (
-            <div
-              key={iso}
-              className="flex flex-col"
+          {/* Workout cards */}
+          <div style={{ flex: 1, padding: "8px", display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
+            {loading ? (
+              <p style={{ fontSize: 11, color: DS.dimText, padding: "4px 0" }}>Loading…</p>
+            ) : list.length === 0 ? (
+              <p style={{ fontSize: 11, color: DS.dimText, padding: "4px 0" }}>No workouts</p>
+            ) : (
+              <>
+                {list.slice(0, 6).map((w, i) => (
+                  <WorkoutCard key={w?.id || `${iso}-${i}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
+                ))}
+                {list.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDay?.(iso)}
+                    style={{
+                      fontSize: 10, fontWeight: 900, ...COND, color: DS.brand,
+                      background: "none", border: "none", cursor: "pointer",
+                      textAlign: "left", padding: "2px 0",
+                    }}
+                  >
+                    +{list.length - 6} more
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding: "6px 10px", borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+            <button
+              type="button"
+              onClick={() => !loading && onCreateForDay?.(iso)}
+              disabled={loading}
               style={{
-                backgroundColor: DS.cardBg,
-                minHeight:       "300px",
-                borderTop:       isToday ? `2px solid ${DS.safe}` : "none",
+                fontSize: 10, fontWeight: 900, ...COND, color: DS.brand,
+                background: "none", border: "none", cursor: loading ? "default" : "pointer",
               }}
             >
-              {/* Column header */}
-              <button
-                type="button"
-                onClick={() => onOpenDay?.(iso)}
-                disabled={loading}
-                className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors"
-                style={{ borderBottom: `1px solid ${DS.border}`, backgroundColor: isToday ? DS.safeBg : DS.pageBg }}
-                onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = isToday ? DS.safeBg : DS.brandBg; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isToday ? DS.safeBg : DS.pageBg; }}
-              >
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wide" style={{ color: isToday ? DS.safe : DS.bodyText }}>
-                    {labelWeekday}
-                  </p>
-                  <p className="text-xs" style={{ color: DS.dimText }}>{labelDate}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  {isToday && <CheckCircle2 className="w-3 h-3" style={{ color: DS.safe }} />}
-                  {counts.workoutsCount > 0 && (
-                    <span className="text-xs font-bold tabular-nums px-1.5" style={{ backgroundColor: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}` }}>
-                      {counts.workoutsCount}
-                    </span>
-                  )}
-                </div>
-              </button>
-
-              {/* Workout cards */}
-              <div className="p-2.5 space-y-2 flex-1 overflow-y-auto">
-                {loading ? (
-                  <p className="text-xs py-2 px-1" style={{ color: DS.dimText }}>Loading…</p>
-                ) : list.length === 0 ? (
-                  <p className="text-xs py-2 px-1" style={{ color: DS.dimText }}>No workouts.</p>
-                ) : (
-                  <>
-                    {desktopList.map((w, idx) => (
-                      <WorkoutCard key={w?.id || `${iso}-${idx}`} w={w} onOpen={() => onOpenDay?.(iso)} compact />
-                    ))}
-                    {hasMore && (
-                      <button type="button" className="text-xs font-bold hover:underline px-1" style={{ color: DS.brand }} onClick={() => onOpenDay?.(iso)}>
-                        +{list.length - DESKTOP_MAX} more
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Column footer — only Create; the entire header is already the Open target */}
-              <div
-                className="px-3 py-2 flex justify-end"
-                style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}
-              >
-                <button
-                  type="button"
-                  className="text-xs font-black uppercase tracking-wide hover:underline"
-                  style={{ color: loading ? DS.dimText : DS.brand }}
-                  onClick={() => !loading && onCreateForDay?.(iso)}
-                  disabled={loading}
-                  title="Create workout for this day"
-                >
-                  + Create
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              + Create
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 
   return (
     <>
-      {renderMobile()}
-      {renderDesktop()}
+      <style>{WEEK_CSS}</style>
+      <div style={{ "--wv-border": DS.border }}>
+        {renderMobile()}
+        {renderDesktop()}
+      </div>
     </>
   );
 }

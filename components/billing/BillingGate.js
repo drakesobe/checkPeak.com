@@ -44,9 +44,10 @@ export default function BillingGate({ role = "", allowAdminBypass = true, childr
   const [err, setErr] = useState("");
   const [billing, setBilling] = useState(null);
 
-  const roleNorm = String(role || "").trim().toLowerCase();
-  const isAdmin = roleNorm === "admin";
-  const bypass = allowAdminBypass && isAdmin;
+  const roleNorm  = String(role || "").trim().toLowerCase();
+  const isAdmin   = roleNorm === "admin";
+  const isTrainer = roleNorm === "trainer";
+  const bypass = allowAdminBypass && (isAdmin || isTrainer);
 
   useEffect(() => {
     let mounted = true;

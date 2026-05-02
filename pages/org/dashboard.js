@@ -49,8 +49,10 @@ export default function OrgDashboard() {
   }, [authReady, user, role, isOrgSide, router]);
 
   /* ── billing ── */
-  const { loading: billingLoading, error: billingErr, billing, isPaidOk } =
-    useBillingStatus({ user, role, isOrgSide, enabled: Boolean(user && isOrgSide) });
+  const { loading: billingLoading, error: billingErr, billing, isPaidOk: isPaidOkRaw } =
+    useBillingStatus({ user, role, isOrgSide, enabled: Boolean(user && isOrgSide && role !== "trainer") });
+
+  const isPaidOk = role === "trainer" ? true : isPaidOkRaw;
 
   /* ── data ── */
   const {

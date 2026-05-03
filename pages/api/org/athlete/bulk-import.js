@@ -1,4 +1,4 @@
-// pages/api/org/athletes/bulk-import.js
+// pages/api/org/athlete/bulk-import.js
 // POST { athletes: [{ firstName, lastName, email, sport, phone }] }
 // Creates Athlete records in Airtable, deduplicates against existing emails,
 // returns { created, skipped, errors: [{ email, reason }] }
@@ -12,14 +12,15 @@ import crypto from "crypto";
 const A = {
   NAME:    F?.ATH_NAME    || "Name",
   EMAIL:   F?.ATH_EMAIL   || "Email",
-  SPORT:   F?.ATH_SPORT   || "Sport",
+  SPORT:   F?.ATH_SPORT   || "sport",
   PHONE:   F?.ATH_PHONE   || "Phone",
   TOKEN:   F?.ATH_TOKEN   || "AthleteToken",
   ORG:     F?.ATH_ORG     || "Organization",
-  ORGID:   F?.ATH_ORGID   || "OrgId",
+  ORGID:   F?.ATH_ORGID   || "Token",
   PASS:    F?.ATH_PASS    || "Password",
   ROLE:    F?.ATH_ROLE    || "Role",
   STATUS:  F?.ATH_STATUS  || "Status",
+  CREATED:   F?.ATH_CREATED || "CreatedAt",
 };
 
 function chunk(arr, n = 10) {
@@ -87,7 +88,8 @@ export default async function handler(req, res) {
   }
 
   const orgId    = user.orgId;
-  const orgRecId = user.orgRecordId || user.orgId; // adjust to match your session shape
+  const orgRecId = user.orgRecordId || user.orgId;
+  const orgToken = String(user.Token || user.token || user["Organization Token"] || "").trim();
   if (!orgId) return res.status(400).json({ error: "Missing orgId on session" });
 
   // ── Validate incoming rows ────────────────────────────────────────────────
@@ -147,12 +149,13 @@ export default async function handler(req, res) {
         [A.TOKEN]:  token,
         [A.PASS]:   hashedPass,
         [A.ROLE]:   "athlete",
+        [A.CREATED]: new Date().toISOString(),
         // Optional fields — only write if value exists
         ...(a.sport ? { [A.SPORT]: a.sport } : {}),
         ...(a.phone ? { [A.PHONE]: a.phone } : {}),
         // Org link — adjust field name/format to match your Airtable setup
-        ...(orgId ? { [A.ORGID]: String(orgId) } : {}),
-        ...(orgRecId && A.ORG !== A.ORGID ? { [A.ORG]: [orgRecId] } : {}),
+        ...(orgToken ? { [A.ORGID]: orgToken } : {}),
+        ...(orgRecId ? { [A.ORG]:   [orgRecId] } : {}), 
       };
 
       // Remove any undefined keys

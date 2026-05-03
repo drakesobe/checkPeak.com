@@ -252,7 +252,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
     if (!toImport.length) return;
     setStep("importing");
     try {
-      const res  = await fetch("/api/org/athletes/bulk-import", {
+      const res  = await fetch("/api/org/athlete/bulk-import", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

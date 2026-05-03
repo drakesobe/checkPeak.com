@@ -339,8 +339,8 @@ export default function InfoPage() {
   return (
     <>
       <Head>
-        <title>CheckPeak — Info &amp; NCAA Compliance</title>
-        <meta name="description" content="CheckPeak supports workout + nutrition accountability and supplement risk awareness, with direct NCAA resource links." />
+        <title>CheckPeak — Built for the Offseason</title>
+        <meta name="description" content="No one's watching. That's the point. CheckPeak gives athletes everything they need to own their offseason — built from the ground up around NCAA compliance." />
       </Head>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
 
@@ -384,7 +384,7 @@ export default function InfoPage() {
 
               {/* Left: headline */}
               <div style={{ maxWidth: "56rem" }}>
-                <Eyebrow>{infoHero?.kicker || "CheckPeak · Athlete Tools + Team Workflows"}</Eyebrow>
+                <Eyebrow>{infoHero?.kicker || "CheckPeak · Built for the Offseason"}</Eyebrow>
 
                 <motion.h1
                   ref={heroReveal.ref}
@@ -399,9 +399,9 @@ export default function InfoPage() {
                     textShadow: "0 2px 60px rgba(0,0,0,0.8)",
                   }}
                 >
-                  Accountability<br />
-                  builds{" "}
-                  <span style={{ color: ACCENT }}>confidence.</span>
+                  No one&apos;s<br />
+                  watching.{" "}
+                  <span style={{ color: ACCENT }}>That&apos;s the point.</span>
                 </motion.h1>
 
                 <motion.p
@@ -416,7 +416,7 @@ export default function InfoPage() {
                   }}
                 >
                   {infoHero?.subtitle ||
-                    "CheckPeak keeps athletes and staff aligned away from campus with clear plans, quick check-ins, and staff visibility."}
+                    "Your coach can't follow you home. Your teammates aren't watching. But the offseason keeps score regardless — and it comes to collect in August."}
                 </motion.p>
 
                 {heroPills.length > 0 && (
@@ -517,9 +517,9 @@ export default function InfoPage() {
                 </p>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.85rem", marginBottom: "1.25rem" }}>
                   {[
-                    "Off-season accountability with consistent check-ins",
-                    "Evidence-based workout completions + staff review workflows",
-                    "Supplement screening as a fast first pass",
+                    "Own your offseason before it owns you",
+                    "Know exactly what's going into your body",
+                    "Show up in August as the athlete you decided to be in June",
                   ].map((item, i) => (
                     <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
                       <span style={{
@@ -599,7 +599,7 @@ export default function InfoPage() {
                     }}
                   >
                     Supplements are contaminated, mislabeled, and relabeled every year.
-                    The NCAA doesn't care about intent — a positive test is a positive test.
+                    The NCAA doesn&apos;t care about intent — a positive test is a positive test.
                     CheckPeak gives athletes a fast first-pass screen before anything goes in their body.
                   </motion.p>
                 </div>
@@ -648,7 +648,10 @@ export default function InfoPage() {
 
               <div style={{ position: "relative", zIndex: 2, maxWidth: "72rem", margin: "0 auto" }}>
                 <Eyebrow>What you get</Eyebrow>
-                <SectionHeadline accent="one place." sub="Workout accountability, nutrition targets, and supplement screening — one repeatable workflow.">
+                <SectionHeadline
+                  accent="One standard."
+                  sub="Workout programming, nutrition targets, and supplement screening — one platform built entirely around the athlete who shows up when no one is watching."
+                >
                   Three tools.
                 </SectionHeadline>
 
@@ -688,8 +691,11 @@ export default function InfoPage() {
 
               <div style={{ position: "relative", zIndex: 2, maxWidth: "72rem", margin: "0 auto" }}>
                 <Eyebrow>The workflow</Eyebrow>
-                <SectionHeadline accent="Clear feedback." sub="Easy for athletes to use, quick for staff to review. Everything stays organized by athlete, team, and date.">
-                  Simple check-ins.
+                <SectionHeadline
+                  accent="Nothing else."
+                  sub="Built for the athlete who doesn't need someone watching to do the work. Simple tools. Personal accountability. Yours alone."
+                >
+                  You. The work.
                 </SectionHeadline>
 
                 <div style={{
@@ -751,7 +757,8 @@ export default function InfoPage() {
                     color: WHITE, marginBottom: "clamp(2rem, 4vw, 3.5rem)",
                   }}
                 >
-                  The database behind every scan
+                  One positive test ends everything.{" "}
+                  <span style={{ color: RED }}>We make sure that&apos;s not you.</span>
                 </motion.h2>
 
                 <div style={{
@@ -800,10 +807,10 @@ export default function InfoPage() {
               <div style={{ position: "relative", zIndex: 2, maxWidth: "72rem", margin: "0 auto" }}>
                 <Eyebrow>Why teams use CheckPeak</Eyebrow>
                 <SectionHeadline
-                  accent="plans drift."
-                  sub="Offseason, breaks, travel, and rehab are where routines get messy. CheckPeak keeps it simple: athletes check in, staff responds, everyone stays aligned."
+                  accent="depth charts are decided."
+                  sub="Not because your coach is watching. Because you decided August matters. CheckPeak is what athletes have when coaches can't be there — and the offseason still comes to collect regardless."
                 >
-                  Away-from-campus is where
+                  June is where
                 </SectionHeadline>
 
                 <div style={{
@@ -861,7 +868,7 @@ export default function InfoPage() {
                 <Eyebrow>Trusted resources</Eyebrow>
                 <SectionHeadline
                   accent="official bodies."
-                  sub="For final decisions, cross-reference official rules and your program's compliance process."
+                  sub="For final decisions, always cross-reference official rules and your program's compliance process. We are a first pass — not a final word."
                 >
                   Use CheckPeak alongside
                 </SectionHeadline>
@@ -1001,7 +1008,7 @@ export default function InfoPage() {
                   lineHeight: 1, letterSpacing: "-0.04em",
                   color: "rgba(255,255,255,0.018)", whiteSpace: "nowrap", userSelect: "none",
                 }}>
-                  SCAN
+                  AUGUST
                 </p>
               </div>
 
@@ -1019,12 +1026,11 @@ export default function InfoPage() {
                       color: WHITE, marginBottom: "1rem",
                     }}
                   >
-                    Run your next label through{" "}
-                    <span style={{ color: ACCENT }}>CheckPeak</span>{" "}
-                    in seconds.
+                    The offseason doesn&apos;t negotiate.{" "}
+                    <span style={{ color: ACCENT }}>Be ready when it collects.</span>
                   </motion.h2>
                   <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>
-                    Scan a label or search ingredients — then confirm with staff when uncertain.
+                    Scan a label. Search an ingredient. Start before August gets here.
                   </p>
                 </div>
 

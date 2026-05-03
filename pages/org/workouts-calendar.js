@@ -385,18 +385,20 @@ export default function WorkoutsCalendarPage() {
           </div>
         )}
 
-        {/* Calendar card — views are full-bleed, no inner padding */}
+        {/* Calendar card - gated on mounted to prevent SSR/client hydration mismatch */}
         <div style={{
           backgroundColor: DS.cardBg,
           border: `1px solid ${DS.border}`,
           borderTop: `3px solid ${DS.brand}`,
           overflow: "hidden",
         }}>
-          {viewMode === "week" ? (
+          {!mounted ? (
+            <div style={{ minHeight: 320 }} />
+          ) : viewMode === "week" ? (
             <WeekView
               weekDays={weekDays}
               todayISO={todayISO}
-              loading={loading || !clientReady}
+              loading={loading}
               workoutsByDate={workoutsByDate}
               onOpenDay={openDay}
               onCreateForDay={openCreateForDay}
@@ -406,7 +408,7 @@ export default function WorkoutsCalendarPage() {
               monthDays={days}
               anchorISO={anchorISO}
               todayISO={todayISO}
-              loading={loading || !clientReady}
+              loading={loading}
               workoutsByDate={workoutsByDate}
               onOpenDay={openDay}
               onJumpToMonth={(iso) => setAnchorISO(iso)}

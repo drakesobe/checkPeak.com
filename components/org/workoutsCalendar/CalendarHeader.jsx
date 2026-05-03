@@ -4,50 +4,69 @@
 import { useState } from "react";
 import {
   CalendarDays, ChevronLeft, ChevronRight,
-  RefreshCcw, Plus, LayoutDashboard, Filter,
-  AlertTriangle, ShieldCheck,
+  Plus, Filter, AlertTriangle, ShieldCheck,
+  MoreHorizontal, X,
 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import SportChips from "./SportChips";
 
-// ─── Responsive CSS ───────────────────────────────────────────────────────────
 const HEADER_CSS = `
   .ch-shell { background-color: var(--ch-brand); }
 
-  /* ── Top bar ── */
-  .ch-top {
-    padding: 10px 16px;
+  /* ── Row 1: title + create ── */
+  .ch-row1 {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 0;
     gap: 8px;
   }
   @media (min-width: 700px) {
-    .ch-top {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 20px;
-      gap: 12px;
-    }
+    .ch-row1 { padding: 10px 20px 0; }
   }
 
-  /* ── Left: title + date nav ── */
-  .ch-left {
+  /* ── Row 2: date nav + toggle + desktop actions ── */
+  .ch-row2 {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
+    padding: 8px 14px 10px;
+    gap: 8px;
     flex-wrap: wrap;
   }
+  @media (min-width: 700px) {
+    .ch-row2 { padding: 8px 20px 10px; }
+  }
 
-  /* ── Right: action buttons ── */
-  .ch-right {
+  .ch-row2-left {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
   }
 
-  /* ── Ghost button base ── */
+  /* Desktop-only action buttons — hidden on mobile */
+  .ch-desktop-actions {
+    display: none;
+  }
+  @media (min-width: 700px) {
+    .ch-desktop-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+  }
+
+  /* Mobile-only more button — hidden on desktop */
+  .ch-more-btn {
+    display: inline-flex;
+  }
+  @media (min-width: 700px) {
+    .ch-more-btn { display: none; }
+  }
+
+  /* ── Ghost button ── */
   .ch-btn {
     display: inline-flex;
     align-items: center;
@@ -65,10 +84,10 @@ const HEADER_CSS = `
     white-space: nowrap;
     line-height: 1;
   }
-  .ch-btn:hover { background-color: rgba(255,255,255,0.18); }
+  .ch-btn:hover   { background-color: rgba(255,255,255,0.18); }
   .ch-btn:disabled { opacity: 0.5; cursor: default; }
 
-  /* ── Primary create button ── */
+  /* ── Create button ── */
   .ch-btn-create {
     display: inline-flex;
     align-items: center;
@@ -88,14 +107,15 @@ const HEADER_CSS = `
   }
   .ch-btn-create:hover { background-color: #fff; }
 
-  /* ── Date nav label ── */
+  /* ── Date label ── */
   .ch-date-label {
     font-size: 13px;
     font-weight: 900;
     color: #fff;
-    padding: 4px 10px;
-    min-width: 130px;
+    padding: 4px 8px;
+    min-width: 110px;
     text-align: center;
+    white-space: nowrap;
   }
   @media (min-width: 700px) {
     .ch-date-label { min-width: 160px; }
@@ -107,7 +127,7 @@ const HEADER_CSS = `
     border: 1px solid rgba(255,255,255,0.2);
   }
   .ch-toggle-btn {
-    padding: 5px 12px;
+    padding: 5px 10px;
     font-size: 10px;
     font-weight: 900;
     text-transform: uppercase;
@@ -118,9 +138,27 @@ const HEADER_CSS = `
     transition: background-color 0.12s;
   }
 
+  /* ── Mobile dropdown menu ── */
+  .ch-mobile-menu {
+    border-top: 1px solid rgba(255,255,255,0.12);
+    background-color: rgba(0,0,0,0.18);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  @media (min-width: 700px) {
+    .ch-mobile-menu { display: none; }
+  }
+  .ch-mobile-menu-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
   /* ── Sport chips panel ── */
   .ch-sports-panel {
-    padding: 10px 16px;
+    padding: 10px 14px;
     border-top: 1px solid rgba(255,255,255,0.12);
     background-color: rgba(0,0,0,0.12);
   }
@@ -130,7 +168,7 @@ const HEADER_CSS = `
 
   /* ── Error stripe ── */
   .ch-error {
-    padding: 8px 16px;
+    padding: 8px 14px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -140,6 +178,11 @@ const HEADER_CSS = `
     border-top: 1px solid rgba(200,16,46,0.3);
     color: #FFC8C8;
   }
+
+  @keyframes ch-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
 `;
 
 export default function CalendarHeader({
@@ -147,44 +190,95 @@ export default function CalendarHeader({
   weekLabel, monthLabel,
   selectedSports, setSelectedSports, SPORTS_ALL, onOpenMoreSports,
   err, loading,
-  rangeSummary,
   onGoDashboard, onRefresh, onGoToday, onPrev, onNext, onCreateToday,
   onOpenCompliance, onOpenSeasonCalendar,
 }) {
+  const [moreOpen,   setMoreOpen]   = useState(false);
   const [sportsOpen, setSportsOpen] = useState(false);
   const primaryLabel = viewMode === "week" ? weekLabel : monthLabel;
+
+  const handleSportsToggle = () => {
+    setSportsOpen((v) => !v);
+    setMoreOpen(false);
+  };
 
   return (
     <>
       <style>{HEADER_CSS}</style>
-      <div
-        className="ch-shell"
-        style={{ "--ch-brand": DS.brand }}
-      >
-        <div className="ch-top">
+      <div className="ch-shell" style={{ "--ch-brand": DS.brand }}>
 
-          {/* ── Left: identity + date nav ── */}
-          <div className="ch-left">
+        {/* ── Row 1: Title + Create ── */}
+        <div className="ch-row1">
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <CalendarDays size={14} color="rgba(255,255,255,0.75)" />
+            <span style={{
+              fontSize: 12, fontWeight: 900, color: "#fff",
+              letterSpacing: "0.09em", textTransform: "uppercase",
+              fontFamily: "'Arial Narrow', Arial, sans-serif",
+            }}>
+              Workouts Calendar
+            </span>
+          </div>
 
-            {/* Title */}
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <CalendarDays size={15} color="rgba(255,255,255,0.75)" />
-              <span style={{
-                fontSize: 13, fontWeight: 900, color: "#fff",
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                fontFamily: "'Arial Narrow', Arial, sans-serif",
-              }}>
-                Workouts Calendar
-              </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Desktop: show all actions inline */}
+            <div className="ch-desktop-actions">
+              <button
+                className="ch-btn"
+                onClick={handleSportsToggle}
+                style={{
+                  backgroundColor: sportsOpen || selectedSports.length > 0
+                    ? "rgba(255,255,255,0.18)"
+                    : "rgba(255,255,255,0.08)",
+                }}
+              >
+                <Filter size={12} />
+                Sports
+                {selectedSports.length > 0 && (
+                  <span style={{ backgroundColor: "rgba(255,255,255,0.25)", padding: "1px 5px", fontSize: 10, fontWeight: 900 }}>
+                    {selectedSports.length}
+                  </span>
+                )}
+              </button>
+              <button className="ch-btn" onClick={(e) => { e.stopPropagation(); onOpenSeasonCalendar?.(); }}>
+                <CalendarDays size={12} />
+                Season Dates
+              </button>
+              <button className="ch-btn" onClick={(e) => { e.stopPropagation(); onOpenCompliance?.(); }}>
+                <ShieldCheck size={12} />
+                Compliance
+              </button>
             </div>
 
-            {/* Date nav */}
+            {/* Mobile: ••• menu toggle */}
+            <button
+              className="ch-btn ch-more-btn"
+              onClick={() => setMoreOpen((v) => !v)}
+              style={{
+                backgroundColor: moreOpen ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              {moreOpen ? <X size={14} /> : <MoreHorizontal size={14} />}
+            </button>
+
+            {/* Create — always visible */}
+            <button className="ch-btn-create" onClick={onCreateToday}>
+              <Plus size={13} />
+              Create
+            </button>
+          </div>
+        </div>
+
+        {/* ── Row 2: Date nav + Today + Week/Month toggle ── */}
+        <div className="ch-row2">
+          <div className="ch-row2-left">
+            {/* Prev / Label / Next */}
             <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-              <button className="ch-btn" onClick={onPrev} title="Previous">
+              <button className="ch-btn" onClick={onPrev} title="Previous" style={{ padding: "5px 8px" }}>
                 <ChevronLeft size={13} />
               </button>
               <span className="ch-date-label">{primaryLabel}</span>
-              <button className="ch-btn" onClick={onNext} title="Next">
+              <button className="ch-btn" onClick={onNext} title="Next" style={{ padding: "5px 8px" }}>
                 <ChevronRight size={13} />
               </button>
             </div>
@@ -192,7 +286,7 @@ export default function CalendarHeader({
             {/* Today */}
             <button className="ch-btn" onClick={onGoToday}>Today</button>
 
-            {/* Week / Month toggle */}
+            {/* Week / Month */}
             <div className="ch-toggle">
               {["week", "month"].map((v) => (
                 <button
@@ -209,65 +303,42 @@ export default function CalendarHeader({
               ))}
             </div>
           </div>
-
-          {/* ── Right: actions ── */}
-          <div className="ch-right">
-
-            <button
-              className="ch-btn"
-              onClick={() => setSportsOpen((v) => !v)}
-              style={{
-                backgroundColor: sportsOpen || selectedSports.length > 0
-                  ? "rgba(255,255,255,0.18)"
-                  : "rgba(255,255,255,0.08)",
-              }}
-            >
-              <Filter size={12} />
-              Sports
-              {selectedSports.length > 0 && (
-                <span style={{
-                  backgroundColor: "rgba(255,255,255,0.25)",
-                  padding: "1px 5px", fontSize: 10, fontWeight: 900,
-                }}>
-                  {selectedSports.length}
-                </span>
-              )}
-            </button>
-
-            <button className="ch-btn" onClick={onRefresh} disabled={loading}>
-              <RefreshCcw size={12} style={{ animation: loading ? "ch-spin 1s linear infinite" : "none" }} />
-              Refresh
-            </button>
-
-            <button className="ch-btn" onClick={onGoDashboard}>
-              <LayoutDashboard size={12} />
-              Dashboard
-            </button>
-
-            <button
-              className="ch-btn"
-              onClick={(e) => { e.stopPropagation(); onOpenSeasonCalendar?.(); }}
-            >
-              <CalendarDays size={12} />
-              Season Dates
-            </button>
-
-            <button
-              className="ch-btn"
-              onClick={(e) => { e.stopPropagation(); onOpenCompliance?.(); }}
-            >
-              <ShieldCheck size={12} />
-              Compliance
-            </button>
-
-            <button className="ch-btn-create" onClick={onCreateToday}>
-              <Plus size={13} />
-              Create
-            </button>
-          </div>
         </div>
 
-        {/* ── Sport chips ── */}
+        {/* ── Mobile dropdown menu ── */}
+        {moreOpen && (
+          <div className="ch-mobile-menu">
+            <div className="ch-mobile-menu-row">
+              <button
+                className="ch-btn"
+                onClick={handleSportsToggle}
+                style={{
+                  backgroundColor: sportsOpen || selectedSports.length > 0
+                    ? "rgba(255,255,255,0.18)"
+                    : "rgba(255,255,255,0.08)",
+                }}
+              >
+                <Filter size={12} />
+                Sports
+                {selectedSports.length > 0 && (
+                  <span style={{ backgroundColor: "rgba(255,255,255,0.25)", padding: "1px 5px", fontSize: 10, fontWeight: 900 }}>
+                    {selectedSports.length}
+                  </span>
+                )}
+              </button>
+              <button className="ch-btn" onClick={() => { onOpenSeasonCalendar?.(); setMoreOpen(false); }}>
+                <CalendarDays size={12} />
+                Season Dates
+              </button>
+              <button className="ch-btn" onClick={() => { onOpenCompliance?.(); setMoreOpen(false); }}>
+                <ShieldCheck size={12} />
+                Compliance
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Sport chips panel ── */}
         {sportsOpen && (
           <div className="ch-sports-panel">
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -294,8 +365,6 @@ export default function CalendarHeader({
             {err}
           </div>
         )}
-
-        <style>{`@keyframes ch-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
     </>
   );

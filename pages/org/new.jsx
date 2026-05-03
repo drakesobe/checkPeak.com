@@ -83,7 +83,7 @@ export default function NewDailyWorkout() {
       if (!res.ok) throw new Error(data?.error || "Failed to create workout");
 
       setOk("Workout assigned!");
-      setTimeout(() => router.push("/org/dashboard"), 650);
+      setTimeout(() => router.push("/org/workouts-calendar"), 650);
     } catch (e) {
       setErr(e.message || "Failed to save workout");
     } finally {
@@ -165,7 +165,7 @@ export default function NewDailyWorkout() {
         <button onClick={save} disabled={saving} style={{ padding: "10px 14px", borderRadius: 12 }}>
           {saving ? "Saving…" : "Save & Assign"}
         </button>
-        <button onClick={() => router.push("/org/dashboard")} style={{ padding: "10px 14px", borderRadius: 12, opacity: 0.9 }}>
+        <button onClick={() => router.push("/org/workouts-calendar")} style={{ padding: "10px 14px", borderRadius: 12, opacity: 0.9 }}>
           Cancel
         </button>
       </div>

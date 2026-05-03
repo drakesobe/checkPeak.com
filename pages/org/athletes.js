@@ -271,7 +271,7 @@ export default function OrgAthletesPage() {
 
         {/* ── Header ── */}
         <AthletesHeader
-          onDashboard={() => router.push("/org/dashboard")}
+          onDashboard={() => router.push("/org/workouts-calendar")}
           onSaveView={saveCurrentView}
           onRefresh={refresh}
           refreshing={loading}

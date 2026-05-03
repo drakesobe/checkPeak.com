@@ -239,7 +239,7 @@ export default function TrainersPage() {
           onFilterChange={setFilter}
           search={search}
           onSearchChange={setSearch}
-          onBack={() => router.push("/org/dashboard")}
+          onBack={() => router.push("/org/workouts-calendar")}
           onRefresh={refresh}
           onLogout={onLogout}
           onInvite={() => setInviteOpen(true)}

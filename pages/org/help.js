@@ -314,7 +314,7 @@ export default function HelpPage() {
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
           <button
             type="button"
-            onClick={() => router.push("/org/dashboard")}
+            onClick={() => router.push("/org/workouts-calendar")}
             style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
           >
             ← {isMobile ? "Back" : "Dashboard"}

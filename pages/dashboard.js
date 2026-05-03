@@ -149,7 +149,7 @@ const ROUTES = {
   smartstack:   "/smartstack-compare",
   account:      "/account",
   login:        "/login",
-  orgDashboard: "/org/dashboard",
+  orgDashboard: "/org/workouts-calendar",
 };
 
 // ---------------------------------------------------------------------------

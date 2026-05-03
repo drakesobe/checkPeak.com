@@ -237,7 +237,7 @@ export default function OrgPrescriptionsPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/org/dashboard")}
+              onClick={() => router.push("/org/workouts-calendar")}
               className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
               style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}

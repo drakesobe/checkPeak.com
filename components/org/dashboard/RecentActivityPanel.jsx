@@ -1,10 +1,10 @@
-// components/org/dashboard/RecentActivityPanel.jsx
+// components/org/workouts-calendar/RecentActivityPanel.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCcw, ArrowRight, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { DS, Button } from "@/components/org/dashboard/DashboardUI";
-import { fmtDate } from "@/lib/org/dashboard-utils";
+import { fmtDate } from "@/lib/org/workouts-calendar-utils";
 
 export default function RecentActivityPanel({
   loading, recentActivity = [], onRefresh, onViewHistory, pageSize = 6,

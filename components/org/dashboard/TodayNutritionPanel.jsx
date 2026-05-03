@@ -1,4 +1,4 @@
-// components/org/dashboard/TodayNutritionPanel.jsx
+// components/org/workouts-calendar/TodayNutritionPanel.jsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -7,7 +7,7 @@ import {
   AlertTriangle, ExternalLink, CheckCircle2,
 } from "lucide-react";
 import { DS, Button } from "@/components/org/dashboard/DashboardUI";
-import { safeJson } from "@/lib/org/dashboard-utils";
+import { safeJson } from "@/lib/org/workouts-calendar-utils";
 
 function pct(n, d) {
   const nn = Number(n || 0);

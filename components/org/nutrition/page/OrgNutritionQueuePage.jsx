@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 // ─── Real imports — uncomment when integrating ────────────────────────────────
 // import { useAuthContext } from "@/hooks/useAuth";
 // import { useNutritionQueue } from "@/hooks/org/useNutritionQueue";
-// import { safeJson } from "@/lib/org/dashboard-utils";
+// import { safeJson } from "@/lib/org/workouts-calendar-utils";
 // import { normalizeRole, isOrgSideRole } from "@/lib/org/nutrition/pageUtils";
 // Then delete everything between the "STUB START" and "STUB END" comments below.
 
@@ -1605,7 +1605,7 @@ export default function OrgNutritionQueuePage() {
           mode={mode === "summary" ? "queue" : mode}
           onMode={m => setMode(m)}
           actCount={actionCount}
-          onDashboard={() => router.push("/org/dashboard")}
+          onDashboard={() => router.push("/org/workouts-calendar")}
           onPlans={() => router.push("/org/prescriptions")}
         />
 

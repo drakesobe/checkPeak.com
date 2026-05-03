@@ -1,4 +1,4 @@
-// components/org/dashboard/EditAthleteModal.jsx
+// components/org/workouts-calendar/EditAthleteModal.jsx
 "use client";
 
 import { ArrowRight } from "lucide-react";

@@ -1,4 +1,4 @@
-// components/org/dashboard/TodayWorkoutsPanel.jsx
+// components/org/workouts-calendar/TodayWorkoutsPanel.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";

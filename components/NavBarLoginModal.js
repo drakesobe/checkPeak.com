@@ -317,7 +317,7 @@ export default function NavBarLoginModal({
       if (rememberMe && typeof window !== "undefined") localStorage.setItem("user", JSON.stringify(userObj));
       closeAndReset();
       const r = getNormalizedRole(userObj);
-      if (["organization", "trainer", "admin"].includes(r)) router.push("/org/dashboard");
+      if (["organization", "trainer", "admin"].includes(r)) router.push("/org/workouts-calendar");
       else router.push("/dashboard");
     } catch (err) {
       console.error("Login error:", err);
@@ -360,7 +360,7 @@ export default function NavBarLoginModal({
       if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
       if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
       const data = await signupOrganization({ name: orgSignup.name, email: orgSignup.email, password: orgSignup.password, contactName: orgSignup.contactName, phoneNumber: orgSignup.phoneNumber, website: orgSignup.website });
-      setSignupSuccess(data); closeAndReset(); router.push("/org/dashboard");
+      setSignupSuccess(data); closeAndReset(); router.push("/org/workouts-calendar");
     } catch (err) {
       console.error("Signup error:", err);
       setSignupError(err?.message || "Signup failed.");

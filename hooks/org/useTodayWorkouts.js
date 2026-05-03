@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { nyDateISO, safeJson } from "@/lib/org/dashboard-utils";
+import { nyDateISO, safeJson } from "@/lib/org/workouts-calendar-utils";
 
 function normKey(s) {
   return String(s || "").trim().toLowerCase();

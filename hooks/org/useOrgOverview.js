@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { safeJson } from "@/lib/org/dashboard-utils";
+import { safeJson } from "@/lib/org/workouts-calendar-utils";
 
 export function useOrgOverview() {
   const [loading, setLoading] = useState(true);

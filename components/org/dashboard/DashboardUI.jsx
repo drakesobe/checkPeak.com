@@ -1,4 +1,4 @@
-// components/org/dashboard/DashboardUI.jsx
+// components/org/workouts-calendar/DashboardUI.jsx
 "use client";
 
 import { useState } from "react";

@@ -1,4 +1,4 @@
-// components/org/dashboard/DashboardSection.jsx
+// components/org/workouts-calendar/DashboardSection.jsx
 "use client";
 
 import { useMemo, useState, useCallback } from "react";

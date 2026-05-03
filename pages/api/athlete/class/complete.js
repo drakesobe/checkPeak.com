@@ -29,6 +29,7 @@ const F_PHOTO_URL   = "PhotoUrl";
 const F_PUBLIC_ID   = "PublicId";
 const F_ATTENDED_AT = "AttendedAt";
 const F_COACH_NOTES = "CoachNotes";
+const F_ORG_TOKEN   = "OrgToken";
 const ATH_TOKEN     = "AthleteToken";
 const ATH_EMAIL     = "Email";
 
@@ -128,6 +129,12 @@ export default async function handler(req, res) {
     asString(auth?.athlete?.Email || auth?.athlete?.email ||
              auth?.user?.Email   || auth?.user?.email);
 
+  const orgToken = asString(
+  auth?.athlete?.OrgToken || auth?.athlete?.orgToken ||
+  auth?.user?.OrgToken   || auth?.user?.orgToken    ||
+  auth?.athlete?.Token   || auth?.user?.Token        || ""
+);
+
   // Form fields
   const classId    = asString(getValue("classId"));
   const classTitle = asString(getValue("classTitle"));
@@ -225,6 +232,7 @@ export default async function handler(req, res) {
       [F_PHOTO_URL]:   cloudResult.secure_url,
       [F_PUBLIC_ID]:   cloudResult.public_id,
       [F_ATTENDED_AT]: new Date().toISOString(),
+      ...(orgToken ? { [F_ORG_TOKEN]: orgToken } : {}),
       ...(note ? { [F_COACH_NOTES]: note } : {}),
     };
 

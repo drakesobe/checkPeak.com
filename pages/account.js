@@ -438,7 +438,7 @@ function AccountInner({ user }) {
     return formData.organization?.trim() ? formData.organization : "Organization";
   }, [isAthlete, isOrgPrimary, isOrgMember, formData.organization, formData.organizationId, user, orgNameFromSession, orgIdFromSession]);
 
-  const dashboardHref  = isOrgSide ? "/org/dashboard" : "/dashboard";
+  const dashboardHref  = isOrgSide ? "/org/workouts-calendar" : "/dashboard";
   const canSeeBilling  = role === "admin" || role === "organization";
 
   /* ---------------------------- render ---------------------------- */

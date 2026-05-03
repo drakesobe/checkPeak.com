@@ -902,7 +902,7 @@ export default function OrgMessagingPage() {
             {posts.length} posts · {conversations.length} conversations · {leaderboard.length} athletes tracked
           </p>
         </div>
-        <button type="button" onClick={() => router.push("/org/dashboard")}
+        <button type="button" onClick={() => router.push("/org/workouts-calendar")}
           style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 8, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
           ← Dashboard
         </button>

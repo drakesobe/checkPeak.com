@@ -178,7 +178,7 @@ export default function OrgAthleteDetailPage() {
       <main className="max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-10 space-y-6">
         {/* Top bar */}
         <div className="flex items-center justify-between gap-3">
-          <Link href="/org/dashboard">
+          <Link href="/org/workouts-calendar">
             <button
               type="button"
               className="px-4 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-sm font-semibold"

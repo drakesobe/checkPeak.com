@@ -111,7 +111,7 @@ export default function OrgCodeCard({ orgToken, copyOk, onCopyOrgCode }) {
       {/* Nav links */}
       <div className="mt-4 flex flex-wrap gap-2">
         <NavChip href="/org/trainers">Manage Trainers</NavChip>
-        <NavChip href="/org/dashboard">Org Dashboard</NavChip>
+        <NavChip href="/org/workouts-calendar">Org Dashboard</NavChip>
       </div>
     </div>
   );

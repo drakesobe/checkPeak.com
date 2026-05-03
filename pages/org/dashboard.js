@@ -1,31 +1,31 @@
-// pages/org/dashboard.js
+// pages/org/workouts-calendar.js
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 
-import { normalizeEmail, toCSV, downloadTextFile, safeJson } from "@/lib/org/dashboard-utils";
+import { normalizeEmail, toCSV, downloadTextFile, safeJson } from "@/lib/org/workouts-calendar-utils";
 
 import { useBillingStatus }  from "@/hooks/org/useBillingStatus";
 import { useOrgOverview }    from "@/hooks/org/useOrgOverview";
 import { usePlanTemplates }  from "@/hooks/org/usePlanTemplates";
 import { useTodayWorkouts }  from "@/hooks/org/useTodayWorkouts";
 
-import BillingGateScreen     from "@/components/org/dashboard/BillingGateScreen";
-import DashboardHeader       from "@/components/org/dashboard/DashboardHeader";
-import DashboardSection      from "@/components/org/dashboard/DashboardSection";
-import DashboardStatsGrid    from "@/components/org/dashboard/DashboardStatsGrid";
+import BillingGateScreen     from "@/components/org/workouts-calendar/BillingGateScreen";
+import DashboardHeader       from "@/components/org/workouts-calendar/DashboardHeader";
+import DashboardSection      from "@/components/org/workouts-calendar/DashboardSection";
+import DashboardStatsGrid    from "@/components/org/workouts-calendar/DashboardStatsGrid";
 
-import TodayWorkoutsPanel    from "@/components/org/dashboard/TodayWorkoutsPanel";
-import TodayNutritionPanel   from "@/components/org/dashboard/TodayNutritionPanel";
+import TodayWorkoutsPanel    from "@/components/org/workouts-calendar/TodayWorkoutsPanel";
+import TodayNutritionPanel   from "@/components/org/workouts-calendar/TodayNutritionPanel";
 
-import ActivityTemplatesPanel from "@/components/org/dashboard/ActivityTemplatesPanel";
+import ActivityTemplatesPanel from "@/components/org/workouts-calendar/ActivityTemplatesPanel";
 
-import EditAthleteModal      from "@/components/org/dashboard/EditAthleteModal";
+import EditAthleteModal      from "@/components/org/workouts-calendar/EditAthleteModal";
 
 import { DS }                from "@/components/org/dashboard/DashboardUI";
-import { normalizeRole, getOrgName } from "@/components/org/dashboard/format";
+import { normalizeRole, getOrgName } from "@/components/org/workouts-calendar/format";
 
 export default function OrgDashboard() {
   const router = useRouter();

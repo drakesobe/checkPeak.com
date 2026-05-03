@@ -1,4 +1,4 @@
-// components/org/dashboard/format.js
+// components/org/workouts-calendar/format.js
 export function fmtDate(v) {
   if (!v) return "—";
   try {

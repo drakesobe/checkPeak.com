@@ -85,7 +85,7 @@ export default function MarketingNav() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
-  const dashHref  = isOrgSide ? "/org/dashboard" : "/dashboard";
+  const dashHref  = isOrgSide ? "/org/workouts-calendar" : "/dashboard";
 
   // Only hero pages start transparent — all others start frosted
   const isHeroPage = HERO_PAGES.includes(pathname);

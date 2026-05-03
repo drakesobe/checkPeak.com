@@ -1,4 +1,4 @@
-// pages/org/dashboard.js
+// pages/org/workouts-calendar.js
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

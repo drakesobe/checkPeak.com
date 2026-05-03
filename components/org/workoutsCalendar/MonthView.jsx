@@ -77,12 +77,14 @@ export default function MonthView({
                 borderTop: `3px solid ${isToday ? DS.safe : DS.border}`,
                 display: "flex",
                 flexDirection: "column",
+                overflow: "hidden",     // ← prevents title bleeding out of cell
+                minWidth: 0,            // ← allows flex children to shrink
               }}
             >
-              <div style={{ padding: "8px 10px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+              <div style={{ padding: "8px 10px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 0, overflow: "hidden" }}>
                 {/* Date number + workout count */}
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 }}>
-                  <p style={{ fontSize: 13, fontWeight: 900, color: isToday ? DS.safe : inMonth ? DS.bodyText : DS.dimText }}>
+                  <p style={{ fontSize: 13, fontWeight: 900, color: isToday ? DS.safe : inMonth ? DS.bodyText : DS.dimText, flexShrink: 0 }}>
                     {d.getDate()}
                   </p>
                   {list.length > 0 && (
@@ -90,16 +92,21 @@ export default function MonthView({
                       fontSize: 10, fontWeight: 900, ...COND,
                       color: DS.brand, backgroundColor: DS.brandBg,
                       border: `1px solid ${DS.brandBorder}`, padding: "1px 5px",
+                      flexShrink: 0,
                     }}>
                       {list.length}
                     </span>
                   )}
                 </div>
 
-                {/* Workout preview */}
+                {/* Workout preview — title hidden on very narrow cells, count badge above handles it */}
                 {inMonth && list.length > 0 && (
-                  <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ minWidth: 0, overflow: "hidden" }}>
+                    <p style={{
+                      fontSize: 11, fontWeight: 700, color: DS.bodyText,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      maxWidth: "100%", display: "block",
+                    }}>
                       {list[0]?.Title || list[0]?.title}
                     </p>
                     {list.length > 1 && (

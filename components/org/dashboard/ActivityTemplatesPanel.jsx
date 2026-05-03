@@ -1,10 +1,10 @@
-// components/org/dashboard/ActivityTemplatesPanel.jsx
+// components/org/workouts-calendar/ActivityTemplatesPanel.jsx
 "use client";
 
 import { useMemo, useState } from "react";
 import { RefreshCcw, ArrowRight, Clock, Layers, ChevronDown, ChevronUp } from "lucide-react";
 import { DS, Button } from "@/components/org/dashboard/DashboardUI";
-import { fmtDate } from "@/lib/org/dashboard-utils";
+import { fmtDate } from "@/lib/org/workouts-calendar-utils";
 
 function ActivityRow({ it, onViewHistory }) {
   const email = String(it?.athleteEmail || "").trim().toLowerCase();

@@ -23,6 +23,7 @@ export function useReviewQueueFilters(items) {
           it?.athleteName,
           it?.athleteEmail,
           it?.coachNotes,
+          it?.type,
         ]
           .filter(Boolean)
           .join(" ")

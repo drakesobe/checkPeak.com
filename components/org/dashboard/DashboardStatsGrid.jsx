@@ -1,4 +1,4 @@
-// components/org/dashboard/DashboardStatsGrid.jsx
+// components/org/workouts-calendar/DashboardStatsGrid.jsx
 "use client";
 
 import { useMemo } from "react";

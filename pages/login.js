@@ -128,7 +128,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (isOrgSideRole) router.push("/org/dashboard");
+    if (isOrgSideRole) router.push("/org/workouts-calendar");
     else               router.push("/dashboard");
   }, [user, isOrgSideRole, router]);
 
@@ -154,7 +154,7 @@ export default function LoginPage() {
       try { if (typeof window !== "undefined") window.localStorage.removeItem("cp_prefill_login_email"); } catch {}
       const roleLabel = String(userData?.role || userData?.Role || "").toLowerCase();
       const orgSide = roleLabel.includes("org") || roleLabel.includes("admin") || roleLabel.includes("trainer");
-      if (orgSide) router.push("/org/dashboard");
+      if (orgSide) router.push("/org/workouts-calendar");
       else         router.push("/dashboard");
     } catch (err) {
       console.error(err);

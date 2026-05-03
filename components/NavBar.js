@@ -225,9 +225,8 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         <>
           <div style={{ padding: "6px 0" }}>
             <DropSection label="Workspace" />
-            <DropLink href="/org/dashboard"          icon="⬡" onClick={onClose}>Dashboard</DropLink>
+            <DropLink href="/org/workouts-calendar"  icon="⬡" onClick={onClose}>Workouts Calendar</DropLink>
             <DropLink href="/org/review-queue"       icon="✦" onClick={onClose}>Review Queue</DropLink>
-            <DropLink href="/org/workouts-calendar"  icon="◈" onClick={onClose}>Workouts Calendar</DropLink>
             <DropLink href="/org/nutrition"          icon="◎" onClick={onClose}>Nutrition</DropLink>
           </div>
           <DropDivider />
@@ -444,7 +443,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
             {isOrgSide && (
               <>
                 <div style={{ padding: "4px 0 2px", fontSize: 9, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.25)", paddingLeft: 14, marginBottom: 2 }}>Workspace</div>
-                <MLink href="/org/dashboard"         icon="⬡">Dashboard</MLink>
+                <MLink href="/org/workouts-calendar"         icon="⬡">Dashboard</MLink>
                 <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
                 <MLink href="/org/workouts-calendar" icon="◈">Workouts Calendar</MLink>
                 <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>

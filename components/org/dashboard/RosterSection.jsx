@@ -1,4 +1,4 @@
-// components/org/dashboard/RosterSection.jsx
+// components/org/workouts-calendar/RosterSection.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -6,7 +6,7 @@ import {
   Search, Filter, ChevronRight, ChevronDown,
   ChevronLeft, Mail, Pencil, ArrowRight, Users, CheckCircle2,
 } from "lucide-react";
-import { normalizeEmail, safeDate, fmtDate } from "@/lib/org/dashboard-utils";
+import { normalizeEmail, safeDate, fmtDate } from "@/lib/org/workouts-calendar-utils";
 import { DS, Button, Pill, TagChip, PlanChip } from "@/components/org/dashboard/DashboardUI";
 
 /* ── Mobile athlete card ─────────────────────────────────────────────────── */

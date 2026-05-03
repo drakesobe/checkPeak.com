@@ -1,4 +1,4 @@
-// components/org/dashboard/DashboardHeader.jsx
+// components/org/workouts-calendar/DashboardHeader.jsx
 "use client";
 
 import {

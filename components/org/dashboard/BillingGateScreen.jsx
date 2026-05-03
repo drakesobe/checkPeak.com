@@ -1,4 +1,4 @@
-// components/org/dashboard/BillingGateScreen.jsx
+// components/org/workouts-calendar/BillingGateScreen.jsx
 "use client";
 
 import { ArrowRight, LogOut, Lock } from "lucide-react";

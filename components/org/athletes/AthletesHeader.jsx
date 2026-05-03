@@ -4,8 +4,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, RefreshCcw, BookmarkPlus,
-  X, ChevronDown, Bookmark, Users,
+  RefreshCcw,
+  X, ChevronDown, Bookmark, Users, Upload,
 } from "lucide-react";
 
 function cx(...xs) { return xs.filter(Boolean).join(" "); }
@@ -31,12 +31,12 @@ function NavBtn({ onClick, disabled, children, title = "" }) {
       title={title}
       className="inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
-        padding:       "7px 11px",
-        background:    DS.cardBg,
-        border:        `1px solid ${DS.border}`,
-        color:         DS.labelText,
-        fontFamily:    "inherit",
-        whiteSpace:    "nowrap",
+        padding:    "7px 11px",
+        background: DS.cardBg,
+        border:     `1px solid ${DS.border}`,
+        color:      DS.labelText,
+        fontFamily: "inherit",
+        whiteSpace: "nowrap",
       }}
       onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = DS.brandBg; }}
       onMouseLeave={e => { e.currentTarget.style.background = DS.cardBg; }}
@@ -47,13 +47,12 @@ function NavBtn({ onClick, disabled, children, title = "" }) {
 }
 
 export default function AthletesHeader({
-  onDashboard,
-  onSaveView,
   onRefresh,
   refreshing,
   savedViews = [],
   onApplyView,
   onDeleteView,
+  onImport,
 }) {
   const [viewsOpen, setViewsOpen] = useState(false);
   const hasSavedViews = Array.isArray(savedViews) && savedViews.length > 0;
@@ -85,6 +84,30 @@ export default function AthletesHeader({
         {/* Right: nav actions */}
         <div className="flex items-center gap-1.5 shrink-0">
 
+          {/* Upload roster */}
+          {onImport && (
+            <button
+              type="button"
+              onClick={onImport}
+              title="Import athletes from CSV or Excel"
+              className="inline-flex items-center gap-1.5 rounded-xl text-xs font-bold transition-all"
+              style={{
+                padding:    "7px 13px",
+                background: DS.brand,
+                border:     `1px solid ${DS.brand}`,
+                color:      "#fff",
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = "0.88"; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Upload roster</span>
+            </button>
+          )}
+
+          {/* Saved views dropdown */}
           {hasSavedViews && (
             <div className="relative">
               <NavBtn onClick={() => setViewsOpen(o => !o)} title="Saved views">
@@ -100,7 +123,7 @@ export default function AthletesHeader({
                   className="w-3 h-3 transition-transform"
                   style={{
                     transform: viewsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                    color: DS.labelText,
+                    color:     DS.labelText,
                   }}
                 />
               </NavBtn>
@@ -157,19 +180,11 @@ export default function AthletesHeader({
             </div>
           )}
 
-          <NavBtn onClick={onSaveView} title="Save current view">
-            <BookmarkPlus className="w-3.5 h-3.5" style={{ color: DS.brand }} />
-            <span className="hidden sm:inline">Save view</span>
-          </NavBtn>
-
-          <NavBtn onClick={onDashboard} title="Back to dashboard">
-            <LayoutDashboard className="w-3.5 h-3.5" style={{ color: DS.brand }} />
-            <span className="hidden sm:inline">Dashboard</span>
-          </NavBtn>
-
+          {/* Refresh */}
           <NavBtn onClick={onRefresh} disabled={refreshing} title="Refresh">
             <RefreshCcw className={cx("w-3.5 h-3.5", refreshing ? "animate-spin" : "")} style={{ color: DS.brand }} />
           </NavBtn>
+
         </div>
       </div>
     </div>

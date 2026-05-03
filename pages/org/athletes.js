@@ -8,22 +8,23 @@ import { Toaster } from "react-hot-toast";
 
 import { cleanString, clamp, normalizeRole, getOrgKey } from "@/lib/org/athletes/utils";
 
-import { useLocalStorageState } from "@/hooks/org/athletes/useLocalStorageState";
-import { useOrgAthletes }       from "@/hooks/org/athletes/useOrgAthletes";
-import { useAthletesShortcuts } from "@/hooks/org/athletes/useAthletesShortcuts";
-import { useAthletesRosterActions } from "@/hooks/org/athletes/useAthletesRosterActions";
+import { useLocalStorageState }      from "@/hooks/org/athletes/useLocalStorageState";
+import { useOrgAthletes }            from "@/hooks/org/athletes/useOrgAthletes";
+import { useAthletesShortcuts }      from "@/hooks/org/athletes/useAthletesShortcuts";
+import { useAthletesRosterActions }  from "@/hooks/org/athletes/useAthletesRosterActions";
 
-import AthleteDrawer     from "@/components/org/athletes/AthleteDrawer";
-import AthletesToolbar   from "@/components/org/athletes/AthletesToolbar";
-import AthletesList      from "@/components/org/athletes/AthletesList";
-import AthletesBulkBar   from "@/components/org/athletes/AthletesBulkBar";
-import AthletesHeader    from "@/components/org/athletes/AthletesHeader";
-import AthletesStats     from "@/components/org/athletes/AthletesStats";
+import AthleteDrawer       from "@/components/org/athletes/AthleteDrawer";
+import AthletesToolbar     from "@/components/org/athletes/AthletesToolbar";
+import AthletesList        from "@/components/org/athletes/AthletesList";
+import AthletesBulkBar     from "@/components/org/athletes/AthletesBulkBar";
+import AthletesHeader      from "@/components/org/athletes/AthletesHeader";
+import AthletesStats       from "@/components/org/athletes/AthletesStats";
+import AthleteImportModal  from "@/components/org/athletes/AthleteImportModal"; // ← NEW
 
-// Absorbed stubs (imports kept so nothing breaks if referenced elsewhere)
-import BatchProgressCard from "@/components/org/athletes/BatchProgressCard"; // noop
-import DesktopActionRow  from "@/components/org/athletes/DesktopActionRow";  // noop
-import SavedViewsBar     from "@/components/org/athletes/SavedViewsBar";     // noop
+// Absorbed stubs
+import BatchProgressCard from "@/components/org/athletes/BatchProgressCard";
+import DesktopActionRow  from "@/components/org/athletes/DesktopActionRow";
+import SavedViewsBar     from "@/components/org/athletes/SavedViewsBar";
 
 export default function OrgAthletesPage() {
   const router = useRouter();
@@ -53,9 +54,10 @@ export default function OrgAthletesPage() {
   const [page,        setPage]        = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [activeRowId, setActiveRowId] = useState("");
-  const [drawerOpen,        setDrawerOpen]        = useState(false);
-  const [drawerAthleteId,   setDrawerAthleteId]   = useState("");
-  const [noteDirty,         setNoteDirty]         = useState(false);
+  const [drawerOpen,       setDrawerOpen]       = useState(false);
+  const [drawerAthleteId,  setDrawerAthleteId]  = useState("");
+  const [noteDirty,        setNoteDirty]        = useState(false);
+  const [importOpen,       setImportOpen]       = useState(false); // ← NEW
   const noteSaveTimer = useRef(null);
 
   useEffect(() => {
@@ -76,14 +78,14 @@ export default function OrgAthletesPage() {
 
   // Derived stats
   const stats = useMemo(() => {
-    const total       = athletes.length;
-    const ready       = athletes.filter(a => !!a.email).length;
-    const incomplete  = total - ready;
-    const doneCount   = athletes.reduce((acc, a) => acc + (coachState?.done?.[a.id]    ? 1 : 0), 0);
+    const total        = athletes.length;
+    const ready        = athletes.filter(a => !!a.email).length;
+    const incomplete   = total - ready;
+    const doneCount    = athletes.reduce((acc, a) => acc + (coachState?.done?.[a.id]    ? 1 : 0), 0);
     const starredCount = athletes.reduce((acc, a) => acc + (coachState?.starred?.[a.id] ? 1 : 0), 0);
     let newest = "";
     for (const a of athletes) {
-      const t = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const t   = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const cur = newest ? new Date(newest).getTime() : 0;
       if (t && t > cur) newest = a.createdAt;
     }
@@ -101,19 +103,13 @@ export default function OrgAthletesPage() {
         const title = String(a.title || "").toLowerCase();
         const sport = String(a.sport || "").toLowerCase();
         const team  = String(a.team  || "").toLowerCase();
-        return (
-          name.includes(q)  ||
-          email.includes(q) ||
-          title.includes(q) ||
-          sport.includes(q) ||
-          team.includes(q)
-        );
+        return name.includes(q) || email.includes(q) || title.includes(q) || sport.includes(q) || team.includes(q);
       });
     }
     if (filter === "ready")      list = list.filter(a =>  !!a.email);
-    if (filter === "incomplete")  list = list.filter(a => !a.email);
-    if (filter === "done")        list = list.filter(a =>  !!coachState?.done?.[a.id]);
-    if (filter === "starred")     list = list.filter(a =>  !!coachState?.starred?.[a.id]);
+    if (filter === "incomplete") list = list.filter(a => !a.email);
+    if (filter === "done")       list = list.filter(a =>  !!coachState?.done?.[a.id]);
+    if (filter === "starred")    list = list.filter(a =>  !!coachState?.starred?.[a.id]);
     const dir = sortDir === "asc" ? 1 : -1;
     return [...list].sort((a, b) => {
       if (sortKey === "name")  return a.name.localeCompare(b.name) * dir;
@@ -166,11 +162,10 @@ export default function OrgAthletesPage() {
 
   const actions = useAthletesRosterActions({
     router, coachState, setCoachState, selectedIds, setSelectedIds,
-    paged, filtered, selectedList, selectedEmails, openDrawer, goNextAfter,
+    paged, filtered, selectedList, selectedEmails, openDrawer, goNextAfter, setAthletesRaw,
   });
 
-
-  // Stats derived from the currently filtered list (updates with filter)
+  // Stats derived from the currently filtered list
   const filteredStats = useMemo(() => {
     const total        = filtered.length;
     const ready        = filtered.filter(a => !!a.email).length;
@@ -193,15 +188,15 @@ export default function OrgAthletesPage() {
   };
 
   useAthletesShortcuts({
-  enabled: !!user && isOrgSide,
-  drawerOpen, drawerAthlete, filtered, paged, activeRowId, searchRef,
-  closeDrawer, openDrawer, setActiveRowId,
-  toggleSelect: actions.toggleSelect,
-  openPrescriptions: actions.openPrescriptions,
-  toggleDoneAndMaybeAdvance: actions.toggleDoneAndMaybeAdvance,
-  toggleStarred: actions.toggleStarred,
-  athletesMap,
-});
+    enabled: !!user && isOrgSide,
+    drawerOpen, drawerAthlete, filtered, paged, activeRowId, searchRef,
+    closeDrawer, openDrawer, setActiveRowId,
+    toggleSelect: actions.toggleSelect,
+    openPrescriptions: actions.openPrescriptions,
+    toggleDoneAndMaybeAdvance: actions.toggleDoneAndMaybeAdvance,
+    toggleStarred: actions.toggleStarred,
+    athletesMap,
+  });
 
   useEffect(() => {
     setPage(1);
@@ -238,7 +233,7 @@ export default function OrgAthletesPage() {
   const deleteView = id => setSavedViews(prev => Array.isArray(prev) ? prev.filter(v => v.id !== id) : []);
 
   return (
-<div className="min-h-screen" style={{ background: "#F4F7FB", color: "#1A2535" }}>
+    <div className="min-h-screen" style={{ background: "#F4F7FB", color: "#1A2535" }}>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -265,18 +260,16 @@ export default function OrgAthletesPage() {
           setDrawerAthleteId("");
           await fetchAthletes();
         }}
-        onSportSaved={(athleteId, newSport) => {         // ← new
-          setAthletesRaw(prev =>                          // ← new
-            prev.map(a =>                                 // ← new
-              a.id === athleteId ? { ...a, sport: newSport } : a  // ← new
-            )                                             // ← new
-          );                                              // ← new
-        }}                                                // ← new
+        onSportSaved={(athleteId, newSport) => {
+          setAthletesRaw(prev =>
+            prev.map(a => a.id === athleteId ? { ...a, sport: newSport } : a)
+          );
+        }}
       />
 
       <main className="max-w-6xl mx-auto px-4 py-6 pb-28 space-y-4">
 
-        {/* ── 1. Header — slim, nav only ──────────────────────────────────── */}
+        {/* ── Header ── */}
         <AthletesHeader
           onDashboard={() => router.push("/org/dashboard")}
           onSaveView={saveCurrentView}
@@ -285,9 +278,10 @@ export default function OrgAthletesPage() {
           savedViews={savedViews}
           onApplyView={applyView}
           onDeleteView={deleteView}
+          onImport={() => setImportOpen(true)}
         />
 
-        {/* ── 3. Toolbar — search + filters primary, sort/export secondary ──── */}
+        {/* ── Toolbar ── */}
         <AthletesToolbar
           error={error}
           query={query}
@@ -315,10 +309,10 @@ export default function OrgAthletesPage() {
           onExportFiltered={actions.exportFilteredCsv}
         />
 
-        {/* ── 4. Stats summary — reflects current filter ─────────────────────── */}
+        {/* ── Stats ── */}
         {!loading && <AthletesStats stats={stats} filteredStats={filteredStats} />}
 
-        {/* ── 5. Athlete list ───────────────────────────────────────────────── */}
+        {/* ── Athlete list ── */}
         {loading ? (
           <div
             className="rounded-2xl px-5 py-8 text-center text-sm"
@@ -345,7 +339,7 @@ export default function OrgAthletesPage() {
 
       </main>
 
-      {/* ── Sticky bulk action bar ────────────────────────────────────────── */}
+      {/* ── Sticky bulk action bar ── */}
       <AthletesBulkBar
         selectedCount={selectedIds.size}
         selectedEmailsCount={selectedEmails.length}
@@ -358,7 +352,15 @@ export default function OrgAthletesPage() {
         onStar={() => actions.bulkStar(true)}
         onUnstar={() => actions.bulkStar(false)}
         onClear={actions.clearSelection}
+        onBulkSetSport={actions.bulkSetSport}
       />
-      </div>
+
+      {/* ── Import modal ── */}
+      <AthleteImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={refresh}
+      />
+    </div>
   );
 }

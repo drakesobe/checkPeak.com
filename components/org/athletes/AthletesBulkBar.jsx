@@ -1,8 +1,9 @@
 // components/org/athletes/AthletesBulkBar.jsx
 "use client";
 
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Download, ExternalLink, CheckCircle2, XCircle, Star, StarOff, X, Users2 } from "lucide-react";
+import { Copy, Download, ExternalLink, CheckCircle2, XCircle, Star, StarOff, X, Users2, Dumbbell, ChevronDown } from "lucide-react";
 
 const DS = {
   brand:       "#1E3A5F",
@@ -22,15 +23,19 @@ const DS = {
   dimText:     "#9BA8B4",
 };
 
+const SPORT_OPTIONS = [
+  "soccer","basketball","xc","football","track",
+  "swim","tennis","hockey","baseball","softball","wrestling",
+];
+
 function BulkBtn({ onClick, disabled, children, variant = "default", title = "" }) {
   const variants = {
-    default: { bg: DS.cardBg,   border: DS.border,       color: DS.labelText, hover: DS.brandBg   },
-    primary: { bg: DS.brand,    border: DS.brand,         color: "#fff",       hover: "#162d4a"    },
-    green:   { bg: DS.safeBg,   border: DS.safeBorder,    color: DS.safe,      hover: "#dcfae6"    },
-    danger:  { bg: DS.bannedBg, border: DS.bannedBorder,  color: DS.banned,    hover: "#ffe0e0"    },
+    default: { bg: DS.cardBg,   border: DS.border,       color: DS.labelText, hover: DS.brandBg  },
+    primary: { bg: DS.brand,    border: DS.brand,         color: "#fff",       hover: "#162d4a"   },
+    green:   { bg: DS.safeBg,   border: DS.safeBorder,    color: DS.safe,      hover: "#dcfae6"   },
+    danger:  { bg: DS.bannedBg, border: DS.bannedBorder,  color: DS.banned,    hover: "#ffe0e0"   },
   };
   const v = variants[variant] || variants.default;
-
   return (
     <button
       type="button"
@@ -59,7 +64,17 @@ export default function AthletesBulkBar({
   onStar,
   onUnstar,
   onClear,
+  onBulkSetSport,   // (sport: string) => void
 }) {
+  const [sportOpen,    setSportOpen]    = useState(false);
+  const [pendingSport, setPendingSport] = useState("");
+
+  function handleSportSelect(sport) {
+    setPendingSport(sport);
+    setSportOpen(false);
+    onBulkSetSport?.(sport);
+  }
+
   return (
     <AnimatePresence>
       {selectedCount > 0 && (
@@ -75,10 +90,10 @@ export default function AthletesBulkBar({
 
           <div
             style={{
-              background:     DS.cardBg,
-              borderTop:      `1px solid ${DS.border}`,
-              boxShadow:      "0 -4px 20px rgba(26,37,53,0.08)",
-              paddingBottom:  "max(12px, env(safe-area-inset-bottom))",
+              background:    DS.cardBg,
+              borderTop:     `1px solid ${DS.border}`,
+              boxShadow:     "0 -4px 20px rgba(26,37,53,0.08)",
+              paddingBottom: "max(12px, env(safe-area-inset-bottom))",
             }}
           >
             <div className="max-w-6xl mx-auto px-4 py-3">
@@ -110,41 +125,115 @@ export default function AthletesBulkBar({
                 </div>
 
                 {/* Actions */}
-                <div className="flex flex-wrap gap-1.5">
-                  <BulkBtn onClick={onCopyEmails}    disabled={!canCopyEmails} title="Copy selected emails">
+                <div className="flex flex-wrap gap-1.5 items-center">
+
+                  <BulkBtn onClick={onCopyEmails} disabled={!canCopyEmails} title="Copy selected emails">
                     <Copy className="w-3.5 h-3.5" />
                     Copy emails
                   </BulkBtn>
+
                   <BulkBtn onClick={onExportSelected} title="Export selected to CSV">
                     <Download className="w-3.5 h-3.5" />
                     Export CSV
                   </BulkBtn>
+
                   <BulkBtn onClick={onOpenTabs} disabled={!canCopyEmails} variant="primary" title="Open prescriptions (up to 12 tabs)">
                     <ExternalLink className="w-3.5 h-3.5" />
                     Prescriptions
                   </BulkBtn>
-                  <BulkBtn onClick={onMarkDone}  variant="green" title="Mark all selected as done">
+
+                  {/* Set sport dropdown */}
+                  <div className="relative">
+                    <BulkBtn
+                      onClick={() => setSportOpen(o => !o)}
+                      title="Set sport for selected athletes"
+                    >
+                      <Dumbbell className="w-3.5 h-3.5" />
+                      Set sport
+                      <ChevronDown
+                        className="w-3 h-3 transition-transform"
+                        style={{ transform: sportOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                      />
+                    </BulkBtn>
+
+                    <AnimatePresence>
+                      {sportOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setSportOpen(false)} />
+                          <motion.div
+                            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                            transition={{ duration: 0.13 }}
+                            className="absolute z-20 rounded-xl overflow-hidden shadow-lg"
+                            style={{
+                              bottom: "calc(100% + 8px)",
+                              left: 0,
+                              minWidth: 160,
+                              background: DS.cardBg,
+                              border: `1px solid ${DS.border}`,
+                            }}
+                          >
+                            <div
+                              className="px-3 py-2"
+                              style={{ borderBottom: `1px solid ${DS.border}` }}
+                            >
+                              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DS.dimText }}>
+                                Set sport for {selectedCount}
+                              </p>
+                            </div>
+                            {SPORT_OPTIONS.map(sport => (
+                              <button
+                                key={sport}
+                                type="button"
+                                onClick={() => handleSportSelect(sport)}
+                                className="w-full text-left px-3 py-2 text-sm font-medium capitalize transition-colors"
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  borderBottom: `1px solid ${DS.border}`,
+                                  color: DS.bodyText,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = DS.brandBg; e.currentTarget.style.color = DS.brand; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = DS.bodyText; }}
+                              >
+                                {sport}
+                              </button>
+                            ))}
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <BulkBtn onClick={onMarkDone} variant="green" title="Mark all selected as done">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Done
                   </BulkBtn>
+
                   <BulkBtn onClick={onClearDone} title="Clear done on selected">
                     <XCircle className="w-3.5 h-3.5" />
                     Undone
                   </BulkBtn>
-                  <BulkBtn onClick={onStar}   title="Star selected">
+
+                  <BulkBtn onClick={onStar} title="Star selected">
                     <Star className="w-3.5 h-3.5" />
                     Star
                   </BulkBtn>
+
                   <BulkBtn onClick={onUnstar} title="Unstar selected">
                     <StarOff className="w-3.5 h-3.5" />
                     Unstar
                   </BulkBtn>
-                  <BulkBtn onClick={onClear}  variant="danger" title="Clear selection">
+
+                  <BulkBtn onClick={onClear} variant="danger" title="Clear selection">
                     <X className="w-3.5 h-3.5" />
                     Clear
                   </BulkBtn>
-                </div>
 
+                </div>
               </div>
             </div>
           </div>

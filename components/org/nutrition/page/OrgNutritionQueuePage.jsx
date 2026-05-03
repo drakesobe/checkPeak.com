@@ -15,6 +15,7 @@ function normaliseSummaryResponse(json) {
   const summary   = json?.summary ?? {};
   const noPlanRows = needsList.map(a => ({
     athleteToken:       a.token  || a.athleteToken || "",
+    athleteEmail:         asStr(ath.email) || "",
     athleteName:        a.name   || a.athleteName  || "Athlete",
     position:           a.position || "",
     team:               a.team     || "",
@@ -603,19 +604,19 @@ function ReminderControl({ row, sending, onRemind }) {
   );
 }
 
-function QueueCard({ row, index, total, onAction, onAssign }) {
+function QueueCard({ row, index, total, onAction, onNavigate }) {
   const isMobile = useIsMobile();
   const [animating, setAnimating] = useState(false);
   const sg = getSubGroup(row);
   const statusMap = {
     noPlan:       { label:"No Plan Assigned",      color:"var(--red)",   tag:"red",   icon:"⊗", action:"Assign Plan",   desc:"This athlete has no nutrition targets. Assign a plan to enable check-ins." },
-    noCheckin:    { label:"Missed Weekly Check-In", color:"var(--amber)", tag:"amber", icon:"◎", action:"Send Reminder", desc:"Has a plan but hasn't logged this week. Opens a pre-filled email reminder." },
-    lowAdherence: { label:"Low Adherence (WTD)",    color:"var(--amber)", tag:"amber", icon:"▽", action:"Review Plan",   desc:`Logging consistently but only hitting ${Math.round(row.adherenceAvg||0)}% of targets week-to-date.` },
+    noCheckin:    { label:"Missed Weekly Check-In", color:"var(--amber)", tag:"amber", icon:"◎", action:"Send Reminder", desc:"Has a plan but hasn't logged this week. Send an email reminder." },
+    lowAdherence: { label:"Low Adherence (WTD)", color:"var(--amber)", tag:"amber", icon:"▽", action:"Review Plan", desc:`Logging consistently but only hitting ${Math.round(row.adherenceAvg||0)}% of targets week-to-date.` },
   };
   const s = statusMap[sg];
 
   function handleAction() {
-    if (sg === "noPlan") { onAssign(row); return; }
+    if (sg === "noPlan") { onNavigate(row); return; }
     setAnimating(true);
     setTimeout(() => { onAction(row, sg); setAnimating(false); }, 420);
   }
@@ -651,10 +652,12 @@ function QueueCard({ row, index, total, onAction, onAssign }) {
         <div style={{ padding:isMobile?"12px 16px":"16px 28px" }}>
           <p style={{ fontSize:14, color:"var(--chalk)", lineHeight:1.6, fontFamily:"var(--font-body)" }}>{s.desc}</p>
         </div>
-        {sg === "lowAdherence" && row.adherenceAvg != null && (
-          <div style={{ padding:isMobile?"0 16px 12px":"0 28px 16px" }}>
-            <WeeklyAdherencePill row={row} />
-          </div>
+        {sg === "lowAdherence" && (
+          <button onClick={() => onNavigate(row)} style={{ padding:"5px 12px", background:"transparent", border:"1px solid var(--rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:12, textTransform:"uppercase", color:"var(--ghost)" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="var(--wire)"; e.currentTarget.style.color="var(--chalk)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="var(--rim)"; e.currentTarget.style.color="var(--ghost)"; }}>
+            Review Plan ↗
+          </button>
         )}
         <Divider my={0} />
         <div style={{ padding:isMobile?"12px 16px":"16px 28px", display:"flex", gap:8 }}>
@@ -687,7 +690,7 @@ function QueueClear({ onViewRoster }) {
   );
 }
 
-function QueueMode({ rows, onRefresh, onViewRoster, onReminderSent }) {
+function QueueMode({ rows, onRefresh, onViewRoster, onReminderSent, onNavigate}) {
   const queue    = useMemo(() => [...rows].filter(r => getUrgency(r) < 3).sort((a,b) => getUrgency(a)-getUrgency(b)), [rows]);
   const [done,       setDone]       = useState([]);
   const [assignRow,  setAssignRow]  = useState(null);
@@ -709,7 +712,11 @@ function QueueMode({ rows, onRefresh, onViewRoster, onReminderSent }) {
       setDone(d => [...d, row.athleteToken]);
       return;
     }
-    if (type === "lowAdherence") setDone(d => [...d, row.athleteToken]);
+    if (type === "lowAdherence") {
+      onNavigate(row);
+      setDone(d => [...d, row.athleteToken]);
+      return;
+    }
   }
 
   if (queue.length === 0) return <QueueClear onViewRoster={onViewRoster} />;
@@ -734,14 +741,14 @@ function QueueMode({ rows, onRefresh, onViewRoster, onReminderSent }) {
   return (
     <div>
       {actionErr && <div style={{ marginBottom:12, padding:"10px 14px", background:"var(--red-bg)", border:"1px solid var(--red-rim)", borderRadius:3, color:"var(--red)", fontSize:13 }}>⚠ {actionErr}</div>}
-      {current && <QueueCard key={current.athleteToken} row={current} index={queue.length-remaining.length} total={queue.length} onAction={handleAction} onAssign={setAssignRow} />}
+      {current && <QueueCard key={current.athleteToken} row={current} index={queue.length-remaining.length} total={queue.length} onAction={handleAction} onNavigate={onNavigate} />}
       {assignRow && <AssignSlideOver row={assignRow} onClose={() => setAssignRow(null)} onSaved={() => { setAssignRow(null); if (current) setDone(d => [...d, current.athleteToken]); onRefresh?.(); }} />}
     </div>
   );
 }
 
 // ─── Roster mode — absorbs all functionality from old ListMode + RosterMode ───
-function RosterMode({ rows, onReminderSent }) {
+function RosterMode({ rows, onReminderSent, onNavigate }) {
   const isMobile  = useIsMobile();
   const [search,       setSearch]       = useState("");
   const [filter,       setFilter]       = useState("all");
@@ -866,10 +873,10 @@ function RosterMode({ rows, onReminderSent }) {
           const ActionCell = () => (
             <>
               {sg === "noPlan" && (
-                <button onClick={() => setAssignRow(row)} style={{ padding:"5px 12px", background:"var(--red-bg)", border:"1px solid var(--red-rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:12, textTransform:"uppercase", color:"var(--red)", transition:"all 0.15s ease", whiteSpace:"nowrap" }}
+                <button onClick={() => onNavigate(row)} style={{ padding:"5px 12px", background:"var(--red-bg)", border:"1px solid var(--red-rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:12, textTransform:"uppercase", color:"var(--red)", transition:"all 0.15s ease", whiteSpace:"nowrap" }}
                   onMouseEnter={e => { e.currentTarget.style.background="var(--red)"; e.currentTarget.style.color="#fff"; }}
                   onMouseLeave={e => { e.currentTarget.style.background="var(--red-bg)"; e.currentTarget.style.color="var(--red)"; }}>
-                  Assign Plan
+                  Assign Plan ↗
                 </button>
               )}
               {sg === "noCheckin" && (
@@ -1008,6 +1015,14 @@ export default function OrgNutritionQueuePage() {
     patchRow(athleteToken, { lastReminderSentAt:reminderData.lastReminderSentAt, reminderCount:reminderData.reminderCount });
   }, [patchRow]);
 
+  const navigateToPrescriptions = useCallback((row) => {
+  if (row?.athleteEmail) {
+    router.push(`/org/prescriptions?athleteEmail=${encodeURIComponent(row.athleteEmail)}`);
+  } else if (row?.athleteToken) {
+    router.push(`/org/prescriptions?athleteToken=${encodeURIComponent(row.athleteToken)}`);
+  }
+}, [router]);
+
   const backBtn = (
     <button onClick={() => setMode("summary")} style={{ display:"inline-flex", alignItems:"center", gap:6, marginBottom:16, background:"transparent", border:"none", cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:600, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--ghost)", transition:"color 0.15s ease" }}
       onMouseEnter={e => e.currentTarget.style.color="var(--chalk)"}
@@ -1061,14 +1076,14 @@ export default function OrgNutritionQueuePage() {
           {!loading && mode === "queue" && (
             <div>
               {backBtn}
-              <QueueMode key={key} rows={rows} onRefresh={refresh} onViewRoster={() => setMode("roster")} onReminderSent={handleReminderSent} />
+              <QueueMode key={key} rows={rows} onRefresh={refresh} onViewRoster={() => setMode("roster")} onReminderSent={handleReminderSent} onNavigate={navigateToPrescriptions} />
             </div>
           )}
 
           {!loading && mode === "roster" && (
             <div>
               {backBtn}
-              <RosterMode rows={rows} onReminderSent={handleReminderSent} />
+              <RosterMode rows={rows} onReminderSent={handleReminderSent} onNavigate={navigateToPrescriptions} />
             </div>
           )}
 

@@ -1,20 +1,20 @@
 // components/org/CreateWorkoutModal.jsx
 // Create OR Edit mode.
 // Edit mode: pass editWorkout={{ id, title, dateISO, sport, status, items, athleteIds }}
-// In edit mode the modal pre-fills all fields and calls /api/org/workouts/update-full on save.
-// Athlete reassignment is now fully supported in edit mode.
+// Recurrence: create mode supports repeating workouts by days-of-week or every-N-days.
+// Each repeat date creates independent workouts — editing one doesn't affect others.
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   X, Plus, Users, CalendarDays, Dumbbell, AlertTriangle,
-  Trash2, ChevronDown, ChevronUp, ClipboardList,
-  Link as LinkIcon, Filter, Search, CheckCircle2, Info, Edit2,
+  Trash2, ChevronDown, ChevronUp, Repeat,
+  Link as LinkIcon, Search, CheckCircle2, Info, Edit2,
 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import { loadPeriods, getActivePeriod, getVaraRequirement } from "@/lib/org/seasonCalendar";
 
-// ---------- pure helpers ----------
+// ---------- helpers ----------
 async function safeJson(res) { try { return await res.json(); } catch { return {}; } }
 function normalizeEmail(e)   { return String(e || "").trim().toLowerCase(); }
 function normalizeTeam(v)    { return String(v || "").trim().toLowerCase(); }
@@ -43,10 +43,40 @@ function renumberOrders(list) {
   return needsNorm ? cleaned.map((it,idx) => ({ ...it, Order: idx+1 })) : cleaned;
 }
 
-// Sport options matching Airtable single-select
+// ── Recurrence ────────────────────────────────────────────────────────────────
+const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MAX_DATES  = 60;
+
+function buildRecurringDates({ mode, baseDate, daysOfWeek, endDate, everyNDays, occurrences }) {
+  if (!baseDate) return [];
+  const dates = new Set([baseDate]);
+  if (mode === "daysOfWeek" && endDate && daysOfWeek.length) {
+    const end = new Date(endDate + "T12:00:00");
+    const cur = new Date(baseDate + "T12:00:00");
+    let safety = 0;
+    while (cur <= end && dates.size < MAX_DATES && safety < 500) {
+      if (daysOfWeek.includes(cur.getDay())) dates.add(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+      safety++;
+    }
+  }
+  if (mode === "everyNDays" && everyNDays >= 1 && occurrences >= 1) {
+    const cur = new Date(baseDate + "T12:00:00");
+    for (let i = 0; i < Math.min(occurrences, MAX_DATES) && dates.size < MAX_DATES; i++) {
+      dates.add(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + everyNDays);
+    }
+  }
+  return Array.from(dates).sort();
+}
+
+function formatDisplayDate(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
 const SPORT_OPTIONS = ["soccer","basketball","xc","football","track","swim","tennis","hockey","baseball","softball"];
 
-// EvidenceRequired options — must match Airtable single-select exactly
 const EVIDENCE_OPTIONS = [
   { value: "none",                    label: "None" },
   { value: "photo",                   label: "Photo" },
@@ -56,7 +86,6 @@ const EVIDENCE_OPTIONS = [
 ];
 const VALID_EVIDENCE_VALUES = new Set(EVIDENCE_OPTIONS.map(o => o.value));
 
-// ---------- DS-token primitives ----------
 const inputStyle = {
   width: "100%", padding: "10px 14px", fontSize: "13px",
   border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg,
@@ -177,7 +206,6 @@ function ModalShell({ open, title, subtitle, onClose, children }) {
           }}
           role="dialog" aria-modal="true" aria-label={title}
           onClick={e => e.stopPropagation()}>
-          {/* Header */}
           <div style={{ padding: "16px 20px", borderBottom: `1px solid ${DS.border}`, backgroundColor: DS.pageBg, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexShrink: 0 }}>
             <div>
               <p style={{ fontSize: "14px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.bodyText }}>{title}</p>
@@ -219,53 +247,163 @@ function Section({ title, label, open, onToggle, children }) {
   );
 }
 
+// ── Repeat Section component ──────────────────────────────────────────────────
+function RepeatSection({ enabled, onToggle, mode, onMode, daysOfWeek, onDaysOfWeek, endDate, onEndDate, everyNDays, onEveryNDays, occurrences, onOccurrences, previewDates }) {
+  const PREVIEW_MAX = 12;
+  const shown  = previewDates.slice(0, PREVIEW_MAX);
+  const hidden = previewDates.length - PREVIEW_MAX;
+
+  return (
+    <div style={{ border: `1px solid ${DS.border}` }}>
+      {/* Toggle row */}
+      <button type="button" onClick={onToggle}
+        className="w-full flex items-center justify-between gap-3"
+        style={{ padding: "12px 16px", backgroundColor: enabled ? DS.brandBg : DS.pageBg, cursor: "pointer", borderBottom: enabled ? `1px solid ${DS.border}` : "none", transition: "background-color 0.12s" }}
+        onMouseEnter={e => { if (!enabled) e.currentTarget.style.backgroundColor = DS.brandBg; }}
+        onMouseLeave={e => { if (!enabled) e.currentTarget.style.backgroundColor = enabled ? DS.brandBg : DS.pageBg; }}>
+        <div className="flex items-center gap-2">
+          <Repeat className="w-4 h-4" style={{ color: enabled ? DS.brand : DS.dimText }} />
+          <span style={{ fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", color: enabled ? DS.brand : DS.bodyText }}>
+            Repeat schedule
+          </span>
+          {enabled && previewDates.length > 1 && <Tag tone="brand">{previewDates.length} dates</Tag>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: enabled ? DS.brand : DS.dimText }}>
+            {enabled ? "On" : "Off"}
+          </span>
+          <div style={{ width: 32, height: 18, borderRadius: 9, backgroundColor: enabled ? DS.brand : DS.border, position: "relative", transition: "background-color 0.15s" }}>
+            <div style={{ position: "absolute", top: 2, left: enabled ? 14 : 2, width: 14, height: 14, borderRadius: "50%", backgroundColor: "#fff", transition: "left 0.15s" }} />
+          </div>
+        </div>
+      </button>
+
+      {enabled && (
+        <div style={{ padding: "16px", backgroundColor: DS.cardBg, display: "flex", flexDirection: "column", gap: "16px" }}>
+
+          {/* Mode selector */}
+          <div>
+            <span style={labelStyle}>Repeat pattern</span>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {[{ key: "daysOfWeek", label: "Days of week" }, { key: "everyNDays", label: "Every N days" }].map(({ key, label }) => (
+                <button key={key} type="button" onClick={() => onMode(key)}
+                  style={{ padding: "7px 14px", fontSize: "12px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", border: `1px solid ${mode === key ? DS.brand : DS.border}`, backgroundColor: mode === key ? DS.brand : DS.cardBg, color: mode === key ? "#fff" : DS.labelText, cursor: "pointer", transition: "all 0.12s" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Days of week inputs */}
+          {mode === "daysOfWeek" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <span style={labelStyle}>Repeat on</span>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {DAY_LABELS.map((label, idx) => {
+                    const active = daysOfWeek.includes(idx);
+                    return (
+                      <button key={idx} type="button"
+                        onClick={() => onDaysOfWeek(active ? daysOfWeek.filter(d => d !== idx) : [...daysOfWeek, idx])}
+                        style={{ width: 44, height: 44, borderRadius: "50%", border: `2px solid ${active ? DS.brand : DS.border}`, backgroundColor: active ? DS.brand : DS.cardBg, color: active ? "#fff" : DS.labelText, fontWeight: 900, fontSize: "11px", cursor: "pointer", transition: "all 0.12s" }}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <DSInput label="End date" type="date" value={endDate} onChange={e => onEndDate(e.target.value)} style={{ maxWidth: 200 }} />
+            </div>
+          )}
+
+          {/* Every N days inputs */}
+          {mode === "everyNDays" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <span style={labelStyle}>Repeat every</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input type="number" min="1" max="90" value={everyNDays}
+                    onChange={e => onEveryNDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))}
+                    style={{ ...inputStyle, width: 80 }}
+                    onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                    onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
+                  <span style={{ fontSize: "13px", color: DS.labelText, fontWeight: 700 }}>days</span>
+                </div>
+              </div>
+              <div>
+                <span style={labelStyle}>Number of times</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input type="number" min="1" max="60" value={occurrences}
+                    onChange={e => onOccurrences(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
+                    style={{ ...inputStyle, width: 80 }}
+                    onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                    onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
+                  <span style={{ fontSize: "13px", color: DS.labelText, fontWeight: 700 }}>times</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Date preview */}
+          {previewDates.length > 1 && (
+            <div style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, padding: "12px 14px" }}>
+              <p style={{ ...labelStyle, marginBottom: "10px" }}>
+                Preview — {previewDates.length} workout{previewDates.length !== 1 ? "s" : ""} will be created
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {shown.map(iso => (
+                  <span key={iso} style={{ padding: "3px 9px", fontSize: "11px", fontWeight: 700, backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}>
+                    {formatDisplayDate(iso)}
+                  </span>
+                ))}
+                {hidden > 0 && (
+                  <span style={{ padding: "3px 9px", fontSize: "11px", fontWeight: 700, backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.dimText }}>
+                    +{hidden} more
+                  </span>
+                )}
+              </div>
+              {previewDates.length >= MAX_DATES && (
+                <p style={{ fontSize: "11px", color: DS.caution, marginTop: "8px", fontWeight: 700 }}>
+                  ⚠ Capped at {MAX_DATES} dates maximum.
+                </p>
+              )}
+            </div>
+          )}
+
+          {previewDates.length <= 1 && mode === "daysOfWeek" && (
+            <p style={{ fontSize: "12px", color: DS.dimText }}>Select at least one day and an end date to preview dates.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VaraWarningBanner({ level, periodName, onSetAllVara }) {
   if (!level) return null;
- 
   const isHard = level === "hard";
   const bg     = isHard ? DS.bannedBg  : DS.cautionBg;
   const border = isHard ? DS.bannedBorder : DS.cautionBorder;
   const accent = isHard ? DS.banned    : DS.caution;
-  const icon   = isHard ? "🚫" : "⚠️";
- 
   return (
-    <div style={{
-      padding: "14px 16px",
-      background: bg,
-      border: `1px solid ${border}`,
-      borderLeft: `4px solid ${accent}`,
-    }}>
+    <div style={{ padding: "14px 16px", background: bg, border: `1px solid ${border}`, borderLeft: `4px solid ${accent}` }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>{icon}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900,
-            fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase",
-            color: accent, margin: "0 0 4px",
-          }}>
+        <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>{isHard ? "🚫" : "⚠️"}</span>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: accent, margin: "0 0 4px" }}>
             {isHard ? "VARA Required — Break Period" : "Out of Season — VARA Preferred"}
           </p>
-          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, lineHeight: 1.6, color: accent, margin: "0 0 10px" }}>
+          <p style={{ fontSize: 12, lineHeight: 1.6, color: accent, margin: "0 0 10px" }}>
             {periodName && <strong>{periodName}: </strong>}
             {isHard
-              ? "Coach-directed workouts are NOT permitted during this break. All items must be Voluntary Activity (VARA) — athlete-initiated, no coach presence or pressure."
-              : "This is an out-of-season period. Required activities are limited to 8 hrs/week. Consider marking workout items as Voluntary Activity (VARA)."
+              ? "Coach-directed workouts are NOT permitted during this break. All items must be Voluntary Activity (VARA)."
+              : "Out-of-season period. Consider marking items as Voluntary Activity (VARA)."
             }
           </p>
-          <button
-            type="button"
-            onClick={onSetAllVara}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 14px",
-              background: accent, color: "#fff",
-              fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11,
-              fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase",
-              border: "none", cursor: "pointer", transition: "filter 0.12s",
-            }}
+          <button type="button" onClick={onSetAllVara}
+            style={{ padding: "7px 14px", background: accent, color: "#fff", fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", cursor: "pointer" }}
             onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
-            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
-          >
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
             Set All Items to Voluntary Activity (VARA)
           </button>
         </div>
@@ -275,14 +413,7 @@ function VaraWarningBanner({ level, periodName, onSetAllVara }) {
 }
 
 // ============================================================
-export default function CreateWorkoutModal({
-  open, onClose,
-  dateISO,      // default date for create mode
-  sport,        // default sport for create mode
-  onCreated,    // called after create
-  onUpdated,    // called after update
-  editWorkout,  // { id, title, dateISO, sport, status, items, athleteIds } — triggers edit mode
-}) {
+export default function CreateWorkoutModal({ open, onClose, dateISO, sport, onCreated, onUpdated, editWorkout }) {
   const isEditMode = Boolean(editWorkout?.id);
 
   const [loadingAthletes, setLoadingAthletes] = useState(false);
@@ -300,11 +431,25 @@ export default function CreateWorkoutModal({
   const [saving,          setSaving]          = useState(false);
   const [err,             setErr]             = useState("");
   const [okMsg,           setOkMsg]           = useState("");
+
+  // Repeat state (create mode only)
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatMode,    setRepeatMode]    = useState("daysOfWeek");
+  const [daysOfWeek,    setDaysOfWeek]    = useState([]);
+  const [repeatEndDate, setRepeatEndDate] = useState("");
+  const [everyNDays,    setEveryNDays]    = useState(7);
+  const [occurrences,   setOccurrences]   = useState(8);
+
   const titleRef = useRef(null);
 
-  // Active date/sport (edit mode overrides props)
   const activeDate  = isEditMode ? editDate  : dateISO;
   const activeSport = isEditMode ? editSport : sport;
+
+  const computedDates = useMemo(() => {
+    if (isEditMode || !activeDate) return activeDate ? [activeDate] : [];
+    if (!repeatEnabled) return [activeDate];
+    return buildRecurringDates({ mode: repeatMode, baseDate: activeDate, daysOfWeek, endDate: repeatEndDate, everyNDays, occurrences });
+  }, [isEditMode, repeatEnabled, activeDate, repeatMode, daysOfWeek, repeatEndDate, everyNDays, occurrences]);
 
   useEffect(() => {
     if (!open) return;
@@ -314,18 +459,16 @@ export default function CreateWorkoutModal({
       setEditDate(String(editWorkout.dateISO || "").slice(0,10));
       setEditSport(editWorkout.sport || "");
       setStatus(editWorkout.status || "assigned");
-      const rawItems = Array.isArray(editWorkout.items) && editWorkout.items.length
-        ? editWorkout.items
-        : [newItem(1)];
+      const rawItems = Array.isArray(editWorkout.items) && editWorkout.items.length ? editWorkout.items : [newItem(1)];
       setItems(rawItems.map((it,idx) => ({
-        Order:            Number(it?.Order ?? it?.order ?? idx+1),
-        ExerciseName:     String(it?.ExerciseName || it?.exerciseName || it?.name || ""),
-        Sets:             toNumberOrEmpty(it?.Sets ?? it?.sets),
-        Reps:             String(it?.Reps   || it?.reps   || ""),
-        Weight:           String(it?.Weight || it?.weight || ""),
-        Rest:             String(it?.Rest   || it?.rest   || ""),
-        Instructions:     String(it?.Instructions || it?.instructions || ""),
-        VideoURL:         String(it?.VideoURL || it?.videoUrl || ""),
+        Order: Number(it?.Order ?? it?.order ?? idx+1),
+        ExerciseName: String(it?.ExerciseName || it?.exerciseName || it?.name || ""),
+        Sets: toNumberOrEmpty(it?.Sets ?? it?.sets),
+        Reps: String(it?.Reps || it?.reps || ""),
+        Weight: String(it?.Weight || it?.weight || ""),
+        Rest: String(it?.Rest || it?.rest || ""),
+        Instructions: String(it?.Instructions || it?.instructions || ""),
+        VideoURL: String(it?.VideoURL || it?.videoUrl || ""),
         EvidenceRequired: String(it?.EvidenceRequired || it?.evidenceRequired || "none"),
       })));
       setItemsOpen(true);
@@ -333,12 +476,8 @@ export default function CreateWorkoutModal({
       if (incoming.length) {
         const sel = {};
         incoming.forEach(t => { if (t) sel[String(t)] = true; });
-        setSelected(sel);
-        setShowSelectedOnly(true);
-      } else {
-        setSelected({});
-        setShowSelectedOnly(false);
-      }
+        setSelected(sel); setShowSelectedOnly(true);
+      } else { setSelected({}); setShowSelectedOnly(false); }
     } else {
       setTitle((prev) => prev || `${sport || "Workout"} — ${dateISO || ""}`);
       setStatus("assigned"); setSelected({});
@@ -346,6 +485,8 @@ export default function CreateWorkoutModal({
       setItemsOpen(typeof window !== "undefined" ? window.innerWidth >= 1024 : false);
       setItems([newItem(1)]);
       setEditDate(""); setEditSport("");
+      setRepeatEnabled(false); setRepeatMode("daysOfWeek");
+      setDaysOfWeek([]); setRepeatEndDate(""); setEveryNDays(7); setOccurrences(8);
     }
     setTimeout(() => { try { titleRef.current?.focus?.(); } catch {} }, 60);
   }, [open, isEditMode]);
@@ -369,10 +510,8 @@ export default function CreateWorkoutModal({
     return Array.from(set).sort();
   }, [athletes]);
 
-  const selectedTokens = useMemo(() =>
-    Object.entries(selected).filter(([,v]) => !!v).map(([k]) => k),
-  [selected]);
-  const selectedCount = selectedTokens.length;
+  const selectedTokens = useMemo(() => Object.entries(selected).filter(([,v]) => !!v).map(([k]) => k), [selected]);
+  const selectedCount  = selectedTokens.length;
 
   const filteredAthletes = useMemo(() => {
     const q   = String(search || "").trim().toLowerCase();
@@ -395,7 +534,6 @@ export default function CreateWorkoutModal({
     setSelected(prev => ({ ...prev, ...next }));
   };
 
-  // ---------- items ----------
   const addItem    = () => setItems(p => { const n=[...(Array.isArray(p)?p:[])]; n.push(newItem(n.length+1)); return renumberOrders(n); });
   const removeItem = (i) => setItems(p => { const n=(Array.isArray(p)?[...p]:[]).filter((_,j)=>j!==i); return renumberOrders(n.length?n:[newItem(1)]); });
   const updateItem = (i, patch) => setItems(p => { const n=Array.isArray(p)?[...p]:[]; n[i]={...(n[i]||newItem(i+1)),...patch}; return n; });
@@ -405,33 +543,31 @@ export default function CreateWorkoutModal({
     return [...list].sort((a,b) => Number(a.Order)-Number(b.Order));
   }, [items]);
 
-  const hasAnyMeaningfulItem = useMemo(() =>
-    (Array.isArray(items)?items:[]).some(it => String(it?.ExerciseName||"").trim()),
-  [items]);
+  const hasAnyMeaningfulItem = useMemo(() => (Array.isArray(items)?items:[]).some(it => String(it?.ExerciseName||"").trim()), [items]);
 
   const validateItems = () => {
     if (!hasAnyMeaningfulItem) return { ok: true, items: [] };
     const list = sortedItemsForSubmit;
     for (let i=0; i<list.length; i++) {
-      const it   = list[i] || {};
+      const it = list[i] || {};
       const sets = toNumberOrEmpty(it.Sets);
       if (sets !== "" && Number(sets) < 0) return { ok: false, error: `Item #${i+1}: Sets must be ≥ 0.` };
-      const ord  = toNumberOrEmpty(it.Order);
-      if (ord  !== "" && Number(ord) <= 0) return { ok: false, error: `Item #${i+1}: Order must be ≥ 1.` };
-      const ev   = String(it.EvidenceRequired||"none");
+      const ord = toNumberOrEmpty(it.Order);
+      if (ord !== "" && Number(ord) <= 0) return { ok: false, error: `Item #${i+1}: Order must be ≥ 1.` };
+      const ev = String(it.EvidenceRequired||"none");
       if (!VALID_EVIDENCE_VALUES.has(ev)) return { ok: false, error: `Item #${i+1}: Invalid EvidenceRequired value "${ev}".` };
     }
     const cleaned = list
       .filter(it => String(it?.ExerciseName||"").trim())
       .map((it,idx) => ({
-        Order:            Number(toNumberOrEmpty(it.Order)||idx+1),
-        ExerciseName:     String(it.ExerciseName||"").trim(),
-        Sets:             toNumberOrEmpty(it.Sets)==="" ? null : Number(it.Sets),
-        Reps:             String(it.Reps||"").trim() || null,
-        Weight:           String(it.Weight||"").trim() || null,
-        Rest:             String(it.Rest||"").trim() || null,
-        Instructions:     String(it.Instructions||"").trim() || null,
-        VideoURL:         sanitizeUrl(it.VideoURL) || null,
+        Order: Number(toNumberOrEmpty(it.Order)||idx+1),
+        ExerciseName: String(it.ExerciseName||"").trim(),
+        Sets: toNumberOrEmpty(it.Sets)==="" ? null : Number(it.Sets),
+        Reps: String(it.Reps||"").trim() || null,
+        Weight: String(it.Weight||"").trim() || null,
+        Rest: String(it.Rest||"").trim() || null,
+        Instructions: String(it.Instructions||"").trim() || null,
+        VideoURL: sanitizeUrl(it.VideoURL) || null,
         EvidenceRequired: String(it.EvidenceRequired||"none"),
       }));
     return { ok: true, items: cleaned };
@@ -439,10 +575,9 @@ export default function CreateWorkoutModal({
 
   const canSubmit = useMemo(() => {
     if (isEditMode) return Boolean(String(title||"").trim() && !saving);
-    return Boolean(activeDate && String(title||"").trim() && selectedCount && !saving);
-  }, [isEditMode, activeDate, title, selectedCount, saving]);
+    return Boolean(computedDates.length && String(title||"").trim() && selectedCount && !saving);
+  }, [isEditMode, computedDates.length, title, selectedCount, saving]);
 
-  // ── Season calendar VARA check ──
   const varaCheck = useMemo(() => {
     const date = isEditMode ? editDate : dateISO;
     if (!date) return null;
@@ -451,27 +586,15 @@ export default function CreateWorkoutModal({
     const level   = getVaraRequirement(period);
     return level ? { level, period } : null;
   }, [isEditMode, editDate, dateISO]);
- 
-  const hasNonVaraItems = useMemo(() => {
-    return (Array.isArray(items) ? items : []).some(
-      it => String(it?.EvidenceRequired || "none") !== "voluntary_activity_vara"
-    );
-  }, [items]);
- 
-  // Only show the banner when the period requires/prefers VARA AND there are non-VARA items
+
+  const hasNonVaraItems = useMemo(() => (Array.isArray(items)?items:[]).some(it => String(it?.EvidenceRequired||"none") !== "voluntary_activity_vara"), [items]);
   const showVaraWarning = varaCheck !== null && hasNonVaraItems;
- 
+
   const handleSetAllVara = useCallback(() => {
-    setItems(prev =>
-      (Array.isArray(prev) ? prev : []).map(it => ({
-        ...it,
-        EvidenceRequired: "voluntary_activity_vara",
-      }))
-    );
-    setItemsOpen(true); // open the items section so coach can see the change
+    setItems(prev => (Array.isArray(prev)?prev:[]).map(it => ({ ...it, EvidenceRequired: "voluntary_activity_vara" })));
+    setItemsOpen(true);
   }, []);
 
-  /* ── Submit ── */
   const submit = async () => {
     setErr(""); setOkMsg("");
     if (!String(title||"").trim()) return setErr("Title is required.");
@@ -479,23 +602,10 @@ export default function CreateWorkoutModal({
     if (!itemsCheck.ok) return setErr(itemsCheck.error || "Invalid items.");
 
     if (isEditMode) {
-      // ── EDIT PATH ──
       setSaving(true);
       try {
-        const body = {
-          id:         editWorkout.id,
-          title:      String(title).trim(),
-          status,
-          athleteIds: selectedTokens,   // ← send reassignment to server
-          ...(editDate  ? { date:  String(editDate).slice(0,10)  } : {}),
-          ...(editSport ? { sport: String(editSport).toLowerCase() } : {}),
-          items: itemsCheck.items,
-        };
-        const res  = await fetch("/api/org/workouts/update-full", {
-          method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const body = { id: editWorkout.id, title: String(title).trim(), status, athleteIds: selectedTokens, ...(editDate ? { date: String(editDate).slice(0,10) } : {}), ...(editSport ? { sport: String(editSport).toLowerCase() } : {}), items: itemsCheck.items };
+        const res  = await fetch("/api/org/workouts/update-full", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error || "Failed to update workout");
         setOkMsg("Workout updated!");
@@ -504,8 +614,7 @@ export default function CreateWorkoutModal({
       } catch (e) { setErr(e?.message || "Failed to update workout"); }
       finally     { setSaving(false); }
     } else {
-      // ── CREATE PATH ──
-      if (!activeDate)            return setErr("Missing date.");
+      if (!computedDates.length) return setErr("Missing date.");
       if (!selectedTokens.length) return setErr("Select at least one athlete.");
       setSaving(true);
       try {
@@ -513,22 +622,26 @@ export default function CreateWorkoutModal({
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            date: String(activeDate).slice(0,10), title: String(title).trim(), status,
-            athleteIds: selectedTokens, items: itemsCheck.items,
+            dates:      computedDates,   // multi-date array
+            date:       computedDates[0], // single-date fallback
+            title:      String(title).trim(),
+            status,
+            athleteIds: selectedTokens,
+            items:      itemsCheck.items,
             ...(activeSport ? { sport: String(activeSport) } : {}),
           }),
         });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error || "Failed to create workout");
-        setOkMsg("Workout created!");
-        onCreated?.(data?.dailyWorkout || data?.workout || null);
-        setTimeout(() => onClose?.(), 350);
+        const count = computedDates.length;
+        setOkMsg(count > 1 ? `${count} workouts created!` : "Workout created!");
+        onCreated?.(data);
+        setTimeout(() => onClose?.(), 400);
       } catch (e) { setErr(e?.message || "Failed to create workout"); }
       finally     { setSaving(false); }
     }
   };
 
-  // ---------- render ----------
   return (
     <ModalShell
       open={open}
@@ -536,7 +649,9 @@ export default function CreateWorkoutModal({
       title={isEditMode ? "Edit Workout" : "Create Workout"}
       subtitle={isEditMode
         ? `Editing: ${editWorkout?.title || "workout"} · changes overwrite all fields and items`
-        : "Select athletes, set a title, and optionally add exercise rows."}
+        : computedDates.length > 1
+          ? `Creating across ${computedDates.length} dates — each is an independent workout`
+          : "Select athletes, set a title, and optionally add exercise rows."}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
@@ -550,27 +665,19 @@ export default function CreateWorkoutModal({
           )}
           <span className="flex items-center gap-1.5 text-sm" style={{ color: DS.bodyText }}>
             <CalendarDays className="w-4 h-4" style={{ color: DS.brand }} />
-            <strong>{activeDate || "—"}</strong>
+            <strong>
+              {computedDates.length > 1
+                ? `${computedDates.length} dates (${formatDisplayDate(computedDates[0])} → ${formatDisplayDate(computedDates[computedDates.length-1])})`
+                : (activeDate || "—")}
+            </strong>
           </span>
           {activeSport && <Tag tone="brand">{activeSport}</Tag>}
-          <Tag tone={selectedCount ? "good" : "warn"}>
-            <Users className="w-3 h-3" /> {selectedCount} selected
-          </Tag>
-          <Tag tone={hasAnyMeaningfulItem ? "brand" : "neutral"}>
-            <Dumbbell className="w-3 h-3" /> {hasAnyMeaningfulItem ? `${items.length} items` : "Items optional"}
-          </Tag>
+          <Tag tone={selectedCount ? "good" : "warn"}><Users className="w-3 h-3" /> {selectedCount} selected</Tag>
+          <Tag tone={hasAnyMeaningfulItem ? "brand" : "neutral"}><Dumbbell className="w-3 h-3" /> {hasAnyMeaningfulItem ? `${items.length} items` : "Items optional"}</Tag>
         </div>
 
-        {/* VARA period warning — shown when date falls in a break/out-of-season window */}
-        {showVaraWarning && (
-          <VaraWarningBanner
-            level={varaCheck.level}
-            periodName={varaCheck.period?.name || ""}
-            onSetAllVara={handleSetAllVara}
-          />
-        )}
+        {showVaraWarning && <VaraWarningBanner level={varaCheck.level} periodName={varaCheck.period?.name || ""} onSetAllVara={handleSetAllVara} />}
 
-        {/* Errors / success */}
         {err && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "12px 16px", backgroundColor: DS.bannedBg, border: `1px solid ${DS.bannedBorder}`, borderLeft: `3px solid ${DS.banned}` }}>
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: DS.banned }} />
@@ -589,7 +696,7 @@ export default function CreateWorkoutModal({
           <div>
             <span style={labelStyle}>Workout title</span>
             <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Lower Body Strength — Team Wide"
+              placeholder="e.g. Upper Body Lift — Mon/Wed/Fri"
               style={{ ...inputStyle }}
               onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
               onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
@@ -599,8 +706,7 @@ export default function CreateWorkoutModal({
               </p>
             )}
           </div>
-          <DSSelect label="Status" value={status} onChange={e => setStatus(e.target.value)}
-            helper={isEditMode ? undefined : "Use 'assigned' for normal scheduling."}>
+          <DSSelect label="Status" value={status} onChange={e => setStatus(e.target.value)} helper={isEditMode ? undefined : "Use 'assigned' for normal scheduling."}>
             <option value="assigned">assigned</option>
             <option value="complete">complete</option>
             <option value="draft">draft</option>
@@ -608,7 +714,7 @@ export default function CreateWorkoutModal({
           </DSSelect>
         </div>
 
-        {/* Date + Sport (edit mode only) */}
+        {/* Date + Sport — edit mode only */}
         {isEditMode && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <DSInput label="Date" type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
@@ -619,23 +725,34 @@ export default function CreateWorkoutModal({
           </div>
         )}
 
-        {/* Items builder */}
-        <Section
-          title="Workout items"
-          label={hasAnyMeaningfulItem ? `${items.length} rows` : "optional"}
-          open={itemsOpen}
-          onToggle={() => setItemsOpen(v => !v)}
-        >
+        {/* Repeat section — create mode only */}
+        {!isEditMode && (
+          <RepeatSection
+            enabled={repeatEnabled}
+            onToggle={() => setRepeatEnabled(v => !v)}
+            mode={repeatMode}
+            onMode={setRepeatMode}
+            daysOfWeek={daysOfWeek}
+            onDaysOfWeek={setDaysOfWeek}
+            endDate={repeatEndDate}
+            onEndDate={setRepeatEndDate}
+            everyNDays={everyNDays}
+            onEveryNDays={setEveryNDays}
+            occurrences={occurrences}
+            onOccurrences={setOccurrences}
+            previewDates={computedDates}
+          />
+        )}
+
+        {/* Items */}
+        <Section title="Workout items" label={hasAnyMeaningfulItem ? `${items.length} rows` : "optional"} open={itemsOpen} onToggle={() => setItemsOpen(v => !v)}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-            <p style={{ fontSize: "11px", color: DS.dimText }}>
-              Rows with a blank <strong>ExerciseName</strong> are skipped on submit.
-            </p>
+            <p style={{ fontSize: "11px", color: DS.dimText }}>Rows with a blank <strong>ExerciseName</strong> are skipped on submit.</p>
             <div style={{ display: "flex", gap: "8px" }}>
               <Btn onClick={addItem}><Plus className="w-3.5 h-3.5" /> Add item</Btn>
               <Btn onClick={() => setItems([newItem(1)])}>Clear</Btn>
             </div>
           </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {(items||[]).map((it, idx) => (
               <div key={idx} style={{ border: `1px solid ${DS.border}`, padding: "14px", backgroundColor: DS.pageBg }}>
@@ -644,77 +761,49 @@ export default function CreateWorkoutModal({
                   <button type="button" onClick={() => removeItem(idx)}
                     style={{ padding: "5px", border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, cursor: "pointer" }}
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = DS.bannedBg; e.currentTarget.style.borderColor = DS.bannedBorder; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = DS.cardBg;  e.currentTarget.style.borderColor = DS.border; }}>
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = DS.cardBg; e.currentTarget.style.borderColor = DS.border; }}>
                     <Trash2 className="w-3.5 h-3.5" style={{ color: DS.dimText }} />
                   </button>
                 </div>
-
                 <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "10px", marginBottom: "10px" }}>
                   <DSInput label="Order" value={toNumberOrEmpty(it?.Order)} onChange={e => updateItem(idx,{Order:toNumberOrEmpty(e.target.value)})} placeholder="1" inputMode="numeric" />
                   <DSInput label="Exercise name" value={it?.ExerciseName||""} onChange={e => updateItem(idx,{ExerciseName:e.target.value})} placeholder="e.g. Trap Bar Deadlift" />
                 </div>
-
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px", marginBottom: "10px" }}>
                   <DSInput label="Sets"   value={toNumberOrEmpty(it?.Sets)}  onChange={e => updateItem(idx,{Sets:toNumberOrEmpty(e.target.value)})} placeholder="3" inputMode="numeric" />
                   <DSInput label="Reps"   value={it?.Reps||""}               onChange={e => updateItem(idx,{Reps:e.target.value})} placeholder="8–10" />
                   <DSInput label="Weight" value={it?.Weight||""}             onChange={e => updateItem(idx,{Weight:e.target.value})} placeholder="225 lb" />
                   <DSInput label="Rest"   value={it?.Rest||""}               onChange={e => updateItem(idx,{Rest:e.target.value})} placeholder="90s" />
                 </div>
-
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
-                  <DSSelect
-                    label="Evidence required"
-                    value={it?.EvidenceRequired||"none"}
-                    onChange={e => updateItem(idx,{EvidenceRequired:e.target.value})}
-                    helper={
-                      it?.EvidenceRequired === "voluntary_activity_vara"
-                        ? "VARA: athlete self-reports — no coach tracking."
-                        : "Must match Airtable single select."
-                    }
-                  >
-                    {EVIDENCE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
+                  <DSSelect label="Evidence required" value={it?.EvidenceRequired||"none"} onChange={e => updateItem(idx,{EvidenceRequired:e.target.value})} helper={it?.EvidenceRequired === "voluntary_activity_vara" ? "VARA: athlete self-reports — no coach tracking." : "Must match Airtable single select."}>
+                    {EVIDENCE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </DSSelect>
                   <div>
                     <span style={labelStyle}>Video URL</span>
                     <div style={{ position: "relative" }}>
                       <LinkIcon className="w-3.5 h-3.5 absolute" style={{ left:"10px",top:"50%",transform:"translateY(-50%)",color:DS.dimText,pointerEvents:"none" }} />
-                      <input value={it?.VideoURL||""} onChange={e => updateItem(idx,{VideoURL:e.target.value})}
-                        placeholder="https://…"
-                        style={{ ...inputStyle, paddingLeft: "30px" }}
+                      <input value={it?.VideoURL||""} onChange={e => updateItem(idx,{VideoURL:e.target.value})} placeholder="https://…" style={{ ...inputStyle, paddingLeft: "30px" }}
                         onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
                         onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
                     </div>
                     <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "5px" }}>YouTube, Hudl, Drive link, etc.</p>
                   </div>
                 </div>
-
-                {/* VARA notice */}
                 {it?.EvidenceRequired === "voluntary_activity_vara" && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "10px 14px", marginBottom: "10px", backgroundColor: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, borderLeft: `3px solid ${DS.caution}` }}>
                     <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: DS.caution }} />
-                    <p style={{ fontSize: "11px", fontWeight: 700, color: DS.caution, lineHeight: 1.5 }}>
-                      Voluntary Activity (VARA) — this item will not be tracked by coaching staff.
-                      Athletes self-report completion only.
-                    </p>
+                    <p style={{ fontSize: "11px", fontWeight: 700, color: DS.caution, lineHeight: 1.5 }}>VARA — this item will not be tracked by coaching staff. Athletes self-report completion only.</p>
                   </div>
                 )}
-
                 <DSTextarea label="Instructions" value={it?.Instructions||""} onChange={e => updateItem(idx,{Instructions:e.target.value})} placeholder="Coaching cues, tempo, technique notes…" />
               </div>
             ))}
           </div>
         </Section>
 
-        {/* Athlete picker — fully enabled in both create and edit mode */}
-        <Section
-          title={isEditMode ? "Reassign athletes" : "Assign athletes"}
-          label={selectedCount ? `${selectedCount} selected` : "required"}
-          open={true}
-          onToggle={() => {}}
-        >
-          {/* Toolbar */}
+        {/* Athlete picker */}
+        <Section title={isEditMode ? "Reassign athletes" : "Assign athletes"} label={selectedCount ? `${selectedCount} selected` : "required"} open={true} onToggle={() => {}}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <Tag tone={selectedCount ? "good" : "warn"}><Users className="w-3 h-3" /> {selectedCount} selected</Tag>
@@ -727,8 +816,6 @@ export default function CreateWorkoutModal({
               <Btn onClick={fetchAthletes}               disabled={loadingAthletes}>Refresh</Btn>
             </div>
           </div>
-
-          {/* Filters */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: "10px", marginBottom: "12px" }}>
             <DSSelect label="Team" value={teamFilter} onChange={e => setTeamFilter(e.target.value)}>
               <option value="all">All teams</option>
@@ -738,8 +825,7 @@ export default function CreateWorkoutModal({
               <span style={labelStyle}>Search</span>
               <div style={{ position: "relative" }}>
                 <Search className="w-3.5 h-3.5 absolute" style={{ left:"10px",top:"50%",transform:"translateY(-50%)",color:DS.dimText,pointerEvents:"none" }} />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name or email…"
-                  style={{ ...inputStyle, paddingLeft: "30px" }}
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name or email…" style={{ ...inputStyle, paddingLeft: "30px" }}
                   onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
                   onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
               </div>
@@ -747,21 +833,11 @@ export default function CreateWorkoutModal({
             <div>
               <span style={labelStyle}>View</span>
               <button type="button" onClick={() => setShowSelectedOnly(v => !v)} disabled={!selectedCount}
-                style={{
-                  ...inputStyle, fontWeight: 900, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em",
-                  cursor: !selectedCount ? "not-allowed" : "pointer",
-                  opacity: !selectedCount ? 0.45 : 1,
-                  backgroundColor: showSelectedOnly ? DS.brand : DS.cardBg,
-                  borderColor:     showSelectedOnly ? DS.brand : DS.border,
-                  color:           showSelectedOnly ? "#fff"   : DS.labelText,
-                  width: "auto", padding: "10px 14px", whiteSpace: "nowrap",
-                }}>
+                style={{ ...inputStyle, fontWeight: 900, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em", cursor: !selectedCount ? "not-allowed" : "pointer", opacity: !selectedCount ? 0.45 : 1, backgroundColor: showSelectedOnly ? DS.brand : DS.cardBg, borderColor: showSelectedOnly ? DS.brand : DS.border, color: showSelectedOnly ? "#fff" : DS.labelText, width: "auto", padding: "10px 14px", whiteSpace: "nowrap" }}>
                 {showSelectedOnly ? "Selected only" : "All"}
               </button>
             </div>
           </div>
-
-          {/* Athlete list */}
           <div style={{ maxHeight: "320px", overflowY: "auto", border: `1px solid ${DS.border}` }}>
             {loadingAthletes ? (
               <div style={{ padding: "16px", textAlign: "center" }}><p style={{ fontSize: "12px", color: DS.dimText }}>Loading athletes…</p></div>
@@ -780,18 +856,11 @@ export default function CreateWorkoutModal({
                         onMouseEnter={e => { if (!checked) e.currentTarget.parentElement.style.backgroundColor = DS.pageBg; }}
                         onMouseLeave={e => { if (!checked) e.currentTarget.parentElement.style.backgroundColor = DS.cardBg; }}>
                         <input type="checkbox" checked={checked}
-                          onChange={() => {
-                            const key = String(token||"").trim();
-                            if (key) setSelected(prev => ({ ...prev, [key]: !prev[key] }));
-                          }}
+                          onChange={() => { const key = String(token||"").trim(); if (key) setSelected(prev => ({ ...prev, [key]: !prev[key] })); }}
                           style={{ marginTop: "3px", accentColor: DS.brand, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: "13px", fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {a?.name || a?.Name || "Athlete"}
-                          </p>
-                          <p style={{ fontSize: "11px", color: DS.dimText, wordBreak: "break-all" }}>
-                            {normalizeEmail(a?.email || a?.Email) || "—"}
-                          </p>
+                          <p style={{ fontSize: "13px", fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a?.name || a?.Name || "Athlete"}</p>
+                          <p style={{ fontSize: "11px", color: DS.dimText, wordBreak: "break-all" }}>{normalizeEmail(a?.email || a?.Email) || "—"}</p>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "5px" }}>
                             {team && <Tag>{team}</Tag>}
                             {a?.needsPlan && <Tag tone="bad">Needs plan</Tag>}
@@ -805,18 +874,13 @@ export default function CreateWorkoutModal({
               </ul>
             )}
           </div>
-
-          {/* Selection summary */}
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", marginTop: "10px", padding: "10px 14px", backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
             <Tag tone={selectedCount ? "good" : "warn"}>{selectedCount} selected</Tag>
             <Tag tone="neutral">{filteredAthletes.length} shown</Tag>
             {teamFilter !== "all" && <Tag tone="brand">Team: {titleTeam(teamFilter)}</Tag>}
             {search && <Tag tone="brand">Search: "{search}"</Tag>}
             <p style={{ fontSize: "11px", color: DS.dimText, marginLeft: "auto" }}>
-              {isEditMode
-                ? "Changes to athlete selection will be applied on save."
-                : "At least one athlete required to save."
-              }
+              {isEditMode ? "Changes to athlete selection will be applied on save." : "At least one athlete required to save."}
             </p>
           </div>
         </Section>
@@ -824,10 +888,14 @@ export default function CreateWorkoutModal({
         {/* Footer */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" onClick={submit} disabled={!canSubmit}
-            title={!isEditMode && !selectedCount ? "Select at least one athlete" : undefined}>
+          <Btn variant="primary" onClick={submit} disabled={!canSubmit} title={!isEditMode && !selectedCount ? "Select at least one athlete" : undefined}>
             {isEditMode ? <Edit2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-            {saving ? (isEditMode ? "Updating…" : "Creating…") : (isEditMode ? "Save changes" : "Create workout")}
+            {saving
+              ? (isEditMode ? "Updating…" : "Creating…")
+              : isEditMode ? "Save changes"
+              : computedDates.length > 1 ? `Create ${computedDates.length} workouts`
+              : "Create workout"
+            }
           </Btn>
         </div>
       </div>

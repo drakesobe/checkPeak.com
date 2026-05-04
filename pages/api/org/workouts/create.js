@@ -185,7 +185,16 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const { athleteId, athleteIds, date, title, sport, status, items = [] } = req.body || {};
+    const { athleteId, athleteIds, date, dates, title, sport, status, items = [] } = req.body || {};
+
+    // Support multi-date creation: dates[] takes priority over single date
+    const allDates = Array.isArray(dates) && dates.length
+      ? dates.map(d => String(d).slice(0, 10)).filter(Boolean)
+      : date
+        ? [String(date).slice(0, 10)]
+        : [];
+
+    if (!allDates.length) return res.status(400).json({ error: "date or dates[] is required." });
 
     const incomingAthletes = Array.isArray(athleteIds)
       ? athleteIds.filter(Boolean)
@@ -221,16 +230,20 @@ export default async function handler(req, res) {
 
     // ✅ One DailyWorkout per athlete (best for token matching)
     for (const a of usable) {
-      const dailyWorkoutFields = {
-        [DW.ORG]: [orgId],
-        [DW.ATHLETE]: [a.athleteRecordId],
-        [DW.DATE]: String(date).slice(0, 10),
-        [DW.TITLE]: String(title || "Daily Workout"),
-        [DW.STATUS]: String(status || "assigned"),
-        ...(sport ? { [DW.SPORT]: String(sport) } : {}),
-        [DW.CREATEDBY]: [memberId],
-        [DW.ATHTOKEN]: String(a.athleteToken),
-      };
+      const createdDailyWorkouts = [];
+
+for (const targetDate of allDates) {
+  for (const a of usable) {
+    const dailyWorkoutFields = {
+      [DW.ORG]:      [orgId],
+      [DW.ATHLETE]:  [a.athleteRecordId],
+      [DW.DATE]:     targetDate,       // ← use targetDate not date
+      [DW.TITLE]:    String(title || "Daily Workout"),
+      [DW.STATUS]:   String(status || "assigned"),
+      ...(sport ? { [DW.SPORT]: String(sport) } : {}),
+      [DW.CREATEDBY]: [memberId],
+      [DW.ATHTOKEN]:  String(a.athleteToken),
+    };
 
       assertNoUndefinedFieldKeys(dailyWorkoutFields);
 
@@ -264,6 +277,10 @@ export default async function handler(req, res) {
         workoutItemIds,
         createdItemCount: workoutItemIds.length,
       });
+    }
+
+    }
+
     }
 
     return res.status(200).json({

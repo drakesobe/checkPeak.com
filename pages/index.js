@@ -323,7 +323,7 @@ const BEAT_IMAGES = [
 ];
 const BEAT_WATERMARKS = ["OFFSEASON", "PROGRAMS", "KNOW"];
 
-function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, watermark, threeLines = false }) {
+function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, watermark, threeLines = false, total = 3 }) {
   const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
 
@@ -430,7 +430,7 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
           />
           {/* FIX: opacity 0.2→0.38, size 0.58rem→0.72rem */}
           <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
-            {String(index + 1).padStart(2, "0")} / 03
+            {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
           </span>
         </motion.div>
 
@@ -488,9 +488,31 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
 // Beats are now rendered individually in the page so other sections
 // can be interleaved between them. TriptychSection sits after beat 1.
 const BEATS = [
-  { lines: [{ text: "The offseason" }, { text: "doesn't lie." }], footnote: "You send athletes home and hope. Hope they stay sharp. Hope nobody takes something stupid. Hope camp isn't the first time you find out who put the work in.", isClimax: false, threeLines: false },
-  { lines: [{ text: "Your athletes" }, { text: "know it." }], footnote: null, isClimax: false, threeLines: false },
-  { lines: [{ text: "Now" }, { text: "you will.", accent: true }], footnote: null, isClimax: true, threeLines: false },
+  {
+    lines:      [{ text: "The offseason" }, { text: "doesn't lie." }],
+    footnote:   "You send athletes home and hope. Hope they stay sharp. Hope nobody takes something stupid. Hope camp isn't the first time you find out who put the work in.",
+    isClimax:   false,
+    threeLines: false,
+  },
+  {
+    lines:      [{ text: "Your athletes" }, { text: "know it." }],
+    footnote:   null,
+    isClimax:   false,
+    threeLines: false,
+  },
+  {
+    lines:      [{ text: "Now" }, { text: "you will.", accent: true }],
+    footnote:   null,
+    isClimax:   true,
+    threeLines: false,
+  },
+  {
+    lines:      [{ text: "Built around" }, { text: "the rules.", accent: true }],
+    footnote:   "Bylaw 16. Bylaw 17. VARA. CARA. Most platforms ignore them and hope nobody checks. We built CheckPeak around them from day one — because a compliance violation isn't a bug. It's a career. Every feature exists inside the line. Not despite it.",
+    isClimax:   false,
+    threeLines: false,
+    watermark:  "COMPLIANT",
+  },
 ];
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1168,6 +1190,402 @@ function ProductMoment() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   COMPLIANCE MOMENT v2 — fixes:
+   1. Modal no longer clips — container has explicit minHeight, ghost grid
+      is decorative strips only (not height-determining cells).
+   2. Connector pill is centered and properly sized, not full-width.
+   3. Warning icon is ⚠ character, not the word "warning".
+   4. "the line." accent period is blue like the rest of the word.
+══════════════════════════════════════════════════════════════════════════ */
+
+function ComplianceMoment() {
+  const ref    = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-10%" });
+
+  const periods = [
+    { name: "Fall Season",      dates: "Sep 1 – Nov 30",  tone: "safe",    vara: null             },
+    { name: "Winter Break",     dates: "Dec 15 – Jan 5",  tone: "banned",  vara: "VARA Required"  },
+    { name: "Spring Preseason", dates: "Jan 20 – Feb 28", tone: "brand",   vara: null             },
+    { name: "Out of Season",    dates: "Mar 1 – Aug 15",  tone: "caution", vara: "VARA Preferred" },
+  ];
+
+  const toneColor = {
+    brand:   { bg: "rgba(0,112,204,0.09)",  border: "rgba(0,112,204,0.25)",  text: "#0070CC", dot: "#0070CC" },
+    safe:    { bg: "rgba(10,138,74,0.09)",  border: "rgba(10,138,74,0.25)",  text: "#0A8A4A", dot: "#0A8A4A" },
+    caution: { bg: "rgba(196,122,0,0.09)",  border: "rgba(196,122,0,0.25)",  text: "#C47A00", dot: "#C47A00" },
+    banned:  { bg: "rgba(217,43,58,0.11)",  border: "rgba(217,43,58,0.38)",  text: "#D92B3A", dot: "#D92B3A" },
+  };
+
+  return (
+    <section
+      ref={ref}
+      style={{
+        width:      "100%",
+        background: BLACK,
+        padding:    "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
+        overflow:   "hidden",
+        position:   "relative",
+        borderTop:  "0.5px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      {/* Film grain */}
+      <div aria-hidden="true" style={{
+        position: "absolute", inset: 0, zIndex: 1,
+        backgroundImage: GRAIN_URL, backgroundRepeat: "repeat",
+        backgroundSize: "256px 256px", opacity: 0.04,
+        mixBlendMode: "screen", pointerEvents: "none",
+      }} />
+
+      {/* Accent glow */}
+      <div aria-hidden="true" style={{
+        position: "absolute", left: "-8%", top: "50%",
+        transform: "translateY(-50%)", width: "45vw", height: "45vw",
+        borderRadius: "50%", zIndex: 0, pointerEvents: "none",
+        background: "radial-gradient(circle, rgba(79,171,255,0.04) 0%, transparent 65%)",
+      }} />
+
+      {/* Two-column layout */}
+      <div style={{
+        position:   "relative", zIndex: 2,
+        display:    "flex",
+        gap:        "clamp(3rem, 6vw, 6rem)",
+        alignItems: "flex-start",
+        flexWrap:   "wrap",
+      }}>
+
+        {/* ── LEFT: editorial declaration ── */}
+        <div style={{ flex: "0 0 clamp(240px, 28%, 320px)", minWidth: 0 }}>
+
+          {/* Eyebrow */}
+          <motion.div
+            initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}}
+            transition={{ duration: 0.5 }}
+            style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.5rem, 3vw, 2.25rem)" }}
+          >
+            <motion.div
+              initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
+              transition={{ duration: 0.8, delay: 0.05 }}
+              style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "left" }}
+            />
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
+              Built around the rules
+            </span>
+          </motion.div>
+
+          {/* Headline — 4 lines, last line in ACCENT */}
+          {[
+            { text: "You set",    accent: false },
+            { text: "the dates.", accent: false },
+            { text: "We hold",    accent: false },
+            { text: "the line.",  accent: true  },
+          ].map(({ text, accent }, i) => (
+            <motion.p key={i}
+              initial={{ opacity: 0, y: 40, skewY: 2 }}
+              animate={inView ? { opacity: 1, y: 0, skewY: 0 } : {}}
+              transition={{ duration: 0.9, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",
+                fontSize:   "clamp(2.8rem, 6vw, 6rem)", lineHeight: 0.88, letterSpacing: "-0.03em",
+                textTransform: "uppercase", color: accent ? ACCENT : WHITE, display: "block",
+                textShadow: "0 2px 60px rgba(0,0,0,0.8)",
+              }}
+            >{text}</motion.p>
+          ))}
+
+          {/* Body copy */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.7, delay: 0.55 }}
+            style={{ marginTop: "clamp(2rem, 4vw, 3rem)", paddingLeft: "1.25rem", borderLeft: "1.5px solid rgba(255,255,255,0.18)", maxWidth: "36ch" }}
+          >
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(0.95rem, 1.2vw, 1.05rem)", fontWeight: 400, lineHeight: 1.75, color: "rgba(255,255,255,0.62)" }}>
+              Configure your season once. Add break periods, preseason,
+              out-of-season , and more. Every workout scheduled on a restricted
+              date triggers an automatic compliance warning before it&apos;s ever saved.
+            </p>
+          </motion.div>
+
+          {/* In-app note */}
+          <motion.p
+            initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
+            transition={{ duration: 0.6, delay: 0.8 }}
+            style={{ marginTop: "clamp(1.5rem, 3vw, 2.25rem)", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.82rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.28)", lineHeight: 1.6 }}
+          >
+            Full CARA / VARA reference available in-app at any time.
+          </motion.p>
+        </div>
+
+        {/* ── RIGHT: product mock ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 48, rotateX: 4 }}
+          animate={inView ? { opacity: 1, y: 0, rotateX: 0 } : {}}
+          transition={{ duration: 1.2, delay: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          style={{
+            flex: "1 1 420px", minWidth: 0,
+            borderRadius: "10px", overflow: "hidden",
+            boxShadow: "0 2px 0 rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.75), 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)",
+            transform: "perspective(1400px) rotateX(1.5deg)", transformOrigin: "center top",
+            fontFamily: "'Barlow Condensed', sans-serif",
+          }}
+        >
+
+          {/* Browser chrome */}
+          <div style={{ background: "#16202E", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "0 16px", height: 44, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {["#FF5F57","#FFBD2E","#28C840"].map((c,i) => (
+                <div key={i} style={{ width: 12, height: 12, borderRadius: "50%", background: c, opacity: 0.85 }} />
+              ))}
+            </div>
+            <div style={{ flex: 1, maxWidth: 380, margin: "0 auto", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, height: 26, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 10px" }}>
+              <svg width="9" height="10" viewBox="0 0 12 14" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
+                <rect x="1" y="6" width="10" height="8" rx="1.5" fill="rgba(255,255,255,0.8)" />
+                <path d="M3.5 6V4a2.5 2.5 0 015 0v2" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              </svg>
+              <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.68rem", color: "rgba(255,255,255,0.45)", letterSpacing: "0.01em", whiteSpace: "nowrap" }}>
+                checkpeak.com<span style={{ opacity: 0.5 }}>/org/workouts-calendar</span>
+              </span>
+            </div>
+          </div>
+
+          {/* App NavBar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", height: 48, background: UI.surface, borderBottom: `1px solid ${UI.rim}`, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: "0.12em", color: UI.brand, textTransform: "uppercase" }}>PEAK</span>
+              <div style={{ width: 1, height: 20, background: UI.rim }} />
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", color: UI.ghost, textTransform: "uppercase" }}>Workouts Calendar</span>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[
+                { label: "Season Dates", active: true  },
+                { label: "Compliance",   active: false },
+                { label: "+ Create",     primary: true },
+              ].map(({ label, active, primary }) => (
+                <div key={label} style={{ padding: "5px 10px", borderRadius: 3, background: primary ? UI.brand : active ? UI.raised : "transparent", border: primary ? "none" : active ? `1px solid ${UI.wire}` : `1px solid ${UI.rim}`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: primary ? "#fff" : active ? UI.ink : UI.ghost }}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Calendar area with modal overlay ──
+              FIX: explicit minHeight so the modal is never clipped.
+              Ghost grid is purely decorative horizontal strips —
+              not height-determining cells.
+          ── */}
+          <div style={{
+            position:  "relative",
+            /* Tall enough to show the full modal without clipping */
+            minHeight: 520,
+            background: UI.void,
+            overflow:  "hidden",
+          }}>
+
+            {/* Ghost calendar strips (decorative, low opacity) */}
+            <div aria-hidden="true" style={{ position: "absolute", inset: 0, padding: "14px 20px 0", opacity: 0.13, pointerEvents: "none" }}>
+              {/* Day-of-week header row */}
+              <div style={{ display: "flex", gap: 3, marginBottom: 6 }}>
+                {["S","M","T","W","T","F","S"].map((d,i) => (
+                  <div key={i} style={{ flex: 1, textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, color: UI.ghost }}>{d}</div>
+                ))}
+              </div>
+              {/* Four week rows as solid strips */}
+              {[0,1,2,3].map(r => (
+                <div key={r} style={{ display: "flex", gap: 3, marginBottom: 3 }}>
+                  {[0,1,2,3,4,5,6].map(c => (
+                    <div key={c} style={{ flex: 1, height: 32, background: UI.surface, border: `1px solid ${UI.rim}`, borderRadius: 2 }} />
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* Modal backdrop */}
+            <div style={{ position: "absolute", inset: 0, background: "rgba(13,27,42,0.52)", display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 16, paddingBottom: 16 }}>
+
+              {/* ── Season Calendar Setup Modal ── */}
+              <motion.div
+                initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}}
+                transition={{ duration: 0.55, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                style={{ width: "100%", maxWidth: 520, background: UI.surface, border: `1px solid ${UI.rim}`, borderTop: `3px solid ${UI.brand}`, borderRadius: 4, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
+              >
+                {/* Header */}
+                <div style={{ padding: "11px 18px", background: UI.raised, borderBottom: `1px solid ${UI.rim}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={UI.brand} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                      </svg>
+                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: UI.ink }}>Season Calendar Setup</span>
+                    </div>
+                    <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org — synced to Airtable.</p>
+                  </div>
+                  <div style={{ width: 26, height: 26, border: `1px solid ${UI.rim}`, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, color: UI.ghost, fontSize: 14, flexShrink: 0, lineHeight: 1 }}>×</div>
+                </div>
+
+                {/* Info banner */}
+                <div style={{ padding: "8px 18px", background: "rgba(0,112,204,0.06)", borderBottom: "1px solid rgba(0,112,204,0.18)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={UI.brand} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                  </svg>
+                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, lineHeight: 1.55, color: UI.brand, margin: 0 }}>
+                    When creating a workout on a <strong>break or vacation date</strong>, CheckPeak flags it with a red warning and prompts you to switch to <strong>Voluntary Activity (VARA)</strong>. <strong>Out of season</strong> dates show amber.
+                  </p>
+                </div>
+
+                {/* Summary tags + period rows */}
+                <div style={{ padding: "11px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {/* Tags */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 3 }}>
+                    {[
+                      { label: "4 periods",       bg: UI.raised,               border: UI.rim,                color: UI.ghost  },
+                      { label: "1 VARA-required", bg: "rgba(217,43,58,0.07)",  border: "rgba(217,43,58,0.2)", color: "#D92B3A" },
+                      { label: "1 out-of-season", bg: "rgba(196,122,0,0.07)", border: "rgba(196,122,0,0.2)", color: "#C47A00" },
+                    ].map(({ label, bg, border, color }) => (
+                      <span key={label} style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, fontWeight: 700, padding: "3px 9px", background: bg, border: `1px solid ${border}`, color }}>{label}</span>
+                    ))}
+                  </div>
+
+                  {/* Periods */}
+                  {periods.map((p, i) => {
+                    const t = toneColor[p.tone];
+                    const isWinter = p.tone === "banned";
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", background: t.bg, border: `1px solid ${isWinter ? t.border : "rgba(0,0,0,0.05)"}`, borderLeft: `3px solid ${t.dot}`, outline: isWinter ? `1.5px solid ${t.dot}` : "none", outlineOffset: "-1.5px", position: "relative" }}>
+                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: t.dot, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, color: isWinter ? t.text : UI.ink, textTransform: "uppercase", letterSpacing: "0.04em" }}>{p.name}</span>
+                          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: UI.ghost, marginLeft: 8 }}>{p.dates}</span>
+                        </div>
+                        {p.vara && (
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 6px", background: t.bg, border: `1px solid ${t.border}`, color: t.text, flexShrink: 0 }}>{p.vara}</span>
+                        )}
+                        <div style={{ width: 22, height: 22, border: `1px solid ${UI.rim}`, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, color: UI.ghost, fontSize: 12, flexShrink: 0 }}>×</div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Add period */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px", border: `2px dashed ${UI.rim}`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: UI.ghost }}>
+                    + Add Period
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{ padding: "10px 18px", borderTop: `1px solid ${UI.rim}`, background: UI.raised, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org.</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ padding: "6px 14px", border: `1px solid ${UI.rim}`, background: UI.surface, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: UI.ghost }}>Cancel</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", background: UI.brand, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff" }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
+                      </svg>
+                      Save Calendar
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* ── Connector — FIX: centered pill, not full-width ── */}
+          <div style={{ background: UI.void, padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", borderTop: `1px solid ${UI.rim}` }}>
+            <div style={{ width: 1, height: 14, borderLeft: "1.5px dashed rgba(217,43,58,0.35)" }} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }} animate={inView ? { opacity: 1, scale: 1 } : {}}
+              transition={{ duration: 0.5, delay: 0.65 }}
+              style={{
+                /* FIX: inline-flex keeps pill width to its content */
+                display: "inline-flex", alignItems: "center",
+                padding: "4px 16px",
+                background: "rgba(217,43,58,0.07)",
+                border: "1px solid rgba(217,43,58,0.22)",
+                borderRadius: 20,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 900, fontSize: 11,
+                letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "#D92B3A", whiteSpace: "nowrap",
+              }}
+            >
+              Dec 20 falls in Winter Break - warning fires
+            </motion.div>
+            <div style={{ width: 1, height: 14, borderLeft: "1.5px dashed rgba(217,43,58,0.35)" }} />
+          </div>
+
+          {/* ── VARA warning fires ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.55, delay: 0.78 }}
+            style={{ padding: "14px 20px", background: "rgba(217,43,58,0.05)", borderTop: "1px solid rgba(217,43,58,0.18)" }}
+          >
+            {/* Step label */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#D92B3A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: "#fff", lineHeight: 1 }}>!</span>
+              </div>
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#D92B3A", opacity: 0.82 }}>
+                Fires automatically — before the workout is saved
+              </span>
+            </div>
+
+            {/* Warning card */}
+            <div style={{ padding: "13px 15px", background: "rgba(217,43,58,0.07)", border: "1px solid rgba(217,43,58,0.25)", borderLeft: "4px solid #D92B3A", borderRadius: 3 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                {/* FIX: ⚠ character in a circle, not the word "warning" */}
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(217,43,58,0.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, fontSize: 14, lineHeight: 1 }}>
+                  ⚠
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#D92B3A", marginBottom: 5 }}>
+                    VARA Required — Break Period
+                  </p>
+                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, lineHeight: 1.65, color: "#D92B3A", opacity: 0.88, marginBottom: 12 }}>
+                    <strong>Winter Break (Dec 15 – Jan 5):</strong> Coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA) — athlete-initiated, no coach presence.
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#D92B3A", borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff" }}>
+                      Set as Voluntary Activity (VARA)
+                    </div>
+                    <div style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${UI.rim}`, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: UI.ghost }}>
+                      Cancel
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+        </motion.div>{/* /product mock */}
+      </div>{/* /two-column */}
+
+      {/* Caption */}
+      <motion.p
+        initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
+        transition={{ duration: 0.6, delay: 1.0 }}
+        style={{ position: "relative", zIndex: 2, textAlign: "center", marginTop: "clamp(2rem, 4vw, 3.5rem)", fontFamily: "'Barlow', sans-serif", fontSize: "0.92rem", color: "rgba(255,255,255,0.38)", letterSpacing: "0.05em", lineHeight: 1.7 }}
+      >
+        Set your season once. CheckPeak flags every restricted date before it becomes a violation.
+        <br />
+        <a
+          href="/compliance/ncaa"
+          style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.88rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", textDecoration: "none", transition: "color 0.18s" }}
+          onMouseEnter={e => { e.currentTarget.style.color = ACCENT; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; }}
+        >
+          Read our full NCAA Compliance reference →
+        </a>
+      </motion.p>
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    6. FINAL CTA
    FIX: Eyebrow opacity 0.22→0.5, size 0.62rem→0.82rem — it's real content
    FIX: Sub-label "30 days free" opacity 0.22→0.5, size 0.65→0.8rem
@@ -1291,15 +1709,21 @@ export default function HomePage() {
 
         {/* Beat 1: "The offseason doesn't lie." */}
         <DeclarationBeat index={0} lines={BEATS[0].lines} footnote={BEATS[0].footnote}
-          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} />
+          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} total={4} />
 
         {/* Beat 2: "Your athletes know it." */}
         <DeclarationBeat index={1} lines={BEATS[1].lines} footnote={BEATS[1].footnote}
-          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[1]} watermark={BEAT_WATERMARKS[1]} />
+          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[1]} watermark={BEAT_WATERMARKS[1]} total={4} />
 
         {/* Beat 3: "Now you will." */}
         <DeclarationBeat index={2} lines={BEATS[2].lines} footnote={BEATS[2].footnote}
-          isClimax={true} threeLines={false} bgImage={BEAT_IMAGES[2]} watermark={BEAT_WATERMARKS[2]} />
+          isClimax={true} threeLines={false} bgImage={BEAT_IMAGES[2]} watermark={BEAT_WATERMARKS[2]} total={4} />
+
+        {/* Beat 4: "Built around the rules." */}
+        <DeclarationBeat index={3} lines={BEATS[3].lines} footnote={BEATS[3].footnote}
+          isClimax={false} threeLines={false} watermark={BEATS[3].watermark} total={4} />
+
+        <ComplianceMoment />
 
         <ProofMoment />
         <ProductMoment />

@@ -275,6 +275,81 @@ function ExerciseRow({ item, index, onChange, onRemove }) {
   );
 }
 
+function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
+  if (!activeDate || !derivedSport) return null;
+
+  if (!varaCheck) {
+    return (
+      <div style={{
+        padding: "9px 16px",
+        background: "rgba(10,138,74,0.06)",
+        border: "1px solid rgba(10,138,74,0.2)",
+        borderLeft: "3px solid #0A8A4A",
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <span style={{ fontSize: 14, flexShrink: 0 }}>✓</span>
+        <div>
+          <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#0A8A4A", margin: "0 0 2px" }}>
+            Active Season — CARA Permitted
+          </p>
+          <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
+            {fmtDate(activeDate)}{derivedSport ? ` · ${derivedSport}` : ""}. Coach-directed activities allowed. Set evidence per item.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (varaCheck.level === "soft") {
+    const period = varaCheck.period;
+    return (
+      <div style={{
+        padding: "9px 16px",
+        background: "rgba(196,122,0,0.06)",
+        border: "1px solid rgba(196,122,0,0.22)",
+        borderLeft: "3px solid #C47A00",
+        display: "flex", alignItems: "flex-start", gap: 10,
+      }}>
+        <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
+        <div>
+          <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#C47A00", margin: "0 0 2px" }}>
+            {period?.name || "Out of Season"} — VARA Strongly Preferred
+          </p>
+          <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
+            Out-of-season period. CARA is limited to 8 hrs/week. Consider setting evidence to{" "}
+            <strong style={{ color: "#C47A00" }}>Voluntary Activity (VARA)</strong>{" "}
+            — athlete-initiated, no coach presence, does not count toward CARA limits.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Hard — break period
+  const period = varaCheck.period;
+  return (
+    <div style={{
+      padding: "9px 16px",
+      background: "rgba(217,43,58,0.06)",
+      border: "1px solid rgba(217,43,58,0.25)",
+      borderLeft: "3px solid #D92B3A",
+      display: "flex", alignItems: "flex-start", gap: 10,
+    }}>
+      <span style={{ fontSize: 14, flexShrink: 0 }}>🚫</span>
+      <div>
+        <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#D92B3A", margin: "0 0 2px" }}>
+          {period?.name || "Break Period"} — VARA Required
+        </p>
+        <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
+          No coach-directed activities permitted during this period. All evidence must be set to{" "}
+          <strong style={{ color: "#D92B3A" }}>Voluntary Activity (VARA)</strong>{" "}
+          — athlete-initiated only, no coach presence, no attendance recorded.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
   const [mode,        setMode]     = useState("idle"); // idle | form | saving | saved
   const [name,        setName]     = useState("");
@@ -494,8 +569,8 @@ export default function CreateWorkoutDrawer({
   }, [athletes, search, sportFilter]);
 
   const varaCheck = useMemo(() => {
-    const date = isEdit ? editDate : dateISO;
-    if (!date) return null;
+    const date = isEdit ? editDate : activeDate;
+    if (!date || !derivedSport) return null;
     const all = Array.isArray(periodsProp)&&periodsProp.length ? periodsProp : loadPeriods();
     const applicable = all.filter(p => !Array.isArray(p.sports)||p.sports.length===0||!derivedSport||p.sports.includes(derivedSport));
     const period = getActivePeriod(date, applicable);
@@ -799,6 +874,12 @@ export default function CreateWorkoutDrawer({
           {/* ── STEP 2: WHEN + WHAT ── */}
           {step===2 && !isEdit && (
             <div style={{ padding:"20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+              <ComplianceDateBanner
+                varaCheck={varaCheck}
+                activeDate={activeDate}
+                derivedSport={derivedSport}
+              />
               {/* Date */}
               <div>
                 <span style={lbl}>Workout date *</span>
@@ -915,6 +996,12 @@ export default function CreateWorkoutDrawer({
           {/* ── STEP 3: THE WORK ── */}
           {(step===3 || isEdit) && (
             <div style={{ padding:"20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+              <ComplianceDateBanner
+                varaCheck={varaCheck}
+                activeDate={activeDate}
+                derivedSport={derivedSport}
+              />
 
               {/* Edit mode: title/status/date/sport */}
               {isEdit && (

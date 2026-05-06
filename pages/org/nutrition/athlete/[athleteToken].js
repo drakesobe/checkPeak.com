@@ -30,7 +30,7 @@ const DS = {
   dimText:    "#9BA8B4",
 };
 
-// Shared shell for loading/auth states — keeps layout stable during hydration
+// Shared shell for loading/auth states - keeps layout stable during hydration
 function Shell({ children }) {
   return (
     <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
@@ -96,7 +96,7 @@ export default function AthleteNutritionProfilePage() {
     );
   }
 
-  // Auth not confirmed yet — calm shell prevents 401 flicker
+  // Auth not confirmed yet - calm shell prevents 401 flicker
   if (!authReady) {
     return (
       <Shell>

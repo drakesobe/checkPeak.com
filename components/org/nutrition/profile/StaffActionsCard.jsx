@@ -11,11 +11,11 @@ function buildMailto({ email, name, missedThisWeek, lastCheckinAt }) {
   if (!to) return "";
   const subject = missedThisWeek
     ? "Quick nutrition completion check-in"
-    : "Nutrition — quick update";
-  const last = lastCheckinAt ? fmtIsoToNice(lastCheckinAt) : "—";
+    : "Nutrition - quick update";
+  const last = lastCheckinAt ? fmtIsoToNice(lastCheckinAt) : "-";
   const body = missedThisWeek
-    ? `Hey ${name || ""},\n\nQuick nudge — I'm not seeing a recent nutrition completion.\n\nLast completion: ${last}\n\nWhen you get a chance, please knock out your Meal + Hydration swipes for today.\n\nThanks!`
-    : `Hey ${name || ""},\n\nNice work staying consistent — your completions look current.\n\nLast completion: ${last}\n\nIf anything feels hard to follow in the dining hall, reply with what's tripping you up and I'll simplify the rule.\n\nThanks!`;
+    ? `Hey ${name || ""},\n\nQuick nudge - I'm not seeing a recent nutrition completion.\n\nLast completion: ${last}\n\nWhen you get a chance, please knock out your Meal + Hydration swipes for today.\n\nThanks!`
+    : `Hey ${name || ""},\n\nNice work staying consistent - your completions look current.\n\nLast completion: ${last}\n\nIf anything feels hard to follow in the dining hall, reply with what's tripping you up and I'll simplify the rule.\n\nThanks!`;
   return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
@@ -176,7 +176,7 @@ export function StaffActionsCard({
           <StatusRow
             ok={true}
             label="Completion current"
-            detail={`Last: ${lastCheckinAt ? fmtIsoToNice(lastCheckinAt) : "—"}`}
+            detail={`Last: ${lastCheckinAt ? fmtIsoToNice(lastCheckinAt) : "-"}`}
           />
         )}
 

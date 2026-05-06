@@ -11,7 +11,7 @@ export default function Modal({
   children,
   onClose,
   subtitle,
-  maxWidth = "560px",   // accepts px string or Tailwind class — we default to px for DS consistency
+  maxWidth = "560px",   // accepts px string or Tailwind class - we default to px for DS consistency
 }) {
   const panelRef = useRef(null);
 
@@ -30,7 +30,7 @@ export default function Modal({
 
   if (!open) return null;
 
-  // Resolve maxWidth — accept either a raw px/rem value or a legacy Tailwind class string
+  // Resolve maxWidth - accept either a raw px/rem value or a legacy Tailwind class string
   // e.g. "max-w-3xl" → we just pass it as className; a pixel value → inline style
   const isTailwind = typeof maxWidth === "string" && maxWidth.startsWith("max-w-");
   const widthStyle = isTailwind ? {} : { maxWidth };
@@ -116,7 +116,7 @@ export default function Modal({
             </button>
           </div>
 
-          {/* Body — scrollable */}
+          {/* Body - scrollable */}
           <div
             className="overflow-y-auto flex-1"
             style={{ padding: "20px" }}

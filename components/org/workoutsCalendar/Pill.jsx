@@ -3,7 +3,7 @@
 
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
-// DS-aligned tone map — matches the exact token values used across
+// DS-aligned tone map - matches the exact token values used across
 // queue, prescriptions, dashboard, and workouts calendar
 const TONES = {
   neutral: {

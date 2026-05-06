@@ -144,7 +144,7 @@ export default function InviteCard({
       onInviteCreated?.();
 
       if (url) {
-        setInviteOk("Invite created — opening email draft…");
+        setInviteOk("Invite created - opening email draft…");
         setTimeout(() => setInviteOk(""), 2500);
         openDraft();
       } else {
@@ -186,7 +186,7 @@ export default function InviteCard({
             style={{ backgroundColor: DS.warnBg, border: `1px solid ${DS.warnBorder}` }}>
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: DS.warn }} />
             <p className="text-sm font-semibold" style={{ color: DS.warn }}>
-              Trainer role — invites are disabled.
+              Trainer role - invites are disabled.
             </p>
           </div>
         )}

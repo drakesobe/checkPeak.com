@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     const memOrgTokenField = F.MEM_ORG_TOKEN || "OrgToken";
 
     // Primary filter: Organization linked-record field.
-    // Fallback: OrgToken field (legacy records only — see migration note above).
+    // Fallback: OrgToken field (legacy records only - see migration note above).
     // TODO: remove orgToken branch once all records have the Organization link.
     const filter = `OR(${orgLinkFormula(memOrgField, orgId)}, ${orgTokenFormula(memOrgTokenField, orgToken)})`;
 
@@ -103,7 +103,7 @@ export default async function handler(req, res) {
       .map((m) => ({
         id: m.id,
         ...m.fields,
-        // Normalize Active to a real boolean — Airtable checkbox fields can
+        // Normalize Active to a real boolean - Airtable checkbox fields can
         // come back as true, false, or undefined (unchecked = missing key).
         [memActiveField]:
           typeof m.fields?.[memActiveField] === "boolean"

@@ -209,8 +209,8 @@ export default function InviteModal({
               <div>
                 <FieldLabel>Role</FieldLabel>
                 <Select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                  <option value="trainer">Trainer — can use org tools</option>
-                  <option value="admin">Admin — can manage invites + members</option>
+                  <option value="trainer">Trainer - can use org tools</option>
+                  <option value="admin">Admin - can manage invites + members</option>
                 </Select>
               </div>
 
@@ -290,7 +290,7 @@ export default function InviteModal({
             Inline edit
           </p>
           <p className="text-xs leading-relaxed" style={{ color: DS.dimText }}>
-            To update name, email, role, or active status — click{" "}
+            To update name, email, role, or active status - click{" "}
             <strong style={{ color: DS.labelText }}>Edit</strong> on any row in the team table.
           </p>
         </div>

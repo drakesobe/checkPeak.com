@@ -8,7 +8,7 @@ import { useOCR, computeOCRQuality } from "@/hooks/useOCR";
 import { useCrop }                   from "@/hooks/useCrop";
 
 // ---------------------------------------------------------------------------
-// Brand tokens — CheckPeak clinical light
+// Brand tokens - CheckPeak clinical light
 // ---------------------------------------------------------------------------
 
 const DS = {

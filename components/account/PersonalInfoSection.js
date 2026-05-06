@@ -51,7 +51,7 @@ function ReadOnlyInput({ value }) {
   return (
     <input
       type="text"
-      value={value || "—"}
+      value={value || "-"}
       readOnly
       className="w-full text-sm px-3 py-2.5 outline-none cursor-default"
       style={{
@@ -138,11 +138,11 @@ export default function PersonalInfoSection({
             invalid={!validation?.phone}
           />
           {!validation?.phone && (
-            <FieldHint error>Invalid phone — digits only, optional +, 7–15 characters.</FieldHint>
+            <FieldHint error>Invalid phone - digits only, optional +, 7–15 characters.</FieldHint>
           )}
         </div>
 
-        {/* Created — read only */}
+        {/* Created - read only */}
         <div>
           <FieldLabel>Member since</FieldLabel>
           <ReadOnlyInput value={formData?.created} />

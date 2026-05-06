@@ -45,7 +45,7 @@ function deleteTempFile(path) {
   try { if (path) fs.unlinkSync(path); } catch {}
 }
 
-// Build internal base URL — works on local dev and Vercel production
+// Build internal base URL - works on local dev and Vercel production
 function siteUrl(req) {
   if (process.env.SITE_URL) return process.env.SITE_URL;
   const proto = req.headers["x-forwarded-proto"] || "https";

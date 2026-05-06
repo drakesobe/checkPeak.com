@@ -85,7 +85,7 @@ function highlightHtml(text, terms, ocrText, color = "#93c5fd") {
   return out;
 }
 
-/* ── ScanContext — always-visible briefing panel for first-time visitors ───── */
+/* ── ScanContext - always-visible briefing panel for first-time visitors ───── */
 
 const LEGEND = [
   {
@@ -102,7 +102,7 @@ const LEGEND = [
     bg:     "rgba(247,127,0,0.15)",
     text:   "#fdba74",
     title:  "Limited",
-    desc:   "Permitted out of competition only. Restricted or banned during the competitive season — timing matters.",
+    desc:   "Permitted out of competition only. Restricted or banned during the competitive season - timing matters.",
   },
   {
     type:   "Sport-Specific",
@@ -110,7 +110,7 @@ const LEGEND = [
     bg:     "rgba(91,158,201,0.15)",
     text:   "#93c5fd",
     title:  "Sport-Specific",
-    desc:   "Banned in certain sports only. Rules vary by governing body — check your specific sport's regulations.",
+    desc:   "Banned in certain sports only. Rules vary by governing body - check your specific sport's regulations.",
   },
   {
     type:   "Monitored",
@@ -196,7 +196,7 @@ function ScanContext() {
           </button>
         </div>
 
-        {/* Color legend — compact dot row, always visible */}
+        {/* Color legend - compact dot row, always visible */}
         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {LEGEND.map(item => (
             <div key={item.type} className="flex items-center gap-1.5">
@@ -216,7 +216,7 @@ function ScanContext() {
         </div>
       </div>
 
-      {/* ── Expanded detail — one card per category ─────────────────────── */}
+      {/* ── Expanded detail - one card per category ─────────────────────── */}
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -271,7 +271,7 @@ function ScanContext() {
                 <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
                   Classifications are based on{" "}
                   <span style={{ color: "rgba(255,255,255,0.75)" }}>NCAA Bylaw 31, WADA Prohibited List, and USADA guidelines</span>.
-                  This is an educational screening tool — always confirm with your athletics staff before making any decisions.
+                  This is an educational screening tool - always confirm with your athletics staff before making any decisions.
                 </p>
               </div>
             </div>
@@ -553,12 +553,12 @@ export default function ModalContent({
   error            = "",
   runOCR           = null,
   stackId          = null,
-  // activeTab kept for backward compat — content is self-contained
+  // activeTab kept for backward compat - content is self-contained
 }) {
   const [showIngredients, setShowIngredients] = useState(false);
   const [showRawText,     setShowRawText]     = useState(false);
 
-  /* Sort banned by severity automatically — no filter bar needed */
+  /* Sort banned by severity automatically - no filter bar needed */
   const sortedBanned = [...matchedRecords]
     .map(r => ({ ...r, _norm: normalizeBanType(r.banType || r._raw?.["Ban Type"]) }))
     .sort((a, b) => (SEVERITY[a._norm] ?? 3) - (SEVERITY[b._norm] ?? 3));
@@ -594,7 +594,7 @@ export default function ModalContent({
   return (
     <div className="space-y-4">
 
-      {/* ── Context strip — always shown, explains system to new visitors ── */}
+      {/* ── Context strip - always shown, explains system to new visitors ── */}
       <ScanContext />
 
       {/* ── Banned / monitored section ──────────────────────────────────── */}
@@ -635,7 +635,7 @@ export default function ModalContent({
         )}
       </div>
 
-      {/* ── Ingredients section — collapsed by default ──────────────────── */}
+      {/* ── Ingredients section - collapsed by default ──────────────────── */}
       {matchedIngredients.length > 0 && (
         <div>
           <button
@@ -665,7 +665,7 @@ export default function ModalContent({
                 </span>
               </div>
               <p className="text-xs leading-snug" style={{ color: "rgba(255,255,255,0.42)" }}>
-                Matched against our pharmacology database — benefits, interactions &amp; sources
+                Matched against our pharmacology database - benefits, interactions &amp; sources
               </p>
             </div>
             <div className="shrink-0 ml-3" style={{ color: "rgba(255,255,255,0.45)" }}>
@@ -694,7 +694,7 @@ export default function ModalContent({
         </div>
       )}
 
-      {/* ── Compliance nudge — only shown when something was flagged ──────── */}
+      {/* ── Compliance nudge - only shown when something was flagged ──────── */}
       {sortedBanned.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 4 }}
@@ -714,7 +714,7 @@ export default function ModalContent({
         </motion.div>
       )}
 
-      {/* ── Raw scan text — debug disclosure at bottom ────────────────────── */}
+      {/* ── Raw scan text - debug disclosure at bottom ────────────────────── */}
       {ocrText && (
         <div>
           <button

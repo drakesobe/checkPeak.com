@@ -289,7 +289,7 @@ export default async function handler(req, res) {
         missing: false,
 
         ExerciseName: it.ExerciseName || it.Title || it.Name || `Workout Item ${idx + 1}`,
-        // Raw string value — client uses this to distinguish none/photo/video/vara
+        // Raw string value - client uses this to distinguish none/photo/video/vara
         EvidenceRequired: evidenceRequired,
         Sets: it.Sets ?? "",
         Reps: it.Reps ?? "",

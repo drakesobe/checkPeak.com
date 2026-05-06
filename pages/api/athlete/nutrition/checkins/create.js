@@ -85,7 +85,7 @@ const CHK_NOTES        = "Notes";
 const ATH_TOKEN_FIELD   = "AthleteToken";
 const ATH_ORG_LINK_FIELD = "Organization";
 
-// NutritionPlans — Athlete is a LINKED RECORD field, not a text field.
+// NutritionPlans - Athlete is a LINKED RECORD field, not a text field.
 // Must use FIND+ARRAYJOIN to match, NOT exact equality.
 const PLAN_ATH_LINK  = "Athlete";
 const PLAN_STATUS    = "Status";
@@ -140,13 +140,13 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "AthleteScans record not found for this AthleteToken.", athleteToken });
     }
 
-    /* 2) Org links — soft-fail: warn but don't block the check-in */
+    /* 2) Org links - soft-fail: warn but don't block the check-in */
     const orgLinks = Array.isArray(athleteRec.fields?.[ATH_ORG_LINK_FIELD])
       ? athleteRec.fields[ATH_ORG_LINK_FIELD]
       : [];
 
     const orgWarning = orgLinks.length === 0
-      ? "Athlete record missing Organization link — check-in saved without org."
+      ? "Athlete record missing Organization link - check-in saved without org."
       : null;
 
     /* 3) Resolve latest plan by linked record ID (ARRAYJOIN, not exact match)

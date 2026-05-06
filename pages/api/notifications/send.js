@@ -3,11 +3,11 @@
 //
 // POST /api/notifications/send
 // Body: {
-//   athleteIds: string[]   — Airtable record IDs
+//   athleteIds: string[]   - Airtable record IDs
 //   title:      string
 //   body:       string
-//   data?:      object     — extra data for tap navigation
-//   type:       string     — 'workout_assigned' | 'meal_assigned' | 'new_message' | 'class_scheduled'
+//   data?:      object     - extra data for tap navigation
+//   type:       string     - 'workout_assigned' | 'meal_assigned' | 'new_message' | 'class_scheduled'
 // }
 
 import Airtable from 'airtable';

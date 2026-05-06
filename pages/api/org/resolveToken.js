@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       ok: true,
       org: {
         id: r.id,
-        // Airtable primary field is often "Name" — adjust if your primary field is different
+        // Airtable primary field is often "Name" - adjust if your primary field is different
         name: r.fields?.Name || r.fields?.name || "",
         token: token,
       },

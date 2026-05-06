@@ -38,7 +38,7 @@ const DS = {
   dimText:      "#9BA8B4",
 };
 
-// Matches the option values in the select below — used to derive a display label
+// Matches the option values in the select below - used to derive a display label
 const SPORT_LABELS = {
   baseball:       "Baseball",
   basketball:     "Basketball",
@@ -231,12 +231,12 @@ export default function AthleteDrawer({
   const handleSportSave = async (newSport) => {
     // Guard: need a valid Airtable record ID
     if (!athleteId) {
-      setSportError("No athlete ID — cannot save.");
+      setSportError("No athlete ID - cannot save.");
       return;
     }
     if (!athleteId.startsWith("rec")) {
       // The ID isn't an Airtable record ID. This is the most common cause
-      // of "Failed to save sport" — the athlete object uses a different ID
+      // of "Failed to save sport" - the athlete object uses a different ID
       // field than what Airtable expects. Log it so it's easy to trace.
       console.warn("[AthleteDrawer] athleteId doesn't look like an Airtable record ID:", athleteId);
     }
@@ -346,7 +346,7 @@ export default function AthleteDrawer({
                         {hasEmail ? "Ready" : "Incomplete"}
                       </span>
 
-                      {/* Sport chip — shown in header once set */}
+                      {/* Sport chip - shown in header once set */}
                       {sportLabel && (
                         <span
                           className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
@@ -527,7 +527,7 @@ export default function AthleteDrawer({
                       onFocus={e  => { e.currentTarget.style.border = `1px solid ${DS.brand}`; }}
                       onBlur={e   => { e.currentTarget.style.border = `1px solid ${sportError ? DS.bannedBorder : DS.border}`; }}
                     >
-                      <option value="">— No sport selected —</option>
+                      <option value="">- No sport selected -</option>
                       {[
                         ["baseball",       "Baseball"],
                         ["basketball",     "Basketball"],

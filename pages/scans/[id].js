@@ -1,4 +1,4 @@
-// pages/scans/[id].js — CheckPeak Scan Detail (redesigned)
+// pages/scans/[id].js - CheckPeak Scan Detail (redesigned)
 // Preserves: rename, delete, share toggle, re-analyze, all data fields
 "use client";
 
@@ -73,7 +73,7 @@ const DETAIL_CSS = `
 `;
 
 // ---------------------------------------------------------------------------
-// Logic — unchanged from original file
+// Logic - unchanged from original file
 // ---------------------------------------------------------------------------
 function getCounts(scan) {
   if (!scan) return { prohibitedCount:0, limitedCount:0, otherCount:0 };
@@ -176,7 +176,7 @@ function BannedTable({ records }) {
         <thead><tr>{["Substance","Ban Type","Banned By","Notes","Matched Terms"].map(h=><th key={h}>{h}</th>)}</tr></thead>
         <tbody>
           {records.map(b => {
-            const banType  = b?.fields?.["Ban Type"] || "—";
+            const banType  = b?.fields?.["Ban Type"] || "-";
             const raw      = banType.toLowerCase();
             const banColor = raw.includes("prohibited")||raw.includes("banned") ? CP.red
                            : raw.includes("limited")||raw.includes("threshold") ? CP.amber : CP.ghost;
@@ -191,12 +191,12 @@ function BannedTable({ records }) {
                     {banType}
                   </span>
                 </td>
-                <td>{b.fields?.["Banned By"]||"—"}</td>
-                <td>{b.fields?.Notes ? String(b.fields.Notes).slice(0,160)+(String(b.fields.Notes).length>160?"…":"") : "—"}</td>
+                <td>{b.fields?.["Banned By"]||"-"}</td>
+                <td>{b.fields?.Notes ? String(b.fields.Notes).slice(0,160)+(String(b.fields.Notes).length>160?"…":"") : "-"}</td>
                 <td>
                   {Array.isArray(b.matchedTerms)&&b.matchedTerms.length
                     ? b.matchedTerms.map((t,i)=><span key={i} style={{ display:"inline-block", marginRight:"4px", marginBottom:"3px", padding:"2px 7px", fontFamily:CP.fontBC, fontSize:"10px", letterSpacing:"0.06em", textTransform:"uppercase", color:CP.accent, background:"rgba(79,171,255,0.08)", border:`0.5px solid rgba(79,171,255,0.2)` }}>{t}</span>)
-                    : "—"}
+                    : "-"}
                 </td>
               </tr>
             );
@@ -225,12 +225,12 @@ function IngredientsTable({ records }) {
                 {ing.fields?.["Synonyms (Extended)"] && <span style={{ fontSize:"11px", color:CP.dim }}>{String(ing.fields["Synonyms (Extended)"]).slice(0,120)}{String(ing.fields["Synonyms (Extended)"]).length>120?"…":""}</span>}
               </td>
               {["Benefits","Weaknesses","Nutrient Antagonism"].map(field=>(
-                <td key={field}>{ing.fields?.[field] ? String(ing.fields[field]).slice(0,160)+(String(ing.fields[field]).length>160?"…":"") : "—"}</td>
+                <td key={field}>{ing.fields?.[field] ? String(ing.fields[field]).slice(0,160)+(String(ing.fields[field]).length>160?"…":"") : "-"}</td>
               ))}
               <td>
                 {Array.isArray(ing.matchedTerms)&&ing.matchedTerms.length
                   ? ing.matchedTerms.map((t,i)=><span key={i} style={{ display:"inline-block", marginRight:"4px", marginBottom:"3px", padding:"2px 7px", fontFamily:CP.fontBC, fontSize:"10px", letterSpacing:"0.06em", textTransform:"uppercase", color:"rgba(124,63,187,0.9)", background:"rgba(124,63,187,0.08)", border:`0.5px solid rgba(124,63,187,0.22)` }}>{t}</span>)
-                  : "—"}
+                  : "-"}
               </td>
             </tr>
           ))}

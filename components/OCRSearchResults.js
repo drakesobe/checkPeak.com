@@ -2,20 +2,20 @@
 "use client";
 
 /**
- * OCRSearchResults — v3 (Visual Polish)
+ * OCRSearchResults - v3 (Visual Polish)
  *
  * Design system:
- *   Fonts    — Syne (display/substance names) + DM Sans (body) via Google Fonts
+ *   Fonts    - Syne (display/substance names) + DM Sans (body) via Google Fonts
  *              Loaded once via a <style> tag injected into the component root.
- *   Colors   — 4-token semantic palette:
+ *   Colors   - 4-token semantic palette:
  *                Brand navy  #1E3A5F  (UI chrome, labels)
  *                Banned red  #C8102E  (banned verdict + left bar)
  *                Safe green  #00873E  (not-banned verdict)
  *                Caution     #E87722  (weaknesses, watch-for panels)
  *              All other surfaces: neutral grays + white
- *   Spacing  — Generous: cards px-6 py-5, expanded panels gap-4
- *   Shadows  — Colored ambient glow matching verdict on hover
- *   Badges   — Org chips unified: dark navy bg, white text, consistent sizing
+ *   Spacing  - Generous: cards px-6 py-5, expanded panels gap-4
+ *   Shadows  - Colored ambient glow matching verdict on hover
+ *   Badges   - Org chips unified: dark navy bg, white text, consistent sizing
  */
 
 import React, { useState, useMemo } from "react";
@@ -23,7 +23,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { DS } from "./scanResultsTokens";
 
 // Component-scoped font classes (cp- prefix avoids collisions with sr- / sp-)
-// DS colors are now imported from scanResultsTokens — single source of truth.
+// DS colors are now imported from scanResultsTokens - single source of truth.
 const FONT_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
   .cp-display { font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.03em; }
@@ -36,7 +36,7 @@ const FONT_STYLE = `
 // ---------------------------------------------------------------------------
 
 // All orgs unified to brand navy for a clean, consistent look.
-// The org NAME itself carries identity — the color doesn't need to.
+// The org NAME itself carries identity - the color doesn't need to.
 const ORG_STYLE = { bg: DS.brand, text: "#FFFFFF" };
 
 const VERDICT = {
@@ -84,7 +84,7 @@ const escapeHtml = (s = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-// highlight() — escapes first, then injects only our own <span> markup (XSS-safe)
+// highlight() - escapes first, then injects only our own <span> markup (XSS-safe)
 const highlight = (text = "", term = "", color = DS.brand) => {
   const escaped = escapeHtml(text);
   if (!term?.trim()) return escaped;
@@ -124,7 +124,7 @@ function normalizeRecord(rRaw) {
 }
 
 // ---------------------------------------------------------------------------
-// Grouping — one SubstanceGroup per unique substance name
+// Grouping - one SubstanceGroup per unique substance name
 // ---------------------------------------------------------------------------
 
 function groupBySubstance(records, searchTerm) {
@@ -201,7 +201,7 @@ function groupBySubstance(records, searchTerm) {
 // Reusable UI pieces
 // ---------------------------------------------------------------------------
 
-// Section label — small uppercase eyebrow used throughout
+// Section label - small uppercase eyebrow used throughout
 function EyebrowLabel({ children, color = DS.labelText }) {
   return (
     <p
@@ -213,7 +213,7 @@ function EyebrowLabel({ children, color = DS.labelText }) {
   );
 }
 
-// Org badge — unified dark navy
+// Org badge - unified dark navy
 function OrgBadge({ org }) {
   return (
     <span
@@ -225,7 +225,7 @@ function OrgBadge({ org }) {
   );
 }
 
-// Verdict pill — the primary status signal
+// Verdict pill - the primary status signal
 function VerdictPill({ verdict, size = "md" }) {
   const isLg = size === "lg";
   return (
@@ -258,7 +258,7 @@ function VerdictPill({ verdict, size = "md" }) {
   );
 }
 
-// Info panel — used for What it does / Things to watch / Interactions
+// Info panel - used for What it does / Things to watch / Interactions
 function InfoPanel({ label, content, searchTerm, accentColor = DS.brand }) {
   if (!content) return null;
   return (
@@ -279,7 +279,7 @@ function InfoPanel({ label, content, searchTerm, accentColor = DS.brand }) {
   );
 }
 
-// "Why it's in your supplement" panel — CheckPeak differentiator
+// "Why it's in your supplement" panel - CheckPeak differentiator
 function WhyPanel({ benefits }) {
   if (!benefits) return null;
   return (
@@ -629,7 +629,7 @@ function SubstanceCard({ group, searchTerm, index }) {
                 </div>
               )}
 
-              {/* Source — bottom of every card */}
+              {/* Source - bottom of every card */}
               {source && (
                 <div
                   className="mt-4 pt-4"
@@ -644,7 +644,7 @@ function SubstanceCard({ group, searchTerm, index }) {
                 </div>
               )}
 
-              {/* Compliance notice — banned cards only */}
+              {/* Compliance notice - banned cards only */}
               {isBanned && (
                 <div
                   className="mt-4 rounded-xl px-4 py-3.5"
@@ -889,7 +889,7 @@ export default function OCRSearchResults({
                   className="cp-body text-[11px] mt-0.5"
                   style={{ color: DS.labelText }}
                 >
-                  {relatedGroups.length} compound{relatedGroups.length !== 1 ? "s" : ""} —
+                  {relatedGroups.length} compound{relatedGroups.length !== 1 ? "s" : ""} -
                   contain &ldquo;{trimmedSearch}&rdquo; as part of a larger ingredient name
                 </p>
               </div>

@@ -19,7 +19,7 @@ function writeBoolLS(key, val) {
 }
 
 /**
- * DashboardSection — card wrapper with DS tokens.
+ * DashboardSection - card wrapper with DS tokens.
  * Use for content that is NOT itself a standalone card (e.g. StatsGrid).
  * For standalone panels (TodayWorkouts, Roster etc.) render them directly.
  */
@@ -95,7 +95,7 @@ export default function DashboardSection({
         <div className="p-5">{children}</div>
       ) : (
         <div className="px-5 py-3">
-          <p className="text-xs" style={{ color: DS.dimText }}>Section collapsed — click to expand.</p>
+          <p className="text-xs" style={{ color: DS.dimText }}>Section collapsed - click to expand.</p>
         </div>
       )}
     </section>

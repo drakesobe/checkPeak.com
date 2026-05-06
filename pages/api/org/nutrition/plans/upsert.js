@@ -35,11 +35,11 @@ function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
 
-  // First attempt — clean parse
+  // First attempt - clean parse
   try { return JSON.parse(raw); }
   catch { /* fall through */ }
 
-  // Second attempt — strip invalid escape sequences then retry
+  // Second attempt - strip invalid escape sequences then retry
   try {
     const sanitized = raw.replace(/\\([^"\\\/bfnrtu])/g, "$1");
     return JSON.parse(sanitized);
@@ -295,7 +295,7 @@ export default async function handler(req, res) {
           },
         };
 
-    // safeJsonStringify runs sanitizeForJson first — strips \_ and other
+    // safeJsonStringify runs sanitizeForJson first - strips \_ and other
     // invalid escape sequences from Amazon URLs before writing to Airtable.
     const planJsonString = safeJsonStringify(mergedPlanJson);
 

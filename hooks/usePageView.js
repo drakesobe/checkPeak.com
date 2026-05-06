@@ -32,7 +32,7 @@ export function usePageView({ userEmail = "" } = {}) {
 
   // Keep userEmail in a ref so it's always current inside the effect
   // without being a dependency. Auth hydrates from localStorage after
-  // first render — if userEmail were a dep, the effect would re-run
+  // first render - if userEmail were a dep, the effect would re-run
   // (and re-fire page_view) every time the user object settles.
   const userEmailRef = useRef(userEmail);
   useEffect(() => { userEmailRef.current = userEmail; }, [userEmail]);
@@ -129,5 +129,5 @@ export function usePageView({ userEmail = "" } = {}) {
       stopScrollTracking();
       recordCurrentPath();
     };
-  }, [router.asPath]); // ← path change only — userEmail is read via ref
+  }, [router.asPath]); // ← path change only - userEmail is read via ref
 }

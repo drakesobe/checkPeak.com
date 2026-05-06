@@ -1,7 +1,7 @@
 // pages/api/org/athletes/bulk-update.js
 // POST { ids: string[], fields: { sport?, phone?, ... } }
 // Updates a set of athlete records with the provided scalar fields.
-// Only whitelisted fields are written — no arbitrary data reaches Airtable.
+// Only whitelisted fields are written - no arbitrary data reaches Airtable.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base } from "@/lib/airtableOrgWorkoutConfig";
@@ -13,7 +13,7 @@ function chunk(arr, n = 10) {
 }
 
 // Only these fields can be bulk-updated from the client.
-// Add more here as needed — never pass raw fields through directly.
+// Add more here as needed - never pass raw fields through directly.
 const ALLOWED_FIELDS = {
   sport:  v => ({ sport: String(v || "").toLowerCase().trim() }),
   phone:  v => ({ Phone: String(v || "").trim() }),
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Maximum 200 records per bulk update" });
   }
 
-  // Build the Airtable field patch — only allowed fields pass through
+  // Build the Airtable field patch - only allowed fields pass through
   const airtableFields = {};
   for (const [key, value] of Object.entries(fields)) {
     const builder = ALLOWED_FIELDS[key];

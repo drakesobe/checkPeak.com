@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Account not found." });
     }
 
-    // Verify password before deleting — no one can delete without knowing it
+    // Verify password before deleting - no one can delete without knowing it
     const storedHash = record.fields.Password;
     if (!storedHash) {
       return res.status(400).json({ error: "Cannot verify account credentials." });

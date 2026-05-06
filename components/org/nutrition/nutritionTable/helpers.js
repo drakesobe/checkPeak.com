@@ -22,11 +22,11 @@ export function clampPct(v) {
 
 export function pctText(v) {
   const n = clampPct(v);
-  return n == null ? "—" : `${n}%`;
+  return n == null ? "-" : `${n}%`;
 }
 
 export function fmtDateTime(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -44,7 +44,7 @@ export function fmtDateTime(v) {
 }
 
 export function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -124,7 +124,7 @@ export function badgeForRow(r) {
 export function mailtoForAthlete({ email, name }) {
   const to = safeText(email);
   if (!to) return "";
-  const subject = "Nutrition completions — quick check-in";
+  const subject = "Nutrition completions - quick check-in";
   const body = `Hey ${safeText(name) || ""},\n\nQuick note: please make sure you’re completing Meal + Hydration swipes each block (Breakfast/Lunch/Afternoon/Dinner).\n\nIf anything is confusing in the dining hall, reply with what’s hard and we’ll simplify the rule.\n\nThanks!`;
   return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

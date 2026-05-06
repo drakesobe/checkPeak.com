@@ -30,11 +30,11 @@ function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
 
-  // First attempt — clean parse
+  // First attempt - clean parse
   try { return JSON.parse(raw); }
   catch { /* fall through */ }
 
-  // Second attempt — strip invalid JSON escape sequences
+  // Second attempt - strip invalid JSON escape sequences
   // (e.g. \_ in Amazon image URLs) then retry
   try {
     const sanitized = raw.replace(/\\([^"\\\/bfnrtu])/g, "$1");

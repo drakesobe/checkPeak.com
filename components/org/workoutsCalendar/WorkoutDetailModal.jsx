@@ -8,8 +8,8 @@
 //   open        boolean
 //   onClose     () => void
 //   workout     { id, Title, Date, Status, Sport, athleteCount, itemCount }
-//   onRefresh   () => void   — called after delete
-//   onEditFull  (editWorkout) => void  — parent opens CreateWorkoutModal with this data
+//   onRefresh   () => void   - called after delete
+//   onEditFull  (editWorkout) => void  - parent opens CreateWorkoutModal with this data
 "use client";
 
 import { useState, useEffect } from "react";
@@ -24,7 +24,7 @@ import { titleSport } from "@/lib/org/workoutsCalendar/sports";
 async function safeJson(r) { try { return await r.json(); } catch { return {}; } }
 
 function formatDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     const [y, m, d] = iso.split("-").map(Number);
     return new Date(y, m - 1, d).toLocaleString(undefined, {
@@ -42,7 +42,7 @@ function StatusBadge({ status }) {
   else if (v.includes("archive") || v.includes("reject")) { bg = DS.bannedBg;  border = DS.bannedBorder;  color = DS.banned;  }
   return (
     <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em", backgroundColor: bg, border: `1px solid ${border}`, color }}>
-      {status || "—"}
+      {status || "-"}
     </span>
   );
 }
@@ -178,7 +178,7 @@ export default function WorkoutDetailModal({ open, onClose, workout, onRefresh, 
               {sport && <p style={{ fontSize: "11px", color: DS.dimText, marginTop: "4px" }}>{sport}</p>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-              {/* Edit Full — opens CreateWorkoutModal pre-populated */}
+              {/* Edit Full - opens CreateWorkoutModal pre-populated */}
               <button type="button" onClick={handleEditFull} disabled={loading || deleting}
                 style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 14px", fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em", cursor: (loading || deleting) ? "not-allowed" : "pointer", opacity: (loading || deleting) ? 0.45 : 1, border: `1px solid ${DS.brand}`, backgroundColor: DS.brand, color: "#fff" }}
                 onMouseEnter={e => { if (!loading && !deleting) e.currentTarget.style.backgroundColor = DS.brandLight; }}
@@ -219,7 +219,7 @@ export default function WorkoutDetailModal({ open, onClose, workout, onRefresh, 
                 {/* Stat chips */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
                   <Chip icon={CalendarDays} label="Date"     value={formatDate(dateISO)} />
-                  <Chip icon={UserCheck}    label="Athletes" value={siblings.length || workout?.athleteCount || "—"} />
+                  <Chip icon={UserCheck}    label="Athletes" value={siblings.length || workout?.athleteCount || "-"} />
                   <Chip icon={Dumbbell}     label="Items"    value={items.length > 0 ? items.length : (workout?.itemCount || 0)} />
                 </div>
 
@@ -232,7 +232,7 @@ export default function WorkoutDetailModal({ open, onClose, workout, onRefresh, 
                         <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", backgroundColor: s.isSelf ? DS.brandBg : DS.pageBg, border: `1px solid ${s.isSelf ? DS.brandBorder : DS.border}` }}>
                           <UserCheck style={{ width: 13, height: 13, color: s.isSelf ? DS.brand : DS.dimText, flexShrink: 0 }} />
                           <p style={{ fontSize: "12px", fontWeight: 700, color: DS.bodyText }}>
-                            {s.athleteName || s.athleteToken || "—"}
+                            {s.athleteName || s.athleteToken || "-"}
                             {s.isSelf && <span style={{ fontSize: "10px", color: DS.brand, marginLeft: "6px" }}>this record</span>}
                           </p>
                         </div>

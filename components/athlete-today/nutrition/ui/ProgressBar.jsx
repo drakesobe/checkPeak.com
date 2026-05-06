@@ -49,7 +49,7 @@ export default function ProgressBar({
 
       {showMeta && (
         <p className="mt-2 text-[11px] text-gray-500">
-          {isDone ? "Complete — nice work." : "Keep going — consistency wins."}
+          {isDone ? "Complete - nice work." : "Keep going - consistency wins."}
         </p>
       )}
     </div>

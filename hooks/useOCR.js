@@ -3,7 +3,7 @@
 // Drop-in replacement for the Tesseract-based useOCR hook.
 // Uses AWS Textract via /api/ocr/textract instead of running
 // Tesseract in the browser. All exports, return shapes, and
-// onScan callback signatures are identical — nothing upstream changes.
+// onScan callback signatures are identical - nothing upstream changes.
 
 "use client";
 
@@ -14,7 +14,7 @@ import { useState, useCallback } from "react";
 // ---------------------------------------------------------------------------
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // Textract hard limit
-const MAX_RESIZE_DIM = 2000;            // slightly higher than Tesseract — Textract handles it
+const MAX_RESIZE_DIM = 2000;            // slightly higher than Tesseract - Textract handles it
 const RESIZE_QUALITY = 0.92;
 
 // ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ async function decodeBitmap(file) {
 
 async function resizeForTextract(file) {
   if (file.size <= MAX_FILE_SIZE) {
-    // Already within limit — still decode to normalise orientation
+    // Already within limit - still decode to normalise orientation
     const { bitmap, width: srcW, height: srcH, close } = await decodeBitmap(file);
 
     let w = srcW, h = srcH;
@@ -82,7 +82,7 @@ async function resizeForTextract(file) {
     return new File([blob], file.name.replace(/(\.\w+)?$/, ".jpg"), { type: "image/jpeg" });
   }
 
-  // File too large — scale down until it fits
+  // File too large - scale down until it fits
   const { bitmap, width: srcW, height: srcH, close } = await decodeBitmap(file);
   const scale = Math.sqrt(MAX_FILE_SIZE / file.size) * 0.9; // 10% headroom
   const w = Math.max(1, Math.round(srcW * scale));
@@ -106,7 +106,7 @@ async function resizeForTextract(file) {
 }
 
 // ---------------------------------------------------------------------------
-// Quality scoring — kept identical to original so computeOCRQuality works
+// Quality scoring - kept identical to original so computeOCRQuality works
 // ---------------------------------------------------------------------------
 
 function scoreText(text) {
@@ -128,7 +128,7 @@ function scoreText(text) {
 
 /**
  * Compute a human-readable quality label from OCR text.
- * Identical export to the original — OCRUpload uses this directly.
+ * Identical export to the original - OCRUpload uses this directly.
  * Returns: { label, tone: "good"|"warn"|"bad", score, action }
  */
 export function computeOCRQuality(text) {
@@ -168,7 +168,7 @@ async function scanWithTextract(file) {
 }
 
 // ---------------------------------------------------------------------------
-// Scan state — identical shape to original
+// Scan state - identical shape to original
 // ---------------------------------------------------------------------------
 
 const INITIAL_SCAN_STATE = {
@@ -185,7 +185,7 @@ const INITIAL_SCAN_STATE = {
 // Identical interface to the Tesseract version:
 //   { scanState, startScan, clearError }
 //
-// onScan(text, meta) meta shape is identical — psmUsed and preprocess are
+// onScan(text, meta) meta shape is identical - psmUsed and preprocess are
 // set to null since Textract doesn't expose those concepts, but the fields
 // are still present so nothing downstream breaks.
 // ---------------------------------------------------------------------------

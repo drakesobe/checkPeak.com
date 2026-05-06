@@ -270,7 +270,7 @@ function TableRow({
         )}
       </td>
 
-      {/* Sport — replaces the old Status/Ready column */}
+      {/* Sport - replaces the old Status/Ready column */}
       <td className="py-3 px-3">
         <SportChip sport={a.sport} />
       </td>
@@ -336,7 +336,7 @@ export default function AthletesList({
         style={{ background: DS.cardBg, border: `1px solid ${DS.border}` }}
       >
         <p className="text-sm" style={{ color: DS.dimText }}>
-          No athletes found — try clearing filters or search.
+          No athletes found - try clearing filters or search.
         </p>
       </div>
     );

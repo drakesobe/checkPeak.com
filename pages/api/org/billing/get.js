@@ -38,7 +38,7 @@ export default async function handler(req, res) {
   const user = requireBillingAdmin(req, res);
   if (!user) return;
 
-  // ✅ Token is canonical now — no orgId fallback
+  // ✅ Token is canonical now - no orgId fallback
   const sessionToken = String(user?.Token || user?.token || user?.orgToken || "").trim();
 
   if (!sessionToken) {

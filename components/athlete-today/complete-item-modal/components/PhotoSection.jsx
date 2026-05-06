@@ -24,7 +24,7 @@ export default function PhotoSection({
         title="Photo"
         subtitle={
           evidenceRequired
-            ? "Required — snap the machine display, bar, or a gym selfie."
+            ? "Required - snap the machine display, bar, or a gym selfie."
             : "Add a photo if you'd like."
         }
         right={
@@ -38,7 +38,7 @@ export default function PhotoSection({
 
       <div className="mt-3 space-y-3">
 
-        {/* Single action button — OS handles camera vs library natively */}
+        {/* Single action button - OS handles camera vs library natively */}
         <label className={classNames(
           "flex items-center justify-center gap-2 w-full rounded-xl border-2 px-4 py-3 cursor-pointer transition font-semibold text-sm",
           submitting ? "opacity-50 pointer-events-none" : "",
@@ -112,7 +112,7 @@ export default function PhotoSection({
               className="w-full h-52 sm:h-56 object-cover"
             />
             <div className="px-3 py-2 bg-gray-50 text-[11px] text-gray-500 font-medium">
-              {evidenceRequired ? "Looks good — submit when ready." : "Photo attached."}
+              {evidenceRequired ? "Looks good - submit when ready." : "Photo attached."}
             </div>
           </div>
         ) : null}

@@ -4,7 +4,7 @@
 import Head    from "next/head";
 import OCRPage from "./ocr";
 
-// Canonical is a build-time constant — avoids hydration mismatch
+// Canonical is a build-time constant - avoids hydration mismatch
 // from typeof window checks during SSR/SSG.
 const CANONICAL = "https://checkpeak.com/nutrition-label-scanner";
 
@@ -15,7 +15,7 @@ const DESCRIPTION =
   "Upload a photo of a supplement or nutrition label. CheckPeak extracts ingredients with OCR and flags potential banned or risky substances for athletes.";
 
 // ---------------------------------------------------------------------------
-// Structured data — defined at module level so they're never recreated
+// Structured data - defined at module level so they're never recreated
 // ---------------------------------------------------------------------------
 
 const softwareAppJsonLd = {

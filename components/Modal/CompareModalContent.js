@@ -332,7 +332,7 @@ export default function CompareModalContent({ stack, allStacks = [], onClose }) 
   }, [imageUrl, fetchRecords, runOCR]);
 
   const handleImageLoad = () => {
-    // Event handlers don’t support returning a cleanup — just run the timer.
+    // Event handlers don’t support returning a cleanup - just run the timer.
     setTimeout(() => runOCR(false), 120);
   };
 

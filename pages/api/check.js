@@ -3,13 +3,13 @@
  * /pages/api/check.js
  *
  * Accepts POST:
- *   { text?, ocrText?, ingredientsText? }          — direct text flow (SmartStack / NutritionModal)
- *   { barcode?, isBarcodeFlow?, text?, ocrText? }  — barcode flow (BarcodeUpload / BarcodeChecker)
+ *   { text?, ocrText?, ingredientsText? }          - direct text flow (SmartStack / NutritionModal)
+ *   { barcode?, isBarcodeFlow?, text?, ocrText? }  - barcode flow (BarcodeUpload / BarcodeChecker)
  *
  * Optional: { userEmail?, scanId?, debug? }
  *
  * Banned substances + ingredients are loaded from static JSON files at
- * import time — zero Airtable calls per scan request.
+ * import time - zero Airtable calls per scan request.
  */
 
 import bannedRecordsRaw      from "../../data/banned.json"      assert { type: "json" };
@@ -32,7 +32,7 @@ async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT)
 }
 
 // ---------------------------------------------------------------------------
-// Airtable client — Scans only
+// Airtable client - Scans only
 // ---------------------------------------------------------------------------
 
 const scansBase =
@@ -100,7 +100,7 @@ function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
   if (!s)                         return true;
   if (NOISE_TOKENS.has(s))        return true;
-  if (s.length < 5)               return true;  // raised from 4 — kills "spice","green","chi" etc.
+  if (s.length < 5)               return true;  // raised from 4 - kills "spice","green","chi" etc.
   if (/^\d+$/.test(s))            return true;  // pure number
   if (/^\d+[a-z]{1,2}$/.test(s)) return true;  // unit like "25mg"
   if (/^[a-z]{1,3}\d*$/.test(s)) return true;  // 1-3 letter token
@@ -108,7 +108,7 @@ function isNoiseToken(t) {
 }
 
 // ---------------------------------------------------------------------------
-// Phrase matching — complete phrase must appear verbatim in text
+// Phrase matching - complete phrase must appear verbatim in text
 // ---------------------------------------------------------------------------
 
 function normalizeForPhrase(str = "") {
@@ -122,7 +122,7 @@ function normalizeForPhrase(str = "") {
 
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhrase(phrase);
-  // Must be at least 6 chars and contain a letter — "K2" or "spice" alone won't qualify
+  // Must be at least 6 chars and contain a letter - "K2" or "spice" alone won't qualify
   if (!p || p.length < 6 || !/[a-z]/.test(p)) return false;
   return normalizeForPhrase(normalizedText).includes(p);
 }
@@ -142,7 +142,7 @@ function primaryTerms(fields = {}, primaryFields = ["Name", "Ingredient Name"]) 
     const v = fields?.[key];
     if (v) splitToTerms(String(v)).forEach((t) => terms.add(t));
   }
-  // Do NOT add synonym tokens here — synonyms are phrase-matched only
+  // Do NOT add synonym tokens here - synonyms are phrase-matched only
   return Array.from(terms);
 }
 
@@ -177,10 +177,10 @@ function termInText(term = "", normalizedText = "") {
 // Short-term allowlist
 //
 // Some legitimate substance/ingredient names are short (< 7 chars) and must
-// still match as standalone tokens — e.g. "zinc", "dmaa", "dhea", "hgh".
+// still match as standalone tokens - e.g. "zinc", "dmaa", "dhea", "hgh".
 // Explicitly allowlisted so they pass the length gate.
 //
-// Do NOT add generic food words here (salt, acid, green, powder etc.) —
+// Do NOT add generic food words here (salt, acid, green, powder etc.) -
 // those belong in NOISE_TOKENS above.
 // ---------------------------------------------------------------------------
 
@@ -209,7 +209,7 @@ const SHORT_TERM_ALLOWLIST = new Set([
 //         >= 7 chars  (e.g. "caffeine", "synephrine", "ephedrine"), OR
 //         in SHORT_TERM_ALLOWLIST  (e.g. "zinc", "dmaa", "dhea")
 //
-// Synonym tokens are NEVER used — only full synonym phrases.
+// Synonym tokens are NEVER used - only full synonym phrases.
 // This prevents "Chi Powder" → "powder" matching "ONION POWDER".
 // ---------------------------------------------------------------------------
 
@@ -238,7 +238,7 @@ function matchAgainstBannedRecords(ingredientsText) {
     // (A) Full substance name as phrase
     const primaryPhraseHit = phraseInText(subName, normalized);
 
-    // (B) Each synonym as a complete phrase — NOT individual tokens
+    // (B) Each synonym as a complete phrase - NOT individual tokens
     const syns = synonymPhrases(fields);
     const synPhraseHit = syns.some((syn) => phraseInText(syn, normalized));
 
@@ -248,7 +248,7 @@ function matchAgainstBannedRecords(ingredientsText) {
 
     if (!hasStrongMatch(matchedTerms, primaryPhraseHit, synPhraseHit)) return matches;
 
-    // What actually triggered the match — for display
+    // What actually triggered the match - for display
     const triggerTerms = primaryPhraseHit
       ? [subName]
       : synPhraseHit
@@ -317,7 +317,7 @@ function matchAgainstIngredientRecords(ingredientsText) {
 }
 
 // ---------------------------------------------------------------------------
-// UPC helpers — unchanged
+// UPC helpers - unchanged
 // ---------------------------------------------------------------------------
 
 function calculateUPCACheckDigit(upcaWithoutChecksum) {
@@ -387,7 +387,7 @@ function generateBarcodeCandidates(rawBarcode) {
 }
 
 // ---------------------------------------------------------------------------
-// Nutritionix helpers — unchanged
+// Nutritionix helpers - unchanged
 // ---------------------------------------------------------------------------
 
 function extractExplicitIngredients(food = {}) {
@@ -424,7 +424,7 @@ function flattenNutritionixForDisplay(itemOrJson) {
 }
 
 // ---------------------------------------------------------------------------
-// External providers — unchanged
+// External providers - unchanged
 // ---------------------------------------------------------------------------
 
 async function tryOpenFoodFacts(upcCandidate) {
@@ -687,7 +687,7 @@ export default async function handler(req, res) {
     // ── End barcode flow ────────────────────────────────────────────────────
 
     // ---------------------------------------------------------------------------
-    // For direct text flow (SmartStack / NutritionModal) — no barcode involved.
+    // For direct text flow (SmartStack / NutritionModal) - no barcode involved.
     // structured.ingredientsText is already set from directText above.
     // We only gate on "no text AND no nutrition" so direct text always proceeds.
     // ---------------------------------------------------------------------------

@@ -47,7 +47,7 @@ export function SidebarLink({ label, icon, active = false, onClick, badge = null
       }}
     >
       <span className="inline-flex items-center gap-2.5 min-w-0">
-        {/* Icon box — explicit color so it overrides any className on the icon itself */}
+        {/* Icon box - explicit color so it overrides any className on the icon itself */}
         <span
           className="h-6 w-6 rounded-lg flex items-center justify-center shrink-0"
           style={{
@@ -87,7 +87,7 @@ export function SidebarLink({ label, icon, active = false, onClick, badge = null
 /* -------------------------------------------------------------------------- */
 /* StatCard                                                                    */
 /*                                                                             */
-/* IMPORTANT — icon color:                                                    */
+/* IMPORTANT - icon color:                                                    */
 /* Lucide icons passed from StatsGrid carry their own className (e.g.         */
 /* text-blue-600). We wrap them in a <span> with an explicit CSS `color`      */
 /* AND render a cloneElement override so the icon always uses our tone color. */
@@ -188,7 +188,7 @@ export function StatCard({ label, value, icon, tone = "neutral", subLabel }) {
         className="text-3xl font-black leading-none"
         style={{ color: t.valueColor, fontFamily: FONT_COND, letterSpacing: "0.01em" }}
       >
-        {value ?? "—"}
+        {value ?? "-"}
       </p>
 
       {/* Sub-label */}

@@ -29,7 +29,7 @@ function safeJson(obj) {
   }
 }
 
-// Sanitise a product object — only keep the fields the athlete UI needs.
+// Sanitise a product object - only keep the fields the athlete UI needs.
 // Returns null if the value isn't a real product selection.
 function safeProduct(v) {
   if (!v || typeof v !== "object" || !asString(v.id)) return null;
@@ -64,7 +64,7 @@ function buildPlanJson({ structured, title }) {
     ...(asString(s.hydrationOz)  ? { hydrationOz:  safeNumOrString(s.hydrationOz)  } : {}),
   };
 
-  // ── Supplement string recommendations (legacy — kept for backward compat) ──
+  // ── Supplement string recommendations (legacy - kept for backward compat) ──
   const supplementStrings = {
     proteinRecommendation:      asString(s.proteinRecommendation      || ""),
     creatineRecommendation:     asString(s.creatineRecommendation     || ""),
@@ -75,7 +75,7 @@ function buildPlanJson({ structured, title }) {
     proteinBarRecommendation:   asString(s.proteinBarRecommendation   || ""),
   };
 
-  // ── Product objects (new — what powers the affiliate card on athlete side) ──
+  // ── Product objects (new - what powers the affiliate card on athlete side) ──
   const supplementProducts = {};
   const productKeys = [
     "proteinProduct",
@@ -104,7 +104,7 @@ function buildPlanJson({ structured, title }) {
       macros:       asString(s.notesMacros      || ""),
       supplements:  asString(s.notesSupplements || ""),
     },
-    // Combined supplements block — strings + product objects together
+    // Combined supplements block - strings + product objects together
     supplements: {
       ...supplementStrings,
       ...supplementProducts,

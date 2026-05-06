@@ -7,7 +7,7 @@ const DS = {
   bodyText: "#1A2535", dimText: "#9BA8B4",
 };
 
-export default function NumInput({ label, value, onChange, placeholder = "—", min = 0, max, step = 1, hint }) {
+export default function NumInput({ label, value, onChange, placeholder = "-", min = 0, max, step = 1, hint }) {
   return (
     <label className="block">
       <span className="block text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.dimText }}>

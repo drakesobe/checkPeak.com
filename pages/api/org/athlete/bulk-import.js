@@ -8,7 +8,7 @@ import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
-// ─── Field map — adjust these to match your Athletes table ───────────────────
+// ─── Field map - adjust these to match your Athletes table ───────────────────
 const A = {
   NAME:    F?.ATH_NAME    || "Name",
   EMAIL:   F?.ATH_EMAIL   || "Email",
@@ -41,7 +41,7 @@ function generateAthleteToken() {
 }
 
 function generateTempPassword() {
-  // Readable temp password — athlete will be prompted to change on first login
+  // Readable temp password - athlete will be prompted to change on first login
   return `Peak${crypto.randomBytes(4).toString("hex").toUpperCase()}!`;
 }
 
@@ -150,10 +150,10 @@ export default async function handler(req, res) {
         [A.PASS]:   hashedPass,
         [A.ROLE]:   "athlete",
         [A.CREATED]: new Date().toISOString(),
-        // Optional fields — only write if value exists
+        // Optional fields - only write if value exists
         ...(a.sport ? { [A.SPORT]: a.sport } : {}),
         ...(a.phone ? { [A.PHONE]: a.phone } : {}),
-        // Org link — adjust field name/format to match your Airtable setup
+        // Org link - adjust field name/format to match your Airtable setup
         ...(orgToken ? { [A.ORGID]: orgToken } : {}),
         ...(orgRecId ? { [A.ORG]:   [orgRecId] } : {}), 
       };

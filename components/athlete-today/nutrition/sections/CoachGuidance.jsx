@@ -186,7 +186,7 @@ export default function CoachGuidance({ coachNotes, supplementItems, supplementN
                           <SupplementCard
                             key={String(it?.k ?? it?.label ?? idx)}
                             label={safeText(it?.label) || "Supplement"}
-                            value={safeText(it?.value) || "—"}
+                            value={safeText(it?.value) || "-"}
                             affiliateLink={it?.affiliateLink || ""}
                             imageUrl={it?.imageUrl || ""}
                             pricePerServing={it?.pricePerServing ?? null}
@@ -203,7 +203,7 @@ export default function CoachGuidance({ coachNotes, supplementItems, supplementN
                       </div>
                     )}
 
-                    {/* Safety reminder — compact, not a lecture */}
+                    {/* Safety reminder - compact, not a lecture */}
                     <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 flex items-center gap-2">
                       <Shield className="w-3.5 h-3.5 text-gray-300 shrink-0" />
                       <p className="text-[11px] text-gray-400">

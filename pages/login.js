@@ -40,7 +40,7 @@ const INPUT_FOCUS = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Sub-components — module-level so they never remount on rerender            */
+/* Sub-components - module-level so they never remount on rerender            */
 /* -------------------------------------------------------------------------- */
 
 function Field({ label, children }) {
@@ -237,7 +237,7 @@ export default function LoginPage() {
           }}
         >
 
-          {/* Role selector — hidden when forgot password is open */}
+          {/* Role selector - hidden when forgot password is open */}
           {!forgotOpen && (
             <div>
               <p

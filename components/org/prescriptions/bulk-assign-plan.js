@@ -53,7 +53,7 @@ const PLAN_PHASE = "Phase";
 const PLAN_PRESCRIPTION = "Prescription";
 const PLAN_PLAN_JSON    = "PlanJson";
 
-// Assign one plan — archive existing active, create new active
+// Assign one plan - archive existing active, create new active
 async function assignOnePlan({ plansTable, athleteToken, plan, createdBy }) {
   const tokFilter = lookupSafeContains(PLAN_ATH_TOKEN, athleteToken);
   const activeFilter = `AND(${tokFilter}, LOWER({${PLAN_STATUS}}&'')='active')`;

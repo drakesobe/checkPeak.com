@@ -18,7 +18,7 @@ function normalizeEvidenceRequired(raw) {
   return String(raw).trim().toLowerCase();
 }
 
-/* ── Entrance/exit animation — injected once into <head> ── */
+/* ── Entrance/exit animation - injected once into <head> ── */
 const ANIM_ID = "checkpeak-modal-anim";
 function ensureAnimStyles() {
   if (typeof document === "undefined") return;
@@ -90,7 +90,7 @@ export default function CompleteItemModal({
     if (!open) setShowError(false);
   }, [open]);
 
-  /* ── Intercept submit — show error + shake if missing photo ── */
+  /* ── Intercept submit - show error + shake if missing photo ── */
   const handleAttemptSubmit = () => {
     if (evidenceRequired && !selectedFile) {
       setShowError(true);
@@ -181,7 +181,7 @@ export default function CompleteItemModal({
         onClick={(e) => e.stopPropagation()}
         style={{ maxHeight: "92dvh", display: "flex", flexDirection: "column" }}
       >
-        {/* Drag handle — mobile only */}
+        {/* Drag handle - mobile only */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-gray-200" />
         </div>
@@ -196,7 +196,7 @@ export default function CompleteItemModal({
             onClose={handleClose}
           />
 
-          {/* Error banner — shown when athlete tries to submit without a required photo */}
+          {/* Error banner - shown when athlete tries to submit without a required photo */}
           {showError && evidenceRequired && !selectedFile ? (
             <div
               ref={errorRef}

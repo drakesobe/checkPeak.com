@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
-// Meal schedule — mirrors today.jsx MEAL_TIMES exactly
+// Meal schedule - mirrors today.jsx MEAL_TIMES exactly
 // ---------------------------------------------------------------------------
 const MEAL_TIMES = {
   breakfast: 7  * 60,
@@ -177,7 +177,7 @@ function parseNextClass() {
 // Hook
 // ---------------------------------------------------------------------------
 export function useTodaySummary({ userEmail }) {
-  // Seed from localStorage immediately — zero loading flash
+  // Seed from localStorage immediately - zero loading flash
   const [todaySummary, setTodaySummary] = useState(() => {
     if (typeof window === "undefined" || !userEmail) return DEFAULT;
     try {
@@ -197,7 +197,7 @@ export function useTodaySummary({ userEmail }) {
     let cancelled = false;
 
     async function loadToday() {
-      // Class data is synchronous from localStorage — resolve instantly
+      // Class data is synchronous from localStorage - resolve instantly
       const classData = parseNextClass();
 
       // Fire workout + nutrition in parallel
@@ -235,7 +235,7 @@ export function useTodaySummary({ userEmail }) {
         } catch {}
       }
 
-      // ── Nutrition — parse next meal from planJson ──────────────────────────
+      // ── Nutrition - parse next meal from planJson ──────────────────────────
       let hasMeal       = false;
       let mealKey       = "";
       let mealName      = "";

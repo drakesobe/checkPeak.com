@@ -81,7 +81,7 @@ export default function TeamTable({
               const editing = isEditing(id);
 
               const createdAt = t?.createdAt || t?.CreatedAt || "";
-              const displayAdded = createdAt ? fmtDate(createdAt) : "—";
+              const displayAdded = createdAt ? fmtDate(createdAt) : "-";
 
               return (
                 <tr key={id || email || Math.random()} className="border-b align-top">
@@ -120,7 +120,7 @@ export default function TeamTable({
                         <div className="text-[11px] text-gray-500">Login email</div>
                       </div>
                     ) : (
-                      <div className="text-gray-700 font-medium">{email || "—"}</div>
+                      <div className="text-gray-700 font-medium">{email || "-"}</div>
                     )}
                   </td>
 

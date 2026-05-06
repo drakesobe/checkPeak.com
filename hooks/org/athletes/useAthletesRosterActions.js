@@ -192,7 +192,7 @@ export function useAthletesRosterActions({
 
     const ids = selectedList.map(a => a.id);
 
-    // Optimistic update — update local list immediately so UI reflects change
+    // Optimistic update - update local list immediately so UI reflects change
     setAthletesRaw?.(prev =>
       prev.map(a => ids.includes(a.id) ? { ...a, sport } : a)
     );

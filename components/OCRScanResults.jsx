@@ -8,7 +8,7 @@ import SubstanceCard   from "./SubstanceCard";
 import { DS, FONT_STYLE, BAN_TYPE_CONFIG, BAN_COLOR_MAP, INGREDIENT_COLOR } from "./scanResultsTokens";
 
 /**
- * OCRScanResults — refactored
+ * OCRScanResults - refactored
  *
  * What changed from the original:
  *
@@ -26,13 +26,13 @@ import { DS, FONT_STYLE, BAN_TYPE_CONFIG, BAN_COLOR_MAP, INGREDIENT_COLOR } from
  * - Full DS token system + Barlow fonts (matches SearchPage, OCRUpload)
  * - Section toggles rebuilt as clean pill buttons, no custom CSS class soup
  * - Ban type filter chips use DS colors
- * - "Clear but calm" tone — banned is visible but not alarming
+ * - "Clear but calm" tone - banned is visible but not alarming
  *
- * Same external props as original — nothing upstream needs to change.
+ * Same external props as original - nothing upstream needs to change.
  */
 
 // ---------------------------------------------------------------------------
-// Pure helpers — module level, never recreated
+// Pure helpers - module level, never recreated
 // ---------------------------------------------------------------------------
 
 const escapeRegex = (s = "") => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -112,8 +112,8 @@ function termAppearsInOCR(terms, ocrIndex) {
 //
 // Groups records that refer to the same substance under different names or
 // synonyms. Without this, the API returns one record per DB row, so a search
-// for "Citric Acid" can yield multiple rows — one exact match, one synonym
-// match — all showing as separate cards.
+// for "Citric Acid" can yield multiple rows - one exact match, one synonym
+// match - all showing as separate cards.
 //
 // Strategy:
 //   1. Normalize name → strip parentheticals, lowercase, collapse whitespace
@@ -182,7 +182,7 @@ function deduplicateRecords(records) {
       _dupeCount:   group.length,
       fields: {
         ...winner.fields,
-        // Replace synonyms with merged set — richer "Also listed as" display
+        // Replace synonyms with merged set - richer "Also listed as" display
         "Synonyms":            allSynonyms.join(", "),
         "Synonyms (Extended)": allSynonyms.join(", "),
       },
@@ -343,7 +343,7 @@ export default function OCRScanResults({
   scanMeta             = null,
   scanMetaList         = null,
 }) {
-  // ── UI state — two objects instead of 7 variables ──
+  // ── UI state - two objects instead of 7 variables ──
   const [sectionOpen, setSectionOpen] = useState({
     ocr:         false,
     banned:      true,
@@ -364,7 +364,7 @@ export default function OCRScanResults({
   const bannedNorm     = useMemo(() => normalizeRecords(detectedSubstances, true),  [detectedSubstances]);
   const ingredientNorm = useMemo(() => normalizeRecords(detectedIngredients, false), [detectedIngredients]);
 
-  // ── OCR index — O(1) lookup, built once ──
+  // ── OCR index - O(1) lookup, built once ──
   const ocrIndex = useMemo(() => buildOCRIndex(ocrText), [ocrText]);
 
   // ── Filter banned to only those appearing in OCR text, then deduplicate ──

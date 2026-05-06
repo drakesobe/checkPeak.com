@@ -6,7 +6,7 @@ export const config = {
 
 export default function handler(req) {
   const { searchParams } = new URL(req.url);
-  const query = searchParams.get('q') || 'PEAK — Supplement Label Scanner';
+  const query = searchParams.get('q') || 'PEAK - Supplement Label Scanner';
 
   return new ImageResponse(
     (

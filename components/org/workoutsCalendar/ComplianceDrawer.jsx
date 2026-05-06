@@ -35,18 +35,18 @@ const CARA_RULES = [
 ];
 
 const VARA_RULES = [
-  "Athletes must have genuine free choice — no coach may require, pressure, or imply attendance.",
+  "Athletes must have genuine free choice - no coach may require, pressure, or imply attendance.",
   "No coach may be present during VARA activities.",
   "Athletes may not be penalized for non-participation.",
   "VARA does NOT count toward CARA hour limits.",
-  "Staff may only observe and provide safety supervision — no instruction.",
+  "Staff may only observe and provide safety supervision - no instruction.",
   "VARA activities must be initiated and controlled by athletes.",
 ];
 
 const REQUIRED_REST = [
   {
     period: "In-Season",
-    rule: "1 day off per week — must be a calendar day with no countable activities.",
+    rule: "1 day off per week - must be a calendar day with no countable activities.",
     severity: "bad",
   },
   {
@@ -72,7 +72,7 @@ const COUNTABLE_ACTIVITIES = [
 ];
 
 const SOURCES = [
-  { label: "NCAA Bylaw 17 — Practice Limitations", href: "https://ncaaorg.s3.amazonaws.com/compliance/rrs/2020/presentations/Division_III/Division_III_Bylaw_17.pdf" },
+  { label: "NCAA Bylaw 17 - Practice Limitations", href: "https://ncaaorg.s3.amazonaws.com/compliance/rrs/2020/presentations/Division_III/Division_III_Bylaw_17.pdf" },
   { label: "CARA / VARA / RARA Definitions (PDF)", href: "https://ncaaorg.s3.amazonaws.com/compliance/d1/D1Comp_TimeDemandsInfo.pdf" },
   { label: "NCAA Voluntary Activity Guidelines", href: "https://www.ncaa.org/news/2020/5/20/di-council-allows-football-basketball-to-have-voluntary-athletics-activities-starting-june-1.aspx" },
   { label: "Banned Substances List", href: "https://www.ncaa.org/sports/2015/6/10/ncaa-banned-substances.aspx" },
@@ -129,7 +129,7 @@ function Rule({ text, tone = "neutral" }) {
 // ─── Main drawer ─────────────────────────────────────────────────────────────
 
 export default function ComplianceDrawer({ open, onClose }) {
-  // Scroll lock — don't lock body since DaySheet may also be open
+  // Scroll lock - don't lock body since DaySheet may also be open
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
@@ -139,7 +139,7 @@ export default function ComplianceDrawer({ open, onClose }) {
 
   return (
     <>
-      {/* Backdrop — semi-transparent, low-z so calendar is still visible behind */}
+      {/* Backdrop - semi-transparent, low-z so calendar is still visible behind */}
       {open && (
         <div
           style={{
@@ -194,7 +194,7 @@ export default function ComplianceDrawer({ open, onClose }) {
               </p>
             </div>
             <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: DS.dimText, margin: 0 }}>
-              Quick reference — always verify with your compliance officer.
+              Quick reference - always verify with your compliance officer.
             </p>
           </div>
           <button
@@ -231,7 +231,7 @@ export default function ComplianceDrawer({ open, onClose }) {
 
           {/* 1. CARA Hour Limits */}
           <section>
-            <SectionLabel>CARA Hour Limits — Division I</SectionLabel>
+            <SectionLabel>CARA Hour Limits - Division I</SectionLabel>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {CARA_RULES.map((r) => (
                 <RuleCard key={r.season} tone={r.tone}>

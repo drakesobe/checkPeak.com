@@ -120,7 +120,7 @@ export default function ProteinPowderLabelScannerPage() {
             <p className="mt-3 text-sm sm:text-base text-gray-700 leading-relaxed max-w-3xl">
               Protein powders often contain add-ins beyond the protein source.
               Scan the label to screen ingredient wording for banned substances,
-              high-risk compounds, and suspicious blends—fast.
+              high-risk compounds, and suspicious blends-fast.
             </p>
 
             <div className="mt-6 flex flex-col sm:flex-row gap-3">

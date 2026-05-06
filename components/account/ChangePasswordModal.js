@@ -98,7 +98,7 @@ function PasswordField({ label, value, onChange, placeholder, autoComplete }) {
 export default function ChangePasswordModal({
   open,
   onClose,
-  inputBase, // accepted but unused — styling is self-contained
+  inputBase, // accepted but unused - styling is self-contained
   passwordData,
   onField,
   pwScore,
@@ -268,7 +268,7 @@ export default function ChangePasswordModal({
               className="flex items-center justify-between gap-3 px-6 py-4"
               style={{ borderTop: `1px solid ${DS.border}` }}
             >
-              {/* Forgot password — relevant here since user is trying to set one */}
+              {/* Forgot password - relevant here since user is trying to set one */}
               <a
                 href="/forgot-password"
                 className="text-xs font-bold hover:underline"

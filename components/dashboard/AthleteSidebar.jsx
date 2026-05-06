@@ -24,7 +24,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* NavGroup — small caps label + set of SidebarLinks                          */
+/* NavGroup - small caps label + set of SidebarLinks                          */
 /* -------------------------------------------------------------------------- */
 
 function NavGroup({ label, children }) {

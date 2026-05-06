@@ -1,6 +1,6 @@
 // components/account/FeedbackBanner.jsx
 // NOTE: This is the single source of feedback for the account page.
-// ActionsSection no longer renders its own banner — it receives message/error
+// ActionsSection no longer renders its own banner - it receives message/error
 // from account.js and delegates display here. Do not add a second banner.
 "use client";
 

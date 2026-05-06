@@ -1,5 +1,5 @@
 // pages/smartstack-compare.js
-// Clinical precision light theme — CheckPeak brand typography, pharmaceutical data aesthetic
+// Clinical precision light theme - CheckPeak brand typography, pharmaceutical data aesthetic
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Head from "next/head";
@@ -45,7 +45,7 @@ const C = {
   redBg:     "#FEF2F2",
   redBdr:    "#FECACA",
 
-  // Amazon — never change
+  // Amazon - never change
   amazon:    "#FF9900",
 };
 
@@ -180,9 +180,9 @@ const SORT_OPTIONS = [
 
 const SEO_BY_CAT = {
   "pre-workout":    { title: "Best Pre-Workout 2025 – Ranked by Price Per Serving | SmartStack",       desc: "We ranked every pre-workout supplement by true cost per serving vs. the category median. No sponsored picks. Find the best value pre-workout on Amazon today." },
-  "protein":        { title: "Best Protein Powder 2025 – Cheapest Per Serving Ranked | SmartStack",    desc: "Compare protein powders by real price-per-serving. Optimum Nutrition, Transparent Labs, Nutricost and more — independently ranked. No paid placements." },
+  "protein":        { title: "Best Protein Powder 2025 – Cheapest Per Serving Ranked | SmartStack",    desc: "Compare protein powders by real price-per-serving. Optimum Nutrition, Transparent Labs, Nutricost and more - independently ranked. No paid placements." },
   "creatine":       { title: "Best Creatine 2025 – Ranked by Price Per Serving | SmartStack",          desc: "Find the cheapest creatine monohydrate per serving. Every product ranked against the category median. Independent analysis, no brand deals." },
-  "vitamins":       { title: "Best Vitamins 2025 – Ranked by Real Value | SmartStack",                 desc: "Compare vitamins and supplements by price-per-serving. Thorne, Nature Made, Solgar and more — independently ranked by value, not sponsorship." },
+  "vitamins":       { title: "Best Vitamins 2025 – Ranked by Real Value | SmartStack",                 desc: "Compare vitamins and supplements by price-per-serving. Thorne, Nature Made, Solgar and more - independently ranked by value, not sponsorship." },
   "bcaas":          { title: "Best BCAAs 2025 – Cheapest Per Serving Ranked | SmartStack",             desc: "Every BCAA supplement ranked by price-per-serving vs. category median. Find the best value BCAAs for recovery and endurance. No paid placements." },
   "energy-drinks":  { title: "Best Energy Drinks 2025 – Ranked by Value | SmartStack",                 desc: "Compare ready-to-drink energy drinks by real cost per serving. Independent rankings. No sponsored placements. Find the best deal on Amazon today." },
   "energy-gel":     { title: "Best Energy Gels 2025 – Ranked by Value | SmartStack",                   desc: "Compare energy gels by real cost per serving. Find the best value running and endurance gels ranked independently. No sponsored placements." },
@@ -222,7 +222,7 @@ function sortStacks(stacks, sortBy, stats) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   AMAZON BUTTON — conversion-critical, keep orange
+   AMAZON BUTTON - conversion-critical, keep orange
 ════════════════════════════════════════════════════════════════════════════ */
 function AmazonBtn({ stack, size = "md", showPrice = false, tier = null }) {
   const price  = showPrice ? priceLabel(stack) : null;
@@ -277,7 +277,7 @@ function trackAmazon(stack, tier) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   CATEGORY SELECTOR — clinical grid
+   CATEGORY SELECTOR - clinical grid
 ════════════════════════════════════════════════════════════════════════════ */
 function CategorySelector({ onSelect }) {
   return (
@@ -320,7 +320,7 @@ function CategorySelector({ onSelect }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   BRAND SELECTOR — clean pills
+   BRAND SELECTOR - clean pills
 ════════════════════════════════════════════════════════════════════════════ */
 function BrandSelector({ onSelect }) {
   return (
@@ -365,7 +365,7 @@ function BrandSelector({ onSelect }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   BEST SELLER STRIP — clinical data card
+   BEST SELLER STRIP - clinical data card
 ════════════════════════════════════════════════════════════════════════════ */
 function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
   if (!stack) return null;
@@ -463,7 +463,7 @@ function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   VALUE EXPLAINER — clinical tier legend
+   VALUE EXPLAINER - clinical tier legend
 ════════════════════════════════════════════════════════════════════════════ */
 function ValueExplainer() {
   return (
@@ -474,7 +474,7 @@ function ValueExplainer() {
             How We Calculate Value
           </p>
           <p style={{ fontFamily:F.body, fontSize:13, color:C.secondary, lineHeight:1.65, margin:0 }}>
-            We calculate <strong>price-per-serving</strong> for every supplement and compare it to the category median. Rankings are 100% independent — no brand pays for placement.
+            We calculate <strong>price-per-serving</strong> for every supplement and compare it to the category median. Rankings are 100% independent - no brand pays for placement.
           </p>
         </div>
         <div style={{ display:"flex", gap:8, flex:"2 1 300px", flexWrap:"wrap" }}>
@@ -489,7 +489,7 @@ function ValueExplainer() {
                 <p style={{ fontFamily:F.cond, fontSize:12, fontWeight:900, letterSpacing:"0.06em", textTransform:"uppercase", color:tm.text, margin:"0 0 2px" }}>{tm.label}</p>
                 <p style={{ fontFamily:F.body, fontSize:11, color:tm.text, opacity:.85, lineHeight:1.5, margin:0 }}>
                   {key === "best"   ? "Significantly cheaper than category average" :
-                   key === "good"   ? "Near category average — solid pick" :
+                   key === "good"   ? "Near category average - solid pick" :
                    "Slightly above average, still worth considering"}
                 </p>
               </div>
@@ -502,7 +502,7 @@ function ValueExplainer() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   PRELOADED COMPARE TABLE — clinical data table
+   PRELOADED COMPARE TABLE - clinical data table
 ════════════════════════════════════════════════════════════════════════════ */
 function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
   if (!stacks.length) return null;
@@ -518,7 +518,7 @@ function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
       {/* Header */}
       <div style={{ padding:"12px 20px", borderBottom:`1px solid ${C.border}`, background:C.accentBg, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
         <p style={{ fontFamily:F.cond, fontSize:14, fontWeight:900, letterSpacing:"0.06em", textTransform:"uppercase", color:C.ink, margin:0 }}>
-          Top {stacks.length} {catLabel} — Head to Head
+          Top {stacks.length} {catLabel} - Head to Head
         </p>
         <span style={{ fontFamily:F.body, fontSize:11, color:C.secondary, marginLeft:"auto" }}>
           Ranked by value · Updated {fetchStr}
@@ -551,7 +551,7 @@ function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
             {[
               {
                 label:"Price / Serving",
-                render: s => { const p = getPPS(s); return p ? <strong style={{ fontFamily:F.cond, fontSize:15, fontStyle:"italic" }}>{ppsLabel(p)}</strong> : "—"; },
+                render: s => { const p = getPPS(s); return p ? <strong style={{ fontFamily:F.cond, fontSize:15, fontStyle:"italic" }}>{ppsLabel(p)}</strong> : "-"; },
                 bestOf: ss => { const ns = ss.map(getPPS).filter(n=>n!=null); return ns.length ? Math.min(...ns) : null; },
                 isBest: (s,b) => getPPS(s) === b,
               },
@@ -561,13 +561,13 @@ function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
               },
               {
                 label:"Customer Rating",
-                render: s => s?.rating > 0 ? <span>★ <strong>{Number(s.rating).toFixed(1)}</strong>{s.reviewCount>0?` (${formatK(s.reviewCount)})`:""}</span> : "—",
+                render: s => s?.rating > 0 ? <span>★ <strong>{Number(s.rating).toFixed(1)}</strong>{s.reviewCount>0?` (${formatK(s.reviewCount)})`:""}</span> : "-",
                 bestOf: ss => { const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0); return ns.length?Math.max(...ns):null; },
                 isBest: (s,b) => Number(s?.rating) === b,
               },
               {
                 label:"Popularity",
-                render: s => { const b=formatK(s?.boughtLastMonth); return b?`🔥 ${b}+ last month`:"—"; },
+                render: s => { const b=formatK(s?.boughtLastMonth); return b?`🔥 ${b}+ last month`:"-"; },
                 bestOf: ss => { const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0); return ns.length?Math.max(...ns):null; },
                 isBest: (s,b) => Number(s?.boughtLastMonth) === b,
               },
@@ -748,10 +748,10 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
           </thead>
           <tbody>
             {[
-              { label:"Price/Serving",  render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:F.cond,fontSize:15,fontStyle:"italic"}}>{ppsLabel(p)}</strong>:"—";}, bestOf:ss=>{const ns=ss.map(getPPS).filter(n=>n!=null);return ns.length?Math.min(...ns):null;}, isBest:(s,b)=>getPPS(s)===b },
-              { label:"Value Rating",   render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{fontFamily:F.cond,fontSize:11,fontWeight:900,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`}}>{tm.label}</span>:"—";} },
-              { label:"Rating",         render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"—", bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.rating)===b },
-              { label:"Popularity",     render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"—";}, bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.boughtLastMonth)===b },
+              { label:"Price/Serving",  render:s=>{const p=getPPS(s);return p?<strong style={{fontFamily:F.cond,fontSize:15,fontStyle:"italic"}}>{ppsLabel(p)}</strong>:"-";}, bestOf:ss=>{const ns=ss.map(getPPS).filter(n=>n!=null);return ns.length?Math.min(...ns):null;}, isBest:(s,b)=>getPPS(s)===b },
+              { label:"Value Rating",   render:s=>{const tm=TIER[getValueTier(getValueScore(s,stats))];return tm?<span style={{fontFamily:F.cond,fontSize:11,fontWeight:900,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",background:tm.bg,color:tm.text,border:`1px solid ${tm.border}`}}>{tm.label}</span>:"-";} },
+              { label:"Rating",         render:s=>s?.rating>0?<span>★ <strong>{Number(s.rating).toFixed(1)}</strong></span>:"-", bestOf:ss=>{const ns=ss.map(v=>Number(v?.rating)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.rating)===b },
+              { label:"Popularity",     render:s=>{const b=formatK(s?.boughtLastMonth);return b?`${b}+ last mo`:"-";}, bestOf:ss=>{const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0);return ns.length?Math.max(...ns):null;}, isBest:(s,b)=>Number(s?.boughtLastMonth)===b },
               { label:"Buy",            render:s=><AmazonBtn stack={s} size="sm" showPrice tier={getValueTier(getValueScore(s, stats))} /> },
             ].map((row) => {
               const bestVal = row.bestOf ? row.bestOf(stacks) : null;
@@ -791,7 +791,7 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
       </div>
       <div style={{ padding:"8px 20px", borderTop:`1px solid ${C.border}`, background:C.raised }}>
         <p style={{ fontFamily:F.body, fontSize:9, color:C.muted, margin:0, textAlign:"center" }}>
-          Safety Check powered by CheckPeak — matched against our banned substances database. Results are for informational purposes only.
+          Safety Check powered by CheckPeak - matched against our banned substances database. Results are for informational purposes only.
         </p>
       </div>
     </div>
@@ -813,7 +813,7 @@ async function fetchLabelAsFile(url) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   COMPARE PANEL — sticky bottom
+   COMPARE PANEL - sticky bottom
 ════════════════════════════════════════════════════════════════════════════ */
 function ComparePanel({ stacks, onRemove, onClear, onScrollToTable }) {
   if (stacks.length === 0) return null;
@@ -1038,7 +1038,7 @@ export default function SmartStackComparePage() {
 
   const catSeo    = activeCatSlug ? SEO_BY_CAT[activeCatSlug] : null;
   const pageTitle = activeBrandName ? `${activeBrandName} Supplements Ranked by Value | SmartStack` : catSeo ? catSeo.title : `Best Supplements 2025 – Ranked by Price Per Serving | SmartStack`;
-  const pageDesc  = activeBrandName ? `Every ${activeBrandName} supplement ranked by price-per-serving against the category median. Independent analysis. No paid placements.` : catSeo ? catSeo.desc : `Compare ${totalCount}+ supplements by true price-per-serving. Pre-workout, protein, creatine, vitamins and more — independently ranked. No brand pays to be here.`;
+  const pageDesc  = activeBrandName ? `Every ${activeBrandName} supplement ranked by price-per-serving against the category median. Independent analysis. No paid placements.` : catSeo ? catSeo.desc : `Compare ${totalCount}+ supplements by true price-per-serving. Pre-workout, protein, creatine, vitamins and more - independently ranked. No brand pays to be here.`;
   const pageUrl   = `https://checkpeak.com/smartstack-compare${activeCatSlug ? `?cat=${activeCatSlug}` : ""}`;
   const isEmailCaptureActive = comparing.length === 0;
 
@@ -1175,9 +1175,9 @@ export default function SmartStackComparePage() {
               color:C.ink, margin:"0 0 clamp(1rem,2.5vw,1.75rem)",
             }}>
               {activeBrandName
-                ? <>{activeBrandName} — <span style={{ color:C.accent }}>ranked by real value</span></>
+                ? <>{activeBrandName} - <span style={{ color:C.accent }}>ranked by real value</span></>
                 : activeCatLabel
-                ? <>Best {activeCatLabel} — <span style={{ color:C.accent }}>ranked by cost per serving</span></>
+                ? <>Best {activeCatLabel} - <span style={{ color:C.accent }}>ranked by cost per serving</span></>
                 : <>Stop wasting money.<br /><span style={{ color:C.accent }}>Here's what's actually worth it.</span></>
               }
             </h1>
@@ -1385,7 +1385,7 @@ export default function SmartStackComparePage() {
                 Serious about your supplements?
               </p>
               <p style={{ fontFamily:F.body, fontSize:14, color:"rgba(255,255,255,0.55)", margin:"0 0 1.5rem", lineHeight:1.7, maxWidth:480, marginLeft:"auto", marginRight:"auto" }}>
-                CheckPeak helps you track nutrition, manage workouts, and scan supplements for banned substances — all in one place.
+                CheckPeak helps you track nutrition, manage workouts, and scan supplements for banned substances - all in one place.
               </p>
               <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
                 <a href="/dashboard" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", background:C.accent, color:"#fff", fontFamily:F.cond, fontSize:13, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", textDecoration:"none", transition:"filter 0.2s" }}

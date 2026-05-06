@@ -416,7 +416,7 @@ export default function ModalContainerSmartstack({ stack, allStacks = [], onClos
       await fetchRecords(text);
     } catch (err) {
       console.error("OCR Error:", err);
-      setError("OCR failed — try a clearer image or re-open this modal.");
+      setError("OCR failed - try a clearer image or re-open this modal.");
       const fallback = "No OCR text detected.";
       OCR_CACHE[imageUrl] = fallback;
       setOcrText(fallback);

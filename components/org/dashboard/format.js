@@ -1,6 +1,6 @@
 // components/org/workouts-calendar/format.js
 export function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);

@@ -36,12 +36,12 @@ const SCAN_STYLE = `
     --cp-border:  rgba(255,255,255,0.08);
 
     /*
-      Readability scale — used consistently across all text:
-        --cp-text-primary   full white — headlines only
-        --cp-text-body      85%  — main body copy, sub headings
-        --cp-text-secondary 65%  — supporting labels, descriptions
-        --cp-text-muted     45%  — decorative / de-emphasised only
-        --cp-text-ghost     28%  — purely decorative (e.g. 01/02/03 numbers)
+      Readability scale - used consistently across all text:
+        --cp-text-primary   full white - headlines only
+        --cp-text-body      85%  - main body copy, sub headings
+        --cp-text-secondary 65%  - supporting labels, descriptions
+        --cp-text-muted     45%  - decorative / de-emphasised only
+        --cp-text-ghost     28%  - purely decorative (e.g. 01/02/03 numbers)
 
       Nothing functional ever goes below --cp-text-secondary (65%).
       The old code had labels and descriptions at 35–45% which fails WCAG AA
@@ -147,7 +147,7 @@ const SCAN_STYLE = `
 
   /*
     Stat pills
-    FIX: was rgba(255,255,255,0.45) at 0.65rem — unreadable on mobile.
+    FIX: was rgba(255,255,255,0.45) at 0.65rem - unreadable on mobile.
     Now uses --cp-text-secondary (65%) with size bumped to 0.7rem.
     The dot remains accent-colored for visual interest.
   */
@@ -242,7 +242,7 @@ const SCAN_STYLE = `
 
   /*
     Sub copy
-    FIX: was rgba(255,255,255,0.55) — acceptable on desktop, too low at small
+    FIX: was rgba(255,255,255,0.55) - acceptable on desktop, too low at small
     viewport widths where line lengths get long and type gets small.
     Bumped to --cp-text-body (85%) so it reads clearly at all sizes.
   */
@@ -266,7 +266,7 @@ const SCAN_STYLE = `
 
   /*
     Strip section number (01 / 02 / 03)
-    FIX: was rgba(255,255,255,0.2) — purely decorative so ghost is fine,
+    FIX: was rgba(255,255,255,0.2) - purely decorative so ghost is fine,
     but bumped slightly to 0.28 so it registers as intentional on mobile
     rather than looking like a rendering artifact.
   */
@@ -322,7 +322,7 @@ const SCAN_STYLE = `
 
   /*
     Strip description
-    FIX: was var(--cp-muted) = 45% — at 0.72rem on mobile this is the worst
+    FIX: was var(--cp-muted) = 45% - at 0.72rem on mobile this is the worst
     offender in the whole component. Bumped to --cp-text-secondary (65%).
     Still clearly secondary to the title but actually readable.
   */
@@ -349,7 +349,7 @@ const SCAN_STYLE = `
     }
 
     /*
-      On mobile the stat block right-aligns to sm:text-right —
+      On mobile the stat block right-aligns to sm:text-right -
       but the number label text is tiny. Bump line-height slightly
       so stacked numbers don't feel cramped.
     */
@@ -437,7 +437,7 @@ export default function HeroSection() {
             <div className="flex flex-col gap-6 max-w-lg">
               <p className="cp-sub">
                 Workout check-ins. Nutrition targets. Supplement screening.
-                One system that keeps your athletes sharp — wherever they are.
+                One system that keeps your athletes sharp - wherever they are.
               </p>
 
               <div className="flex flex-wrap gap-3">
@@ -464,7 +464,7 @@ export default function HeroSection() {
 
               {/*
                 Disclaimer line
-                FIX: was rgba(255,255,255,0.25) — completely unreadable on mobile.
+                FIX: was rgba(255,255,255,0.25) - completely unreadable on mobile.
                 Bumped to --cp-text-secondary (65%). It's intentionally the
                 quietest text on the page but it should still be legible.
               */}
@@ -509,7 +509,7 @@ export default function HeroSection() {
                   </div>
                   {/*
                     Stat label
-                    FIX: was rgba(255,255,255,0.35) — fails at small sizes on
+                    FIX: was rgba(255,255,255,0.35) - fails at small sizes on
                     mobile. This is the label beneath the big counter number,
                     which is the whole point of the stat. Bumped to 0.6.
                   */}

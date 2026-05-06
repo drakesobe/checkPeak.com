@@ -337,8 +337,8 @@ export default function WorkoutsCalendarPage() {
       <CalendarHeader
         viewMode={viewMode}
         setViewMode={setViewMode}
-        weekLabel={clientReady ? weekLabel : "—"}
-        monthLabel={clientReady ? monthLabel : "—"}
+        weekLabel={clientReady ? weekLabel : "-"}
+        monthLabel={clientReady ? monthLabel : "-"}
         selectedSports={selectedSports}
         setSelectedSports={setSelectedSports}
         SPORTS_ALL={SPORTS_ALL}

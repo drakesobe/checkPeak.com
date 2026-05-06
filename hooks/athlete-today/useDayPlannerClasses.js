@@ -19,7 +19,7 @@ function lsSet(key, val) {
 }
 
 /**
- * @param {string} athleteToken  — used to namespace the storage key per athlete
+ * @param {string} athleteToken  - used to namespace the storage key per athlete
  * @returns {{
  *   classes: Array,
  *   addClass: (cls: {name, time, room, days}) => void,

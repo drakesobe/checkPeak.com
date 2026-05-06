@@ -84,7 +84,7 @@ export default function OrgTrainersHeader({
           </div>
         </div>
 
-        {/* Right — actions */}
+        {/* Right - actions */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
           <Btn onClick={onBack} disabled={typeof onBack !== "function"} variant="ghost">
             <ArrowLeft className="w-3.5 h-3.5" />

@@ -6,12 +6,12 @@
   Three-panel editorial image section. Adidas Spezial reference.
 
   Key design decisions (v2):
-  • ONE word "CHECKPEAK" stamped on panels 1 & 3 — repetition = brand hammer
-  • Middle panel is pure image — no text, breathing room. Loud / quiet / loud.
-  • Type is italic + white — bigger, more kinetic, max contrast on any image
+  • ONE word "CHECKPEAK" stamped on panels 1 & 3 - repetition = brand hammer
+  • Middle panel is pure image - no text, breathing room. Loud / quiet / loud.
+  • Type is italic + white - bigger, more kinetic, max contrast on any image
   • Blue accent reserved only for the label chip and CTA hover
-  • Proportions: 1.1fr 0.8fr 1.1fr — tighter middle feels more editorial
-  • Hairline 0.5px dividers — barely there, just enough structure
+  • Proportions: 1.1fr 0.8fr 1.1fr - tighter middle feels more editorial
+  • Hairline 0.5px dividers - barely there, just enough structure
   ─────────────────────────────────────────────────────────────────────────
 */
 
@@ -97,7 +97,7 @@ const STYLE = `
   /*
     THE STAMP
     Italic = kinetic, forward motion. White = max contrast on any bg.
-    Size goes up to 12vw — big enough to feel like it's fighting the image.
+    Size goes up to 12vw - big enough to feel like it's fighting the image.
     Two panels, same word, same position. Repetition is the brand strategy.
   */
   .cp-stamp {
@@ -296,7 +296,7 @@ export default function TriptychSection() {
             </div>
           </Panel>
 
-          {/* ── PANEL 2: mirror / side — PURE IMAGE, no text ── */}
+          {/* ── PANEL 2: mirror / side - PURE IMAGE, no text ── */}
           <Panel
             src="/images/athlete-barbell-squat-mirror-gym-intensity.jpg"
             alt=""
@@ -306,7 +306,7 @@ export default function TriptychSection() {
             delay={0.12}
           />
 
-          {/* ── PANEL 3: front-facing — stamp repeated, quiet label ── */}
+          {/* ── PANEL 3: front-facing - stamp repeated, quiet label ── */}
           <Panel
             src="/images/college-athlete-barbell-squat-training-gym.jpg"
             alt="Athlete ready in the gym"

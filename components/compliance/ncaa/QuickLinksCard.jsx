@@ -30,7 +30,7 @@ export default function QuickLinksCard({ toc, lastReviewed }) {
       <div className="border-t border-gray-100 mt-4 pt-4">
         <div className="font-semibold text-gray-900">Program-first compliance</div>
         <p className="text-sm text-gray-600 mt-2 leading-relaxed">
-          Built to reduce eligibility risk — without replacing your compliance office or athletics health care staff.
+          Built to reduce eligibility risk - without replacing your compliance office or athletics health care staff.
         </p>
 
         <div className="mt-3 flex flex-col gap-2">

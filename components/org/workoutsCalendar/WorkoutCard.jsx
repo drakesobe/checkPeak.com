@@ -49,7 +49,7 @@ export default function WorkoutCard({ w, onOpen, compact = false }) {
             {title}
           </p>
 
-          {/* Athlete name — shown when available */}
+          {/* Athlete name - shown when available */}
           {athleteName && (
             <p
               className="truncate font-semibold"

@@ -5,7 +5,7 @@ import { useState } from "react";
 import Cropper from "react-easy-crop";
 
 /**
- * CropModal v3 — Immersive, native-feel crop UI
+ * CropModal v3 - Immersive, native-feel crop UI
  *
  * Design philosophy:
  *   The image IS the UI. Everything else is chrome that gets out of the way.
@@ -14,16 +14,16 @@ import Cropper from "react-easy-crop";
  *   - A frosted glass strip floats at the bottom with just what's needed
  *   - Zoom slider is integrated into the glass strip, large thumb, easy to hit
  *   - Aspect toggle is a subtle pill button in the top-right (most users never touch it)
- *   - Confirm is a full-width pill at the very bottom — thumb-reachable from anywhere
+ *   - Confirm is a full-width pill at the very bottom - thumb-reachable from anywhere
  *   - Step dots show progress in multi-file mode (minimal, non-intrusive)
- *   - Close is a small circle in the top-left — easy to reach, hard to accidentally hit
+ *   - Close is a small circle in the top-left - easy to reach, hard to accidentally hit
  *   - No blocky panels, no cards, no borders
  */
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap');
 
-  /* Zoom slider — large thumb, invisible tall hit area */
+  /* Zoom slider - large thumb, invisible tall hit area */
   .cm-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -155,7 +155,7 @@ export default function CropModal({
           }}
         >
 
-        {/* ── Cropper — fills the inner container ─────────────────── */}
+        {/* ── Cropper - fills the inner container ─────────────────── */}
         <div className="absolute inset-0">
           <Cropper
             image={previewURL}
@@ -178,7 +178,7 @@ export default function CropModal({
           />
         </div>
 
-        {/* ── Top bar — minimal, floating over image ──────────────── */}
+        {/* ── Top bar - minimal, floating over image ──────────────── */}
         <div
           className="absolute top-0 left-0 right-0 z-10 flex items-start justify-between px-4 pt-4"
           style={{
@@ -186,7 +186,7 @@ export default function CropModal({
             paddingTop: "max(16px, env(safe-area-inset-top, 16px))",
           }}
         >
-          {/* Close — small circle, easy to find, hard to mis-tap */}
+          {/* Close - small circle, easy to find, hard to mis-tap */}
           <button
             type="button"
             onClick={onClose}
@@ -213,7 +213,7 @@ export default function CropModal({
             {/* Step dots */}
             <StepDots total={totalFiles} current={cropIndex} />
 
-            {/* Aspect toggle — subtle pill, top right */}
+            {/* Aspect toggle - subtle pill, top right */}
             <div className="relative">
               <button
                 type="button"
@@ -247,7 +247,7 @@ export default function CropModal({
                   }}
                 >
                   {[
-                    { key: "label", label: "Label Text",  hint: "Tall — best for panels" },
+                    { key: "label", label: "Label Text",  hint: "Tall - best for panels" },
                     { key: "free",  label: "Free Crop",   hint: "Any shape"              },
                   ].map(({ key, label, hint }) => (
                     <button
@@ -285,7 +285,7 @@ export default function CropModal({
           </div>
         </div>
 
-        {/* ── Floating hint — center top, fades away ──────────────── */}
+        {/* ── Floating hint - center top, fades away ──────────────── */}
         <div
           className="absolute left-0 right-0 z-10 flex justify-center pointer-events-none"
           style={{ top: "max(64px, calc(env(safe-area-inset-top, 16px) + 52px))" }}
@@ -305,7 +305,7 @@ export default function CropModal({
           </div>
         </div>
 
-        {/* ── Bottom glass strip — floats over the image ──────────── */}
+        {/* ── Bottom glass strip - floats over the image ──────────── */}
         <div
           className="cm-glass absolute bottom-0 left-0 right-0 z-10 flex flex-col gap-4 px-5 pt-5"
           style={{

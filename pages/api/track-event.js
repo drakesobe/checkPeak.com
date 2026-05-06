@@ -22,7 +22,7 @@ const analyticsBase =
     ? new Airtable({ apiKey: process.env.ANALYTICS_API_KEY }).base(process.env.ANALYTICS_BASE_ID)
     : null;
 
-// Scroll and time milestones are too noisy for Airtable — they still
+// Scroll and time milestones are too noisy for Airtable - they still
 // fire to GA on the client, just skip the DB write here.
 const SKIP_AIRTABLE = new Set([
   "scroll_milestone",
@@ -104,7 +104,7 @@ export default async function handler(req, res) {
       "Referrer":          String(client?.referrer   || ""),
       "User Agent":        String(userAgent  || ""),
       "Accept-Language":   String(acceptLang || ""),
-      "IP Hash":           hashIp(ip), // always hashed, never raw — privacy safe
+      "IP Hash":           hashIp(ip), // always hashed, never raw - privacy safe
     };
 
     // ── Fields only written when consent is given ────────────────────────

@@ -189,7 +189,7 @@ export default function OrgAthleteDetailPage() {
 
           <div className="text-right">
             <p className="text-xs text-gray-500">Athlete Email</p>
-            <p className="text-sm font-semibold break-all">{athleteEmail || "—"}</p>
+            <p className="text-sm font-semibold break-all">{athleteEmail || "-"}</p>
             <p className="text-[11px] text-gray-400 mt-1">
               Viewing as {headerOrgLabel}
               {orgName ? ` • ${orgName}` : ""}
@@ -213,7 +213,7 @@ export default function OrgAthleteDetailPage() {
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Example: Supplement Protocol — Week 1"
+                placeholder="Example: Supplement Protocol - Week 1"
                 className="w-full px-4 py-3 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#46769B]"
               />
             </div>

@@ -27,13 +27,13 @@ export default function StatusBadge({
     pending:      labels.pending      || "Submitted",
     completed:    labels.completed    || "Done",
     proof:        labels.proof        || "Proof required",
-    // "optional photo" replaced — no badge shown at all (see state logic below)
+    // "optional photo" replaced - no badge shown at all (see state logic below)
     pendingHint:  labels.pendingHint  || "Coach review",
     rejectedHint: labels.rejectedHint || "Needs re-upload",
   }), [labels]);
 
   // Priority: rejected > completed > pending > proof required
-  // When evidenceRequired=false and no completion state, return null — no badge needed.
+  // When evidenceRequired=false and no completion state, return null - no badge needed.
   const state = useMemo(() => {
     if (isRejected)      return "rejected";
     if (isCompleted)     return "completed";

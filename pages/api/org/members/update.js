@@ -100,7 +100,7 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: "You can't deactivate your own account." });
     }
 
-    // Fetch once — single source of truth, no formula round trip
+    // Fetch once - single source of truth, no formula round trip
     const record = await b(AT.tables.orgMembers).find(id);
     if (!record) return res.status(404).json({ error: "Member not found." });
 
@@ -161,7 +161,7 @@ export default async function handler(req, res) {
       updates[ACTIVE_FIELD] = Boolean(active);
     }
 
-    // Email — unique within org
+    // Email - unique within org
     if (email !== undefined) {
       const nextEmail = normEmail(email);
       if (!nextEmail || !nextEmail.includes("@")) {

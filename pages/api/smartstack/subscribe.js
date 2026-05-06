@@ -34,12 +34,12 @@ export default async function handler(req, res) {
   }
 
   if (!base || !process.env.ATHLETE_TABLE_NAME) {
-    console.warn("[smartstack/subscribe] Athletes table not configured — email not saved:", email);
+    console.warn("[smartstack/subscribe] Athletes table not configured - email not saved:", email);
     return res.status(200).json({ ok: true, saved: false, reason: "not_configured" });
   }
 
   try {
-    // Check for existing record — don't create duplicates
+    // Check for existing record - don't create duplicates
     const existing = await base(process.env.ATHLETE_TABLE_NAME)
       .select({
         filterByFormula: `LOWER({Email})='${escapeAirtable(email)}'`,
@@ -48,12 +48,12 @@ export default async function handler(req, res) {
       .firstPage();
 
     if (existing.length > 0) {
-      // Already in the table — still a success, just don't duplicate
+      // Already in the table - still a success, just don't duplicate
       console.log(`[smartstack/subscribe] Already exists: ${email}`);
       return res.status(200).json({ ok: true, saved: false, reason: "already_exists" });
     }
 
-    // Create lightweight lead record — same fields as athlete-signup.js
+    // Create lightweight lead record - same fields as athlete-signup.js
     await base(process.env.ATHLETE_TABLE_NAME).create([{
       fields: {
         Email:     email,
@@ -63,8 +63,8 @@ export default async function handler(req, res) {
         Type:      "Athlete",
         Source:    "price_alert",
         CreatedAt: new Date().toISOString(),
-        // Tag the category they were interested in — useful for segmenting blasts
-        Notes:     `Price alert subscriber — interested in: ${category}`,
+        // Tag the category they were interested in - useful for segmenting blasts
+        Notes:     `Price alert subscriber - interested in: ${category}`,
       },
     }]);
 
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("[smartstack/subscribe] Airtable error:", err);
-    // Non-fatal — don't break the UX
+    // Non-fatal - don't break the UX
     return res.status(200).json({ ok: true, saved: false, reason: err?.message });
   }
 }

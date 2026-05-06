@@ -11,7 +11,7 @@ import { fmtDateTime, shortToken, adherenceTone } from "./utils";
 import { StatusPill, DS } from "./ui";
 
 function pillForAdherence(avg) {
-  if (avg == null) return { tone: "neutral", text: "Adherence —" };
+  if (avg == null) return { tone: "neutral", text: "Adherence -" };
   if (avg >= 75)   return { tone: "good",    text: `Adherence ${avg}%` };
   if (avg >= 60)   return { tone: "warn",    text: `Adherence ${avg}%` };
   return                   { tone: "bad",    text: `Adherence ${avg}%` };
@@ -51,7 +51,7 @@ function DetailRow({ icon, label, value, action }) {
             {label}
           </p>
           <p className="text-sm mt-0.5 break-words" style={{ color: DS.bodyText }}>
-            {value || "—"}
+            {value || "-"}
           </p>
         </div>
       </div>
@@ -241,7 +241,7 @@ export function ProfileHeader({
             <DetailRow
               icon={<KeyRound className="h-4 w-4" />}
               label="Athlete Token"
-              value={token ? shortToken(token) : "—"}
+              value={token ? shortToken(token) : "-"}
               action={
                 token ? (
                   <button
@@ -263,7 +263,7 @@ export function ProfileHeader({
             <DetailRow
               icon={<Clock className="h-4 w-4" />}
               label="Last refreshed"
-              value={lastLoadedAt ? `${fmtDateTime(lastLoadedAt)} ET` : "—"}
+              value={lastLoadedAt ? `${fmtDateTime(lastLoadedAt)} ET` : "-"}
             />
           </div>
         </div>

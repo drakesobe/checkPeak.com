@@ -1,5 +1,5 @@
 // pages/athlete/today.jsx
-// Athlete command center — Skimmer route checklist.
+// Athlete command center - Skimmer route checklist.
 // Workout row tap → WorkoutSheet (dark bottom sheet, swipeable exercises).
 // Meal rows → inline dual toggles. Class rows → photo completion.
 "use client";
@@ -60,8 +60,8 @@ const DAY_GROUPS = [
 const SWIPE_HINT_KEY = "cp_swipe_hint:shown";
 
 // ─── buildDayRoute ────────────────────────────────────────────────────────────
-// `loading` — skips the workout while a new date is being fetched.
-// `mealTimeOverrides` — { mealKey: startMinutes } set when user drags a meal
+// `loading` - skips the workout while a new date is being fetched.
+// `mealTimeOverrides` - { mealKey: startMinutes } set when user drags a meal
 //   block in DayPlannerSheet. Overrides the default MEAL_TIMES constants so
 //   the RouteList reflects the user's customised schedule immediately.
 function buildDayRoute({
@@ -89,7 +89,7 @@ function buildDayRoute({
     if (dateMatches) {
       const sub = (items || []).map(item => {
         const evRaw = String(item.EvidenceRequired || "").toLowerCase();
-        // Normalise video URL — try common Airtable field name variations
+        // Normalise video URL - try common Airtable field name variations
         const rawVideo = String(
           item.VideoURL || item.VideoUrl || item.Video ||
           item.video_url || item.video || item.VideoLink || ""
@@ -647,7 +647,7 @@ export default function AthleteToday() {
 
         {/* Sub-bar: now context + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
-          {/* Now context — left side */}
+          {/* Now context - left side */}
           {nowCtx ? (
             <div style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0 }}>
               <div style={{
@@ -669,7 +669,7 @@ export default function AthleteToday() {
             </div>
           )}
 
-          {/* Action buttons — right side, always visible */}
+          {/* Action buttons - right side, always visible */}
           {!isPastDay && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
               {/* Add class */}

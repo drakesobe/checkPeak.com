@@ -129,7 +129,7 @@ export default function PreWorkoutLabelScannerPage() {
             <p className="mt-3 text-sm sm:text-base text-gray-700 leading-relaxed max-w-3xl">
               Pre-workouts are one of the highest-risk supplement categories.
               Scan the label to screen for banned ingredients, high-risk
-              stimulants, and alias wording—fast. Then verify with trusted
+              stimulants, and alias wording-fast. Then verify with trusted
               guidance for final decisions.
             </p>
 

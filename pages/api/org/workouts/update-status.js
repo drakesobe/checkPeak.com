@@ -16,7 +16,7 @@ function getBase() {
 }
 
 function getOrgId(req) {
-  // Mirror your existing auth pattern — adjust to match your session/cookie field names
+  // Mirror your existing auth pattern - adjust to match your session/cookie field names
   try {
     const raw  = req.cookies?.["apex_session"] || req.cookies?.["session"] || "";
     const sess = raw ? JSON.parse(Buffer.from(raw.split(".")[1] || "{}", "base64").toString()) : {};

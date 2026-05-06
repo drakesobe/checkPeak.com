@@ -10,13 +10,13 @@ import ComplianceSection from "@/components/info/ComplianceSection";
 import { ncaaWordingCallouts }                      from "@/lib/compliance/ncaaWording";
 import { ncaaResourceBackbone, NCAA_LAST_REVIEWED } from "@/lib/compliance/ncaaSources";
 
-// ── Brand tokens — match index.js exactly ────────────────────────────────────
+// ── Brand tokens - match index.js exactly ────────────────────────────────────
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
 const WHITE  = "#FFFFFF";
 const RED    = "#C8102E";
 
-// ── Film grain — same as index ────────────────────────────────────────────────
+// ── Film grain - same as index ────────────────────────────────────────────────
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const GLOBAL_STYLE = `
@@ -120,7 +120,7 @@ export default function NcaaCompliancePage() {
   return (
     <>
       <Head>
-        <title>CheckPeak — NCAA Rules</title>
+        <title>CheckPeak - NCAA Rules</title>
         <meta name="description" content="Direct NCAA resources and how CheckPeak stays NCAA-aligned." />
       </Head>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
@@ -167,7 +167,7 @@ export default function NcaaCompliancePage() {
               alignItems: "start",
             }}>
 
-              {/* Left — headline + CTAs */}
+              {/* Left - headline + CTAs */}
               <div>
                 <Eyebrow>Compliance · NCAA Rules</Eyebrow>
 
@@ -303,7 +303,7 @@ export default function NcaaCompliancePage() {
                 </motion.p>
               </div>
 
-              {/* Right — how to use card */}
+              {/* Right - how to use card */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -325,7 +325,7 @@ export default function NcaaCompliancePage() {
 
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.85rem", marginBottom: "1.25rem" }}>
                   {[
-                    "Start with NCAA sources — links below",
+                    "Start with NCAA sources - links below",
                     "Use callouts to explain the \"why\" to athletes",
                     "If it's unclear: don't hesitate to ask compliance staff",
                   ].map((item, i) => (

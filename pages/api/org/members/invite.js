@@ -124,7 +124,7 @@ export default async function handler(req, res) {
 
       // ── FIX: Re-invite guard ───────────────────────────────────────────────
       // If InviteUsedAt is set AND Active=true, the member has already completed
-      // their setup and is a live account. Do NOT set Active=false — that locks
+      // their setup and is a live account. Do NOT set Active=false - that locks
       // them out immediately. Instead, refresh the invite token only (allows
       // password reset flow) and leave Active untouched.
       //
@@ -150,16 +150,16 @@ export default async function handler(req, res) {
       }
 
       if (isAlreadyActive && hasCompletedSetup) {
-        // Live member — preserve Active=true, don't include it in the write
+        // Live member - preserve Active=true, don't include it in the write
       } else {
-        // Pending or inactive — reset to pending
+        // Pending or inactive - reset to pending
         fieldsToWrite[memActiveField] = false;
       }
 
       record = await b(AT.tables.orgMembers).update(existing[0].id, fieldsToWrite);
 
     } else {
-      // New record — always starts as pending (Active=false)
+      // New record - always starts as pending (Active=false)
       const fieldsToWrite = {
         [memEmailField]:         emailLower,
         [memRoleField]:          roleLower,

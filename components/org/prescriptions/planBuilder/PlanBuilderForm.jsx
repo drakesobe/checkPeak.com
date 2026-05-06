@@ -110,7 +110,7 @@ function Badge({ children, tone = "brand" }) {
 }
 
 /* ══════════════════════════════════════════════════════
-   Header zone — athlete identity + templates drawer
+   Header zone - athlete identity + templates drawer
 ══════════════════════════════════════════════════════ */
 
 function AthleteIdentity({ selectedAthlete, selectedAthleteEmail }) {
@@ -324,7 +324,7 @@ function TabBar({ activeTab, onTabChange, badges }) {
 }
 
 /* ══════════════════════════════════════════════════════
-   Plan summary strip — visible on all tabs except Daily
+   Plan summary strip - visible on all tabs except Daily
    so coach always knows what targets are loaded
 ══════════════════════════════════════════════════════ */
 
@@ -392,7 +392,7 @@ function DailyTab({ structured, onChange, activePreset, setActivePreset, onGoToM
           <p className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>
             Quick Presets
           </p>
-          <span className="text-xs" style={{ color: DS.dimText }}>— fills all targets instantly</span>
+          <span className="text-xs" style={{ color: DS.dimText }}>- fills all targets instantly</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -563,7 +563,7 @@ const SUPP_CATEGORIES = [
   },
 ];
 
-/* ── Custom product dropdown — shows image in trigger + option rows ──────── */
+/* ── Custom product dropdown - shows image in trigger + option rows ──────── */
 function CategoryPicker({ catDef, products, structured, onChange }) {
   const [open, setOpen] = useState(false);
   const ref             = useRef(null);
@@ -632,7 +632,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
           boxShadow:       open ? `0 0 0 2px ${DS.brand}18` : "none",
         }}
       >
-        {/* Thumbnail — shown when something is selected */}
+        {/* Thumbnail - shown when something is selected */}
         {selectedProduct ? (
           <div
             className="shrink-0 overflow-hidden rounded-sm"
@@ -674,7 +674,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
             </>
           ) : (
             <p className="text-sm" style={{ color: DS.dimText }}>
-              — No recommendation —
+              - No recommendation -
             </p>
           )}
         </div>
@@ -721,7 +721,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <p className="text-sm" style={{ color: DS.dimText }}>— No recommendation —</p>
+            <p className="text-sm" style={{ color: DS.dimText }}>- No recommendation -</p>
           </button>
 
           {/* Product rows */}
@@ -784,7 +784,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
                   </svg>
                 )}
 
-                {/* Affiliate link — only when hovering feels cluttered, so always show small */}
+                {/* Affiliate link - only when hovering feels cluttered, so always show small */}
                 {p.affiliateLink && (
                   <a
                     href={p.affiliateLink}
@@ -803,7 +803,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
         </div>
       )}
 
-      {/* ── Selected product Amazon CTA — shown below trigger when selected ── */}
+      {/* ── Selected product Amazon CTA - shown below trigger when selected ── */}
       {selectedProduct?.affiliateLink && (
         <div className="mt-2 flex items-center justify-between px-3 py-2 rounded-sm"
           style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}
@@ -827,7 +827,7 @@ function CategoryPicker({ catDef, products, structured, onChange }) {
   );
 }
 
-/* ── SupplementsTab — products passed from page, no fetch here ───────────── */
+/* ── SupplementsTab - products passed from page, no fetch here ───────────── */
 function SupplementsTab({ structured, onChange, products }) {
 
   // Split products into category buckets once
@@ -868,7 +868,7 @@ function SupplementsTab({ structured, onChange, products }) {
         )}
       </div>
 
-      {/* One dropdown row per category — 2-col grid on wider screens */}
+      {/* One dropdown row per category - 2-col grid on wider screens */}
       <div className="grid sm:grid-cols-2 gap-5">
         {SUPP_CATEGORIES.map((cat) => (
           <CategoryPicker
@@ -881,7 +881,7 @@ function SupplementsTab({ structured, onChange, products }) {
         ))}
       </div>
 
-      {/* Dosing notes — plain textarea, not a SearchSelect */}
+      {/* Dosing notes - plain textarea, not a SearchSelect */}
       <div style={{ borderTop: `1px solid ${DS.border}`, paddingTop: "1rem" }}>
         <Label>Dosing Notes</Label>
         <textarea
@@ -930,7 +930,7 @@ function NotesTab({ structured, onChange, title, setTitle, OPTIONS, onSave, onSa
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave?.(e); return; }
             if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); onSaveNext?.(e); }
           }}
-          placeholder="e.g. lactose sensitive — avoid whey. Increase carbs on heavy practice days. Prioritize sleep and avoid fast food in-season…"
+          placeholder="e.g. lactose sensitive - avoid whey. Increase carbs on heavy practice days. Prioritize sleep and avoid fast food in-season…"
           onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
           onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
         />
@@ -939,7 +939,7 @@ function NotesTab({ structured, onChange, title, setTitle, OPTIONS, onSave, onSa
         </p>
       </section>
 
-      {/* Plan meta — title, status, effective date */}
+      {/* Plan meta - title, status, effective date */}
       <section style={{ borderTop: `1px solid ${DS.border}`, paddingTop: "1.25rem" }}>
         <p className="text-xs font-black uppercase tracking-wider mb-3" style={{ color: DS.bodyText }}>
           Plan Meta
@@ -1025,11 +1025,11 @@ export default function PlanBuilderForm({
   onSaveNext,
   // Athlete object (for name + token display in header)
   selectedAthlete,
-  // Templates bundle — see prescriptions.js for shape
+  // Templates bundle - see prescriptions.js for shape
   tpl,
-  // History bundle — the hist object from usePlanHistory
+  // History bundle - the hist object from usePlanHistory
   hist,
-  // SmartStack products — fetched once at page level
+  // SmartStack products - fetched once at page level
   products = [],
 }) {
   const [activeTab,     setActiveTab]     = useState("daily");
@@ -1038,7 +1038,7 @@ export default function PlanBuilderForm({
 
   const canSave = Boolean(selectedAthleteEmail) && !createLoading;
 
-  /* ── Tab content badges — shows ✓ when a section has data ── */
+  /* ── Tab content badges - shows ✓ when a section has data ── */
   const badges = useMemo(() => ({
     daily: Boolean(
       String(structured?.calories     || "").trim() ||
@@ -1135,7 +1135,7 @@ export default function PlanBuilderForm({
       {/* ── Tab bar ── */}
       <TabBar activeTab={activeTab} onTabChange={handleTabChange} badges={badges} />
 
-      {/* ── Persistent plan summary — keeps daily targets visible from any tab ── */}
+      {/* ── Persistent plan summary - keeps daily targets visible from any tab ── */}
       <PlanSummaryStrip structured={structured} activeTab={activeTab} />
 
       {/* ── Tab content ── */}
@@ -1182,7 +1182,7 @@ export default function PlanBuilderForm({
         )}
       </div>
 
-      {/* ── Sticky action bar — always reachable ── */}
+      {/* ── Sticky action bar - always reachable ── */}
       <div
         className="flex items-center gap-3 px-5 py-3"
         style={{
@@ -1204,7 +1204,7 @@ export default function PlanBuilderForm({
           Reset
         </button>
 
-        {/* Warning — no athlete selected */}
+        {/* Warning - no athlete selected */}
         {!selectedAthleteEmail && (
           <p className="flex-1 text-center text-xs font-semibold" style={{ color: DS.caution }}>
             Select an athlete to save

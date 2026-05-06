@@ -104,7 +104,7 @@ function SaveButton({ isSaved, saving, pulse, onClick }) {
   );
 }
 
-/* Rating + social proof — overlaid at bottom of image */
+/* Rating + social proof - overlaid at bottom of image */
 function RatingOverlay({ rating, reviewCount, boughtLastMonth }) {
   const r      = Number(rating);
   const count  = formatK(reviewCount);
@@ -317,7 +317,7 @@ export default function StackCard({
         </div>
       )}
 
-      {/* Top: save heart only — compare moves to body button stack */}
+      {/* Top: save heart only - compare moves to body button stack */}
       <div className="absolute top-2 right-2">
         <SaveButton isSaved={isSaved} saving={saving} pulse={pulse} onClick={toggleSave} />
       </div>
@@ -346,7 +346,7 @@ export default function StackCard({
   const bodySection = (
     <div className="flex flex-col flex-1 px-3 pt-2.5 pb-3 gap-2">
 
-      {/* Product name — 2-line reserved */}
+      {/* Product name - 2-line reserved */}
       <h3 className="font-bold text-white leading-snug"
         style={{
           fontFamily:      "'Barlow Condensed', sans-serif",
@@ -361,7 +361,7 @@ export default function StackCard({
         {stack?.name || "Untitled"}
       </h3>
 
-      {/* Rating + bought — body row, only when data exists */}
+      {/* Rating + bought - body row, only when data exists */}
       {(stack?.rating || stack?.boughtLastMonth) && (() => {
         const r      = Number(stack?.rating);
         const hasR   = Number.isFinite(r) && r > 0;
@@ -391,7 +391,7 @@ export default function StackCard({
         );
       })()}
 
-      {/* Price + Value badge — side by side, no duplication */}
+      {/* Price + Value badge - side by side, no duplication */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         {pps != null ? (
           <p className="font-black tabular-nums leading-none"
@@ -404,7 +404,7 @@ export default function StackCard({
         ) : (
           <span style={{ color: "rgba(255,255,255,0.22)", fontSize: 11 }}>Price N/A</span>
         )}
-        {/* ValueBadge shows tier label only — price already shown above */}
+        {/* ValueBadge shows tier label only - price already shown above */}
         <ValueBadge
           valueScore={stack?.valueScore}
           valueLabel={stack?.valueLabel}
@@ -416,10 +416,10 @@ export default function StackCard({
         {authToastOpen && <AuthToast onClose={() => setAuthToastOpen(false)} />}
       </AnimatePresence>
 
-      {/* CTAs — stacked, full width */}
+      {/* CTAs - stacked, full width */}
       <div className="mt-auto flex flex-col gap-1.5 pt-0.5">
 
-        {/* Compare — primary page feature, shows selected state clearly */}
+        {/* Compare - primary page feature, shows selected state clearly */}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); toggleCompare(e); }}
@@ -555,7 +555,7 @@ export default function StackCard({
       role="button"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      aria-label={`${stack?.name || "Stack"}${pps != null ? ` — $${pps.toFixed(2)} per serving` : ""}`}
+      aria-label={`${stack?.name || "Stack"}${pps != null ? ` - $${pps.toFixed(2)} per serving` : ""}`}
       aria-pressed={isSelected}
     >
       {imageSection}

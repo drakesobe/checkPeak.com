@@ -23,11 +23,11 @@ function pillClass(p) {
 
 function fmtPct(v) {
   const n = asNum(v);
-  return n == null ? "—" : `${n}%`;
+  return n == null ? "-" : `${n}%`;
 }
 
 function fmtDate(d) {
-  if (!d) return "—";
+  if (!d) return "-";
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return String(d);
   return x.toLocaleString();
@@ -73,7 +73,7 @@ export default function CheckinsCard({ checkins = [] }) {
               {items.map((c) => (
                 <tr key={c.id} className="border-t border-gray-100">
                   <td className="py-3 pr-3 font-semibold text-gray-900 whitespace-nowrap">
-                    {c.weekStartISO || "—"}
+                    {c.weekStartISO || "-"}
                   </td>
 
                   <td className="py-3 pr-3">
@@ -102,7 +102,7 @@ export default function CheckinsCard({ checkins = [] }) {
                     {String(c.notes || "").trim() ? (
                       <div className="whitespace-pre-wrap">{c.notes}</div>
                     ) : (
-                      <span className="text-gray-400">—</span>
+                      <span className="text-gray-400">-</span>
                     )}
                   </td>
                 </tr>
@@ -111,7 +111,7 @@ export default function CheckinsCard({ checkins = [] }) {
           </table>
 
           <p className="mt-3 text-[11px] text-gray-500">
-            Coaching tip: use a simple rule—if Protein &lt; 70% two weeks in a row, intervene with 1–2 dining hall rules.
+            Coaching tip: use a simple rule-if Protein &lt; 70% two weeks in a row, intervene with 1–2 dining hall rules.
           </p>
         </div>
       ) : (

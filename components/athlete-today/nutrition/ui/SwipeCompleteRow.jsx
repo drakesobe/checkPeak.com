@@ -252,7 +252,7 @@ export default function SwipeCompleteRow({
                 </span>
               ) : (
                 <span className="text-[11px] text-gray-500">
-                  {isDisabled ? "Saving…" : done ? "Nice." : "—"}
+                  {isDisabled ? "Saving…" : done ? "Nice." : "-"}
                 </span>
               )}
             </div>

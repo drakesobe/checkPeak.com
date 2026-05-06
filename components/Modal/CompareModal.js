@@ -44,12 +44,12 @@ import {
  *  - Barlow Condensed headings
  *
  * Props:
- *   stacks   — array of 2–3 SmartStack records
- *   onClose  — close callback
+ *   stacks   - array of 2–3 SmartStack records
+ *   onClose  - close callback
  */
 
 /* -------------------------------------------------------------------------- */
-/* Module-level helpers — never recreated on render                           */
+/* Module-level helpers - never recreated on render                           */
 /* -------------------------------------------------------------------------- */
 
 function getStackField(stack, field, fallback = "") {
@@ -94,7 +94,7 @@ function getRiskLevel(flaggedCount) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* useScrollShadows — same hook pattern as ResultsTable-smartstack            */
+/* useScrollShadows - same hook pattern as ResultsTable-smartstack            */
 /* -------------------------------------------------------------------------- */
 function useScrollShadows(ref, deps = []) {
   const [showLeft,    setShowLeft]    = useState(false);
@@ -208,7 +208,7 @@ function ColumnScanOverlay({ dots }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* RiskPill — compact result indicator per column                             */
+/* RiskPill - compact result indicator per column                             */
 /* -------------------------------------------------------------------------- */
 function RiskPill({ flaggedCount, isVisible }) {
   const risk = getRiskLevel(flaggedCount);
@@ -262,7 +262,7 @@ export default function CompareModal({ stacks = [], onClose }) {
   const count = stacks.length;
 
   // A stable string key that changes when the actual stacks change,
-  // not just the count — fixes the bug where swapping one stack
+  // not just the count - fixes the bug where swapping one stack
   // with another of the same count didn't trigger a re-scan.
   const stableKey = useMemo(
     () => stacks.map((s) => s?.id ?? "").join(","),
@@ -329,11 +329,11 @@ export default function CompareModal({ stacks = [], onClose }) {
     setScanCompleteArr(stacks.map(() => false));
     // Preserve existing imageRefs slots, fill new ones with null
     imageRefs.current = stacks.map((_, i) => imageRefs.current[i] ?? null);
-  // stableKey changes when any stack id changes — correct dep
+  // stableKey changes when any stack id changes - correct dep
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableKey]);
 
-  /* ── Grid layout derived from count — single source of truth ─────────── */
+  /* ── Grid layout derived from count - single source of truth ─────────── */
 
   const { gridColsClass, stackCountLabel } = useMemo(() => ({
     gridColsClass:   count === 3 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 md:grid-cols-2",
@@ -518,7 +518,7 @@ export default function CompareModal({ stacks = [], onClose }) {
       const start = () => runOCR(idx, false).catch(() => {});
 
       if (img.complete && img.naturalWidth > 0) {
-        // Already loaded — start immediately
+        // Already loaded - start immediately
         start();
         return null;
       }
@@ -530,7 +530,7 @@ export default function CompareModal({ stacks = [], onClose }) {
     return () => {
       cleanups.forEach((cleanup) => cleanup?.());
     };
-  // stableKey changes when stacks identity changes — re-attach listeners
+  // stableKey changes when stacks identity changes - re-attach listeners
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableKey]);
 
@@ -837,7 +837,7 @@ export default function CompareModal({ stacks = [], onClose }) {
                           </h3>
                         </div>
 
-                        {/* Risk pill — animates in when scan is done */}
+                        {/* Risk pill - animates in when scan is done */}
                         <RiskPill
                           flaggedCount={bannedCount}
                           isVisible={isDone && !isScanning}

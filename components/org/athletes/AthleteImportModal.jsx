@@ -116,7 +116,7 @@ function rowToAthlete(row, headerMap, rowIndex) {
   if (!lastName)         errors.push("Missing last name");
   if (!email)            errors.push("Missing email");
   else if (!validateEmail(email)) errors.push("Invalid email format");
-  if (sport && !SPORT_OPTIONS.includes(sport)) errors.push(`Unknown sport "${sport}" — will still be saved`);
+  if (sport && !SPORT_OPTIONS.includes(sport)) errors.push(`Unknown sport "${sport}" - will still be saved`);
 
   return {
     _rowIndex: rowIndex,
@@ -329,7 +329,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
             </p>
             <p style={{ fontSize: 11, color: "#6B7A8D", marginTop: 3 }}>
               {step === "upload"    && "Upload a CSV or Excel file to add athletes in bulk."}
-              {step === "preview"   && `${rows.length} rows detected — review before importing.`}
+              {step === "preview"   && `${rows.length} rows detected - review before importing.`}
               {step === "importing" && "Creating athlete accounts…"}
               {step === "done"      && `${result?.created ?? 0} athletes added to your roster.`}
             </p>
@@ -351,7 +351,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                 <div style={{ fontSize: 12, color: "#1E40AF", lineHeight: 1.7 }}>
                   <strong>Required columns:</strong> First Name, Last Name, Email<br />
                   <strong>Optional columns:</strong> Sport, Phone Number<br />
-                  Column headers must match exactly — download the template below to be safe.
+                  Column headers must match exactly - download the template below to be safe.
                 </div>
               </div>
 
@@ -387,7 +387,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                     <p style={{ fontSize: 14, fontWeight: 700, color: "#1A2535", marginBottom: 6 }}>
                       Drop your file here, or click to browse
                     </p>
-                    <p style={{ fontSize: 12, color: "#94A3B8" }}>CSV, XLSX or XLS — up to 1,000 athletes</p>
+                    <p style={{ fontSize: 12, color: "#94A3B8" }}>CSV, XLSX or XLS - up to 1,000 athletes</p>
                   </>
                 )}
               </div>
@@ -430,7 +430,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                 )}
                 {(errorRows.length > 0 || duplicateRows.length > 0) && (
                   <span style={{ fontSize: 12, color: "#6B7A8D", padding: "4px 0" }}>
-                    — Rows with errors and duplicates will be skipped. Fix them inline or proceed.
+                    - Rows with errors and duplicates will be skipped. Fix them inline or proceed.
                   </span>
                 )}
               </div>
@@ -491,7 +491,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                               onChange={e => updateRow(r._rowIndex, "sport", e.target.value)}
                               style={{ width: "100%", padding: "4px 6px", fontSize: 12, border: "1px solid #E5E7EB", borderRadius: 4, background: "#fff", color: "#1A2535" }}
                             >
-                              <option value="">— none —</option>
+                              <option value="">- none -</option>
                               {SPORT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                           </td>
@@ -585,7 +585,7 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                     <ul style={{ margin: 0, padding: "8px 14px 12px", listStyle: "none" }}>
                       {result.errors.map((e, i) => (
                         <li key={i} style={{ fontSize: 12, color: "#991B1B", padding: "4px 0", borderBottom: i < result.errors.length - 1 ? "1px solid #FEE2E2" : "none" }}>
-                          {e.email} — {e.reason}
+                          {e.email} - {e.reason}
                         </li>
                       ))}
                     </ul>

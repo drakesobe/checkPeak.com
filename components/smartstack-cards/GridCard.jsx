@@ -10,7 +10,7 @@
 //  │  vs. category median        │
 //  │  ★ 4.5  ·  $0.26/srv        │
 //  ├─────────────────────────────┤
-//  │  Buy on Amazon — $23.10     │
+//  │  Buy on Amazon - $23.10     │
 //  ├─────────────────────────────┤
 //  │  [Compare]  [Check Safety]  │
 //  └─────────────────────────────┘
@@ -20,7 +20,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useOCR } from "@/hooks/useOCR";
 
-/* ─── Tokens — cool clinical palette ─────────────────────────────────────── */
+/* ─── Tokens - cool clinical palette ─────────────────────────────────────── */
 const C = {
   // Brand
   brand:       "#4FABFF",
@@ -48,7 +48,7 @@ const C = {
   cardBg:  "#FFFFFF",
   surface: "#F8FAFC",
 
-  // Amazon — never change
+  // Amazon - never change
   amazon:      "#FF9900",
   amazonHover: "#E68A00",
 };
@@ -92,7 +92,7 @@ async function fetchLabelAsFile(url) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const b = await r.blob();
     return new File([b], `label.${b.type.includes("png")?"png":"jpg"}`, { type:b.type||"image/jpeg" });
-  } catch { /* CORS — proxy */ }
+  } catch { /* CORS - proxy */ }
   const r = await fetch(`/api/ocr/proxy-image?url=${encodeURIComponent(url)}`);
   if (!r.ok) throw new Error(`Proxy failed (${r.status})`);
   const b = await r.blob();
@@ -387,7 +387,7 @@ export default function GridCard({
           </div>
         )}
 
-        {/* Compare check — top-right */}
+        {/* Compare check - top-right */}
         <AnimatePresence>
           {isComparing && (
             <motion.div
@@ -408,7 +408,7 @@ export default function GridCard({
           )}
         </AnimatePresence>
 
-        {/* Safety result badge — post-scan */}
+        {/* Safety result badge - post-scan */}
         <AnimatePresence>
           {isDone && (
             <motion.div
@@ -493,7 +493,7 @@ export default function GridCard({
             <span style={{ fontFamily:F.body, fontSize:10, color:C.dim, flexShrink:0 }}>/srv</span>
           </>
         )}
-        {!hasRating && !ppsStr && <span style={{ fontFamily:F.body, fontSize:10, color:C.dim }}>—</span>}
+        {!hasRating && !ppsStr && <span style={{ fontFamily:F.body, fontSize:10, color:C.dim }}>-</span>}
       </div>
 
       {/* ── AMAZON CTA ───────────────────────────────────────────────── */}
@@ -517,7 +517,7 @@ export default function GridCard({
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} style={{ flexShrink:0 }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
             </svg>
-            {fullPrice ? `Buy on Amazon — ${fullPrice}` : "View on Amazon"}
+            {fullPrice ? `Buy on Amazon - ${fullPrice}` : "View on Amazon"}
           </motion.a>
         ) : (
           <div style={{

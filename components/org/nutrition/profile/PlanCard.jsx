@@ -25,7 +25,7 @@ function toNumber(v) {
 
 function fmtMacro(v) {
   const n = toNumber(v);
-  return n == null ? "—" : String(n);
+  return n == null ? "-" : String(n);
 }
 
 function hasAnyTargets(t = {}) {

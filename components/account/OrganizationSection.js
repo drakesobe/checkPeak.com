@@ -33,7 +33,7 @@ function ReadOnlyInput({ value, loading }) {
   return (
     <input
       type="text"
-      value={loading ? "Loading…" : (value || "—")}
+      value={loading ? "Loading…" : (value || "-")}
       readOnly
       className="w-full text-sm px-3 py-2.5 outline-none cursor-default"
       style={{
@@ -64,7 +64,7 @@ export default function OrganizationSection(props) {
     titleValue,
     memberId,
     orgToken,
-    // Hydrate state — passed from account.js Fix 5
+    // Hydrate state - passed from account.js Fix 5
     orgHydrating = false,
     orgHydrateError = "",
   } = props;
@@ -91,7 +91,7 @@ export default function OrganizationSection(props) {
           <FieldLabel>Organization</FieldLabel>
           <ReadOnlyInput value={organizationDisplay} loading={orgHydrating} />
 
-          {/* Hydrate error — shown only when the background fetch fails */}
+          {/* Hydrate error - shown only when the background fetch fails */}
           {orgHydrateError && !orgHydrating && (
             <div
               className="mt-2 px-3 py-2 text-xs"
@@ -102,7 +102,7 @@ export default function OrganizationSection(props) {
                 color: "#7A4A0A",
               }}
             >
-              {orgHydrateError} — try refreshing or logging out and back in.
+              {orgHydrateError} - try refreshing or logging out and back in.
             </div>
           )}
 
@@ -132,10 +132,10 @@ export default function OrganizationSection(props) {
         </div>
       </div>
 
-      {/* Athlete — connect org card */}
+      {/* Athlete - connect org card */}
       {isAthlete && <AthleteConnectOrgCard {...props} />}
 
-      {/* Org side — share org code */}
+      {/* Org side - share org code */}
       {isOrgSide && <OrgCodeCard {...props} orgToken={orgToken} />}
     </div>
   );

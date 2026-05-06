@@ -195,7 +195,7 @@ export default function ClassScheduleModal({
 
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
-              Semester range <span className="text-gray-300 font-normal normal-case tracking-normal">— optional</span>
+              Semester range <span className="text-gray-300 font-normal normal-case tracking-normal">- optional</span>
             </label>
             <p className="text-[11px] text-gray-400 mb-2">Leave blank to repeat every week indefinitely.</p>
             <div className="flex gap-3">

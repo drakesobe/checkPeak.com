@@ -5,14 +5,14 @@
  * ChoiceModal
  *
  * Presents two options: "Use Camera" and "Choose from Photos / Files".
- * Keeps file input logic in the parent — this component only renders
+ * Keeps file input logic in the parent - this component only renders
  * the UI and fires the appropriate callback.
  *
  * Props:
- *   isOpen        — boolean
- *   onClose       — () => void
- *   onUseCamera   — () => void   triggered when user taps "Use Camera"
- *   onUseLibrary  — () => void   triggered when user taps "Choose from Photos"
+ *   isOpen        - boolean
+ *   onClose       - () => void
+ *   onUseCamera   - () => void   triggered when user taps "Use Camera"
+ *   onUseLibrary  - () => void   triggered when user taps "Choose from Photos"
  */
 export default function ChoiceModal({ isOpen, onClose, onUseCamera, onUseLibrary }) {
   if (!isOpen) return null;

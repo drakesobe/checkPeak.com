@@ -12,7 +12,7 @@ import { Metric, EmptyState, StatusPill, DS } from "./ui";
 
 function weekLabel(weekStartISO) {
   const iso = String(weekStartISO || "").trim();
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   try {
@@ -211,7 +211,7 @@ export function CheckinsCard({ checkins, openIds, onToggle, onExpandAll, onLates
                       </span>
                       <span style={{ color: DS.border }}>·</span>
                       <span style={{ color: DS.dimText }}>
-                        Calories {caloriesPct ?? "—"}% · Protein {proteinPct ?? "—"}% · Hydration {hydrationPct ?? "—"}%
+                        Calories {caloriesPct ?? "-"}% · Protein {proteinPct ?? "-"}% · Hydration {hydrationPct ?? "-"}%
                       </span>
                     </div>
                   </button>

@@ -30,7 +30,7 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 
 // ---------------------------------------------------------------------------
 // Global styles
-// FIX: cursor:none scoped to (pointer:fine) only — desktop mice.
+// FIX: cursor:none scoped to (pointer:fine) only - desktop mice.
 //      Mobile touch devices keep their default tap indicator.
 // FIX: Added .sm-show rule so product mock nav tabs appear on wider screens.
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ const GLOBAL_STYLE = `
 
   html { scroll-behavior: smooth; }
 
-  /* Cursor — desktop pointer devices only, never mobile */
+  /* Cursor - desktop pointer devices only, never mobile */
   @media (pointer: fine) {
     body, a, button { cursor: none; }
   }
@@ -70,7 +70,7 @@ const GLOBAL_STYLE = `
     }
   }
 
-  /* Declaration beats — full viewport on desktop, compact on mobile */
+  /* Declaration beats - full viewport on desktop, compact on mobile */
   .declaration-beat { min-height: 100svh; }
   @media (max-width: 767px) {
     .declaration-beat {
@@ -80,19 +80,19 @@ const GLOBAL_STYLE = `
     }
   }
 
-  /* Product mock nav tabs — shown on wider screens */
+  /* Product mock nav tabs - shown on wider screens */
   .sm-show { display: none; }
   @media (min-width: 640px) {
     .sm-show { display: block; }
   }
 
-  /* Proof stats right column — desktop only */
+  /* Proof stats right column - desktop only */
   .proof-stats-col { display: none !important; }
   @media (min-width: 900px) {
     .proof-stats-col { display: flex !important; }
   }
 
-  /* Hero nav — hide on small screens to avoid crowding wordmark */
+  /* Hero nav - hide on small screens to avoid crowding wordmark */
   .hero-nav { display: none; }
   @media (min-width: 540px) {
     .hero-nav { display: flex; }
@@ -100,12 +100,12 @@ const GLOBAL_STYLE = `
 `;
 
 // ---------------------------------------------------------------------------
-// Grain overlay — SVG noise, same technique as A24/Nike editorial pages
+// Grain overlay - SVG noise, same technique as A24/Nike editorial pages
 // ---------------------------------------------------------------------------
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 // ---------------------------------------------------------------------------
-// Custom cursor — desktop only
+// Custom cursor - desktop only
 // ---------------------------------------------------------------------------
 function Cursor() {
   const ref = useRef(null);
@@ -128,7 +128,7 @@ function Cursor() {
 
 // ---------------------------------------------------------------------------
 // CTA button
-// FIX: min font-size lifted to 1rem on lg, 0.92rem on md — readable on all screens
+// FIX: min font-size lifted to 1rem on lg, 0.92rem on md - readable on all screens
 // ---------------------------------------------------------------------------
 function PilotButton({ source, size = "md" }) {
   const lg = size === "lg";
@@ -195,7 +195,7 @@ function Hero() {
           .hero-video {
             width: 100%; height: 100%;
             object-fit: cover;
-            /* Mobile: true center — no horizontal shift */
+            /* Mobile: true center - no horizontal shift */
             object-position: center center;
           }
           /* Desktop only: nudge right slightly to favour the subject */
@@ -214,7 +214,7 @@ function Hero() {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to bottom, transparent, ${BLACK})` }} />
       </motion.div>
 
-      {/* Nav — hidden on mobile via .hero-nav */}
+      {/* Nav - hidden on mobile via .hero-nav */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.6 }}
         className="hero-nav"
         style={{ position: "absolute", top: "clamp(1.25rem, 3vw, 2rem)", right: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 10, gap: "1.75rem" }}
@@ -309,12 +309,12 @@ function Hero() {
    Three full-viewport beats with ghost images, grain, and structure.
 
    FIX: Vertical padding reduced from clamp(6rem, 12vw, 10rem)
-        to clamp(3.5rem, 8vw, 8rem) — content was cut off on phones.
+        to clamp(3.5rem, 8vw, 8rem) - content was cut off on phones.
    FIX: Beat 2 (3 lines) gets its own smaller font clamp so three stacked
         lines don't overflow a 390px viewport.
    FIX: Footnote opacity 0.42 → 0.6, size min 0.82rem → 0.95rem.
    FIX: Section counter opacity 0.2 → 0.35, size 0.58rem → 0.72rem.
-   FIX: Watermark hidden on mobile — it clips and looks broken on phones.
+   FIX: Watermark hidden on mobile - it clips and looks broken on phones.
 ══════════════════════════════════════════════════════════════════════════ */
 const BEAT_IMAGES = [
   "/images/athlete-barbell-squat-rack-offseason-training.jpg",
@@ -330,7 +330,7 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
   /*
     Font size strategy:
     - Normal 2-line beat: clamp(4rem, 13vw, 15rem)
-    - 3-line beat: clamp(3rem, 10vw, 12rem) — smaller min so all 3 lines
+    - 3-line beat: clamp(3rem, 10vw, 12rem) - smaller min so all 3 lines
       fit on a 390px phone without overflowing
     - Climax ("You / will."): clamp(6rem, 22vw, 20rem)
   */
@@ -391,7 +391,7 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
         }}
       />
 
-      {/* Ghost watermark — hidden on mobile via inline media query trick:
+      {/* Ghost watermark - hidden on mobile via inline media query trick:
           we use a max font-size that collapses on small screens */}
       {watermark && (
         <div aria-hidden="true" style={{
@@ -459,7 +459,7 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
           ))}
         </div>
 
-        {/* Footnote — FIX: opacity 0.42→0.6, size min 0.82rem→0.95rem */}
+        {/* Footnote - FIX: opacity 0.42→0.6, size min 0.82rem→0.95rem */}
         {footnote && (
           <motion.div
             initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}}
@@ -473,7 +473,7 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
         )}
       </div>
 
-      {/* Brand mark bottom-right — decorative only, stays dim */}
+      {/* Brand mark bottom-right - decorative only, stays dim */}
       <div aria-hidden="true" style={{
         position: "absolute", bottom: "clamp(1rem, 2vw, 1.5rem)", right: "clamp(1rem, 3vw, 2rem)", zIndex: 3,
         fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.62rem", fontWeight: 900,
@@ -508,7 +508,7 @@ const BEATS = [
   },
   {
     lines:      [{ text: "Built around" }, { text: "the rules.", accent: true }],
-    footnote:   "Bylaw 16. Bylaw 17. VARA. CARA. Most platforms ignore them and hope nobody checks. We built CheckPeak around them from day one — because a compliance violation isn't a bug. It's a career. Every feature exists inside the line. Not despite it.",
+    footnote:   "Bylaw 16. Bylaw 17. VARA. CARA. Most platforms ignore them and hope nobody checks. We built CheckPeak around them from day one - because a compliance violation isn't a bug. It's a career. Every feature exists inside the line. Not despite it.",
     isClimax:   false,
     threeLines: false,
     watermark:  "COMPLIANT",
@@ -613,7 +613,7 @@ function ProofMoment() {
       }}>
         {/* Left: dominant stat */}
         <div style={{ flex: "1 1 300px", minWidth: 0 }}>
-          {/* Eyebrow — FIX: opacity 0.22→0.42, size 0.58→0.75rem */}
+          {/* Eyebrow - FIX: opacity 0.22→0.42, size 0.58→0.75rem */}
           <motion.div initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.5 }}
             style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.25rem, 2.5vw, 2rem)" }}
           >
@@ -628,7 +628,7 @@ function ProofMoment() {
             style={{ height: "0.5px", background: "rgba(255,255,255,0.12)", marginBottom: "clamp(0.75rem, 1.5vw, 1.25rem)", transformOrigin: "left" }}
           />
 
-          {/* The number — FIX: min 6rem so it's always visible on mobile */}
+          {/* The number - FIX: min 6rem so it's always visible on mobile */}
           <motion.p
             initial={{ opacity: 0, y: 48 }} animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 1.1, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
@@ -648,7 +648,7 @@ function ProofMoment() {
             style={{ height: "0.5px", background: "rgba(255,255,255,0.12)", margin: "clamp(0.75rem, 1.5vw, 1.25rem) 0", transformOrigin: "left" }}
           />
 
-          {/* Context — FIX: opacity 0.4→0.62, size min 0.82→0.95rem */}
+          {/* Context - FIX: opacity 0.4→0.62, size min 0.82→0.95rem */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.7, delay: 0.55 }}
             style={{ paddingLeft: "1.1rem", borderLeft: "1.5px solid rgba(255,255,255,0.15)", maxWidth: "40ch" }}
           >
@@ -658,7 +658,7 @@ function ProofMoment() {
           </motion.div>
         </div>
 
-        {/* Right: supporting stats — desktop only via .proof-stats-col */}
+        {/* Right: supporting stats - desktop only via .proof-stats-col */}
         <motion.div initial={{ opacity: 0, x: 20 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.8, delay: 0.5 }}
           className="proof-stats-col"
           style={{ flexDirection: "column", gap: 0, flexShrink: 0, borderLeft: "0.5px solid rgba(255,255,255,0.1)" }}
@@ -682,15 +682,15 @@ function ProofMoment() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   5. PRODUCT MOMENT — rebuilt to match the actual Nutrition Queue page
-   The real UI is a LIGHT interface — white/near-white backgrounds,
+   5. PRODUCT MOMENT - rebuilt to match the actual Nutrition Queue page
+   The real UI is a LIGHT interface - white/near-white backgrounds,
    dark ink text, brand blue #0070CC. Completely different from the dark
    mock we had before. This version faithfully replicates:
      • The sticky NavBar with PEAK wordmark + mode toggles
      • The SummaryHero ("4 athletes need your attention")
      • The ReadinessStrip with progress bar + supporting stats
      • Two QueueCards showing real athlete states
-   The light UI creates a striking contrast moment in the dark page —
+   The light UI creates a striking contrast moment in the dark page -
    feels like a literal window into the product.
 ══════════════════════════════════════════════════════════════════════════ */
 
@@ -763,12 +763,12 @@ function ProductMoment() {
          doesn't feel crammed against the proof section above it */
       padding:    "clamp(5rem, 10vw, 9rem) 0 clamp(5rem, 10vw, 9rem)",
       overflow:   "hidden",
-      /* No hard border — gradient overlay on the section itself
+      /* No hard border - gradient overlay on the section itself
          handles the transition from the section above            */
       position:   "relative",
     }}>
 
-      {/* Top gradient — softens the edge from the section above.
+      {/* Top gradient - softens the edge from the section above.
           The previous section already fades to BLACK at its base,
           so this just confirms continuity rather than hard-cutting. */}
       <div aria-hidden="true" style={{
@@ -793,7 +793,7 @@ function ProductMoment() {
         What your staff sees every morning
       </motion.p>
 
-      {/* Interface mock — wrapped in browser chrome so the light UI
+      {/* Interface mock - wrapped in browser chrome so the light UI
           reads as a product window floating in the dark page,
           not a jarring cut to a different colour scheme          */}
       <motion.div
@@ -806,7 +806,7 @@ function ProductMoment() {
           margin:          "0 clamp(0.75rem, 6vw, 6rem)",
           borderRadius:    "10px",
           overflow:        "hidden",
-          /* Layered shadow — close dark + wide diffuse blue glow */
+          /* Layered shadow - close dark + wide diffuse blue glow */
           boxShadow:       `
             0 2px 0 rgba(255,255,255,0.06),
             0 24px 80px rgba(0,0,0,0.75),
@@ -822,7 +822,7 @@ function ProductMoment() {
         {/* ── BROWSER CHROME ──
             A dark titlebar with traffic dots + URL bar.
             This single element tells the viewer "this is a product
-            window" — bridging the dark editorial page and the
+            window" - bridging the dark editorial page and the
             light interface below without a hard cut.              */}
         <div style={{
           background:    "#16202E",
@@ -872,7 +872,7 @@ function ProductMoment() {
             </span>
           </div>
 
-          {/* Right side — tabs hint */}
+          {/* Right side - tabs hint */}
           <div style={{ display: "flex", gap: 6, flexShrink: 0, opacity: 0.3 }}>
             {[1, 2, 3].map(i => (
               <div key={i} style={{ width: 14, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.6)" }} />
@@ -880,7 +880,7 @@ function ProductMoment() {
           </div>
         </div>
 
-        {/* ── NAV BAR — matches NavBar component exactly ── */}
+        {/* ── NAV BAR - matches NavBar component exactly ── */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "0 20px", height: 48,
@@ -933,7 +933,7 @@ function ProductMoment() {
         <div style={{ background: UI.void, padding: "20px" }}>
           <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
 
-            {/* ── SUMMARY HERO — matches SummaryHero component ── */}
+            {/* ── SUMMARY HERO - matches SummaryHero component ── */}
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.55, delay: 0.2 }}
@@ -978,7 +978,7 @@ function ProductMoment() {
               </div>
             </motion.div>
 
-            {/* ── READINESS STRIP — matches ReadinessStrip component ── */}
+            {/* ── READINESS STRIP - matches ReadinessStrip component ── */}
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.55, delay: 0.28 }}
@@ -1035,7 +1035,7 @@ function ProductMoment() {
               </div>
             </motion.div>
 
-            {/* ── QUEUE CARDS — first two athletes needing action ── */}
+            {/* ── QUEUE CARDS - first two athletes needing action ── */}
             {queueAthletes.map(({ name, pos, team, subGroup, label, desc, action, lastSeen }, qi) => {
               const cardColor = subGroup === "noPlan" ? UI.red : UI.amber;
               const tagBg     = subGroup === "noPlan" ? "rgba(217,43,58,0.07)" : "rgba(196,122,0,0.07)";
@@ -1118,7 +1118,7 @@ function ProductMoment() {
               );
             })}
 
-            {/* ── ROSTER STRIP — condensed athlete list ── */}
+            {/* ── ROSTER STRIP - condensed athlete list ── */}
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.55, delay: 0.55 }}
@@ -1190,8 +1190,8 @@ function ProductMoment() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   COMPLIANCE MOMENT v2 — fixes:
-   1. Modal no longer clips — container has explicit minHeight, ghost grid
+   COMPLIANCE MOMENT v2 - fixes:
+   1. Modal no longer clips - container has explicit minHeight, ghost grid
       is decorative strips only (not height-determining cells).
    2. Connector pill is centered and properly sized, not full-width.
    3. Warning icon is ⚠ character, not the word "warning".
@@ -1272,7 +1272,7 @@ function ComplianceMoment() {
             </span>
           </motion.div>
 
-          {/* Headline — 4 lines, last line in ACCENT */}
+          {/* Headline - 4 lines, last line in ACCENT */}
           {[
             { text: "You set",    accent: false },
             { text: "the dates.", accent: false },
@@ -1369,7 +1369,7 @@ function ComplianceMoment() {
 
           {/* ── Calendar area with modal overlay ──
               FIX: explicit minHeight so the modal is never clipped.
-              Ghost grid is purely decorative horizontal strips —
+              Ghost grid is purely decorative horizontal strips -
               not height-determining cells.
           ── */}
           <div style={{
@@ -1420,7 +1420,7 @@ function ComplianceMoment() {
                       </svg>
                       <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: UI.ink }}>Season Calendar Setup</span>
                     </div>
-                    <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org — synced to Airtable.</p>
+                    <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org - synced to Airtable.</p>
                   </div>
                   <div style={{ width: 26, height: 26, border: `1px solid ${UI.rim}`, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, color: UI.ghost, fontSize: 14, flexShrink: 0, lineHeight: 1 }}>×</div>
                 </div>
@@ -1494,7 +1494,7 @@ function ComplianceMoment() {
             </div>
           </div>
 
-          {/* ── Connector — FIX: centered pill, not full-width ── */}
+          {/* ── Connector - FIX: centered pill, not full-width ── */}
           <div style={{ background: UI.void, padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", borderTop: `1px solid ${UI.rim}` }}>
             <div style={{ width: 1, height: 14, borderLeft: "1.5px dashed rgba(217,43,58,0.35)" }} />
             <motion.div
@@ -1530,7 +1530,7 @@ function ComplianceMoment() {
                 <span style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: "#fff", lineHeight: 1 }}>!</span>
               </div>
               <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#D92B3A", opacity: 0.82 }}>
-                Fires automatically — before the workout is saved
+                Fires automatically - before the workout is saved
               </span>
             </div>
 
@@ -1543,10 +1543,10 @@ function ComplianceMoment() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#D92B3A", marginBottom: 5 }}>
-                    VARA Required — Break Period
+                    VARA Required - Break Period
                   </p>
                   <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, lineHeight: 1.65, color: "#D92B3A", opacity: 0.88, marginBottom: 12 }}>
-                    <strong>Winter Break (Dec 15 – Jan 5):</strong> Coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA) — athlete-initiated, no coach presence.
+                    <strong>Winter Break (Dec 15 – Jan 5):</strong> Coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA) - athlete-initiated, no coach presence.
                   </p>
                   <div style={{ display: "flex", gap: 8 }}>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#D92B3A", borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff" }}>
@@ -1587,10 +1587,10 @@ function ComplianceMoment() {
 
 /* ══════════════════════════════════════════════════════════════════════════
    6. FINAL CTA
-   FIX: Eyebrow opacity 0.22→0.5, size 0.62rem→0.82rem — it's real content
+   FIX: Eyebrow opacity 0.22→0.5, size 0.62rem→0.82rem - it's real content
    FIX: Sub-label "30 days free" opacity 0.22→0.5, size 0.65→0.8rem
-   FIX: Athlete link opacity 0.35→0.55, size 0.58→0.78rem — functional link
-   FIX: Disclaimer opacity 0.12→0.22, size 0.55→0.65rem — legal minimum
+   FIX: Athlete link opacity 0.35→0.55, size 0.58→0.78rem - functional link
+   FIX: Disclaimer opacity 0.12→0.22, size 0.55→0.65rem - legal minimum
    FIX: Bottom absolute elements get padding to avoid overlap on short phones
 ══════════════════════════════════════════════════════════════════════════ */
 function FinalCta() {
@@ -1624,7 +1624,7 @@ function FinalCta() {
 
       {/* Content */}
       <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-        {/* Eyebrow — FIX: opacity 0.22→0.5, size 0.62→0.82rem */}
+        {/* Eyebrow - FIX: opacity 0.22→0.5, size 0.62→0.82rem */}
         <motion.p initial={{ opacity: 0, y: 8 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.5 }}
           style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.82rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: "clamp(1.25rem, 2.5vw, 2rem)" }}
         >
@@ -1648,7 +1648,7 @@ function FinalCta() {
         </motion.div>
       </div>
 
-      {/* Bottom-left athlete link — FIX: opacity bump so it's actually usable */}
+      {/* Bottom-left athlete link - FIX: opacity bump so it's actually usable */}
       <div style={{ position: "absolute", bottom: "clamp(1.25rem, 2.5vw, 2rem)", left: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 1 }}>
         {/* FIX: size 0.58→0.78rem, opacity chain bumped */}
         <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
@@ -1663,7 +1663,7 @@ function FinalCta() {
         </p>
       </div>
 
-      {/* Bottom-right legal — FIX: opacity 0.12→0.25, size 0.55→0.68rem */}
+      {/* Bottom-right legal - FIX: opacity 0.12→0.25, size 0.55→0.68rem */}
       <div style={{ position: "absolute", bottom: "clamp(1.25rem, 2.5vw, 2rem)", right: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 1 }}>
         <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.68rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.25)", textAlign: "right", lineHeight: 1.6, maxWidth: "26ch" }}>
           Screening does not replace governing body verification.
@@ -1684,16 +1684,16 @@ export default function HomePage() {
     <>
       <style>{GLOBAL_STYLE}</style>
       <Head>
-        <title>CheckPeak — When athletes leave campus, you still know.</title>
+        <title>CheckPeak - When athletes leave campus, you still know.</title>
         <meta name="description" content="CheckPeak helps strength staffs verify off-campus workout completion, monitor nutrition, and catch supplement risk. Built for college programs." />
-        <meta property="og:title"       content="CheckPeak — When athletes leave campus, you still know." />
+        <meta property="og:title"       content="CheckPeak - When athletes leave campus, you still know." />
         <meta property="og:description" content={ogDesc} />
         <meta property="og:type"        content="website" />
         <meta property="og:url"         content={siteUrl} />
         <meta property="og:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
         <meta name="twitter:card"       content="summary_large_image" />
         <meta name="twitter:site"       content="@checkPeak_" />
-        <meta name="twitter:title"      content="CheckPeak — When athletes leave campus, you still know." />
+        <meta name="twitter:title"      content="CheckPeak - When athletes leave campus, you still know." />
         <meta name="twitter:image"      content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
       </Head>
 
@@ -1702,7 +1702,7 @@ export default function HomePage() {
       <main style={{ background: BLACK, color: WHITE }}>
         <Hero />
 
-        {/* Triptych immediately after hero — visual proof before any copy.
+        {/* Triptych immediately after hero - visual proof before any copy.
             The claim lands, then three panels of real athletes answer it.
             Words come after the image, not before. */}
         <TriptychSection />

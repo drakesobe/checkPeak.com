@@ -39,7 +39,7 @@ function safeNum(v) {
 
 function fmtMacro(v, unit = "") {
   const n = safeNum(v);
-  return n != null ? `${n}${unit}` : "—";
+  return n != null ? `${n}${unit}` : "-";
 }
 
 /* ─── Type icon ──────────────────────────────────────────────────────────── */

@@ -442,7 +442,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                   style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}>
                 {stack?.name || "Untitled Stack"}
               </h2>
-              {/* Servings + price — visible on ALL screen sizes */}
+              {/* Servings + price - visible on ALL screen sizes */}
               {(servingsNumber > 0 || priceNumber > 0) && (
                 <div className="flex items-center gap-3">
                   {servingsNumber > 0 && (
@@ -562,7 +562,7 @@ export default function NutritionModal({ stack, allStacks = [], onClose }) {
                 )}
               </AnimatePresence>
 
-              {/* ModalContent — self-contained, no tabs needed */}
+              {/* ModalContent - self-contained, no tabs needed */}
               {(ocrText || scanComplete || error) && (
                 <ModalContent
                   loadingOCR={loadingOCR}

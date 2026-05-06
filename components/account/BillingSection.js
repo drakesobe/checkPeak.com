@@ -33,7 +33,7 @@ async function safeJson(res) {
 }
 
 function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -162,7 +162,7 @@ function ReadOnlyDisplay({ value }) {
         color: DS.labelText,
       }}
     >
-      {value || "—"}
+      {value || "-"}
     </div>
   );
 }
@@ -576,7 +576,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
         </button>
       </div>
 
-      {/* ── Feedback — local to billing only ───────────────────────── */}
+      {/* ── Feedback - local to billing only ───────────────────────── */}
       <AnimatePresence>
         {(msg || err) && (
           <motion.div
@@ -647,7 +647,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
                 { label: "Trial ends",      value: fmtDate(stripeInfo.trialEnds) },
                 { label: "Period end",      value: fmtDate(stripeInfo.currentPeriodEnd) },
                 { label: "Renewal",         value: fmtDate(stripeInfo.renewalDate) },
-                { label: "Stripe", value: stripeInfo.stripeCustomerId || "—" },
+                { label: "Stripe", value: stripeInfo.stripeCustomerId || "-" },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <p
@@ -671,7 +671,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
             </div>
 
             <p className="text-xs mt-4" style={{ color: DS.dimText }}>
-              Plan, status, and dates are read-only — synced from Stripe webhooks.
+              Plan, status, and dates are read-only - synced from Stripe webhooks.
             </p>
           </div>
 

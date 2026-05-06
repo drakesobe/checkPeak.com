@@ -2,12 +2,12 @@
 // Outlook-style day planner. Slides up over today.jsx.
 //
 // Changes from original:
-// 1. SCROLL FIX — touchmove listener is now passive:true. We never call
+// 1. SCROLL FIX - touchmove listener is now passive:true. We never call
 //    preventDefault() so there's no reason for it to be non-passive.
 //    Swipe-to-change-day now requires a predominantly horizontal gesture
 //    (|dx|>60 AND |dy|<50) so vertical scrolling never accidentally flips days.
 //    Sheet container gets explicit height:"100dvh" so flex overflow works on iOS.
-// 2. PERSISTENCE — after every drag/resize, onNutritionTimesChange fires with
+// 2. PERSISTENCE - after every drag/resize, onNutritionTimesChange fires with
 //    { breakfast, lunch, afternoon, dinner } → startMinutes so today.jsx can
 //    update the RouteList time display without a server round-trip.
 "use client";
@@ -72,7 +72,7 @@ const lsNutKey=(tok,date)=>`checkpeak:nutritionCompletion:${tok}:${date}`;
 function lsGet(k){try{return typeof window!=="undefined"?localStorage.getItem(k):null;}catch{return null;}}
 function lsSet(k,v){try{if(typeof window!=="undefined")localStorage.setItem(k,v);}catch{}}
 
-// ─── DRAG HOOK — passive touch, onDragEnd callback ────────────────────────────
+// ─── DRAG HOOK - passive touch, onDragEnd callback ────────────────────────────
 function usePointerDrag({gridRef,events,setEvents,onDragEnd}){
   const dragRef=useRef(null), resizeRef=useRef(null);
   const [dragging,setDragging]=useState(null);
@@ -120,7 +120,7 @@ function usePointerDrag({gridRef,events,setEvents,onDragEnd}){
       dragRef.current=null; resizeRef.current=null;
       setDragging(null); setResizing(null);
     };
-    // passive:true — we never call preventDefault, so native scroll is unaffected
+    // passive:true - we never call preventDefault, so native scroll is unaffected
     window.addEventListener("mousemove",move,{passive:true});
     window.addEventListener("touchmove",move,{passive:true});
     window.addEventListener("mouseup",up);
@@ -203,7 +203,7 @@ function EventBlock({event,onDragStart,onResizeStart,onClick,isDragging,isResizi
         <p style={{fontSize:13,fontWeight:600,color:cfg.title,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{event.title}</p>
         {tall&&<span style={{fontSize:10,color:T.textFaint,flexShrink:0,marginTop:1}}>{formatTime(event.startMinutes)}</span>}
       </div>
-      {tall&&<p style={{fontSize:11,color:cfg.meta,margin:"3px 0 0"}}>{formatTime(event.startMinutes)} — {formatTime(event.startMinutes+event.durationMinutes)}{event.notes?<span style={{color:T.textFaint}}> · {event.notes}</span>:null}</p>}
+      {tall&&<p style={{fontSize:11,color:cfg.meta,margin:"3px 0 0"}}>{formatTime(event.startMinutes)} - {formatTime(event.startMinutes+event.durationMinutes)}{event.notes?<span style={{color:T.textFaint}}> · {event.notes}</span>:null}</p>}
       <ResizeHandle color={cfg.border} onMouseDown={(e)=>{e.stopPropagation();onResizeStart(e,event.id);}} onTouchStart={(e)=>{e.stopPropagation();onResizeStart(e,event.id);}}/>
     </div>
   );
@@ -221,7 +221,7 @@ function ClassBlock({event,schedule,onClick}){
         <p style={{fontSize:13,fontWeight:600,color:cfg.title,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{event.title}</p>
         {pat&&<span style={{fontSize:9,fontWeight:700,color:cfg.border,background:"rgba(227,179,65,0.12)",padding:"2px 6px",flexShrink:0,letterSpacing:"0.05em",border:`0.5px solid rgba(227,179,65,0.3)`}}>{pat}</span>}
       </div>
-      {tall&&<p style={{fontSize:11,color:cfg.meta,margin:0}}>{formatTime(event.startMinutes)} — {formatTime(event.startMinutes+event.durationMinutes)}{event.notes?<span style={{color:T.textFaint}}> · {event.notes}</span>:null}</p>}
+      {tall&&<p style={{fontSize:11,color:cfg.meta,margin:0}}>{formatTime(event.startMinutes)} - {formatTime(event.startMinutes+event.durationMinutes)}{event.notes?<span style={{color:T.textFaint}}> · {event.notes}</span>:null}</p>}
     </div>
   );
 }
@@ -237,7 +237,7 @@ function CoachWorkoutBlock({dailyWorkout,items,optimisticStatusById,onClick}){
         <p style={{fontSize:13,fontWeight:600,color:allDone?T.greenText:T.textPrimary,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{dailyWorkout?.Title||"Coach Workout"}</p>
         <span style={{fontSize:11,fontWeight:700,color:allDone?T.greenText:T.redText,background:allDone?"rgba(35,134,54,0.2)":"rgba(218,54,51,0.15)",padding:"2px 8px",flexShrink:0}}>{totalCount>0?`${doneCount}/${totalCount}`:"Tap to log"}</span>
       </div>
-      <p style={{fontSize:11,color:T.textFaint,margin:0}}>{formatTime(9*60)} — Tap to log exercises</p>
+      <p style={{fontSize:11,color:T.textFaint,margin:0}}>{formatTime(9*60)} - Tap to log exercises</p>
     </div>
   );
 }
@@ -262,7 +262,7 @@ function MacroModal({mealKey,mealData,event,nutritionCompletion,onToggle,onClose
           <div>
             <p style={{fontSize:10,fontWeight:700,color:T.blueText,letterSpacing:"0.14em",textTransform:"uppercase",margin:"0 0 3px"}}>Nutrition target</p>
             <p style={{fontSize:20,fontWeight:600,color:T.textPrimary,margin:0,letterSpacing:"-0.02em"}}>{mealData?.name||MEAL_LABELS[mealKey]||mealKey}</p>
-            {event&&<p style={{fontSize:11,color:T.textFaint,margin:"2px 0 0"}}>{formatTime(event.startMinutes)} — {formatTime(event.startMinutes+event.durationMinutes)}</p>}
+            {event&&<p style={{fontSize:11,color:T.textFaint,margin:"2px 0 0"}}>{formatTime(event.startMinutes)} - {formatTime(event.startMinutes+event.durationMinutes)}</p>}
           </div>
           <button onClick={onClose} style={{background:T.bgBlock,border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><X size={13}/></button>
         </div>
@@ -280,7 +280,7 @@ function MacroModal({mealKey,mealData,event,nutritionCompletion,onToggle,onClose
         <div style={{padding:"14px 16px"}}>
           <p style={{fontSize:9,fontWeight:700,color:T.textFaint,letterSpacing:"0.14em",textTransform:"uppercase",margin:"0 0 10px"}}>Log completion</p>
           <div style={{display:"flex",gap:8}}>
-            {[{field:"mealDone",label:"Meal done"},...(hyd!=null?[{field:"hydrationDone",label:`Water — ${hyd} oz`}]:[{field:"hydrationDone",label:"Hydration"}])].map(({field,label})=>{
+            {[{field:"mealDone",label:"Meal done"},...(hyd!=null?[{field:"hydrationDone",label:`Water - ${hyd} oz`}]:[{field:"hydrationDone",label:"Hydration"}])].map(({field,label})=>{
               const done=comp[field];
               return(
                 <button key={field} onClick={()=>onToggle(mealKey,field)} style={{flex:1,padding:"12px 10px",border:`0.5px solid ${done?T.green:T.border}`,background:done?"rgba(35,134,54,0.12)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",transition:"all 0.15s"}}>
@@ -309,7 +309,7 @@ function WorkoutDetailModal({dailyWorkout,items,optimisticStatusById,onClose,onO
           <div>
             <p style={{fontSize:10,fontWeight:700,color:T.redText,letterSpacing:"0.14em",textTransform:"uppercase",margin:"0 0 3px"}}>Coach assigned</p>
             <p style={{fontSize:20,fontWeight:600,color:T.textPrimary,margin:0,letterSpacing:"-0.02em"}}>{dailyWorkout?.Title||"Today's Workout"}</p>
-            <p style={{fontSize:11,color:T.textFaint,margin:"2px 0 0"}}>{sorted.length} exercise{sorted.length!==1?"s":""} — tap to log</p>
+            <p style={{fontSize:11,color:T.textFaint,margin:"2px 0 0"}}>{sorted.length} exercise{sorted.length!==1?"s":""} - tap to log</p>
           </div>
           <button onClick={onClose} style={{background:T.bgBlock,border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><X size={13}/></button>
         </div>
@@ -366,7 +366,7 @@ function EventModal({event,defaultStartMinutes,onSave,onDelete,onClose,onOpenCla
           {type==="class"&&(
             <div style={{background:T.bgBlock,border:`0.5px solid ${BLOCK_TYPES.class.border}`,padding:"16px"}}>
               <p style={{fontSize:13,fontWeight:600,color:T.textPrimary,margin:"0 0 6px",letterSpacing:"-0.01em"}}>Classes repeat weekly</p>
-              <p style={{fontSize:12,color:T.textMuted,margin:"0 0 14px",lineHeight:1.6}}>Pick the days, time, and duration — it shows up automatically every week.</p>
+              <p style={{fontSize:12,color:T.textMuted,margin:"0 0 14px",lineHeight:1.6}}>Pick the days, time, and duration - it shows up automatically every week.</p>
               <button onClick={()=>{onClose();onOpenClassSchedule({startMinutes:defaultStartMinutes});}} style={{width:"100%",padding:"13px",border:"none",background:BLOCK_TYPES.class.border,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Set up class schedule →</button>
             </div>
           )}
@@ -531,7 +531,7 @@ export default function DayPlannerSheet({
   const evRaw=String(canonicalItem?.EvidenceRequired??activeItem?.EvidenceRequired??"").toLowerCase();
   const evidenceRequired=evRaw!==""&&evRaw!=="none"&&evRaw!=="false"&&evRaw!=="voluntary_activity_vara";
 
-  // ── Swipe nav — horizontal only ───────────────────────────────────────────
+  // ── Swipe nav - horizontal only ───────────────────────────────────────────
   const swipeRef=useRef({x:null,y:null});
   const handleTouchStart=useCallback((e)=>{ swipeRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; },[]);
   const handleTouchEnd=useCallback((e)=>{
@@ -548,7 +548,7 @@ export default function DayPlannerSheet({
       {/* Backdrop */}
       <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:40,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)",pointerEvents:isOpen?"auto":"none",opacity:isOpen?1:0,transition:"opacity 0.3s ease"}}/>
 
-      {/* Sheet — height:100dvh ensures flex overflow works correctly on iOS */}
+      {/* Sheet - height:100dvh ensures flex overflow works correctly on iOS */}
       <div style={{
         position:"fixed",inset:0,zIndex:50,
         background:T.bg,

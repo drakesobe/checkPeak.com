@@ -179,8 +179,8 @@ export default function EditMemberPanel({
               </span>
             </FieldLabel>
             <Select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="trainer">Trainer — can use org tools</option>
-              <option value="admin">Admin — can manage invites + members</option>
+              <option value="trainer">Trainer - can use org tools</option>
+              <option value="admin">Admin - can manage invites + members</option>
             </Select>
           </div>
 

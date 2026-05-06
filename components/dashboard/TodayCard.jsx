@@ -14,7 +14,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* Nutrition helpers — all logic preserved from TodayNutritionCard            */
+/* Nutrition helpers - all logic preserved from TodayNutritionCard            */
 /* -------------------------------------------------------------------------- */
 
 function nyDateISO() {
@@ -101,7 +101,7 @@ function ProgressBar({ pct, ariaLabel }) {
   );
 }
 
-/* MacroBlock — the 2×2 grid tile for each macro value */
+/* MacroBlock - the 2×2 grid tile for each macro value */
 function MacroBlock({ label, value, unit }) {
   if (value == null) return null;
   return (
@@ -128,7 +128,7 @@ function MacroBlock({ label, value, unit }) {
   );
 }
 
-/* ZoneLabel — the small caps section eyebrow inside each column */
+/* ZoneLabel - the small caps section eyebrow inside each column */
 function ZoneLabel({ icon, children }) {
   return (
     <div className="flex items-center gap-1.5 mb-3">
@@ -144,7 +144,7 @@ function ZoneLabel({ icon, children }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* WorkoutZone — left column                                                   */
+/* WorkoutZone - left column                                                   */
 /* -------------------------------------------------------------------------- */
 
 function WorkoutZone({ loading, summary }) {
@@ -241,11 +241,11 @@ function WorkoutZone({ loading, summary }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* NutritionZone — right column                                               */
+/* NutritionZone - right column                                               */
 /* -------------------------------------------------------------------------- */
 
 function NutritionZone({ loading, planPayload, completionPayload }) {
-  /* Derived — same logic as TodayNutritionCard */
+  /* Derived - same logic as TodayNutritionCard */
   const daily = useMemo(() => {
     const lp = planPayload?.latestPlan || null;
     return lp?.planJson?.daily || lp?.daily || null;
@@ -296,7 +296,7 @@ function NutritionZone({ loading, planPayload, completionPayload }) {
       ) : (
         <div className="flex-1 space-y-4">
 
-          {/* Macro 2×2 grid — the hero element of this zone */}
+          {/* Macro 2×2 grid - the hero element of this zone */}
           {hasAnyTargets && (
             <div className="grid grid-cols-2 gap-x-6 gap-y-3">
               <MacroBlock label="Kcal"    value={calories} unit=""  />
@@ -350,13 +350,13 @@ function NutritionZone({ loading, planPayload, completionPayload }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* TodayPanel — the unified component                                          */
+/* TodayPanel - the unified component                                          */
 /* -------------------------------------------------------------------------- */
 
 export default function TodayPanel({ loading: workoutLoading = false, summary, onOpen }) {
   const router = useRouter();
 
-  /* Nutrition data — fetched internally, same as TodayNutritionCard */
+  /* Nutrition data - fetched internally, same as TodayNutritionCard */
   const [nutLoading,        setNutLoading]        = useState(true);
   const [planPayload,       setPlanPayload]       = useState(null);
   const [completionPayload, setCompletionPayload] = useState(null);
@@ -389,7 +389,7 @@ export default function TodayPanel({ loading: workoutLoading = false, summary, o
 
   useEffect(() => { fetchNutrition(); }, [fetchNutrition]);
 
-  /* Unified CTA — goes to the Today page anchored to the top */
+  /* Unified CTA - goes to the Today page anchored to the top */
   const handleOpen = () => {
     if (typeof onOpen === "function") {
       onOpen();
@@ -471,7 +471,7 @@ export default function TodayPanel({ loading: workoutLoading = false, summary, o
       {/* ── Two-column body ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2">
 
-        {/* Left — Workout */}
+        {/* Left - Workout */}
         <div className="p-5 lg:p-6">
           <WorkoutZone loading={workoutLoading} summary={summary} />
         </div>
@@ -488,7 +488,7 @@ export default function TodayPanel({ loading: workoutLoading = false, summary, o
           aria-hidden="true"
         />
 
-        {/* Right — Nutrition */}
+        {/* Right - Nutrition */}
         <div className="p-5 lg:p-6">
           <NutritionZone
             loading={nutLoading}

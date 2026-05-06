@@ -1,6 +1,6 @@
 // components/athlete-today/WorkoutCard.jsx
 // The primary visual of the athlete's day.
-// Full-width dark card. Always expanded — the athlete sees their full workout
+// Full-width dark card. Always expanded - the athlete sees their full workout
 // the moment they open the page. No accordion. No hiding the most important
 // information behind a tap.
 //
@@ -114,7 +114,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
         </div>
       </div>
 
-      {/* Sets × Reps / Weight — right side */}
+      {/* Sets × Reps / Weight - right side */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         {sets && reps && (
           <span style={{
@@ -192,7 +192,7 @@ export default function WorkoutCard({
       {/* ── Card header ── */}
       <div style={{ padding: "24px 24px 0" }}>
 
-        {/* Eyebrow — label + date */}
+        {/* Eyebrow - label + date */}
         <div style={{
           display:       "flex",
           alignItems:    "center",
@@ -220,7 +220,7 @@ export default function WorkoutCard({
           </span>
         </div>
 
-        {/* Workout name — the hero element */}
+        {/* Workout name - the hero element */}
         <div style={{
           fontSize:      28,
           fontWeight:    800,

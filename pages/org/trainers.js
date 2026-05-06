@@ -26,7 +26,7 @@ function resolveField(obj, keys, fallback = "") {
 }
 
 // Logs a console error in dev if any required session fields are missing.
-// Required: orgId, Token, role — all org API routes depend on these.
+// Required: orgId, Token, role - all org API routes depend on these.
 function validateOrgSession(user) {
   if (!user || typeof user !== "object") return;
   const REQUIRED = [
@@ -39,7 +39,7 @@ function validateOrgSession(user) {
   );
   if (missing.length > 0) {
     console.error(
-      "[trainers] Session user is missing required fields — API calls will return 400:\n" +
+      "[trainers] Session user is missing required fields - API calls will return 400:\n" +
       missing.map(({ label, why }) => `  ✗ ${label} (${why})`).join("\n") +
       "\n  Actual keys on user:", Object.keys(user)
     );
@@ -71,7 +71,7 @@ export default function TrainersPage() {
     if (!isOrgSide)  { router.push("/dashboard"); return; }
   }, [user, isOrgSide, router]);
 
-  /* ── Session validation — surfaces field casing mismatches immediately ── */
+  /* ── Session validation - surfaces field casing mismatches immediately ── */
   useEffect(() => {
     if (!user) return;
     // validateOrgSession logs errors/warnings to the console if required fields
@@ -80,7 +80,7 @@ export default function TrainersPage() {
     validateOrgSession(user, { logWarnings: true });
   }, [user]);
 
-  /* ── Session display — resolveField checks multiple key casings ── */
+  /* ── Session display - resolveField checks multiple key casings ── */
   const orgName = useMemo(() => {
     const v = resolveField(user, [
       "OrgName", "orgName", "Organization Name", "OrganizationName", "organizationName", "Organization",

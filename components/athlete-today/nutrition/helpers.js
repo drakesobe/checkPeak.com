@@ -23,7 +23,7 @@ export function toNum(v) {
 
 export function fmt(v) {
   const n = toNum(v);
-  return n == null ? "—" : String(n);
+  return n == null ? "-" : String(n);
 }
 
 export function isISODateOnly(s) {
@@ -32,7 +32,7 @@ export function isISODateOnly(s) {
 
 export function fmtHumanDate(isoDate) {
   const s = String(isoDate || "").trim();
-  if (!isISODateOnly(s)) return s || "—";
+  if (!isISODateOnly(s)) return s || "-";
   const d = new Date(`${s}T12:00:00`);
   try {
     return new Intl.DateTimeFormat("en-US", {
@@ -44,7 +44,7 @@ export function fmtHumanDate(isoDate) {
 
 export function pct(n) {
   const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
+  if (!Number.isFinite(x)) return "-";
   return `${Math.max(0, Math.min(100, Math.round(x)))}%`;
 }
 
@@ -100,7 +100,7 @@ export function pickDailyHydrationOz({ daily, planJson, dailyHydrationOzProp }) 
 }
 
 export function pickCoachNotes({ planJson }) {
-  // ── 1) freeformNotes — the actual coach free-text field, check FIRST ──────
+  // ── 1) freeformNotes - the actual coach free-text field, check FIRST ──────
   // planJson.notes is a structured object { macros, supplements }, NOT a string.
   // The ?? operator would stop there and never reach freeformNotes, so we check
   // freeformNotes explicitly before anything else.
@@ -116,7 +116,7 @@ export function pickCoachNotes({ planJson }) {
   );
   if (legacy) return legacy;
 
-  // ── 3) planJson.notes — structured object { macros, supplements } ─────────
+  // ── 3) planJson.notes - structured object { macros, supplements } ─────────
   // Only used as a fallback for plans that stored notes here instead of
   // freeformNotes. Both fields are usually empty strings in practice.
   const notesRaw = planJson?.notes;
@@ -143,8 +143,8 @@ export function pickCoachNotes({ planJson }) {
  * pickSupplements
  *
  * Reads planJson.supplements and returns:
- *   items  — array of { k, label, value, affiliateLink?, imageUrl?, pricePerServing? }
- *   notes  — string dosing notes
+ *   items  - array of { k, label, value, affiliateLink?, imageUrl?, pricePerServing? }
+ *   notes  - string dosing notes
  *
  * Priority: product object (new) → legacy string (old) → skip
  *
@@ -162,7 +162,7 @@ export function pickSupplements({ planJson }) {
       : null) ||
     planJson;
 
-  // Helper — try the product object first, fall back to the string recommendation
+  // Helper - try the product object first, fall back to the string recommendation
   function resolveItem({ k, label, productKey, stringKey }) {
     const product = src?.[productKey];
 
@@ -195,7 +195,7 @@ export function pickSupplements({ planJson }) {
     resolveItem({ k: "creatine",     label: "Creatine",       productKey: "creatineProduct",    stringKey: "creatineRecommendation"     }),
     resolveItem({ k: "proteinBar",   label: "Protein Bars",   productKey: "proteinBarProduct",  stringKey: "proteinBarRecommendation"   }),
     resolveItem({ k: "bcaa",         label: "BCAA / EAA",     productKey: "bcaaProduct",        stringKey: "bcaaRecommendation"         }),
-    // Legacy — kept so old plans still render
+    // Legacy - kept so old plans still render
     resolveItem({ k: "electrolytes", label: "Electrolytes",   productKey: "electrolytesProduct", stringKey: "electrolytesRecommendation" }),
   ].filter(Boolean);
 

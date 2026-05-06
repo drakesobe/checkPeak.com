@@ -1,4 +1,4 @@
-// pages/dashboard.js — CheckPeak Athlete Dashboard (redesigned)
+// pages/dashboard.js - CheckPeak Athlete Dashboard (redesigned)
 // Design: dark editorial, Barlow Condensed, #060810 + #4FABFF
 //
 // This file is a self-contained visual reference.
@@ -15,7 +15,7 @@ import { useAthleteDashboardData } from "@/hooks/dashboard/useAthleteDashboardDa
 import { useTodaySummary } from "@/hooks/dashboard/useTodaySummary";
 
 // ---------------------------------------------------------------------------
-// Design Tokens — import/share these across all sub-components
+// Design Tokens - import/share these across all sub-components
 // ---------------------------------------------------------------------------
 export const CP = {
   // Backgrounds
@@ -47,7 +47,7 @@ export const CP = {
 };
 
 // ---------------------------------------------------------------------------
-// Responsive CSS — injected via <style> tag since inline styles can't do @media
+// Responsive CSS - injected via <style> tag since inline styles can't do @media
 // ---------------------------------------------------------------------------
 const RESPONSIVE_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
@@ -156,7 +156,7 @@ const ROUTES = {
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-/** Eyebrow label — used above every section heading */
+/** Eyebrow label - used above every section heading */
 function Eyebrow({ children, style }) {
   return (
     <p style={{
@@ -258,7 +258,7 @@ function CtaButton({ children, onClick, ghost = false, size = "md", style }) {
   );
 }
 
-/** Ghost film-grain overlay — place as first child of any section */
+/** Ghost film-grain overlay - place as first child of any section */
 function Grain() {
   const svg = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
   return (
@@ -454,7 +454,7 @@ function Header({ user, stats, onNavigate }) {
 }
 
 // ---------------------------------------------------------------------------
-// Today Panel — Workout · Upcoming Class · Upcoming Meal
+// Today Panel - Workout · Upcoming Class · Upcoming Meal
 // summary fields come from the expanded useTodaySummary hook.
 // Sections only render if that data exists; the panel hides entirely
 // if nothing at all is available for today.
@@ -884,7 +884,7 @@ function RiskAlertsCard({ flaggedCount = 0, recentScans = [], onReview }) {
           }} />
           <p style={{ fontFamily: CP.fontB, fontSize: "12px", color: CP.ghost, lineHeight: 1.45 }}>
             <span style={{ color: CP.white, fontWeight: 600 }}>{scan.product}</span>
-            {" "}— {scan.flagCount} flagged compound{scan.flagCount !== 1 ? "s" : ""}
+            {" "}- {scan.flagCount} flagged compound{scan.flagCount !== 1 ? "s" : ""}
           </p>
         </div>
       ))}
@@ -979,7 +979,7 @@ function RecentScansCard({ scans = [], loading, formatDate, onOpen, onViewAll })
 }
 
 // ---------------------------------------------------------------------------
-// [SuggestedSupplementsCard removed — no credentials to back recommendations]
+// [SuggestedSupplementsCard removed - no credentials to back recommendations]
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Skeleton loader
@@ -1082,7 +1082,7 @@ export default function DashboardPage() {
           <p style={{ fontFamily: CP.fontBC, fontWeight: 900, fontSize: "14px", letterSpacing: "0.16em", textTransform: "uppercase", color: CP.white }}>
             Check<span style={{ color: CP.accent }}>Peak</span>
           </p>
-          {/* Hamburger — wire up to your existing mobile nav/modal */}
+          {/* Hamburger - wire up to your existing mobile nav/modal */}
           <button
             onClick={() => {}}
             style={{ background: "none", border: "none", cursor: "pointer", padding: "8px", display: "flex", flexDirection: "column", gap: "5px" }}
@@ -1140,7 +1140,7 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {/* Recent Scans — full width */}
+              {/* Recent Scans - full width */}
               <RecentScansCard
                 scans={scansWithFlags}
                 loading={loading}

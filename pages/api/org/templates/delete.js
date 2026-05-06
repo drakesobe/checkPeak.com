@@ -1,5 +1,5 @@
 // pages/api/org/templates/delete.js
-// POST { id } — removes a template by ID.
+// POST { id } - removes a template by ID.
 
 import Airtable from "airtable";
 import { requireOrgSideUser } from "@/lib/requireUser";

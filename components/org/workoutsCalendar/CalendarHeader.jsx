@@ -45,7 +45,7 @@ const HEADER_CSS = `
     flex-wrap: wrap;
   }
 
-  /* Desktop-only action buttons — hidden on mobile */
+  /* Desktop-only action buttons - hidden on mobile */
   .ch-desktop-actions {
     display: none;
   }
@@ -58,7 +58,7 @@ const HEADER_CSS = `
     }
   }
 
-  /* Mobile-only more button — hidden on desktop */
+  /* Mobile-only more button - hidden on desktop */
   .ch-more-btn {
     display: inline-flex;
   }
@@ -261,7 +261,7 @@ export default function CalendarHeader({
               {moreOpen ? <X size={14} /> : <MoreHorizontal size={14} />}
             </button>
 
-            {/* Create — always visible */}
+            {/* Create - always visible */}
             <button className="ch-btn-create" onClick={onCreateToday}>
               <Plus size={13} />
               Create

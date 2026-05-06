@@ -246,14 +246,14 @@ function ConfigureStep({ athletes, onProceed }) {
       {/* ── Athlete checklist ── */}
       <div style={{ borderBottom: `1px solid ${DS.border}` }}>
 
-        {/* Step header — navy bar, clearly a new section */}
+        {/* Step header - navy bar, clearly a new section */}
         <div
           className="flex items-center gap-2 px-4 py-2.5"
           style={{ backgroundColor: DS.brand }}
         >
           <CheckSquare className="h-3.5 w-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.65)" }} />
           <p className="text-xs font-black uppercase tracking-wider flex-1" style={{ color: "#fff" }}>
-            Step 2 — Select Athletes
+            Step 2 - Select Athletes
           </p>
           {selected.size > 0 && (
             <span
@@ -265,7 +265,7 @@ function ConfigureStep({ athletes, onProceed }) {
           )}
         </div>
 
-        {/* Toolbar — select all + filter */}
+        {/* Toolbar - select all + filter */}
         <div
           className="flex items-center justify-between gap-3 px-4 py-2"
           style={{ backgroundColor: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}` }}
@@ -502,10 +502,10 @@ function SummaryStep({ results, athleteMap, plan, onReset }) {
         </div>
       )}
 
-      {/* Succeeded — with override links */}
+      {/* Succeeded - with override links */}
       <div className="px-4 py-3">
         <p className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: DS.labelText }}>
-          Assigned ({succeeded.length}) — click any name to open profile and override
+          Assigned ({succeeded.length}) - click any name to open profile and override
         </p>
         <div className="space-y-1">
           {succeeded.map((r) => {
@@ -556,7 +556,7 @@ export default function GroupBlastPanel({ athletes }) {
   const [blastConfig, setBlastConfig] = useState(null);  // { plan, athletes }
   const [results,     setResults]     = useState([]);
 
-  // Normalize athletes — only those with tokens can be blasted
+  // Normalize athletes - only those with tokens can be blasted
   const normalizedAthletes = useMemo(() =>
     (Array.isArray(athletes) ? athletes : []).map((a) => ({
       ...a,

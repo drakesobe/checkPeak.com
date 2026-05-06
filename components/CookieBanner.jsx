@@ -19,7 +19,7 @@ function requestAndStoreGeolocation() {
       } catch {}
     },
     () => {
-      // User denied or unavailable — store a marker so we don't ask again
+      // User denied or unavailable - store a marker so we don't ask again
       try { localStorage.setItem("cp_geo", JSON.stringify({ denied: true })); } catch {}
     },
     { timeout: 8000, maximumAge: 3_600_000 } // cache for 1 hour

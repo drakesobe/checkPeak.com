@@ -19,7 +19,7 @@ export default function ContactPage() {
             Contact
           </h1>
           <p className="mt-2 text-sm text-gray-400">
-            Questions, feedback, or partnership ideas? Reach out — we read every
+            Questions, feedback, or partnership ideas? Reach out - we read every
             message.
           </p>
 

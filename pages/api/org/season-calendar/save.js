@@ -1,5 +1,5 @@
 // pages/api/org/season-calendar/save.js
-// POST { periods: [] } — saves the org's season calendar periods.
+// POST { periods: [] } - saves the org's season calendar periods.
 // Writes JSON to the "SeasonCalendar" Long Text field on the org's
 // Organizations Airtable record, identified by session orgId.
 
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
 
   const orgId = String(user?.orgId || user?.OrgId || "").trim();
   if (!orgId) {
-    return res.status(400).json({ error: "No orgId on session — re-login." });
+    return res.status(400).json({ error: "No orgId on session - re-login." });
   }
 
   const { periods } = req.body || {};

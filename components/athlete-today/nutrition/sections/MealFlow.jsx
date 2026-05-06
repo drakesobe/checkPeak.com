@@ -85,7 +85,7 @@ function nyISODate() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   DayTimeline — tappable segments jump to that meal
+   DayTimeline - tappable segments jump to that meal
 ──────────────────────────────────────────────────────────────────────────── */
 function DayTimeline({ recommendedMeal, completion, onSelectMeal }) {
   const now   = new Date();
@@ -103,7 +103,7 @@ function DayTimeline({ recommendedMeal, completion, onSelectMeal }) {
 
   return (
     <div className="relative mb-4" aria-label="Day meal timeline">
-      {/* Tappable track — h-5 so a thumb can actually hit it */}
+      {/* Tappable track - h-5 so a thumb can actually hit it */}
       <div className="flex h-5 rounded-full overflow-hidden gap-px bg-gray-100">
         {MEAL_KEYS.map(k => {
           const [s, e]   = MEAL_SPANS[k];
@@ -183,7 +183,7 @@ function MacroTiles({ targets }) {
   );
 }
 
-/* ── Hydration target strip — shown prominently inside each meal ── */
+/* ── Hydration target strip - shown prominently inside each meal ── */
 function HydrationTargetStrip({ oz, done }) {
   if (oz == null) return null;
   return (
@@ -267,10 +267,10 @@ function MealDetail({ mealKey, block, doneMeal, doneWater, saving, onToggleMeal,
       {/* Macros */}
       <MacroTiles targets={targets} />
 
-      {/* Hydration target — front and center, above action buttons */}
+      {/* Hydration target - front and center, above action buttons */}
       <HydrationTargetStrip oz={hydOz} done={doneWater} />
 
-      {/* Action buttons — 72px tall, full-width feel on mobile */}
+      {/* Action buttons - 72px tall, full-width feel on mobile */}
       <div className="grid grid-cols-2 gap-3">
 
         {/* Meal done */}
@@ -300,7 +300,7 @@ function MealDetail({ mealKey, block, doneMeal, doneWater, saving, onToggleMeal,
           )}
         </button>
 
-        {/* Hydration — label shows exact oz target when known */}
+        {/* Hydration - label shows exact oz target when known */}
         <button
           type="button"
           onClick={onToggleWater}
@@ -377,7 +377,7 @@ function MealRow({ mealKey, isNow, isOpen, doneMeal, doneWater, saving, block, o
       )}
       style={isNow && isOpen ? { borderTop: `2px solid ${C.brand}` } : undefined}
     >
-      {/* Row header — min-h-[64px] so thumbs can tap it comfortably */}
+      {/* Row header - min-h-[64px] so thumbs can tap it comfortably */}
       <button
         type="button"
         onClick={onToggle}
@@ -415,7 +415,7 @@ function MealRow({ mealKey, isNow, isOpen, doneMeal, doneWater, saving, block, o
           <p className="text-[12px] text-gray-400 mt-0.5 truncate">{subtitle}</p>
         </div>
 
-        {/* Readable status badges — not tiny 8px dots */}
+        {/* Readable status badges - not tiny 8px dots */}
         <div className="shrink-0 flex items-center gap-1.5">
           <span
             className="text-[11px] font-bold px-2 py-1 rounded-lg"

@@ -2,24 +2,24 @@
 import Airtable from "airtable";
 
 /**
- * Search API — v2
+ * Search API - v2
  *
  * Changes from v1:
  *
  * 1. SERVER-SIDE FILTERING
- *    Was: fetchAllRecords() — pulled every row into memory, then filtered in JS.
+ *    Was: fetchAllRecords() - pulled every row into memory, then filtered in JS.
  *    Now: filterByFormula passed directly to Airtable so only matching rows
  *    are transferred. Dramatically faster and avoids rate limit issues under
  *    real traffic.
  *
  * 2. MAP-BASED INGREDIENT LOOKUP
  *    Was: findIngredientMatch() ran a .find() loop over all ingredients for
- *    every banned record — O(n²) complexity.
+ *    every banned record - O(n²) complexity.
  *    Now: ingredients are indexed into a Map keyed by lowercase name before
- *    the merge step — O(1) lookup per banned record.
+ *    the merge step - O(1) lookup per banned record.
  *
  * 3. PROPER NULL HANDLING
- *    Was: banType: banned.fields["Ban Type"] || "" — empty string is falsy
+ *    Was: banType: banned.fields["Ban Type"] || "" - empty string is falsy
  *    but inconsistent with ingredient records which used null.
  *    Now: all optional fields use ?? null so the frontend gets a consistent
  *    null when a field is absent.
@@ -31,7 +31,7 @@ import Airtable from "airtable";
  *
  * 5. PARALLEL FETCHING
  *    Was: banned and ingredient queries ran sequentially (implicit await chain).
- *    Now: Promise.all() runs both Airtable queries in parallel — roughly 2x
+ *    Now: Promise.all() runs both Airtable queries in parallel - roughly 2x
  *    faster on cold requests.
  *
  * 6. FIELD NORMALIZATION IN ONE PLACE
@@ -41,7 +41,7 @@ import Airtable from "airtable";
  */
 
 // ---------------------------------------------------------------------------
-// Airtable clients — one per base
+// Airtable clients - one per base
 // ---------------------------------------------------------------------------
 
 const bannedBase = new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
@@ -64,7 +64,7 @@ function sanitizeForFormula(query = "") {
   return String(query)
     .trim()
     .replace(/[^a-zA-Z0-9\s\-,.()+]/g, "")
-    .slice(0, 100); // hard cap — no query needs to be longer than this
+    .slice(0, 100); // hard cap - no query needs to be longer than this
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ function buildIngredientFormula(query) {
 }
 
 // ---------------------------------------------------------------------------
-// Airtable fetchers — server-side filtered
+// Airtable fetchers - server-side filtered
 // ---------------------------------------------------------------------------
 
 async function fetchBannedMatches(query) {
@@ -188,7 +188,7 @@ export default async function handler(req, res) {
       .json({ error: "Query is required and must be at least 2 characters." });
   }
 
-  // Sanitize early — reject if nothing remains after sanitization
+  // Sanitize early - reject if nothing remains after sanitization
   const sanitized = sanitizeForFormula(query);
   if (sanitized.length < 2) {
     return res
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
       fetchIngredientMatches(sanitized),
     ]);
 
-    // FIX 2: Build ingredient lookup Map — O(1) per lookup vs O(n) per lookup
+    // FIX 2: Build ingredient lookup Map - O(1) per lookup vs O(n) per lookup
     // Keyed by lowercase name for case-insensitive matching
     const ingredientMap = new Map(
       ingredientRecords.map((rec) => [
@@ -223,7 +223,7 @@ export default async function handler(req, res) {
       normalizedBanned.map((r) => r.name.toLowerCase())
     );
 
-    // Normalize ingredient records — exclude any already covered by banned
+    // Normalize ingredient records - exclude any already covered by banned
     const normalizedIngredients = ingredientRecords
       .filter((rec) => !bannedNameSet.has((rec.fields["Name"] ?? "").toLowerCase().trim()))
       .map(normalizeIngredientRecord);

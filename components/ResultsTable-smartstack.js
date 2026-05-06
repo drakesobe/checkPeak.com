@@ -78,8 +78,8 @@ function safeField(rec, ...keys) {
 }
 
 function cell(v) {
-  if (v === undefined || v === null) return "—";
-  if (typeof v === "string" && v.trim() === "") return "—";
+  if (v === undefined || v === null) return "-";
+  if (typeof v === "string" && v.trim() === "") return "-";
   return v;
 }
 
@@ -192,7 +192,7 @@ function BanTypeBadge({ banType, size = "md" }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* DetailField / ExtendedField — reusable label+value pairs                   */
+/* DetailField / ExtendedField - reusable label+value pairs                   */
 /* -------------------------------------------------------------------------- */
 function DetailField({ label, value, wide = false }) {
   return (
@@ -508,7 +508,7 @@ function IngredientRow({ rec, index, showPubchem }) {
           {displayName}
         </span>
 
-        {/* PubChem CID — compact, secondary */}
+        {/* PubChem CID - compact, secondary */}
         {showPubchem && pub && (
           <span className="text-[10px] text-white/25 font-mono shrink-0 hidden sm:block">
             CID {pub}
@@ -574,7 +574,7 @@ export default function ResultsTableSmartstack({
     );
   }, [matchedRecords, activeBanType]);
 
-  // Per-type counts for filter pill badges — only computed when matchedRecords changes
+  // Per-type counts for filter pill badges - only computed when matchedRecords changes
   const banTypeCounts = useMemo(
     () =>
       Object.fromEntries(
@@ -638,7 +638,7 @@ export default function ResultsTableSmartstack({
             </h2>
           </div>
 
-          {/* Ban type filter pills — only rendered when there are flagged results */}
+          {/* Ban type filter pills - only rendered when there are flagged results */}
           {matchedRecords.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               {BAN_TYPES.map((b) => {
@@ -726,7 +726,7 @@ export default function ResultsTableSmartstack({
       </section>
 
       {/* ================================================================
-          INGREDIENTS DETECTED — informational, secondary section
+          INGREDIENTS DETECTED - informational, secondary section
       ================================================================ */}
       {matchedIngredients.length > 0 && (
         <section aria-labelledby="ingredients-heading">
@@ -753,7 +753,7 @@ export default function ResultsTableSmartstack({
               </h2>
             </div>
 
-            {/* "Informational" label — communicates intent clearly */}
+            {/* "Informational" label - communicates intent clearly */}
             <span
               className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full border shrink-0"
               style={{

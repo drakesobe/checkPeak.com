@@ -42,7 +42,7 @@ export default async function handler(req, res) {
           <p>You’ve been invited to join your organization’s PEAK account.</p>
           <p>Click the link below to sign up:</p>
           <a href="${inviteLink}" style="color: #1d4ed8;">${inviteLink}</a>
-          <p>— The PEAK Team</p>
+          <p>- The PEAK Team</p>
         `,
       });
     } catch (err) {

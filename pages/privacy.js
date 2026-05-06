@@ -25,7 +25,7 @@ const SECTIONS = [
       },
       {
         heading: "Scan results and usage data",
-        text: "We retain anonymised scan result data — the ingredients detected and their risk classifications — to improve the accuracy of our ingredient database. This data is not linked to your identity or account. We also collect standard usage analytics such as pages visited, features used, and session duration to understand how people use CheckPeak.",
+        text: "We retain anonymised scan result data - the ingredients detected and their risk classifications - to improve the accuracy of our ingredient database. This data is not linked to your identity or account. We also collect standard usage analytics such as pages visited, features used, and session duration to understand how people use CheckPeak.",
       },
       {
         heading: "Saved stacks and preferences",
@@ -43,7 +43,7 @@ const SECTIONS = [
     body: [
       {
         heading: "To provide the service",
-        text: "We use your information to operate CheckPeak — processing scans, returning results, syncing your saved stacks, and authenticating your account.",
+        text: "We use your information to operate CheckPeak - processing scans, returning results, syncing your saved stacks, and authenticating your account.",
       },
       {
         heading: "To improve accuracy",
@@ -87,7 +87,7 @@ const SECTIONS = [
     body: [
       {
         heading: "Essential cookies",
-        text: "We use cookies that are strictly necessary to operate CheckPeak — for example, to keep you signed in across sessions. These cannot be disabled without breaking the service.",
+        text: "We use cookies that are strictly necessary to operate CheckPeak - for example, to keep you signed in across sessions. These cannot be disabled without breaking the service.",
       },
       {
         heading: "Analytics cookies",
@@ -203,7 +203,7 @@ export default function PrivacyPage() {
   return (
     <>
       <Head>
-        <title>Privacy Policy — CheckPeak</title>
+        <title>Privacy Policy - CheckPeak</title>
         <meta name="description" content="CheckPeak's privacy policy. How we collect, use, and protect your data when you use our supplement scanning tools." />
         <meta name="robots" content="noindex" />
       </Head>
@@ -262,7 +262,7 @@ export default function PrivacyPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
           <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-16 xl:gap-20">
 
-            {/* ── Sidebar — sticky on desktop ── */}
+            {/* ── Sidebar - sticky on desktop ── */}
             <aside className="hidden lg:block">
               <div className="sticky top-20 space-y-8">
                 <TableOfContents sections={SECTIONS} />
@@ -392,7 +392,7 @@ export default function PrivacyPage() {
                 </h2>
                 <p className="text-sm text-slate-600 leading-relaxed mb-4">
                   We're happy to explain anything in more detail. Reach out and a real
-                  person will respond — not an automated form letter.
+                  person will respond - not an automated form letter.
                 </p>
                 <a
                   href={`mailto:${CONTACT_EMAIL}`}

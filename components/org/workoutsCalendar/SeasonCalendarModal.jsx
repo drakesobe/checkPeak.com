@@ -61,7 +61,7 @@ async function savePeriodsToAPI(periods) {
 }
 
 function formatDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso + "T12:00:00").toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   });
@@ -119,7 +119,7 @@ function PeriodCard({ period, onEdit, onRemove }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <CalendarDays style={{ width: 11, height: 11, color: DS.dimText, flexShrink: 0 }} />
           <span style={{ fontFamily: F.body, fontSize: 12, color: DS.bodyText }}>
-            {formatDate(period.start)} — {formatDate(period.end)}
+            {formatDate(period.start)} - {formatDate(period.end)}
           </span>
         </div>
 
@@ -300,8 +300,8 @@ function PeriodEditForm({ period, onChange }) {
             <Info style={{ width: 12, height: 12, color: isHard ? DS.banned : DS.caution, flexShrink: 0, marginTop: 2 }} />
             <p style={{ fontFamily: F.body, fontSize: 11, lineHeight: 1.55, color: isHard ? DS.banned : DS.caution, margin: 0 }}>
               {isHard
-                ? "Break period — coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA)."
-                : "Out-of-season period — VARA is strongly preferred. Warnings will appear when scheduling workouts."}
+                ? "Break period - coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA)."
+                : "Out-of-season period - VARA is strongly preferred. Warnings will appear when scheduling workouts."}
             </p>
           </div>
         );
@@ -333,7 +333,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
         savePeriods(apiPeriods);
       })
       .catch((e) => {
-        setFetchErr("Could not sync from server — showing locally cached data.");
+        setFetchErr("Could not sync from server - showing locally cached data.");
         console.warn("[SeasonCalendarModal] fetch:", e?.message);
       })
       .finally(() => setLoading(false));
@@ -452,8 +452,8 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
                 </div>
                 <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
                   {isEditing
-                    ? "Edit period details — click All periods to return"
-                    : "Shared across all coaches in your org — synced to Airtable."}
+                    ? "Edit period details - click All periods to return"
+                    : "Shared across all coaches in your org - synced to Airtable."}
                 </p>
               </div>
             </div>
@@ -465,7 +465,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
             </button>
           </div>
 
-          {/* ── Info banner — list view only ── */}
+          {/* ── Info banner - list view only ── */}
           {!isEditing && (
             <div style={{
               padding: "10px 20px", background: DS.brandBg,
@@ -578,7 +578,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
                 {saved
-                  ? "✓ Saved to Airtable — all coaches will see these dates."
+                  ? "✓ Saved to Airtable - all coaches will see these dates."
                   : isEditing
                     ? "Changes are saved when you click Save Calendar."
                     : "Shared across all coaches in your org."}

@@ -22,14 +22,14 @@ import {
 import { ncaaWordingCallouts }                      from "@/lib/compliance/ncaaWording";
 import { ncaaResourceBackbone, NCAA_LAST_REVIEWED } from "@/lib/compliance/ncaaSources";
 
-// ── Brand tokens — match index.js exactly ────────────────────────────────────
+// ── Brand tokens - match index.js exactly ────────────────────────────────────
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
 const WHITE  = "#FFFFFF";
 const RED    = "#C8102E";
 const AMBER  = "#F5A623";
 
-// ── Film grain — same as index ────────────────────────────────────────────────
+// ── Film grain - same as index ────────────────────────────────────────────────
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const GLOBAL_STYLE = `
@@ -96,7 +96,7 @@ function Eyebrow({ children, color = ACCENT }) {
   );
 }
 
-// ── Big section headline — index style ───────────────────────────────────────
+// ── Big section headline - index style ───────────────────────────────────────
 function SectionHeadline({ children, accent, sub }) {
   const { ref, inView } = useReveal();
   return (
@@ -185,7 +185,7 @@ function DarkCard({ icon, title, text, accentColor = ACCENT, index = 0 }) {
   );
 }
 
-// ── Step card — matches DeclarationBeat numerals ──────────────────────────────
+// ── Step card - matches DeclarationBeat numerals ──────────────────────────────
 const STEP_COLORS = [ACCENT, "#7C6EF5", "#46cc8a", RED];
 
 function StepCard({ step, index }) {
@@ -264,7 +264,7 @@ function StepCard({ step, index }) {
   );
 }
 
-// ── Stat tile — index proof-moment style ──────────────────────────────────────
+// ── Stat tile - index proof-moment style ──────────────────────────────────────
 function StatTile({ value, label, index }) {
   const { ref, inView } = useReveal();
   return (
@@ -339,8 +339,8 @@ export default function InfoPage() {
   return (
     <>
       <Head>
-        <title>CheckPeak — Built for the Offseason</title>
-        <meta name="description" content="No one's watching. That's the point. CheckPeak gives athletes everything they need to own their offseason — built from the ground up around NCAA compliance." />
+        <title>CheckPeak - Built for the Offseason</title>
+        <meta name="description" content="No one's watching. That's the point. CheckPeak gives athletes everything they need to own their offseason - built from the ground up around NCAA compliance." />
       </Head>
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
 
@@ -416,7 +416,7 @@ export default function InfoPage() {
                   }}
                 >
                   {infoHero?.subtitle ||
-                    "Your coach can't follow you home. Your teammates aren't watching. But the offseason keeps score regardless — and it comes to collect in August."}
+                    "Your coach can't follow you home. Your teammates aren't watching. But the offseason keeps score regardless - and it comes to collect in August."}
                 </motion.p>
 
                 {heroPills.length > 0 && (
@@ -495,7 +495,7 @@ export default function InfoPage() {
                 )}
               </div>
 
-              {/* What we do best — right card */}
+              {/* What we do best - right card */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -599,7 +599,7 @@ export default function InfoPage() {
                     }}
                   >
                     Supplements are contaminated, mislabeled, and relabeled every year.
-                    The NCAA doesn&apos;t care about intent — a positive test is a positive test.
+                    The NCAA doesn&apos;t care about intent - a positive test is a positive test.
                     CheckPeak gives athletes a fast first-pass screen before anything goes in their body.
                   </motion.p>
                 </div>
@@ -650,7 +650,7 @@ export default function InfoPage() {
                 <Eyebrow>What you get</Eyebrow>
                 <SectionHeadline
                   accent="One standard."
-                  sub="Workout programming, nutrition targets, and supplement screening — one platform built entirely around the athlete who shows up when no one is watching."
+                  sub="Workout programming, nutrition targets, and supplement screening - one platform built entirely around the athlete who shows up when no one is watching."
                 >
                   Three tools.
                 </SectionHeadline>
@@ -808,7 +808,7 @@ export default function InfoPage() {
                 <Eyebrow>Why teams use CheckPeak</Eyebrow>
                 <SectionHeadline
                   accent="depth charts are decided."
-                  sub="Not because your coach is watching. Because you decided August matters. CheckPeak is what athletes have when coaches can't be there — and the offseason still comes to collect regardless."
+                  sub="Not because your coach is watching. Because you decided August matters. CheckPeak is what athletes have when coaches can't be there - and the offseason still comes to collect regardless."
                 >
                   June is where
                 </SectionHeadline>
@@ -868,7 +868,7 @@ export default function InfoPage() {
                 <Eyebrow>Trusted resources</Eyebrow>
                 <SectionHeadline
                   accent="official bodies."
-                  sub="For final decisions, always cross-reference official rules and your program's compliance process. We are a first pass — not a final word."
+                  sub="For final decisions, always cross-reference official rules and your program's compliance process. We are a first pass - not a final word."
                 >
                   Use CheckPeak alongside
                 </SectionHeadline>
@@ -880,8 +880,8 @@ export default function InfoPage() {
                   marginTop: "clamp(2rem, 4vw, 3.5rem)",
                 }}>
                   {[
-                    { name: "WADA — World Anti-Doping Agency", desc: "Global authority for the World Anti-Doping Code and Prohibited List.", href: "https://www.wada-ama.org/" },
-                    { name: "USADA — U.S. Anti-Doping Agency", desc: "U.S. education resources and prohibited list guidance.", href: "https://www.usada.org/" },
+                    { name: "WADA - World Anti-Doping Agency", desc: "Global authority for the World Anti-Doping Code and Prohibited List.", href: "https://www.wada-ama.org/" },
+                    { name: "USADA - U.S. Anti-Doping Agency", desc: "U.S. education resources and prohibited list guidance.", href: "https://www.usada.org/" },
                     { name: "NSF Certified for Sport",         desc: "Third-party testing program for supplement certification.", href: "https://www.nsfsport.com/certified-for-sport/" },
                     { name: "Informed Sport",                  desc: "Global supplement testing and certification program.", href: "https://sport.wetestyoutrust.com/" },
                   ].map((r, i) => (

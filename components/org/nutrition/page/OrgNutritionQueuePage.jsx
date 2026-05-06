@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 
-// ─── Real imports — uncomment when integrating ────────────────────────────────
+// ─── Real imports - uncomment when integrating ────────────────────────────────
 // import { useAuthContext } from "@/hooks/useAuth";
 // import { useNutritionQueue } from "@/hooks/org/useNutritionQueue";
 
-// ─── STUB START — remove when using real hooks ────────────────────────────────
+// ─── STUB START - remove when using real hooks ────────────────────────────────
 function useAuthContext() {
   return { user: { role: "org_admin" }, authReady: true };
 }
@@ -23,7 +23,7 @@ function normaliseSummaryResponse(json) {
     hasPlan:            false,
     missingCheckin:     false,
     adherenceAvg:       null,
-    // Weekly adherence fields — API should return these
+    // Weekly adherence fields - API should return these
     weeklyChecksLogged: null,
     weeklyChecksExpected: null,
     lastSeen:           a.lastSeen ?? null,
@@ -168,7 +168,7 @@ function WeeklyAdherencePill({ row, compact = false }) {
   const logged   = row?.weeklyChecksLogged;
   const expected = row?.weeklyChecksExpected;
 
-  if (adh == null) return <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>;
+  if (adh == null) return <span style={{ color: "var(--muted)", fontSize: 12 }}>-</span>;
 
   const color = adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)";
 
@@ -202,7 +202,7 @@ function WeeklyAdherencePill({ row, compact = false }) {
 
 // ─── CARA Season Banner ───────────────────────────────────────────────────────
 // Shows current NCAA season phase and compliance status.
-// Dismissable within session only — shows again on next page load.
+// Dismissable within session only - shows again on next page load.
 function SeasonBanner({ status }) {
   const [dismissed, setDismissed] = useState(false);
   if (!status || dismissed) return null;
@@ -224,7 +224,7 @@ function SeasonBanner({ status }) {
       bg: "var(--amber-bg)", border: "var(--amber-rim)", color: "var(--amber)",
       icon: "◎",
       title: "Out of Season",
-      note: status.note || "Voluntary period. Nutrition tracking is optional — do not require or pressure athletes to log.",
+      note: status.note || "Voluntary period. Nutrition tracking is optional - do not require or pressure athletes to log.",
     },
     "bowl-prep": {
       bg: "var(--brand-bg)", border: "var(--brand-rim)", color: "var(--brand)",
@@ -379,7 +379,7 @@ function ProgressBar({ value, max, color = "var(--brand)", height = 3, animate =
   );
 }
 
-// ─── NavBar — 2 tabs only: Queue + Roster ────────────────────────────────────
+// ─── NavBar - 2 tabs only: Queue + Roster ────────────────────────────────────
 function NavBar({ mode, onMode, actCount, onDashboard, onPlans }) {
   const isMobile = useIsMobile();
   return (
@@ -449,7 +449,7 @@ function ReadinessStrip({ rows, actionCount }) {
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"repeat(3,1fr)":"auto auto auto", gap:isMobile?0:20, flexShrink:0, borderTop:isMobile?"1px solid var(--rim)":"none", paddingTop:isMobile?12:0 }}>
         {[
           { label:"Need Action",   value:actionCount, color:actionCount>0?"var(--red)":"var(--green)" },
-          { label:"Avg Adherence (WTD)", value:adh!=null?`${adh}%`:"—", color:adh==null?"var(--ghost)":adh>=80?"var(--green)":adh>=65?"var(--amber)":"var(--red)" },
+          { label:"Avg Adherence (WTD)", value:adh!=null?`${adh}%`:"-", color:adh==null?"var(--ghost)":adh>=80?"var(--green)":adh>=65?"var(--amber)":"var(--red)" },
           { label:"Week",          value:isMobile?getWeekLabel().split("–")[0].trim():getWeekLabel(), color:"var(--ghost)" },
         ].map(({ label, value, color:c }) => (
           <div key={label} style={{ textAlign:isMobile?"center":"right" }}>
@@ -747,7 +747,7 @@ function QueueMode({ rows, onRefresh, onViewRoster, onReminderSent, onNavigate})
   );
 }
 
-// ─── Roster mode — absorbs all functionality from old ListMode + RosterMode ───
+// ─── Roster mode - absorbs all functionality from old ListMode + RosterMode ───
 function RosterMode({ rows, onReminderSent, onNavigate }) {
   const isMobile  = useIsMobile();
   const [search,       setSearch]       = useState("");
@@ -869,7 +869,7 @@ function RosterMode({ rows, onReminderSent, onNavigate }) {
           const isSending = sendingToken === row.athleteToken;
           const rs        = getReminderState(row);
 
-          // Action cell — same for mobile/desktop
+          // Action cell - same for mobile/desktop
           const ActionCell = () => (
             <>
               {sg === "noPlan" && (
@@ -934,7 +934,7 @@ function RosterMode({ rows, onReminderSent, onNavigate }) {
                   {row.team && <div style={{ fontFamily:"var(--font-body)", fontSize:11, color:"var(--ghost)", marginTop:1 }}>{row.team}</div>}
                 </div>
               </div>
-              <div>{row.position ? <Tag color="ghost">{row.position}</Tag> : <span style={{ color:"var(--muted)", fontSize:12 }}>—</span>}</div>
+              <div>{row.position ? <Tag color="ghost">{row.position}</Tag> : <span style={{ color:"var(--muted)", fontSize:12 }}>-</span>}</div>
               <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                 <StatusDot color={sc.dot} pulse={sg==="noPlan"} />
                 <span style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:11, color:sc.color }}>{sc.label}</span>
@@ -942,7 +942,7 @@ function RosterMode({ rows, onReminderSent, onNavigate }) {
               <div style={{ padding:"0 8px" }}>
                 {row.adherenceAvg != null
                   ? <WeeklyAdherencePill row={row} compact />
-                  : <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color:"var(--muted)" }}>{sg==="noPlan"?"—":"Pending"}</span>
+                  : <span style={{ fontFamily:"var(--font-mono)", fontSize:12, color:"var(--muted)" }}>{sg==="noPlan"?"-":"Pending"}</span>
                 }
               </div>
               <div style={{ display:"flex", justifyContent:"center" }}><ActionCell /></div>
@@ -1063,7 +1063,7 @@ export default function OrgNutritionQueuePage() {
             </div>
           )}
 
-          {/* CARA season banner — always shown when status is loaded */}
+          {/* CARA season banner - always shown when status is loaded */}
           {!loading && <SeasonBanner status={seasonStatus} />}
 
           {!loading && mode === "summary" && (

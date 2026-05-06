@@ -72,7 +72,7 @@ export default function DaySheet({
   selectedSports,
   onCreateForDay,
   onEditWorkout, // NEW: bubble edit payload up to parent
-  onRefresh,     // () => void — called after any mutation in WorkoutDetailModal
+  onRefresh,     // () => void - called after any mutation in WorkoutDetailModal
 }) {
   const [detailWorkout, setDetailWorkout] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);

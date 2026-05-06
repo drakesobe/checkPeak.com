@@ -351,7 +351,7 @@ function ListRow({ item, isActive, isSelected, onSelect, onActivate }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>
-              {item?.athleteName || "—"}
+              {item?.athleteName || "-"}
             </p>
             <p className="text-[11px] truncate mt-0.5" style={{ color: DS.labelText }}>
               {item?.exerciseName || item?.title || (item?.type === "class" ? "Class Attendance" : "Workout Completion")}
@@ -432,7 +432,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onOpenLigh
     setSelIdx(0);
   }, [item?.id]);
 
-  // Unified attachments — works for both workout (Airtable array) and class (PhotoUrl string)
+  // Unified attachments - works for both workout (Airtable array) and class (PhotoUrl string)
   const attachments = useMemo(() => normalizeAttachments(item), [item]);
   const safeIdx = Math.min(selIdx, Math.max(0, attachments.length - 1));
   const selAtt  = attachments[safeIdx];
@@ -506,7 +506,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onOpenLigh
             <p className="text-xs" style={{ color: DS.labelText }}>{item.athleteEmail}</p>
           )}
 
-          {/* Context badge — exercise name or class title */}
+          {/* Context badge - exercise name or class title */}
           {(item?.exerciseName || (isClass && item?.title)) && (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-sm"
               style={{
@@ -597,7 +597,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onOpenLigh
                     />
                   ) : (
                     <p className="py-8 text-center text-xs" style={{ color: DS.dimText }}>
-                      Preview —{" "}
+                      Preview -{" "}
                       <a href={selUrl} target="_blank" rel="noreferrer" className="font-bold underline" style={{ color: DS.brand }}>Open</a>
                     </p>
                   )
@@ -616,7 +616,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onOpenLigh
             <div className="px-4 py-2 border-b" style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}>
               <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: DS.labelText }}>
                 Message to athlete
-                <span className="normal-case font-normal ml-1" style={{ color: DS.dimText }}>— required for Needs Info</span>
+                <span className="normal-case font-normal ml-1" style={{ color: DS.dimText }}>- required for Needs Info</span>
               </p>
             </div>
             <div className="p-3">
@@ -856,7 +856,7 @@ export default function ReviewQueuePage() {
     setBulkSaving(true);
     const ids = Array.from(selected);
     try {
-      // For bulk we don't know individual types — send both, server handles routing
+      // For bulk we don't know individual types - send both, server handles routing
       await Promise.all(
         displayItems
           .filter(it => ids.includes(String(it?.id)))

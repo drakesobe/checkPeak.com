@@ -19,7 +19,7 @@ const C = {
 const SEGMENTS    = 10;
 const DEFAULT_GOAL = 128;
 
-/* per-meal hydration oz field picker — same as MealFlow */
+/* per-meal hydration oz field picker - same as MealFlow */
 function pickMealHydrationOz(targets) {
   const t = targets && typeof targets === "object" ? targets : {};
   const n = Number(String(
@@ -89,7 +89,7 @@ function MealBreakdownRow({ mealBlocks }) {
               </p>
               <p className="text-[15px] font-extrabold tabular-nums leading-none"
                 style={{ color: oz != null ? C.water : "#D1D5DB" }}>
-                {oz != null ? oz : "—"}
+                {oz != null ? oz : "-"}
               </p>
               {oz != null && (
                 <p className="text-[9px] font-semibold text-gray-400 mt-0.5">oz</p>
@@ -187,7 +187,7 @@ export default function HydrationTracker({ goalOz, storageKey, mealBlocks }) {
             </div>
           </div>
 
-          {/* Tappable oz counter — tap to type a value directly */}
+          {/* Tappable oz counter - tap to type a value directly */}
           <div className="text-right">
             {editing ? (
               <div className="flex items-baseline justify-end gap-1">
@@ -254,10 +254,10 @@ export default function HydrationTracker({ goalOz, storageKey, mealBlocks }) {
           </div>
         )}
 
-        {/* Per-meal breakdown — shows how daily goal is distributed */}
+        {/* Per-meal breakdown - shows how daily goal is distributed */}
         <MealBreakdownRow mealBlocks={mealBlocks} />
 
-        {/* Quick-add buttons — full row, 48px tall for easy thumb tapping */}
+        {/* Quick-add buttons - full row, 48px tall for easy thumb tapping */}
         <div className="space-y-2">
           <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
             Add water

@@ -74,7 +74,7 @@ export default function BannedSubstanceChecker() {
             CheckPeak is an athlete-focused banned substance checker that helps
             you scan supplement labels and flag potential red flags fast. Upload
             an ingredient label, and CheckPeak extracts text and checks it
-            against reference lists—highlighting suspicious matches and aliases.
+            against reference lists-highlighting suspicious matches and aliases.
           </p>
 
           <div className="mt-6 flex flex-col sm:flex-row gap-3">

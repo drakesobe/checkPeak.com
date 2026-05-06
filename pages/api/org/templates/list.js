@@ -1,5 +1,5 @@
 // pages/api/org/templates/list.js
-// GET — returns all workout templates for this org.
+// GET - returns all workout templates for this org.
 // Stored as JSON in the "WorkoutTemplates" Long Text field
 // on the Organizations Airtable record. Same pattern as SeasonCalendar.
 //

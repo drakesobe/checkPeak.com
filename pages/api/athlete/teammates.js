@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     const base    = new Airtable({ apiKey }).base(baseId);
     const records = [];
 
-    // Use .all() instead of .eachPage() — compatible with Vercel serverless
+    // Use .all() instead of .eachPage() - compatible with Vercel serverless
     const pages = await base(tableName)
       .select({
         filterByFormula: `{Token} = '${orgToken.replace(/'/g, "\\'")}'`,

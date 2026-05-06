@@ -10,7 +10,7 @@ export default function ModalHeaderBanner({ itemTitle, evidenceRequired, onClose
       "rounded-2xl border overflow-hidden",
       evidenceRequired ? "border-amber-200" : "border-gray-200"
     )}>
-      {/* Item identity — the most important thing to read first */}
+      {/* Item identity - the most important thing to read first */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
         <div className="min-w-0">
           <p className="text-[11px] font-black uppercase tracking-widest text-[#46769B] mb-1.5">
@@ -40,12 +40,12 @@ export default function ModalHeaderBanner({ itemTitle, evidenceRequired, onClose
           <>
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <p className="text-[12px] text-amber-800 font-semibold leading-snug">
-              Your coach requires proof for this item — snap a quick pic.
+              Your coach requires proof for this item - snap a quick pic.
             </p>
           </>
         ) : (
           <p className="text-[12px] text-gray-500 font-semibold leading-snug">
-            Photo optional — submit when ready.
+            Photo optional - submit when ready.
           </p>
         )}
       </div>

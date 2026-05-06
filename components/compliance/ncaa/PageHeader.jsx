@@ -11,7 +11,7 @@ export default function PageHeader({ disclaimer }) {
       </h1>
 
       <p className="text-sm md:text-base text-gray-600 max-w-3xl leading-relaxed">
-        Direct NCAA resources on drug testing, banned substances, supplements, sports wagering, and NIL —
+        Direct NCAA resources on drug testing, banned substances, supplements, sports wagering, and NIL -
         plus how CheckPeak supports compliance-first workflows.
       </p>
 

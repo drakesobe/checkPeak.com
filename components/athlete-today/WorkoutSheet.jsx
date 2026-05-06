@@ -32,10 +32,10 @@ function parseMeta(meta) {
   if (!meta) return [];
   return meta.split(" · ").filter(Boolean).map((part, i) => {
     const colors = [
-      { bg: "rgba(0,87,255,0.18)",   text: "#79B8FF", border: "rgba(0,87,255,0.3)"   }, // sets — blue
-      { bg: "rgba(139,92,246,0.18)", text: "#C4B5FD", border: "rgba(139,92,246,0.3)" }, // reps — purple
-      { bg: "rgba(245,158,11,0.18)", text: "#FCD34D", border: "rgba(245,158,11,0.3)" }, // weight — amber
-      { bg: "rgba(34,197,94,0.15)",  text: "#86EFAC", border: "rgba(34,197,94,0.25)" }, // rest — green
+      { bg: "rgba(0,87,255,0.18)",   text: "#79B8FF", border: "rgba(0,87,255,0.3)"   }, // sets - blue
+      { bg: "rgba(139,92,246,0.18)", text: "#C4B5FD", border: "rgba(139,92,246,0.3)" }, // reps - purple
+      { bg: "rgba(245,158,11,0.18)", text: "#FCD34D", border: "rgba(245,158,11,0.3)" }, // weight - amber
+      { bg: "rgba(34,197,94,0.15)",  text: "#86EFAC", border: "rgba(34,197,94,0.25)" }, // rest - green
     ];
     return { label: part, ...colors[Math.min(i, colors.length - 1)] };
   });
@@ -103,7 +103,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast }) {
 
   return (
     <div style={{ position: "relative", overflow: "hidden" }}>
-      {/* Reveal — invisible at rest, fades in as row moves */}
+      {/* Reveal - invisible at rest, fades in as row moves */}
       {!done && (
         <div style={{
           position: "absolute", right: 0, top: 0, bottom: 0, width: 56,
@@ -397,7 +397,7 @@ export default function WorkoutSheet({
             {/* ── Exercise list (scrollable) ── */}
             <div style={{ overflowY: "auto", flex: 1, WebkitOverflowScrolling: "touch" }}>
 
-              {/* Hint row — first time only */}
+              {/* Hint row - first time only */}
               <div style={{
                 display: "flex", alignItems: "center", gap: 7,
                 padding: "9px 20px", borderBottom: `1px solid ${C.cardLine}`,

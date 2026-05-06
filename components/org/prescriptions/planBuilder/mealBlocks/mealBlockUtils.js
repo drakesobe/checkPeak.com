@@ -28,7 +28,7 @@ export function normalizeSplit(split) {
 
 export function pctStr(r) {
   const x = Number(r);
-  if (!Number.isFinite(x)) return "—";
+  if (!Number.isFinite(x)) return "-";
   return `${Math.round(x * 100)}%`;
 }
 

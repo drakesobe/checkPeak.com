@@ -1,10 +1,10 @@
 // components/athlete-today/TodayStrip.jsx
 //
-// Today's schedule strip — dark, actionable, contextual.
+// Today's schedule strip - dark, actionable, contextual.
 //
 // Changes from previous version:
 //  • Dark visual system matching DayPlannerSheet (no more white card mismatch)
-//  • Meal blocks only render when hasPlan=true — no fake default meals
+//  • Meal blocks only render when hasPlan=true - no fake default meals
 //  • Meal rows show live completion state (checkmark when done)
 //  • Timeline bar has a "now" indicator line for today's date
 //  • Current event gets a highlighted "RIGHT NOW" badge in the list
@@ -20,24 +20,24 @@ import {
   formatTime,
 } from "@/lib/athlete-today/utils";
 
-// ─── DESIGN TOKENS — light theme, matches today.jsx card aesthetic ────────────
+// ─── DESIGN TOKENS - light theme, matches today.jsx card aesthetic ────────────
 const T = {
   bg:       "#FFFFFF",
   bgSub:    "#F9FAFB",   // row hover / timeline track
   bgBadge:  "#F3F4F6",   // ghost pill backgrounds
-  border:   "#F3F4F6",   // gray-100 — same as other cards
-  borderMid:"#E5E7EB",   // gray-200 — dividers
+  border:   "#F3F4F6",   // gray-100 - same as other cards
+  borderMid:"#E5E7EB",   // gray-200 - dividers
   textPri:  "#111827",   // gray-900
   textSec:  "#374151",   // gray-700
   textMuted:"#6B7280",   // gray-500
   textFaint:"#9CA3AF",   // gray-400
-  textGhost:"#D1D5DB",   // gray-300 — hour labels
+  textGhost:"#D1D5DB",   // gray-300 - hour labels
 };
 
-// Event accent colours — kept vivid so they pop on white
+// Event accent colours - kept vivid so they pop on white
 const COL = {
   workout: "#DA3633",
-  class:   "#D97706",   // amber-600 — readable on white (was #E3B341 which washed out)
+  class:   "#D97706",   // amber-600 - readable on white (was #E3B341 which washed out)
   meal:    "#EA580C",   // orange-600
 };
 
@@ -217,7 +217,7 @@ export default function TodayStrip({
   onAddClass,
   onEditClass,
 }) {
-  // Live "now" minutes — updates every minute, only for today's date
+  // Live "now" minutes - updates every minute, only for today's date
   const [nowMin, setNowMin] = useState(() => {
     const n = new Date();
     return n.getHours() * 60 + n.getMinutes();
@@ -243,7 +243,7 @@ export default function TodayStrip({
   const events = useMemo(() => {
     const out = [];
 
-    // Coach-assigned workout — anchor at 9am as a planning reference
+    // Coach-assigned workout - anchor at 9am as a planning reference
     if (dailyWorkout) {
       const wDone  = workoutProgress?.done  ?? 0;
       const wTotal = workoutProgress?.total ?? 0;
@@ -271,7 +271,7 @@ export default function TodayStrip({
       });
     });
 
-    // Meal blocks — ONLY when athlete has an active nutrition plan.
+    // Meal blocks - ONLY when athlete has an active nutrition plan.
     // Previously always rendered, creating false signal for athletes with no plan.
     if (hasPlan) {
       Object.entries(MEAL_DEFAULTS).forEach(([key, def]) => {

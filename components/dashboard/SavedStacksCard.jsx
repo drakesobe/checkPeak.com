@@ -12,7 +12,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* Avatar — initial letter with consistent brand tint                         */
+/* Avatar - initial letter with consistent brand tint                         */
 /* -------------------------------------------------------------------------- */
 
 function StackAvatar({ title }) {

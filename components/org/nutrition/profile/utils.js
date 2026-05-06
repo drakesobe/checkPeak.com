@@ -31,7 +31,7 @@ export function clampPct(n) {
 /* ---------------- Date helpers (ET-stable) ---------------- */
 
 export function fmtDateTime(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -46,7 +46,7 @@ export function fmtDateTime(v) {
 }
 
 export function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -59,9 +59,9 @@ export function fmtDate(v) {
   }
 }
 
-// Loose local format — use only for display strings that don't need timezone stability
+// Loose local format - use only for display strings that don't need timezone stability
 export function fmtIsoToNice(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -83,7 +83,7 @@ export function daysSince(dateValue) {
 
 /* ---------------- Adherence helpers ---------------- */
 
-// Avg of present metrics only — missing fields are ignored, not treated as 0
+// Avg of present metrics only - missing fields are ignored, not treated as 0
 export function avgAdherence(c) {
   const fields = [c?.caloriesPct, c?.proteinPct, c?.carbsPct, c?.hydrationPct];
   const vals = fields

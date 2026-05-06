@@ -13,7 +13,7 @@ export default function Button({
   type     = "button",
   style    = {},
 }) {
-  // Base layout — no border-radius, no Tailwind color classes
+  // Base layout - no border-radius, no Tailwind color classes
   const base = {
     display:       "inline-flex",
     alignItems:    "center",

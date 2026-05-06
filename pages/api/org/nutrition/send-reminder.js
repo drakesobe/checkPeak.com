@@ -22,8 +22,8 @@ const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
 const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
 
 // Add these two fields to your Athlete table in Airtable if not present:
-//   LastReminderSentAt  — Date field (date + time)
-//   ReminderCount   — Number field (integer, default 0)
+//   LastReminderSentAt  - Date field (date + time)
+//   ReminderCount   - Number field (integer, default 0)
 const ATH_TOKEN          = "AthleteToken";
 const ATH_NAME           = "Name";
 const ATH_EMAIL          = "Email";
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
 
     if (!athleteEmail) {
       return res.status(400).json({
-        error: "Athlete has no email on record — cannot send reminder.",
+        error: "Athlete has no email on record - cannot send reminder.",
         athleteToken,
         athleteName,
       });
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     );
     const mailto = `mailto:${athleteEmail}?subject=${subject}&body=${body}`;
 
-    // Persist tally — non-fatal if it fails
+    // Persist tally - non-fatal if it fails
     const prevCount = Number(af[ATH_REMINDER_COUNT] || 0);
     const nowISO    = new Date().toISOString();
 

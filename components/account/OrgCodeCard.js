@@ -90,7 +90,7 @@ export default function OrgCodeCard({ orgToken, copyOk, onCopyOrgCode }) {
         </p>
         <input
           type="text"
-          value={orgToken || "—"}
+          value={orgToken || "-"}
           readOnly
           onFocus={(e) => e.target.select()}
           className="w-full text-sm font-mono px-3 py-2.5 outline-none cursor-text"
@@ -103,7 +103,7 @@ export default function OrgCodeCard({ orgToken, copyOk, onCopyOrgCode }) {
         />
         {!orgToken && (
           <p className="text-xs mt-1.5" style={{ color: DS.dimText }}>
-            Token missing from session — log out and back in to refresh.
+            Token missing from session - log out and back in to refresh.
           </p>
         )}
       </div>

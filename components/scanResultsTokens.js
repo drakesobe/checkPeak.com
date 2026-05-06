@@ -21,7 +21,7 @@ export const DS = {
   banned:       "#DC2626",
   bannedBg:     "#FEF2F2",
   bannedBorder: "#FECACA",
-  ingredient:   "#4FABFF",   // matches accent — distinct enough from banned/safe
+  ingredient:   "#4FABFF",   // matches accent - distinct enough from banned/safe
   ingredientBg: "rgba(79,171,255,0.07)",
   ingredientBorder: "rgba(79,171,255,0.18)",
   cardBg:       "#FFFFFF",
@@ -40,7 +40,7 @@ export const FONT_STYLE = `
 `;
 
 // ---------------------------------------------------------------------------
-// Ban type config — module-level constant, never recreated
+// Ban type config - module-level constant, never recreated
 // ---------------------------------------------------------------------------
 
 export const BAN_TYPE_CONFIG = [

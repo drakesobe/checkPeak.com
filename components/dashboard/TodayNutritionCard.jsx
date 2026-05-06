@@ -14,7 +14,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* Pure helpers — unchanged from original                                     */
+/* Pure helpers - unchanged from original                                     */
 /* -------------------------------------------------------------------------- */
 
 function nyDateISO() {
@@ -176,7 +176,7 @@ export default function TodayNutritionCard({ className = "" }) {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  /* ── Derived values — unchanged logic ── */
+  /* ── Derived values - unchanged logic ── */
   const daily = useMemo(() => {
     const lp = planPayload?.latestPlan || null;
     const d  = lp?.planJson?.daily || lp?.daily || null;
@@ -300,7 +300,7 @@ export default function TodayNutritionCard({ className = "" }) {
                 </p>
               )}
 
-              {/* Macro chips — replaces the plain text one-liner */}
+              {/* Macro chips - replaces the plain text one-liner */}
               {hasAnyTargets && (
                 <div className="flex flex-wrap gap-1.5">
                   <MacroChip label="Kcal"    value={calories} unit=""  />

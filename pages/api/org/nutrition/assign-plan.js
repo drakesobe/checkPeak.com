@@ -39,7 +39,7 @@ const PLAN_DCARB      = "DailyCarbs";
 const PLAN_DFAT       = "DailyFat";
 const PLAN_PRESCRIPTION = "Prescription";
 
-// Airtable single select — must match exactly (case-sensitive)
+// Airtable single select - must match exactly (case-sensitive)
 const PHASE_MAP = {
   surplus:     "Surplus",
   maintain:    "Maintain",
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
       .select({ filterByFormula: existingFilter, maxRecords: 25 })
       .firstPage();
 
-    // Archive in parallel — best effort, don't block
+    // Archive in parallel - best effort, don't block
     await Promise.all(
       (existingPlans || []).map((r) =>
         plansTable.update(r.id, { [PLAN_STATUS]: "archived" }).catch(() => null)

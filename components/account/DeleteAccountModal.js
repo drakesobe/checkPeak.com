@@ -293,7 +293,7 @@ export default function DeleteAccountModal({ open, onClose, athleteId }) {
         </div>
       </div>
 
-      {/* Spin keyframe — injected once */}
+      {/* Spin keyframe - injected once */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

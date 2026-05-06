@@ -1,13 +1,13 @@
 // components/athlete-today/RouteList.jsx
-// Skimmer-style route checklist — full design pass.
+// Skimmer-style route checklist - full design pass.
 //
 // Improvements in this version:
-//  1. WorkoutRow visual dominance — 18px/800, 5px border, no visual equals
-//  2. Completion moment — theatrical flash, spring check, ring-expand
-//  3. Active item highlight — nowCtx-driven live badge + tint on current/next item
+//  1. WorkoutRow visual dominance - 18px/800, 5px border, no visual equals
+//  2. Completion moment - theatrical flash, spring check, ring-expand
+//  3. Active item highlight - nowCtx-driven live badge + tint on current/next item
 //
 // Typography hierarchy:
-//   Workout title  18px / 800  — hero
+//   Workout title  18px / 800  - hero
 //   Meal title     14px / 600
 //   Class title    13px / 500
 //   Meta           11px / 400
@@ -23,7 +23,7 @@ function haptic(ms = 10) { try { navigator.vibrate?.(ms); } catch {} }
 
 // ─── Keyframes ────────────────────────────────────────────────────────────────
 const STYLES = `
-  /* Improvement #2 — theatrical completion flash:
+  /* Improvement #2 - theatrical completion flash:
      immediate bright white → green wash → settle to done bg.
      Feels like a real payoff, not just a color swap. */
   @keyframes completionFlash {
@@ -37,7 +37,7 @@ const STYLES = `
     18%  { background: #F0FDF4; }
     100% { background: #fff; }
   }
-  /* Ring-expand effect — animates the GreenCheck border outward */
+  /* Ring-expand effect - animates the GreenCheck border outward */
   @keyframes ringExpand {
     0%   { box-shadow: 0 0 0 0px rgba(134,239,172,0.7); }
     60%  { box-shadow: 0 0 0 6px rgba(134,239,172,0.15); }
@@ -75,7 +75,7 @@ const STYLES = `
   }
 `;
 
-// ─── Swipe hook — Framer Motion ───────────────────────────────────────────────
+// ─── Swipe hook - Framer Motion ───────────────────────────────────────────────
 const SWIPE_THRESHOLD = 52;
 
 function useSwipeRight(onFire, disabled) {
@@ -112,7 +112,7 @@ function useSwipeRight(onFire, disabled) {
   return { controls, dragProps, dragX, armed };
 }
 
-// ─── GreenCheck — improvement #2 ─────────────────────────────────────────────
+// ─── GreenCheck - improvement #2 ─────────────────────────────────────────────
 // When `animate` is true (just completed), plays the ring-expand + popIn spring.
 function GreenCheck({ size = 20, animate = false }) {
   return (
@@ -127,7 +127,7 @@ function GreenCheck({ size = 20, animate = false }) {
   );
 }
 
-// ─── ActiveBadge — improvement #3 ────────────────────────────────────────────
+// ─── ActiveBadge - improvement #3 ────────────────────────────────────────────
 // Tiny pill that appears on the current or next item.
 // isNow = solid red. isNext = amber outline.
 function ActiveBadge({ isNow }) {
@@ -253,7 +253,7 @@ function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, i
   );
 }
 
-// ─── WORKOUT ROW — improvement #1 ────────────────────────────────────────────
+// ─── WORKOUT ROW - improvement #1 ────────────────────────────────────────────
 // Hero card. Single tap → WorkoutSheet.
 // 18px/800 title. 5px border. No visual equals on the page.
 // Active state: left accent shifts to red, top stripe appears.
@@ -301,7 +301,7 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
         position:     "relative",
       }}
     >
-      {/* Improvement #3 — active indicator: top stripe on isActive */}
+      {/* Improvement #3 - active indicator: top stripe on isActive */}
       {isActive && !allDone && (
         <div style={{
           position:   "absolute",
@@ -330,7 +330,7 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Improvement #1 — 18px/800. Largest text on the page. */}
+          {/* Improvement #1 - 18px/800. Largest text on the page. */}
           <div style={{
             fontSize:      18,
             fontWeight:    800,
@@ -362,7 +362,7 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
 
         {/* Right: badge + time + ring + chevron */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-          {/* Improvement #3 — active badge */}
+          {/* Improvement #3 - active badge */}
           {isActive && !allDone && <ActiveBadge isNow={true} />}
 
           <div style={{ fontSize: 11, color: "#9AA0B4", fontWeight: 500 }}>
@@ -375,7 +375,7 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
         </div>
       </div>
 
-      {/* Progress bar — full bleed, generous height */}
+      {/* Progress bar - full bleed, generous height */}
       <div style={{ margin: "12px 0 0", height: 3, background: "#E8EDF8", overflow: "hidden" }}>
         <div style={{
           height: "100%",
@@ -388,7 +388,7 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
   );
 }
 
-// ─── MEAL ROW — improvements #2 + #3 ─────────────────────────────────────────
+// ─── MEAL ROW - improvements #2 + #3 ─────────────────────────────────────────
 function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggleField, isReadOnly, showHint, isActive, isNext }) {
   const comp          = nutritionCompletion?.[item.mealKey] || {};
   const mealDone      = Boolean(comp.mealDone);
@@ -426,7 +426,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   const hasMacros = item.targets?.calories || item.targets?.protein
     || item.targets?.carbs || item.targets?.fat || item.targets?.hydrationOz;
 
-  // Improvement #3 — active meal gets a distinct tint
+  // Improvement #3 - active meal gets a distinct tint
   const rowBg = flash
     ? undefined
     : allDone
@@ -438,7 +438,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   return (
     <div style={{
       borderBottom: "0.5px solid #F0F2F7",
-      // Improvement #3 — subtle left accent on active/next meal
+      // Improvement #3 - subtle left accent on active/next meal
       borderLeft: isActive
         ? "3px solid #F59E0B"
         : isNext
@@ -476,7 +476,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
             width: "100%", boxSizing: "border-box",
             display: "flex", alignItems: "center", gap: 12, padding: "13px 16px",
             background: rowBg,
-            // Improvement #2 — completionFlash plays on swipe done, completionFlashWhite plays on toggle
+            // Improvement #2 - completionFlash plays on swipe done, completionFlashWhite plays on toggle
             animation: flash
               ? "completionFlash 0.7s ease both"
               : (showHint && !allDone ? "swipeNudge 1.2s ease-out 0.9s both" : "none"),
@@ -518,7 +518,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
-            {/* Improvement #3 — active/next badge on meal */}
+            {/* Improvement #3 - active/next badge on meal */}
             {(isActive || isNext) && !allDone && (
               <ActiveBadge isNow={isActive} />
             )}
@@ -556,7 +556,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
       {expanded && (
         <div style={{ background: "#FAFBFF", borderTop: "0.5px solid #EEF4FF", animation: "fadeSlideUp 0.18s ease" }}>
 
-          {/* Action toggles — primary, always first */}
+          {/* Action toggles - primary, always first */}
           {!isReadOnly && (
             <div style={{ padding: "12px 16px 10px", display: "flex", gap: 8 }}>
               {[
@@ -578,7 +578,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                     transition: "all 0.15s",
                   }}
                 >
-                  {/* Improvement #2 — check springs in on done */}
+                  {/* Improvement #2 - check springs in on done */}
                   {done && <Check size={12} color={color} strokeWidth={3} style={{ animation: "popIn 0.35s cubic-bezier(0.16,1,0.3,1)" }} />}
                   {label}
                 </button>
@@ -650,7 +650,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   );
 }
 
-// ─── CLASS ROW — improvement #3 ──────────────────────────────────────────────
+// ─── CLASS ROW - improvement #3 ──────────────────────────────────────────────
 function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOnly, showHint, isNext }) {
   const [expanded,   setExpanded]   = useState(false);
   const [photo,      setPhoto]      = useState(null);
@@ -700,7 +700,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
     <div style={{
       borderBottom: "0.5px solid #F5F5F7",
       animation: flash ? "completionFlash 0.7s ease both" : "none",
-      // Improvement #3 — next class gets amber accent
+      // Improvement #3 - next class gets amber accent
       borderLeft: isNext && !done
         ? "3px solid rgba(245,158,11,0.4)"
         : "3px solid transparent",
@@ -766,7 +766,7 @@ function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOn
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
-            {/* Improvement #3 — next badge on upcoming class */}
+            {/* Improvement #3 - next badge on upcoming class */}
             {isNext && !done && <ActiveBadge isNow={false} />}
             <div style={{ fontSize: 11, color: "#B0B8D0" }}>{formatTime(item.startMinutes)}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -862,7 +862,7 @@ function PastDayBanner({ dateLabel }) {
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round">
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
-      <span style={{ fontSize: 12, fontWeight: 500, color: "#6B7280" }}>Viewing {dateLabel} — read only</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: "#6B7280" }}>Viewing {dateLabel} - read only</span>
     </div>
   );
 }
@@ -912,8 +912,8 @@ function EmptyState({ loading, isPastDay, onAddClass }) {
 }
 
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
-// New prop: `activeItemId` — the id of the item that is happening right now
-//           `nextItemId`   — the id of the next upcoming item (within ~75 min)
+// New prop: `activeItemId` - the id of the item that is happening right now
+//           `nextItemId`   - the id of the next upcoming item (within ~75 min)
 // Both come from useNowContext in today.jsx.
 export default function RouteList({
   groups,
@@ -929,8 +929,8 @@ export default function RouteList({
   onNutritionToggle,
   onClassTap,
   onAddClass,
-  activeItemId  = null,   // currently happening — red accent
-  nextItemId    = null,   // up next — amber accent
+  activeItemId  = null,   // currently happening - red accent
+  nextItemId    = null,   // up next - amber accent
   isReadOnly    = false,
   isPastDay     = false,
   dateLabel     = "",

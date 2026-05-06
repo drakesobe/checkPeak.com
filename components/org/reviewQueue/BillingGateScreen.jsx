@@ -3,7 +3,7 @@
 import { Lock, ArrowRight, LogOut } from "lucide-react";
 
 function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -42,7 +42,7 @@ export default function BillingGateScreen({ role, billing, error, onLogout, onGo
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                 <div className="text-xs font-semibold text-gray-600">Status</div>
                 <div className="text-sm font-semibold text-gray-900 mt-1">
-                  {billing?.statusRaw || billing?.status || "—"}
+                  {billing?.statusRaw || billing?.status || "-"}
                 </div>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">

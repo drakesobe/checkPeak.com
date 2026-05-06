@@ -14,7 +14,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* Nutrition helpers — all logic preserved                                     */
+/* Nutrition helpers - all logic preserved                                     */
 /* -------------------------------------------------------------------------- */
 
 function nyDateISO() {
@@ -72,7 +72,7 @@ function todayLabel() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* RingProgress — SVG circular progress, used for workout                     */
+/* RingProgress - SVG circular progress, used for workout                     */
 /* -------------------------------------------------------------------------- */
 
 function RingProgress({ pct, size = 80, strokeWidth = 7, children }) {
@@ -119,7 +119,7 @@ function RingProgress({ pct, size = 80, strokeWidth = 7, children }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* MacroBar — horizontal bar showing a macro value with a label               */
+/* MacroBar - horizontal bar showing a macro value with a label               */
 /* -------------------------------------------------------------------------- */
 
 function MacroBar({ label, value, unit, color }) {
@@ -151,7 +151,7 @@ function MacroBar({ label, value, unit, color }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* MealRow — shows one meal slot's food + hydration status                   */
+/* MealRow - shows one meal slot's food + hydration status                   */
 /* -------------------------------------------------------------------------- */
 
 function MealRow({ label, mealDone, hydrationDone }) {
@@ -228,7 +228,7 @@ function WorkoutZone({ loading, summary }) {
   const isAllDone = itemsCount > 0 && completedCount >= itemsCount;
 
   const badgeTone  = loading ? "neutral" : hasWork ? (isAllDone ? "done" : "assigned") : "neutral";
-  const badgeLabel = loading ? "—" : hasWork ? (isAllDone ? "Complete ✓" : "Assigned") : "None";
+  const badgeLabel = loading ? "-" : hasWork ? (isAllDone ? "Complete ✓" : "Assigned") : "None";
 
   return (
     <div className="flex flex-col h-full">
@@ -317,7 +317,7 @@ function WorkoutZone({ loading, summary }) {
             className="mt-auto text-[11px] font-bold uppercase tracking-widest"
             style={{ color: "#94a3b8", fontFamily: FONT_COND }}
           >
-            {isAllDone ? "Workout complete — great session 💪" : "Coach schedules · You execute"}
+            {isAllDone ? "Workout complete - great session 💪" : "Coach schedules · You execute"}
           </p>
         </div>
       ) : (
@@ -377,7 +377,7 @@ function NutritionZone({ loading, planPayload, completionPayload }) {
   const isComplete       = counts.total > 0 && counts.done >= counts.total;
 
   const badgeTone  = loading ? "neutral" : !hasNutrition ? "neutral" : isComplete ? "done" : "inProgress";
-  const badgeLabel = loading ? "—" : !hasNutrition ? "None" : isComplete ? "Complete ✓" : "In progress";
+  const badgeLabel = loading ? "-" : !hasNutrition ? "None" : isComplete ? "Complete ✓" : "In progress";
 
   return (
     <div className="flex flex-col h-full">
@@ -451,7 +451,7 @@ function NutritionZone({ loading, planPayload, completionPayload }) {
             </div>
           )}
 
-          {/* Meal completion — visual dot grid */}
+          {/* Meal completion - visual dot grid */}
           {counts.total > 0 && (
             <div
               className="rounded-xl px-4 py-3"
@@ -521,7 +521,7 @@ function NutritionZone({ loading, planPayload, completionPayload }) {
             className="mt-auto text-[11px] font-bold uppercase tracking-widest"
             style={{ color: "#94a3b8", fontFamily: FONT_COND }}
           >
-            {isComplete ? "Nutrition complete — well fuelled 🥗" : "Fuelled right · Perform better"}
+            {isComplete ? "Nutrition complete - well fuelled 🥗" : "Fuelled right · Perform better"}
           </p>
         </div>
       )}

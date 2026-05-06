@@ -27,7 +27,7 @@ const rawFaqs = [
     answer: `
       CheckPeak gives you a fast, clear breakdown of the ingredients in your supplements.
       You scan a label, and we highlight banned substances, risky compounds, and ingredients worth a second look.
-      The goal isn't fear — it's clarity. You shouldn't need a chemistry degree to know what's going into your body.
+      The goal isn't fear - it's clarity. You shouldn't need a chemistry degree to know what's going into your body.
     `,
   },
   {
@@ -50,7 +50,7 @@ const rawFaqs = [
     answer: `
       Our OCR system reads your label photo, extracts the ingredient list, and matches everything against
       the CheckPeak Ingredient Database. This includes banned substances, synonyms, derivatives, and common blend names.
-      You get a simple status result that tells you where to focus your attention — nothing more, nothing less.
+      You get a simple status result that tells you where to focus your attention - nothing more, nothing less.
     `,
   },
   {
@@ -74,7 +74,7 @@ const rawFaqs = [
       Accuracy mostly depends on the label image. Curved bottles, glossy backgrounds, tiny font sizes, and uneven lighting
       can make OCR struggle. A clear, straight photo gives the best results.
 
-      That said — we update both the scanner and ingredient classifications consistently to stay ahead of new products.
+      That said - we update both the scanner and ingredient classifications consistently to stay ahead of new products.
     `,
   },
   {
@@ -105,7 +105,7 @@ const rawFaqs = [
       • It’s under-researched or frequently mislabeled by brands.
       • It’s part of a proprietary blend with unknown dosage.
 
-      A flag is not a verdict — it’s simply a signal that this ingredient deserves closer attention.
+      A flag is not a verdict - it’s simply a signal that this ingredient deserves closer attention.
     `,
   },
   {
@@ -134,7 +134,7 @@ const rawFaqs = [
       Sometimes ingredient names are vague, stylized, extremely new, or intentionally branded to avoid detection.
       When we can’t match a compound with high confidence, we mark it as “Unknown.”
 
-      You can submit it through our “Suggest an Ingredient” page — we review user submissions regularly.
+      You can submit it through our “Suggest an Ingredient” page - we review user submissions regularly.
     `,
   },
   {
@@ -199,7 +199,7 @@ const rawFaqs = [
     answer: `
       We keep a close eye on new research, regulatory changes, and supplement trends.
       On top of that, athlete and coach submissions help us spot new compounds early.
-      Updates happen regularly — not once a year.
+      Updates happen regularly - not once a year.
     `,
   },
   {
@@ -220,7 +220,7 @@ const rawFaqs = [
     ),
     question: "Can I suggest a new ingredient or correction?",
     answer: `
-      Yes — and it genuinely helps. As brands launch new products and rebrand old compounds,
+      Yes - and it genuinely helps. As brands launch new products and rebrand old compounds,
       athlete feedback keeps our database ahead of the curve.
 
       Use the “Suggest an Ingredient” page in the footer to send us details directly.
@@ -248,7 +248,7 @@ const rawFaqs = [
     ),
     question: "Is CheckPeak free?",
     answer: `
-      Yes — core scanning is currently free while we build and refine the platform.
+      Yes - core scanning is currently free while we build and refine the platform.
       If we introduce paid features later, we’ll be transparent about what’s changing and why,
       and we’ll always keep core safety insight a priority.
     `,
@@ -287,7 +287,7 @@ export default function FAQPage() {
         <title>FAQs | CheckPeak</title>
         <meta
           name="description"
-          content="Frequently asked questions about CheckPeak—scanning, ingredient flags, safety, and accuracy in plain language."
+          content="Frequently asked questions about CheckPeak-scanning, ingredient flags, safety, and accuracy in plain language."
         />
       </Head>
 
@@ -453,7 +453,7 @@ export default function FAQPage() {
           <div className="mt-12 rounded-lg border border-gray-800 bg-gray-900/70 p-4 text-xs text-gray-500 leading-relaxed">
             CheckPeak is built to help athletes and coaches make cleaner, more informed
             supplement decisions. It should always be used alongside your own research
-            and input from qualified professionals — especially if you compete under
+            and input from qualified professionals - especially if you compete under
             strict testing rules.
           </div>
         </div>

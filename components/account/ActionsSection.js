@@ -1,7 +1,7 @@
 // components/account/ActionsSection.jsx
 "use client";
 
-// No local feedback banner here — feedback is handled by FeedbackBanner in account.js.
+// No local feedback banner here - feedback is handled by FeedbackBanner in account.js.
 // message/error props are accepted but ignored to avoid a breaking change if callers
 // still pass them; display is intentionally delegated upward.
 
@@ -27,8 +27,8 @@ const DS = {
  * - onOpenPassword () => void
  * - onLogout       () => void
  * - saveLabel?     string   e.g. "Save Profile + Billing"
- * - message?       string   (accepted but not displayed — see FeedbackBanner)
- * - error?         string   (accepted but not displayed — see FeedbackBanner)
+ * - message?       string   (accepted but not displayed - see FeedbackBanner)
+ * - error?         string   (accepted but not displayed - see FeedbackBanner)
  */
 export default function ActionsSection({
   canSave,
@@ -74,7 +74,7 @@ export default function ActionsSection({
         Change Password
       </button>
 
-      {/* ── Divider — separates navigation from form actions ──────── */}
+      {/* ── Divider - separates navigation from form actions ──────── */}
       <div
         className="flex items-center gap-3 py-1"
         style={{ borderTop: `1px solid ${DS.border}`, paddingTop: "0.75rem", marginTop: "0.25rem" }}

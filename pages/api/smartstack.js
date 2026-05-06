@@ -61,7 +61,7 @@ export default async function handler(req, res) {
         f["AffiliateLink"]          || "";
       const imageUrl = f["Image URL"] || "";
 
-      // ── Review data — exact Airtable column names ──
+      // ── Review data - exact Airtable column names ──
       const rating      = Number.isFinite(Number(f["Review Rating"])) ? Number(f["Review Rating"]) : null;
       const reviewCount = Number.isFinite(Number(f["Reviews"]))       ? Number(f["Reviews"])       : null;
       const boughtLastMonth = Number.isFinite(Number(f["Bought"]))    ? Number(f["Bought"])        : null;

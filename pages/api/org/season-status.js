@@ -1,5 +1,5 @@
 // pages/api/org/season-status.js
-// GET — returns the current CARA season phase for the org.
+// GET - returns the current CARA season phase for the org.
 //
 // Reads the org's SeasonCalendar JSON from the Organizations Airtable record
 // (same field used by season-calendar/get.js and season-calendar/save.js).
@@ -29,7 +29,7 @@ function buildStatus(period) {
       phase:  "out-of-season",
       label:  "No Period Defined",
       isCara: false,
-      note:   "No season period is configured for today. Treat as voluntary — do not require nutrition logging.",
+      note:   "No season period is configured for today. Treat as voluntary - do not require nutrition logging.",
       period: null,
     };
   }
@@ -44,12 +44,12 @@ function buildStatus(period) {
     // winter_break, spring_break, summer_break, vacation, holiday
     phase  = "dead-period";
     isCara = false;
-    note   = `${cfg.label || "Break"} — VARA required for any assigned activity. Do not require nutrition logging or send reminders during this window. Doing so may constitute an NCAA violation.`;
+    note   = `${cfg.label || "Break"} - VARA required for any assigned activity. Do not require nutrition logging or send reminders during this window. Doing so may constitute an NCAA violation.`;
   } else if (vara === "soft") {
     // out_of_season
     phase  = "out-of-season";
     isCara = false;
-    note   = "Out-of-season voluntary period. Nutrition tracking is optional — do not require or pressure athletes to log.";
+    note   = "Out-of-season voluntary period. Nutrition tracking is optional - do not require or pressure athletes to log.";
   } else {
     // preseason, season, postseason, championship
     phase  = "in-season";
@@ -61,7 +61,7 @@ function buildStatus(period) {
     phase,
     label:  cfg.label || period.type,
     isCara,
-    note:   period.name ? `${period.name} — ${note}` : note,
+    note:   period.name ? `${period.name} - ${note}` : note,
     period: {
       name:  period.name,
       type:  period.type,
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
   if (!user) return;
 
   const orgId = String(user?.orgId || user?.OrgId || "").trim();
-  if (!orgId) return res.status(400).json({ error: "No orgId on session — re-login." });
+  if (!orgId) return res.status(400).json({ error: "No orgId on session - re-login." });
 
   const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
 
@@ -101,13 +101,13 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error("[season-status]", e?.message || e);
-    // Non-fatal — nutrition page still loads, banner shows safe fallback
+    // Non-fatal - nutrition page still loads, banner shows safe fallback
     return res.status(200).json({
       ok:     true,
       phase:  "out-of-season",
       label:  "Calendar Unavailable",
       isCara: false,
-      note:   "Could not load season calendar. Treat as voluntary period — do not require nutrition logging until resolved.",
+      note:   "Could not load season calendar. Treat as voluntary period - do not require nutrition logging until resolved.",
       period: null,
     });
   }

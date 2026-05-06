@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   const orgId = asString(auth?.org?.id || auth?.orgId || auth?.OrgId);
   if (!orgId) return res.status(400).json({ error: "Organization id missing in session." });
 
-  // Token is lookup/computed — only used for fallback search/relink, never written.
+  // Token is lookup/computed - only used for fallback search/relink, never written.
   const orgToken = asString(auth?.org?.token || auth?.org?.Token || auth?.token || auth?.Token || auth?.orgToken).toUpperCase();
 
   const SANDBOX_DAYS = 14;
@@ -145,9 +145,9 @@ export default async function handler(req, res) {
       isPaidOk
         ? ""
         : outStatusNorm === "Not Started"
-        ? "Sandbox ended — start your 30-day trial to continue."
+        ? "Sandbox ended - start your 30-day trial to continue."
         : outStatusNorm === "Past Due"
-        ? "Payment failed or trial ended — payment required."
+        ? "Payment failed or trial ended - payment required."
         : outStatusNorm === "Canceled"
         ? "Subscription canceled."
         : outStatusNorm === "Suspended"

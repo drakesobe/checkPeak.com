@@ -20,7 +20,7 @@ export default function ModalActions({
       </Button>
 
       {/* 
-        Always tappable unless actively submitting — missing photo is handled upstream
+        Always tappable unless actively submitting - missing photo is handled upstream
         in handleAttemptSubmit which shows the error banner + shake instead of blocking
         the tap entirely. This gives the athlete feedback rather than a silent dead button.
       */}

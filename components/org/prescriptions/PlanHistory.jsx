@@ -169,7 +169,7 @@ export default function PlanHistory({
           className="mx-4 mt-4 px-3 py-2.5 text-xs"
           style={{ backgroundColor: DS.cautionBg, borderLeft: `3px solid ${DS.caution}`, color: DS.caution }}
         >
-          <span className="font-bold">Missing athlete token</span> — fix the roster record to load history.
+          <span className="font-bold">Missing athlete token</span> - fix the roster record to load history.
         </div>
       )}
 
@@ -226,7 +226,7 @@ export default function PlanHistory({
                     {extractTitleHint(p)}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-                    {p?.createdAt ? formatDateTime(p.createdAt) : "—"}
+                    {p?.createdAt ? formatDateTime(p.createdAt) : "-"}
                     {by && ` · ${by}`}
                   </p>
                   {!isOpen && text && (
@@ -291,7 +291,7 @@ export default function PlanHistory({
 
       {token && (Array.isArray(prescriptions) ? prescriptions.length : 0) > 0 && (
         <div className="px-4 pb-3 text-xs" style={{ color: DS.dimText }}>
-          {hasMore ? "Showing latest plans — Load more for older ones." : "End of history."}
+          {hasMore ? "Showing latest plans - Load more for older ones." : "End of history."}
         </div>
       )}
     </div>

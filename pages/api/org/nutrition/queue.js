@@ -9,7 +9,7 @@
 //
 // Expected checks = meals that have passed × 2 (mealDone + hydrationDone)
 // across all days since Sunday, so a Thursday 10am reading reflects
-// 3 complete days + breakfast today — not just today's snapshot.
+// 3 complete days + breakfast today - not just today's snapshot.
 
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
@@ -59,7 +59,7 @@ const MEALS = ["breakfast", "lunch", "afternoon", "dinner"];
 
 /**
  * How many checks should have been logged between Sunday 00:00 and `now`.
- * Returns 0 if no meal has passed yet (early Sunday morning) — caller
+ * Returns 0 if no meal has passed yet (early Sunday morning) - caller
  * should treat this as 100% rather than dividing by zero.
  */
 function weeklyExpectedChecks(now = new Date()) {
@@ -262,7 +262,7 @@ export default async function handler(req, res) {
           sort: [{ field: COMPLETION_DATE_FIELD, direction: "desc" }],
         });
 
-        // Accumulate ALL records for each athlete — no early-exit guard
+        // Accumulate ALL records for each athlete - no early-exit guard
         for (const r of recs) {
           const tok = asStr(r.fields[COMPLETION_TOKEN_FIELD]);
           if (!tok || !athleteByToken[tok]) continue;
@@ -322,7 +322,7 @@ export default async function handler(req, res) {
         if (weeklyExpected > 0) {
           adherenceAvg = Math.min(100, Math.round((weeklyChecksLogged / weeklyExpected) * 100));
         } else {
-          // No checks due yet (early Sunday before breakfast) — 100% by definition
+          // No checks due yet (early Sunday before breakfast) - 100% by definition
           adherenceAvg = 100;
         }
       }
@@ -364,7 +364,7 @@ export default async function handler(req, res) {
       (r.adherenceAvg == null || r.adherenceAvg >= 65)
     ).length;
 
-    console.log(`[nutrition/queue] ${rows.length} rows — withPlan:${withPlan} noCheckin:${noCheckin} lowAdherence:${lowAdherence} onTrack:${onTrack}`);
+    console.log(`[nutrition/queue] ${rows.length} rows - withPlan:${withPlan} noCheckin:${noCheckin} lowAdherence:${lowAdherence} onTrack:${onTrack}`);
 
     return res.status(200).json({
       rows,

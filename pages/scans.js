@@ -1,4 +1,4 @@
-// pages/scans/index.js — CheckPeak Scans Page (redesigned)
+// pages/scans/index.js - CheckPeak Scans Page (redesigned)
 // Matches dashboard.js design tokens: #060810, #4FABFF, Barlow Condensed
 "use client";
 
@@ -9,7 +9,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 import { trackEvent } from "@/lib/analytics";
 
 // ---------------------------------------------------------------------------
-// Design Tokens (mirrors dashboard.js CP object — import from shared file
+// Design Tokens (mirrors dashboard.js CP object - import from shared file
 // once you centralise tokens)
 // ---------------------------------------------------------------------------
 const CP = {
@@ -336,7 +336,7 @@ function ScanCard({ scan, onView }) {
               {meta.label}
             </span>
 
-            {/* Breakdown chips — only show non-zero counts */}
+            {/* Breakdown chips - only show non-zero counts */}
             {prohibited > 0 && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: CP.red, background: "rgba(217,43,58,0.07)", border: `0.5px solid rgba(217,43,58,0.2)` }}>
                 <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: CP.red, flexShrink: 0 }} />

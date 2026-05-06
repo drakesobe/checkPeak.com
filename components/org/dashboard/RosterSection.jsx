@@ -34,14 +34,14 @@ function AthleteCard({ athlete, templates, isExpanded, onToggle, onEdit, onHisto
           <Pill>{status}</Pill>
           <Pill>{athlete?.plansCount || 0} plans</Pill>
         </div>
-        <p className="mt-1.5 pl-5 text-xs break-all" style={{ color: DS.labelText }}>{email || "—"}</p>
+        <p className="mt-1.5 pl-5 text-xs break-all" style={{ color: DS.labelText }}>{email || "-"}</p>
         {email && (
           <a href={`mailto:${email}`} className="pl-5 inline-flex items-center gap-1 text-xs font-bold mt-0.5 hover:underline" style={{ color: DS.brand }}>
             <Mail className="w-3 h-3" /> Email
           </a>
         )}
         <div className="mt-2 pl-5">
-          <p className="text-xs" style={{ color: DS.dimText }}>Last plan: {athlete?.lastPlanAt ? fmtDate(athlete.lastPlanAt) : "—"}</p>
+          <p className="text-xs" style={{ color: DS.dimText }}>Last plan: {athlete?.lastPlanAt ? fmtDate(athlete.lastPlanAt) : "-"}</p>
           {athlete?.lastPlanTitle && <p className="text-xs mt-0.5 break-words" style={{ color: DS.dimText }}>{athlete.lastPlanTitle}</p>}
         </div>
       </button>
@@ -80,7 +80,7 @@ function AthleteCard({ athlete, templates, isExpanded, onToggle, onEdit, onHisto
           <div className="p-3" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
             <p className="text-xs mb-2" style={{ color: DS.dimText }}>Tags</p>
             <div className="flex flex-wrap gap-1">
-              {tags.length ? tags.map((t) => <TagChip key={t} text={t} />) : <span className="text-xs" style={{ color: DS.dimText }}>—</span>}
+              {tags.length ? tags.map((t) => <TagChip key={t} text={t} />) : <span className="text-xs" style={{ color: DS.dimText }}>-</span>}
             </div>
           </div>
         </div>
@@ -107,7 +107,7 @@ function RosterEmptyState({ filterMode, search, counts }) {
       <div>
         <p className="text-sm font-black" style={{ color: DS.safe }}>Every athlete has a plan.</p>
         <p className="text-xs mt-0.5" style={{ color: DS.safe, opacity: 0.8 }}>
-          Nothing to assign right now — check back after the next training block.
+          Nothing to assign right now - check back after the next training block.
         </p>
       </div>
     </div>
@@ -238,7 +238,7 @@ export default function RosterSection({
           </span>
         </div>
 
-        {/* Status summary — right side */}
+        {/* Status summary - right side */}
         <div className="flex flex-wrap gap-1.5">
           {counts.needsPlan > 0 && (
             <span className="text-xs font-bold px-2 py-0.5" style={{ backgroundColor: DS.bannedBg, color: DS.banned, border: `1px solid ${DS.bannedBorder}` }}>
@@ -332,7 +332,7 @@ export default function RosterSection({
           ))}
         </div>
 
-        {/* Pager — far right */}
+        {/* Pager - far right */}
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-xs" style={{ color: DS.dimText }}>
             {filteredAthletes.length} · pg {page}/{totalPages}
@@ -420,7 +420,7 @@ export default function RosterSection({
                       </td>
 
                       <td className="py-2.5 px-3 align-top">
-                        <div className="break-all line-clamp-2" style={{ color: DS.labelText }}>{email || "—"}</div>
+                        <div className="break-all line-clamp-2" style={{ color: DS.labelText }}>{email || "-"}</div>
                         {email && (
                           <a href={`mailto:${email}`} className="inline-flex items-center gap-1 mt-0.5 font-bold hover:underline" style={{ color: DS.brand }}>
                             <Mail className="w-3 h-3" /> Email
@@ -434,7 +434,7 @@ export default function RosterSection({
                         <div className="flex flex-wrap gap-1">
                           {tags.length
                             ? <>{tags.slice(0, 3).map((t) => <TagChip key={t} text={t} />)}{tags.length > 3 && <span style={{ color: DS.dimText }}>+{tags.length - 3}</span>}</>
-                            : <span style={{ color: DS.dimText }}>—</span>
+                            : <span style={{ color: DS.dimText }}>-</span>
                           }
                         </div>
                       </td>
@@ -442,7 +442,7 @@ export default function RosterSection({
                       <td className="py-2.5 px-3 align-top"><Pill>{a?.plansCount || 0}</Pill></td>
 
                       <td className="py-2.5 px-3 align-top">
-                        <div className="font-bold" style={{ color: DS.bodyText }}>{a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "—"}</div>
+                        <div className="font-bold" style={{ color: DS.bodyText }}>{a?.lastPlanAt ? fmtDate(a.lastPlanAt) : "-"}</div>
                         <div className="mt-0.5 truncate" style={{ color: DS.dimText }}>
                           {a?.lastPlanTitle || "No plans yet"}
                         </div>

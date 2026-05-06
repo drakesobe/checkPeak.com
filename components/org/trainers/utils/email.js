@@ -93,9 +93,9 @@ export function buildInviteEmail({ orgName, inviterName, to, role, inviteUrl, ex
       : "As a Trainer, your access is scoped to training tools and permitted athlete workflows.",
     "",
     "Not expecting this invite?",
-    "You can ignore this email — no action is required, and your access will not be activated.",
+    "You can ignore this email - no action is required, and your access will not be activated.",
     "",
-    `— ${safeInviter}`,
+    `- ${safeInviter}`,
     safeOrg,
   ].filter((x) => x !== null);
 

@@ -89,7 +89,7 @@ export default function PlanHeader({
           </div>
         )}
 
-        {/* Macro row — always visible, tight */}
+        {/* Macro row - always visible, tight */}
         <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5">
           <MacroItem
             icon={<Flame className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
@@ -99,17 +99,17 @@ export default function PlanHeader({
           <MacroItem
             icon={<Target className="w-3.5 h-3.5 shrink-0" style={{ color: C.brand }} />}
             label="protein"
-            value={fmt(daily?.protein) !== "—" ? `${fmt(daily?.protein)}g` : "—"}
+            value={fmt(daily?.protein) !== "-" ? `${fmt(daily?.protein)}g` : "-"}
           />
           <MacroItem
             icon={<Zap className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
             label="carbs"
-            value={fmt(daily?.carbs) !== "—" ? `${fmt(daily?.carbs)}g` : "—"}
+            value={fmt(daily?.carbs) !== "-" ? `${fmt(daily?.carbs)}g` : "-"}
           />
           <MacroItem
             icon={<Droplets className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
             label="fat"
-            value={fmt(daily?.fat) !== "—" ? `${fmt(daily?.fat)}g` : "—"}
+            value={fmt(daily?.fat) !== "-" ? `${fmt(daily?.fat)}g` : "-"}
           />
         </div>
       </div>

@@ -5,7 +5,7 @@ import SearchBar         from "../components/SearchBar";
 import OCRSearchResults  from "../components/OCRSearchResults";
 import { DS }            from "../components/scanResultsTokens";
 
-// DS colors now come from scanResultsTokens — single source of truth.
+// DS colors now come from scanResultsTokens - single source of truth.
 // Component-scoped font classes (sp- prefix avoids collisions with sr- / cp-)
 const PAGE_FONTS = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
@@ -80,7 +80,7 @@ export default function SearchPage() {
         },
         {
           bold: "Search aliases or slang.",
-          rest: "Some substances appear under multiple names — searching the alias works too.",
+          rest: "Some substances appear under multiple names - searching the alias works too.",
         },
         {
           bold: "Partial names work.",
@@ -371,7 +371,7 @@ export default function SearchPage() {
               </div>
             )}
 
-            {/* Idle — nothing searched yet */}
+            {/* Idle - nothing searched yet */}
             {!isSearching && !hasSearched && (
               <div className="py-14 text-center space-y-2">
                 <div

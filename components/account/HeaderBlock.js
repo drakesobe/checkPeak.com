@@ -36,7 +36,7 @@ export default function HeaderBlock({
       className="flex items-start justify-between gap-4 pb-5"
       style={{ borderBottom: `1px solid ${DS.border}` }}
     >
-      {/* Left — title + pills */}
+      {/* Left - title + pills */}
       <div className="min-w-0">
         <span
           className="inline-block text-xs font-black uppercase tracking-wider mb-2"
@@ -102,7 +102,7 @@ export default function HeaderBlock({
         </div>
       </div>
 
-      {/* Right — nav links */}
+      {/* Right - nav links */}
       <div className="shrink-0 flex flex-col items-end gap-2 pt-1">
         <NavLink href="/">Home</NavLink>
         <NavLink href={dashboardHref || "/"}>Dashboard</NavLink>

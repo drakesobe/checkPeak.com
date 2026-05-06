@@ -2,13 +2,13 @@
 // GET /api/org/workouts/detail?id=recXXXXXXXXXXXXXX
 //
 // Returns:
-//   workout  — full DailyWorkout + expanded WorkoutItems
-//   siblings — every record sharing the same title + date + org,
+//   workout  - full DailyWorkout + expanded WorkoutItems
+//   siblings - every record sharing the same title + date + org,
 //              each shaped as { id, athleteToken, athleteName, isSelf }
 //
 // Athlete names come from a direct Airtable query on the Athletes table
 // using the tokens collected from the sibling records. No mock-response
-// tricks — just a straightforward fetch with the env vars that already exist.
+// tricks - just a straightforward fetch with the env vars that already exist.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
@@ -45,7 +45,7 @@ function chunk(arr, n = 30) {
 }
 
 // ── Resolve athlete names from the Athletes (AthleteScans) table ───────────────
-// Uses the same env vars as getAthletes.js — no session needed, just the API key.
+// Uses the same env vars as getAthletes.js - no session needed, just the API key.
 async function resolveNames(tokens) {
   if (!tokens.length) return {};
 

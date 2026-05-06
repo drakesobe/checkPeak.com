@@ -5,7 +5,7 @@
  *  - Banned Substances base
  *  - Ingredients base
  *
- * Banned + ingredient records loaded from static JSON at build time —
+ * Banned + ingredient records loaded from static JSON at build time -
  * zero Airtable calls per request. Run `npm run sync-db` after updating
  * either Airtable table to regenerate the JSON and redeploy.
  *
@@ -51,7 +51,7 @@ function splitNormalizedTextToTerms(text) {
   const lowered = normalizeText(text);
   const cleaned = lowered.replace(/[\n\r\t]+/g, " ");
   return cleaned
-    // Split on structural separators ONLY — NOT commas, NOT hyphens
+    // Split on structural separators ONLY - NOT commas, NOT hyphens
     .split(/[\s;\/\\\[\]\(\)\{\}"""''<>|@#\$%\^&\*_+=~`·•]+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 1 && !/^\s*$/.test(t));
@@ -70,7 +70,7 @@ const NOISE_TOKENS = new Set([
   "sodium", "potassium", "calcium", "magnesium",
   "chloride", "citrate", "phosphate", "sulfate",
   "oxide", "hydroxide", "extract", "blend", "complex",
-  // Units — should never match anything
+  // Units - should never match anything
   "mg", "mcg", "g", "iu", "ml",
   // Serving-size words common on labels
   "scoop", "scoops", "serving", "servings", "container",
@@ -81,7 +81,7 @@ function isNoiseToken(t) {
   const s = String(t || "").toLowerCase().trim();
   if (!s)                       return true;   // empty
   if (NOISE_TOKENS.has(s))      return true;   // known noise word
-  if (s.length < 4)             return true;   // too short — catches "1", "3", "n", etc.
+  if (s.length < 4)             return true;   // too short - catches "1", "3", "n", etc.
   if (/^\d+$/.test(s))          return true;   // pure number
   if (/^\d+[a-z]{1,2}$/.test(s)) return true; // unit like "25mg", "50g"
   if (/^[a-z]{1,2}\d*$/.test(s)) return true; // single/double letter optionally followed by digits
@@ -89,7 +89,7 @@ function isNoiseToken(t) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Phrase matching — for multi-word substance names                          */
+/* Phrase matching - for multi-word substance names                          */
 /* -------------------------------------------------------------------------- */
 
 function normalizeForPhraseMatch(str = "") {
@@ -103,7 +103,7 @@ function normalizeForPhraseMatch(str = "") {
 
 function phraseInText(phrase = "", normalizedText = "") {
   const p = normalizeForPhraseMatch(phrase);
-  // Require phrase to be meaningful — at least 6 chars and contain a letter
+  // Require phrase to be meaningful - at least 6 chars and contain a letter
   if (!p || p.length < 6 || !/[a-z]/.test(p)) return false;
   return normalizeForPhraseMatch(normalizedText).includes(p);
 }
@@ -133,7 +133,7 @@ function termInText(term, normalized) {
   if (!term || !normalized) return false;
   const t = String(term).toLowerCase().trim();
   if (!t || t.length < 2) return false;
-  // Pure digits never match — prevents "1" in "1,3-dimethyl" matching "1 Scoop"
+  // Pure digits never match - prevents "1" in "1,3-dimethyl" matching "1 Scoop"
   if (/^\d+$/.test(t)) return false;
   try {
     return new RegExp(`\\b${escapeRegex(t)}\\b`, "i").test(normalized);
@@ -160,7 +160,7 @@ function hasStrongMatch(matchedTerms = [], phraseHit = false) {
   const meaningful = matchedTerms.filter((t) => !isNoiseToken(t));
   if (!meaningful.length) return false;
 
-  // Single long term (>= 5 chars) is sufficient — catches "caffeine", "synephrine" etc.
+  // Single long term (>= 5 chars) is sufficient - catches "caffeine", "synephrine" etc.
   if (meaningful.some((t) => String(t).length >= 5)) return true;
 
   // Two or more shorter meaningful terms
@@ -178,14 +178,14 @@ function matchAgainstBannedRecords(ingredientsText) {
     const fields    = rec.fields || {};
     const subName   = fields["Substance Name"] || "";
 
-    // Phrase match on the full substance name — catches "1,3-dimethylamylamine" as a unit
+    // Phrase match on the full substance name - catches "1,3-dimethylamylamine" as a unit
     const phraseHit = phraseInText(subName, normalized);
 
     // Also phrase-match each synonym as a whole string
     const synPhraseHit = ["Synonyms", "Other Names", "Alt Names"].some((col) => {
       const v = fields?.[col];
       if (!v) return false;
-      // Each synonym may be comma-separated — check each one as a phrase
+      // Each synonym may be comma-separated - check each one as a phrase
       return String(v).split(/[,;\/\n]/).some((syn) => phraseInText(syn.trim(), normalized));
     });
 

@@ -35,7 +35,7 @@ export default function BillingGateScreen({ role, billing, error, onLogout, onGo
               <div className="p-3" style={{ backgroundColor: DS.pageBg }}>
                 <p className="text-xs uppercase tracking-wider font-black" style={{ color: DS.dimText }}>Status</p>
                 <p className="text-sm font-black mt-1" style={{ color: DS.bodyText }}>
-                  {billing?.statusRaw || billing?.status || "—"}
+                  {billing?.statusRaw || billing?.status || "-"}
                 </p>
               </div>
               <div className="p-3" style={{ backgroundColor: DS.pageBg }}>
@@ -63,7 +63,7 @@ export default function BillingGateScreen({ role, billing, error, onLogout, onGo
           </div>
 
           <p className="text-xs mt-4" style={{ color: DS.dimText }}>
-            Billing IDs are set by Stripe checkout + webhooks — never enter them manually.
+            Billing IDs are set by Stripe checkout + webhooks - never enter them manually.
           </p>
         </div>
       </div>

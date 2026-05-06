@@ -98,11 +98,11 @@ export default async function handler(req, res) {
     const ORG_FIELD    = pickField(F, "MEM_ORG",    "Organization");
     const ROLE_FIELD   = pickField(F, "MEM_ROLE",   "Role");
 
-    // Fetch once — single source of truth
+    // Fetch once - single source of truth
     const rec = await b(AT.tables.orgMembers).find(memberId);
     if (!rec) return res.status(404).json({ error: "Member not found." });
 
-    // Hard org check in JS — no Airtable formula round trip
+    // Hard org check in JS - no Airtable formula round trip
     if (!isMemberInOrg(rec, ORG_FIELD, orgId)) {
       return res.status(403).json({
         error:   "Forbidden.",

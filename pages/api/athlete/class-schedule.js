@@ -11,7 +11,7 @@ import Airtable from "airtable";
 import { requireAthlete } from "@/lib/requireAthlete";
 
 const TABLE          = process.env.DAYPLANNER_TABLE_ID || "DayPlannerBlocks";
-const RECURRING_DATE = "recurring"; // sentinel — no real date, just schedules
+const RECURRING_DATE = "recurring"; // sentinel - no real date, just schedules
 
 // ── Auth cookie fallback ──────────────────────────────────────────────────────
 function cookieMissingOrBroken(req) {

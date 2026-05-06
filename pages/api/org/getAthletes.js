@@ -126,7 +126,7 @@ export default async function handler(req, res) {
 
     /**
      * Only request fields that EXIST in AthleteScans.
-     * "Team" does not exist as a standalone field — team/org membership
+     * "Team" does not exist as a standalone field - team/org membership
      * is derived from the "Organization" linked record field instead.
      */
     const FIELDS = [
@@ -137,7 +137,7 @@ export default async function handler(req, res) {
       "CreatedAt",
       "Organization",
       "Token",
-      "sport",   // lowercase — real field name in AthleteScans
+      "sport",   // lowercase - real field name in AthleteScans
       "Status",
     ];
     debug.fieldsRequested = FIELDS;

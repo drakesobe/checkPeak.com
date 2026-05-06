@@ -78,7 +78,7 @@ export default function OrgDashboard() {
         <div className="bg-white rounded-2xl shadow-md border border-blue-100 p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold">{orgName} — Dashboard</h1>
+              <h1 className="text-2xl font-bold">{orgName} - Dashboard</h1>
               <p className="text-sm text-gray-600 mt-1">
                 Logged in as <span className="font-semibold">{orgEmail}</span>{" "}
                 <span className="text-gray-400">•</span>{" "}
@@ -99,7 +99,7 @@ export default function OrgDashboard() {
               <div className="min-w-0">
                 <p className="text-xs text-gray-500">Organization Token</p>
                 <p className="font-mono text-sm font-semibold break-all mt-1">
-                  {token || "— (token missing from session)"}
+                  {token || "- (token missing from session)"}
                 </p>
                 <p className="text-[11px] text-gray-500 mt-2">
                   Athletes use this token to connect to your organization.

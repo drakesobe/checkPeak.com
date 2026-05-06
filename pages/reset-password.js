@@ -152,7 +152,7 @@ export default function ResetPasswordPage() {
   return (
     <>
       <Head>
-        <title>Reset Password — CheckPeak</title>
+        <title>Reset Password - CheckPeak</title>
         <meta name="description" content="Reset your CheckPeak password securely." />
         <meta name="robots" content="noindex,nofollow" />
       </Head>

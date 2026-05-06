@@ -27,11 +27,11 @@ const getLs = (k) => { if (typeof window === "undefined") return null; return wi
 const setLs = (k, v) => { if (typeof window === "undefined") return; window.localStorage.setItem(k, v); };
 
 // ---------------------------------------------------------------------------
-// Brand tokens — CheckPeak clinical light system
+// Brand tokens - CheckPeak clinical light system
 // ---------------------------------------------------------------------------
 
 const B = {
-  // Accent — blue only for active/primary states
+  // Accent - blue only for active/primary states
   accent:    "#4FABFF",
   accentDk:  "#0284C7",
   accentBg:  "rgba(79,171,255,0.07)",
@@ -167,7 +167,7 @@ function ResultsSummaryBar({ bannedCount, ingredientCount, scanMode, productName
 }
 
 // ---------------------------------------------------------------------------
-// UnlockGate — slides up from bottom, clinical light design
+// UnlockGate - slides up from bottom, clinical light design
 // ---------------------------------------------------------------------------
 
 function UnlockGate({
@@ -455,7 +455,7 @@ export default function OCRPage() {
   const finishRole  = useMemo(() => getLs("cp_unlocked_role")      || "Athlete", [showFinishSetup]);
   const finishOrg   = useMemo(() => getLs("cp_unlocked_org_token") || "",        [showFinishSetup]);
 
-  const gateTitle    = bannedCount > 0 ? "Potential risk detected" : "Scan complete — no obvious red flags";
+  const gateTitle    = bannedCount > 0 ? "Potential risk detected" : "Scan complete - no obvious red flags";
   const gateSubtitle = bannedCount > 0
     ? "Unlock details and save scan history so you can reference this later."
     : "Save this scan to build history and get alerts as our database expands.";
@@ -468,7 +468,7 @@ export default function OCRPage() {
         className="ocr-body min-h-screen"
         style={{ backgroundColor: B.pageBg, color: B.ink }}
       >
-        {/* Accent progress bar — top of page */}
+        {/* Accent progress bar - top of page */}
         {scanning && (
           <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:100 }}>
             <ProgressBar progress={progress} scanning={scanning} />
@@ -558,7 +558,7 @@ export default function OCRPage() {
                 boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
                 overflow: "hidden",
               }}>
-                {/* Top accent line — color signals status */}
+                {/* Top accent line - color signals status */}
                 {hasResults && (
                   <div style={{
                     height: 3,

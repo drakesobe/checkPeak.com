@@ -223,7 +223,7 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports, 
           </span>
         </div>
 
-        {/* Action buttons — hidden on mobile, visible sm+ */}
+        {/* Action buttons - hidden on mobile, visible sm+ */}
         <div className="hidden sm:flex gap-1.5 shrink-0">
           <Button variant="secondary" onClick={fetchToday} disabled={loading}>
             <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -372,12 +372,12 @@ export default function TodayWorkoutsPanel({ onOpenCalendar, isOrgSide, sports, 
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: DS.safe }} />
             <p className="text-xs font-black" style={{ color: DS.safe }}>
-              All workouts complete — nothing in the review queue.
+              All workouts complete - nothing in the review queue.
             </p>
           </div>
         )}
 
-        {/* Metric tiles — 2-col on mobile, 4-col on lg+ */}
+        {/* Metric tiles - 2-col on mobile, 4-col on lg+ */}
         <div
           className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-px"
           style={{ backgroundColor: DS.border }}

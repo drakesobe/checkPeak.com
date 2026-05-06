@@ -47,7 +47,7 @@ function ScanRow({ scan, formatDate, onOpen }) {
           ? "rgba(245,158,11,0.2)"
           : "#f1f5f9";
       }}
-      aria-label={`Open scan: ${scan.displayName}${isFlagged ? " — flagged" : ""}`}
+      aria-label={`Open scan: ${scan.displayName}${isFlagged ? " - flagged" : ""}`}
     >
       {/* Status dot */}
       <div
@@ -77,7 +77,7 @@ function ScanRow({ scan, formatDate, onOpen }) {
           >
             {typeof formatDate === "function" && scan.parsedDate
               ? formatDate(scan.parsedDate)
-              : "—"}
+              : "-"}
           </p>
 
           {isFlagged && (

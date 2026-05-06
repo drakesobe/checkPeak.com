@@ -106,12 +106,12 @@ async function fetchTable(config) {
     .select({
       view:     "Grid view",
       pageSize: 100,
-      // No fields filter — pull everything so exact column names don't matter.
+      // No fields filter - pull everything so exact column names don't matter.
       // check.js accesses fields by name with fallbacks so unknown fields are harmless.
     })
     .eachPage((page, next) => {
       for (const rec of page) {
-        // Only include fields that have values — keeps JSON lean
+        // Only include fields that have values - keeps JSON lean
         const cleanFields = {};
         for (const [field, v] of Object.entries(rec.fields)) {
           if (v !== undefined && v !== null && v !== "") {
@@ -144,7 +144,7 @@ function writeJSON(filename, data, label) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("\nCheckPeak — Airtable sync\n");
+  console.log("\nCheckPeak - Airtable sync\n");
 
   // Ensure /data dir exists
   if (!fs.existsSync(OUTPUT_DIR)) {

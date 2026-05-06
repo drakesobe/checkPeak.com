@@ -122,7 +122,7 @@ export default function ScanActivityCard({
                   onMouseEnter={() => setHoveredIdx(idx)}
                   onMouseLeave={() => setHoveredIdx(null)}
                 >
-                  {/* Count label — shows on hover or peak */}
+                  {/* Count label - shows on hover or peak */}
                   <div style={{ height: 16, display: "flex", alignItems: "flex-end" }}>
                     {(isHover || isPeak) && day.count > 0 && (
                       <span

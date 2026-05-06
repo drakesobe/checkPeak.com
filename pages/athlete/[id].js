@@ -154,7 +154,7 @@ export default function AthleteProfile() {
   return (
     <>
       <Head>
-        <title>PEAK — {displayName}'s Profile</title>
+        <title>PEAK - {displayName}'s Profile</title>
         <meta name="description" content={`Athlete profile for ${displayName} in PEAK`} />
       </Head>
 

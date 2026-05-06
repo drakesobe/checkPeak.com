@@ -24,7 +24,7 @@ function classNames(...xs) {
  * - Parent-controlled open via onRequestOpen()
  */
 /* -------------------------------------------------------------------------- */
-/* Design tokens — module-level so sub-components don't remount on rerender  */
+/* Design tokens - module-level so sub-components don't remount on rerender  */
 /* -------------------------------------------------------------------------- */
 
 const BRAND      = "#5B9EC9";
@@ -399,7 +399,7 @@ export default function NavBarLoginModal({
             transition={{ type: "spring", stiffness: 420, damping: 36 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close button — proper hit area */}
+            {/* Close button - proper hit area */}
             <button
               type="button"
               onClick={closeAndReset}

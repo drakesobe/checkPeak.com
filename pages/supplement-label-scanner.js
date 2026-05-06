@@ -135,7 +135,7 @@ export default function SupplementLabelScannerPage() {
             <p className="mt-3 text-sm sm:text-base text-gray-700 leading-relaxed max-w-3xl">
               Upload a supplement label photo and screen the ingredient list for
               banned ingredients, high-risk compounds, and alias wording. Get a
-              quick “red-flag pass” in seconds—then verify with trusted guidance
+              quick “red-flag pass” in seconds-then verify with trusted guidance
               for high-stakes decisions.
             </p>
 
@@ -186,7 +186,7 @@ export default function SupplementLabelScannerPage() {
               <div className="p-4 rounded-xl border border-gray-200 bg-gray-50">
                 <p className="font-semibold text-gray-900">Ingredient clarity</p>
                 <p className="mt-1 text-sm text-gray-600">
-                  Extract and review what the label claims—fast.
+                  Extract and review what the label claims-fast.
                 </p>
               </div>
               <div className="p-4 rounded-xl border border-gray-200 bg-gray-50">

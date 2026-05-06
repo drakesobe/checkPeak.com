@@ -53,7 +53,7 @@ function getNavType(pathname) {
 /* ─────────────────────────────────────────────────────────────────────────────
    AppCore
    Inner component so hooks that need AuthContext (useAuthContext, usePageView)
-   can run inside the AuthProvider tree. This is the right pattern — hooks
+   can run inside the AuthProvider tree. This is the right pattern - hooks
    that depend on context must be children of that context's provider.
 ───────────────────────────────────────────────────────────────────────────── */
 function AppCore({ Component, pageProps, analyticsEnabled }) {
@@ -140,7 +140,7 @@ export default function MyApp({ Component, pageProps }) {
     }
   }, [analyticsEnabled]);
 
-  // Clarity — only loads after consent
+  // Clarity - only loads after consent
   const clarityScript = useMemo(() => {
     if (!analyticsEnabled) return null;
     return (

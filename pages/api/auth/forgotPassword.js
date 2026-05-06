@@ -125,7 +125,7 @@ export default async function handler(req, res) {
     // Find user record in Airtable
     const found = await findUserByEmail(cleanEmail);
 
-    // If not found, do not send email — still generic ok
+    // If not found, do not send email - still generic ok
     if (!found?.record) return safeOk(res);
 
     // Create reset token

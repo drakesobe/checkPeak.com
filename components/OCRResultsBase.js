@@ -28,7 +28,7 @@ const banTypeColorsMap = {
 export default function OCRResultsBase({
   ocrText = "",
   detectedSubstances = [], // banned substances
-  detectedIngredients = [], // newly added — ingredients results array
+  detectedIngredients = [], // newly added - ingredients results array
   showOCR = false,
   hideTitle = false,
 }) {
@@ -130,7 +130,7 @@ export default function OCRResultsBase({
     return map;
   }, [filteredIngredients, ocrText]);
 
-  // Highlight OCR text for display above table — merge both banned + ingredients terms
+  // Highlight OCR text for display above table - merge both banned + ingredients terms
   const highlightedOCRText = useMemo(() => {
     if (!ocrText) return "No text scanned yet.";
     let highlighted = ocrText;

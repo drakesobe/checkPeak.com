@@ -83,7 +83,7 @@ export function useTodayWorkouts({ isOrgSide }) {
     let workoutCount      = workouts.length;
     let itemCount         = 0;
     let completedCount    = 0;   // completed + pending_review (athlete did the work)
-    let pendingReviewCount = 0;  // subset of above — awaiting coach review
+    let pendingReviewCount = 0;  // subset of above - awaiting coach review
     let rejectedCount     = 0;
     let athleteSum        = 0;
 
@@ -110,7 +110,7 @@ export function useTodayWorkouts({ isOrgSide }) {
         if (!status) return;
 
         if (status === "completed" || status === "complete") {
-          // Fully approved — counts toward completion
+          // Fully approved - counts toward completion
           completedCount += 1;
         } else if (status === "pending_review" || status === "pending review") {
           // Athlete submitted, awaiting coach review.

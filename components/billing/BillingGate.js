@@ -19,7 +19,7 @@ function toTime(v) {
 }
 
 function fmtDate(v) {
-  if (!v) return "—";
+  if (!v) return "-";
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
@@ -167,7 +167,7 @@ export default function BillingGate({ role = "", allowAdminBypass = true, childr
               <div className="rounded-2xl border border-amber-200 bg-white px-4 py-2 text-[12px] text-amber-900/90">
                 Trial ends: <span className="font-semibold">{fmtDate(billing?.trialEnds)}</span>
                 <br />
-                Status: <span className="font-semibold">{String(billing?.status || "—")}</span>
+                Status: <span className="font-semibold">{String(billing?.status || "-")}</span>
               </div>
             </div>
           </div>

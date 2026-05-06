@@ -169,7 +169,7 @@ export default async function handler(req, res) {
     });
   }
 
-  /* ── 2. Athletes — load BEFORE sport filter so we can key by AthleteScans.sport ──
+  /* ── 2. Athletes - load BEFORE sport filter so we can key by AthleteScans.sport ──
      The `sport` single-select lives on AthleteScans, not on DailyWorkouts.
      We build tokenToSport and tokenToName here, then use them to:
        • derive availableSports (sports of athletes who have a workout today)
@@ -237,7 +237,7 @@ export default async function handler(req, res) {
   }));
 
   /*
-   * availableSports — derived from AthleteScans.sport for athletes
+   * availableSports - derived from AthleteScans.sport for athletes
    * who have at least one workout scheduled today.
    */
   
@@ -246,7 +246,7 @@ export default async function handler(req, res) {
   ).sort((a, b) => a.localeCompare(b));
 
   /*
-   * Sport filter — match against the athlete's sport from AthleteScans,
+   * Sport filter - match against the athlete's sport from AthleteScans,
    * not a Sport field on the workout record itself.
    */
   const workouts = sportQ
@@ -309,7 +309,7 @@ export default async function handler(req, res) {
     debug.workoutItemsError = { message: e?.message || String(e) };
   }
 
-  /* ── 1c. WorkoutCompletions — authoritative source for review queue ── */
+  /* ── 1c. WorkoutCompletions - authoritative source for review queue ── */
   try {
     const WorkoutCompletions = base("WorkoutCompletions");
 

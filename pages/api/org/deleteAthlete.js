@@ -1,7 +1,7 @@
 // pages/api/org/deleteAthlete.js
 // DELETE { athleteId?: string, athleteEmail?: string }
 // Permanently removes an athlete record from Airtable.
-// Auth: requireOrg — same pattern as updateAthleteMeta / createPrescription.
+// Auth: requireOrg - same pattern as updateAthleteMeta / createPrescription.
 
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";

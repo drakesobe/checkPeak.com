@@ -8,7 +8,7 @@ import { SummaryCard, StatusPill, DS } from "./ui";
 
 function weekLabel(weekStartISO) {
   const iso = String(weekStartISO || "").trim();
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   try {
@@ -71,7 +71,7 @@ export function SummaryGrid({ latestCheckin, latestAvg, plan, hasPlan }) {
   );
 
   const adherenceValue = useMemo(
-    () => latestAvg == null ? "—" : `${latestAvg}%`,
+    () => latestAvg == null ? "-" : `${latestAvg}%`,
     [latestAvg]
   );
 

@@ -148,7 +148,7 @@ export default async function handler(req, res) {
 
     /* ── Athlete name enrichment ──────────────────────────────────────────
        Fetch the org's athlete roster using {Token} field (not Organization
-       linked field — Athletes table uses Token, a plain text field).
+       linked field - Athletes table uses Token, a plain text field).
        Build a token→name map and attach athleteName to each workout.
     ── */
     let tokenToName = new Map();
@@ -179,7 +179,7 @@ export default async function handler(req, res) {
             .map(r => [String(r.fields.AthleteToken).trim(), String(r.fields.Name).trim()])
         );
       } catch (athErr) {
-        // Non-fatal — cards still render without names
+        // Non-fatal - cards still render without names
         console.warn("[range] athlete name lookup failed:", athErr?.message);
       }
     }

@@ -509,7 +509,7 @@ function AccountInner({ user }) {
           }}
         />
 
-        {/* ── Delete account — athletes only ─────────────────────────────── */}
+        {/* ── Delete account - athletes only ─────────────────────────────── */}
         {isAthlete && (
           <div style={{ paddingTop: "8px", textAlign: "center" }}>
             <button

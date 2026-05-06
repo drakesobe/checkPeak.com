@@ -1,5 +1,5 @@
 // pages/api/org/templates/save.js
-// POST { template } — creates or updates a single template.
+// POST { template } - creates or updates a single template.
 // If template.id exists and matches a stored template, it's updated.
 // If template.id is new/missing, a new template is created.
 

@@ -27,7 +27,7 @@ function ensureSwipeStyles() {
   if (document.getElementById(SWIPE_ANIM_ID)) return;
   const s = document.createElement("style");
   s.id = SWIPE_ANIM_ID;
-  // Nudge the row content rightward then back — draws attention to swipe direction
+  // Nudge the row content rightward then back - draws attention to swipe direction
   s.textContent = `
     @keyframes cp-swipe-nudge {
       0%   { transform: translateX(0) }
@@ -44,7 +44,7 @@ function ensureSwipeStyles() {
   document.head.appendChild(s);
 }
 
-// Module-level flag — only animate the first actionable row per page load
+// Module-level flag - only animate the first actionable row per page load
 let swipeHintFired = false;
 
 function pickCoachNote(item) {
@@ -158,7 +158,7 @@ export default function WorkoutItemRow({
       return;
     }
 
-    // VARA: self-report tap — same as quickComplete, no modal
+    // VARA: self-report tap - same as quickComplete, no modal
     if (isVARA) {
       onQuickComplete?.(id);
       return;
@@ -277,9 +277,9 @@ export default function WorkoutItemRow({
                     {isCheckedOff ? (
                       <p className={cx("text-xs mt-2 leading-snug", hintToneText)}>
                         {isRejected
-                          ? "Coach note available — acknowledge when seen."
+                          ? "Coach note available - acknowledge when seen."
                           : isPending
-                          ? "Submitted — coach review pending."
+                          ? "Submitted - coach review pending."
                           : isAcknowledged
                           ? "Acknowledged."
                           : "Completed."}
@@ -294,11 +294,11 @@ export default function WorkoutItemRow({
                     !isCheckedOff ? (
                       <p className="text-xs text-gray-500 mt-2 leading-snug">
                         {isRejected
-                          ? "Coach left a note — swipe to acknowledge."
+                          ? "Coach left a note - swipe to acknowledge."
                           : isVARA
-                          ? "Self-report only — swipe to log."
+                          ? "Self-report only - swipe to log."
                           : evidenceRequired
-                          ? "Proof required — swipe to upload."
+                          ? "Proof required - swipe to upload."
                           : "Swipe to mark complete."}
                       </p>
                     ) : null}
@@ -328,7 +328,7 @@ export default function WorkoutItemRow({
                       <p className="text-[11px] text-violet-800 font-extrabold">Voluntary Activity</p>
                     </div>
                     <p className="text-[12px] text-violet-900 leading-snug">
-                      This activity is optional and self-reported. No photo or video required — just tap Done when complete.
+                      This activity is optional and self-reported. No photo or video required - just tap Done when complete.
                     </p>
                   </div>
                 ) : null}
@@ -345,7 +345,7 @@ export default function WorkoutItemRow({
                         {coachNote}
                       </p>
                       <p className="text-[11px] text-amber-800 mt-2">
-                        No back-and-forth needed — just acknowledge once you've read it.
+                        No back-and-forth needed - just acknowledge once you've read it.
                       </p>
                     </div>
                   </div>

@@ -228,7 +228,7 @@ export default async function handler(req, res) {
     let orgRecordId = "";
     const orgLinks = fields.Organization;
 
-    // Use the linked record ID directly — no extra API call needed
+    // Use the linked record ID directly - no extra API call needed
     if (Array.isArray(orgLinks) && orgLinks.length) {
       const firstId = String(orgLinks[0] || "").trim();
       if (firstId.startsWith("rec")) orgRecordId = firstId;
@@ -251,7 +251,7 @@ export default async function handler(req, res) {
         Role:         "Athlete",
         Email:        safeFields.Email || emailLower,
         AthleteToken: athleteToken || "",
-        // ✅ Org name + record ID — both available in session for mobile + web
+        // ✅ Org name + record ID - both available in session for mobile + web
         ...(orgName     ? { OrgName: orgName }                     : {}),
         ...(orgRecordId ? { organizationId: orgRecordId,
                             OrganizationId: orgRecordId }          : {}),

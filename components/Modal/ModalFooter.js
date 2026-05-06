@@ -11,7 +11,7 @@ export default function ModalFooter({ affiliateLink, runOCR }) {
 
   return (
     <div className="flex items-center gap-2">
-      {/* Primary — Amazon, matches card button label exactly */}
+      {/* Primary - Amazon, matches card button label exactly */}
       {affiliateLink ? (
         <a
           href={affiliateLink}
@@ -53,7 +53,7 @@ export default function ModalFooter({ affiliateLink, runOCR }) {
         </div>
       )}
 
-      {/* Secondary — Re-scan, quiet */}
+      {/* Secondary - Re-scan, quiet */}
       {typeof runOCR === "function" && (
         <button
           type="button"

@@ -16,13 +16,13 @@ function safeJson(res, code, obj) {
  * GET /api/athlete/account/org
  *
  * Looks up the athlete's connected organization directly from the Athletes table.
- * Uses athlete's id or email from the session cookie — NOT AthleteToken.
+ * Uses athlete's id or email from the session cookie - NOT AthleteToken.
  *
  * Athletes table fields expected:
  *   - Email              (single line text)
  *   - Organization       (linked record → Organizations table, array of record IDs)
- *   - Token              (single line text — org token copied on connect for dashboard compat)
- *   - Organization Name  (lookup from Organizations.Name — optional but ideal)
+ *   - Token              (single line text - org token copied on connect for dashboard compat)
+ *   - Organization Name  (lookup from Organizations.Name - optional but ideal)
  *
  * If Organization Name lookup isn't set up in Airtable, we do a second fetch
  * to the Organizations table using the linked record ID to get the name.
@@ -82,7 +82,7 @@ export default async function handler(req, res) {
 
   if (!athleteId && !athleteEmail) {
     return safeJson(res, 400, {
-      error: "Cannot identify athlete — session cookie is missing id and email. Log out and back in.",
+      error: "Cannot identify athlete - session cookie is missing id and email. Log out and back in.",
     });
   }
 
@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     let athleteRecord = null;
 
     if (athleteId) {
-      // Fastest path — fetch by Airtable record ID directly
+      // Fastest path - fetch by Airtable record ID directly
       try {
         athleteRecord = await athBase(TABLE).find(athleteId);
       } catch {
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
     // Token field on athlete row = org token (written by connectOrg for dashboard compat)
     const orgToken = asString(firstValue(f["Token"]));
 
-    // Organization is a linked record field — array of org record IDs
+    // Organization is a linked record field - array of org record IDs
     const orgLinkRaw = f["Organization"];
     const orgRecordId = asString(firstValue(orgLinkRaw));
 

@@ -291,8 +291,8 @@ export default function CompleteItemModal({
               title="Photo"
               subtitle={
                 evidenceRequired
-                  ? "Required — take a quick pic and submit."
-                  : "Optional — take a pic if you want."
+                  ? "Required - take a quick pic and submit."
+                  : "Optional - take a pic if you want."
               }
               right={
                 evidenceRequired ? (
@@ -381,8 +381,8 @@ export default function CompleteItemModal({
                   />
                   <div className="px-3 py-2 text-[11px] text-gray-600">
                     {evidenceRequired
-                      ? "Looks good — submit when ready."
-                      : "Optional photo attached — submit when ready."}
+                      ? "Looks good - submit when ready."
+                      : "Optional photo attached - submit when ready."}
                   </div>
                 </div>
               ) : null}
@@ -416,7 +416,7 @@ export default function CompleteItemModal({
           {evidenceRequired && !selectedFile ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-[12px] text-amber-900 font-semibold">
-                Photo required — take one before submitting.
+                Photo required - take one before submitting.
               </p>
             </div>
           ) : null}

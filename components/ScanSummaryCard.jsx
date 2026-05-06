@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from "framer-motion";
  *   - Guidance text for low-quality scans
  *   - Optional multi-scan detail drawer
  *
- * Tone: "clear but calm" — banned results are visible and actionable
+ * Tone: "clear but calm" - banned results are visible and actionable
  * without triggering panic. An athlete finding 1 banned substance needs
  * to understand it, not be alarmed by it.
  */
@@ -114,7 +114,7 @@ export default function ScanSummaryCard({
 
   const totalMatches = bannedCount + ingredientCount;
 
-  // Headline — calm, factual
+  // Headline - calm, factual
   const headline =
     bannedCount === 0
       ? "No banned substances detected"
@@ -167,7 +167,7 @@ export default function ScanSummaryCard({
         boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
       }}
     >
-      {/* Top accent strip — subtle color signal */}
+      {/* Top accent strip - subtle color signal */}
       <div
         style={{
           height: 4,

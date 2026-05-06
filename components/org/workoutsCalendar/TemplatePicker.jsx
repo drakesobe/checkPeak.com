@@ -54,7 +54,7 @@ function ExercisePreviewRow({ ex, index }) {
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontFamily: F.body, fontWeight: 700, fontSize: 13, color: DS.bodyText, margin: "0 0 3px" }}>
-          {ex.ExerciseName || "—"}
+          {ex.ExerciseName || "-"}
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {[
@@ -341,7 +341,7 @@ function SaveTemplateForm({ currentExercises, derivedSport, onSaved, onCancel })
       <div>
         <span style={lbl}>Description (optional)</span>
         <input value={description} onChange={e => setDescription(e.target.value)}
-          placeholder="e.g. Compound press focus — 5x5 week"
+          placeholder="e.g. Compound press focus - 5x5 week"
           style={inp}
           onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
           onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
@@ -502,7 +502,7 @@ export default function TemplatePicker({
               })}
             </div>
 
-            {/* Sport pills — only show if templates have sport tags */}
+            {/* Sport pills - only show if templates have sport tags */}
             {sportsWithTemplates.length > 0 && (
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => setSportFilter("all")}

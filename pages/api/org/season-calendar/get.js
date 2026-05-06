@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   console.log("[season-calendar/get] orgId resolved:", orgId);
 
   if (!orgId) {
-    return res.status(400).json({ error: "No orgId on session — re-login." });
+    return res.status(400).json({ error: "No orgId on session - re-login." });
   }
 
   const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";

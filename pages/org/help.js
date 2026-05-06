@@ -1,5 +1,5 @@
 // pages/org/help.js
-// CheckPeak Coach Training Center — fully responsive
+// CheckPeak Coach Training Center - fully responsive
 // Desktop: sidebar left, video right
 // Mobile: horizontal episode strip top, video + info below
 
@@ -40,7 +40,7 @@ const VIDEOS = [
     episode:   "03",
     title:     "Understanding Nutrition",
     subtitle:  "How the nutrition system works",
-    desc:      "Walk through the nutrition dashboard — how meals are structured, what athletes see in the app, and how macro targets are displayed.",
+    desc:      "Walk through the nutrition dashboard - how meals are structured, what athletes see in the app, and how macro targets are displayed.",
     duration:  "Coming soon",
     embedId:   null,
     url:       null,
@@ -425,7 +425,7 @@ export default function HelpPage() {
 
           {active && !active.comingSoon ? (
             <>
-              {/* Video player — aspect ratio wrapper */}
+              {/* Video player - aspect ratio wrapper */}
               <div style={{
                 position:      "relative",
                 width:         "100%",

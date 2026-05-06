@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     const member = matches[0];
     const fields = member.fields || {};
 
-    /* 2) Role gate — checked BEFORE expiry/used ──────────────────────────
+    /* 2) Role gate - checked BEFORE expiry/used ──────────────────────────
        Order matters: we check role first so that probing an expired or used
        token doesn't reveal its state to someone who isn't the intended
        recipient. If the role is wrong, we return the same 404 as "not found"
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     ──────────────────────────────────────────────────────────────────────── */
     const role = String(fields[ROLE_FIELD] || "").trim().toLowerCase();
     if (!["trainer", "admin"].includes(role)) {
-      // Return 404 rather than 403 — don't confirm the token exists
+      // Return 404 rather than 403 - don't confirm the token exists
       return res.status(404).json({ error: "Invite link is invalid or has already been used." });
     }
 
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
       ok:       true,
       role,
       memberId: member.id,
-      message:  "Password set! Your account is now active — you can log in as Trainer/Admin.",
+      message:  "Password set! Your account is now active - you can log in as Trainer/Admin.",
     });
 
   } catch (err) {

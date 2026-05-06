@@ -63,7 +63,7 @@ export default function RiskAlertsCard({ flaggedCount = 0, onReview }) {
         {isClear ? <ClearState /> : <FlaggedState count={flaggedCount} onReview={onReview} />}
       </div>
 
-      {/* ── Disclaimer — full width footer strip ── */}
+      {/* ── Disclaimer - full width footer strip ── */}
       <div
         className="mt-auto px-5 py-3 flex items-start gap-2"
         style={{ background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}
@@ -95,7 +95,7 @@ function ClearState() {
           border:     "1px solid rgba(91,158,201,0.15)",
         }}
       >
-        {/* Shield — no glow, the "All clear" headline does the work */}
+        {/* Shield - no glow, the "All clear" headline does the work */}
         <div
           className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
           style={{
@@ -131,7 +131,7 @@ function ClearState() {
         className="text-[11px] leading-relaxed"
         style={{ color: "#94a3b8" }}
       >
-        Keep scanning new supplements before use — formulations change.
+        Keep scanning new supplements before use - formulations change.
       </p>
     </div>
   );
@@ -189,7 +189,7 @@ function FlaggedState({ count, onReview }) {
         </div>
       </div>
 
-      {/* CTA — firm but composed, not a fire alarm */}
+      {/* CTA - firm but composed, not a fire alarm */}
       <button
         type="button"
         onClick={onReview}

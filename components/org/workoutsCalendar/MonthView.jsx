@@ -99,7 +99,7 @@ export default function MonthView({
                   )}
                 </div>
 
-                {/* Workout preview — title hidden on very narrow cells, count badge above handles it */}
+                {/* Workout preview - title hidden on very narrow cells, count badge above handles it */}
                 {inMonth && list.length > 0 && (
                   <div style={{ minWidth: 0, overflow: "hidden" }}>
                     <p style={{

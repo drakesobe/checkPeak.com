@@ -236,7 +236,7 @@ export default function AthletesToolbar({
           </button>
         </div>
 
-        {/* Secondary row — collapsible */}
+        {/* Secondary row - collapsible */}
         <AnimatePresence initial={false}>
           {secondaryOpen && (
             <motion.div

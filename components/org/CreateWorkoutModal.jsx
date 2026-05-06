@@ -40,11 +40,11 @@ function newItem(order) {
 }
 function renumber(list) { return list.map((it,i) => ({ ...it, Order: i+1 })); }
 function fmtDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso+"T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 function fmtShort(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso+"T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -113,8 +113,8 @@ const lbl = {
 };
 
 const VARA_CFG = {
-  hard: { bg:"rgba(217,43,58,0.05)", border:"rgba(217,43,58,0.25)", accent:"#D92B3A", barBg:"rgba(217,43,58,0.10)", icon:"🚫", label:"VARA Required — Break Period", sublabel:"Coach-directed workouts are NOT permitted.", btnLabel:"Create as Voluntary Activity (VARA)" },
-  soft: { bg:"rgba(196,122,0,0.04)", border:"rgba(196,122,0,0.22)", accent:"#C47A00", barBg:"rgba(196,122,0,0.09)", icon:"⚠️", label:"Out of Season — VARA Preferred",    sublabel:"Consider marking items as Voluntary Activity.", btnLabel:"Create Workout" },
+  hard: { bg:"rgba(217,43,58,0.05)", border:"rgba(217,43,58,0.25)", accent:"#D92B3A", barBg:"rgba(217,43,58,0.10)", icon:"🚫", label:"VARA Required - Break Period", sublabel:"Coach-directed workouts are NOT permitted.", btnLabel:"Create as Voluntary Activity (VARA)" },
+  soft: { bg:"rgba(196,122,0,0.04)", border:"rgba(196,122,0,0.22)", accent:"#C47A00", barBg:"rgba(196,122,0,0.09)", icon:"⚠️", label:"Out of Season - VARA Preferred",    sublabel:"Consider marking items as Voluntary Activity.", btnLabel:"Create Workout" },
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ function ComplianceBar({ varaLevel, periodName, date, derivedSport }) {
     <div style={{ padding:"8px 20px", background:"rgba(10,138,74,0.06)", borderBottom:`1px solid rgba(10,138,74,0.18)`, display:"flex", alignItems:"center", gap:8 }}>
       <Shield style={{ width:12, height:12, color:DS.safe, flexShrink:0 }} />
       <span style={{ fontFamily:F.body, fontSize:11, color:DS.safe, fontWeight:700 }}>
-        Clear — {fmtDate(date)}{derivedSport ? ` · ${derivedSport}` : ""} is unrestricted.
+        Clear - {fmtDate(date)}{derivedSport ? ` · ${derivedSport}` : ""} is unrestricted.
       </span>
     </div>
   );
@@ -193,7 +193,7 @@ function AthleteRow({ athlete, checked, onToggle }) {
       </div>
       <div style={{ flex:1, minWidth:0 }}>
         <p style={{ fontFamily:F.body, fontWeight:700, fontSize:13, color:DS.bodyText, margin:"0 0 2px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{name}</p>
-        <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, margin:0 }}>{email||"—"}</p>
+        <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, margin:0 }}>{email||"-"}</p>
       </div>
       {sport && (
         <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:9, letterSpacing:"0.1em", textTransform:"uppercase", padding:"2px 7px", background:`hsl(${SPORT_HUE[sport]||214},55%,92%)`, color:`hsl(${SPORT_HUE[sport]||214},55%,28%)`, borderRadius:2, flexShrink:0 }}>
@@ -259,7 +259,7 @@ function ExerciseRow({ item, index, onChange, onRemove }) {
         {item.EvidenceRequired === "voluntary_activity_vara" && (
           <div style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 12px", background:DS.cautionBg, border:`1px solid ${DS.cautionBorder}`, borderLeft:`3px solid ${DS.caution}` }}>
             <Info style={{ width:12, height:12, color:DS.caution, flexShrink:0, marginTop:2 }} />
-            <p style={{ fontFamily:F.body, fontSize:11, color:DS.caution, margin:0, fontWeight:700, lineHeight:1.5 }}>VARA — athlete self-reports only. No coach tracking.</p>
+            <p style={{ fontFamily:F.body, fontSize:11, color:DS.caution, margin:0, fontWeight:700, lineHeight:1.5 }}>VARA - athlete self-reports only. No coach tracking.</p>
           </div>
         )}
         <div>
@@ -577,7 +577,7 @@ export default function CreateWorkoutDrawer({
     setShowItems(true);
   }, []);
 
-  // Apply template — fills exercise builder
+  // Apply template - fills exercise builder
   const applyTemplate = useCallback((template) => {
     const converted = Array.isArray(template.exercises)
       ? template.exercises.map((ex,i) => ({
@@ -685,7 +685,7 @@ export default function CreateWorkoutDrawer({
                 {isEdit ? "Edit Workout" : "Create Workout"}
               </p>
               <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, margin:"3px 0 0" }}>
-                {isEdit ? `Editing: ${editWorkout?.title||"workout"}` : varaDate ? fmtDate(varaDate) : "Assign athletes — VARA fires automatically."}
+                {isEdit ? `Editing: ${editWorkout?.title||"workout"}` : varaDate ? fmtDate(varaDate) : "Assign athletes - VARA fires automatically."}
               </p>
             </div>
             <button type="button" onClick={onClose}
@@ -820,10 +820,10 @@ export default function CreateWorkoutDrawer({
               <div>
                 <span style={lbl}>Workout title *</span>
                 <input value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Upper Body — Strength Block Week 3" autoFocus style={inp}
+                  placeholder="e.g. Upper Body - Strength Block Week 3" autoFocus style={inp}
                   onFocus={e=>{e.currentTarget.style.borderColor=DS.brand;}}
                   onBlur={e =>{e.currentTarget.style.borderColor=DS.border;}} />
-                <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, marginTop:5 }}>Include the goal — strength, speed, mobility.</p>
+                <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, marginTop:5 }}>Include the goal - strength, speed, mobility.</p>
               </div>
 
               {/* Status */}
@@ -942,7 +942,7 @@ export default function CreateWorkoutDrawer({
                     <div>
                       <span style={lbl}>Sport</span>
                       <select value={editSport} onChange={e=>setEditSport(e.target.value)} style={{ ...inp, cursor:"pointer", appearance:"none" }} onFocus={e=>{e.currentTarget.style.borderColor=DS.brand;}} onBlur={e=>{e.currentTarget.style.borderColor=DS.border;}}>
-                        <option value="">— no sport —</option>
+                        <option value="">- no sport -</option>
                         {SPORT_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
@@ -1059,13 +1059,13 @@ export default function CreateWorkoutDrawer({
               {step===1&&!isEdit && (
                 <button type="button" onClick={() => canNext1&&setStep(2)} disabled={!canNext1}
                   style={{ display:"flex", alignItems:"center", gap:6, padding:"9px 20px", background:canNext1?DS.brand:DS.border, border:"none", fontFamily:F.cond, fontWeight:900, fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", color:"#fff", cursor:canNext1?"pointer":"not-allowed", opacity:canNext1?1:0.5 }}>
-                  Next — When <ArrowRight style={{ width:13, height:13 }} />
+                  Next - When <ArrowRight style={{ width:13, height:13 }} />
                 </button>
               )}
               {step===2&&!isEdit && (
                 <button type="button" onClick={() => canNext2&&setStep(3)} disabled={!canNext2}
                   style={{ display:"flex", alignItems:"center", gap:6, padding:"9px 20px", background:canNext2?DS.brand:DS.border, border:"none", fontFamily:F.cond, fontWeight:900, fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", color:"#fff", cursor:canNext2?"pointer":"not-allowed", opacity:canNext2?1:0.5 }}>
-                  Next — Exercises <ArrowRight style={{ width:13, height:13 }} />
+                  Next - Exercises <ArrowRight style={{ width:13, height:13 }} />
                 </button>
               )}
               {(step===3||isEdit) && (

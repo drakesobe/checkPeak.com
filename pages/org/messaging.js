@@ -1,5 +1,5 @@
 // pages/org/messaging.js
-// Org Command Center — three tools for coaches:
+// Org Command Center - three tools for coaches:
 //   Feed        → broadcast to teams (bulletins, announcements)
 //   Messages    → 1:1 and group DMs with athletes
 //   Leaderboard → live streak rankings, accountability monitoring
@@ -246,7 +246,7 @@ function FeedComposePanel({ onClose, myId, myName, myRole, mySport, orgId }) {
   const handlePost = async () => {
     if (!content.trim()) return;
     if (scope !== "org" && selectedSports.length === 0) { setError("Select at least one sport/team."); return; }
-    if (!orgId) { setError("Organisation ID is missing — try logging out and back in."); return; }
+    if (!orgId) { setError("Organisation ID is missing - try logging out and back in."); return; }
     setPosting(true); setError("");
     try {
       let imageUrl = null;
@@ -778,7 +778,7 @@ export default function OrgMessagingPage() {
   const { user } = useAuthContext();
   const isMobile = useIsMobile();
 
-  // ── Auth guard — wait for user to hydrate ─────────────────────────────────
+  // ── Auth guard - wait for user to hydrate ─────────────────────────────────
   const myId    = String(user?.id || user?.memberId || "");
   const myName  = String(user?.Name || user?.name || "Coach");
   const myRole  = String(user?.role || user?.Role || "");
@@ -1049,7 +1049,7 @@ export default function OrgMessagingPage() {
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", color: DS.rankAccent, marginBottom: 6 }}>Season Rankings</p>
                 <h2 style={{ fontSize: 28, fontWeight: 900, color: DS.bodyText, letterSpacing: "-0.5px", margin: 0 }}>Team Leaderboard</h2>
                 <p style={{ fontSize: 13, color: DS.dimText, marginTop: 6, lineHeight: 1.5 }}>
-                  Consecutive days completing all workouts, meals, and classes — updated in real-time.
+                  Consecutive days completing all workouts, meals, and classes - updated in real-time.
                 </p>
               </div>
 

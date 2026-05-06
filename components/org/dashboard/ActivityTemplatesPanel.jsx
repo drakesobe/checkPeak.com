@@ -12,9 +12,9 @@ function ActivityRow({ it, onViewHistory }) {
     <div className="flex items-start justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${DS.border}` }}>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{it?.title || "Plan"}</p>
-        <p className="text-xs mt-0.5 truncate" style={{ color: DS.labelText }}>{email || "—"}</p>
+        <p className="text-xs mt-0.5 truncate" style={{ color: DS.labelText }}>{email || "-"}</p>
         <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-          {it?.createdAt ? fmtDate(it.createdAt) : "—"}
+          {it?.createdAt ? fmtDate(it.createdAt) : "-"}
           {it?.createdBy ? ` · ${it.createdBy}` : ""}
         </p>
       </div>
@@ -40,7 +40,7 @@ function TemplateRow({ t, onUseTemplate }) {
 }
 
 /**
- * Collapsed by default — coaches don't need to see activity every visit.
+ * Collapsed by default - coaches don't need to see activity every visit.
  * Expand to audit or browse templates.
  */
 export default function ActivityTemplatesPanel({

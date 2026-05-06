@@ -68,7 +68,7 @@ export default function NutritionCard({
     [daily, planJson, dailyHydrationOz]
   );
 
-  /* ── mealBlocks — prefer prop, fall back to planJson directly ──────────────
+  /* ── mealBlocks - prefer prop, fall back to planJson directly ──────────────
      The hook derives mealBlocks from planJson, but if it returns null (e.g.
      stale render, old plan shape) we can still get the data from planJson. */
   const resolvedMealBlocks = useMemo(() => {
@@ -79,13 +79,13 @@ export default function NutritionCard({
     return mb && typeof mb === "object" && Object.keys(mb).length > 0 ? mb : null;
   }, [mealBlocks, planJson]);
 
-  /* ── daily — prefer prop, fall back to planJson.daily ──────────────────────
+  /* ── daily - prefer prop, fall back to planJson.daily ──────────────────────
      Ensures PlanHeader always gets macro targets even if the flat daily
      prop is missing hydrationOz or was built from older Airtable columns. */
   const resolvedDaily = useMemo(() => {
     const pjDaily = planJson?.daily && typeof planJson.daily === "object" ? planJson.daily : null;
     if (!daily && !pjDaily) return null;
-    // Merge both — planJson.daily wins for any field it has
+    // Merge both - planJson.daily wins for any field it has
     return { ...(daily || {}), ...(pjDaily || {}) };
   }, [daily, planJson]);
 

@@ -4,7 +4,7 @@
 // DetectDocumentText, and returns the extracted text string.
 //
 // Drop-in replacement for the Tesseract pipeline in useOCR.js.
-// Same response shape — nothing in OCRUpload or OCRScanResults changes.
+// Same response shape - nothing in OCRUpload or OCRScanResults changes.
 
 import { TextractClient, DetectDocumentTextCommand } from "@aws-sdk/client-textract";
 
@@ -13,7 +13,7 @@ export const config = {
 };
 
 // ---------------------------------------------------------------------------
-// Textract client — initialised once per cold start
+// Textract client - initialised once per cold start
 // ---------------------------------------------------------------------------
 
 const client = new TextractClient({
@@ -43,7 +43,7 @@ async function readBody(req) {
 // Textract response → plain text string
 //
 // Textract returns a list of Block objects. We keep only LINE blocks,
-// joined with newlines — same shape as Tesseract output so the existing
+// joined with newlines - same shape as Tesseract output so the existing
 // quality scoring, highlighting, and substance matching all work unchanged.
 // ---------------------------------------------------------------------------
 
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
 
   // Textract has a 5 MB limit for synchronous DetectDocumentText
   if (imageBytes.length > 5 * 1024 * 1024) {
-    return res.status(400).json({ error: "Image too large — max 5 MB" });
+    return res.status(400).json({ error: "Image too large - max 5 MB" });
   }
 
   try {
@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok:   true,
       text,
-      // Pass back block count for debugging — not used by the hook
+      // Pass back block count for debugging - not used by the hook
       blockCount: (response.Blocks ?? []).length,
     });
   } catch (err) {
@@ -104,9 +104,9 @@ export default async function handler(req, res) {
     // Surface a clean message for common AWS errors
     const msg =
       err?.name === "InvalidParameterException" ? "Textract could not read this image format." :
-      err?.name === "UnsupportedDocumentException" ? "Unsupported image — try JPEG or PNG." :
+      err?.name === "UnsupportedDocumentException" ? "Unsupported image - try JPEG or PNG." :
       err?.name === "DocumentTooLargeException" ? "Image too large for Textract (max 5 MB)." :
-      err?.name === "ProvisionedThroughputExceededException" ? "Too many requests — please try again." :
+      err?.name === "ProvisionedThroughputExceededException" ? "Too many requests - please try again." :
       err?.message || "Textract scan failed";
 
     return res.status(500).json({ error: msg });

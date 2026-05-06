@@ -6,19 +6,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import { DS, BAN_COLOR_MAP, BAN_TYPE_CONFIG, INGREDIENT_COLOR } from "./scanResultsTokens";
 
 /**
- * SubstanceCard — v2
+ * SubstanceCard - v2
  *
  * Visual upgrades aligned with OCRSearchResults (Search page):
- *   - VerdictPill  — icon-circle + label (✕ Banned / ! Limited Use / ✓ Not Banned)
- *   - Hover glow   — colored ambient shadow matching verdict
- *   - OrgBadge     — dark navy chips for "Banned by" orgs
- *   - WhyPanel     — "Why it's in your supplement" for ingredient cards
- *   - Compliance notice — inside expanded banned cards
+ *   - VerdictPill  - icon-circle + label (✕ Banned / ! Limited Use / ✓ Not Banned)
+ *   - Hover glow   - colored ambient shadow matching verdict
+ *   - OrgBadge     - dark navy chips for "Banned by" orgs
+ *   - WhyPanel     - "Why it's in your supplement" for ingredient cards
+ *   - Compliance notice - inside expanded banned cards
  *   - Source eyebrow label (matching search card style)
  */
 
 // ---------------------------------------------------------------------------
-// Verdict config — parallel to OCRSearchResults VERDICT object
+// Verdict config - parallel to OCRSearchResults VERDICT object
 // ---------------------------------------------------------------------------
 
 const VERDICT = {
@@ -132,7 +132,7 @@ function getSnippets(ocrText, terms, { radius = 90, maxSnippets = 2, maxChars = 
 }
 
 // ---------------------------------------------------------------------------
-// VerdictPill — icon circle + label, same as OCRSearchResults
+// VerdictPill - icon circle + label, same as OCRSearchResults
 // ---------------------------------------------------------------------------
 
 function VerdictPill({ verdict }) {
@@ -165,7 +165,7 @@ function VerdictPill({ verdict }) {
 }
 
 // ---------------------------------------------------------------------------
-// OrgBadge — dark navy, matches OCRSearchResults
+// OrgBadge - dark navy, matches OCRSearchResults
 // ---------------------------------------------------------------------------
 
 function OrgBadge({ org }) {
@@ -213,7 +213,7 @@ function InfoPanel({ title, html, accentColor = DS.labelText }) {
 }
 
 // ---------------------------------------------------------------------------
-// WhyPanel — "Why it's in your supplement" (ingredient cards)
+// WhyPanel - "Why it's in your supplement" (ingredient cards)
 // ---------------------------------------------------------------------------
 
 function WhyPanel({ html }) {
@@ -234,7 +234,7 @@ function WhyPanel({ html }) {
 }
 
 // ---------------------------------------------------------------------------
-// SnippetPanel — "How it showed up on your label"
+// SnippetPanel - "How it showed up on your label"
 // ---------------------------------------------------------------------------
 
 function SnippetPanel({ snippets, snippetHTML }) {
@@ -260,7 +260,7 @@ function SnippetPanel({ snippets, snippetHTML }) {
 }
 
 // ---------------------------------------------------------------------------
-// ComplianceNotice — bottom of expanded banned cards
+// ComplianceNotice - bottom of expanded banned cards
 // ---------------------------------------------------------------------------
 
 function ComplianceNotice() {
@@ -310,7 +310,7 @@ export default function SubstanceCard({
   const antagonisms = String(fields["Nutrient Antagonism"] ?? fields["Nutrient Antagonisms"] ?? "");
   const source      = String(fields["Source / Citation"] ?? fields["Sources / References"] ?? fields["Source"] ?? "");
 
-  // Org badges — parse comma/semicolon separated
+  // Org badges - parse comma/semicolon separated
   const orgList = bannedBy
     ? bannedBy.split(/[,;\/·]/).map((s) => s.trim()).filter(Boolean)
     : [];
@@ -421,7 +421,7 @@ export default function SubstanceCard({
           )}
         </div>
 
-        {/* Expand/collapse CTA — matches search card style */}
+        {/* Expand/collapse CTA - matches search card style */}
         <div className="shrink-0 pt-1 flex flex-col items-end gap-1">
           <span
             className="sr-body inline-flex items-center gap-1 text-xs font-bold rounded-lg px-2.5 py-1.5 transition-colors"
@@ -488,7 +488,7 @@ export default function SubstanceCard({
               {/* Label snippet */}
               <SnippetPanel snippets={snippets} snippetHTML={snippetHTML} />
 
-              {/* Compliance notice — banned cards only */}
+              {/* Compliance notice - banned cards only */}
               {isBanned && <ComplianceNotice />}
             </div>
           </motion.div>

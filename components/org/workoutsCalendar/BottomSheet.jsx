@@ -1,5 +1,5 @@
 // components/org/workoutsCalendar/BottomSheet.jsx
-// Note: "BottomSheet" is now a centered dialog on all breakpoints — the name
+// Note: "BottomSheet" is now a centered dialog on all breakpoints - the name
 // is retained for import compatibility but the layout matches the DS panel pattern.
 "use client";
 
@@ -13,7 +13,7 @@ export default function BottomSheet({
   children,
   onClose,
   subtitle,
-  topOffsetPx,   // kept for API compat — not used in centered layout
+  topOffsetPx,   // kept for API compat - not used in centered layout
 }) {
   useEffect(() => {
     if (!open) return;
@@ -40,7 +40,7 @@ export default function BottomSheet({
         aria-label="Close sheet"
       />
 
-      {/* Centered panel — same DS panel system as Modal / DaySheet */}
+      {/* Centered panel - same DS panel system as Modal / DaySheet */}
       <div className="absolute inset-0 flex items-center justify-center px-3 py-4 sm:px-6 sm:py-8">
         <div
           className="w-full flex flex-col"
@@ -103,7 +103,7 @@ export default function BottomSheet({
             </button>
           </div>
 
-          {/* Body — scrollable */}
+          {/* Body - scrollable */}
           <div
             className="overflow-y-auto overscroll-contain flex-1"
             style={{ padding: "20px" }}

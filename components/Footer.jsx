@@ -32,7 +32,7 @@ function IconYouTube() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* StatPill — a single trust metric                                           */
+/* StatPill - a single trust metric                                           */
 /* -------------------------------------------------------------------------- */
 function StatPill({ value, label }) {
   return (
@@ -100,7 +100,7 @@ export default function Footer() {
         color:      "rgba(255,255,255,0.55)",
       }}
     >
-      {/* Top accent line — thin blue glow at the seam */}
+      {/* Top accent line - thin blue glow at the seam */}
       <div
         aria-hidden="true"
         className="absolute top-0 left-0 right-0 h-px"
@@ -123,7 +123,7 @@ export default function Footer() {
         {/* ── Brand hero block ────────────────────────────────────────────── */}
         {/*
           Full-width brand statement above the nav grid.
-          This is the product's last impression — it should earn it.
+          This is the product's last impression - it should earn it.
         */}
         <div
           className="pt-12 pb-8"
@@ -133,7 +133,7 @@ export default function Footer() {
 
             {/* Left: wordmark + mission */}
             <div className="max-w-lg">
-              {/* Wordmark with live dot — mirrors the SmartStack badge pattern */}
+              {/* Wordmark with live dot - mirrors the SmartStack badge pattern */}
               <div className="flex items-center gap-2.5 mb-3">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -166,7 +166,7 @@ export default function Footer() {
               </p>
             </div>
 
-            {/* Right: trust stats — concrete proof, not just claims */}
+            {/* Right: trust stats - concrete proof, not just claims */}
             <div className="flex flex-wrap gap-2.5 lg:shrink-0">
               <StatPill value="1,000+"  label="Ingredients tracked"     />
               <StatPill value="900+"     label="Banned substances"       />
@@ -225,7 +225,7 @@ export default function Footer() {
               <NavLink href="/add-ingredient" arrow>Suggest an Ingredient</NavLink>
             </ul>
 
-            {/* CTA — lives in the support column, contextually makes sense */}
+            {/* CTA - lives in the support column, contextually makes sense */}
             <div
               className="mt-5 rounded-xl p-3"
               style={{

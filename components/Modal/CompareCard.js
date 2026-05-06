@@ -206,7 +206,7 @@ export default function CompareCard({
                 {compareLabel}
               </button>
               <p className="text-xs text-gray-300">
-                You’re viewing {selectedCount} stack{selectedCount > 1 ? "s" : ""} — open the comparison modal
+                You’re viewing {selectedCount} stack{selectedCount > 1 ? "s" : ""} - open the comparison modal
                 to see them side-by-side.
               </p>
             </div>

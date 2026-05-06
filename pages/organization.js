@@ -159,8 +159,8 @@ export default function OrganizationPage() {
                   const pendingInvite = !!a.fields?.['Invite Token'] && !signedUp;
                   return (
                     <tr key={a.id} className="border-b last:border-b-0 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">{a.fields?.Name || '—'}</td>
-                      <td className="px-4 py-3">{a.fields?.Email || '—'}</td>
+                      <td className="px-4 py-3">{a.fields?.Name || '-'}</td>
+                      <td className="px-4 py-3">{a.fields?.Email || '-'}</td>
                       <td className="px-4 py-3">
                         {signedUp ? (
                           <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
@@ -171,7 +171,7 @@ export default function OrganizationPage() {
                             <FaHourglassHalf /> Pending Invite
                           </span>
                         ) : (
-                          <span className="text-gray-500 font-semibold">—</span>
+                          <span className="text-gray-500 font-semibold">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3 flex gap-2">

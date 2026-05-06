@@ -47,7 +47,7 @@ export default function MobileCards({ rows, loading, onOpen }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold text-gray-900 truncate">{r.athleteName || "Athlete"}</p>
-                <p className="text-xs text-gray-500 truncate">{r.athleteEmail || "—"}</p>
+                <p className="text-xs text-gray-500 truncate">{r.athleteEmail || "-"}</p>
 
                 {(r.team || r.sport) ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -66,7 +66,7 @@ export default function MobileCards({ rows, loading, onOpen }) {
             <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
                 <p className="text-gray-500">Adherence</p>
-                <p className="mt-1 text-gray-900 font-extrabold tabular-nums">{avg == null ? "—" : `${avg}%`}</p>
+                <p className="mt-1 text-gray-900 font-extrabold tabular-nums">{avg == null ? "-" : `${avg}%`}</p>
                 <div className="mt-2">
                   <ProgressBar value={avg} />
                 </div>
@@ -79,7 +79,7 @@ export default function MobileCards({ rows, loading, onOpen }) {
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
                 <p className="text-gray-500">Latest completion</p>
-                <p className="mt-1 text-gray-900 font-semibold">{comp?.updatedAt ? fmtDateTime(comp.updatedAt) : "—"}</p>
+                <p className="mt-1 text-gray-900 font-semibold">{comp?.updatedAt ? fmtDateTime(comp.updatedAt) : "-"}</p>
                 <p className="mt-1 text-[11px] text-gray-500">{comp?.dateISO ? `Date: ${fmtDate(comp.dateISO)}` : ""}</p>
                 <p className="mt-1 text-[11px] text-gray-500">
                   {comp?.weekStartISO

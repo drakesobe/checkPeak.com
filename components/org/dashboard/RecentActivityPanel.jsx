@@ -69,9 +69,9 @@ export default function RecentActivityPanel({
             >
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{it?.title || "Plan"}</p>
-                <p className="text-xs mt-0.5 break-all" style={{ color: DS.labelText }}>{it?.athleteEmail || "—"}</p>
+                <p className="text-xs mt-0.5 break-all" style={{ color: DS.labelText }}>{it?.athleteEmail || "-"}</p>
                 <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-                  {it?.createdAt ? fmtDate(it.createdAt) : "—"}
+                  {it?.createdAt ? fmtDate(it.createdAt) : "-"}
                   {it?.createdBy ? ` · ${it.createdBy}` : ""}
                 </p>
               </div>

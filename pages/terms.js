@@ -17,7 +17,7 @@ const SECTIONS = [
     body: [
       {
         heading: "Agreement to these terms",
-        text: "By accessing or using CheckPeak — including our website, scanning tools, SmartStack feature, and any associated mobile applications — you agree to be bound by these Terms of Service and our Privacy Policy. If you do not agree, please do not use CheckPeak.",
+        text: "By accessing or using CheckPeak - including our website, scanning tools, SmartStack feature, and any associated mobile applications - you agree to be bound by these Terms of Service and our Privacy Policy. If you do not agree, please do not use CheckPeak.",
       },
       {
         heading: "Changes to these terms",
@@ -67,7 +67,7 @@ const SECTIONS = [
     body: [
       {
         heading: "Permitted use",
-        text: "You may use CheckPeak for your own personal, non-commercial purposes — scanning supplement labels, saving stacks, browsing SmartStack, and comparing products.",
+        text: "You may use CheckPeak for your own personal, non-commercial purposes - scanning supplement labels, saving stacks, browsing SmartStack, and comparing products.",
       },
       {
         heading: "Prohibited conduct",
@@ -143,7 +143,7 @@ const SECTIONS = [
       },
       {
         heading: "Dispute resolution",
-        text: "We encourage you to contact us first if you have a concern — most issues can be resolved quickly. If a formal dispute arises, you agree to attempt informal resolution before initiating any legal proceedings. Any unresolved disputes shall be resolved through binding arbitration in accordance with the American Arbitration Association rules.",
+        text: "We encourage you to contact us first if you have a concern - most issues can be resolved quickly. If a formal dispute arises, you agree to attempt informal resolution before initiating any legal proceedings. Any unresolved disputes shall be resolved through binding arbitration in accordance with the American Arbitration Association rules.",
       },
       {
         heading: "Class action waiver",
@@ -221,7 +221,7 @@ export default function TermsPage() {
   return (
     <>
       <Head>
-        <title>Terms of Service — CheckPeak</title>
+        <title>Terms of Service - CheckPeak</title>
         <meta name="description" content="CheckPeak's Terms of Service. Rules and guidelines for using our supplement scanning and SmartStack tools." />
         <meta name="robots" content="noindex" />
       </Head>
@@ -280,7 +280,7 @@ export default function TermsPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
           <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-16 xl:gap-20">
 
-            {/* ── Sidebar — sticky on desktop ── */}
+            {/* ── Sidebar - sticky on desktop ── */}
             <aside className="hidden lg:block">
               <div className="sticky top-20 space-y-8">
                 <TableOfContents sections={SECTIONS} />
@@ -355,7 +355,7 @@ export default function TermsPage() {
 
                 <p className="mt-3 text-sm text-slate-500 leading-relaxed max-w-2xl">
                   These terms govern your use of CheckPeak. We've kept them as readable
-                  as possible. If something's unclear, just ask — we'd rather explain
+                  as possible. If something's unclear, just ask - we'd rather explain
                   it than hide behind legal jargon.
                 </p>
 
@@ -364,7 +364,7 @@ export default function TermsPage() {
                   <span>Last updated: <strong className="text-slate-600">{LAST_UPDATED}</strong></span>
                 </div>
 
-                {/* Anti-doping warning — most important notice, surfaced early */}
+                {/* Anti-doping warning - most important notice, surfaced early */}
                 <div
                   className="mt-6 rounded-xl px-4 py-3.5 flex gap-3"
                   style={{

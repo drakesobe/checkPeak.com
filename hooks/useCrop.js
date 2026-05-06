@@ -79,18 +79,18 @@ async function cropFileToRegion(file, cropRect) {
 
 /**
  * @param {object}   options
- * @param {boolean}  options.multiple  — if true, steps through all files after each crop
+ * @param {boolean}  options.multiple  - if true, steps through all files after each crop
  *
  * Returns:
- *   cropState       — { isOpen, cropIndex, crop, zoom, aspectMode, croppedFlags }
- *   aspectValue     — number | undefined — derived from aspectMode for react-easy-crop
- *   openCropFor     — (index: number) => void
- *   closeCrop       — () => void
- *   setCrop         — react-easy-crop onCropChange handler
- *   setZoom         — react-easy-crop onZoomChange handler
- *   setAspectMode   — "label" | "free"
- *   onCropComplete  — react-easy-crop onCropComplete handler
- *   confirmCrop     — (files, previewURLs, setFiles, setPreviewURLs) => Promise<void>
+ *   cropState       - { isOpen, cropIndex, crop, zoom, aspectMode, croppedFlags }
+ *   aspectValue     - number | undefined - derived from aspectMode for react-easy-crop
+ *   openCropFor     - (index: number) => void
+ *   closeCrop       - () => void
+ *   setCrop         - react-easy-crop onCropChange handler
+ *   setZoom         - react-easy-crop onZoomChange handler
+ *   setAspectMode   - "label" | "free"
+ *   onCropComplete  - react-easy-crop onCropComplete handler
+ *   confirmCrop     - (files, previewURLs, setFiles, setPreviewURLs) => Promise<void>
  */
 export function useCrop({ multiple = false } = {}) {
   const [isOpen,            setIsOpen]           = useState(false);
@@ -138,7 +138,7 @@ export function useCrop({ multiple = false } = {}) {
   }, []);
 
   /**
-   * confirmCrop — applies the crop to the file, updates previews,
+   * confirmCrop - applies the crop to the file, updates previews,
    * and steps to the next file if multiple mode is enabled.
    *
    * Callers pass setter fns so this hook doesn't need to own files/previews.
@@ -164,7 +164,7 @@ export function useCrop({ multiple = false } = {}) {
         newFiles[cropIndex] = croppedFile;
         setFiles(newFiles);
 
-        // Update preview URLs — revoke old one to avoid memory leak
+        // Update preview URLs - revoke old one to avoid memory leak
         const newPreviews = [...previewURLs];
         if (newPreviews[cropIndex]) URL.revokeObjectURL(newPreviews[cropIndex]);
         newPreviews[cropIndex] = URL.createObjectURL(croppedFile);

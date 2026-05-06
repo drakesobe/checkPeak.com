@@ -9,7 +9,7 @@ import Cropper from "react-easy-crop";
 import ProgressBar from "./ProgressBar";
 
 // ---------------------------------------------------------------------------
-// Design tokens — matches OCRUpload / scanResultsTokens exactly
+// Design tokens - matches OCRUpload / scanResultsTokens exactly
 // ---------------------------------------------------------------------------
 
 const DS = {
@@ -32,7 +32,7 @@ const BEEP_SRC =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
 // ---------------------------------------------------------------------------
-// Utilities — unchanged from original
+// Utilities - unchanged from original
 // ---------------------------------------------------------------------------
 
 const isBlobUrl             = (s) => typeof s === "string" && s.startsWith("blob:");
@@ -82,7 +82,7 @@ function normalizeAndValidateBarcode(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// Image decode — unchanged
+// Image decode - unchanged
 // ---------------------------------------------------------------------------
 
 async function decodeBitmapFromFile(file) {
@@ -126,7 +126,7 @@ async function cropFileToRegion(file, cropRect) {
 }
 
 // ---------------------------------------------------------------------------
-// Preprocessing — unchanged
+// Preprocessing - unchanged
 // ---------------------------------------------------------------------------
 
 function applyGrayscaleContrast(ctx, w, h, contrast = 1.25) {
@@ -158,7 +158,7 @@ function applyThreshold(ctx, w, h, thresh = 170) {
 }
 
 // ---------------------------------------------------------------------------
-// OCR numeric fallback — unchanged
+// OCR numeric fallback - unchanged
 // ---------------------------------------------------------------------------
 
 function coerceDigitsFromOCR(text) {
@@ -307,7 +307,7 @@ export default function BarcodeUpload({
     try { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); } catch {}
   };
 
-  // OCR worker — unchanged
+  // OCR worker - unchanged
   const initOCRWorker = useCallback(async () => {
     if (ocrWorkerRef.current) return ocrWorkerRef.current;
     if (ocrInitializingRef.current) {
@@ -515,7 +515,7 @@ export default function BarcodeUpload({
 
       <div className="bc-body space-y-5 mt-4" style={{ maxWidth: "100%" }}>
 
-        {/* ── Step header — matches OCRUpload exactly ─────────────── */}
+        {/* ── Step header - matches OCRUpload exactly ─────────────── */}
         <div className="max-w-3xl mx-auto space-y-2">
           <div className="flex items-center gap-2">
             <span
@@ -536,7 +536,7 @@ export default function BarcodeUpload({
           </p>
         </div>
 
-        {/* ── Upload zone — mirrors OCRUpload UploadZone ───────────── */}
+        {/* ── Upload zone - mirrors OCRUpload UploadZone ───────────── */}
         <div
           className="w-full max-w-3xl mx-auto rounded-2xl overflow-hidden transition"
           style={{
@@ -564,7 +564,7 @@ export default function BarcodeUpload({
               </p>
             </div>
 
-            {/* Primary CTA — camera */}
+            {/* Primary CTA - camera */}
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
@@ -581,7 +581,7 @@ export default function BarcodeUpload({
               {files.length ? "Retake Photo" : "Take Photo"}
             </button>
 
-            {/* Secondary CTA — library */}
+            {/* Secondary CTA - library */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -614,7 +614,7 @@ export default function BarcodeUpload({
           onChange={(e) => handleFiles(e.target.files)}
         />
 
-        {/* ── Crop modal — dark sheet, same as original ────────────── */}
+        {/* ── Crop modal - dark sheet, same as original ────────────── */}
         {showCropModal && cropIndex != null && previewURLs[cropIndex] && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
             <div className="w-full max-w-md bg-neutral-900 rounded-2xl overflow-hidden flex flex-col">
@@ -677,7 +677,7 @@ export default function BarcodeUpload({
           </div>
         )}
 
-        {/* ── Preview cards — matches FilePreviewCard style ────────── */}
+        {/* ── Preview cards - matches FilePreviewCard style ────────── */}
         {files.map((file, idx) => (
           <div
             key={idx}
@@ -786,7 +786,7 @@ export default function BarcodeUpload({
           </div>
         )}
 
-        {/* ── Scan button — matches OCRUpload scan button ──────────── */}
+        {/* ── Scan button - matches OCRUpload scan button ──────────── */}
         {showScanButton && (
           <div className="max-w-3xl mx-auto flex justify-end">
             <button

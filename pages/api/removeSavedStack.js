@@ -102,7 +102,7 @@ export default async function handler(req, res) {
           .json({ error: "recordId or stackId is required" });
       }
 
-      // Find all records for (email, stackId) — and delete them all (dedupe cleanup)
+      // Find all records for (email, stackId) - and delete them all (dedupe cleanup)
       const filter = buildFilterByFormula({ email: normalizedEmail, stackId: sid });
       const findUrl = `${baseUrl}?filterByFormula=${encodeURIComponent(
         filter

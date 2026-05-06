@@ -87,7 +87,7 @@ export default function MarketingNav() {
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
   const dashHref  = isOrgSide ? "/org/workouts-calendar" : "/dashboard";
 
-  // Only hero pages start transparent — all others start frosted
+  // Only hero pages start transparent - all others start frosted
   const isHeroPage = HERO_PAGES.includes(pathname);
 
   const [scrolled,        setScrolled]       = useState(!isHeroPage);
@@ -96,7 +96,7 @@ export default function MarketingNav() {
   const [loginModalOpen,  setLoginModalOpen]  = useState(false);
   const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
 
-  // Scroll detection — only matters on hero pages
+  // Scroll detection - only matters on hero pages
   useEffect(() => {
     if (!isHeroPage) {
       setScrolled(true);
@@ -204,7 +204,7 @@ export default function MarketingNav() {
         {/* Mobile spacer */}
         <div className="mkt-spacer" style={{ width:40 }} aria-hidden="true" />
 
-        {/* Logo — absolutely centered, always white */}
+        {/* Logo - absolutely centered, always white */}
         <div style={{ position:"absolute", left:"50%", transform:"translateX(-50%)" }}>
           <Link href="/" aria-label="CheckPeak Home" style={{ display:"inline-flex", alignItems:"center" }}>
             <span className="mkt-logo-wrap">
@@ -371,7 +371,7 @@ export default function MarketingNav() {
                         border:"none", cursor:"pointer", textAlign:"center",
                       }}
                     >
-                      Start Your Pilot — 30 Days Free
+                      Start Your Pilot - 30 Days Free
                     </button>
                     <button
                       type="button"
@@ -394,7 +394,7 @@ export default function MarketingNav() {
         )}
       </AnimatePresence>
 
-      {/* Auth modal — required since NavBar isn't mounted on marketing pages */}
+      {/* Auth modal - required since NavBar isn't mounted on marketing pages */}
       <NavBarLoginModal
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}

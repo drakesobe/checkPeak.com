@@ -184,7 +184,7 @@ function getValueLabel(stack, bucketStats) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* CompareNudge — shown before any compare selection                          */
+/* CompareNudge - shown before any compare selection                          */
 /* -------------------------------------------------------------------------- */
 function CompareNudge() {
   const [visible, setVisible] = useState(true);
@@ -227,7 +227,7 @@ function CompareNudge() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* FilterDrawer — slides in from the left on mobile (power-user filters)      */
+/* FilterDrawer - slides in from the left on mobile (power-user filters)      */
 /* -------------------------------------------------------------------------- */
 function FilterDrawer({
   open, onClose,
@@ -408,7 +408,7 @@ function ActiveFilterPills({
 }
 
 /* -------------------------------------------------------------------------- */
-/* LoadingGrid — matches 2-col mobile / multi-col desktop                     */
+/* LoadingGrid - matches 2-col mobile / multi-col desktop                     */
 /* -------------------------------------------------------------------------- */
 function LoadingGrid() {
   return (
@@ -490,7 +490,7 @@ function EmptyState({ onClearAll, searchQuery, onCategoryChange }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ScrollToTopButton — floats above compare tray once user scrolls            */
+/* ScrollToTopButton - floats above compare tray once user scrolls            */
 /* -------------------------------------------------------------------------- */
 function ScrollToTopButton() {
   const [visible, setVisible] = useState(false);
@@ -793,7 +793,7 @@ export default function SmartStackPage() {
           </h1>
 
           <p className="hidden sm:block mt-2 text-sm max-w-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-            Compare pre-workouts, protein powders, vitamins, and more — side-by-side value ratings,
+            Compare pre-workouts, protein powders, vitamins, and more - side-by-side value ratings,
             price-per-serving, and ingredient breakdowns{totalCount > 0 ? ` for ${totalCount} supplements` : ""} in one place.
           </p>
 
@@ -898,7 +898,7 @@ export default function SmartStackPage() {
 
             <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
 
-            {/* Value filter pills — larger, labeled, glow when active */}
+            {/* Value filter pills - larger, labeled, glow when active */}
             {VALUE_FILTERS.map((filter) => {
               const active = activeValueFilters.includes(filter);
               const colors = VALUE_COLOR[filter];
@@ -991,7 +991,7 @@ export default function SmartStackPage() {
               </div>
             )}
 
-            {/* Value row — now sm:flex (was lg:flex), higher-contrast active state */}
+            {/* Value row - now sm:flex (was lg:flex), higher-contrast active state */}
             <div className="px-6 hidden sm:flex items-center gap-2.5 py-2 pb-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
               <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none" style={{ color: "rgba(255,255,255,0.25)" }}>Value</span>
               {VALUE_FILTERS.map((filter) => {
@@ -1065,7 +1065,7 @@ export default function SmartStackPage() {
           <LoadingGrid />
         ) : (
           <>
-            {/* ── PATCH 3: Live result count — all screen sizes, with inline clear ──
+            {/* ── PATCH 3: Live result count - all screen sizes, with inline clear ──
                 Replaces the old hidden sm:block desktop-only count.
                 Animates when count changes. Shows "Clear filters" shortcut.
             ─────────────────────────────────────────────────────────────────── */}
@@ -1160,7 +1160,7 @@ export default function SmartStackPage() {
 
             {!canLoadMore && visibleCount > 0 && (
               <p className="mt-10 text-center text-[11px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-                All {visibleCount} stacks shown — adjust filters to explore more.
+                All {visibleCount} stacks shown - adjust filters to explore more.
               </p>
             )}
 

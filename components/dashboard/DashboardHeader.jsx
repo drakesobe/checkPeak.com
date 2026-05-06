@@ -10,7 +10,7 @@ const FONT_COND = "'Barlow Condensed', sans-serif";
 const FONT_BODY = "'Barlow', sans-serif";
 
 /* -------------------------------------------------------------------------- */
-/* Pure helpers — no hooks, safe at module level                              */
+/* Pure helpers - no hooks, safe at module level                              */
 /* -------------------------------------------------------------------------- */
 
 function getGreeting() {
@@ -79,7 +79,7 @@ function QuickActionPill({ label, icon, onClick, variant = "ghost" }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ScanIcon + StackIcon — inline SVGs, no dependency                         */
+/* ScanIcon + StackIcon - inline SVGs, no dependency                         */
 /* -------------------------------------------------------------------------- */
 
 function ScanIcon() {
@@ -157,7 +157,7 @@ function getStateConfig(state, stats, routes) {
         accentColor:  BRAND,
         headline:     `Your stack is clear. Keep it that way.`,
         headlineColor: "#0f172a",
-        subline:      `${t} scan${t !== 1 ? "s" : ""} completed — no banned substances detected.`,
+        subline:      `${t} scan${t !== 1 ? "s" : ""} completed - no banned substances detected.`,
         sublineColor:  "#64748b",
         alert: null,
         primaryAction:   { label: "Scan a Label", icon: <ScanIcon />,  href: routes?.scan        || "/nutrition-label-scanner" },
@@ -167,7 +167,7 @@ function getStateConfig(state, stats, routes) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ProfileRing — circular progress, replaces the passive progress bar        */
+/* ProfileRing - circular progress, replaces the passive progress bar        */
 /* -------------------------------------------------------------------------- */
 
 function ProfileRing({ pct, onClick }) {
@@ -274,7 +274,7 @@ export default function DashboardHeader({ user, stats, routes, onNavigate }) {
               </p>
             </div>
 
-            {/* Status headline — primary message */}
+            {/* Status headline - primary message */}
             <h1
               className="text-2xl sm:text-[28px] font-black leading-tight"
               style={{
@@ -325,7 +325,7 @@ export default function DashboardHeader({ user, stats, routes, onNavigate }) {
               />
             </div>
 
-            {/* Profile ring — only when incomplete */}
+            {/* Profile ring - only when incomplete */}
             {accountCompletion < 100 && (
               <ProfileRing
                 pct={accountCompletion}
@@ -336,7 +336,7 @@ export default function DashboardHeader({ user, stats, routes, onNavigate }) {
         </div>
       </div>
 
-      {/* ── Flagged alert strip — only in "flagged" state ─────────────── */}
+      {/* ── Flagged alert strip - only in "flagged" state ─────────────── */}
       {cfg.alert && (
         <div
           className="mx-5 mb-4 flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5"

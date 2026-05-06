@@ -22,7 +22,7 @@ function sortByDateDesc(a, b) {
 
 /**
  * Fetch every page from an Airtable select query.
- * .firstPage() silently caps at 100 — use this for large tables.
+ * .firstPage() silently caps at 100 - use this for large tables.
  */
 function fetchAllPages(query) {
   return new Promise((resolve, reject) => {
@@ -94,11 +94,11 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: auth?.error || "Unauthorized" });
   }
 
-  // Support both modern (orgId) and legacy (token) auth — same pattern as requireOrg itself
+  // Support both modern (orgId) and legacy (token) auth - same pattern as requireOrg itself
   const orgId    = String(auth?.org?.id    || "").trim();
   const orgToken = String(auth?.org?.token || "").trim();
 
-  // All Airtable filters use Token — it is required
+  // All Airtable filters use Token - it is required
   if (!orgToken) {
     return res.status(401).json({ error: "Organization token missing from session. Please log out and back in." });
   }
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
   try {
     const safeToken = orgToken ? escapeAirtableString(orgToken) : "";
 
-    // Athletes table uses {Token} — there is no OrgId field on this table
+    // Athletes table uses {Token} - there is no OrgId field on this table
     const athleteOrgFilter = `{Token}='${safeToken}'`;
 
     /* ── 1. Load ALL athletes for this org (eachPage avoids 100-record cap) ── */
@@ -146,7 +146,7 @@ export default async function handler(req, res) {
     }
 
     /* ── 2. Check nutrition plan coverage per athlete ─────────────────────
-       Mirrors /api/org/nutrition/table.js exactly — individual lookups with
+       Mirrors /api/org/nutrition/table.js exactly - individual lookups with
        concurrency limit of 8. Avoids batched OR formulas that fail silently
        when Airtable rejects overly-long formula strings.
     ── */
@@ -162,7 +162,7 @@ export default async function handler(req, res) {
       return `FIND('${safe}', ARRAYJOIN({${fieldName}}&''))>0`;
     }
 
-    // Concurrency-limited map — same as nutrition/table.js
+    // Concurrency-limited map - same as nutrition/table.js
     async function mapLimit(items, limit, fn) {
       const results = new Array(items.length);
       let i = 0;
@@ -178,7 +178,7 @@ export default async function handler(req, res) {
 
     const activity = [];
 
-    // Per-athlete plan lookup — concurrency 8, exactly like nutrition/table.js
+    // Per-athlete plan lookup - concurrency 8, exactly like nutrition/table.js
     const planResultsByRecId = nutritionBase
       ? await mapLimit(athleteRecords, 8, async (athRec) => {
           const tok = String(athRec.fields?.AthleteToken || "").trim();
@@ -274,7 +274,7 @@ export default async function handler(req, res) {
 
     /* ── 4. Workouts today ─────────────────────────────────────────────── */
     // DailyWorkouts links to org via {Organization} linked record field.
-    // Match by org name/token/id as primary values — same approach as workouts/range.js.
+    // Match by org name/token/id as primary values - same approach as workouts/range.js.
     let workoutsTodayCompleted = 0;
     let workoutsTodayTotal     = 0;
 
@@ -282,7 +282,7 @@ export default async function handler(req, res) {
       try {
         const today = todayNY();
 
-        // Build org candidates — name most reliable (linked primary), token/id as fallbacks
+        // Build org candidates - name most reliable (linked primary), token/id as fallbacks
         const orgName = String(
           auth?.user?.OrgName || auth?.user?.organizationName ||
           auth?.user?.["Organization Name"] || auth?.org?.name || ""
@@ -298,7 +298,7 @@ export default async function handler(req, res) {
                 `FIND("${c.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}", ${orgJoin})`
               ).join(",")})`;
 
-          // Inclusive date range for today — same pattern as range.js
+          // Inclusive date range for today - same pattern as range.js
           const wFilter = `AND(${orgMatch}, OR(IS_SAME({Date}, "${today}", "day")))`;
 
           const workoutRecs = await fetchAllPages(
@@ -318,13 +318,13 @@ export default async function handler(req, res) {
           }).length;
         }
       } catch (wErr) {
-        // Non-fatal — workouts stats degrade gracefully to 0
+        // Non-fatal - workouts stats degrade gracefully to 0
         console.warn("[getOrgOverview] workouts today query failed:", wErr?.message);
       }
     }
 
     /* ── 5. Nutrition completions today ────────────────────────────────── */
-    // Uses AthleteToken — same approach as /api/org/nutrition/table.js
+    // Uses AthleteToken - same approach as /api/org/nutrition/table.js
     let nutritionTodayCompleted = 0;
     let nutritionTodayTotal     = 0;
 
@@ -371,7 +371,7 @@ export default async function handler(req, res) {
             allTodayRecs.push(...batchRecs);
           }
 
-          // Deduplicate by AthleteToken — pick record with most boxes checked if dupes
+          // Deduplicate by AthleteToken - pick record with most boxes checked if dupes
           const byToken = new Map();
           for (const r of allTodayRecs) {
             const tok = String(r.fields?.AthleteToken || "").trim();
@@ -412,7 +412,7 @@ export default async function handler(req, res) {
         totalPlans,
         athletesWithPlans,
         coveragePct,
-        coveragePercent: coveragePct,   // alias — grid reads coveragePercent
+        coveragePercent: coveragePct,   // alias - grid reads coveragePercent
         needsPlan,
         activeLast30,
         staleCount,

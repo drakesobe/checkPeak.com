@@ -60,7 +60,7 @@ async function safeJson(res) {
  *
  * Tries the athlete-side daily workout endpoint.
  * Any non-2xx response (including 404 = no workout today) is treated as
- * "no workout assigned" rather than a hard error — the planner should
+ * "no workout assigned" rather than a hard error - the planner should
  * never crash just because there's no workout today.
  *
  * Returns an array of workout block objects (may be empty).
@@ -68,7 +68,7 @@ async function safeJson(res) {
 async function fetchWorkoutBlocks(dateISO, signal) {
   const qs = new URLSearchParams({ date: dateISO });
 
-  // Try the athlete daily endpoint — adjust this path if your project
+  // Try the athlete daily endpoint - adjust this path if your project
   // uses a different route (e.g. /api/athlete/workouts/day)
   let res;
   try {
@@ -77,12 +77,12 @@ async function fetchWorkoutBlocks(dateISO, signal) {
       signal,
     });
   } catch (e) {
-    // Network error or aborted — treat as no workout
+    // Network error or aborted - treat as no workout
     if (e?.name === "AbortError") throw e;
     return [];
   }
 
-  // 404 = no workout assigned for this date — totally normal
+  // 404 = no workout assigned for this date - totally normal
   // Any other non-ok status = soft fail, show empty placeholder
   if (!res.ok) return [];
 
@@ -145,7 +145,7 @@ async function fetchNutritionData(dateISO, signal) {
     signal,
   });
 
-  // 404 = no plan assigned, 401 = not authenticated yet — both are soft failures
+  // 404 = no plan assigned, 401 = not authenticated yet - both are soft failures
   if (!res.ok) return null;
 
   const data = await safeJson(res);
@@ -203,7 +203,7 @@ export function useDayPlanner({ authReady, user, isAthlete }) {
 
     const controller = new AbortController();
 
-    // Workouts — 404 / any failure = "no workout today", never an error banner
+    // Workouts - 404 / any failure = "no workout today", never an error banner
     setWorkoutLoading(true);
     setWorkoutError(null);
     fetchWorkoutBlocks(dateISO, controller.signal)
@@ -249,14 +249,14 @@ export function useDayPlanner({ authReady, user, isAthlete }) {
         id:       "workout-none",
         type:     "workout",
         label:    "No workout assigned today",
-        time:     "—",
+        time:     "-",
         subtitle: "Check back with your coach",
         done:     false,
         empty:    true,
       });
     }
 
-    // 2) Nutrition blocks — one per meal, with full plan detail for the expandable panel
+    // 2) Nutrition blocks - one per meal, with full plan detail for the expandable panel
     const latestPlan  = nutritionData?.latestPlan ?? null;
     const planJson    = latestPlan?.planJson       ?? null;
     const daily       = latestPlan?.daily          ?? {};
@@ -347,7 +347,7 @@ export function useDayPlanner({ authReady, user, isAthlete }) {
 
   /* ── Meal-level completion toggles ────────────────────────────────────── */
   const toggleMealDone = useCallback((mealId) => {
-    // Toggle the mealDone flag — treat as done toggle for the overall block
+    // Toggle the mealDone flag - treat as done toggle for the overall block
     // The actual Airtable write happens via the existing completion/upsert endpoint
     // For now we mirror it through doneIds optimistically
     const blockId = `nutrition-${mealId}`;

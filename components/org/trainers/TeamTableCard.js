@@ -9,8 +9,8 @@ import { normalizeEmail } from "@/components/org/trainers/utils/strings";
 import { formatET } from "@/components/org/trainers/utils/time";
 
 function fmtDate(v) {
-  if (!v) return "—";
-  try { return `${formatET(v)} ET`; } catch { return "—"; }
+  if (!v) return "-";
+  try { return `${formatET(v)} ET`; } catch { return "-"; }
 }
 
 /* ── Column config for desktop ── */
@@ -24,7 +24,7 @@ const COLS = [
 ];
 
 /* ─────────────────────────────────────────────────────────
-   Bulk action bar — appears above table when rows selected
+   Bulk action bar - appears above table when rows selected
 ───────────────────────────────────────────────────────── */
 function BulkBar({ count, onDeactivate, onClear }) {
   return (
@@ -280,7 +280,7 @@ export default function TrainersTable({
                       {/* Email */}
                       <td className="px-3 py-3">
                         <span className="text-sm break-all" style={{ color: DS.labelText }}>
-                          {email || "—"}
+                          {email || "-"}
                         </span>
                       </td>
 
@@ -359,7 +359,7 @@ export default function TrainersTable({
                           <p className="text-sm font-bold truncate" style={{ color: DS.bodyText }}>
                             {t?.Name || "Member"}
                           </p>
-                          <p className="text-xs mt-0.5 break-all" style={{ color: DS.dimText }}>{email || "—"}</p>
+                          <p className="text-xs mt-0.5 break-all" style={{ color: DS.dimText }}>{email || "-"}</p>
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <RolePill role={role} />

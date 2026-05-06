@@ -168,7 +168,7 @@ export default function OrgPrescriptionsPage() {
     setView, setError, advanceSafely, goToNextAthlete,
   });
 
-  // ── Templates bundle — everything PlanBuilderForm's TemplatesDrawer needs ──
+  // ── Templates bundle - everything PlanBuilderForm's TemplatesDrawer needs ──
   const builderTpl = useMemo(() => ({
     // from useTemplateActions
     templateId:               tpl.templateId,
@@ -322,7 +322,7 @@ export default function OrgPrescriptionsPage() {
               />
             </div>
 
-            {/* Unified builder — athlete header + tabs + history all in one card */}
+            {/* Unified builder - athlete header + tabs + history all in one card */}
             <section className="col-span-12 lg:col-span-8 min-w-0">
               <PlanBuilderForm
                 // Plan data
@@ -343,7 +343,7 @@ export default function OrgPrescriptionsPage() {
                 tpl={builderTpl}
                 // History
                 hist={hist}
-                // SmartStack products — fetched once at page level
+                // SmartStack products - fetched once at page level
                 products={products}
               />
             </section>
@@ -352,7 +352,7 @@ export default function OrgPrescriptionsPage() {
 
       </main>
 
-      {/* Template delete confirmation — unchanged */}
+      {/* Template delete confirmation - unchanged */}
       <ConfirmDeleteModal
         open={tpl.confirmDeleteOpen}
         title="Delete Template"

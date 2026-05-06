@@ -57,7 +57,7 @@ export default function DashboardHeader({
       {/* ── Main bar ── */}
       <div className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
 
-        {/* Identity — always visible */}
+        {/* Identity - always visible */}
         <div className="min-w-0 flex items-center gap-3">
           <div className="min-w-0">
             <h1
@@ -94,7 +94,7 @@ export default function DashboardHeader({
           </div>
         </div>
 
-        {/* Action buttons — ALL hidden on mobile, full row on sm+ */}
+        {/* Action buttons - ALL hidden on mobile, full row on sm+ */}
         <div className="hidden sm:flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
@@ -184,7 +184,7 @@ export default function DashboardHeader({
             borderTop:       "1px solid rgba(200,16,46,0.3)",
           }}
         >
-          {error} — try refreshing or logging out.
+          {error} - try refreshing or logging out.
         </div>
       )}
     </div>

@@ -130,7 +130,7 @@ function MealSummaryLine({ targets }) {
   const t = safeTargets(targets);
   return (
     <span className="text-xs tabular-nums" style={{ color: DS.labelText }}>
-      {t.calories || "—"} cal · P {t.protein || "—"} · C {t.carbs || "—"} · F {t.fat || "—"} · 💧{t.hydrationOz || "—"}oz
+      {t.calories || "-"} cal · P {t.protein || "-"} · C {t.carbs || "-"} · F {t.fat || "-"} · 💧{t.hydrationOz || "-"}oz
     </span>
   );
 }
@@ -335,7 +335,7 @@ export default function MealBlockEditor({ subtleHint, structured, onChange }) {
                 <p className="text-xs" style={{ color: DS.dimText }}>{x.label}</p>
                 <p className="text-sm font-black tabular-nums mt-0.5" style={{ color: DS.bodyText }}>{x.val}</p>
                 <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
-                  vs {x.d ?? "—"}{" "}
+                  vs {x.d ?? "-"}{" "}
                   {x.diff != null && (
                     <span
                       className="font-bold"
@@ -361,7 +361,7 @@ export default function MealBlockEditor({ subtleHint, structured, onChange }) {
                 Auto-split locks
               </p>
               <p className="text-xs mb-2" style={{ color: DS.dimText }}>
-                Lock fields you set manually — Auto-split won't overwrite them.
+                Lock fields you set manually - Auto-split won't overwrite them.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[

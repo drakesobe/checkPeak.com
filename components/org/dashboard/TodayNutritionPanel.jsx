@@ -94,7 +94,7 @@ export default function TodayNutritionPanel({
           )}
         </div>
 
-        {/* Action buttons — hidden on mobile, visible sm+ */}
+        {/* Action buttons - hidden on mobile, visible sm+ */}
         <div className="hidden sm:flex gap-1.5 shrink-0">
           <Button variant="secondary" onClick={refresh} disabled={loading}>
             <RefreshCcw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -243,7 +243,7 @@ export default function TodayNutritionPanel({
                     </p>
                   </div>
 
-                  {/* Action buttons — full labels on sm+, icon-only on mobile */}
+                  {/* Action buttons - full labels on sm+, icon-only on mobile */}
                   <div className="flex gap-1.5 shrink-0">
                     {onViewAthleteNutrition && (
                       <>

@@ -29,11 +29,11 @@ function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
 
-  // First attempt — clean parse
+  // First attempt - clean parse
   try { return JSON.parse(raw); }
   catch { /* fall through */ }
 
-  // Second attempt — strip invalid JSON escape sequences.
+  // Second attempt - strip invalid JSON escape sequences.
   // Amazon image URLs sometimes contain \_ (backslash + underscore) which
   // is not a valid JSON escape. JSON only allows: \" \\ \/ \b \f \n \r \t \uXXXX
   // Replace any \X where X is not a recognised escape char with just X.
@@ -253,13 +253,13 @@ export default async function handler(req, res) {
 
     const f = picked.fields;
 
-    /* ── 4) Build latestPlan — include DailyHydration so the athlete UI
+    /* ── 4) Build latestPlan - include DailyHydration so the athlete UI
             doesn't have to rely solely on planJson for hydration oz ── */
     const latestPlan = {
       id:    picked.id,
       phase: asString(f[PLAN_PHASE]),
 
-      // Flat daily columns — hydrationOz NOW included
+      // Flat daily columns - hydrationOz NOW included
       daily: {
         calories:    f[PLAN_DCAL]       ?? "",
         protein:     f[PLAN_DPRO]       ?? "",
@@ -268,7 +268,7 @@ export default async function handler(req, res) {
         hydrationOz: f[PLAN_DHYDRATION] ?? "", // ← the fix
       },
 
-      // Full structured blob — used for mealBlocks, supplements, coach notes
+      // Full structured blob - used for mealBlocks, supplements, coach notes
       planJsonRaw:  picked.planJsonRaw,
       planJson:     picked.planJson,
 

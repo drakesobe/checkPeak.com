@@ -75,7 +75,7 @@ const PLAN_PRESCRIPTION = "Prescription";
 // NutritionCheckins
 // FIX: checkins/create.js links by AthleteName (record ID), not AthleteToken text.
 // Query by the linked record field using FIND+ARRAYJOIN on the athlete record ID.
-const CHK_ATHLETE_LINK = "AthleteName";   // linked record field — matches create.js
+const CHK_ATHLETE_LINK = "AthleteName";   // linked record field - matches create.js
 const CHK_WEEK         = "WeekStartISO";
 const CHK_CREATED_AT   = "CreatedAt";
 const CHK_CAL          = "CaloriesAdherencePct";
@@ -120,7 +120,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    /* 1) Find athlete record — token preferred, email fallback */
+    /* 1) Find athlete record - token preferred, email fallback */
     let athleteFilter = "";
     if (athleteToken) {
       athleteFilter = tokenMatchFormula(ATH_TOKEN, athleteToken);
@@ -147,7 +147,7 @@ export default async function handler(req, res) {
       athleteToken: asString(af[ATH_TOKEN]),
     };
 
-    /* 2+3) Fetch plan and checkins in PARALLEL — saves one round-trip */
+    /* 2+3) Fetch plan and checkins in PARALLEL - saves one round-trip */
     const planAthMatch     = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
     const latestActiveFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
 

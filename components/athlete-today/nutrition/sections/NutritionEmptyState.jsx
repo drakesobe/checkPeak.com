@@ -104,7 +104,7 @@ export default function NutritionEmptyState({
             <div className="space-y-2 text-[12px] text-gray-700">
               {[
                 "Build meals around a protein anchor + a training carb.",
-                "Keep hydration steady — a measured bottle makes it automatic.",
+                "Keep hydration steady - a measured bottle makes it automatic.",
                 "Aim for repeatable portions, not perfect labels.",
               ].map((line) => (
                 <div key={line} className="flex items-start gap-2 min-w-0">

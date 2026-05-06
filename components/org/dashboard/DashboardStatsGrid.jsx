@@ -20,28 +20,28 @@ function num(v) {
  */
 function deriveUrgency({ needsPlan, coveragePct, workoutsTodayPct, nutritionTodayPct, totalAthletes }) {
   if (needsPlan > 0) return {
-    text:  `${needsPlan} athlete${needsPlan > 1 ? "s" : ""} still need a plan — start there.`,
+    text:  `${needsPlan} athlete${needsPlan > 1 ? "s" : ""} still need a plan - start there.`,
     href:  "/org/prescriptions",
     tone:  "bad",
   };
   if (coveragePct < 80) return {
-    text:  `Coverage is at ${coveragePct}% — assign plans to close the gap.`,
+    text:  `Coverage is at ${coveragePct}% - assign plans to close the gap.`,
     href:  "/org/prescriptions",
     tone:  "warn",
   };
   if (workoutsTodayPct < 50 && totalAthletes > 0) return {
-    text:  `Workout completion is only ${workoutsTodayPct}% today — check who's behind.`,
+    text:  `Workout completion is only ${workoutsTodayPct}% today - check who's behind.`,
     href:  "/org/workouts-calendar",
     tone:  "warn",
   };
   if (nutritionTodayPct < 50 && totalAthletes > 0) return {
-    text:  `Nutrition check-ins are at ${nutritionTodayPct}% — open nutrition queue.`,
+    text:  `Nutrition check-ins are at ${nutritionTodayPct}% - open nutrition queue.`,
     href:  "/org/nutrition",
     tone:  "warn",
   };
   if (totalAthletes === 0) return null;
   return {
-    text:  "Your roster is covered and on track — nothing urgent today.",
+    text:  "Your roster is covered and on track - nothing urgent today.",
     href:  null,
     tone:  "good",
   };

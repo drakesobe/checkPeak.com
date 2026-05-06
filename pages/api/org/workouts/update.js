@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "id is required" });
   }
 
-  // Build the fields object — only include keys that were actually sent
+  // Build the fields object - only include keys that were actually sent
   const fields = {};
 
   if (title !== undefined) {

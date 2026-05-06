@@ -244,7 +244,7 @@ export default async function handler(req, res) {
       needsFile ? "pending_review" :
                   "completed";
 
-    // Write to WorkoutCompletions — only fields that exist in the table
+    // Write to WorkoutCompletions - only fields that exist in the table
     const created = await base("WorkoutCompletions").create([{
       fields: {
         CompletedAt:  new Date().toISOString(),

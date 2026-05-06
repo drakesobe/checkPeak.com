@@ -432,6 +432,7 @@ export default function WorkoutsCalendarPage() {
         editWorkout={editWorkout}
         dateISO={createDayISO}
         sport={defaultSportForCreate}
+        periods={periods}
         onCreated={() => {
           setCreateOpen(false);
           setEditWorkout(null);

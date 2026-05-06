@@ -16,11 +16,14 @@ function getBase() {
 
 function sanitizePeriod(p) {
   return {
-    id:    String(p?.id    || "").slice(0, 64),
-    name:  String(p?.name  || "").slice(0, 120),
-    type:  String(p?.type  || "season").slice(0, 40),
-    start: String(p?.start || "").slice(0, 10),
-    end:   String(p?.end   || "").slice(0, 10),
+    id:     String(p?.id    || "").slice(0, 64),
+    name:   String(p?.name  || "").slice(0, 120),
+    type:   String(p?.type  || "season").slice(0, 40),
+    start:  String(p?.start || "").slice(0, 10),
+    end:    String(p?.end   || "").slice(0, 10),
+    sports: Array.isArray(p?.sports)
+      ? p.sports.map(s => String(s).slice(0, 40)).filter(Boolean)
+      : [],
   };
 }
 

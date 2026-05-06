@@ -1,7 +1,3 @@
-// pages/api/org/season-calendar/get.js
-// GET — returns the org's saved season calendar periods.
-// Reads the "SeasonCalendar" Long Text field on the Organizations Airtable record.
-
 import Airtable from "airtable";
 import { requireOrgSideUser } from "@/lib/requireUser";
 
@@ -22,9 +18,17 @@ export default async function handler(req, res) {
   }
 
   const user = requireOrgSideUser(req, res);
+  console.log("[season-calendar/get] user:", JSON.stringify(user));
+
   if (!user) return;
 
-  const orgId = String(user?.orgId || user?.OrgId || "").trim();
+  const orgId = String(
+    user?.orgId || user?.OrgId || user?.org_id ||
+    user?.OrganizationId || user?.airtableId || user?.id || ""
+  ).trim();
+
+  console.log("[season-calendar/get] orgId resolved:", orgId);
+
   if (!orgId) {
     return res.status(400).json({ error: "No orgId on session — re-login." });
   }
@@ -32,19 +36,33 @@ export default async function handler(req, res) {
   const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
 
   try {
+    console.log("[season-calendar/get] fetching record:", orgId, "from table:", table);
     const record = await getBase()(table).find(orgId);
-    const raw    = record?.fields?.SeasonCalendar || "";
+    console.log("[season-calendar/get] record fields keys:", Object.keys(record?.fields || {}));
+
+    const raw = (record?.fields?.SeasonCalendar || "").replace(/\\\_/g, "_");
+    console.log("[season-calendar/get] raw value:", raw?.slice(0, 100));
 
     let periods = [];
     if (raw) {
-      try { periods = JSON.parse(raw); } catch {}
+      try { periods = JSON.parse(raw); } catch (parseErr) {
+        console.error("[season-calendar/get] JSON parse failed:", parseErr?.message);
+      }
     }
     if (!Array.isArray(periods)) periods = [];
 
+    // Backfill sports field for periods saved before it was added
+    periods = periods.map(p => ({
+      ...p,
+      sports: Array.isArray(p.sports) ? p.sports : [],
+    }));
+
+    console.log("[season-calendar/get] returning", periods.length, "periods");
     return res.status(200).json({ ok: true, periods });
+
   } catch (e) {
-    console.error("[season-calendar/get]", e?.message || e);
-    // Return empty rather than crashing — calendar still works without periods
-    return res.status(200).json({ ok: true, periods: [], warning: e?.message });
+    console.error("[season-calendar/get] FAILED:", e?.message || e);
+    // Now returns 500 so the frontend actually knows something went wrong
+    return res.status(500).json({ error: e?.message || "Failed to load season calendar." });
   }
 }

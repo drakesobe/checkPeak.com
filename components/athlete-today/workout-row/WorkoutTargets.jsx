@@ -69,17 +69,16 @@ export default function WorkoutTargets({
     tone === "pending" ? "text-sky-600" :
     tone === "completed" ? "text-emerald-600" : "";
 
-  // Tile accent colors per tone
+  // Tile accent colors per tone — base now uses brand #4FABFF
   const tileAccent =
     tone === "pending"
       ? { border: "border-sky-100", bg: "bg-sky-50/60", icon: "text-sky-500", value: "text-sky-900", label: "text-sky-500/80" }
       : tone === "completed"
       ? { border: "border-emerald-100", bg: "bg-emerald-50/60", icon: "text-emerald-500", value: "text-emerald-900", label: "text-emerald-500/80" }
-      : { border: "border-gray-100", bg: "bg-white", icon: "text-[#46769B]", value: "text-gray-900", label: "text-gray-400" };
+      : { border: "border-gray-100", bg: "bg-white", icon: "text-[#4FABFF]", value: "text-gray-900", label: "text-gray-400" };
 
   return (
     <div className={cx("mt-3", muted ? "opacity-70" : "")}>
-      {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
           Targets
@@ -91,7 +90,6 @@ export default function WorkoutTargets({
         ) : null}
       </div>
 
-      {/* Tiles */}
       <div className={cx(
         "grid gap-1.5",
         tiles.length <= 2 ? "grid-cols-2" :

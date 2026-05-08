@@ -5,9 +5,8 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { Camera, X, Upload, Check, AlertCircle, ChevronDown, ChevronUp, ClipboardEdit, Image as ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// ─── Design tokens (matches WorkoutSheet exactly) ─────────────────────────────
 const C = {
-  bg:        "#0F0F0F",
+  bg:        "#060810",
   surface:   "#161616",
   surface2:  "#1C1C1C",
   line:      "#1E1E1E",
@@ -16,9 +15,9 @@ const C = {
   dim:       "rgba(255,255,255,0.35)",
   muted:     "rgba(255,255,255,0.18)",
   faint:     "rgba(255,255,255,0.07)",
-  accent:    "#0057FF",
-  accentBg:  "rgba(0,87,255,0.14)",
-  accentBdr: "rgba(0,87,255,0.3)",
+  accent:    "#4FABFF",
+  accentBg:  "rgba(79,171,255,0.14)",
+  accentBdr: "rgba(79,171,255,0.3)",
   green:     "#00C851",
   greenBg:   "rgba(0,200,81,0.12)",
   greenBdr:  "rgba(0,200,81,0.3)",
@@ -29,7 +28,6 @@ const C = {
   handle:    "#2A2A2A",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function normBool(v) {
   return String(v ?? "").trim().toLowerCase() === "true";
 }
@@ -47,7 +45,6 @@ function fileLabel(file) {
   return `${name} · ${(kb / 1024).toFixed(1)} MB`;
 }
 
-// ─── NOTES SECTION ────────────────────────────────────────────────────────────
 function NotesSection({ value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const text = String(value || "");
@@ -55,7 +52,6 @@ function NotesSection({ value, onChange, disabled }) {
 
   return (
     <div style={{ border:`1px solid ${hasNote ? C.accentBdr : C.line2}`, borderRadius:14, overflow:"hidden", background:C.surface, transition:"border-color 0.2s" }}>
-      {/* Toggle row */}
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -79,7 +75,6 @@ function NotesSection({ value, onChange, disabled }) {
         </div>
       </button>
 
-      {/* Textarea */}
       {open && (
         <div style={{ borderTop:`1px solid ${C.line2}`, padding:"12px 16px 16px" }}>
           <textarea
@@ -106,7 +101,6 @@ function NotesSection({ value, onChange, disabled }) {
   );
 }
 
-// ─── MAIN MODAL ───────────────────────────────────────────────────────────────
 export default function CompleteItemModal({
   open,
   item,
@@ -129,7 +123,6 @@ export default function CompleteItemModal({
 
   const title = safeText(item?.ExerciseName || item?.Title || "") || "Exercise";
 
-  // Preview URL lifecycle
   useEffect(() => {
     if (!open || !selectedFile) { setPreviewUrl(""); return; }
     const url = URL.createObjectURL(selectedFile);
@@ -142,7 +135,6 @@ export default function CompleteItemModal({
   const canSubmit = Boolean(item?.id) && !submitting && (!evidenceRequired || !!selectedFile);
   const fileReady = !!selectedFile;
 
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -150,7 +142,6 @@ export default function CompleteItemModal({
 
   return (
     <>
-      {/* Backdrop */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -163,7 +154,6 @@ export default function CompleteItemModal({
         )}
       </AnimatePresence>
 
-      {/* Sheet */}
       <AnimatePresence>
         {open && item && (
           <motion.div
@@ -180,15 +170,12 @@ export default function CompleteItemModal({
               paddingBottom:"env(safe-area-inset-bottom,0)",
             }}
           >
-            {/* Top accent */}
             <div style={{ height:3, background: evidenceRequired ? C.orange : C.accent, flexShrink:0 }} />
 
-            {/* Handle */}
             <div style={{ display:"flex", justifyContent:"center", padding:"10px 0 0", flexShrink:0, cursor:"pointer" }} onClick={onClose}>
               <div style={{ width:32, height:3.5, background:C.handle, borderRadius:2 }} />
             </div>
 
-            {/* Header */}
             <div style={{ padding:"14px 20px 0", flexShrink:0 }}>
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
                 <div style={{ minWidth:0 }}>
@@ -208,16 +195,12 @@ export default function CompleteItemModal({
               </div>
             </div>
 
-            {/* Divider */}
             <div style={{ height:1, background:C.line, margin:"16px 0 0", flexShrink:0 }} />
 
-            {/* Scrollable content */}
             <div style={{ overflowY:"auto", flex:1, WebkitOverflowScrolling:"touch", padding:"20px 20px 0" }}>
 
-              {/* ── Photo section ── */}
               <div style={{ border:`1px solid ${fileReady ? C.greenBdr : evidenceRequired ? C.orangeBdr : C.line2}`, borderRadius:14, overflow:"hidden", background:C.surface, marginBottom:12, transition:"border-color 0.3s" }}>
 
-                {/* Section header */}
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:`1px solid ${C.line2}` }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <div style={{
@@ -251,7 +234,6 @@ export default function CompleteItemModal({
                   </span>
                 </div>
 
-                {/* Buttons */}
                 <div style={{ padding:"14px 16px", display:"flex", gap:10 }}>
                   <button
                     type="button"
@@ -290,7 +272,6 @@ export default function CompleteItemModal({
                   </button>
                 </div>
 
-                {/* Hidden input */}
                 <input
                   ref={inputRef}
                   type="file"
@@ -300,7 +281,6 @@ export default function CompleteItemModal({
                   style={{ display:"none" }}
                 />
 
-                {/* File status */}
                 {!previewUrl && (
                   <div style={{ margin:"0 16px 14px", padding:"11px 14px", background:C.surface2, border:`1px solid ${C.line2}`, borderRadius:10, display:"flex", alignItems:"center", gap:10 }}>
                     <ImageIcon size={14} color={C.muted} />
@@ -315,7 +295,6 @@ export default function CompleteItemModal({
                   </div>
                 )}
 
-                {/* Preview */}
                 {previewUrl && (
                   <div style={{ margin:"0 16px 14px", borderRadius:10, overflow:"hidden", border:`1px solid ${C.greenBdr}` }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -330,16 +309,13 @@ export default function CompleteItemModal({
                 )}
               </div>
 
-              {/* ── Notes ── */}
               <div style={{ marginBottom:20 }}>
                 <NotesSection value={coachNote} onChange={onChangeNote} disabled={submitting} />
               </div>
 
             </div>
 
-            {/* ── Actions (fixed at bottom) ── */}
             <div style={{ padding:"12px 20px 28px", flexShrink:0, borderTop:`1px solid ${C.line}`, background:C.bg }}>
-              {/* Validation warning */}
               {evidenceRequired && !selectedFile && (
                 <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:C.orangeBg, border:`1px solid ${C.orangeBdr}`, borderRadius:10, marginBottom:12 }}>
                   <AlertCircle size={13} color={C.orange} />

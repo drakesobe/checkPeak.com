@@ -1,33 +1,25 @@
 // components/athlete-today/WorkoutCard.jsx
-// The primary visual of the athlete's day.
-// Full-width dark card. Always expanded - the athlete sees their full workout
-// the moment they open the page. No accordion. No hiding the most important
-// information behind a tap.
-//
-// Design language: Nike Training Club × YEEZY. High contrast. Typography-forward.
-// Numbers breathe. One accent color per group. Nothing decorative that isn't functional.
+"use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  card:        "#0F0F0F",
+  card:        "#060810",
   cardBorder:  "#1E1E1E",
   cardSurface: "#161616",
   cardLine:    "#282828",
   white:       "#FFFFFF",
   dim:         "rgba(255,255,255,0.35)",
   muted:       "rgba(255,255,255,0.18)",
-  accent:      "#0057FF",
+  accent:      "#4FABFF",
   green:       "#00C851",
   greenDim:    "rgba(0,200,81,0.15)",
 };
 
-// ─── Group palette — each group gets a distinct color ─────────────────────────
 const GROUP_COLORS = [
-  { accent: "#0057FF", bg: "rgba(0,87,255,0.08)",   border: "rgba(0,87,255,0.2)"   },
+  { accent: "#4FABFF", bg: "rgba(79,171,255,0.08)",  border: "rgba(79,171,255,0.2)"  },
   { accent: "#9B5DE5", bg: "rgba(155,93,229,0.08)", border: "rgba(155,93,229,0.2)" },
   { accent: "#FF6B2B", bg: "rgba(255,107,43,0.08)", border: "rgba(255,107,43,0.2)" },
   { accent: "#00C9A7", bg: "rgba(0,201,167,0.08)",  border: "rgba(0,201,167,0.2)"  },
@@ -35,7 +27,6 @@ const GROUP_COLORS = [
 ];
 const GROUP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-// ─── Group helpers ────────────────────────────────────────────────────────────
 function buildGroupMeta(exercises) {
   const meta = {};
   let idx = 0;
@@ -81,7 +72,6 @@ function buildSegments(exercises, groupMeta) {
   return segs;
 }
 
-// ─── Haptic ───────────────────────────────────────────────────────────────────
 function haptic(ms = 10) { try { navigator.vibrate?.(ms); } catch {} }
 
 function isDone(optimisticStatus, itemStatus) {
@@ -89,7 +79,6 @@ function isDone(optimisticStatus, itemStatus) {
   return s === "completed" || s === "pending_review" || s === "pending review" || s === "approved";
 }
 
-// ─── Parse exercise meta into parts ──────────────────────────────────────────
 function parseMeta(meta) {
   if (!meta) return {};
   const parts = meta.split(" · ");
@@ -100,7 +89,6 @@ function parseMeta(meta) {
   return { sets, reps, weight, rest };
 }
 
-// ─── EXERCISE ROW ─────────────────────────────────────────────────────────────
 function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, groupAccent }) {
   const done     = isDone(optimisticStatusById?.[sub.id], sub.item?.Status);
   const prevDone = useRef(done);
@@ -133,7 +121,6 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, gro
         userSelect:    "none",
       }}
     >
-      {/* Status indicator */}
       <div style={{
         width:          22,
         height:         22,
@@ -157,7 +144,6 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, gro
         )}
       </div>
 
-      {/* Exercise name */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize:       14,
@@ -175,7 +161,6 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, gro
         </div>
       </div>
 
-      {/* Sets × Reps / Weight */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         {sets && reps && (
           <span style={{
@@ -193,8 +178,8 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, gro
             fontSize:   11,
             fontWeight: 600,
             color:      done ? C.muted : (groupAccent || C.accent),
-            background: done ? "rgba(255,255,255,0.04)" : (groupAccent ? groupAccent + "22" : "rgba(0,87,255,0.15)"),
-            border:     `1px solid ${done ? "rgba(255,255,255,0.06)" : (groupAccent ? groupAccent + "45" : "rgba(0,87,255,0.3)")}`,
+            background: done ? "rgba(255,255,255,0.04)" : (groupAccent ? groupAccent + "22" : "rgba(79,171,255,0.15)"),
+            border:     `1px solid ${done ? "rgba(255,255,255,0.06)" : (groupAccent ? groupAccent + "45" : "rgba(79,171,255,0.3)")}`,
             borderRadius: 4,
             padding:    "2px 7px",
             transition: "all 0.2s",
@@ -210,7 +195,6 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, gro
   );
 }
 
-// ─── GROUP BLOCK ──────────────────────────────────────────────────────────────
 function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap, isReadOnly }) {
   const { label, color, type } = meta;
 
@@ -228,7 +212,6 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap, isRea
       overflow:     "hidden",
       transition:   "border-color 0.3s",
     }}>
-      {/* Group header */}
       <div style={{
         display:      "flex",
         alignItems:   "center",
@@ -262,7 +245,6 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap, isRea
         )}
       </div>
 
-      {/* Exercises */}
       {members.map((sub, i) => (
         <ExerciseRow
           key={sub.id}
@@ -278,7 +260,6 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap, isRea
   );
 }
 
-// ─── WORKOUT CARD ─────────────────────────────────────────────────────────────
 export default function WorkoutCard({
   dailyWorkout,
   exercises,
@@ -293,7 +274,6 @@ export default function WorkoutCard({
   const groupMeta = useMemo(() => buildGroupMeta(exercises || []), [exercises]);
   const segments  = useMemo(() => buildSegments(exercises || [], groupMeta), [exercises, groupMeta]);
 
-  // Top gradient bar colors from the groups present in this workout
   const groupAccents = useMemo(() => Object.values(groupMeta).map(m => m.color.accent), [groupMeta]);
   const accentBar = groupAccents.length > 1
     ? `linear-gradient(90deg, ${groupAccents.join(", ")})`
@@ -301,7 +281,6 @@ export default function WorkoutCard({
       ? groupAccents[0]
       : C.accent;
 
-  // Show first 2 segments by default, rest on demand
   const PREVIEW_SEGS = 2;
   const hasMore      = segments.length > PREVIEW_SEGS;
   const visibleSegs  = showAll ? segments : segments.slice(0, PREVIEW_SEGS);
@@ -331,13 +310,10 @@ export default function WorkoutCard({
   return (
     <div style={{ background: C.card, marginBottom: 2 }}>
 
-      {/* ── Color accent bar (gradient across group colors) ── */}
       <div style={{ height: 3, background: accentBar }} />
 
-      {/* ── Card header ── */}
       <div style={{ padding: "20px 24px 0" }}>
 
-        {/* Eyebrow */}
         <div style={{
           display:        "flex",
           alignItems:     "center",
@@ -365,7 +341,6 @@ export default function WorkoutCard({
           </span>
         </div>
 
-        {/* Workout name */}
         <div style={{
           fontSize:      28,
           fontWeight:    800,
@@ -378,7 +353,6 @@ export default function WorkoutCard({
           {dailyWorkout.Title || "Team Workout"}
         </div>
 
-        {/* Group badges */}
         {Object.keys(groupMeta).length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
             {Object.values(groupMeta).map(m => (
@@ -399,7 +373,6 @@ export default function WorkoutCard({
           </div>
         )}
 
-        {/* Progress bar */}
         <div style={{ marginBottom: 20 }}>
           <div style={{
             height:       2,
@@ -425,10 +398,8 @@ export default function WorkoutCard({
         </div>
       </div>
 
-      {/* ── Divider ── */}
       <div style={{ height: 1, background: C.cardLine, margin: "0 24px" }} />
 
-      {/* ── Exercise segments ── */}
       <div style={{ paddingTop: 4 }}>
         {visibleSegs.map((seg, si) => {
           if (seg.type === "group") {
@@ -457,7 +428,6 @@ export default function WorkoutCard({
         })}
       </div>
 
-      {/* ── Show more / less ── */}
       {hasMore && (
         <div
           onClick={() => setShowAll(v => !v)}
@@ -483,7 +453,6 @@ export default function WorkoutCard({
         </div>
       )}
 
-      {/* ── All done state ── */}
       {allDone && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}

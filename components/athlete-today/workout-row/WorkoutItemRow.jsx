@@ -20,14 +20,12 @@ import WorkoutTargets from "./WorkoutTargets";
 import { asBool, cx, formatWeight, normStatus, safeText, hasText } from "./helpers";
 import { getRowState, getTone } from "./tone";
 
-/* ── Swipe affordance: inject once, play once per page load ── */
 const SWIPE_ANIM_ID = "checkpeak-swipe-hint-anim";
 function ensureSwipeStyles() {
   if (typeof document === "undefined") return;
   if (document.getElementById(SWIPE_ANIM_ID)) return;
   const s = document.createElement("style");
   s.id = SWIPE_ANIM_ID;
-  // Nudge the row content rightward then back - draws attention to swipe direction
   s.textContent = `
     @keyframes cp-swipe-nudge {
       0%   { transform: translateX(0) }
@@ -44,7 +42,6 @@ function ensureSwipeStyles() {
   document.head.appendChild(s);
 }
 
-// Module-level flag - only animate the first actionable row per page load
 let swipeHintFired = false;
 
 function pickCoachNote(item) {
@@ -67,11 +64,6 @@ function pickCoachNote(item) {
   return "";
 }
 
-/**
- * Normalizes EvidenceRequired to a consistent lowercase string.
- * byDate.js now returns the raw string value, but we guard against
- * legacy boolean shapes here too.
- */
 function normalizeEvidenceRequired(raw) {
   if (raw === true || raw === "true") return "photo";
   if (!raw || raw === false || raw === "false") return "none";
@@ -94,10 +86,8 @@ export default function WorkoutItemRow({
   const id = String(item?.id || item?.ID || item?.recordId || "").trim();
   const exercise = safeText(item?.ExerciseName || item?.Title || "Exercise");
 
-  // Normalize to string so we can distinguish VARA from photo/video
   const evidenceValue   = normalizeEvidenceRequired(item?.EvidenceRequired);
   const isVARA          = evidenceValue === "voluntary_activity_vara";
-  // Legacy boolean path: evidenceRequired=true means coach wants a file
   const evidenceRequired = !isVARA && evidenceValue !== "none";
 
   let status = normStatus(optimisticStatus || item?.Status || "");
@@ -135,11 +125,10 @@ export default function WorkoutItemRow({
 
   const disabled = submitting || acknowledging || (isCheckedOff && !isRejected);
 
-  // Fire the swipe nudge animation once on the first actionable row per page load
   useEffect(() => {
-    if (disabled) return;                    // already done, skip
-    if (hintedRef.current) return;           // already ran for this instance
-    if (swipeHintFired) return;              // already ran for a sibling row this load
+    if (disabled) return;
+    if (hintedRef.current) return;
+    if (swipeHintFired) return;
     hintedRef.current  = true;
     swipeHintFired     = true;
     const el = rowRef.current;
@@ -158,7 +147,6 @@ export default function WorkoutItemRow({
       return;
     }
 
-    // VARA: self-report tap - same as quickComplete, no modal
     if (isVARA) {
       onQuickComplete?.(id);
       return;
@@ -188,7 +176,7 @@ export default function WorkoutItemRow({
     ) : evidenceRequired ? (
       <Camera className="w-5 h-5 text-amber-700" />
     ) : (
-      <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
+      <CheckCircle2 className="w-5 h-5 text-[#4FABFF]" />
     );
 
   return (
@@ -199,13 +187,13 @@ export default function WorkoutItemRow({
       actionLabel={actionLabel}
       actionIcon={
         isRejected ? (
-          <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
+          <CheckCircle2 className="w-5 h-5 text-[#4FABFF]" />
         ) : isVARA ? (
-          <Footprints className="w-5 h-5 text-[#46769B]" />
+          <Footprints className="w-5 h-5 text-[#4FABFF]" />
         ) : evidenceRequired ? (
-          <Camera className="w-5 h-5 text-[#46769B]" />
+          <Camera className="w-5 h-5 text-[#4FABFF]" />
         ) : (
-          <CheckCircle2 className="w-5 h-5 text-[#46769B]" />
+          <CheckCircle2 className="w-5 h-5 text-[#4FABFF]" />
         )
       }
       railTone={railTone}
@@ -226,7 +214,6 @@ export default function WorkoutItemRow({
         ) : null}
 
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 relative">
-          {/* Left */}
           <div className="min-w-0 flex-1">
             <div className="flex items-start gap-3">
               <span
@@ -243,7 +230,6 @@ export default function WorkoutItemRow({
                   <div className="min-w-0 flex-1">
                     <p className="font-extrabold text-gray-900 truncate">{exercise}</p>
 
-                    {/* VARA badge */}
                     {isVARA && !isCheckedOff ? (
                       <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-200 px-2.5 py-0.5">
                         <Footprints className="w-3 h-3 text-violet-500" />
@@ -309,7 +295,6 @@ export default function WorkoutItemRow({
                   </span>
                 </div>
 
-                {/* Targets */}
                 <WorkoutTargets
                   sets={safeText(item?.Sets)}
                   reps={safeText(item?.Reps)}
@@ -320,7 +305,6 @@ export default function WorkoutItemRow({
                   tone={cardTone === "pending" ? "pending" : cardTone === "completed" ? "completed" : "base"}
                 />
 
-                {/* VARA explanation (when not yet done) */}
                 {isVARA && !isCheckedOff ? (
                   <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 p-3">
                     <div className="flex items-center gap-2 mb-1">
@@ -333,7 +317,6 @@ export default function WorkoutItemRow({
                   </div>
                 ) : null}
 
-                {/* Coach note (when rejected) */}
                 {isRejected && coachNote ? (
                   <div className={cx("mt-3", isCheckedOff ? "opacity-[0.92]" : "")}>
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
@@ -351,7 +334,6 @@ export default function WorkoutItemRow({
                   </div>
                 ) : null}
 
-                {/* Instructions */}
                 {instructions ? (
                   <div className={cx("mt-3", isCheckedOff ? "opacity-[0.86]" : "")}>
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
@@ -366,7 +348,6 @@ export default function WorkoutItemRow({
                   </div>
                 ) : null}
 
-                {/* Video */}
                 {videoUrl ? (
                   <a
                     href={videoUrl}
@@ -383,7 +364,6 @@ export default function WorkoutItemRow({
             </div>
           </div>
 
-          {/* Right actions */}
           <div className="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-2 lg:items-end">
             {isRejected ? (
               <Button

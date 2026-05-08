@@ -7,18 +7,19 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { Check, X, ChevronDown, AlertCircle, Play, SkipForward, Star, Camera } from "lucide-react";
+import ExerciseProgressSheet from "./ExerciseProgressSheet";
 
 const C = {
-  bg:"#060810", surface:"#161616", surface2:"#1A1A1A",
+  bg:"#0F0F0F", surface:"#161616", surface2:"#1A1A1A",
   cardLine:"#1E1E1E", line2:"#2A2A2A",
   white:"#FFFFFF", dim:"rgba(255,255,255,0.35)",
   muted:"rgba(255,255,255,0.18)", faint:"rgba(255,255,255,0.07)",
-  accent:"#4FABFF", green:"#00C851", greenDim:"rgba(0,200,81,0.15)",
+  accent:"#0057FF", green:"#00C851", greenDim:"rgba(0,200,81,0.15)",
   greenText:"#00C851", orange:"#FF6B2B", amber:"#F59E0B", handle:"#2A2A2A",
 };
 
 const GROUP_COLORS = [
-  { accent:"#4FABFF", bg:"rgba(79,171,255,0.08)",  border:"rgba(79,171,255,0.2)"  },
+  { accent:"#0057FF", bg:"rgba(0,87,255,0.08)",   border:"rgba(0,87,255,0.2)"   },
   { accent:"#9B5DE5", bg:"rgba(155,93,229,0.08)", border:"rgba(155,93,229,0.2)" },
   { accent:"#FF6B2B", bg:"rgba(255,107,43,0.08)", border:"rgba(255,107,43,0.2)" },
   { accent:"#00C9A7", bg:"rgba(0,201,167,0.08)",  border:"rgba(0,201,167,0.2)"  },
@@ -66,9 +67,11 @@ function parseMeta(meta) {
 }
 
 function parseRestSecs(sub) {
+  // Try raw Airtable field first
   const raw = String(sub?.item?.Rest || sub?.item?.rest || "").trim();
   if (raw) {
     const isMin = /min/i.test(raw);
+    // Handle "1:30" format
     if (/^\d+:\d+$/.test(raw)) {
       const [m, s] = raw.split(":").map(Number);
       return m * 60 + s;
@@ -76,6 +79,7 @@ function parseRestSecs(sub) {
     const n = parseInt(raw.replace(/[^0-9]/g, "")) || 0;
     if (n > 0) return isMin ? n * 60 : n;
   }
+  // Fall back to meta string
   const restPart = (sub?.meta || "").split(" · ").find(p => /rest/i.test(p));
   if (restPart) {
     const isMin = /min/i.test(restPart);
@@ -87,6 +91,7 @@ function parseRestSecs(sub) {
 
 function haptic(ms=10) { try { navigator.vibrate?.(ms); } catch {} }
 
+// Treat both "Completed" and coach-review states as done from the athlete's POV
 function isDone(optimisticStatus, itemStatus) {
   const s = String(optimisticStatus || itemStatus || "").toLowerCase().trim();
   return s === "completed" || s === "pending_review" || s === "pending review" || s === "approved";
@@ -103,14 +108,111 @@ function SetDots({ total, done, color }) {
   );
 }
 
-// ─── ACTIVE EXERCISE CARD ─────────────────────────────────────────────────────
+// ─── SET LOGGER ───────────────────────────────────────────────────────────────
+const EFFORT = [null,
+  { label:"Easy",     color:"#22C55E" },
+  { label:"Light",    color:"#84CC16" },
+  { label:"Moderate", color:"#FBBF24" },
+  { label:"Hard",     color:"#F97316" },
+  { label:"Max",      color:"#EF4444" },
+];
+
+function SetLogger({ sub, setNumber, value, onChange }) {
+  const { reps: tr, weight: tw } = parseMeta(sub?.meta || "");
+  const isBodyWeight = /body.?weight|^bw$/i.test(String(tw || ""));
+  const weightUnit   = /kg/i.test(String(tw || "")) ? "kg" : "lb";
+  const weightStep   = weightUnit === "kg" ? 2.5 : 5;
+
+  const cols = isBodyWeight ? "1fr 1fr" : "1fr 1fr 1fr";
+
+  const btn = (label, onClick) => (
+    <button onClick={onClick} style={{
+      width:28, height:28, borderRadius:7, background:C.surface2,
+      border:`1px solid ${C.line2}`, color:C.white, fontSize:17, lineHeight:1,
+      cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+      fontFamily:"inherit", flexShrink:0,
+    }}>{label}</button>
+  );
+
+  return (
+    <div style={{ marginTop:16, padding:"14px 16px 12px", background:C.faint, borderRadius:10, border:`1px solid ${C.line2}` }}>
+      <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginBottom:14 }}>
+        Log Set {setNumber}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:cols, gap:16 }}>
+
+        {/* REPS */}
+        <div>
+          <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Reps</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            {btn("−", () => onChange({ ...value, reps: Math.max(0, value.reps - 1) }))}
+            <span style={{ fontSize:18, fontWeight:900, color:C.white, minWidth:28, textAlign:"center", letterSpacing:"-0.02em" }}>{value.reps}</span>
+            {btn("+", () => onChange({ ...value, reps: value.reps + 1 }))}
+          </div>
+        </div>
+
+        {/* WEIGHT */}
+        {isBodyWeight ? (
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Weight</div>
+            <div style={{ fontSize:13, fontWeight:600, color:C.dim, paddingTop:4 }}>Body weight</div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Weight ({weightUnit})</div>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={value.weight || ""}
+              onChange={e => onChange({ ...value, weight: parseFloat(e.target.value) || 0 })}
+              placeholder="0"
+              style={{
+                width:"100%", padding:"6px 10px",
+                background:C.surface2, border:`1px solid ${C.line2}`,
+                borderRadius:8, color:C.white, fontSize:18, fontWeight:900,
+                fontFamily:"inherit", letterSpacing:"-0.02em",
+                outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+              }}
+              onFocus={e => { e.target.style.borderColor = C.accentBdr || "rgba(0,87,255,0.4)"; }}
+              onBlur={e  => { e.target.style.borderColor = C.line2; }}
+            />
+          </div>
+        )}
+
+        {/* DIFFICULTY */}
+        <div>
+          <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Difficulty</div>
+          <div style={{ display:"flex", gap:6, marginBottom:5 }}>
+            {[1,2,3,4,5].map(e => (
+              <button key={e} onClick={() => onChange({ ...value, effort: value.effort === e ? 0 : e })}
+                style={{
+                  width:24, height:24, borderRadius:"50%", cursor:"pointer",
+                  background: e <= value.effort ? EFFORT[value.effort]?.color : "transparent",
+                  border:`2px solid ${e <= value.effort ? EFFORT[value.effort]?.color : "rgba(255,255,255,0.18)"}`,
+                  transition:"all 0.15s",
+                  padding:0,
+                }}
+              />
+            ))}
+          </div>
+          {value.effort > 0 && (
+            <div style={{ fontSize:10, fontWeight:700, color:EFFORT[value.effort]?.color }}>
+              {EFFORT[value.effort]?.label}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function splitValueUnit(str) {
   if (!str) return { num: str, unit: "" };
   const match = String(str).match(/^([0-9\-\/\+\.]+)\s*(.*)$/);
   return match ? { num: match[1], unit: match[2].trim() } : { num: str, unit: "" };
 }
 
-function ActiveCard({ sub, currentSet, groupMeta }) {
+function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onViewHistory }) {
   const gid = sub?.groupId || sub?.item?.groupId;
   const gMeta = gid ? groupMeta[gid] : null;
   const accent = gMeta ? gMeta.color.accent : C.accent;
@@ -122,17 +224,26 @@ function ActiveCard({ sub, currentSet, groupMeta }) {
   return (
     <div style={{ margin:"12px 14px 8px", background:C.surface, border:`1.5px solid ${gMeta?gMeta.color.border:C.cardLine}`, borderTop:`3px solid ${accent}`, borderRadius:16, padding:"22px 20px 20px", animation:"cardIn 0.3s ease" }}>
 
-      {gMeta && (
-        <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 11px", borderRadius:20, marginBottom:16, background:gMeta.color.accent+"18", border:`1px solid ${gMeta.color.accent+"40"}` }}>
-          <div style={{ width:5, height:5, borderRadius:"50%", background:gMeta.color.accent }}/>
-          <span style={{ fontSize:9, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", color:gMeta.color.accent }}>{gMeta.type} {gMeta.label}</span>
-        </div>
-      )}
+      {/* Top row: group badge + history button */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+        {gMeta ? (
+          <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 11px", borderRadius:20, background:gMeta.color.accent+"18", border:`1px solid ${gMeta.color.accent+"40"}` }}>
+            <div style={{ width:5, height:5, borderRadius:"50%", background:gMeta.color.accent }}/>
+            <span style={{ fontSize:9, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", color:gMeta.color.accent }}>{gMeta.type} {gMeta.label}</span>
+          </div>
+        ) : <div />}
+        <button onClick={onViewHistory} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:20, background:C.faint, border:`1px solid ${C.line2}`, cursor:"pointer", fontFamily:"inherit" }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:C.muted }}>History</span>
+        </button>
+      </div>
 
+      {/* Exercise name */}
       <div style={{ fontSize:30, fontWeight:900, color:C.white, letterSpacing:"-0.04em", lineHeight:1.05, marginBottom:22 }}>
         {sub.title}
       </div>
 
+      {/* Stats grid */}
       {statCols.length > 0 && (
         <div style={{ display:"grid", gridTemplateColumns:`repeat(${statCols.length},1fr)`, border:`1px solid ${C.line2}`, borderRadius:12, overflow:"hidden", marginBottom:24 }}>
           {statCols.map((s,i) => {
@@ -150,7 +261,8 @@ function ActiveCard({ sub, currentSet, groupMeta }) {
         </div>
       )}
 
-      <div style={{ marginBottom:20 }}>
+      {/* Set tracker */}
+      <div style={{ marginBottom:4 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted }}>Sets</span>
           <span style={{ fontSize:11, fontWeight:600, color:C.dim }}>{Math.min(currentSet,totalSets)} of {totalSets}</span>
@@ -158,15 +270,22 @@ function ActiveCard({ sub, currentSet, groupMeta }) {
         <SetDots total={totalSets} done={Math.min(currentSet-1,totalSets)} color={accent}/>
       </div>
 
+      {/* Set Logger */}
+      {setLog && onSetLogChange && (
+        <SetLogger sub={sub} setNumber={currentSet} value={setLog} onChange={onSetLogChange} />
+      )}
+
+      {/* Instructions */}
       {sub.instructions && (
-        <div style={{ fontSize:12, color:"rgba(255,255,255,0.32)", lineHeight:1.65, padding:"11px 14px", background:C.faint, borderRadius:8, borderLeft:`2px solid ${C.line2}`, marginTop:4 }}>
+        <div style={{ fontSize:12, color:"rgba(255,255,255,0.32)", lineHeight:1.65, padding:"11px 14px", background:C.faint, borderRadius:8, borderLeft:`2px solid ${C.line2}`, marginTop:16 }}>
           {sub.instructions}
         </div>
       )}
 
+      {/* Video link */}
       {sub.videoUrl && (
         <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-          style={{ display:"inline-flex", alignItems:"center", gap:7, marginTop:14, fontSize:12, fontWeight:700, color:C.accent, textDecoration:"none", background:"rgba(79,171,255,0.12)", border:"1px solid rgba(79,171,255,0.25)", borderRadius:7, padding:"7px 13px" }}>
+          style={{ display:"inline-flex", alignItems:"center", gap:7, marginTop:14, fontSize:12, fontWeight:700, color:C.accent, textDecoration:"none", background:"rgba(0,87,255,0.12)", border:"1px solid rgba(0,87,255,0.25)", borderRadius:7, padding:"7px 13px" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
           </svg>
@@ -174,6 +293,7 @@ function ActiveCard({ sub, currentSet, groupMeta }) {
         </a>
       )}
 
+      {/* Evidence required */}
       {sub.evidenceRequired && (
         <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:12, padding:"11px 14px", background:"rgba(255,165,0,0.08)", border:"1px solid rgba(255,165,0,0.2)", borderRadius:8 }}>
           <Camera size={13} color="rgba(255,165,0,0.72)"/>
@@ -287,6 +407,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
 
   return (
     <div style={{ position:"relative", overflow:"hidden" }}>
+      {/* Swipe reveal */}
       {!done&&<div style={{ position:"absolute",right:0,top:0,bottom:0,width:56,display:"flex",alignItems:"center",justifyContent:"center",opacity:Math.min(1,dragX/18),pointerEvents:"none" }}>
         <div style={{ width:28,height:28,borderRadius:"50%",background:armed?"rgba(0,200,81,0.25)":"rgba(0,200,81,0.12)",border:`1.5px solid ${armed?C.green:"rgba(0,200,81,0.35)"}`,display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.15s,border-color 0.15s",transform:armed?"scale(1.1)":"scale(1)" }}>
           <Check size={13} color={armed?C.green:"rgba(0,200,81,0.6)"} strokeWidth={3}/>
@@ -302,11 +423,14 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
 
         {isGrouped&&showConnector&&<div style={{ position:"absolute",left:20,top:"50%",bottom:-12,width:1,borderLeft:`1px dashed ${groupAccent||"rgba(255,255,255,0.2)"}`,opacity:0.4,pointerEvents:"none" }}/>}
 
+        {/* Status circle */}
         <div style={{ width:22,height:22,borderRadius:"50%",flexShrink:0,marginTop:1,border:`1.5px solid ${done?C.green:"rgba(255,255,255,0.2)"}`,background:done?C.greenDim:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.25s ease" }}>
           {done&&<motion.div initial={{scale:0}} animate={{scale:1}} transition={{type:"spring",stiffness:500,damping:25}}><Check size={11} color={C.green} strokeWidth={3}/></motion.div>}
         </div>
 
+        {/* Name + stat strip */}
         <div style={{ flex:1, minWidth:0 }}>
+          {/* Exercise name */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
             <div style={{ fontSize:14, fontWeight:done?400:600, color:done?C.dim:C.white, letterSpacing:"-0.01em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textDecoration:done?"line-through":"none", textDecorationColor:"rgba(255,255,255,0.18)", transition:"all 0.2s", flex:1, minWidth:0 }}>
               {sub.title}
@@ -314,6 +438,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
             {sub.evidenceRequired&&!done&&<AlertCircle size={13} color="rgba(255,165,0,0.55)" style={{flexShrink:0}}/>}
           </div>
 
+          {/* Stat strip */}
           {stats.length > 0 && (
             <div style={{ display:"flex", alignItems:"flex-end", gap:16, marginTop:8 }}>
               {stats.map((s,i) => (
@@ -321,9 +446,11 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
                   accent={i===2&&groupAccent ? groupAccent : undefined}
                 />
               ))}
+              {/* Divider before video */}
               {sub.videoUrl && stats.length > 0 && (
                 <div style={{ width:1, height:20, background:"rgba(255,255,255,0.08)", alignSelf:"center" }}/>
               )}
+              {/* Video icon */}
               {sub.videoUrl && (
                 <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer"
                   onClick={e=>e.stopPropagation()}
@@ -337,6 +464,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
             </div>
           )}
 
+          {/* Done state meta */}
           {done&&sub.meta&&<div style={{ fontSize:11, color:C.muted, marginTop:3 }}>{sub.meta}</div>}
         </div>
       </motion.div>
@@ -371,7 +499,7 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap }) {
 }
 
 // ─── WORKOUT SHEET ────────────────────────────────────────────────────────────
-export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkout, optimisticStatusById, onExerciseTap, onQuickComplete }) {
+export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkout, optimisticStatusById, onExerciseTap, onQuickComplete, onLogSet, getExerciseSessions }) {
   useEffect(()=>{ document.body.style.overflow=isOpen?"hidden":""; return()=>{ document.body.style.overflow=""; }; },[isOpen]);
 
   const sub = workoutItem?.sub || [];
@@ -386,6 +514,25 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
   const [restTotal,  setRestTotal]  = useState(60);
   const [restNext,   setRestNext]   = useState("");
   const timerRef = useRef(null);
+
+  // Set logger state — tracks what the athlete actually did this set
+  const [setLog, setSetLog] = useState({ reps: 0, weight: 0, effort: 0 });
+
+  // History sheet
+  const [historyEx, setHistoryEx] = useState(null); // exercise sub-object
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Reset setLog when exercise or set number changes (pre-fill from target)
+  useEffect(() => {
+    if (!sub[activeIdx]) return;
+    const { reps: tr, weight: tw } = parseMeta(sub[activeIdx]?.meta || "");
+    const isBodyWeight = /body.?weight|^bw$/i.test(String(tw || ""));
+    setSetLog({
+      reps:   parseInt(tr) || 0,
+      weight: isBodyWeight ? 0 : (parseFloat(String(tw || "").replace(/[^0-9.]/g, "")) || 0),
+      effort: 0,
+    });
+  }, [activeIdx, currentSet]); // eslint-disable-line
 
   useEffect(()=>{ if(!isOpen){ const t=setTimeout(()=>{ setMode("preview"); setActiveIdx(0); setCurrentSet(1); },400); return()=>clearTimeout(t); } },[isOpen]);
 
@@ -405,19 +552,36 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
     const curSub = sub[activeIdx]; if (!curSub) return;
     const gid = curSub.groupId || curSub.item?.groupId;
 
+    // Save what the athlete actually did this set, regardless of path
+    onLogSet?.({
+      workoutItemId: curSub.id,
+      exerciseTitle: curSub.title,
+      setNumber:     currentSet,
+      targetReps:    parseMeta(curSub.meta||"").reps,
+      targetWeight:  parseMeta(curSub.meta||"").weight,
+      actualReps:    setLog.reps,
+      actualWeight:  setLog.weight,
+      effort:        setLog.effort,
+      groupId:       gid || null,
+    });
+
     if (gid) {
+      // ── GROUPED (superset / circuit) ─────────────────────────────────────
+      // Flow: A1 → A2 → A3 → REST → A1 → A2 → A3 → REST → done
       const groupMembers = sub.filter(s => (s.groupId||s.item?.groupId) === gid);
       const posInGroup   = groupMembers.findIndex(s => s.id === curSub.id);
       const isLastInGroup = posInGroup === groupMembers.length - 1;
       const totalRounds   = parseInt(parseMeta(groupMembers[0].meta||"").sets) || 1;
 
       if (!isLastInGroup) {
+        // Move to next exercise in group — no rest, no set increment
         const nextGroupEx = groupMembers[posInGroup + 1];
         const nextIdx = sub.findIndex(s => s.id === nextGroupEx.id);
         setActiveIdx(nextIdx);
         setMode("active");
 
       } else if (currentSet < totalRounds) {
+        // Completed a full round — rest, then back to first in group
         haptic(15);
         const firstIdx = sub.findIndex(s => s.id === groupMembers[0].id);
         const restSec  = Math.max(...groupMembers.map(m => parseRestSecs(m)));
@@ -428,6 +592,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
         setMode("resting");
 
       } else {
+        // All rounds done — mark every exercise in group complete, move on
         haptic(20);
         groupMembers.forEach(m => {
           if (!isDone(optimisticStatusById?.[m.id], m.item?.Status)) {
@@ -435,6 +600,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
             else onQuickComplete(m);
           }
         });
+        // Find next exercise after the group
         const lastGroupIdx = sub.findIndex(s => s.id === groupMembers[groupMembers.length-1].id);
         const nextIdx = sub.findIndex((s,i) => i > lastGroupIdx && !isDone(optimisticStatusById?.[s.id], s.item?.Status));
         if (nextIdx === -1) { setMode("complete"); return; }
@@ -448,6 +614,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
       }
 
     } else {
+      // ── SINGLE EXERCISE ───────────────────────────────────────────────────
       const totalSets = parseInt(parseMeta(curSub.meta||"").sets) || 1;
       const isLastSet = currentSet >= totalSets;
       if (isLastSet) {
@@ -499,12 +666,15 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               @keyframes riseUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
             `}</style>
 
+            {/* Gradient bar */}
             <div style={{ height:3, background:accentBar, flexShrink:0 }}/>
 
+            {/* Handle */}
             <div style={{ display:"flex",justifyContent:"center",padding:"10px 0 0",flexShrink:0,cursor:"pointer" }} onClick={onClose}>
               <div style={{ width:32,height:3.5,background:C.handle,borderRadius:2 }}/>
             </div>
 
+            {/* Header */}
             <div style={{ padding:"14px 20px 0", flexShrink:0 }}>
               <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
                 <div style={{ minWidth:0, flex:1 }}>
@@ -541,6 +711,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
 
             <div style={{ height:1,background:C.cardLine,flexShrink:0 }}/>
 
+            {/* PREVIEW */}
             {mode==="preview"&&(
               <div style={{ overflowY:"auto",flex:1,WebkitOverflowScrolling:"touch" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:7,padding:"9px 20px",borderBottom:`1px solid ${C.cardLine}`,background:"#0D0D0D" }}>
@@ -561,8 +732,8 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
                 <div style={{ height:12 }}/>
                 {!allDone&&(
                   <div style={{ padding:"0 16px 32px" }}>
-                    <button onClick={handleBegin} style={{ width:"100%",padding:"18px",background:C.accent,border:"none",borderRadius:14,fontSize:15,fontWeight:800,color:"#060810",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:"inherit",letterSpacing:"-0.01em" }}>
-                      <Play size={15} fill="#060810"/>
+                    <button onClick={handleBegin} style={{ width:"100%",padding:"18px",background:C.accent,border:"none",borderRadius:14,fontSize:15,fontWeight:800,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:"inherit",letterSpacing:"-0.01em" }}>
+                      <Play size={15} fill="white"/>
                       {doneCount>0?"Continue Workout":"Begin Workout"}
                     </button>
                   </div>
@@ -570,6 +741,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               </div>
             )}
 
+            {/* ACTIVE */}
             {mode==="active"&&sub[activeIdx]&&(()=>{
               const curSub = sub[activeIdx];
               const gid = curSub.groupId || curSub.item?.groupId;
@@ -579,6 +751,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               const totalRounds   = groupMembers ? parseInt(parseMeta(groupMembers[0].meta||"").sets)||1 : parseInt(parseMeta(curSub.meta||"").sets)||1;
               const isLastRound   = currentSet >= totalRounds;
 
+              // What comes after tapping the button?
               const nextInGroup   = groupMembers && !isLastInGroup ? groupMembers[posInGroup+1] : null;
               const afterThisLabel = nextInGroup
                 ? `${nextInGroup.title} · Same round, no rest`
@@ -586,6 +759,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
                   ? `Rest · Then Round ${currentSet+1} of ${totalRounds}`
                   : null;
 
+              // Button label
               const btnLabel = nextInGroup
                 ? `Next: ${nextInGroup.title} →`
                 : !isLastRound
@@ -597,11 +771,14 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
                       : `Set ${currentSet} Done`;
 
               const btnColor = nextInGroup ? C.accent : C.green;
-              const btnTextColor = nextInGroup ? "#060810" : "#040A05";
+              const btnTextColor = nextInGroup ? "#fff" : "#040A05";
 
               return (
                 <div style={{ flex:1,display:"flex",flexDirection:"column",overflowY:"auto" }}>
-                  <ActiveCard key={curSub.id} sub={curSub} currentSet={currentSet} groupMeta={groupMeta}/>
+                  <ActiveCard key={curSub.id} sub={curSub} currentSet={currentSet} groupMeta={groupMeta}
+                    setLog={setLog} onSetLogChange={setSetLog}
+                    onViewHistory={() => { setHistoryEx(curSub); setHistoryOpen(true); }}
+                  />
                   {afterThisLabel && (
                     <div style={{ margin:"0 14px 10px",padding:"10px 14px",background:C.surface,border:`1px solid ${C.line2}`,borderRadius:10 }}>
                       <div style={{ fontSize:9,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:C.muted,marginBottom:4 }}>After this</div>
@@ -620,11 +797,22 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               );
             })()}
 
+            {/* REST */}
             {mode==="resting"&&<RestTimer seconds={restSecs} total={restTotal} nextLabel={restNext} onSkip={handleSkipRest}/>}
+
+            {/* COMPLETE */}
             {mode==="complete"&&<WorkoutComplete startTime={startTime} totalCount={totalCount} onDone={()=>{ setMode("preview"); onClose(); }}/>}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Exercise progress / history sheet */}
+      <ExerciseProgressSheet
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        exerciseTitle={historyEx?.title || ""}
+        sessions={historyEx && getExerciseSessions ? getExerciseSessions(historyEx.title) : []}
+      />
     </>
   );
 }

@@ -144,7 +144,7 @@ function EmptyState() {
     >
       <ScanLine className="w-6 h-6" style={{ color: "#cbd5e1" }} aria-hidden="true" />
       <p className="text-sm font-semibold" style={{ color: "#64748b" }}>
-        No scans yet
+        No scans this week
       </p>
       <p className="text-[11px]" style={{ color: "#94a3b8" }}>
         Scan a supplement label to see your history here.

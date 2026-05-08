@@ -753,7 +753,7 @@ function ScanActivityCard({ data = [], max = 1, loading, lastScanDate, formatDat
             color:         CP.dim,
             textAlign:     "center",
           }}>
-            No scans yet
+            No scans this week
           </p>
           <CtaButton onClick={onView} size="sm">Scan Your First Label →</CtaButton>
         </div>
@@ -915,7 +915,7 @@ function RecentScansCard({ scans = [], loading, formatDate, onOpen, onViewAll })
       {scans.length === 0 && (
         <div style={{ textAlign: "center", padding: "24px 0" }}>
           <p style={{ fontFamily: CP.fontBC, fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: CP.dim }}>
-            No scans yet
+            No scans this week
           </p>
           <CtaButton onClick={() => {}} size="sm" style={{ marginTop: "12px" }}>
             Scan Your First Label →

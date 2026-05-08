@@ -18,6 +18,7 @@ import { useAthleteToday }          from "@/hooks/athlete-today/useAthleteToday"
 import { useWorkoutCompletion }      from "@/hooks/athlete-today/useWorkoutCompletion";
 import { useAthleteNutritionToday } from "@/hooks/athlete-today/useAthleteNutritionToday";
 import { useClassSchedules }        from "@/hooks/athlete-today/useClassSchedules";
+import { useWorkoutLog }           from "@/hooks/athlete-today/useWorkoutLog";
 
 import {
   makeEmptyCompletion, normalizeCompletion,
@@ -389,6 +390,8 @@ export default function AthleteToday() {
     submitCompletion, quickComplete, acknowledgeCompletion,
   } = useWorkoutCompletion({ selectedDate, reload, setErr });
 
+  const { saveSetLog, getExerciseSessions } = useWorkoutLog({ athleteToken, selectedDate });
+
   // ── Nutrition ─────────────────────────────────────────────────────────────
   const nutrition        = useAthleteNutritionToday({ authReady, user, isAthlete, selectedDate });
   const dailyHydrationOz = nutrition.dailyHydrationOz ?? null;
@@ -755,6 +758,8 @@ export default function AthleteToday() {
         optimisticStatusById={optimisticStatusById}
         onExerciseTap={handleSheetExerciseTap}
         onQuickComplete={(sub) => quickComplete(sub.item)}
+        onLogSet={saveSetLog}
+        getExerciseSessions={getExerciseSessions}
       />
 
       {/* ── MODALS ── */}

@@ -67,6 +67,7 @@ const WI = {
   VIDEO: F?.WI_VIDEO || "VideoURL",
   EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
   ATHTOKEN: F?.WI_ATHTOKEN || "AthleteToken",
+  GROUPID:  F?.WI_GROUPID  || "GroupId",
 };
 
 function normalizeItem(it = {}, idx = 0) {
@@ -80,6 +81,7 @@ function normalizeItem(it = {}, idx = 0) {
     instructions: toTrimmed(it?.Instructions) || toTrimmed(it?.instructions) || toTrimmed(it?.notes),
     videoUrl: toTrimmed(it?.VideoURL) || toTrimmed(it?.videoUrl),
     evidenceRequired: toTrimmed(it?.EvidenceRequired) || toTrimmed(it?.evidenceRequired) || "none",
+    groupId:          toTrimmed(it?.groupId) || null,
   };
 
   const allowed = new Set(["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"]);
@@ -160,6 +162,7 @@ async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, item
       ...(toTrimmed(it.videoUrl) ? { [WI.VIDEO]: toTrimmed(it.videoUrl) } : {}),
       [WI.EVIDENCE]: it.evidenceRequired || "none",
       ...(WI.ATHTOKEN ? { [WI.ATHTOKEN]: String(athleteToken) } : {}),
+      ...(it.groupId && WI.GROUPID ? { [WI.GROUPID]: String(it.groupId) } : {}),
     };
 
     assertNoUndefinedFieldKeys(fields);

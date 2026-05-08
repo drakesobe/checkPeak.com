@@ -290,6 +290,7 @@ export default async function handler(req, res) {
             Status:       status,
             Order:        f.Order ?? null,
             ExerciseName: f.ExerciseName || f.Name || "",
+            groupId:      String(f.GroupId || "") || null,
           };
 
           if (linkedWorkoutId && Array.isArray(itemsByWorkoutId[linkedWorkoutId])) {

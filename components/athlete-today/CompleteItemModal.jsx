@@ -1,169 +1,112 @@
 // components/athlete-today/CompleteItemModal.jsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Camera,
-  Info,
-  Upload,
-  AlertTriangle,
-  X,
-  Image as ImageIcon,
-  CheckCircle2,
-  ClipboardEdit,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import { Button, Modal, Pill, classNames } from "./ui";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { Camera, X, Upload, Check, AlertCircle, ChevronDown, ChevronUp, ClipboardEdit, Image as ImageIcon } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-/**
- * CompleteItemModal (athlete-simple)
- * Goals:
- * ✅ Clean spacing on mobile (no “running into header”)
- * ✅ Photo capture first (live camera on mobile via input capture)
- * ✅ Proof-required gating stays strict
- * ✅ Notes are optional + collapsible (keeps UI simple for “the lads”)
- * ✅ Preview image when selected
- * ✅ Small, clear copy (less SaaS-y, more athlete)
- */
+// ─── Design tokens (matches WorkoutSheet exactly) ─────────────────────────────
+const C = {
+  bg:        "#0F0F0F",
+  surface:   "#161616",
+  surface2:  "#1C1C1C",
+  line:      "#1E1E1E",
+  line2:     "#2A2A2A",
+  white:     "#FFFFFF",
+  dim:       "rgba(255,255,255,0.35)",
+  muted:     "rgba(255,255,255,0.18)",
+  faint:     "rgba(255,255,255,0.07)",
+  accent:    "#0057FF",
+  accentBg:  "rgba(0,87,255,0.14)",
+  accentBdr: "rgba(0,87,255,0.3)",
+  green:     "#00C851",
+  greenBg:   "rgba(0,200,81,0.12)",
+  greenBdr:  "rgba(0,200,81,0.3)",
+  greenDim:  "rgba(0,200,81,0.15)",
+  orange:    "rgba(255,165,0,0.85)",
+  orangeBg:  "rgba(255,165,0,0.08)",
+  orangeBdr: "rgba(255,165,0,0.22)",
+  handle:    "#2A2A2A",
+};
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function normBool(v) {
   return String(v ?? "").trim().toLowerCase() === "true";
 }
-
 function safeText(v) {
   return String(v ?? "").trim();
 }
-
 function fileLabel(file) {
   if (!file) return "";
   const name = safeText(file?.name);
   const size = Number(file?.size || 0);
   if (!name) return "Selected file";
-  if (!size) return name;
+  if (!size)  return name;
   const kb = Math.round(size / 1024);
-  if (kb < 1024) return `${name} (${kb} KB)`;
-  const mb = (kb / 1024).toFixed(1);
-  return `${name} (${mb} MB)`;
+  if (kb < 1024) return `${name} · ${kb} KB`;
+  return `${name} · ${(kb / 1024).toFixed(1)} MB`;
 }
 
-function Card({ children, className = "" }) {
-  return (
-    <div
-      className={classNames(
-        "rounded-2xl border border-gray-200 bg-white p-4",
-        className
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SectionTitle({ icon, title, subtitle = "", right = null }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          {icon ? (
-            <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
-              {icon}
-            </span>
-          ) : null}
-          <div className="min-w-0">
-            <p className="text-sm font-extrabold text-gray-900">{title}</p>
-            {subtitle ? (
-              <p className="text-[12px] text-gray-600 mt-0.5 leading-snug">
-                {subtitle}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-      {right ? <div className="shrink-0">{right}</div> : null}
-    </div>
-  );
-}
-
-/**
- * NotesDropdown
- * - Button row + animated open/close area
- * - Keeps the main modal short and simple
- */
-function NotesDropdown({ value, onChange, disabled, maxLength = 500 }) {
+// ─── NOTES SECTION ────────────────────────────────────────────────────────────
+function NotesSection({ value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const text = String(value || "");
-  const len = text.length;
-
-  // Close dropdown if user clears everything (optional nice touch)
-  useEffect(() => {
-    if (!text.trim()) return;
-    // keep open if they’re actively typing; no-op
-  }, [text]);
+  const hasNote = text.trim().length > 0;
 
   return (
-    <Card className="overflow-hidden">
+    <div style={{ border:`1px solid ${hasNote ? C.accentBdr : C.line2}`, borderRadius:14, overflow:"hidden", background:C.surface, transition:"border-color 0.2s" }}>
+      {/* Toggle row */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={classNames(
-          "w-full text-left rounded-2xl",
-          "focus:outline-none focus:ring-2 focus:ring-[#46769B]/25"
-        )}
-        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
         disabled={disabled}
+        style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, padding:"14px 16px", background:"transparent", border:"none", cursor:"pointer", fontFamily:"inherit" }}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
-                <ClipboardEdit className="w-4 h-4 text-gray-700" />
-              </span>
-
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-gray-900">
-                  Notes (optional)
-                </p>
-                <p className="text-[12px] text-gray-600 mt-0.5 leading-snug truncate">
-                  {text.trim()
-                    ? "Note added"
-                    : "Add a quick note if you changed anything."}
-                </p>
-              </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:C.faint, border:`1px solid ${C.line2}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <ClipboardEdit size={14} color={C.dim} />
+          </div>
+          <div style={{ minWidth:0, textAlign:"left" }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.white }}>Notes</div>
+            <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>
+              {hasNote ? "Note added" : "Optional — add if you changed anything"}
             </div>
           </div>
-
-          <div className="shrink-0 flex items-center gap-2">
-            <span className="text-[11px] text-gray-500 tabular-nums">
-              {len}/{maxLength}
-            </span>
-            <span className="h-9 w-9 rounded-2xl border border-gray-200 bg-white flex items-center justify-center">
-              {open ? (
-                <ChevronUp className="w-5 h-5 text-gray-700" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-700" />
-              )}
-            </span>
-          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          {hasNote && <span style={{ fontSize:10, fontWeight:700, color:C.accent }}>✓</span>}
+          {open ? <ChevronUp size={16} color={C.muted} /> : <ChevronDown size={16} color={C.muted} />}
         </div>
       </button>
 
-      {open ? (
-        <div className="mt-3 border-t border-gray-200 pt-3">
+      {/* Textarea */}
+      {open && (
+        <div style={{ borderTop:`1px solid ${C.line2}`, padding:"12px 16px 16px" }}>
           <textarea
-            className="w-full min-h-[92px] sm:min-h-[104px] px-4 py-3 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#46769B]/40"
-            placeholder="Example: used 10 lbs less, swapped machine, short on time, felt easy/tough…"
             value={text}
-            maxLength={maxLength}
-            onChange={(e) => onChange?.(e.target.value)}
+            onChange={e => onChange?.(e.target.value)}
             disabled={disabled}
+            maxLength={500}
+            placeholder="e.g. used 10 lbs less, swapped machine, felt easy, short on time…"
+            style={{
+              width:"100%", minHeight:96, padding:"12px 14px",
+              background:C.surface2, border:`1px solid ${C.line2}`,
+              borderRadius:10, resize:"vertical",
+              fontSize:13, color:C.white, lineHeight:1.55,
+              fontFamily:"inherit", outline:"none",
+              transition:"border-color 0.2s",
+            }}
+            onFocus={e => { e.target.style.borderColor = C.accentBdr; }}
+            onBlur={e  => { e.target.style.borderColor = C.line2; }}
           />
+          <div style={{ fontSize:10, color:C.muted, textAlign:"right", marginTop:5 }}>{text.length}/500</div>
         </div>
-      ) : null}
-    </Card>
+      )}
+    </div>
   );
 }
 
+// ─── MAIN MODAL ───────────────────────────────────────────────────────────────
 export default function CompleteItemModal({
   open,
   item,
@@ -174,260 +117,276 @@ export default function CompleteItemModal({
   onPickFile,
   onChangeNote,
   onSubmit,
+  evidenceRequiredOverride,
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const inputRef = useRef(null);
 
-  const evidenceRequired = useMemo(
-    () => normBool(item?.EvidenceRequired),
-    [item]
-  );
+  const evidenceRequired = useMemo(() => {
+    if (evidenceRequiredOverride !== undefined) return Boolean(evidenceRequiredOverride);
+    return normBool(item?.EvidenceRequired);
+  }, [item, evidenceRequiredOverride]);
 
-  const title =
-    safeText(item?.ExerciseName || item?.Title || "") || "Workout item";
+  const title = safeText(item?.ExerciseName || item?.Title || "") || "Exercise";
 
-  // Build / clean up preview URL
+  // Preview URL lifecycle
   useEffect(() => {
-    if (!open) return;
-
-    if (selectedFile) {
-      const url = URL.createObjectURL(selectedFile);
-      setPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-
-    setPreviewUrl("");
+    if (!open || !selectedFile) { setPreviewUrl(""); return; }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [open, selectedFile]);
 
-  // When closing or switching items, clear preview
+  useEffect(() => { if (!open) setPreviewUrl(""); }, [open, item?.id]);
+
+  const canSubmit = Boolean(item?.id) && !submitting && (!evidenceRequired || !!selectedFile);
+  const fileReady = !!selectedFile;
+
+  // Lock body scroll
   useEffect(() => {
-    if (!open) setPreviewUrl("");
-  }, [open, item?.id]);
-
-  if (!open) return null;
-
-  const noteText = String(coachNote || "");
-  const canSubmit =
-    Boolean(item?.id) &&
-    !submitting &&
-    (!evidenceRequired || !!selectedFile);
-
-  const submitLabel = evidenceRequired ? "Submit proof" : "Mark complete";
-
-  // Button copy simplified
-  const captureBtnLabel = selectedFile ? "Change photo" : "Take photo";
-
-  // “Live picture taking”
-  // On most mobile browsers, <input type="file" accept="image/*" capture="environment" />
-  // opens camera directly (or lets user choose camera).
-  // Desktop will open file picker (expected).
-  const openCamera = () => {
-    if (submitting) return;
-    if (inputRef.current) inputRef.current.click();
-  };
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
 
   return (
-    <Modal
-      open={open}
-      title={item ? `Complete: ${title}` : "Complete item"}
-      onClose={onClose}
-      subtitle={
-        evidenceRequired
-          ? "Take a photo to submit."
-          : "Photo is optional."
-      }
-    >
-      {!item ? null : (
-        <div className="space-y-3 sm:space-y-4">
-          {/* Top banner: tighter spacing so it doesn’t feel bulky on mobile */}
-          <div
-            className={classNames(
-              "rounded-2xl border p-3 sm:p-4",
-              evidenceRequired
-                ? "border-amber-200 bg-amber-50"
-                : "border-gray-200 bg-gray-50"
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] text-gray-700 font-semibold flex items-center gap-2">
-                  <Info className="w-4 h-4 text-gray-400" />
-                  Keep it quick
-                </p>
-
-                <p className="text-[12px] text-gray-700 mt-2 leading-snug">
-                  Snap the machine display, bar on rack, treadmill screen, or a quick selfie in the gym.
-                </p>
-
-                <div className="mt-2">
-                  {evidenceRequired ? (
-                    <Pill tone="warn">
-                      <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                      Photo required
-                    </Pill>
-                  ) : (
-                    <Pill>Photo optional</Pill>
-                  )}
-                </div>
-              </div>
-
-              {/* Close for fast mobile */}
-              <button
-                type="button"
-                onClick={onClose}
-                className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#46769B]/30"
-                title="Close"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
-          </div>
-
-          {/* Upload / Camera card */}
-          <Card>
-            <SectionTitle
-              icon={<Camera className="w-4 h-4 text-[#46769B]" />}
-              title="Photo"
-              subtitle={
-                evidenceRequired
-                  ? "Required - take a quick pic and submit."
-                  : "Optional - take a pic if you want."
-              }
-              right={
-                evidenceRequired ? (
-                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900">
-                    Required
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
-                    Optional
-                  </span>
-                )
-              }
-            />
-
-            <div className="mt-3 grid gap-3">
-              {/* Primary “Take photo” action (simple for athletes) */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button
-                  onClick={openCamera}
-                  disabled={submitting}
-                  className="w-full sm:w-auto"
-                  title="Open camera / choose photo"
-                >
-                  <Camera className="w-4 h-4" />
-                  {captureBtnLabel}
-                </Button>
-
-                {/* Secondary “Upload” action for clarity (same input) */}
-                <Button
-                  variant="secondary"
-                  onClick={openCamera}
-                  disabled={submitting}
-                  className="w-full sm:w-auto"
-                  title="Choose from library"
-                >
-                  <Upload className="w-4 h-4" />
-                  Choose file
-                </Button>
-              </div>
-
-              {/* Hidden input (camera capture on mobile) */}
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => onPickFile?.(e.target.files?.[0] || null)}
-                className="hidden"
-              />
-
-              {/* File label / quick status */}
-              <div
-                className={classNames(
-                  "rounded-2xl border p-3",
-                  selectedFile ? "border-blue-200 bg-blue-50/40" : "border-gray-200 bg-gray-50"
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="h-9 w-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center shrink-0">
-                    <ImageIcon className="w-4 h-4 text-gray-600" />
-                  </span>
-
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-semibold text-gray-900">
-                      {selectedFile ? "Photo selected" : "No photo selected"}
-                    </p>
-                    <p className="text-[12px] text-gray-600 truncate">
-                      {selectedFile
-                        ? fileLabel(selectedFile)
-                        : evidenceRequired
-                        ? "You need a photo to submit."
-                        : "You can submit without a photo."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Preview */}
-              {previewUrl ? (
-                <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="w-full h-52 sm:h-56 object-cover"
-                  />
-                  <div className="px-3 py-2 text-[11px] text-gray-600">
-                    {evidenceRequired
-                      ? "Looks good - submit when ready."
-                      : "Optional photo attached - submit when ready."}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </Card>
-
-          {/* Notes dropdown (optional, keeps it simple) */}
-          <NotesDropdown
-            value={noteText}
-            onChange={onChangeNote}
-            disabled={submitting}
+    <>
+      {/* Backdrop */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key="cim-backdrop"
+            initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+            transition={{ duration:0.22 }}
+            onClick={onClose}
+            style={{ position:"fixed", inset:0, zIndex:60, background:"rgba(0,0,0,0.78)", backdropFilter:"blur(4px)" }}
           />
+        )}
+      </AnimatePresence>
 
-          {/* Actions (mobile-safe stacking) */}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
-            <Button variant="secondary" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
+      {/* Sheet */}
+      <AnimatePresence>
+        {open && item && (
+          <motion.div
+            key="cim-sheet"
+            initial={{ y:"100%" }} animate={{ y:0 }} exit={{ y:"100%" }}
+            transition={{ type:"spring", stiffness:380, damping:42, mass:1 }}
+            style={{
+              position:"fixed", bottom:0, left:0, right:0, zIndex:70,
+              background:C.bg,
+              borderTopLeftRadius:22, borderTopRightRadius:22,
+              maxHeight:"90dvh", display:"flex", flexDirection:"column",
+              overflow:"hidden",
+              fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif",
+              paddingBottom:"env(safe-area-inset-bottom,0)",
+            }}
+          >
+            {/* Top accent */}
+            <div style={{ height:3, background: evidenceRequired ? C.orange : C.accent, flexShrink:0 }} />
 
-            <Button onClick={onSubmit} disabled={!canSubmit}>
-              {evidenceRequired ? (
-                <Camera className="w-4 h-4" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )}
-              {submitting ? "Submitting…" : submitLabel}
-            </Button>
-          </div>
-
-          {/* Inline validation */}
-          {evidenceRequired && !selectedFile ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-[12px] text-amber-900 font-semibold">
-                Photo required - take one before submitting.
-              </p>
+            {/* Handle */}
+            <div style={{ display:"flex", justifyContent:"center", padding:"10px 0 0", flexShrink:0, cursor:"pointer" }} onClick={onClose}>
+              <div style={{ width:32, height:3.5, background:C.handle, borderRadius:2 }} />
             </div>
-          ) : null}
 
-          {/* Tiny help text (super minimal, but reduces confusion) */}
-          <p className="text-[11px] text-gray-500 leading-snug">
-            On mobile, <span className="font-semibold">Take photo</span> should open your camera.
-            If it doesn’t, your browser may ask whether to use the camera or photo library.
-          </p>
-        </div>
-      )}
-    </Modal>
+            {/* Header */}
+            <div style={{ padding:"14px 20px 0", flexShrink:0 }}>
+              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:9, fontWeight:900, letterSpacing:"0.18em", textTransform:"uppercase", color: evidenceRequired ? C.orange : C.accent, marginBottom:5 }}>
+                    {evidenceRequired ? "⚠ Proof required" : "Completing"}
+                  </div>
+                  <div style={{ fontSize:24, fontWeight:800, color:C.white, letterSpacing:"-0.03em", lineHeight:1.1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {title}
+                  </div>
+                </div>
+                <button
+                  type="button" onClick={onClose}
+                  style={{ background:"#1A1A1A", border:"none", width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0, marginTop:2 }}
+                >
+                  <X size={14} color={C.dim} />
+                </button>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height:1, background:C.line, margin:"16px 0 0", flexShrink:0 }} />
+
+            {/* Scrollable content */}
+            <div style={{ overflowY:"auto", flex:1, WebkitOverflowScrolling:"touch", padding:"20px 20px 0" }}>
+
+              {/* ── Photo section ── */}
+              <div style={{ border:`1px solid ${fileReady ? C.greenBdr : evidenceRequired ? C.orangeBdr : C.line2}`, borderRadius:14, overflow:"hidden", background:C.surface, marginBottom:12, transition:"border-color 0.3s" }}>
+
+                {/* Section header */}
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:`1px solid ${C.line2}` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{
+                      width:32, height:32, borderRadius:8, flexShrink:0,
+                      background: fileReady ? C.greenBg : evidenceRequired ? C.orangeBg : C.faint,
+                      border:`1px solid ${fileReady ? C.greenBdr : evidenceRequired ? C.orangeBdr : C.line2}`,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      transition:"all 0.2s",
+                    }}>
+                      {fileReady
+                        ? <Check size={14} color={C.green} strokeWidth={3} />
+                        : <Camera size={14} color={evidenceRequired ? C.orange : C.dim} />
+                      }
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, color:C.white }}>Photo</div>
+                      <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>
+                        {evidenceRequired ? "Required to submit" : "Optional"}
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase",
+                    padding:"3px 9px", borderRadius:5,
+                    background: fileReady ? C.greenBg : evidenceRequired ? C.orangeBg : C.faint,
+                    border:`1px solid ${fileReady ? C.greenBdr : evidenceRequired ? C.orangeBdr : C.line2}`,
+                    color: fileReady ? C.green : evidenceRequired ? C.orange : C.dim,
+                    transition:"all 0.3s",
+                  }}>
+                    {fileReady ? "✓ Ready" : evidenceRequired ? "Required" : "Optional"}
+                  </span>
+                </div>
+
+                {/* Buttons */}
+                <div style={{ padding:"14px 16px", display:"flex", gap:10 }}>
+                  <button
+                    type="button"
+                    onClick={() => inputRef.current?.click()}
+                    disabled={submitting}
+                    style={{
+                      flex:1, padding:"13px 16px",
+                      background: fileReady ? C.greenBg : C.accentBg,
+                      border:`1px solid ${fileReady ? C.greenBdr : C.accentBdr}`,
+                      borderRadius:11, cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                      fontSize:13, fontWeight:800,
+                      color: fileReady ? C.green : C.accent,
+                      fontFamily:"inherit", transition:"all 0.2s",
+                      opacity: submitting ? 0.5 : 1,
+                    }}
+                  >
+                    <Camera size={15} />
+                    {fileReady ? "Retake" : "Take Photo"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (inputRef.current) { inputRef.current.removeAttribute("capture"); inputRef.current.click(); setTimeout(() => inputRef.current?.setAttribute("capture","environment"), 500); } }}
+                    disabled={submitting}
+                    style={{
+                      padding:"13px 16px",
+                      background:C.faint, border:`1px solid ${C.line2}`,
+                      borderRadius:11, cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+                      fontSize:13, fontWeight:700, color:C.dim,
+                      fontFamily:"inherit", opacity: submitting ? 0.5 : 1,
+                    }}
+                  >
+                    <Upload size={14} />
+                    Library
+                  </button>
+                </div>
+
+                {/* Hidden input */}
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={e => onPickFile?.(e.target.files?.[0] || null)}
+                  style={{ display:"none" }}
+                />
+
+                {/* File status */}
+                {!previewUrl && (
+                  <div style={{ margin:"0 16px 14px", padding:"11px 14px", background:C.surface2, border:`1px solid ${C.line2}`, borderRadius:10, display:"flex", alignItems:"center", gap:10 }}>
+                    <ImageIcon size={14} color={C.muted} />
+                    <div>
+                      <div style={{ fontSize:12, fontWeight:600, color: selectedFile ? C.white : C.dim }}>
+                        {selectedFile ? "Photo selected" : "No photo selected"}
+                      </div>
+                      <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>
+                        {selectedFile ? fileLabel(selectedFile) : evidenceRequired ? "Take a photo to submit" : "You can submit without one"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview */}
+                {previewUrl && (
+                  <div style={{ margin:"0 16px 14px", borderRadius:10, overflow:"hidden", border:`1px solid ${C.greenBdr}` }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrl} alt="Preview" style={{ width:"100%", height:200, objectFit:"cover", display:"block" }} />
+                    <div style={{ padding:"9px 12px", background:C.greenBg, display:"flex", alignItems:"center", gap:7 }}>
+                      <Check size={12} color={C.green} strokeWidth={3} />
+                      <span style={{ fontSize:11, fontWeight:700, color:C.green }}>
+                        {evidenceRequired ? "Looking good — ready to submit" : "Photo attached — optional but nice"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Notes ── */}
+              <div style={{ marginBottom:20 }}>
+                <NotesSection value={coachNote} onChange={onChangeNote} disabled={submitting} />
+              </div>
+
+            </div>
+
+            {/* ── Actions (fixed at bottom) ── */}
+            <div style={{ padding:"12px 20px 28px", flexShrink:0, borderTop:`1px solid ${C.line}`, background:C.bg }}>
+              {/* Validation warning */}
+              {evidenceRequired && !selectedFile && (
+                <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:C.orangeBg, border:`1px solid ${C.orangeBdr}`, borderRadius:10, marginBottom:12 }}>
+                  <AlertCircle size={13} color={C.orange} />
+                  <span style={{ fontSize:12, fontWeight:700, color:C.orange }}>Take a photo before submitting</span>
+                </div>
+              )}
+
+              <div style={{ display:"flex", gap:10 }}>
+                <button
+                  type="button" onClick={onClose} disabled={submitting}
+                  style={{ padding:"14px 20px", background:"transparent", border:`1px solid ${C.line2}`, borderRadius:12, fontSize:13, fontWeight:700, color:C.dim, cursor:"pointer", fontFamily:"inherit", opacity: submitting ? 0.5 : 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button" onClick={onSubmit} disabled={!canSubmit}
+                  style={{
+                    flex:1, padding:"16px",
+                    background: canSubmit ? C.green : C.faint,
+                    border:`1px solid ${canSubmit ? "transparent" : C.line2}`,
+                    borderRadius:12, cursor: canSubmit ? "pointer" : "not-allowed",
+                    display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                    fontSize:14, fontWeight:900,
+                    color: canSubmit ? "#040A05" : C.muted,
+                    fontFamily:"inherit", letterSpacing:"-0.01em",
+                    transition:"all 0.25s ease",
+                  }}
+                >
+                  {submitting ? (
+                    <>
+                      <div style={{ width:14, height:14, borderRadius:"50%", border:`2px solid currentColor`, borderTopColor:"transparent", animation:"spin 0.7s linear infinite" }} />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      {evidenceRequired ? <Camera size={15} /> : <Check size={15} strokeWidth={3} />}
+                      {evidenceRequired ? "Submit Proof" : "Mark Complete"}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <style>{`@keyframes spin { to { transform:rotate(360deg); } }`}</style>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

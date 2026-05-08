@@ -4,17 +4,6 @@
 import { useCallback, useState } from "react";
 import { safeJson } from "@/components/athlete-today/ui";
 
-/**
- * Handles:
- * - modal state
- * - file selection + note
- * - submit -> /api/athlete/workouts/completeItem (multipart FormData)
- * - quickComplete (same endpoint, no file)
- *
- * Adds:
- * - optimisticStatusById: instant UI feedback on success (pending_review/completed)
- * - acknowledgeCompletion: athlete confirms they saw coach note on rejected item
- */
 export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeItem, setActiveItem] = useState(null);
@@ -25,7 +14,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [coachNote, setCoachNote] = useState("");
 
-  // ✅ optimistic UI: { [workoutItemId]: "pending_review" | "completed" | "rejected" | "assigned" | "acknowledged" }
   const [optimisticStatusById, setOptimisticStatusById] = useState({});
 
   const openModal = useCallback(
@@ -84,7 +72,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
       try {
         const usedFile = selectedFile;
 
-        // strict gating: if proof required, must have file
         if (String(evidenceRequired).toLowerCase() === "true" && !usedFile) {
           throw new Error("This item requires a photo. Please take/upload a photo first.");
         }
@@ -97,21 +84,18 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
           note: coachNote || "",
         });
 
-        // ✅ INSTANT FEEDBACK
         const nextStatus = String(data?.status || "").trim().toLowerCase();
         if (nextStatus) {
           setOptimisticStatusById((prev) => ({ ...prev, [id]: nextStatus }));
         }
 
-        // keep the "instant" state around briefly even if reload is slow
-        const keepMs = 2500;
         setTimeout(() => {
           setOptimisticStatusById((prev) => {
             if (!prev?.[id]) return prev;
             const { [id]: _, ...rest } = prev;
             return rest;
           });
-        }, keepMs);
+        }, 2500);
 
         await reload(selectedDate);
         closeModal();
@@ -124,9 +108,19 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
     [selectedFile, coachNote, postCompletion, reload, selectedDate, closeModal, setErr]
   );
 
+  // ─── quickComplete ───────────────────────────────────────────────────────────
+  // Accepts any of these shapes so call-sites don't need to know the internals:
+  //   quickComplete("recXXX")                   — plain Airtable record ID
+  //   quickComplete({ id: "recXXX", ... })      — raw Airtable item object
+  //   quickComplete({ item: { id: "recXXX" } }) — sub-object from WorkoutSheet
   const quickComplete = useCallback(
-    async (workoutItemId, dailyWorkoutId = "") => {
-      const id = String(workoutItemId || "").trim();
+    async (workoutItemOrId, dailyWorkoutId = "") => {
+      const rawId =
+        workoutItemOrId && typeof workoutItemOrId === "object"
+          ? (workoutItemOrId.item?.id ?? workoutItemOrId.id)
+          : workoutItemOrId;
+
+      const id = String(rawId || "").trim();
       if (!id) return;
 
       setErr?.("");
@@ -164,13 +158,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
     [postCompletion, reload, selectedDate, setErr]
   );
 
-  /**
-   * ✅ Athlete acknowledges a rejected completion.
-   * Expected API: POST /api/athlete/workouts/acknowledgeCompletion
-   * Accepts either:
-   *  - { completionId }
-   *  - OR { workoutItemId, date } (server can resolve latest completion)
-   */
   const acknowledgeCompletion = useCallback(
     async ({ completionId, workoutItemId }) => {
       const wid = String(workoutItemId || "").trim();
@@ -185,7 +172,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
       setAcknowledgingId(wid || cid);
 
       try {
-        // optimistic: mark as acknowledged (your UI can treat this as checked-off)
         if (wid) {
           setOptimisticStatusById((prev) => ({ ...prev, [wid]: "acknowledged" }));
         }
@@ -204,10 +190,8 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error || "Failed to acknowledge");
 
-        // Let Airtable truth win
         await reload(selectedDate);
       } catch (e) {
-        // rollback optimistic if it was set
         if (wid) {
           setOptimisticStatusById((prev) => {
             const { [wid]: _, ...rest } = prev || {};
@@ -239,6 +223,6 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
 
     submitCompletion,
     quickComplete,
-    acknowledgeCompletion, // ✅ NEW
+    acknowledgeCompletion,
   };
 }

@@ -34,6 +34,7 @@ const WI = {
   INSTR:    F?.WI_INSTR    || "Instructions",
   VIDEO:    F?.WI_VIDEO    || "VideoURL",
   EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
+  GROUPID:  F?.WI_GROUPID  || "GroupId",
 };
 
 function safeArray(v) { return Array.isArray(v) ? v : []; }
@@ -154,6 +155,7 @@ export default async function handler(req, res) {
             Instructions:     String(wf[WI.INSTR]    || ""),
             VideoURL:         String(wf[WI.VIDEO]    || ""),
             EvidenceRequired: String(wf[WI.EVIDENCE] || "none"),
+            groupId:          String(wf[WI.GROUPID]  || "") || null,
           };
         })
         .sort((a, b) => a.Order - b.Order);

@@ -60,6 +60,7 @@ const WI = {
   VIDEO:    F?.WI_VIDEO    || "VideoURL",
   EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
   ATHTOKEN: F?.WI_ATHTOKEN || "AthleteToken",
+  GROUPID:  F?.WI_GROUPID  || "GroupId",
 };
 
 async function resolveAthletes(b, incoming = []) {
@@ -131,6 +132,7 @@ async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, item
       ...(toTrimmed(it.VideoURL)         ? { [WI.VIDEO]:  toTrimmed(it.VideoURL) }     : {}),
       [WI.EVIDENCE]: it.EvidenceRequired || "none",
       ...(WI.ATHTOKEN && athleteToken ? { [WI.ATHTOKEN]: String(athleteToken) } : {}),
+      ...(it.groupId && WI.GROUPID ? { [WI.GROUPID]: String(it.groupId) } : {}),
     };
     assertNoUndefinedKeys(fields);
     return { fields };

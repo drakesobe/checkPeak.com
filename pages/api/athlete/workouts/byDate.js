@@ -298,6 +298,7 @@ export default async function handler(req, res) {
         Rest: it.Rest ?? "",
         Instructions: it.Instructions ?? "",
         VideoURL: it.VideoURL ?? it.Video ?? "",
+        groupId: String(it.GroupId || "") || null,
 
         Completed: doneForAthlete ? "true" : "false",
         Status: status,

@@ -106,6 +106,7 @@ function buildDayRoute({
           instructions: String(item.Instructions || item.instructions || item.Notes || "").trim(),
           videoUrl,
           evidenceRequired: evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara",
+          groupId: item.groupId || null,
           item,
         };
       });

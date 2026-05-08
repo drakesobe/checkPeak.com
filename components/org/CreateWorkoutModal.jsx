@@ -2,8 +2,13 @@
 // Three-step workout creation drawer with template support.
 // Step 1: WHO (athlete picker, sport detection)
 // Step 2: WHEN + WHAT (date, title, recurrence)
-// Step 3: THE WORK (template picker + exercise builder)
+// Step 3: THE WORK (template picker + exercise builder + superset/circuit grouping)
 // VARA-gated footer: hard break periods replace the Create button entirely.
+// GROUPING: exercises can be chained into Supersets (2) or Circuits (3+).
+//   - Each exercise has an optional groupId.
+//   - Click the chain icon on any exercise to link it with the one below.
+//   - Grouped exercises render as a bracketed block with a type label.
+//   - Ungroup individually or ungroup all.
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -11,7 +16,7 @@ import {
   X, Plus, Dumbbell, AlertTriangle, Trash2,
   Repeat, Link as LinkIcon, Search, CheckCircle2,
   Info, Edit2, Users, Shield,
-  Calendar, ArrowLeft, ArrowRight,
+  Calendar, ArrowLeft, ArrowRight, Link2, Unlink,
 } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import { loadPeriods, getActivePeriod, getVaraRequirement } from "@/lib/org/seasonCalendar";
@@ -36,7 +41,12 @@ function initials(name) {
   return p.length >= 2 ? (p[0][0] + p[p.length-1][0]).toUpperCase() : String(name||"?")[0].toUpperCase();
 }
 function newItem(order) {
-  return { Order: order, ExerciseName: "", Sets: "", Reps: "", Weight: "", Rest: "", Instructions: "", VideoURL: "", EvidenceRequired: "none" };
+  return {
+    Order: order, ExerciseName: "", Sets: "", Reps: "",
+    Weight: "", Rest: "", Instructions: "", VideoURL: "",
+    EvidenceRequired: "none",
+    groupId: null,  // ← grouping support
+  };
 }
 function renumber(list) { return list.map((it,i) => ({ ...it, Order: i+1 })); }
 function fmtDate(iso) {
@@ -46,6 +56,9 @@ function fmtDate(iso) {
 function fmtShort(iso) {
   if (!iso) return "-";
   return new Date(iso+"T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+function genGroupId() {
+  return `grp_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 const MAX_DATES   = 60;
@@ -77,6 +90,62 @@ const EVIDENCE_OPTIONS = [
   { value: "voluntary_activity_vara", label: "Voluntary Activity (VARA)"},
 ];
 const VALID_EV = new Set(EVIDENCE_OPTIONS.map(o => o.value));
+
+// ─── Grouping constants ────────────────────────────────────────────────────────
+const GROUP_COLORS = [
+  { accent: "#7C3AED", bg: "rgba(124,58,237,0.04)", border: "rgba(124,58,237,0.18)" }, // purple
+  { accent: "#0891B2", bg: "rgba(8,145,178,0.04)",  border: "rgba(8,145,178,0.18)"  }, // cyan
+  { accent: "#D97706", bg: "rgba(217,119,6,0.04)",  border: "rgba(217,119,6,0.18)"  }, // amber
+  { accent: "#059669", bg: "rgba(5,150,105,0.04)",  border: "rgba(5,150,105,0.18)"  }, // green
+  { accent: "#DC2626", bg: "rgba(220,38,38,0.04)",  border: "rgba(220,38,38,0.18)"  }, // red
+];
+const GROUP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+// Compute stable metadata for each groupId: label (A/B/C), color, count, type
+function getGroupMeta(items) {
+  const meta = {};
+  let idx = 0;
+  (items || []).forEach(it => {
+    if (it?.groupId && !meta[it.groupId]) {
+      meta[it.groupId] = {
+        label: GROUP_LETTERS[idx % 26],
+        color: GROUP_COLORS[idx % GROUP_COLORS.length],
+        count: 0,
+      };
+      idx++;
+    }
+    if (it?.groupId) meta[it.groupId].count++;
+  });
+  Object.values(meta).forEach(m => {
+    m.type = m.count >= 3 ? "Circuit" : "Superset";
+  });
+  return meta;
+}
+
+// Turn a flat items array into render segments: grouped items collapse into
+// a single "group" segment, ungrouped items stay as "single" segments.
+// NOTE: grouped items must be consecutive in the array (enforced by onGroup).
+function computeSegments(items, groupMeta) {
+  const segments = [];
+  let i = 0;
+  while (i < (items || []).length) {
+    const item = items[i];
+    if (item?.groupId && groupMeta[item.groupId]) {
+      const members = [{ item, index: i }];
+      let j = i + 1;
+      while (j < items.length && items[j]?.groupId === item.groupId) {
+        members.push({ item: items[j], index: j });
+        j++;
+      }
+      segments.push({ type: "group", groupId: item.groupId, members });
+      i = j;
+    } else {
+      segments.push({ type: "single", item, index: i });
+      i++;
+    }
+  }
+  return segments;
+}
 
 function buildDates({ mode, baseDate, daysOfWeek, endDate, everyNDays, occurrences }) {
   if (!baseDate) return [];
@@ -204,18 +273,56 @@ function AthleteRow({ athlete, checked, onToggle }) {
   );
 }
 
-function ExerciseRow({ item, index, onChange, onRemove }) {
+// ─── ExerciseRow ──────────────────────────────────────────────────────────────
+// `isGrouped`    — rendered inside a GroupBlock, shows unlink button instead of chain button
+// `canChainDown` — show "chain with next" button (false for last exercise or already has a group gap below)
+// `onGroup`      — called to chain this exercise with the one below
+// `onUngroup`    — called to remove this exercise from its group
+
+function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canChainDown = false, onGroup, onUngroup, groupColor }) {
   return (
-    <div style={{ border:`1px solid ${DS.border}`, background:DS.pageBg, overflow:"hidden" }}>
+    <div style={{
+      border: isGrouped ? "none" : `1px solid ${DS.border}`,
+      borderBottom: isGrouped ? `1px solid ${groupColor?.border || DS.border}` : `1px solid ${DS.border}`,
+      background: DS.pageBg,
+      overflow: "hidden",
+    }}>
+      {/* Row header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 14px", background:DS.cardBg, borderBottom:`1px solid ${DS.border}` }}>
-        <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:DS.labelText }}>Exercise {index+1}</span>
-        <button type="button" onClick={onRemove}
-          style={{ padding:"3px 6px", border:`1px solid transparent`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.dimText }}
-          onMouseEnter={e => { e.currentTarget.style.background=DS.bannedBg; e.currentTarget.style.borderColor=DS.bannedBorder; e.currentTarget.style.color=DS.banned; }}
-          onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.color=DS.dimText; }}>
-          <Trash2 style={{ width:10, height:10 }} /> Remove
-        </button>
+        <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color: isGrouped ? (groupColor?.accent || DS.labelText) : DS.labelText }}>
+          Exercise {index+1}
+        </span>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {/* Ungroup button — shown when already in a group */}
+          {isGrouped && onUngroup && (
+            <button type="button" onClick={onUngroup}
+              style={{ padding:"3px 8px", border:`1px solid transparent`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.dimText }}
+              title="Remove from group"
+              onMouseEnter={e => { e.currentTarget.style.background=DS.cautionBg; e.currentTarget.style.borderColor=DS.cautionBorder; e.currentTarget.style.color=DS.caution; }}
+              onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.color=DS.dimText; }}>
+              <Unlink style={{ width:10, height:10 }} /> Unlink
+            </button>
+          )}
+          {/* Chain-down button — shown on ungrouped exercises that have a next exercise */}
+          {!isGrouped && canChainDown && onGroup && (
+            <button type="button" onClick={onGroup}
+              style={{ padding:"3px 8px", border:`1px solid ${DS.border}`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.brand }}
+              title="Group with next exercise"
+              onMouseEnter={e => { e.currentTarget.style.background=DS.brandBg; e.currentTarget.style.borderColor=DS.brandBorder; }}
+              onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor=DS.border; }}>
+              <Link2 style={{ width:10, height:10 }} /> Group with next
+            </button>
+          )}
+          <button type="button" onClick={onRemove}
+            style={{ padding:"3px 6px", border:`1px solid transparent`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.dimText }}
+            onMouseEnter={e => { e.currentTarget.style.background=DS.bannedBg; e.currentTarget.style.borderColor=DS.bannedBorder; e.currentTarget.style.color=DS.banned; }}
+            onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.color=DS.dimText; }}>
+            <Trash2 style={{ width:10, height:10 }} /> Remove
+          </button>
+        </div>
       </div>
+
+      {/* Fields */}
       <div style={{ padding:"12px 14px", display:"flex", flexDirection:"column", gap:10 }}>
         <div>
           <span style={lbl}>Exercise</span>
@@ -275,6 +382,92 @@ function ExerciseRow({ item, index, onChange, onRemove }) {
   );
 }
 
+// ─── GroupBlock ───────────────────────────────────────────────────────────────
+// Renders a bracketed block for exercises sharing a groupId.
+// Shows Superset A / Circuit A header, connector line, and ungroup controls.
+
+function GroupBlock({ groupId, members, groupMeta, onChange, onRemove, onUngroup, onUngroupAll, onAddToGroup }) {
+  const meta = groupMeta[groupId];
+  if (!meta) return null;
+  const { label, color, type, count } = meta;
+
+  return (
+    <div style={{
+      border: `1px solid ${color.border}`,
+      borderLeft: `3px solid ${color.accent}`,
+      background: color.bg,
+      overflow: "hidden",
+    }}>
+      {/* Group header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 14px",
+        background: DS.cardBg,
+        borderBottom: `1px solid ${color.border}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            fontFamily: F.cond, fontWeight: 900, fontSize: 10,
+            letterSpacing: "0.12em", textTransform: "uppercase",
+            padding: "2px 8px",
+            background: color.accent + "18",
+            border: `1px solid ${color.accent}30`,
+            color: color.accent,
+          }}>
+            {type} {label}
+          </span>
+          <span style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText }}>
+            {count} exercises · complete back to back, rest after
+          </span>
+        </div>
+        <button type="button" onClick={() => onUngroupAll(groupId)}
+          style={{
+            fontFamily: F.cond, fontWeight: 900, fontSize: 9,
+            letterSpacing: "0.08em", textTransform: "uppercase",
+            color: DS.dimText, background: "transparent",
+            border: `1px solid transparent`, padding: "3px 8px", cursor: "pointer",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = DS.banned; e.currentTarget.style.borderColor = DS.bannedBorder; e.currentTarget.style.background = DS.bannedBg; }}
+          onMouseLeave={e => { e.currentTarget.style.color = DS.dimText; e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.background = "transparent"; }}>
+          Ungroup all
+        </button>
+      </div>
+
+      {/* Exercises within the group */}
+      {members.map(({ item, index }, mi) => (
+        <ExerciseRow
+          key={index}
+          item={item}
+          index={index}
+          onChange={patch => onChange(index, patch)}
+          onRemove={() => onRemove(index)}
+          onUngroup={() => onUngroup(index)}
+          isGrouped={true}
+          groupColor={color}
+        />
+      ))}
+
+      {/* Add to group shortcut */}
+      {onAddToGroup && (
+        <button type="button" onClick={() => onAddToGroup(groupId)}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "8px",
+            border: "none", background: "transparent",
+            borderTop: `1px dashed ${color.border}`,
+            fontFamily: F.cond, fontWeight: 900, fontSize: 10,
+            letterSpacing: "0.1em", textTransform: "uppercase",
+            color: color.accent, cursor: "pointer",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = color.bg; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+          <Plus style={{ width: 11, height: 11 }} /> Add exercise to {type} {label}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
   if (!activeDate || !derivedSport) return null;
 
@@ -325,7 +518,6 @@ function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
     );
   }
 
-  // Hard — break period
   const period = varaCheck.period;
   return (
     <div style={{
@@ -351,7 +543,7 @@ function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
 }
 
 function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
-  const [mode,        setMode]     = useState("idle"); // idle | form | saving | saved
+  const [mode,        setMode]     = useState("idle");
   const [name,        setName]     = useState("");
   const [category,    setCategory] = useState("strength");
   const [sport,       setSport]    = useState(derivedSport || "");
@@ -386,11 +578,7 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
 
   if (mode === "saved") {
     return (
-      <span style={{
-        fontFamily: F.cond, fontWeight: 900, fontSize: 11,
-        letterSpacing: "0.08em", textTransform: "uppercase",
-        color: DS.safe, display: "flex", alignItems: "center", gap: 5,
-      }}>
+      <span style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: DS.safe, display: "flex", alignItems: "center", gap: 5 }}>
         ✓ Saved as template
       </span>
     );
@@ -401,16 +589,7 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
       <button type="button"
         onClick={() => { setMode("form"); setSport(derivedSport || ""); }}
         disabled={meaningfulItems.length === 0}
-        style={{
-          padding: "9px 16px",
-          border: `1px solid ${DS.border}`,
-          background: "transparent",
-          fontFamily: F.cond, fontWeight: 900, fontSize: 11,
-          letterSpacing: "0.08em", textTransform: "uppercase",
-          color: meaningfulItems.length ? DS.brand : DS.dimText,
-          cursor: meaningfulItems.length ? "pointer" : "not-allowed",
-          opacity: meaningfulItems.length ? 1 : 0.4,
-        }}
+        style={{ padding: "9px 16px", border: `1px solid ${DS.border}`, background: "transparent", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: meaningfulItems.length ? DS.brand : DS.dimText, cursor: meaningfulItems.length ? "pointer" : "not-allowed", opacity: meaningfulItems.length ? 1 : 0.4 }}
         onMouseEnter={e => { if (meaningfulItems.length) { e.currentTarget.style.background = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; }}}
         onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = DS.border; }}>
         Save as template
@@ -418,32 +597,13 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
     );
   }
 
-  // form mode (and saving mode)
   return (
-    <div style={{
-      position: "absolute", bottom: "100%", right: 20,
-      width: 300,
-      background: DS.cardBg,
-      border: `1px solid ${DS.border}`,
-      borderTop: `2px solid ${DS.brand}`,
-      padding: "14px",
-      boxShadow: "0 -8px 32px rgba(0,0,0,0.12)",
-      display: "flex", flexDirection: "column", gap: 10,
-    }}>
-      <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.brand, margin: 0 }}>
-        Save as Template
-      </p>
-      {err && (
-        <p style={{ fontFamily: F.body, fontSize: 11, color: DS.banned, margin: 0 }}>⚠ {err}</p>
-      )}
+    <div style={{ position: "absolute", bottom: "100%", right: 20, width: 300, background: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `2px solid ${DS.brand}`, padding: "14px", boxShadow: "0 -8px 32px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column", gap: 10 }}>
+      <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.brand, margin: 0 }}>Save as Template</p>
+      {err && <p style={{ fontFamily: F.body, fontSize: 11, color: DS.banned, margin: 0 }}>⚠ {err}</p>}
       <div>
         <span style={lbl}>Name *</span>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="e.g. Upper Body Strength A"
-          autoFocus
-          style={{ ...inp, padding: "8px 12px" }}
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Upper Body Strength A" autoFocus style={{ ...inp, padding: "8px 12px" }}
           onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
           onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
           onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setMode("idle"); }} />
@@ -451,34 +611,24 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div>
           <span style={lbl}>Category</span>
-          <select value={category} onChange={e => setCategory(e.target.value)}
-            style={{ ...inp, padding: "8px 10px", cursor: "pointer", appearance: "none" }}
-            onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
-            onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}>
+          <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, padding: "8px 10px", cursor: "pointer", appearance: "none" }} onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }} onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}>
             {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
         <div>
           <span style={lbl}>Sport</span>
-          <select value={sport} onChange={e => setSport(e.target.value)}
-            style={{ ...inp, padding: "8px 10px", cursor: "pointer", appearance: "none" }}
-            onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
-            onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}>
+          <select value={sport} onChange={e => setSport(e.target.value)} style={{ ...inp, padding: "8px 10px", cursor: "pointer", appearance: "none" }} onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }} onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}>
             <option value="">All sports</option>
             {SPORT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       </div>
-      <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
-        {meaningfulItems.length} exercise{meaningfulItems.length !== 1 ? "s" : ""} will be saved.
-      </p>
+      <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>{meaningfulItems.length} exercise{meaningfulItems.length !== 1 ? "s" : ""} will be saved.</p>
       <div style={{ display: "flex", gap: 6 }}>
-        <button type="button" onClick={handleSave} disabled={mode === "saving"}
-          style={{ flex: 1, padding: "8px", background: DS.brand, border: "none", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#fff", cursor: mode === "saving" ? "not-allowed" : "pointer", opacity: mode === "saving" ? 0.6 : 1 }}>
+        <button type="button" onClick={handleSave} disabled={mode === "saving"} style={{ flex: 1, padding: "8px", background: DS.brand, border: "none", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#fff", cursor: mode === "saving" ? "not-allowed" : "pointer", opacity: mode === "saving" ? 0.6 : 1 }}>
           {mode === "saving" ? "Saving..." : "Save"}
         </button>
-        <button type="button" onClick={() => setMode("idle")}
-          style={{ padding: "8px 14px", border: `1px solid ${DS.border}`, background: "transparent", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.dimText, cursor: "pointer" }}>
+        <button type="button" onClick={() => setMode("idle")} style={{ padding: "8px 14px", border: `1px solid ${DS.border}`, background: "transparent", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.dimText, cursor: "pointer" }}>
           Cancel
         </button>
       </div>
@@ -517,7 +667,6 @@ export default function CreateWorkoutDrawer({
   const [everyN,          setEveryN]          = useState(7);
   const [occurrences,     setOccurrences]     = useState(8);
 
-  // Template state
   const [templates,        setTemplates]        = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [appliedTemplateId,setAppliedTemplateId]= useState(null);
@@ -584,6 +733,10 @@ export default function CreateWorkoutDrawer({
   const showVaraWarn= varaCheck !== null && hasNonVara;
   const varaDate    = isEdit ? editDate : dateISO;
 
+  // ── Group meta (derived from items) ──────────────────────────────────────
+  const groupMeta   = useMemo(() => getGroupMeta(items), [items]);
+  const segments    = useMemo(() => computeSegments(items, groupMeta), [items, groupMeta]);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchAthletes = useCallback(async () => {
     setLoadingAthletes(true);
@@ -614,7 +767,18 @@ export default function CreateWorkoutDrawer({
       setEditSport(editWorkout.sport||"");
       setStatus(editWorkout.status||"assigned");
       const raw = Array.isArray(editWorkout.items)&&editWorkout.items.length ? editWorkout.items : [newItem(1)];
-      setItems(raw.map((it,i) => ({ Order:Number(it?.Order??i+1), ExerciseName:String(it?.ExerciseName||""), Sets:toNum(it?.Sets), Reps:String(it?.Reps||""), Weight:String(it?.Weight||""), Rest:String(it?.Rest||""), Instructions:String(it?.Instructions||""), VideoURL:String(it?.VideoURL||""), EvidenceRequired:String(it?.EvidenceRequired||"none") })));
+      setItems(raw.map((it,i) => ({
+        Order:           Number(it?.Order??i+1),
+        ExerciseName:    String(it?.ExerciseName||""),
+        Sets:            toNum(it?.Sets),
+        Reps:            String(it?.Reps||""),
+        Weight:          String(it?.Weight||""),
+        Rest:            String(it?.Rest||""),
+        Instructions:    String(it?.Instructions||""),
+        VideoURL:        String(it?.VideoURL||""),
+        EvidenceRequired:String(it?.EvidenceRequired||"none"),
+        groupId:         it?.groupId || null,  // ← preserve groupId
+      })));
       setShowItems(true);
       const incoming = Array.isArray(editWorkout.athleteIds) ? editWorkout.athleteIds : [];
       if (incoming.length) { const sel={}; incoming.forEach(t=>{ if(t) sel[String(t)]=true; }); setSelected(sel); } else setSelected({});
@@ -652,7 +816,68 @@ export default function CreateWorkoutDrawer({
     setShowItems(true);
   }, []);
 
-  // Apply template - fills exercise builder
+  // ── Grouping handlers ─────────────────────────────────────────────────────
+
+  // Link exercise at `index` with the exercise immediately below it.
+  // If either already has a groupId, merge into it.
+  // Also reorders so the two exercises are consecutive.
+  const handleGroup = useCallback((index) => {
+    setItems(prev => {
+      const next = [...prev];
+      const a    = next[index];
+      const b    = next[index + 1];
+      if (!a || !b) return prev;
+
+      // Resolve group id
+      let gid = a.groupId || b.groupId;
+      if (!gid) gid = genGroupId();
+
+      // Merge if both in different groups
+      if (a.groupId && b.groupId && a.groupId !== b.groupId) {
+        const oldGid = b.groupId;
+        return next.map(it => it.groupId === oldGid ? { ...it, groupId: gid } : it);
+      }
+
+      next[index]     = { ...a, groupId: gid };
+      next[index + 1] = { ...b, groupId: gid };
+      return next;
+    });
+  }, []);
+
+  // Add a new exercise directly into an existing group (appended after last member)
+  const handleAddToGroup = useCallback((groupId) => {
+    setItems(prev => {
+      const lastIndex = prev.reduceRight((acc, it, i) => (acc === -1 && it.groupId === groupId ? i : acc), -1);
+      if (lastIndex === -1) return prev;
+      const next = [...prev];
+      const newEx = { ...newItem(lastIndex + 2), groupId };
+      next.splice(lastIndex + 1, 0, newEx);
+      return renumber(next);
+    });
+    setShowItems(true);
+  }, []);
+
+  // Remove exercise at `index` from its group.
+  // If the group drops to 1 member, that member also loses groupId.
+  const handleUngroup = useCallback((index) => {
+    setItems(prev => {
+      const item = prev[index];
+      if (!item?.groupId) return prev;
+      const gid  = item.groupId;
+      const next = prev.map((it, i) => i === index ? { ...it, groupId: null } : it);
+      const remaining = next.filter(it => it.groupId === gid);
+      if (remaining.length === 1) {
+        return next.map(it => it.groupId === gid ? { ...it, groupId: null } : it);
+      }
+      return next;
+    });
+  }, []);
+
+  // Ungroup ALL exercises in a group
+  const handleUngroupAll = useCallback((groupId) => {
+    setItems(prev => prev.map(it => it.groupId === groupId ? { ...it, groupId: null } : it));
+  }, []);
+
   const applyTemplate = useCallback((template) => {
     const converted = Array.isArray(template.exercises)
       ? template.exercises.map((ex,i) => ({
@@ -665,6 +890,7 @@ export default function CreateWorkoutDrawer({
           Instructions:    String(ex?.Instructions || ""),
           VideoURL:        String(ex?.VideoURL || ""),
           EvidenceRequired:String(ex?.EvidenceRequired || "none"),
+          groupId:         ex?.groupId || null,  // ← preserve template groups
         }))
       : [newItem(1)];
     setItems(converted.length ? converted : [newItem(1)]);
@@ -690,7 +916,21 @@ export default function CreateWorkoutDrawer({
     for (let i=0; i<meaningful.length; i++) {
       if (!VALID_EV.has(String(meaningful[i].EvidenceRequired||"none"))) return { ok:false, error:`Item ${i+1}: invalid evidence type.` };
     }
-    return { ok:true, items:meaningful.map((it,i) => ({ Order:i+1, ExerciseName:String(it.ExerciseName).trim(), Sets:toNum(it.Sets)===""?null:Number(it.Sets), Reps:String(it.Reps||"").trim()||null, Weight:String(it.Weight||"").trim()||null, Rest:String(it.Rest||"").trim()||null, Instructions:String(it.Instructions||"").trim()||null, VideoURL:sanitizeUrl(it.VideoURL)||null, EvidenceRequired:String(it.EvidenceRequired||"none") })) };
+    return {
+      ok: true,
+      items: meaningful.map((it,i) => ({
+        Order:           i+1,
+        ExerciseName:    String(it.ExerciseName).trim(),
+        Sets:            toNum(it.Sets)===""?null:Number(it.Sets),
+        Reps:            String(it.Reps||"").trim()||null,
+        Weight:          String(it.Weight||"").trim()||null,
+        Rest:            String(it.Rest||"").trim()||null,
+        Instructions:    String(it.Instructions||"").trim()||null,
+        VideoURL:        sanitizeUrl(it.VideoURL)||null,
+        EvidenceRequired:String(it.EvidenceRequired||"none"),
+        groupId:         it.groupId || null,  // ← preserve in saved payload
+      })),
+    };
   };
 
   const submit = async (forceVara=false) => {
@@ -773,10 +1013,8 @@ export default function CreateWorkoutDrawer({
           {!isEdit && <StepIndicator step={step} />}
         </div>
 
-        {/* Compliance bar */}
         <ComplianceBar varaLevel={varaCheck?.level} periodName={varaCheck?.period?.name} date={varaDate} derivedSport={derivedSport} />
 
-        {/* Messages */}
         {err && (
           <div style={{ padding:"8px 20px", background:DS.bannedBg, borderBottom:`1px solid ${DS.bannedBorder}`, display:"flex", gap:8, alignItems:"center", flexShrink:0 }}>
             <AlertTriangle style={{ width:13, height:13, color:DS.banned, flexShrink:0 }} />
@@ -796,7 +1034,6 @@ export default function CreateWorkoutDrawer({
           {/* ── STEP 1: WHO ── */}
           {(step===1 || isEdit) && (
             <div style={{ display:step===1||isEdit?"flex":"none", flexDirection:"column", minHeight:0 }}>
-              {/* Sport filter pills */}
               <div style={{ padding:"12px 20px", background:DS.cardBg, borderBottom:`1px solid ${DS.border}`, display:"flex", gap:6, flexWrap:"wrap", flexShrink:0 }}>
                 <button type="button" onClick={() => setSportFilter("all")}
                   style={{ padding:"4px 12px", fontFamily:F.cond, fontWeight:900, fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", border:`1px solid ${sportFilter==="all"?DS.brand:DS.border}`, background:sportFilter==="all"?DS.brand:"transparent", color:sportFilter==="all"?"#fff":DS.dimText, cursor:"pointer" }}>
@@ -814,7 +1051,6 @@ export default function CreateWorkoutDrawer({
                 })}
               </div>
 
-              {/* Search + quick-select */}
               <div style={{ padding:"10px 20px", borderBottom:`1px solid ${DS.border}`, display:"flex", gap:8, alignItems:"center", flexShrink:0 }}>
                 <div style={{ position:"relative", flex:1 }}>
                   <Search style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:13, height:13, color:DS.dimText, pointerEvents:"none" }} />
@@ -841,7 +1077,6 @@ export default function CreateWorkoutDrawer({
                 )}
               </div>
 
-              {/* Athlete list */}
               <div style={{ overflowY:"auto" }}>
                 {loadingAthletes ? (
                   <div style={{ padding:"40px 20px", textAlign:"center" }}>
@@ -874,30 +1109,16 @@ export default function CreateWorkoutDrawer({
           {/* ── STEP 2: WHEN + WHAT ── */}
           {step===2 && !isEdit && (
             <div style={{ padding:"20px", display:"flex", flexDirection:"column", gap:14 }}>
+              <ComplianceDateBanner varaCheck={varaCheck} activeDate={activeDate} derivedSport={derivedSport} />
 
-              <ComplianceDateBanner
-                varaCheck={varaCheck}
-                activeDate={activeDate}
-                derivedSport={derivedSport}
-              />
-              {/* Date */}
               <div>
                 <span style={lbl}>Workout date *</span>
-                <input
-                  type="date"
-                  value={createDate}
-                  onChange={e => setCreateDate(e.target.value)}
-                  style={inp}
+                <input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} style={inp}
                   onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
                   onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }} />
-                {createDate && (
-                  <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: 5 }}>
-                    {fmtDate(createDate)}
-                  </p>
-                )}
+                {createDate && <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: 5 }}>{fmtDate(createDate)}</p>}
               </div>
 
-              {/* Title */}
               <div>
                 <span style={lbl}>Workout title *</span>
                 <input value={title} onChange={e => setTitle(e.target.value)}
@@ -907,7 +1128,6 @@ export default function CreateWorkoutDrawer({
                 <p style={{ fontFamily:F.body, fontSize:11, color:DS.dimText, marginTop:5 }}>Include the goal - strength, speed, mobility.</p>
               </div>
 
-              {/* Status */}
               <div>
                 <span style={lbl}>Status</span>
                 <select value={status} onChange={e => setStatus(e.target.value)}
@@ -996,12 +1216,7 @@ export default function CreateWorkoutDrawer({
           {/* ── STEP 3: THE WORK ── */}
           {(step===3 || isEdit) && (
             <div style={{ padding:"20px", display:"flex", flexDirection:"column", gap:14 }}>
-
-              <ComplianceDateBanner
-                varaCheck={varaCheck}
-                activeDate={activeDate}
-                derivedSport={derivedSport}
-              />
+              <ComplianceDateBanner varaCheck={varaCheck} activeDate={activeDate} derivedSport={derivedSport} />
 
               {/* Edit mode: title/status/date/sport */}
               {isEdit && (
@@ -1052,7 +1267,6 @@ export default function CreateWorkoutDrawer({
                 </div>
               )}
 
-              {/* ── TEMPLATE PICKER ── */}
               <TemplatePicker
                 templates={templates}
                 loading={loadingTemplates}
@@ -1076,6 +1290,11 @@ export default function CreateWorkoutDrawer({
                     <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:10, padding:"2px 7px", background:DS.pageBg, border:`1px solid ${DS.border}`, color:DS.dimText }}>
                       {items.filter(it=>String(it?.ExerciseName||"").trim()).length || "optional"}
                     </span>
+                    {Object.keys(groupMeta).length > 0 && (
+                      <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:9, padding:"2px 7px", background:"rgba(124,58,237,0.08)", border:`1px solid rgba(124,58,237,0.2)`, color:"#7C3AED", letterSpacing:"0.08em", textTransform:"uppercase" }}>
+                        {Object.values(groupMeta).map(m => `${m.type} ${m.label}`).join(", ")}
+                      </span>
+                    )}
                     {appliedTemplateId && (
                       <span style={{ fontFamily:F.cond, fontWeight:900, fontSize:9, padding:"2px 7px", background:DS.safeBg, border:`1px solid ${DS.safeBorder}`, color:DS.safe, letterSpacing:"0.08em", textTransform:"uppercase" }}>
                         ✓ From template
@@ -1086,13 +1305,57 @@ export default function CreateWorkoutDrawer({
                     {showItems ? "Collapse" : "Edit exercises"}
                   </span>
                 </button>
+
                 {showItems && (
                   <div style={{ padding:16, display:"flex", flexDirection:"column", gap:10 }}>
-                    {items.map((it,i) => (
-                      <ExerciseRow key={i} item={it} index={i}
-                        onChange={patch => setItems(prev => { const n=[...prev]; n[i]={...n[i],...patch}; return n; })}
-                        onRemove={() => setItems(prev => { const n=renumber(prev.filter((_,j)=>j!==i)); return n.length?n:[newItem(1)]; })} />
-                    ))}
+
+                    {/* Grouping hint — only shown when 2+ exercises and no groups yet */}
+                    {items.length >= 2 && Object.keys(groupMeta).length === 0 && (
+                      <div style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 12px", background:DS.brandBg, border:`1px solid ${DS.brandBorder}`, borderLeft:`3px solid ${DS.brand}` }}>
+                        <Link2 style={{ width:12, height:12, color:DS.brand, flexShrink:0, marginTop:2 }} />
+                        <p style={{ fontFamily:F.body, fontSize:11, color:DS.brand, margin:0, lineHeight:1.5 }}>
+                          <strong>Tip:</strong> Use <strong>Group with next</strong> on any exercise to create a Superset or Circuit — athletes will complete them back to back before resting.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ── Render segments: groups get GroupBlock, singles get ExerciseRow ── */}
+                    {segments.map((seg, si) => {
+                      if (seg.type === "group") {
+                        return (
+                          <GroupBlock
+                            key={seg.groupId}
+                            groupId={seg.groupId}
+                            members={seg.members}
+                            groupMeta={groupMeta}
+                            onChange={(index, patch) => setItems(prev => { const n=[...prev]; n[index]={...n[index],...patch}; return n; })}
+                            onRemove={(index) => setItems(prev => { const n=renumber(prev.filter((_,j)=>j!==index)); return n.length?n:[newItem(1)]; })}
+                            onUngroup={handleUngroup}
+                            onUngroupAll={handleUngroupAll}
+                            onAddToGroup={handleAddToGroup}
+                          />
+                        );
+                      }
+
+                      const { item, index } = seg;
+                      // canChainDown: true if next item exists (regardless of its group state)
+                      const canChainDown = index < items.length - 1;
+
+                      return (
+                        <ExerciseRow
+                          key={index}
+                          item={item}
+                          index={index}
+                          onChange={patch => setItems(prev => { const n=[...prev]; n[index]={...n[index],...patch}; return n; })}
+                          onRemove={() => setItems(prev => { const n=renumber(prev.filter((_,j)=>j!==index)); return n.length?n:[newItem(1)]; })}
+                          isGrouped={false}
+                          canChainDown={canChainDown}
+                          onGroup={() => handleGroup(index)}
+                        />
+                      );
+                    })}
+
+                    {/* Add exercise button */}
                     <button type="button" onClick={() => setItems(prev => renumber([...prev, newItem(prev.length+1)]))}
                       style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, padding:12, border:`2px dashed ${DS.border}`, background:"transparent", fontFamily:F.cond, fontWeight:900, fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:DS.brand, cursor:"pointer" }}
                       onMouseEnter={e=>{e.currentTarget.style.background=DS.brandBg;e.currentTarget.style.borderColor=DS.brandBorder;}}
@@ -1122,7 +1385,6 @@ export default function CreateWorkoutDrawer({
             </div>
           )}
           <div style={{ padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
-            {/* Back / Cancel */}
             {step>1&&!isEdit ? (
               <button type="button" onClick={() => setStep(s=>s-1)}
                 style={{ display:"flex", alignItems:"center", gap:6, padding:"9px 16px", border:`1px solid ${DS.border}`, background:DS.cardBg, fontFamily:F.cond, fontWeight:900, fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.labelText, cursor:"pointer" }}
@@ -1158,11 +1420,7 @@ export default function CreateWorkoutDrawer({
               {(step===3||isEdit) && (
                 <>
                   {!isVaraHard && (
-                    <SaveAsTemplateButton
-                      items={items}
-                      derivedSport={derivedSport}
-                      onSaved={handleTemplateSaved}
-                    />
+                    <SaveAsTemplateButton items={items} derivedSport={derivedSport} onSaved={handleTemplateSaved} />
                   )}
                   {isVaraHard ? (
                     <button type="button" onClick={() => submit(true)} disabled={saving||!canSubmit}

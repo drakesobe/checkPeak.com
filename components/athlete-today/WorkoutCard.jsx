@@ -5,9 +5,9 @@
 // information behind a tap.
 //
 // Design language: Nike Training Club × YEEZY. High contrast. Typography-forward.
-// Numbers breathe. One accent color. Nothing decorative that isn't functional.
+// Numbers breathe. One accent color per group. Nothing decorative that isn't functional.
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 
@@ -25,8 +25,69 @@ const C = {
   greenDim:    "rgba(0,200,81,0.15)",
 };
 
+// ─── Group palette — each group gets a distinct color ─────────────────────────
+const GROUP_COLORS = [
+  { accent: "#0057FF", bg: "rgba(0,87,255,0.08)",   border: "rgba(0,87,255,0.2)"   },
+  { accent: "#9B5DE5", bg: "rgba(155,93,229,0.08)", border: "rgba(155,93,229,0.2)" },
+  { accent: "#FF6B2B", bg: "rgba(255,107,43,0.08)", border: "rgba(255,107,43,0.2)" },
+  { accent: "#00C9A7", bg: "rgba(0,201,167,0.08)",  border: "rgba(0,201,167,0.2)"  },
+  { accent: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.2)" },
+];
+const GROUP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+// ─── Group helpers ────────────────────────────────────────────────────────────
+function buildGroupMeta(exercises) {
+  const meta = {};
+  let idx = 0;
+  exercises.forEach(s => {
+    const gid = s?.groupId || s?.item?.groupId;
+    if (gid && !meta[gid]) {
+      meta[gid] = {
+        label: GROUP_LETTERS[idx % 26],
+        color: GROUP_COLORS[idx % GROUP_COLORS.length],
+        count: 0,
+      };
+      idx++;
+    }
+    if (gid) meta[gid].count++;
+  });
+  Object.values(meta).forEach(m => {
+    m.type = m.count >= 3 ? "Circuit" : "Superset";
+  });
+  return meta;
+}
+
+function buildSegments(exercises, groupMeta) {
+  const segs = [];
+  let i = 0;
+  while (i < exercises.length) {
+    const ex = exercises[i];
+    const gid = ex?.groupId || ex?.item?.groupId;
+    if (gid && groupMeta[gid]) {
+      const members = [ex];
+      let j = i + 1;
+      while (j < exercises.length) {
+        const nextGid = exercises[j]?.groupId || exercises[j]?.item?.groupId;
+        if (nextGid === gid) { members.push(exercises[j]); j++; }
+        else break;
+      }
+      segs.push({ type: "group", groupId: gid, members });
+      i = j;
+    } else {
+      segs.push({ type: "single", sub: ex });
+      i++;
+    }
+  }
+  return segs;
+}
+
 // ─── Haptic ───────────────────────────────────────────────────────────────────
 function haptic(ms = 10) { try { navigator.vibrate?.(ms); } catch {} }
+
+function isDone(optimisticStatus, itemStatus) {
+  const s = String(optimisticStatus || itemStatus || "").toLowerCase().trim();
+  return s === "completed" || s === "pending_review" || s === "pending review" || s === "approved";
+}
 
 // ─── Parse exercise meta into parts ──────────────────────────────────────────
 function parseMeta(meta) {
@@ -40,8 +101,8 @@ function parseMeta(meta) {
 }
 
 // ─── EXERCISE ROW ─────────────────────────────────────────────────────────────
-function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
-  const done     = (optimisticStatusById?.[sub.id] || sub.item?.Status) === "Completed";
+function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast, groupAccent }) {
+  const done     = isDone(optimisticStatusById?.[sub.id], sub.item?.Status);
   const prevDone = useRef(done);
   const [flash,  setFlash] = useState(false);
   const { sets, reps, weight } = parseMeta(sub.meta);
@@ -114,7 +175,7 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
         </div>
       </div>
 
-      {/* Sets × Reps / Weight - right side */}
+      {/* Sets × Reps / Weight */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         {sets && reps && (
           <span style={{
@@ -129,19 +190,18 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
         )}
         {weight && (
           <span style={{
-            fontSize:      11,
-            fontWeight:    600,
-            color:         done ? C.muted : C.accent,
-            background:    done ? "rgba(255,255,255,0.04)" : "rgba(0,87,255,0.15)",
-            border:        `1px solid ${done ? "rgba(255,255,255,0.06)" : "rgba(0,87,255,0.3)"}`,
-            borderRadius:  4,
-            padding:       "2px 7px",
-            transition:    "all 0.2s",
+            fontSize:   11,
+            fontWeight: 600,
+            color:      done ? C.muted : (groupAccent || C.accent),
+            background: done ? "rgba(255,255,255,0.04)" : (groupAccent ? groupAccent + "22" : "rgba(0,87,255,0.15)"),
+            border:     `1px solid ${done ? "rgba(255,255,255,0.06)" : (groupAccent ? groupAccent + "45" : "rgba(0,87,255,0.3)")}`,
+            borderRadius: 4,
+            padding:    "2px 7px",
+            transition: "all 0.2s",
           }}>
             {weight}
           </span>
         )}
-        {/* Evidence required indicator */}
         {sub.evidenceRequired && !done && (
           <AlertCircle size={13} color="rgba(255,165,0,0.6)" />
         )}
@@ -150,10 +210,78 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isReadOnly, isLast }) {
   );
 }
 
+// ─── GROUP BLOCK ──────────────────────────────────────────────────────────────
+function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap, isReadOnly }) {
+  const { label, color, type } = meta;
+
+  const doneCount = members.filter(s =>
+    isDone(optimisticStatusById?.[s.id], s.item?.Status)
+  ).length;
+  const allDone = doneCount >= members.length;
+
+  return (
+    <div style={{
+      margin:       "4px 12px",
+      border:       `1px solid ${allDone ? "rgba(0,200,81,0.25)" : color.border}`,
+      borderLeft:   `3px solid ${allDone ? C.green : color.accent}`,
+      borderRadius: 10,
+      overflow:     "hidden",
+      transition:   "border-color 0.3s",
+    }}>
+      {/* Group header */}
+      <div style={{
+        display:      "flex",
+        alignItems:   "center",
+        gap:          10,
+        padding:      "8px 14px",
+        background:   allDone ? "rgba(0,200,81,0.06)" : color.bg,
+        borderBottom: `1px solid ${allDone ? "rgba(0,200,81,0.15)" : color.border}`,
+        transition:   "background 0.3s",
+      }}>
+        <span style={{
+          fontSize:      10,
+          fontWeight:    800,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          padding:       "2px 9px",
+          borderRadius:  5,
+          background:    allDone ? "rgba(0,200,81,0.15)" : color.accent + "22",
+          border:        `1px solid ${allDone ? "rgba(0,200,81,0.4)" : color.accent + "50"}`,
+          color:         allDone ? C.green : color.accent,
+          transition:    "all 0.3s",
+        }}>
+          {allDone ? "✓ " : ""}{type} {label}
+        </span>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.32)", fontWeight: 500, flex: 1 }}>
+          {members.length} exercises · back to back
+        </span>
+        {doneCount > 0 && !allDone && (
+          <span style={{ fontSize: 11, fontWeight: 800, color: color.accent }}>
+            {doneCount}/{members.length}
+          </span>
+        )}
+      </div>
+
+      {/* Exercises */}
+      {members.map((sub, i) => (
+        <ExerciseRow
+          key={sub.id}
+          sub={sub}
+          optimisticStatusById={optimisticStatusById}
+          onTap={onTap}
+          isReadOnly={isReadOnly}
+          isLast={i === members.length - 1}
+          groupAccent={color.accent}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── WORKOUT CARD ─────────────────────────────────────────────────────────────
 export default function WorkoutCard({
   dailyWorkout,
-  exercises,          // array of exercise sub-objects
+  exercises,
   optimisticStatusById,
   onExerciseTap,
   loading,
@@ -161,6 +289,25 @@ export default function WorkoutCard({
   selectedDate,
 }) {
   const [showAll, setShowAll] = useState(false);
+
+  const groupMeta = useMemo(() => buildGroupMeta(exercises || []), [exercises]);
+  const segments  = useMemo(() => buildSegments(exercises || [], groupMeta), [exercises, groupMeta]);
+
+  // Top gradient bar colors from the groups present in this workout
+  const groupAccents = useMemo(() => Object.values(groupMeta).map(m => m.color.accent), [groupMeta]);
+  const accentBar = groupAccents.length > 1
+    ? `linear-gradient(90deg, ${groupAccents.join(", ")})`
+    : groupAccents.length === 1
+      ? groupAccents[0]
+      : C.accent;
+
+  // Show first 2 segments by default, rest on demand
+  const PREVIEW_SEGS = 2;
+  const hasMore      = segments.length > PREVIEW_SEGS;
+  const visibleSegs  = showAll ? segments : segments.slice(0, PREVIEW_SEGS);
+  const hiddenCount  = exercises
+    ? exercises.length - visibleSegs.flatMap(s => s.type === "group" ? s.members : [s.sub]).length
+    : 0;
 
   if (loading && !dailyWorkout) {
     return (
@@ -176,28 +323,26 @@ export default function WorkoutCard({
 
   if (!dailyWorkout) return null;
 
-  const doneCount  = exercises.filter(s => (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed").length;
-  const totalCount = exercises.length;
+  const doneCount  = (exercises || []).filter(s => isDone(optimisticStatusById?.[s.id], s.item?.Status)).length;
+  const totalCount = (exercises || []).length;
   const allDone    = totalCount > 0 && doneCount >= totalCount;
   const pct        = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
-
-  // Show first 5 exercises by default, expand on demand
-  const PREVIEW_COUNT = 5;
-  const hasMore       = exercises.length > PREVIEW_COUNT;
-  const visible       = showAll ? exercises : exercises.slice(0, PREVIEW_COUNT);
 
   return (
     <div style={{ background: C.card, marginBottom: 2 }}>
 
-      {/* ── Card header ── */}
-      <div style={{ padding: "24px 24px 0" }}>
+      {/* ── Color accent bar (gradient across group colors) ── */}
+      <div style={{ height: 3, background: accentBar }} />
 
-        {/* Eyebrow - label + date */}
+      {/* ── Card header ── */}
+      <div style={{ padding: "20px 24px 0" }}>
+
+        {/* Eyebrow */}
         <div style={{
-          display:       "flex",
-          alignItems:    "center",
+          display:        "flex",
+          alignItems:     "center",
           justifyContent: "space-between",
-          marginBottom:  16,
+          marginBottom:   14,
         }}>
           <span style={{
             fontSize:      9,
@@ -220,21 +365,42 @@ export default function WorkoutCard({
           </span>
         </div>
 
-        {/* Workout name - the hero element */}
+        {/* Workout name */}
         <div style={{
           fontSize:      28,
           fontWeight:    800,
           color:         allDone ? "rgba(255,255,255,0.4)" : C.white,
           letterSpacing: "-0.03em",
           lineHeight:    1.1,
-          marginBottom:  20,
+          marginBottom:  16,
           transition:    "color 0.5s",
         }}>
           {dailyWorkout.Title || "Team Workout"}
         </div>
 
+        {/* Group badges */}
+        {Object.keys(groupMeta).length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+            {Object.values(groupMeta).map(m => (
+              <span key={m.label} style={{
+                fontSize:      9,
+                fontWeight:    800,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                padding:       "2px 8px",
+                borderRadius:  4,
+                background:    m.color.accent + "18",
+                border:        `1px solid ${m.color.accent + "40"}`,
+                color:         m.color.accent,
+              }}>
+                {m.type} {m.label}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Progress bar */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 20 }}>
           <div style={{
             height:       2,
             background:   "#252525",
@@ -252,12 +418,7 @@ export default function WorkoutCard({
             <span style={{ fontSize: 11, color: C.dim, fontWeight: 500 }}>
               {doneCount} of {totalCount} complete
             </span>
-            <span style={{
-              fontSize:  11,
-              fontWeight: 800,
-              color:      allDone ? C.green : C.accent,
-              letterSpacing: "0.05em",
-            }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: allDone ? C.green : C.accent, letterSpacing: "0.05em" }}>
               {Math.round(pct)}%
             </span>
           </div>
@@ -267,21 +428,34 @@ export default function WorkoutCard({
       {/* ── Divider ── */}
       <div style={{ height: 1, background: C.cardLine, margin: "0 24px" }} />
 
-      {/* ── Exercise list ── */}
-      <AnimatePresence initial={false}>
-        <div>
-          {visible.map((sub, i) => (
+      {/* ── Exercise segments ── */}
+      <div style={{ paddingTop: 4 }}>
+        {visibleSegs.map((seg, si) => {
+          if (seg.type === "group") {
+            return (
+              <GroupBlock
+                key={seg.groupId}
+                groupId={seg.groupId}
+                members={seg.members}
+                meta={groupMeta[seg.groupId]}
+                optimisticStatusById={optimisticStatusById}
+                onTap={onExerciseTap}
+                isReadOnly={isReadOnly}
+              />
+            );
+          }
+          return (
             <ExerciseRow
-              key={sub.id}
-              sub={sub}
+              key={seg.sub.id}
+              sub={seg.sub}
               optimisticStatusById={optimisticStatusById}
               onTap={onExerciseTap}
               isReadOnly={isReadOnly}
-              isLast={i === visible.length - 1 && !hasMore}
+              isLast={si === visibleSegs.length - 1 && !hasMore}
             />
-          ))}
-        </div>
-      </AnimatePresence>
+          );
+        })}
+      </div>
 
       {/* ── Show more / less ── */}
       {hasMore && (
@@ -304,7 +478,7 @@ export default function WorkoutCard({
           {showAll ? (
             <><ChevronUp size={13} /> Show less</>
           ) : (
-            <><ChevronDown size={13} /> {exercises.length - PREVIEW_COUNT} more exercises</>
+            <><ChevronDown size={13} /> {hiddenCount} more exercises</>
           )}
         </div>
       )}

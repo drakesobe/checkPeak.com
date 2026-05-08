@@ -12,7 +12,7 @@ const C = {
   line:"#1E1E1E", line2:"#2A2A2A",
   white:"#FFFFFF", dim:"rgba(255,255,255,0.35)",
   muted:"rgba(255,255,255,0.18)", faint:"rgba(255,255,255,0.07)",
-  accent:"#0057FF", green:"#00C851", orange:"#FF6B2B", amber:"#F59E0B",
+  accent:"#4FABFF", green:"#00C851", orange:"#FF6B2B", amber:"#F59E0B",
   handle:"#2A2A2A",
 };
 

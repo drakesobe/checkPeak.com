@@ -14,12 +14,12 @@ const C = {
   cardLine:"#1E1E1E", line2:"#2A2A2A",
   white:"#FFFFFF", dim:"rgba(255,255,255,0.35)",
   muted:"rgba(255,255,255,0.18)", faint:"rgba(255,255,255,0.07)",
-  accent:"#0057FF", green:"#00C851", greenDim:"rgba(0,200,81,0.15)",
+  accent:"#4FABFF", green:"#00C851", greenDim:"rgba(0,200,81,0.15)",
   greenText:"#00C851", orange:"#FF6B2B", amber:"#F59E0B", handle:"#2A2A2A",
 };
 
 const GROUP_COLORS = [
-  { accent:"#0057FF", bg:"rgba(0,87,255,0.08)",   border:"rgba(0,87,255,0.2)"   },
+  { accent:"#4FABFF", bg:"rgba(0,87,255,0.08)",   border:"rgba(0,87,255,0.2)"   },
   { accent:"#9B5DE5", bg:"rgba(155,93,229,0.08)", border:"rgba(155,93,229,0.2)" },
   { accent:"#FF6B2B", bg:"rgba(255,107,43,0.08)", border:"rgba(255,107,43,0.2)" },
   { accent:"#00C9A7", bg:"rgba(0,201,167,0.08)",  border:"rgba(0,201,167,0.2)"  },

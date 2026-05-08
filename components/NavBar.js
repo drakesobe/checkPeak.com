@@ -249,6 +249,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
           <DropSection label="My Account" />
           <DropLink href="/dashboard"     icon="⬡" onClick={onClose}>Athlete Dashboard</DropLink>
           <DropLink href="/athlete/today" icon="◎" onClick={onClose}>Today</DropLink>
+          <DropLink href="/athlete/journal" icon="◈" onClick={onClose}>Journal</DropLink>
           <DropLink href="/scans"         icon="◈" onClick={onClose}>My Scans</DropLink>
         </div>
       )}
@@ -466,6 +467,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
               <>
                 <MLink href="/dashboard"     icon="⬡">Athlete Dashboard</MLink>
                 <MLink href="/athlete/today" icon="◎">Today</MLink>
+                <MLink href="/athlete/journal" icon="◈">Journal</MLink>
                 <MLink href="/scans"         icon="◈">My Scans</MLink>
               </>
             )}

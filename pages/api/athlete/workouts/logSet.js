@@ -1,52 +1,44 @@
 // pages/api/athlete/workouts/logSet.js
-// Persists a single set log entry to the Airtable "Set Logs" table.
-// Called fire-and-forget from useWorkoutLog — localStorage is the primary store,
-// this is the cross-device/coach-visible layer.
-
 import Airtable from "airtable";
+import { requireAthlete } from "@/lib/requireAthlete";
 
 const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
   .base(process.env.ATHLETE_BASE_ID);
 
 const TABLE = process.env.SET_LOGS_TABLE_NAME || "Set Logs";
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+function getAthleteToken(auth) {
+  return String(
+    auth?.athlete?.AthleteToken ||
+    auth?.athlete?.athleteToken ||
+    auth?.user?.AthleteToken    ||
+    auth?.user?.athleteToken    ||
+    ""
+  ).trim();
+}
 
-  // Pull athlete identity from session cookie
-  // Adjust this to match however you read the session in other routes
-  const athleteToken = req.session?.athleteToken
-    || req.cookies?.athleteToken
-    || req.body?.athleteToken
-    || "";
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const auth = requireAthlete(req);
+  if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
+
+  const athleteToken = getAthleteToken(auth);
+  if (!athleteToken) return res.status(401).json({ error: "Missing AthleteToken" });
 
   const {
-    workoutItemId,
-    exerciseTitle,
-    date,
-    setNumber,
-    targetReps,
-    targetWeight,
-    actualReps,
-    actualWeight,
-    effort,        // legacy field name
-    difficulty,    // preferred field name going forward
-    groupId,
-    timestamp,
-    id,
+    workoutItemId, exerciseTitle, date, setNumber,
+    targetReps, targetWeight, actualReps, actualWeight,
+    effort, difficulty, groupId, timestamp,
   } = req.body || {};
 
-  if (!exerciseTitle) {
-    return res.status(400).json({ error: "exerciseTitle is required" });
-  }
+  if (!exerciseTitle) return res.status(400).json({ error: "exerciseTitle is required" });
 
   const difficultyValue = difficulty ?? effort ?? null;
 
   try {
     const record = await base(TABLE).create({
-      AthleteToken:  String(athleteToken || ""),
+      AthleteToken:  athleteToken,
       ExerciseTitle: String(exerciseTitle || ""),
       WorkoutItemId: String(workoutItemId || ""),
       Date:          String(date || ""),
@@ -63,7 +55,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, id: record.id });
   } catch (err) {
     console.error("logSet error:", err);
-    // Don't surface Airtable errors to the client — localStorage already saved it
     return res.status(200).json({ ok: false, warning: "Saved locally, sync failed" });
   }
 }

@@ -36,32 +36,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const records = [];
-    await base(TABLE)
+    const records = await base(TABLE)
       .select({
         filterByFormula: formula,
         sort: [{ field: "Timestamp", direction: "desc" }],
         maxRecords: Number(limit),
       })
-      .eachPage((page, next) => {
-        page.forEach(r => records.push({
-          id:            r.id,
-          workoutItemId: r.get("WorkoutItemId") || "",
-          exerciseTitle: r.get("ExerciseTitle") || "",
-          date:          r.get("Date")          || "",
-          setNumber:     r.get("SetNumber")     || 0,
-          targetReps:    r.get("TargetReps")    || "",
-          targetWeight:  r.get("TargetWeight")  || "",
-          actualReps:    r.get("ActualReps")    || 0,
-          actualWeight:  r.get("ActualWeight")  || 0,
-          difficulty:    r.get("Difficulty")    || 0,
-          groupId:       r.get("GroupId")       || "",
-          timestamp:     r.get("Timestamp")     || 0,
-        }));
-        next();
-      });
+      .all();
 
-    return res.status(200).json({ ok: true, logs: records, total: records.length });
+    const logs = records.map(r => ({
+      id:            r.id,
+      workoutItemId: r.get("WorkoutItemId") || "",
+      exerciseTitle: r.get("ExerciseTitle") || "",
+      date:          r.get("Date")          || "",
+      setNumber:     r.get("SetNumber")     || 0,
+      targetReps:    r.get("TargetReps")    || "",
+      targetWeight:  r.get("TargetWeight")  || "",
+      actualReps:    r.get("ActualReps")    || 0,
+      actualWeight:  r.get("ActualWeight")  || 0,
+      difficulty:    r.get("Difficulty")    || 0,
+      groupId:       r.get("GroupId")       || "",
+      timestamp:     r.get("Timestamp")     || 0,
+    }));
+
+    return res.status(200).json({ ok: true, logs, total: logs.length });
   } catch (err) {
     console.error("logs GET error:", err);
     return res.status(500).json({ error: "Failed to fetch logs" });

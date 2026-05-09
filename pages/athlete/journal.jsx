@@ -138,7 +138,7 @@ function BaselinesSection({ baselines, exercises, onEdit }) {
   return (
     <div style={{ padding: "20px 0 16px", borderBottom: `1px solid ${C.line}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 12px" }}>
-        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted }}>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted }}>
           Baselines
         </span>
         <button
@@ -166,14 +166,14 @@ function BaselinesSection({ baselines, exercises, onEdit }) {
       borderTop: `3px solid ${beatBaseline ? C.green : hasBaseline ? C.amber : C.line2}`,
       borderRadius: 10, cursor: "pointer", transition: "border-color 0.2s",
     }}>
-      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 8, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: hasBaseline ? C.amber : C.muted, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: hasBaseline ? C.amber : C.muted, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {lift.label}
       </div>
 
       {hasBaseline ? (
         <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: loggedPR ? 4 : 0 }}>
           <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 900, fontStyle: "italic", color: C.white, letterSpacing: "-0.03em", lineHeight: 1 }}>{baseline}</span>
-          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 9, color: C.muted, fontWeight: 600 }}>{lift.unit}</span>
+          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: C.muted, fontWeight: 600 }}>{lift.unit}</span>
         </div>
       ) : (
         <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: loggedPR ? 4 : 0 }}>—</div>
@@ -181,11 +181,11 @@ function BaselinesSection({ baselines, exercises, onEdit }) {
 
       {loggedPR && (
         <div style={{ paddingTop: 4, borderTop: `1px solid ${C.line2}` }}>
-          <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 1 }}>Logged</div>
+          <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 1 }}>Logged</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 1 }}>
             <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 900, color: beatBaseline ? C.green : C.accent, letterSpacing: "-0.01em" }}>{loggedPR}</span>
-            <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 8, color: C.muted }}>{lift.unit}</span>
-            {beatBaseline && <span style={{ fontSize: 8, marginLeft: 1 }}>🏆</span>}
+            <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: C.muted }}>{lift.unit}</span>
+            {beatBaseline && <span style={{ fontSize: 10, marginLeft: 1 }}>🏆</span>}
           </div>
         </div>
       )}
@@ -229,7 +229,7 @@ function BaselinesSheet({ open, onClose, baselines, onSave }) {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px 12px", flexShrink: 0, borderBottom: `1px solid ${C.line}` }}>
               <div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.amber, marginBottom: 3 }}>Performance</div>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.amber, marginBottom: 3 }}>Performance</div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", color: C.white, letterSpacing: "-0.02em", lineHeight: 1 }}>My Baselines</div>
               </div>
               <button onClick={onClose} style={{ background: C.s1, border: `1px solid ${C.line}`, width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -483,14 +483,14 @@ function HeroStats({ totalDays, bestPR, streak }) {
           <div aria-hidden style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse 80% 60% at 50% 100%, ${color}0A 0%, transparent 70%)`, pointerEvents: "none" }} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 10 }}>
             <Icon size={11} color={color} />
-            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: C.muted }}>{label}</span>
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: C.muted }}>{label}</span>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 3 }}>
             <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 38, fontWeight: 900, fontStyle: "italic", color, letterSpacing: "-0.04em", lineHeight: 1 }}>{value}</span>
             {sub && <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, color: C.muted, fontWeight: 600 }}>{sub}</span>}
           </div>
           {sublabel && (
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 8, fontWeight: 700, color: C.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: C.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
               {sublabel}
             </div>
           )}

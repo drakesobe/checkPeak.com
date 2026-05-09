@@ -125,9 +125,15 @@ const RESPONSIVE_CSS = `
     .cp-greeting-h1 {
       font-size: clamp(32px, 10vw, 52px);
     }
-    /* Today panel: stack workout/class/meal vertically on mobile */
+    /* Force Today panel to stack vertically on mobile */
+    .cp-today-row {
+      flex-direction: column;
+    }
     .cp-today-row > div {
+      width: 100%;
+      box-sizing: border-box;
       border-left: none !important;
+      border-right: none !important;
       border-top: 0.5px solid rgba(255,255,255,0.08);
     }
     .cp-today-row > div:first-child {

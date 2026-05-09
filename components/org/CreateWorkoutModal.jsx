@@ -21,6 +21,7 @@ import {
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import { loadPeriods, getActivePeriod, getVaraRequirement } from "@/lib/org/seasonCalendar";
 import TemplatePicker from "@/components/org/workoutsCalendar/TemplatePicker";
+import ExerciseTitleInput from "@/components/org/ExerciseTitleInput";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 async function safeJson(r) { try { return await r.json(); } catch { return {}; } }
@@ -326,10 +327,16 @@ function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canCh
       <div style={{ padding:"12px 14px", display:"flex", flexDirection:"column", gap:10 }}>
         <div>
           <span style={lbl}>Exercise</span>
-          <input value={item.ExerciseName} onChange={e => onChange({ ExerciseName:e.target.value })}
-            placeholder="e.g. Trap Bar Deadlift" style={inp}
-            onFocus={e => { e.currentTarget.style.borderColor=DS.brand; }}
-            onBlur={e  => { e.currentTarget.style.borderColor=DS.border; }} />
+          <ExerciseTitleInput
+            value={item.ExerciseName}
+            onChange={val => onChange({ ExerciseName: val })}
+            placeholder="e.g. Trap Bar Deadlift"
+            inputStyle={{
+              ...inp,
+              onFocus: undefined,
+              onBlur:  undefined,
+            }}
+          />
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
           {[["Sets","Sets","3",true],["Reps","Reps","8–10",false],["Weight","Weight","225lb",false],["Rest","Rest","90s",false]].map(([label,key,ph,num]) => (

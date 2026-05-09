@@ -130,6 +130,7 @@ const RESPONSIVE_CSS = `
       flex-direction: column;
     }
     .cp-today-row > div {
+      flex: 0 0 auto !important; 
       width: 100%;
       box-sizing: border-box;
       border-left: none !important;

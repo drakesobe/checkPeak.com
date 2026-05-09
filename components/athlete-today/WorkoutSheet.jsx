@@ -140,7 +140,8 @@ function SetLogger({ sub, setNumber, value, onChange }) {
         Log Set {setNumber}
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:cols, gap:16 }}>
+      {/* Row 1: Reps + Weight side by side */}
+      <div style={{ display:"grid", gridTemplateColumns: isBodyWeight ? "1fr" : "1fr 1fr", gap:16, marginBottom:16 }}>
 
         {/* REPS */}
         <div>
@@ -153,12 +154,7 @@ function SetLogger({ sub, setNumber, value, onChange }) {
         </div>
 
         {/* WEIGHT */}
-        {isBodyWeight ? (
-          <div>
-            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Weight</div>
-            <div style={{ fontSize:13, fontWeight:600, color:C.dim, paddingTop:4 }}>Body weight</div>
-          </div>
-        ) : (
+        {!isBodyWeight && (
           <div>
             <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Weight ({weightUnit})</div>
             <input
@@ -174,32 +170,33 @@ function SetLogger({ sub, setNumber, value, onChange }) {
                 fontFamily:"inherit", letterSpacing:"-0.02em",
                 outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
               }}
-              onFocus={e => { e.target.style.borderColor = C.accentBdr || "rgba(79,171,255,0.4)"; }}
+              onFocus={e => { e.target.style.borderColor = "rgba(79,171,255,0.4)"; }}
               onBlur={e  => { e.target.style.borderColor = C.line2; }}
             />
           </div>
         )}
+      </div>
 
-        {/* DIFFICULTY */}
-        <div>
-          <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Difficulty</div>
-          <div style={{ display:"flex", gap:6, marginBottom:5 }}>
+      {/* Row 2: Difficulty — full width so 5 dots never clip on narrow screens */}
+      <div>
+        <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:10 }}>Difficulty</div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ display:"flex", gap:10, flexShrink:0 }}>
             {[1,2,3,4,5].map(e => (
               <button key={e} onClick={() => onChange({ ...value, effort: value.effort === e ? 0 : e })}
                 style={{
-                  width:24, height:24, borderRadius:"50%", cursor:"pointer",
+                  width:28, height:28, borderRadius:"50%", cursor:"pointer", flexShrink:0,
                   background: e <= value.effort ? EFFORT[value.effort]?.color : "transparent",
                   border:`2px solid ${e <= value.effort ? EFFORT[value.effort]?.color : "rgba(255,255,255,0.28)"}`,
-                  transition:"all 0.15s",
-                  padding:0,
+                  transition:"all 0.15s", padding:0,
                 }}
               />
             ))}
           </div>
           {value.effort > 0 && (
-            <div style={{ fontSize:10, fontWeight:700, color:EFFORT[value.effort]?.color }}>
+            <span style={{ fontSize:11, fontWeight:700, color:EFFORT[value.effort]?.color, letterSpacing:"0.02em" }}>
               {EFFORT[value.effort]?.label}
-            </div>
+            </span>
           )}
         </div>
       </div>
@@ -500,7 +497,31 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap }) {
 
 // ─── WORKOUT SHEET ────────────────────────────────────────────────────────────
 export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkout, optimisticStatusById, onExerciseTap, onQuickComplete, onLogSet, getExerciseSessions }) {
-  useEffect(()=>{ document.body.style.overflow=isOpen?"hidden":""; return()=>{ document.body.style.overflow=""; }; },[isOpen]);
+  useEffect(() => {
+    if (!isOpen) {
+      const savedY = document.body.style.top;
+      document.body.style.position = "";
+      document.body.style.top      = "";
+      document.body.style.width    = "";
+      document.body.style.overflow = "";
+      if (savedY) window.scrollTo(0, parseInt(savedY) * -1);
+      return;
+    }
+    // iOS Safari needs position:fixed to actually block scroll
+    const scrollY = window.scrollY;
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top      = `-${scrollY}px`;
+    document.body.style.width    = "100%";
+    return () => {
+      const savedY = document.body.style.top;
+      document.body.style.position = "";
+      document.body.style.top      = "";
+      document.body.style.width    = "";
+      document.body.style.overflow = "";
+      if (savedY) window.scrollTo(0, parseInt(savedY) * -1);
+    };
+  }, [isOpen]);
 
   const sub = workoutItem?.sub || [];
   const groupMeta = useMemo(()=>buildGroupMeta(sub),[sub]);

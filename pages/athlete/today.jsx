@@ -191,7 +191,7 @@ function ProgressRing({ done, total, size = 38, stroke = 3 }) {
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)", display: "block" }}>
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} />
         <circle cx={size/2} cy={size/2} r={r} fill="none"
-          stroke={all ? "#4ADE80" : "#60A5FA"} strokeWidth={stroke}
+          stroke={all ? "#4ADE80" : "#4FABFF"} strokeWidth={stroke}
           strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
           strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s ease, stroke 0.5s ease" }}
         />
@@ -242,7 +242,7 @@ function WeekStrip({ selectedDate, onSelectDate, classSchedules, todayHasContent
               {day.num}
             </div>
           </div>
-          <div style={{ width: 4, height: 4, borderRadius: "50%", background: day.isSelected ? "#60A5FA" : day.isPast ? "rgba(255,255,255,0.12)" : day.hasItems ? "rgba(96,165,250,0.4)" : "transparent", transition: "background 0.2s" }} />
+          <div style={{ width: 4, height: 4, borderRadius: "50%", background: day.isSelected ? "#4FABFF" : day.isPast ? "rgba(255,255,255,0.12)" : day.hasItems ? "rgba(96,165,250,0.4)" : "transparent", transition: "background 0.2s" }} />
         </div>
       ))}
     </div>
@@ -270,7 +270,7 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
  
     const current  = all.find(ev => nowMin >= ev.startMinutes && nowMin < ev.startMinutes + (ev.durationMinutes || 60));
     const upcoming = all.find(ev => ev.startMinutes > nowMin);
-    const colorMap = { workout: "#EF4444", meal: "#60A5FA", class: "#FBBF24" };
+    const colorMap = { workout: "#EF4444", meal: "#4FABFF", class: "#FBBF24" };
  
     if (current && !itemDone(current)) {
       return {
@@ -313,41 +313,118 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
 }
 
 // ─── ALL DONE CELEBRATION ─────────────────────────────────────────────────────
+// Drop-in replacement for AllDoneState in today.jsx
+// Cinematic dark version matching homepage / WorkoutSheet energy
 function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutritionDone, nutritionTotal, hasPlan, onReview }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "55vh", padding: "48px 32px", textAlign: "center" }}>
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", minHeight: "65vh",
+      padding: "48px 32px", textAlign: "center",
+      background: "#0A0A0A",
+      position: "relative", overflow: "hidden",
+    }}>
       <style>{`
-        @keyframes popIn { 0%{transform:scale(0.5);opacity:0} 65%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
-        @keyframes fadeSlideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes glowPulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
+        @keyframes dayIn { 0%{opacity:0;transform:translateY(32px) skewY(2deg)} 100%{opacity:1;transform:translateY(0) skewY(0)} }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
-      <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#D1FAE5,#A7F3D0)", border: "2px solid #6EE7B7", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28, animation: "popIn 0.55s cubic-bezier(0.16,1,0.3,1)", boxShadow: "0 0 0 8px rgba(110,231,183,0.12), 0 4px 20px rgba(16,185,129,0.15)" }}>
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><path d="M5 12l4.5 4.5L19 7" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+
+      {/* Background glow */}
+      <div aria-hidden="true" style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(ellipse 60% 50% at 50% 60%, rgba(0,200,81,0.08) 0%, transparent 70%)",
+        animation: "glowPulse 3s ease-in-out infinite",
+      }} />
+
+      {/* Check ring */}
+      <div style={{
+        width: 64, height: 64, borderRadius: "50%",
+        background: "rgba(0,200,81,0.1)",
+        border: "1.5px solid rgba(0,200,81,0.3)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        marginBottom: 28, position: "relative", zIndex: 1,
+        boxShadow: "0 0 0 12px rgba(0,200,81,0.05), 0 0 40px rgba(0,200,81,0.12)",
+        animation: "fadeUp 0.5s ease both",
+      }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path d="M5 12l4.5 4.5L19 7" stroke="#00C851" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </div>
-      <div style={{ fontSize: 30, fontWeight: 800, color: "#111827", letterSpacing: "-0.5px", marginBottom: 8, lineHeight: 1.1, animation: "fadeSlideUp 0.4s ease 0.15s both" }}>Day cleared.</div>
-      <div style={{ fontSize: 15, color: "#6B7280", fontWeight: 500, marginBottom: 32, animation: "fadeSlideUp 0.4s ease 0.25s both" }}>
+
+      {/* Headline */}
+      <div style={{
+        fontFamily: "'Barlow Condensed', -apple-system, sans-serif",
+        fontWeight: 900, fontStyle: "italic",
+        fontSize: "clamp(3rem, 12vw, 5rem)",
+        lineHeight: 0.9, letterSpacing: "-0.03em",
+        textTransform: "uppercase", color: "#FFFFFF",
+        marginBottom: 8, position: "relative", zIndex: 1,
+        animation: "dayIn 0.5s cubic-bezier(0.16,1,0.3,1) 0.1s both",
+      }}>
+        Day<br /><span style={{ color: "#00C851" }}>Cleared.</span>
+      </div>
+
+      {/* Sub */}
+      <div style={{
+        fontSize: 14, color: "rgba(255,255,255,0.35)", fontWeight: 500,
+        marginBottom: 36, position: "relative", zIndex: 1,
+        animation: "fadeUp 0.4s ease 0.3s both",
+      }}>
         {firstName}, you finished {totalDone} {totalDone === 1 ? "thing" : "things"} today.
       </div>
-      <div style={{ width: "100%", maxWidth: 280, background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", marginBottom: 32, animation: "fadeSlideUp 0.4s ease 0.35s both" }}>
+
+      {/* Stats */}
+      <div style={{
+        width: "100%", maxWidth: 280,
+        background: "#111111", border: "1px solid #1E1E1E",
+        borderRadius: 14, overflow: "hidden",
+        marginBottom: 32, position: "relative", zIndex: 1,
+        animation: "fadeUp 0.4s ease 0.4s both",
+      }}>
         {workoutTotal > 0 && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: hasPlan ? "1px solid #F3F4F6" : "none" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Workout</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{workoutDone}/{workoutTotal}</span>
-              {workoutDone >= workoutTotal && <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={9} color="#059669" strokeWidth={3}/></div>}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: hasPlan ? "1px solid #1E1E1E" : "none" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.45)" }}>Workout</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: workoutDone >= workoutTotal ? "#00C851" : "rgba(255,255,255,0.45)" }}>
+                {workoutDone}/{workoutTotal}
+              </span>
+              {workoutDone >= workoutTotal && (
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "rgba(0,200,81,0.15)", border: "1px solid rgba(0,200,81,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Check size={9} color="#00C851" strokeWidth={3}/>
+                </div>
+              )}
             </div>
           </div>
         )}
         {hasPlan && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Nutrition</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{nutritionDone}/{nutritionTotal}</span>
-              {nutritionDone >= nutritionTotal && <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#D1FAE5", display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={9} color="#059669" strokeWidth={3}/></div>}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.45)" }}>Nutrition</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: nutritionDone >= nutritionTotal ? "#00C851" : "rgba(255,255,255,0.45)" }}>
+                {nutritionDone}/{nutritionTotal}
+              </span>
+              {nutritionDone >= nutritionTotal && (
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "rgba(0,200,81,0.15)", border: "1px solid rgba(0,200,81,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Check size={9} color="#00C851" strokeWidth={3}/>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
-      <button onClick={onReview} style={{ padding: "10px 24px", background: "transparent", border: "1px solid #E5E7EB", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#6B7280", cursor: "pointer", animation: "fadeSlideUp 0.4s ease 0.45s both" }}>
+
+      {/* Review button */}
+      <button onClick={onReview} style={{
+        padding: "11px 28px",
+        background: "transparent",
+        border: "1px solid #2A2A2A",
+        borderRadius: 10, fontSize: 13, fontWeight: 600,
+        color: "rgba(255,255,255,0.3)", cursor: "pointer",
+        position: "relative", zIndex: 1,
+        animation: "fadeUp 0.4s ease 0.55s both",
+        fontFamily: "inherit",
+      }}>
         Review today's work
       </button>
     </div>
@@ -601,7 +678,7 @@ export default function AthleteToday() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100dvh", background: "#F7F8FA" }}>
+    <div style={{ minHeight: "100dvh", background: "#0A0A0A" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes nowPulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
 
       {/* ── HEADER ── */}
@@ -622,9 +699,9 @@ export default function AthleteToday() {
               {streak > 0 && isToday && (
                 <div style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(0,87,255,0.15)", border: "0.5px solid rgba(0,87,255,0.3)", borderRadius: 20, padding: "3px 9px 3px 7px", flexShrink: 0 }}>
                   <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
-                    <polyline points="0,10 4,10 6,4 8,12 10,7 12,9 14,2 16,11 18,8 20,10 24,10 28,10" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <polyline points="0,10 4,10 6,4 8,12 10,7 12,9 14,2 16,11 18,8 20,10 24,10 28,10" stroke="#4FABFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: "#60A5FA" }}>{streak}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "#4FABFF" }}>{streak}</span>
                 </div>
               )}
             </div>
@@ -715,7 +792,7 @@ export default function AthleteToday() {
       </div>
 
       {/* ── CONTENT ── */}
-      <div style={{ background: "#fff", minHeight: "calc(100dvh - 160px)" }}>
+      <div style={{ background: "#0A0A0A", minHeight: "calc(100dvh - 160px)" }}>
         {showAllDone && !reviewMode ? (
           <AllDoneState
             firstName={firstName} totalDone={totalDone}

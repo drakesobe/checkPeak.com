@@ -12,14 +12,14 @@ import ExerciseProgressSheet from "./ExerciseProgressSheet";
 const C = {
   bg:"#0F0F0F", surface:"#161616", surface2:"#1A1A1A",
   cardLine:"#1E1E1E", line2:"#2A2A2A",
-  white:"#FFFFFF", dim:"rgba(255,255,255,0.35)",
-  muted:"rgba(255,255,255,0.18)", faint:"rgba(255,255,255,0.07)",
+  white:"#FFFFFF", dim:"rgba(255,255,255,0.65)",
+  muted:"rgba(255,255,255,0.45)", faint:"rgba(255,255,255,0.10)",
   accent:"#4FABFF", green:"#00C851", greenDim:"rgba(0,200,81,0.15)",
   greenText:"#00C851", orange:"#FF6B2B", amber:"#F59E0B", handle:"#2A2A2A",
 };
 
 const GROUP_COLORS = [
-  { accent:"#4FABFF", bg:"rgba(0,87,255,0.08)",   border:"rgba(0,87,255,0.2)"   },
+  { accent:"#4FABFF", bg:"rgba(79,171,255,0.08)",   border:"rgba(79,171,255,0.2)"   },
   { accent:"#9B5DE5", bg:"rgba(155,93,229,0.08)", border:"rgba(155,93,229,0.2)" },
   { accent:"#FF6B2B", bg:"rgba(255,107,43,0.08)", border:"rgba(255,107,43,0.2)" },
   { accent:"#00C9A7", bg:"rgba(0,201,167,0.08)",  border:"rgba(0,201,167,0.2)"  },
@@ -102,7 +102,7 @@ function SetDots({ total, done, color }) {
   return (
     <div style={{ display:"flex", gap:8 }}>
       {Array.from({length:total},(_,i)=>(
-        <div key={i} style={{ width:i<done?16:11, height:i<done?16:11, borderRadius:"50%", flexShrink:0, background:i<done?color:"transparent", border:`2px solid ${i<done?color:"rgba(255,255,255,0.18)"}`, transition:"all 0.35s cubic-bezier(0.34,1.56,0.64,1)" }} />
+        <div key={i} style={{ width:i<done?16:11, height:i<done?16:11, borderRadius:"50%", flexShrink:0, background:i<done?color:"transparent", border:`2px solid ${i<done?color:"rgba(255,255,255,0.28)"}`, transition:"all 0.35s cubic-bezier(0.34,1.56,0.64,1)" }} />
       ))}
     </div>
   );
@@ -174,7 +174,7 @@ function SetLogger({ sub, setNumber, value, onChange }) {
                 fontFamily:"inherit", letterSpacing:"-0.02em",
                 outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
               }}
-              onFocus={e => { e.target.style.borderColor = C.accentBdr || "rgba(0,87,255,0.4)"; }}
+              onFocus={e => { e.target.style.borderColor = C.accentBdr || "rgba(79,171,255,0.4)"; }}
               onBlur={e  => { e.target.style.borderColor = C.line2; }}
             />
           </div>
@@ -189,7 +189,7 @@ function SetLogger({ sub, setNumber, value, onChange }) {
                 style={{
                   width:24, height:24, borderRadius:"50%", cursor:"pointer",
                   background: e <= value.effort ? EFFORT[value.effort]?.color : "transparent",
-                  border:`2px solid ${e <= value.effort ? EFFORT[value.effort]?.color : "rgba(255,255,255,0.18)"}`,
+                  border:`2px solid ${e <= value.effort ? EFFORT[value.effort]?.color : "rgba(255,255,255,0.28)"}`,
                   transition:"all 0.15s",
                   padding:0,
                 }}
@@ -252,7 +252,7 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
               <div key={i} style={{ padding:"16px 10px 14px", textAlign:"center", borderRight:i<statCols.length-1?`1px solid ${C.line2}`:"none" }}>
                 <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:4 }}>
                   <span style={{ fontSize:28, fontWeight:900, color:C.white, letterSpacing:"-2px", lineHeight:1 }}>{num}</span>
-                  {unit && <span style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.35)" }}>{unit}</span>}
+                  {unit && <span style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.55)" }}>{unit}</span>}
                 </div>
                 <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginTop:7 }}>{s.l}</div>
               </div>
@@ -277,7 +277,7 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
 
       {/* Instructions */}
       {sub.instructions && (
-        <div style={{ fontSize:12, color:"rgba(255,255,255,0.32)", lineHeight:1.65, padding:"11px 14px", background:C.faint, borderRadius:8, borderLeft:`2px solid ${C.line2}`, marginTop:16 }}>
+        <div style={{ fontSize:12, color:"rgba(255,255,255,0.50)", lineHeight:1.65, padding:"11px 14px", background:C.faint, borderRadius:8, borderLeft:`2px solid ${C.line2}`, marginTop:16 }}>
           {sub.instructions}
         </div>
       )}
@@ -285,7 +285,7 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
       {/* Video link */}
       {sub.videoUrl && (
         <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-          style={{ display:"inline-flex", alignItems:"center", gap:7, marginTop:14, fontSize:12, fontWeight:700, color:C.accent, textDecoration:"none", background:"rgba(0,87,255,0.12)", border:"1px solid rgba(0,87,255,0.25)", borderRadius:7, padding:"7px 13px" }}>
+          style={{ display:"inline-flex", alignItems:"center", gap:7, marginTop:14, fontSize:12, fontWeight:700, color:C.accent, textDecoration:"none", background:"rgba(79,171,255,0.12)", border:"1px solid rgba(79,171,255,0.25)", borderRadius:7, padding:"7px 13px" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
           </svg>
@@ -384,7 +384,7 @@ function StatCell({ value, label, accent }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2 }}>
       <span style={{ fontSize:13, fontWeight:700, color:accent||C.white, letterSpacing:"-0.02em", lineHeight:1 }}>{value}</span>
-      <span style={{ fontSize:8, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em", color:"rgba(255,255,255,0.25)", lineHeight:1 }}>{label}</span>
+      <span style={{ fontSize:8, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em", color:"rgba(255,255,255,0.45)", lineHeight:1 }}>{label}</span>
     </div>
   );
 }
@@ -487,7 +487,7 @@ function GroupBlock({ groupId, members, meta, optimisticStatusById, onTap }) {
         <span style={{ fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"2px 9px",borderRadius:5,background:allDone?"rgba(0,200,81,0.15)":color.accent+"22",border:`1px solid ${allDone?"rgba(0,200,81,0.4)":color.accent+"50"}`,color:allDone?C.green:color.accent,transition:"all 0.3s" }}>
           {allDone?"✓ ":""}{type} {label}
         </span>
-        <span style={{ fontSize:11, color:"rgba(255,255,255,0.32)", fontWeight:500, flex:1 }}>{members.length} exercises · back to back · rest after</span>
+        <span style={{ fontSize:11, color:"rgba(255,255,255,0.50)", fontWeight:500, flex:1 }}>{members.length} exercises · back to back · rest after</span>
         {doneCount>0&&!allDone&&<span style={{ fontSize:11,fontWeight:800,color:color.accent }}>{doneCount}/{members.length}</span>}
       </div>
       {members.map((sub,mi)=>(
@@ -716,7 +716,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               <div style={{ overflowY:"auto",flex:1,WebkitOverflowScrolling:"touch" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:7,padding:"9px 20px",borderBottom:`1px solid ${C.cardLine}`,background:"#0D0D0D" }}>
                   <ChevronDown size={11} color="rgba(255,255,255,0.2)" style={{ transform:"rotate(-90deg)" }}/>
-                  <span style={{ fontSize:10,color:"rgba(255,255,255,0.22)",fontWeight:500 }}>Swipe to complete · Tap Begin for focus mode</span>
+                  <span style={{ fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:500 }}>Swipe to complete · Tap Begin for focus mode</span>
                 </div>
                 {segments.map((seg,si)=>
                   seg.type==="group"

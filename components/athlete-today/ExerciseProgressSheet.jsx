@@ -1,17 +1,17 @@
 // components/athlete-today/ExerciseProgressSheet.jsx
 // Dark bottom sheet showing an athlete's logged history for one exercise.
-// Triggered from the WorkoutSheet active card.
+// Fetches from Airtable API on open, merges with localStorage sessions.
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 const C = {
   bg:"#0F0F0F", surface:"#161616", surface2:"#1C1C1C",
   line:"#1E1E1E", line2:"#2A2A2A",
-  white:"#FFFFFF", dim:"rgba(255,255,255,0.35)",
-  muted:"rgba(255,255,255,0.18)", faint:"rgba(255,255,255,0.07)",
+  white:"#FFFFFF", dim:"rgba(255,255,255,0.65)",
+  muted:"rgba(255,255,255,0.45)", faint:"rgba(255,255,255,0.10)",
   accent:"#4FABFF", green:"#00C851", orange:"#FF6B2B", amber:"#F59E0B",
   handle:"#2A2A2A",
 };
@@ -21,29 +21,51 @@ const EFFORT_COLORS = ["", "#22C55E", "#84CC16", "#FBBF24", "#F97316", "#EF4444"
 
 function formatDate(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(`${dateStr}T12:00:00`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// Simple SVG sparkline for weight over sessions
-function Sparkline({ sessions, height = 60, width = "100%" }) {
+// Group flat log entries (from API) into sessions, same shape as useWorkoutLog
+function groupIntoSessions(logs = []) {
+  const byDate = {};
+  logs.forEach(l => {
+    const d = l.date || new Date(l.timestamp).toISOString().slice(0, 10);
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(l);
+  });
+  return Object.entries(byDate)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, sets]) => ({
+      date, sets,
+      maxWeight: Math.max(0, ...sets.map(s => Number(s.actualWeight) || 0)),
+      maxReps:   Math.max(0, ...sets.map(s => Number(s.actualReps)   || 0)),
+      totalSets: sets.length,
+    }));
+}
+
+// Merge localStorage sessions + API sessions, deduplicate by date (API wins)
+function mergeSessions(localSessions = [], apiSessions = []) {
+  const merged = {};
+  // Local first (lower priority)
+  localSessions.forEach(s => { merged[s.date] = s; });
+  // API overwrites (higher priority — authoritative cross-device data)
+  apiSessions.forEach(s => { merged[s.date] = s; });
+  return Object.values(merged).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function Sparkline({ sessions, height = 60 }) {
   const weights = sessions.map(s => s.maxWeight).filter(w => w > 0);
   if (weights.length < 2) return null;
 
   const min = Math.min(...weights);
   const max = Math.max(...weights);
   const range = max - min || 1;
-  const pts = weights.slice().reverse(); // oldest first for left→right trend
+  const pts = weights.slice().reverse();
   const n = pts.length;
 
   const getX = (i) => (i / (n - 1)) * 100;
   const getY = (w) => height - ((w - min) / range) * (height - 10) - 5;
+  const pathD = pts.map((w, i) => `${i === 0 ? "M" : "L"} ${getX(i).toFixed(1)} ${getY(w).toFixed(1)}`).join(" ");
 
-  const pathD = pts.map((w, i) =>
-    `${i === 0 ? "M" : "L"} ${getX(i).toFixed(1)} ${getY(w).toFixed(1)}`
-  ).join(" ");
-
-  // Trend direction
   const first = pts[0], last = pts[pts.length - 1];
   const trend = last > first + 2 ? "up" : last < first - 2 ? "down" : "flat";
   const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
@@ -62,27 +84,19 @@ function Sparkline({ sessions, height = 60, width = "100%" }) {
       </div>
       <div style={{ position: "relative", background: C.faint, borderRadius: 8, padding: "8px 4px", overflow: "hidden" }}>
         <svg width="100%" height={height} viewBox={`0 0 100 ${height}`} preserveAspectRatio="none">
-          {/* Area fill */}
-          <path
-            d={`${pathD} L ${getX(n - 1).toFixed(1)} ${height} L 0 ${height} Z`}
-            fill="rgba(0,87,255,0.08)"
-          />
-          {/* Line */}
+          <path d={`${pathD} L ${getX(n-1).toFixed(1)} ${height} L 0 ${height} Z`} fill="rgba(79,171,255,0.10)" />
           <path d={pathD} fill="none" stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          {/* Dots */}
           {pts.map((w, i) => (
             <circle key={i} cx={getX(i)} cy={getY(w)} r="2" fill={C.accent} vectorEffect="non-scaling-stroke" />
           ))}
         </svg>
-        {/* Min / Max labels */}
         <div style={{ position: "absolute", bottom: 6, left: 8, fontSize: 9, color: C.muted, fontWeight: 600 }}>{min} lb</div>
-        <div style={{ position: "absolute", top: 6,    left: 8, fontSize: 9, color: C.muted, fontWeight: 600 }}>{max} lb</div>
+        <div style={{ position: "absolute", top:    6, left: 8, fontSize: 9, color: C.muted, fontWeight: 600 }}>{max} lb</div>
       </div>
     </div>
   );
 }
 
-// PR badge
 function PRBadge({ label, value }) {
   return (
     <div style={{ flex: 1, padding: "12px 10px", background: C.surface, border: `1px solid ${C.line2}`, borderRadius: 10, textAlign: "center" }}>
@@ -92,19 +106,42 @@ function PRBadge({ label, value }) {
   );
 }
 
-export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, sessions = [] }) {
-  const prWeight = useMemo(() => {
-    const w = Math.max(...sessions.map(s => s.maxWeight).filter(Boolean));
-    return isFinite(w) ? `${w} lb` : null;
-  }, [sessions]);
+export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, sessions: localSessions = [] }) {
+  const [apiSessions, setApiSessions] = useState([]);
+  const [loading,     setLoading]     = useState(false);
 
-  const prReps = useMemo(() => {
-    const r = Math.max(...sessions.map(s => s.maxReps).filter(Boolean));
-    return isFinite(r) ? r : null;
-  }, [sessions]);
+  // Fetch from API every time the sheet opens for a new exercise
+  useEffect(() => {
+    if (!isOpen || !exerciseTitle) return;
+    setLoading(true);
+    fetch(
+      `/api/athlete/workouts/logs?exerciseTitle=${encodeURIComponent(exerciseTitle)}&days=365&limit=500`,
+      { credentials: "include" }
+    )
+      .then(r => r.ok ? r.json() : { ok: false })
+      .then(data => {
+        if (data.ok && Array.isArray(data.logs)) {
+          setApiSessions(groupIntoSessions(data.logs));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [isOpen, exerciseTitle]);
 
-  const totalSets = useMemo(() =>
-    sessions.reduce((a, s) => a + s.totalSets, 0), [sessions]);
+  // Reset API data when sheet closes
+  useEffect(() => {
+    if (!isOpen) setApiSessions([]);
+  }, [isOpen]);
+
+  // Merge localStorage + API, API wins per date
+  const sessions = useMemo(
+    () => mergeSessions(localSessions, apiSessions),
+    [localSessions, apiSessions]
+  );
+
+  const prWeight  = useMemo(() => { const w = Math.max(0, ...sessions.map(s => s.maxWeight).filter(Boolean)); return w > 0 ? `${w} lb` : null; }, [sessions]);
+  const prReps    = useMemo(() => { const r = Math.max(0, ...sessions.map(s => s.maxReps).filter(Boolean));   return r > 0 ? r   : null; }, [sessions]);
+  const totalSets = useMemo(() => sessions.reduce((a, s) => a + s.totalSets, 0), [sessions]);
 
   return (
     <>
@@ -147,8 +184,13 @@ export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, 
                   <div style={{ fontSize: 22, fontWeight: 800, color: C.white, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
                     {exerciseTitle}
                   </div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>
-                    {sessions.length} session{sessions.length !== 1 ? "s" : ""} · {totalSets} total sets
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                    <span style={{ fontSize: 11, color: C.muted }}>
+                      {sessions.length} session{sessions.length !== 1 ? "s" : ""} · {totalSets} total sets
+                    </span>
+                    {loading && (
+                      <span style={{ fontSize: 10, color: C.accent, fontWeight: 600 }}>Loading…</span>
+                    )}
                   </div>
                 </div>
                 <button onClick={onClose} style={{ background: "#1A1A1A", border: "none", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -156,12 +198,11 @@ export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, 
                 </button>
               </div>
 
-              {/* PRs */}
               {sessions.length > 0 && (
                 <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
                   <PRBadge label="Best weight" value={prWeight} />
-                  <PRBadge label="Best reps" value={prReps} />
-                  <PRBadge label="Sessions" value={sessions.length} />
+                  <PRBadge label="Best reps"   value={prReps}   />
+                  <PRBadge label="Sessions"    value={sessions.length} />
                 </div>
               )}
             </div>
@@ -171,30 +212,31 @@ export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, 
             {/* Scrollable content */}
             <div style={{ overflowY: "auto", flex: 1, padding: "20px 20px 32px", WebkitOverflowScrolling: "touch" }}>
 
-              {sessions.length === 0 ? (
+              {sessions.length === 0 && !loading ? (
                 <div style={{ textAlign: "center", padding: "48px 24px" }}>
                   <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: C.dim, marginBottom: 8 }}>No history yet</div>
                   <div style={{ fontSize: 13, color: C.muted }}>Log your sets and your progress will appear here.</div>
                 </div>
+              ) : sessions.length === 0 && loading ? (
+                <div style={{ textAlign: "center", padding: "48px 24px" }}>
+                  <div style={{ fontSize: 13, color: C.muted }}>Loading history…</div>
+                </div>
               ) : (
                 <>
-                  {/* Sparkline */}
                   <Sparkline sessions={sessions} />
 
-                  {/* Session history */}
                   <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, marginBottom: 12 }}>
                     Session history
                   </div>
 
                   {sessions.map((session, si) => (
                     <div key={session.date} style={{ marginBottom: 12, border: `1px solid ${C.line2}`, borderRadius: 12, overflow: "hidden", background: C.surface }}>
-                      {/* Session header */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderBottom: `1px solid ${C.line2}` }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <span style={{ fontSize: 13, fontWeight: 700, color: C.white }}>{formatDate(session.date)}</span>
                           {si === 0 && (
-                            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, background: "rgba(0,87,255,0.18)", border: "1px solid rgba(0,87,255,0.3)", color: C.accent }}>
+                            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, background: "rgba(79,171,255,0.15)", border: "1px solid rgba(79,171,255,0.3)", color: C.accent }}>
                               Latest
                             </span>
                           )}
@@ -215,32 +257,28 @@ export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, 
                         </div>
                       </div>
 
-                      {/* Individual sets */}
                       {session.sets.map((set, i) => (
                         <div key={set.id || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: i < session.sets.length - 1 ? `1px solid ${C.line}` : "none" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, minWidth: 40 }}>Set {set.setNumber}</span>
                             <div style={{ display: "flex", gap: 8 }}>
-                              {set.actualReps > 0 && (
-                                <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{set.actualReps} reps</span>
-                              )}
-                              {set.actualWeight > 0 && (
-                                <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{set.actualWeight} lb</span>
-                              )}
+                              {set.actualReps > 0   && <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{set.actualReps} reps</span>}
+                              {set.actualWeight > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{set.actualWeight} lb</span>}
                             </div>
                           </div>
-                          {set.effort > 0 && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <div style={{ display: "flex", gap: 3 }}>
-                                {[1,2,3,4,5].map(e => (
-                                  <div key={e} style={{ width: 6, height: 6, borderRadius: "50%", background: e <= set.effort ? EFFORT_COLORS[set.effort] : "rgba(255,255,255,0.1)" }} />
-                                ))}
+                          {(set.effort > 0 || set.difficulty > 0) && (() => {
+                            const d = set.difficulty || set.effort;
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <div style={{ display: "flex", gap: 3 }}>
+                                  {[1,2,3,4,5].map(e => (
+                                    <div key={e} style={{ width: 6, height: 6, borderRadius: "50%", background: e <= d ? EFFORT_COLORS[d] : "rgba(255,255,255,0.12)" }} />
+                                  ))}
+                                </div>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: EFFORT_COLORS[d] }}>{EFFORT_LABELS[d]}</span>
                               </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: EFFORT_COLORS[set.effort] }}>
-                                {EFFORT_LABELS[set.effort]}
-                              </span>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>

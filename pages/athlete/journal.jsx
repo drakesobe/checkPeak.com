@@ -12,6 +12,8 @@ import {
   Flame, Award, BarChart2,
   GitMerge, X, Check, ChevronRight,
 } from "lucide-react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 // ─── Brand tokens — matches pages/index.js exactly ───────────────────────────
 const C = {
@@ -35,6 +37,25 @@ const C = {
 const GRAIN = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 const EFFORT_COLORS = ["", "#22C55E", "#84CC16", "#FBBF24", "#F97316", "#EF4444"];
 const EFFORT_LABELS = ["", "Easy", "Light", "Moderate", "Hard", "Max"];
+const BASELINE_LIFTS = [
+  { key: "squat",         label: "Squat",        unit: "lb", type: "weight"   },
+  { key: "bench",         label: "Bench",         unit: "lb", type: "weight"   },
+  { key: "deadlift",      label: "Deadlift",      unit: "lb", type: "weight"   },
+  { key: "powerClean",    label: "Power Clean",   unit: "lb", type: "weight"   },
+  { key: "fortyYardDash", label: "40 Yard Dash",  unit: "s",  type: "time"     },
+  { key: "verticalJump",  label: "Vertical Jump", unit: "in", type: "distance" },
+  { key: "broadJump",     label: "Broad Jump",    unit: "in", type: "distance" },
+];
+
+const BASELINE_KEYWORDS = {
+  squat:         ["squat"],
+  bench:         ["bench"],
+  deadlift:      ["deadlift"],
+  powerClean:    ["power clean", "clean"],
+  fortyYardDash: ["40", "forty"],
+  verticalJump:  ["vertical"],
+  broadJump:     ["broad"],
+};
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 function fmtDate(str) {
@@ -82,20 +103,6 @@ function groupByExercise(logs) {
   }).sort((a,b) => b.lastDate.localeCompare(a.lastDate));
 }
 
-function calcStreak(logs) {
-  const days = [...new Set(logs.map(l => l.date||new Date(l.timestamp).toISOString().slice(0,10)))].sort().reverse();
-  if (!days.length) return 0;
-  const today     = new Date().toISOString().slice(0,10);
-  const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
-  if (days[0]!==today && days[0]!==yesterday) return 0;
-  let streak = 1;
-  for (let i=1; i<days.length; i++) {
-    const diff = Math.round((new Date(days[i-1]+"T12:00:00")-new Date(days[i]+"T12:00:00"))/86400000);
-    if (diff===1) streak++; else break;
-  }
-  return streak;
-}
-
 function calcBestPR(exercises) {
   return exercises.reduce((best,ex) => ex.prWeight>best.weight ? {weight:ex.prWeight,title:ex.title} : best, {weight:0,title:""});
 }
@@ -114,6 +121,162 @@ function getInsight(activeEx) {
     if (days>10) return { type:"warn", text:`${days} days since your last ${activeEx.title.toLowerCase()} session.` };
   }
   return { type:"neutral", text:`${activeEx.sessions.length} sessions logged. Consistency is the edge.` };
+}
+function BaselinesSection({ baselines, exercises, onEdit }) {
+  const findLoggedPR = (keywords) => {
+  for (const ex of exercises) {
+    const title = ex.title.toLowerCase().trim();
+    if (keywords.some(kw => title === kw || title.startsWith(kw + " ") || title.startsWith(kw + "  "))) {
+      return ex.prWeight > 0 ? ex.prWeight : null;
+    }
+  }
+  return null;
+};
+
+  const hasAnyBaseline = BASELINE_LIFTS.some(l => baselines[l.key]);
+
+  return (
+    <div style={{ padding: "20px 0 16px", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 12px" }}>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted }}>
+          Baselines
+        </span>
+        <button
+          onClick={onEdit}
+          style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.line2}`, background: "transparent", color: C.muted, fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = C.amber; e.currentTarget.style.color = C.amber; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = C.line2; e.currentTarget.style.color = C.muted; }}
+        >
+          {hasAnyBaseline ? "Edit" : "+ Set baselines"}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "4px 20px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+        {BASELINE_LIFTS.map(lift => {
+  const baseline     = baselines[lift.key];
+  const loggedPR     = lift.type === "weight" ? findLoggedPR(BASELINE_KEYWORDS[lift.key]) : null;
+  const hasBaseline  = baseline !== undefined && baseline !== "" && baseline !== null;
+  const beatBaseline = loggedPR && hasBaseline && loggedPR > baseline;
+
+  return (
+    <div key={lift.key} onClick={onEdit} style={{
+      flexShrink: 0, width: 110, padding: "10px 10px 8px",
+      background: C.s1,
+      border: `1.5px solid ${beatBaseline ? `${C.green}40` : C.line}`,
+      borderTop: `3px solid ${beatBaseline ? C.green : hasBaseline ? C.amber : C.line2}`,
+      borderRadius: 10, cursor: "pointer", transition: "border-color 0.2s",
+    }}>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 8, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: hasBaseline ? C.amber : C.muted, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {lift.label}
+      </div>
+
+      {hasBaseline ? (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: loggedPR ? 4 : 0 }}>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 900, fontStyle: "italic", color: C.white, letterSpacing: "-0.03em", lineHeight: 1 }}>{baseline}</span>
+          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 9, color: C.muted, fontWeight: 600 }}>{lift.unit}</span>
+        </div>
+      ) : (
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: loggedPR ? 4 : 0 }}>—</div>
+      )}
+
+      {loggedPR && (
+        <div style={{ paddingTop: 4, borderTop: `1px solid ${C.line2}` }}>
+          <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 1 }}>Logged</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 900, color: beatBaseline ? C.green : C.accent, letterSpacing: "-0.01em" }}>{loggedPR}</span>
+            <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 8, color: C.muted }}>{lift.unit}</span>
+            {beatBaseline && <span style={{ fontSize: 8, marginLeft: 1 }}>🏆</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+})}
+      </div>
+    </div>
+  );
+}
+
+function BaselinesSheet({ open, onClose, baselines, onSave }) {
+  const [values,  setValues]  = useState({});
+  const [saving,  setSaving]  = useState(false);
+  const [err,     setErr]     = useState("");
+
+  useEffect(() => {
+    if (open) { setValues({ ...baselines }); setErr(""); }
+  }, [open, baselines]);
+
+  const handleSave = async () => {
+    setSaving(true); setErr("");
+    try { await onSave(values); onClose(); }
+    catch { setErr("Failed to save. Try again."); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <>
+      <AnimatePresence>
+        {open && <motion.div key="bl-bd" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {open && (
+          <motion.div key="bl-sh" initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 42, mass: 1 }}
+            style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 60, background: C.bg, borderTop: `3px solid ${C.amber}`, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "85dvh", display: "flex", flexDirection: "column", overflow: "hidden", fontFamily: "-apple-system,'SF Pro Display',sans-serif", paddingBottom: "env(safe-area-inset-bottom,0)" }}>
+
+            <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 0", flexShrink: 0 }}>
+              <div style={{ width: 32, height: 3.5, background: C.line2, borderRadius: 2 }} />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px 12px", flexShrink: 0, borderBottom: `1px solid ${C.line}` }}>
+              <div>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.amber, marginBottom: 3 }}>Performance</div>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 20, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", color: C.white, letterSpacing: "-0.02em", lineHeight: 1 }}>My Baselines</div>
+              </div>
+              <button onClick={onClose} style={{ background: C.s1, border: `1px solid ${C.line}`, width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={14} color={C.dim} />
+              </button>
+            </div>
+
+            <div style={{ padding: "10px 20px 6px", flexShrink: 0 }}>
+              <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.5 }}>
+                Enter your current bests. These stay separate from your logged PRs so you can track both.
+              </p>
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1, padding: "12px 20px 0", WebkitOverflowScrolling: "touch" }}>
+              {BASELINE_LIFTS.map(lift => (
+                <div key={lift.key} style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>{lift.label}</span>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 10, fontWeight: 700, color: C.muted }}>{lift.unit}</span>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode={lift.type === "time" ? "decimal" : "numeric"}
+                    step={lift.type === "time" ? "0.01" : "1"}
+                    value={values[lift.key] ?? ""}
+                    onChange={e => setValues(prev => ({ ...prev, [lift.key]: e.target.value === "" ? "" : lift.type === "time" ? parseFloat(e.target.value) : parseInt(e.target.value) }))}
+                    placeholder={lift.type === "time" ? "e.g. 4.52" : lift.type === "distance" ? "e.g. 32" : "e.g. 315"}
+                    style={{ width: "100%", padding: "12px 14px", background: C.s1, border: `1px solid ${C.line2}`, borderRadius: 10, fontSize: 16, fontWeight: 700, color: C.white, fontFamily: "inherit", outline: "none", transition: "border-color 0.15s", boxSizing: "border-box" }}
+                    onFocus={e => { e.target.style.borderColor = C.amber; }}
+                    onBlur={e  => { e.target.style.borderColor = C.line2; }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {err && <div style={{ padding: "8px 20px", background: "rgba(239,68,68,0.08)", flexShrink: 0 }}><p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, fontWeight: 700, color: C.red, margin: 0 }}>⚠ {err}</p></div>}
+
+            <div style={{ padding: "12px 20px 20px", borderTop: `1px solid ${C.line}`, flexShrink: 0 }}>
+              <button onClick={handleSave} disabled={saving} style={{ width: "100%", padding: "15px", background: saving ? C.s1 : C.amber, border: "none", borderRadius: 12, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase", color: saving ? C.muted : C.bg, cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+                {saving ? <><div style={{ width: 14, height: 14, borderRadius: "50%", border: `2px solid ${C.muted}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} /> Saving...</> : "Save Baselines"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 }
 
 // ─── Merge Sheet ──────────────────────────────────────────────────────────────
@@ -309,23 +472,28 @@ function MergeSheet({ exercises, open, onClose, onMerged }) {
 // ─── Hero Stats ───────────────────────────────────────────────────────────────
 function HeroStats({ totalDays, bestPR, streak }) {
   const stats = [
-    { value:totalDays, label:"Sessions", sub:"", color:C.accent, Icon:BarChart2 },
-    { value:bestPR.weight>0?bestPR.weight:"—", sub:bestPR.weight>0?"lb":"", label:bestPR.title||"Best PR", color:C.amber, Icon:Award },
-    { value:streak, label:"Day Streak", sub:"", color:streak>0?C.orange:C.muted, Icon:Flame },
+    { value: totalDays, label: "Sessions", sub: "", sublabel: null, color: C.accent, Icon: BarChart2 },
+    { value: bestPR.weight > 0 ? bestPR.weight : "—", sub: bestPR.weight > 0 ? "lb" : "", label: "Best PR", sublabel: bestPR.title || null, color: C.amber, Icon: Award },
+    { value: streak, label: "Day Streak", sub: "", sublabel: null, color: streak > 0 ? C.orange : C.muted, Icon: Flame },
   ];
   return (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"1px",background:C.line}}>
-      {stats.map(({value,label,sub,color,Icon},i)=>(
-        <div key={i} style={{background:C.bg,padding:"22px 12px 18px",textAlign:"center",position:"relative",overflow:"hidden"}}>
-          <div aria-hidden style={{position:"absolute",inset:0,background:`radial-gradient(ellipse 80% 60% at 50% 100%, ${color}0A 0%, transparent 70%)`,pointerEvents:"none"}}/>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:10}}>
-            <Icon size={11} color={color}/>
-            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted}}>{label}</span>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1px", background: C.line }}>
+      {stats.map(({ value, label, sub, sublabel, color, Icon }, i) => (
+        <div key={i} style={{ background: C.bg, padding: "22px 12px 18px", textAlign: "center", position: "relative", overflow: "hidden" }}>
+          <div aria-hidden style={{ position: "absolute", inset: 0, background: `radial-gradient(ellipse 80% 60% at 50% 100%, ${color}0A 0%, transparent 70%)`, pointerEvents: "none" }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 10 }}>
+            <Icon size={11} color={color} />
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: C.muted }}>{label}</span>
           </div>
-          <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:3}}>
-            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:38,fontWeight:900,fontStyle:"italic",color,letterSpacing:"-0.04em",lineHeight:1}}>{value}</span>
-            {sub && <span style={{fontFamily:"'Barlow',sans-serif",fontSize:12,color:C.muted,fontWeight:600}}>{sub}</span>}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 3 }}>
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 38, fontWeight: 900, fontStyle: "italic", color, letterSpacing: "-0.04em", lineHeight: 1 }}>{value}</span>
+            {sub && <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, color: C.muted, fontWeight: 600 }}>{sub}</span>}
           </div>
+          {sublabel && (
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 8, fontWeight: 700, color: C.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              {sublabel}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -500,6 +668,39 @@ export default function WorkoutJournal() {
   const [metric,    setMetric]   = useState("weight");
   const [days,      setDays]     = useState(90);
   const [mergeOpen, setMergeOpen]= useState(false);
+  const [baselines,     setBaselines]     = useState({});
+const [baselinesOpen, setBaselinesOpen] = useState(false);
+  const [streak, setStreak] = useState(0);
+
+  useEffect(() => {
+  const userId = user?.id || user?.AthleteToken || user?.athleteToken || "";
+  if (!userId) return;
+  getDoc(doc(db, "streaks", userId))
+    .then(snap => {
+      if (!snap.exists()) return;
+      const data      = snap.data();
+      const today     = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const active    = data.lastDate === today || data.lastDate === yesterday;
+      setStreak(active ? (data.current || 0) : 0);
+    })
+    .catch(e => console.error("Streak fetch:", e));
+}, [user]);
+
+useEffect(() => {
+  const userId = user?.id || user?.AthleteToken || user?.athleteToken || "";
+  if (!userId) return;
+  getDoc(doc(db, "baselines", userId))
+    .then(snap => { if (snap.exists()) setBaselines(snap.data()); })
+    .catch(e => console.error("Baselines fetch:", e));
+}, [user]);
+
+const saveBaselines = useCallback(async (newValues) => {
+  const userId = user?.id || user?.AthleteToken || user?.athleteToken || "";
+  if (!userId) throw new Error("Not logged in");
+  await setDoc(doc(db, "baselines", userId), { ...newValues, updatedAt: new Date().toISOString() });
+  setBaselines(newValues);
+}, [user]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -525,7 +726,6 @@ export default function WorkoutJournal() {
 
   const activeEx   = useMemo(()=>exercises.find(e=>e.title===selected),[exercises,selected]);
   const insight    = useMemo(()=>getInsight(activeEx),[activeEx]);
-  const streak     = useMemo(()=>calcStreak(logs),[logs]);
   const totalDays  = useMemo(()=>new Set(logs.map(l=>l.date||new Date(l.timestamp).toISOString().slice(0,10))).size,[logs]);
   const bestPR     = useMemo(()=>calcBestPR(exercises),[exercises]);
   const trendColor = activeEx?.trend==="up"?C.green:activeEx?.trend==="down"?C.orange:C.muted;
@@ -587,6 +787,7 @@ export default function WorkoutJournal() {
           <>
             <HeroStats totalDays={totalDays} bestPR={bestPR} streak={streak}/>
             <div style={{height:1,background:`linear-gradient(to right, transparent, ${C.accent}40, transparent)`}}/>
+            <BaselinesSection baselines={baselines} exercises={exercises} onEdit={()=>setBaselinesOpen(true)}/>
             <PRBoard exercises={exercises} selected={selected} onSelect={setSelected}/>
 
             {activeEx&&(
@@ -641,6 +842,12 @@ export default function WorkoutJournal() {
       </div>
 
       <MergeSheet exercises={exercises} open={mergeOpen} onClose={()=>setMergeOpen(false)} onMerged={handleMerged}/>
+        <BaselinesSheet
+          open={baselinesOpen}
+          onClose={()=>setBaselinesOpen(false)}
+          baselines={baselines}
+          onSave={saveBaselines}
+        />
     </div>
   );
 }

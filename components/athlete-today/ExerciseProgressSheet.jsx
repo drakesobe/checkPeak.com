@@ -120,6 +120,7 @@ export default function ExerciseProgressSheet({ isOpen, onClose, exerciseTitle, 
     )
       .then(r => r.ok ? r.json() : { ok: false })
       .then(data => {
+        console.log("EPS fetch result:", data);
         if (data.ok && Array.isArray(data.logs)) {
           setApiSessions(groupIntoSessions(data.logs));
         }

@@ -229,9 +229,12 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
             <span style={{ fontSize:9, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", color:gMeta.color.accent }}>{gMeta.type} {gMeta.label}</span>
           </div>
         ) : <div />}
-        <button onClick={onViewHistory} style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:20, background:C.faint, border:`1px solid ${C.line2}`, cursor:"pointer", fontFamily:"inherit" }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          <span style={{ fontSize:9, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:C.muted }}>History</span>
+        <button onClick={onViewHistory} style={{ display:"flex", alignItems:"center", gap:5, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, opacity:0.7 }}
+          onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+          onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.65)", textDecoration:"underline", textDecorationColor:"rgba(255,255,255,0.25)", textUnderlineOffset:"3px", letterSpacing:"0.04em" }}>History</span>
         </button>
       </div>
 

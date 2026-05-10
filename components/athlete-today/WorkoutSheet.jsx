@@ -221,7 +221,7 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
   return (
     <div style={{ margin:"12px 14px 8px", background:C.surface, border:`1.5px solid ${gMeta?gMeta.color.border:C.cardLine}`, borderTop:`3px solid ${accent}`, borderRadius:16, padding:"22px 20px 20px", animation:"cardIn 0.3s ease" }}>
 
-      {/* Top row: group badge + history button */}
+      {/* Top row: group badge + history link */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
         {gMeta ? (
           <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 11px", borderRadius:20, background:gMeta.color.accent+"18", border:`1px solid ${gMeta.color.accent+"40"}` }}>
@@ -229,12 +229,8 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
             <span style={{ fontSize:9, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", color:gMeta.color.accent }}>{gMeta.type} {gMeta.label}</span>
           </div>
         ) : <div />}
-        <button onClick={onViewHistory} style={{ display:"flex", alignItems:"center", gap:5, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0, opacity:0.7 }}
-          onMouseEnter={e => e.currentTarget.style.opacity = "1"}
-          onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          <span style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.65)", textDecoration:"underline", textDecorationColor:"rgba(255,255,255,0.25)", textUnderlineOffset:"3px", letterSpacing:"0.04em" }}>History</span>
+        <button onClick={onViewHistory} style={{ background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", padding:0 }}>
+          <span style={{ fontSize:12, fontWeight:600, color:C.accent, letterSpacing:"0.01em" }}>View history →</span>
         </button>
       </div>
 

@@ -117,68 +117,250 @@ const EFFORT = [null,
   { label:"Max",      color:"#EF4444" },
 ];
 
-function SetLogger({ sub, setNumber, value, onChange }) {
-  const { reps: tr, weight: tw } = parseMeta(sub?.meta || "");
-  const isBodyWeight = /body.?weight|^bw$/i.test(String(tw || ""));
-  const weightUnit   = /kg/i.test(String(tw || "")) ? "kg" : "lb";
-  const weightStep   = weightUnit === "kg" ? 2.5 : 5;
+// ─── PERCENT CALCULATOR ───────────────────────────────────────────────────────
+function PercentCalc({ exerciseTitle, percentage, weightUnit, onUse }) {
+  const [userMax, setUserMax] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState("");
+  const inputRef = useRef(null);
 
-  const cols = isBodyWeight ? "1fr 1fr" : "1fr 1fr 1fr";
+  useEffect(() => {
+    if (!exerciseTitle) { setLoading(false); return; }
+    fetch(
+      `/api/athlete/workouts/logs?exerciseTitle=${encodeURIComponent(exerciseTitle)}&days=730&limit=500`,
+      { credentials: "include" }
+    )
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        if (data.ok && Array.isArray(data.logs)) {
+          const best = Math.max(0, ...data.logs.map(l => Number(l.actualWeight) || 0));
+          if (best > 0) setUserMax(best);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [exerciseTitle]);
+
+  const target = userMax > 0 ? Math.round((percentage / 100) * userMax) : null;
+
+  const startEdit = () => {
+    setDraft(userMax === 0 ? "" : String(userMax));
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+  const commitEdit = () => {
+    const n = parseFloat(draft);
+    if (Number.isFinite(n) && n > 0) setUserMax(n);
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ marginTop:2 }}>
+
+      {/* Row 1: max → target on same line */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="number"
+            inputMode="decimal"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+            autoFocus
+            style={{
+              flex:1, padding:"5px 8px", textAlign:"center",
+              background:C.surface2, border:`1px solid rgba(79,171,255,0.45)`,
+              borderRadius:7, color:C.white, fontSize:18, fontWeight:900,
+              fontFamily:"inherit", letterSpacing:"-0.02em",
+              outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+            }}
+          />
+        ) : (
+          <button onClick={startEdit} style={{
+            flex:1, padding:"5px 8px", textAlign:"center",
+            background:C.surface2, border:`1px solid ${C.line2}`,
+            borderRadius:7, cursor:"text",
+            fontSize:18, fontWeight:900, color: userMax > 0 ? C.white : C.muted,
+            fontFamily:"inherit", letterSpacing:"-0.02em",
+            display:"flex", alignItems:"baseline", justifyContent:"center", gap:2,
+          }}>
+            {loading ? "…" : userMax > 0 ? userMax : "—"}
+            <span style={{ fontSize:10, fontWeight:600, color:C.muted }}>{weightUnit}</span>
+          </button>
+        )}
+
+        <span style={{ fontSize:12, color:C.muted, flexShrink:0 }}>→</span>
+
+        <div style={{ flex:1, display:"flex", alignItems:"baseline", justifyContent:"center", gap:2,
+          padding:"5px 8px", background:C.faint, borderRadius:7, border:`1px solid ${C.line2}` }}>
+          <span style={{ fontSize:18, fontWeight:900, color: target ? C.white : C.muted, letterSpacing:"-0.02em" }}>
+            {target ?? "—"}
+          </span>
+          <span style={{ fontSize:10, fontWeight:600, color:C.muted }}>{weightUnit}</span>
+        </div>
+      </div>
+
+      {/* Row 3: Use button full width */}
+      {target && (
+        <button onClick={() => onUse(target)} style={{
+          width:"100%", padding:"9px", background:C.accent, border:"none",
+          borderRadius:8, fontSize:12, fontWeight:900, color:"#040A05",
+          cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.02em",
+        }}>
+          Use {target} {weightUnit}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Stepper — tap −/+ to nudge, tap the number to type directly
+function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState("");
+  const inputRef = useRef(null);
+
+  const startEdit = () => {
+    setDraft(value === 0 ? "" : String(value));
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const commitEdit = () => {
+    const n = parseFloat(draft);
+    onChange(Number.isFinite(n) ? Math.max(min, n) : value);
+    setEditing(false);
+  };
 
   const btn = (label, onClick) => (
     <button onClick={onClick} style={{
-      width:28, height:28, borderRadius:7, background:C.surface2,
-      border:`1px solid ${C.line2}`, color:C.white, fontSize:17, lineHeight:1,
+      width:36, height:36, borderRadius:9, background:C.surface2,
+      border:`1px solid ${C.line2}`, color:C.white, fontSize:20, lineHeight:1,
       cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
-      fontFamily:"inherit", flexShrink:0,
+      fontFamily:"inherit", flexShrink:0, userSelect:"none",
     }}>{label}</button>
   );
 
   return (
-    <div style={{ marginTop:16, padding:"14px 16px 12px", background:C.faint, borderRadius:10, border:`1px solid ${C.line2}` }}>
-      <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginBottom:14 }}>
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      {btn("−", () => onChange(Math.max(min, value - step)))}
+
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="number"
+          inputMode="decimal"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
+          autoFocus
+          style={{
+            width:64, padding:"4px 6px", textAlign:"center",
+            background:C.surface2, border:`1px solid rgba(79,171,255,0.45)`,
+            borderRadius:8, color:C.white, fontSize:20, fontWeight:900,
+            fontFamily:"inherit", letterSpacing:"-0.02em",
+            outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+          }}
+        />
+      ) : (
+        <button onClick={startEdit} style={{
+          minWidth:52, padding:"4px 6px", textAlign:"center",
+          background:"transparent", border:"1px solid transparent",
+          borderRadius:8, cursor:"text",
+          fontSize:20, fontWeight:900, color:C.white,
+          fontFamily:"inherit", letterSpacing:"-0.02em",
+          borderBottom:`1px dashed rgba(255,255,255,0.2)`,
+        }}>
+          {value}{unit && <span style={{ fontSize:11, fontWeight:600, color:C.muted, marginLeft:2 }}>{unit}</span>}
+        </button>
+      )}
+
+      {btn("+", () => onChange(value + step))}
+    </div>
+  );
+}
+
+function SetLogger({ sub, setNumber, value, onChange }) {
+  const { reps: tr, weight: tw } = parseMeta(sub?.meta || "");
+  const isBodyWeight  = /body.?weight|^bw$/i.test(String(tw || ""));
+  const weightUnit    = /kg/i.test(String(tw || "")) ? "kg" : "lb";
+  const weightStep    = weightUnit === "kg" ? 2.5 : 5;
+
+  // Detect percentage prescription e.g. "75%", "80% 1RM"
+  const pctMatch      = String(tw || "").match(/^(\d+(?:\.\d+)?)\s*%/);
+  const isPercent     = !!pctMatch;
+  const prescribedPct = isPercent ? parseFloat(pctMatch[1]) : null;
+
+  // Once athlete taps "Use X lb" from the calc, flip to normal stepper
+  const [pctConfirmed, setPctConfirmed] = useState(false);
+
+  // Reset when exercise changes
+  useEffect(() => { setPctConfirmed(false); }, [sub?.title, setNumber]);
+
+  const handleUseCalc = (weight) => {
+    onChange({ ...value, weight });
+    setPctConfirmed(true);
+  };
+
+  return (
+    <div style={{ marginTop:16, padding:"16px 16px 14px", background:C.faint, borderRadius:10, border:`1px solid ${C.line2}` }}>
+      <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, marginBottom:16 }}>
         Log Set {setNumber}
       </div>
 
       {/* Row 1: Reps + Weight side by side */}
-      <div style={{ display:"grid", gridTemplateColumns: isBodyWeight ? "1fr" : "1fr 1fr", gap:16, marginBottom:16 }}>
+      <div style={{ display:"grid", gridTemplateColumns: isBodyWeight ? "1fr" : "1fr 1fr", gap:16, marginBottom:18 }}>
 
         {/* REPS */}
         <div>
-          <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Reps</div>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            {btn("−", () => onChange({ ...value, reps: Math.max(0, value.reps - 1) }))}
-            <span style={{ fontSize:18, fontWeight:900, color:C.white, minWidth:28, textAlign:"center", letterSpacing:"-0.02em" }}>{value.reps}</span>
-            {btn("+", () => onChange({ ...value, reps: value.reps + 1 }))}
+          <div style={{ display:"flex", alignItems:"center", height:16, marginBottom:10 }}>
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted }}>Reps</div>
           </div>
+          <Stepper value={value.reps} step={1} min={0}
+            onChange={v => onChange({ ...value, reps: v })} />
         </div>
 
-        {/* WEIGHT */}
+        {/* WEIGHT — stepper if confirmed/fixed, calc if percentage */}
         {!isBodyWeight && (
           <div>
-            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:8 }}>Weight ({weightUnit})</div>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={value.weight || ""}
-              onChange={e => onChange({ ...value, weight: parseFloat(e.target.value) || 0 })}
-              placeholder="0"
-              style={{
-                width:"100%", padding:"6px 10px",
-                background:C.surface2, border:`1px solid ${C.line2}`,
-                borderRadius:8, color:C.white, fontSize:18, fontWeight:900,
-                fontFamily:"inherit", letterSpacing:"-0.02em",
-                outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
-              }}
-              onFocus={e => { e.target.style.borderColor = "rgba(79,171,255,0.4)"; }}
-              onBlur={e  => { e.target.style.borderColor = C.line2; }}
-            />
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", height:16, marginBottom:10 }}>
+              <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted }}>
+                Weight ({weightUnit})
+              </div>
+              {isPercent && !pctConfirmed && (
+                <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.accent }}>
+                  {prescribedPct}% of max
+                </div>
+              )}
+              {isPercent && pctConfirmed && (
+                <button onClick={() => setPctConfirmed(false)} style={{ background:"none", border:"none", cursor:"pointer", padding:0, fontFamily:"inherit" }}>
+                  <span style={{ fontSize:9, fontWeight:700, color:C.accent, letterSpacing:"0.06em", textTransform:"uppercase" }}>
+                    Recalc →
+                  </span>
+                </button>
+              )}
+            </div>
+            {isPercent && !pctConfirmed ? (
+              <PercentCalc
+                exerciseTitle={sub?.title}
+                percentage={prescribedPct}
+                weightUnit={weightUnit}
+                onUse={handleUseCalc}
+              />
+            ) : (
+              <Stepper value={value.weight} step={weightStep} min={0}
+                onChange={v => onChange({ ...value, weight: v })} />
+            )}
           </div>
         )}
       </div>
 
-      {/* Row 2: Difficulty — full width so 5 dots never clip on narrow screens */}
-      <div>
+      {/* Row 2: Difficulty */}
+      <div style={{ paddingTop:16, borderTop:`1px solid ${C.line2}` }}>
         <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:10 }}>Difficulty</div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ display:"flex", gap:10, flexShrink:0 }}>

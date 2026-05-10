@@ -1,7 +1,5 @@
 // components/athlete-today/WorkoutSheet.jsx
 // Full "Flow State" workout experience.
-// Preview → Begin → Active exercise → Rest timer → Complete
-// Wired to real Airtable data via props.
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
@@ -67,11 +65,9 @@ function parseMeta(meta) {
 }
 
 function parseRestSecs(sub) {
-  // Try raw Airtable field first
   const raw = String(sub?.item?.Rest || sub?.item?.rest || "").trim();
   if (raw) {
     const isMin = /min/i.test(raw);
-    // Handle "1:30" format
     if (/^\d+:\d+$/.test(raw)) {
       const [m, s] = raw.split(":").map(Number);
       return m * 60 + s;
@@ -79,7 +75,6 @@ function parseRestSecs(sub) {
     const n = parseInt(raw.replace(/[^0-9]/g, "")) || 0;
     if (n > 0) return isMin ? n * 60 : n;
   }
-  // Fall back to meta string
   const restPart = (sub?.meta || "").split(" · ").find(p => /rest/i.test(p));
   if (restPart) {
     const isMin = /min/i.test(restPart);
@@ -91,7 +86,6 @@ function parseRestSecs(sub) {
 
 function haptic(ms=10) { try { navigator.vibrate?.(ms); } catch {} }
 
-// Treat both "Completed" and coach-review states as done from the athlete's POV
 function isDone(optimisticStatus, itemStatus) {
   const s = String(optimisticStatus || itemStatus || "").toLowerCase().trim();
   return s === "completed" || s === "pending_review" || s === "pending review" || s === "approved";
@@ -117,107 +111,7 @@ const EFFORT = [null,
   { label:"Max",      color:"#EF4444" },
 ];
 
-// ─── PERCENT CALCULATOR ───────────────────────────────────────────────────────
-function PercentCalc({ exerciseTitle, percentage, weightUnit, onUse }) {
-  const [userMax, setUserMax] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [draft,   setDraft]   = useState("");
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (!exerciseTitle) { setLoading(false); return; }
-    fetch(
-      `/api/athlete/workouts/logs?exerciseTitle=${encodeURIComponent(exerciseTitle)}&days=730&limit=500`,
-      { credentials: "include" }
-    )
-      .then(r => r.ok ? r.json() : {})
-      .then(data => {
-        if (data.ok && Array.isArray(data.logs)) {
-          const best = Math.max(0, ...data.logs.map(l => Number(l.actualWeight) || 0));
-          if (best > 0) setUserMax(best);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [exerciseTitle]);
-
-  const target = userMax > 0 ? Math.round((percentage / 100) * userMax) : null;
-
-  const startEdit = () => {
-    setDraft(userMax === 0 ? "" : String(userMax));
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  };
-  const commitEdit = () => {
-    const n = parseFloat(draft);
-    if (Number.isFinite(n) && n > 0) setUserMax(n);
-    setEditing(false);
-  };
-
-  return (
-    <div style={{ marginTop:2 }}>
-
-      {/* Row 1: max → target on same line */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-        {editing ? (
-          <input
-            ref={inputRef}
-            type="number"
-            inputMode="decimal"
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-            autoFocus
-            style={{
-              flex:1, padding:"5px 8px", textAlign:"center",
-              background:C.surface2, border:`1px solid rgba(79,171,255,0.45)`,
-              borderRadius:7, color:C.white, fontSize:18, fontWeight:900,
-              fontFamily:"inherit", letterSpacing:"-0.02em",
-              outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
-            }}
-          />
-        ) : (
-          <button onClick={startEdit} style={{
-            flex:1, padding:"5px 8px", textAlign:"center",
-            background:C.surface2, border:`1px solid ${C.line2}`,
-            borderRadius:7, cursor:"text",
-            fontSize:18, fontWeight:900, color: userMax > 0 ? C.white : C.muted,
-            fontFamily:"inherit", letterSpacing:"-0.02em",
-            display:"flex", alignItems:"baseline", justifyContent:"center", gap:2,
-          }}>
-            {loading ? "…" : userMax > 0 ? userMax : "—"}
-            <span style={{ fontSize:10, fontWeight:600, color:C.muted }}>{weightUnit}</span>
-          </button>
-        )}
-
-        <span style={{ fontSize:12, color:C.muted, flexShrink:0 }}>→</span>
-
-        <div style={{ flex:1, display:"flex", alignItems:"baseline", justifyContent:"center", gap:2,
-          padding:"5px 8px", background:C.faint, borderRadius:7, border:`1px solid ${C.line2}` }}>
-          <span style={{ fontSize:18, fontWeight:900, color: target ? C.white : C.muted, letterSpacing:"-0.02em" }}>
-            {target ?? "—"}
-          </span>
-          <span style={{ fontSize:10, fontWeight:600, color:C.muted }}>{weightUnit}</span>
-        </div>
-      </div>
-
-      {/* Row 3: Use button full width */}
-      {target && (
-        <button onClick={() => onUse(target)} style={{
-          width:"100%", padding:"9px", background:C.accent, border:"none",
-          borderRadius:8, fontSize:12, fontWeight:900, color:"#040A05",
-          cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.02em",
-        }}>
-          Use {target} {weightUnit}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Stepper — tap −/+ to nudge, tap the number to type directly
+// ─── STEPPER ──────────────────────────────────────────────────────────────────
 function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
   const [editing, setEditing] = useState(false);
   const [draft,   setDraft]   = useState("");
@@ -247,7 +141,6 @@ function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
       {btn("−", () => onChange(Math.max(min, value - step)))}
-
       {editing ? (
         <input
           ref={inputRef}
@@ -256,7 +149,7 @@ function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onBlur={commitEdit}
-          onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); } }}
+          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
           autoFocus
           style={{
             width:64, padding:"4px 6px", textAlign:"center",
@@ -278,33 +171,58 @@ function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
           {value}{unit && <span style={{ fontSize:11, fontWeight:600, color:C.muted, marginLeft:2 }}>{unit}</span>}
         </button>
       )}
-
       {btn("+", () => onChange(value + step))}
     </div>
   );
 }
 
+// ─── SET LOGGER ───────────────────────────────────────────────────────────────
 function SetLogger({ sub, setNumber, value, onChange }) {
   const { reps: tr, weight: tw } = parseMeta(sub?.meta || "");
   const isBodyWeight  = /body.?weight|^bw$/i.test(String(tw || ""));
   const weightUnit    = /kg/i.test(String(tw || "")) ? "kg" : "lb";
   const weightStep    = weightUnit === "kg" ? 2.5 : 5;
 
-  // Detect percentage prescription e.g. "75%", "80% 1RM"
   const pctMatch      = String(tw || "").match(/^(\d+(?:\.\d+)?)\s*%/);
   const isPercent     = !!pctMatch;
   const prescribedPct = isPercent ? parseFloat(pctMatch[1]) : null;
 
-  // Once athlete taps "Use X lb" from the calc, flip to normal stepper
-  const [pctConfirmed, setPctConfirmed] = useState(false);
+  const [prMax,     setPrMax]     = useState(0);
+  const [prLoading, setPrLoading] = useState(false);
+  const autoFilledRef = useRef(false);
 
-  // Reset when exercise changes
-  useEffect(() => { setPctConfirmed(false); }, [sub?.title, setNumber]);
+  // Fetch PR silently and auto-fill weight stepper
+  useEffect(() => {
+    if (!isPercent || !sub?.title) return;
+    autoFilledRef.current = false;
+    setPrMax(0);
+    setPrLoading(true);
+    fetch(
+      `/api/athlete/workouts/logs?exerciseTitle=${encodeURIComponent(sub.title)}&days=730&limit=500`,
+      { credentials: "include" }
+    )
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        if (data.ok && Array.isArray(data.logs)) {
+          const best = Math.max(0, ...data.logs.map(l => Number(l.actualWeight) || 0));
+          if (best > 0) {
+            setPrMax(best);
+            if (!autoFilledRef.current) {
+              autoFilledRef.current = true;
+              onChange({ ...value, weight: Math.round((prescribedPct / 100) * best) });
+            }
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPrLoading(false));
+  }, [sub?.title, setNumber]); // eslint-disable-line
 
-  const handleUseCalc = (weight) => {
-    onChange({ ...value, weight });
-    setPctConfirmed(true);
-  };
+  const hintText = isPercent
+    ? prLoading      ? "Fetching your max…"
+    : prMax > 0      ? `${prescribedPct}% of ${prMax} ${weightUnit} max`
+    : `${prescribedPct}% of max`
+    : null;
 
   return (
     <div style={{ marginTop:16, padding:"16px 16px 14px", background:C.faint, borderRadius:10, border:`1px solid ${C.line2}` }}>
@@ -312,54 +230,35 @@ function SetLogger({ sub, setNumber, value, onChange }) {
         Log Set {setNumber}
       </div>
 
-      {/* Row 1: Reps + Weight side by side */}
       <div style={{ display:"grid", gridTemplateColumns: isBodyWeight ? "1fr" : "1fr 1fr", gap:16, marginBottom:18 }}>
 
         {/* REPS */}
         <div>
-          <div style={{ display:"flex", alignItems:"center", height:16, marginBottom:10 }}>
-            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted }}>Reps</div>
+          <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:10 }}>
+            Reps
           </div>
           <Stepper value={value.reps} step={1} min={0}
             onChange={v => onChange({ ...value, reps: v })} />
         </div>
 
-        {/* WEIGHT — stepper if confirmed/fixed, calc if percentage */}
+        {/* WEIGHT */}
         {!isBodyWeight && (
           <div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", height:16, marginBottom:10 }}>
-              <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted }}>
-                Weight ({weightUnit})
-              </div>
-              {isPercent && !pctConfirmed && (
-                <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.accent }}>
-                  {prescribedPct}% of max
-                </div>
-              )}
-              {isPercent && pctConfirmed && (
-                <button onClick={() => setPctConfirmed(false)} style={{ background:"none", border:"none", cursor:"pointer", padding:0, fontFamily:"inherit" }}>
-                  <span style={{ fontSize:9, fontWeight:700, color:C.accent, letterSpacing:"0.06em", textTransform:"uppercase" }}>
-                    Recalc →
-                  </span>
-                </button>
-              )}
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:10 }}>
+              Weight ({weightUnit})
             </div>
-            {isPercent && !pctConfirmed ? (
-              <PercentCalc
-                exerciseTitle={sub?.title}
-                percentage={prescribedPct}
-                weightUnit={weightUnit}
-                onUse={handleUseCalc}
-              />
-            ) : (
-              <Stepper value={value.weight} step={weightStep} min={0}
-                onChange={v => onChange({ ...value, weight: v })} />
+            <Stepper value={value.weight} step={weightStep} min={0}
+              onChange={v => onChange({ ...value, weight: v })} />
+            {hintText && (
+              <div style={{ fontSize:9, fontWeight:600, color:C.muted, marginTop:6, letterSpacing:"0.02em" }}>
+                {hintText}
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Row 2: Difficulty */}
+      {/* Difficulty */}
       <div style={{ paddingTop:16, borderTop:`1px solid ${C.line2}` }}>
         <div style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted, marginBottom:10 }}>Difficulty</div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -385,6 +284,7 @@ function SetLogger({ sub, setNumber, value, onChange }) {
     </div>
   );
 }
+
 function splitValueUnit(str) {
   if (!str) return { num: str, unit: "" };
   const match = String(str).match(/^([0-9\-\/\+\.]+)\s*(.*)$/);
@@ -403,7 +303,6 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
   return (
     <div style={{ margin:"12px 14px 8px", background:C.surface, border:`1.5px solid ${gMeta?gMeta.color.border:C.cardLine}`, borderTop:`3px solid ${accent}`, borderRadius:16, padding:"22px 20px 20px", animation:"cardIn 0.3s ease" }}>
 
-      {/* Top row: group badge + history link */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
         {gMeta ? (
           <div style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 11px", borderRadius:20, background:gMeta.color.accent+"18", border:`1px solid ${gMeta.color.accent+"40"}` }}>
@@ -416,12 +315,10 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
         </button>
       </div>
 
-      {/* Exercise name */}
       <div style={{ fontSize:30, fontWeight:900, color:C.white, letterSpacing:"-0.04em", lineHeight:1.05, marginBottom:22 }}>
         {sub.title}
       </div>
 
-      {/* Stats grid */}
       {statCols.length > 0 && (
         <div style={{ display:"grid", gridTemplateColumns:`repeat(${statCols.length},1fr)`, border:`1px solid ${C.line2}`, borderRadius:12, overflow:"hidden", marginBottom:24 }}>
           {statCols.map((s,i) => {
@@ -439,7 +336,6 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
         </div>
       )}
 
-      {/* Set tracker */}
       <div style={{ marginBottom:4 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted }}>Sets</span>
@@ -448,19 +344,16 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
         <SetDots total={totalSets} done={Math.min(currentSet-1,totalSets)} color={accent}/>
       </div>
 
-      {/* Set Logger */}
       {setLog && onSetLogChange && (
         <SetLogger sub={sub} setNumber={currentSet} value={setLog} onChange={onSetLogChange} />
       )}
 
-      {/* Instructions */}
       {sub.instructions && (
         <div style={{ fontSize:12, color:"rgba(255,255,255,0.50)", lineHeight:1.65, padding:"11px 14px", background:C.faint, borderRadius:8, borderLeft:`2px solid ${C.line2}`, marginTop:16 }}>
           {sub.instructions}
         </div>
       )}
 
-      {/* Video link */}
       {sub.videoUrl && (
         <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
           style={{ display:"inline-flex", alignItems:"center", gap:7, marginTop:14, fontSize:12, fontWeight:700, color:C.accent, textDecoration:"none", background:"rgba(79,171,255,0.12)", border:"1px solid rgba(79,171,255,0.25)", borderRadius:7, padding:"7px 13px" }}>
@@ -471,7 +364,6 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
         </a>
       )}
 
-      {/* Evidence required */}
       {sub.evidenceRequired && (
         <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:12, padding:"11px 14px", background:"rgba(255,165,0,0.08)", border:"1px solid rgba(255,165,0,0.2)", borderRadius:8 }}>
           <Camera size={13} color="rgba(255,165,0,0.72)"/>
@@ -585,54 +477,36 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
 
   return (
     <div style={{ position:"relative", overflow:"hidden" }}>
-      {/* Swipe reveal */}
       {!done&&<div style={{ position:"absolute",right:0,top:0,bottom:0,width:56,display:"flex",alignItems:"center",justifyContent:"center",opacity:Math.min(1,dragX/18),pointerEvents:"none" }}>
         <div style={{ width:28,height:28,borderRadius:"50%",background:armed?"rgba(0,200,81,0.25)":"rgba(0,200,81,0.12)",border:`1.5px solid ${armed?C.green:"rgba(0,200,81,0.35)"}`,display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.15s,border-color 0.15s",transform:armed?"scale(1.1)":"scale(1)" }}>
           <Check size={13} color={armed?C.green:"rgba(0,200,81,0.6)"} strokeWidth={3}/>
         </div>
       </div>}
-
       <motion.div {...props} onClick={()=>!done&&onTap(sub)}
         style={{ ...props.style, width:"100%", display:"flex", alignItems:"flex-start", gap:14,
           padding:isGrouped?"12px 20px 12px 28px":"12px 20px",
           background:flash?"rgba(0,200,81,0.07)":C.bg,
           borderBottom:isLast?"none":`1px solid ${C.cardLine}`,
           boxSizing:"border-box", userSelect:"none", position:"relative" }}>
-
         {isGrouped&&showConnector&&<div style={{ position:"absolute",left:20,top:"50%",bottom:-12,width:1,borderLeft:`1px dashed ${groupAccent||"rgba(255,255,255,0.2)"}`,opacity:0.4,pointerEvents:"none" }}/>}
-
-        {/* Status circle */}
         <div style={{ width:22,height:22,borderRadius:"50%",flexShrink:0,marginTop:1,border:`1.5px solid ${done?C.green:"rgba(255,255,255,0.2)"}`,background:done?C.greenDim:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.25s ease" }}>
           {done&&<motion.div initial={{scale:0}} animate={{scale:1}} transition={{type:"spring",stiffness:500,damping:25}}><Check size={11} color={C.green} strokeWidth={3}/></motion.div>}
         </div>
-
-        {/* Name + stat strip */}
         <div style={{ flex:1, minWidth:0 }}>
-          {/* Exercise name */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
             <div style={{ fontSize:14, fontWeight:done?400:600, color:done?C.dim:C.white, letterSpacing:"-0.01em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textDecoration:done?"line-through":"none", textDecorationColor:"rgba(255,255,255,0.18)", transition:"all 0.2s", flex:1, minWidth:0 }}>
               {sub.title}
             </div>
             {sub.evidenceRequired&&!done&&<AlertCircle size={13} color="rgba(255,165,0,0.55)" style={{flexShrink:0}}/>}
           </div>
-
-          {/* Stat strip */}
           {stats.length > 0 && (
             <div style={{ display:"flex", alignItems:"flex-end", gap:16, marginTop:8 }}>
               {stats.map((s,i) => (
-                <StatCell key={i} value={s.value} label={s.label}
-                  accent={i===2&&groupAccent ? groupAccent : undefined}
-                />
+                <StatCell key={i} value={s.value} label={s.label} accent={i===2&&groupAccent ? groupAccent : undefined}/>
               ))}
-              {/* Divider before video */}
-              {sub.videoUrl && stats.length > 0 && (
-                <div style={{ width:1, height:20, background:"rgba(255,255,255,0.08)", alignSelf:"center" }}/>
-              )}
-              {/* Video icon */}
+              {sub.videoUrl && stats.length > 0 && <div style={{ width:1, height:20, background:"rgba(255,255,255,0.08)", alignSelf:"center" }}/>}
               {sub.videoUrl && (
-                <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer"
-                  onClick={e=>e.stopPropagation()}
-                  style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2, textDecoration:"none" }}>
+                <a href={sub.videoUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2, textDecoration:"none" }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={groupAccent||C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill={groupAccent||C.accent} stroke="none"/>
                   </svg>
@@ -641,12 +515,9 @@ function ExerciseRow({ sub, optimisticStatusById, onTap, isLast, isGrouped=false
               )}
             </div>
           )}
-
-          {/* Done state meta */}
           {done&&sub.meta&&<div style={{ fontSize:11, color:C.muted, marginTop:3 }}>{sub.meta}</div>}
         </div>
       </motion.div>
-
       {dragX>4&&<div style={{ height:2,background:"#252525",position:"absolute",bottom:0,left:0,right:0 }}>
         <motion.div style={{ height:"100%",background:armed?C.green:"#00A040",borderRadius:1 }} animate={{ width:`${Math.min(100,(dragX/SWIPE_THRESHOLD)*100)}%` }} transition={{ duration:0.05 }}/>
       </div>}
@@ -688,7 +559,6 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
       if (savedY) window.scrollTo(0, parseInt(savedY) * -1);
       return;
     }
-    // iOS Safari needs position:fixed to actually block scroll
     const scrollY = window.scrollY;
     document.body.style.overflow = "hidden";
     document.body.style.position = "fixed";
@@ -717,21 +587,18 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
   const [restNext,   setRestNext]   = useState("");
   const timerRef = useRef(null);
 
-  // Set logger state — tracks what the athlete actually did this set
   const [setLog, setSetLog] = useState({ reps: 0, weight: 0, effort: 0 });
-
-  // History sheet
-  const [historyEx, setHistoryEx] = useState(null); // exercise sub-object
+  const [historyEx, setHistoryEx] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Reset setLog when exercise or set number changes (pre-fill from target)
   useEffect(() => {
     if (!sub[activeIdx]) return;
     const { reps: tr, weight: tw } = parseMeta(sub[activeIdx]?.meta || "");
     const isBodyWeight = /body.?weight|^bw$/i.test(String(tw || ""));
+    const isPercent    = /^\d+(\.\d+)?\s*%/.test(String(tw || ""));
     setSetLog({
       reps:   parseInt(tr) || 0,
-      weight: isBodyWeight ? 0 : (parseFloat(String(tw || "").replace(/[^0-9.]/g, "")) || 0),
+      weight: isBodyWeight || isPercent ? 0 : (parseFloat(String(tw || "").replace(/[^0-9.]/g, "")) || 0),
       effort: 0,
     });
   }, [activeIdx, currentSet]); // eslint-disable-line
@@ -747,62 +614,41 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
   },[mode]);
 
   const firstIncomplete = useMemo(()=>{ const i=sub.findIndex(s=>!isDone(optimisticStatusById?.[s.id], s.item?.Status)); return i===-1?0:i; },[sub,optimisticStatusById]);
-
   const handleBegin = useCallback(()=>{ setActiveIdx(firstIncomplete); setCurrentSet(1); setStartTime(prev=>prev||Date.now()); setMode("active"); },[firstIncomplete]);
 
   const handleCompleteSet = useCallback(()=>{
     const curSub = sub[activeIdx]; if (!curSub) return;
     const gid = curSub.groupId || curSub.item?.groupId;
-
-    // Save what the athlete actually did this set, regardless of path
     onLogSet?.({
-      workoutItemId: curSub.id,
-      exerciseTitle: curSub.title,
-      setNumber:     currentSet,
-      targetReps:    parseMeta(curSub.meta||"").reps,
-      targetWeight:  parseMeta(curSub.meta||"").weight,
-      actualReps:    setLog.reps,
-      actualWeight:  setLog.weight,
-      effort:        setLog.effort,
-      groupId:       gid || null,
+      workoutItemId: curSub.id, exerciseTitle: curSub.title, setNumber: currentSet,
+      targetReps: parseMeta(curSub.meta||"").reps, targetWeight: parseMeta(curSub.meta||"").weight,
+      actualReps: setLog.reps, actualWeight: setLog.weight, effort: setLog.effort, groupId: gid || null,
     });
 
     if (gid) {
-      // ── GROUPED (superset / circuit) ─────────────────────────────────────
-      // Flow: A1 → A2 → A3 → REST → A1 → A2 → A3 → REST → done
       const groupMembers = sub.filter(s => (s.groupId||s.item?.groupId) === gid);
       const posInGroup   = groupMembers.findIndex(s => s.id === curSub.id);
       const isLastInGroup = posInGroup === groupMembers.length - 1;
       const totalRounds   = parseInt(parseMeta(groupMembers[0].meta||"").sets) || 1;
-
       if (!isLastInGroup) {
-        // Move to next exercise in group — no rest, no set increment
         const nextGroupEx = groupMembers[posInGroup + 1];
-        const nextIdx = sub.findIndex(s => s.id === nextGroupEx.id);
-        setActiveIdx(nextIdx);
+        setActiveIdx(sub.findIndex(s => s.id === nextGroupEx.id));
         setMode("active");
-
       } else if (currentSet < totalRounds) {
-        // Completed a full round — rest, then back to first in group
         haptic(15);
         const firstIdx = sub.findIndex(s => s.id === groupMembers[0].id);
         const restSec  = Math.max(...groupMembers.map(m => parseRestSecs(m)));
-        setActiveIdx(firstIdx);
-        setCurrentSet(prev => prev + 1);
+        setActiveIdx(firstIdx); setCurrentSet(prev => prev + 1);
         setRestTotal(restSec); setRestSecs(restSec);
         setRestNext(`${groupMembers[0].title} · Round ${currentSet + 1} of ${totalRounds}`);
         setMode("resting");
-
       } else {
-        // All rounds done — mark every exercise in group complete, move on
         haptic(20);
         groupMembers.forEach(m => {
           if (!isDone(optimisticStatusById?.[m.id], m.item?.Status)) {
-            if (m.evidenceRequired) onExerciseTap(m);
-            else onQuickComplete(m);
+            if (m.evidenceRequired) onExerciseTap(m); else onQuickComplete(m);
           }
         });
-        // Find next exercise after the group
         const lastGroupIdx = sub.findIndex(s => s.id === groupMembers[groupMembers.length-1].id);
         const nextIdx = sub.findIndex((s,i) => i > lastGroupIdx && !isDone(optimisticStatusById?.[s.id], s.item?.Status));
         if (nextIdx === -1) { setMode("complete"); return; }
@@ -814,15 +660,12 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
         setRestNext(`${nextSub.title} · ${ns||""}×${nr||""}`);
         setMode("resting");
       }
-
     } else {
-      // ── SINGLE EXERCISE ───────────────────────────────────────────────────
       const totalSets = parseInt(parseMeta(curSub.meta||"").sets) || 1;
       const isLastSet = currentSet >= totalSets;
       if (isLastSet) {
         haptic(20);
-        if (curSub.evidenceRequired) onExerciseTap(curSub);
-        else onQuickComplete(curSub);
+        if (curSub.evidenceRequired) onExerciseTap(curSub); else onQuickComplete(curSub);
         const nextIdx = sub.findIndex((s,i) => i > activeIdx && !isDone(optimisticStatusById?.[s.id], s.item?.Status));
         if (nextIdx === -1) { setMode("complete"); return; }
         const nextSub = sub[nextIdx];
@@ -852,7 +695,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
   const title=workoutItem?.title||dailyWorkout?.Title||"Team Workout";
   const groupAccents=Object.values(groupMeta).map(m=>m.color.accent);
   const accentBar=groupAccents.length>1?`linear-gradient(90deg,${groupAccents.join(",")})`:groupAccents.length===1?groupAccents[0]:C.accent;
-  
+
   return (
     <>
       <AnimatePresence>
@@ -868,15 +711,11 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               @keyframes riseUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
             `}</style>
 
-            {/* Gradient bar */}
             <div style={{ height:3, background:accentBar, flexShrink:0 }}/>
-
-            {/* Handle */}
             <div style={{ display:"flex",justifyContent:"center",padding:"10px 0 0",flexShrink:0,cursor:"pointer" }} onClick={onClose}>
               <div style={{ width:32,height:3.5,background:C.handle,borderRadius:2 }}/>
             </div>
 
-            {/* Header */}
             <div style={{ padding:"14px 20px 0", flexShrink:0 }}>
               <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
                 <div style={{ minWidth:0, flex:1 }}>
@@ -913,7 +752,6 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
 
             <div style={{ height:1,background:C.cardLine,flexShrink:0 }}/>
 
-            {/* PREVIEW */}
             {mode==="preview"&&(
               <div style={{ overflowY:"auto",flex:1,WebkitOverflowScrolling:"touch" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:7,padding:"9px 20px",borderBottom:`1px solid ${C.cardLine}`,background:"#0D0D0D" }}>
@@ -943,7 +781,6 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               </div>
             )}
 
-            {/* ACTIVE */}
             {mode==="active"&&sub[activeIdx]&&(()=>{
               const curSub = sub[activeIdx];
               const gid = curSub.groupId || curSub.item?.groupId;
@@ -952,26 +789,13 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               const isLastInGroup = groupMembers ? posInGroup===groupMembers.length-1 : true;
               const totalRounds   = groupMembers ? parseInt(parseMeta(groupMembers[0].meta||"").sets)||1 : parseInt(parseMeta(curSub.meta||"").sets)||1;
               const isLastRound   = currentSet >= totalRounds;
-
-              // What comes after tapping the button?
               const nextInGroup   = groupMembers && !isLastInGroup ? groupMembers[posInGroup+1] : null;
               const afterThisLabel = nextInGroup
                 ? `${nextInGroup.title} · Same round, no rest`
-                : !isLastRound
-                  ? `Rest · Then Round ${currentSet+1} of ${totalRounds}`
-                  : null;
-
-              // Button label
-              const btnLabel = nextInGroup
-                ? `Next: ${nextInGroup.title} →`
-                : !isLastRound
-                  ? `Round ${currentSet} Done · Rest`
-                  : gid
-                    ? `Complete Group`
-                    : isLastRound
-                      ? `Complete`
-                      : `Set ${currentSet} Done`;
-
+                : !isLastRound ? `Rest · Then Round ${currentSet+1} of ${totalRounds}` : null;
+              const btnLabel = nextInGroup ? `Next: ${nextInGroup.title} →`
+                : !isLastRound ? `Round ${currentSet} Done · Rest`
+                : gid ? `Complete Group` : isLastRound ? `Complete` : `Set ${currentSet} Done`;
               const btnColor = nextInGroup ? C.accent : C.green;
               const btnTextColor = nextInGroup ? "#fff" : "#040A05";
 
@@ -999,16 +823,12 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
               );
             })()}
 
-            {/* REST */}
             {mode==="resting"&&<RestTimer seconds={restSecs} total={restTotal} nextLabel={restNext} onSkip={handleSkipRest}/>}
-
-            {/* COMPLETE */}
             {mode==="complete"&&<WorkoutComplete startTime={startTime} totalCount={totalCount} onDone={()=>{ setMode("preview"); onClose(); }}/>}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Exercise progress / history sheet */}
       <ExerciseProgressSheet
         isOpen={historyOpen}
         onClose={() => setHistoryOpen(false)}

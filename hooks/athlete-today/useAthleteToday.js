@@ -16,6 +16,7 @@ function isISODateOnly(s) {
 export function useAthleteToday({ authReady, user, isAthlete }) {
   const [loading, setLoading] = useState(true);
   const [dailyWorkout, setDailyWorkout] = useState(null);
+  const [dailyWorkouts, setDailyWorkouts] = useState([]);
   const [items, setItems] = useState([]);
   const [err, setErr] = useState("");
 
@@ -30,10 +31,10 @@ export function useAthleteToday({ authReady, user, isAthlete }) {
       const force = Boolean(opts?.force);
       const date = safeText(isoDate || selectedDate);
 
-      // If date invalid, don’t fetch
+      // If date invalid, don't fetch
       if (!isISODateOnly(date)) return;
 
-      // Don’t refetch same date unless forced
+      // Don't refetch same date unless forced
       if (!force && lastLoadedDateRef.current === date && !err) return;
 
       // Abort previous request (prevents race conditions + duplicate spam)
@@ -67,6 +68,7 @@ export function useAthleteToday({ authReady, user, isAthlete }) {
         if (!res.ok) throw new Error(data?.error || "Failed to load workout");
 
         setDailyWorkout(data?.dailyWorkout || null);
+        setDailyWorkouts(Array.isArray(data?.dailyWorkouts) ? data.dailyWorkouts : []);
         setItems(Array.isArray(data?.items) ? data.items : []);
 
         // mark success for dedupe
@@ -76,6 +78,7 @@ export function useAthleteToday({ authReady, user, isAthlete }) {
 
         setErr(e?.message || "Failed to load");
         setDailyWorkout(null);
+        setDailyWorkouts([]);
         setItems([]);
 
         // do NOT set lastLoadedDateRef here so user can retry
@@ -130,6 +133,7 @@ export function useAthleteToday({ authReady, user, isAthlete }) {
 
     loading,
     dailyWorkout,
+    dailyWorkouts,
     items,
     err,
     setErr,

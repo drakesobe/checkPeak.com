@@ -45,6 +45,7 @@ const DW = {
   DATE:         F?.DW_DATE         || "Date",
   WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
   ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
+  SCHEDTIME: F?.DW_SCHEDTIME || "ScheduleTime",
 };
 
 const WI = {
@@ -154,7 +155,7 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const { id, ids, title, date, status, sport, items, athleteIds } = req.body || {};
+  const { id, ids, title, date, status, sport, items, athleteIds, scheduledTime } = req.body || {};
 
   if (!id || !String(id).trim()) return res.status(400).json({ error: "id is required" });
 
@@ -194,6 +195,11 @@ export default async function handler(req, res) {
     if (date   !== undefined) scalarPatch[DW.DATE]   = String(date).trim();
     if (status !== undefined) scalarPatch[DW.STATUS] = normalizedStatus;
     if (sport  !== undefined) scalarPatch[DW.SPORT]  = String(sport).toLowerCase();
+    if (scheduledTime !== undefined && scheduledTime !== "") {
+      scalarPatch[DW.SCHEDTIME] = String(scheduledTime);
+    } else if (scheduledTime === "") {
+      scalarPatch[DW.SCHEDTIME] = null;
+    }
 
     if (Object.keys(scalarPatch).length) {
       assertNoUndefinedKeys(scalarPatch);

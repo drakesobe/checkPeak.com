@@ -52,6 +52,18 @@ function barPct(min) {
 
 function cx(...xs) { return xs.filter(Boolean).join(" "); }
 
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim(), isPM = /pm/i.test(s);
+  const parts = s.replace(/[^0-9:]/g, "").split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return null;
+  if (isPM && h < 12) h += 12;
+  if (!isPM && h === 12) h = 0;
+  return h * 60 + m;
+}
+
 // ─── SUBCOMPONENTS ────────────────────────────────────────────────────────────
 
 /** Thin line + dot marking current time on the timeline bar. */
@@ -247,13 +259,17 @@ export default function TodayStrip({
     if (dailyWorkout) {
       const wDone  = workoutProgress?.done  ?? 0;
       const wTotal = workoutProgress?.total ?? 0;
+      const scheduledMin = dailyWorkout.ScheduledTime
+        ? parseTimeToMinutes(dailyWorkout.ScheduledTime)
+        : null;
       out.push({
         id:              "coach_workout",
         type:            "workout",
         label:           dailyWorkout.Title || "Workout",
         badge:           wTotal > 0 ? `${wDone}/${wTotal}` : "Coach",
-        startMinutes:    9 * 60,
+        startMinutes:    scheduledMin ?? 0,
         durationMinutes: 90,
+        selfSchedule:    scheduledMin === null,
       });
     }
 

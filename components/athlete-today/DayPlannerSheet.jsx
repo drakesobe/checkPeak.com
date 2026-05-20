@@ -61,6 +61,17 @@ const safeNum      = v => { const n=Number(String(v??"").trim()); return Number.
 
 function formatHour(h){ if(h===0)return"12 AM"; if(h===12)return"12 PM"; return h<12?`${h} AM`:`${h-12} PM`; }
 function formatTime(m){ const h=Math.floor(m/60)%24,mn=m%60,ap=h>=12?"PM":"AM",dh=h===0?12:h>12?h-12:h; return `${dh}:${String(mn).padStart(2,"0")} ${ap}`; }
+function parseTimeToMinutes(str){
+  if(!str)return null;
+  const s=String(str).trim(),isPM=/pm/i.test(s);
+  const parts=s.replace(/[^0-9:]/g,"").split(":");
+  let h=parseInt(parts[0],10);
+  const m=parseInt(parts[1]||"0",10);
+  if(isNaN(h))return null;
+  if(isPM&&h<12)h+=12;
+  if(!isPM&&h===12)h=0;
+  return h*60+m;
+}
 function classMatchesDate(cls,dateStr){ const dow=new Date(`${dateStr}T12:00:00`).getDay(); if(!Array.isArray(cls.days)||!cls.days.includes(dow))return false; if(cls.startDate&&dateStr<cls.startDate)return false; if(cls.endDate&&dateStr>cls.endDate)return false; return true; }
 function classesToDayEvents(schedules,dateStr){ return(schedules||[]).filter(cls=>classMatchesDate(cls,dateStr)).map(cls=>({id:`cls_${cls.id}_${dateStr}`,scheduleId:cls.id,source:"class_schedule",type:"class",title:cls.title,startMinutes:cls.startMinutes,durationMinutes:cls.durationMinutes,notes:cls.notes||""})); }
 function dayPattern(days){ if(!Array.isArray(days)||!days.length)return null; const S={0:"Su",1:"M",2:"T",3:"W",4:"Th",5:"F",6:"Sa"}; return[...days].sort((a,b)=>(a===0?7:a)-(b===0?7:b)).map(d=>S[d]||"?").join("/"); }
@@ -226,18 +237,19 @@ function ClassBlock({event,schedule,onClick}){
   );
 }
 
-function CoachWorkoutBlock({dailyWorkout,items,optimisticStatusById,onClick}){
+function CoachWorkoutBlock({dailyWorkout,items,optimisticStatusById,onClick,scheduledTime}){
   const doneCount=items?.filter(i=>(optimisticStatusById?.[i.id]||i.Status)==="Completed").length||0;
   const totalCount=items?.length||0,allDone=totalCount>0&&doneCount>=totalCount;
   const height=Math.max(minutesToY(Math.min(Math.max(60,(items?.length||1)*20),120)),MIN_BLOCK_PX);
+  const startMin = (scheduledTime ? parseTimeToMinutes(scheduledTime) : null) ?? 9*60;
   return(
     <div onClick={(e)=>{e.stopPropagation();onClick();}}
-      style={{position:"absolute",left:4,right:4,top:minutesToY(9*60),height,background:allDone?"rgba(35,134,54,0.12)":T.redBg,borderLeft:`3px solid ${allDone?T.green:T.red}`,padding:"9px 10px",cursor:"pointer",userSelect:"none",zIndex:3,overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"space-between",transition:"background 0.2s, border-color 0.2s"}}>
+      style={{position:"absolute",left:4,right:4,top:minutesToY(startMin),height,background:allDone?"rgba(35,134,54,0.12)":T.redBg,borderLeft:`3px solid ${allDone?T.green:T.red}`,padding:"9px 10px",cursor:"pointer",userSelect:"none",zIndex:3,overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"space-between",transition:"background 0.2s, border-color 0.2s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8,justifyContent:"space-between"}}>
         <p style={{fontSize:13,fontWeight:600,color:allDone?T.greenText:T.textPrimary,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{dailyWorkout?.Title||"Coach Workout"}</p>
         <span style={{fontSize:11,fontWeight:700,color:allDone?T.greenText:T.redText,background:allDone?"rgba(35,134,54,0.2)":"rgba(218,54,51,0.15)",padding:"2px 8px",flexShrink:0}}>{totalCount>0?`${doneCount}/${totalCount}`:"Tap to log"}</span>
       </div>
-      <p style={{fontSize:11,color:T.textFaint,margin:0}}>{formatTime(9*60)} - Tap to log exercises</p>
+      <p style={{fontSize:11,color:T.textFaint,margin:0}}>{formatTime(startMin)} - Tap to log exercises</p>
     </div>
   );
 }
@@ -412,7 +424,7 @@ export default function DayPlannerSheet({
   // ── Data ──────────────────────────────────────────────────────────────────
   const workout=useAthleteToday({authReady,user,isAthlete});
   useEffect(()=>{ if(workout.setSelectedDate&&isOpen)workout.setSelectedDate(dateStr); },[dateStr,isOpen]); // eslint-disable-line
-  const{dailyWorkout,items:workoutItems,loading:workoutLoading,setErr}=workout;
+  const{dailyWorkout,dailyWorkouts,items:workoutItems,loading:workoutLoading,setErr}=workout;
   const{modalOpen,activeItem,selectedFile,coachNote,submittingId,optimisticStatusById,openModal,closeModal,setSelectedFile,setCoachNote,submitCompletion}=useWorkoutCompletion({selectedDate:dateStr,reload:workout.reload,setErr});
   const nutrition=useAthleteNutritionToday({authReady,user,isAthlete,selectedDate:dateStr});
   const{mealBlocks,loading:nutritionLoading}=nutrition;
@@ -457,6 +469,33 @@ export default function DayPlannerSheet({
 
   useEffect(()=>{ if(loadingEvents||nutritionLoading||!mealBlocks)return; setEvents(prev=>{if(prev.some(e=>e.source==="nutrition"))return prev;return[...prev,...buildNutritionDefaults(mealBlocks)];}); },[loadingEvents,nutritionLoading,mealBlocks]);
 
+  useEffect(()=>{
+  if(!isOpen || workoutLoading || loadingEvents)return;
+  const list = Array.isArray(dailyWorkouts) && dailyWorkouts.length
+    ? dailyWorkouts
+    : (dailyWorkout ? [{ dailyWorkout, items: workoutItems }] : []);
+  if(!list.length)return;
+  setEvents(prev=>{
+    const withoutOld = prev.filter(e=>e.source!=="coach_workout");
+    const workoutBlocks = list.map(({ dailyWorkout: dw })=>{
+      const scheduledMin = dw.ScheduledTime
+        ? parseTimeToMinutes(dw.ScheduledTime)
+        : null;
+      return {
+        id: `coach_workout_${dw.id}`,
+        source: "coach_workout",
+        dwId: dw.id,
+        type: "workout",
+        title: dw.Title || "Team Workout",
+        startMinutes: scheduledMin ?? 5 * 60,
+        durationMinutes: 90,
+        selfSchedule: scheduledMin === null,
+      };
+    });
+    return [...withoutOld, ...workoutBlocks];
+  });
+},[isOpen, workoutLoading, loadingEvents, dailyWorkout, dailyWorkouts, workoutItems]);
+
   const saveToAirtable=useCallback((evts)=>{
     if(!athleteToken||!dateStr)return;
     setSaveStatus("saving");
@@ -473,11 +512,24 @@ export default function DayPlannerSheet({
 
   // ── Drag end → propagate nutrition times to RouteList ─────────────────────
   const handleDragEnd=useCallback(()=>{
-    if(!onNutritionTimesChange)return;
+  // Propagate nutrition times
+  if(onNutritionTimesChange){
     const times={};
     events.forEach(ev=>{if(ev.source==="nutrition"&&ev.mealKey)times[ev.mealKey]=ev.startMinutes;});
     if(Object.keys(times).length>0) onNutritionTimesChange(times);
-  },[events,onNutritionTimesChange]);
+  }
+  // Save new scheduled time for dragged coach workouts
+  events.forEach(ev=>{
+    if(ev.source!=="coach_workout"||!ev.dwId)return;
+    const h=Math.floor(ev.startMinutes/60), m=ev.startMinutes%60;
+    const timeStr=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+    fetch("/api/org/workouts/update-full",{
+      method:"POST", credentials:"include",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ id: ev.dwId, scheduledTime: timeStr }),
+    }).catch(()=>{});
+  });
+},[events,onNutritionTimesChange]);
 
   // ── Now line ──────────────────────────────────────────────────────────────
   const[nowMinutes,setNowMinutes]=useState(null);
@@ -546,11 +598,11 @@ export default function DayPlannerSheet({
   return(
     <>
       {/* Backdrop */}
-      <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:40,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)",pointerEvents:isOpen?"auto":"none",opacity:isOpen?1:0,transition:"opacity 0.3s ease"}}/>
+      <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9990,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)",pointerEvents:isOpen?"auto":"none",opacity:isOpen?1:0,transition:"opacity 0.3s ease"}}/>
 
       {/* Sheet - height:100dvh ensures flex overflow works correctly on iOS */}
       <div style={{
-        position:"fixed",inset:0,zIndex:50,
+        position:"fixed",inset:0,zIndex:9991,
         background:T.bg,
         fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif",
         display:"flex",flexDirection:"column",
@@ -561,7 +613,7 @@ export default function DayPlannerSheet({
       }}>
 
         {/* ── Header ── */}
-        <div style={{background:T.bg,borderBottom:`0.5px solid ${T.border}`,flexShrink:0,paddingTop:"env(safe-area-inset-top,0)"}}>
+        <div style={{background:T.bg,borderBottom:`0.5px solid ${T.border}`,flexShrink:0,paddingTop:"max(env(safe-area-inset-top,0px), 60px)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px 0"}}>
             <button onClick={onClose} style={{background:"none",border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><X size={13}/></button>
             <button onClick={()=>goToDate(-1)} style={{background:"none",border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ChevronLeft size={14}/></button>
@@ -638,10 +690,9 @@ export default function DayPlannerSheet({
                 </div>
               )}
 
-              {dailyWorkout&&<CoachWorkoutBlock dailyWorkout={dailyWorkout} items={workoutItems} optimisticStatusById={optimisticStatusById} onClick={()=>setWorkoutModal(true)}/>}
               {nutritionEvents.map(ev=>(<NutritionBlock key={ev.id} event={ev} mealData={mealBlocks?.[ev.mealKey]} nutritionCompletion={nutritionCompletion} onDragStart={startDrag} onResizeStart={startResize} onClick={(e)=>setMacroModal({event:e,mealKey:e.mealKey})} isDragging={dragging===ev.id} isResizing={resizing===ev.id}/>))}
               {classEvents.map(ev=>{ const sched=classSchedules.find(c=>c.id===ev.scheduleId); return<ClassBlock key={ev.id} event={ev} schedule={sched} onClick={()=>sched&&setClassModal({schedule:sched})}/>; })}
-              {athleteEvents.map(ev=>(<EventBlock key={ev.id} event={ev} onDragStart={startDrag} onResizeStart={startResize} onClick={(e)=>setModal({event:e,mode:"edit",defaultStartMinutes:e.startMinutes})} isDragging={dragging===ev.id} isResizing={resizing===ev.id}/>))}
+              {athleteEvents.map(ev=>(<EventBlock key={ev.id} event={ev} onDragStart={startDrag} onResizeStart={startResize} onClick={(e)=>{ if(e.source==="coach_workout"){setWorkoutModal(true);return;} setModal({event:e,mode:"edit",defaultStartMinutes:e.startMinutes}); }} isDragging={dragging===ev.id} isResizing={resizing===ev.id}/>))}
 
               {athleteEvents.length===0&&!dailyWorkout&&nutritionEvents.length===0&&classEvents.length===0&&!isLoading&&(
                 <div style={{position:"absolute",top:minutesToY(8*60),left:"50%",transform:"translateX(-50%)",textAlign:"center",pointerEvents:"none",whiteSpace:"nowrap"}}>

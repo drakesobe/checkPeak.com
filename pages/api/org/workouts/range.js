@@ -45,6 +45,26 @@ function buildOrgCandidates(user) {
   return { orgId, orgToken, orgName, candidates };
 }
 
+// Parse Airtable time field → minutes since midnight
+// Handles: "09:00", "9:30am", "14:00", number (already minutes)
+function parseTimeToMinutes(val) {
+  if (val === null || val === undefined || val === "") return null;
+  const n = Number(val);
+  if (Number.isFinite(n) && n >= 0 && n < 1440) return Math.round(n);
+  const s = String(val).trim();
+  if (s.includes("T")) {
+    const d = new Date(s);
+    if (!isNaN(d)) return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
+  const ap = (m[3] || "").toLowerCase();
+  if (ap === "pm" && h < 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  return h * 60 + mn;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -85,6 +105,8 @@ export default async function handler(req, res) {
   const DAILY_STATUS_FIELD        = "Status";
   const DAILY_SPORT_FIELD         = "Sport";
   const DAILY_ITEMS_LINK_FIELD    = "WorkoutItems";
+  const DAILY_SCHED_TIME_FIELD    = "ScheduleTime";
+  const DAILY_SCHED_MIN_FIELD     = "ScheduledMinutes";
 
   const orgJoin  = `ARRAYJOIN({${DAILY_ORG_LINK_FIELD}}&"")`;
   const orgMatch = candidates.length === 1
@@ -105,7 +127,6 @@ export default async function handler(req, res) {
   const formula = `AND(${parts.join(",")})`;
 
   try {
-    // ── Use .all() not .firstPage() — .firstPage() stops at 100 records ───────
     const rows = await base(TABLE_ID)
       .select({
         filterByFormula: formula,
@@ -119,21 +140,29 @@ export default async function handler(req, res) {
       const athletes = safeArray(f[DAILY_ATHLETES_LINK_FIELD]);
       const items    = safeArray(f[DAILY_ITEMS_LINK_FIELD]);
       const date     = f[DAILY_DATE_FIELD] ? String(f[DAILY_DATE_FIELD]).slice(0, 10) : "";
+
+      // Resolve scheduled time — try ScheduledMinutes first, then parse ScheduledTime string
+      const scheduledMinutes =
+        parseTimeToMinutes(f[DAILY_SCHED_MIN_FIELD]) ??
+        parseTimeToMinutes(f[DAILY_SCHED_TIME_FIELD]) ??
+        null;
+
       return {
-        id:           rec.id,
-        Date:         date,
-        Title:        f[DAILY_TITLE_FIELD]  || "Workout",
-        Status:       f[DAILY_STATUS_FIELD] || "assigned",
-        Sport:        f[DAILY_SPORT_FIELD]  || "",
-        athleteCount: athletes.length,
-        athleteToken: String(f.AthleteToken || "").trim(),
-        itemCount:    items.length,
+        id:               rec.id,
+        Date:             date,
+        Title:            f[DAILY_TITLE_FIELD]  || "Workout",
+        Status:           f[DAILY_STATUS_FIELD] || "assigned",
+        Sport:            f[DAILY_SPORT_FIELD]  || "",
+        ScheduledTime:    String(f[DAILY_SCHED_TIME_FIELD]  || "").trim(),
+        ScheduledMinutes: scheduledMinutes,
+        athleteCount:     athletes.length,
+        athleteToken:     String(f.AthleteToken || "").trim(),
+        itemCount:        items.length,
       };
     });
 
-    // ── Athlete name enrichment ───────────────────────────────────────────────
+    // Athlete name enrichment
     let tokenToName = new Map();
-
     if (orgToken && process.env.ATHLETE_API_KEY && process.env.ATHLETE_BASE_ID && process.env.ATHLETE_TABLE_NAME) {
       try {
         const athleteBase   = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);

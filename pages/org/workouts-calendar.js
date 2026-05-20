@@ -12,6 +12,7 @@ import MonthView           from "@/components/org/workoutsCalendar/MonthView";
 import DaySheet            from "@/components/org/workoutsCalendar/DaySheet";
 import ComplianceDrawer    from "@/components/org/workoutsCalendar/ComplianceDrawer";
 import SeasonCalendarModal from "@/components/org/workoutsCalendar/SeasonCalendarModal";
+import CoachDaySchedule    from "@/components/org/workoutsCalendar/CoachDaySchedule";
 
 import {
   addDays, dateToISO, endOfMonth, endOfWeek,
@@ -70,12 +71,12 @@ export default function WorkoutsCalendarPage() {
   const [sportsModal,        setSportsModal]        = useState(false);
   const [dayOpen,            setDayOpen]            = useState(false);
   const [selectedDayISO,     setSelectedDayISO]     = useState("2000-01-01");
+  const [availableSports,    setAvailableSports]    = useState([]);
   const [createOpen,         setCreateOpen]         = useState(false);
   const [createDayISO,       setCreateDayISO]       = useState("2000-01-01");
   const [editWorkout,        setEditWorkout]        = useState(null);
 
   // ── Season calendar periods ──
-  // Hydrate from localStorage immediately; sync from Airtable after mount
   const [periods, setPeriods] = useState(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -100,6 +101,11 @@ export default function WorkoutsCalendarPage() {
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
 
+  // memberId — unique per coach, used as Firestore namespace for personal blocks
+  const memberId = useMemo(() =>
+    String(user?.memberId || user?.orgId || "default"),
+  [user]);
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -120,6 +126,8 @@ export default function WorkoutsCalendarPage() {
       const t = nyDateISO();
       setTodayISO(t);
       setAnchorISO((prev) => (prev && prev !== "2000-01-01" ? prev : t));
+      // Default sidebar to today
+      setSelectedDayISO((prev) => (prev === "2000-01-01" ? t : prev));
     } catch {}
     try {
       const raw = window.localStorage.getItem(LS_KEY);
@@ -250,6 +258,19 @@ export default function WorkoutsCalendarPage() {
     fetchRange(false);
   }, [user, isOrgSide, mounted, cacheKey, fetchRange]);
 
+  // Fetch availableSports for the selected day from the day API
+  // This is more reliable than Sport field on workout records
+  useEffect(() => {
+    const date = selectedDayISO === "2000-01-01" ? todayISO : selectedDayISO;
+    if (!date || !isOrgSide || !mounted) return;
+    fetch(`/api/org/workouts/day?date=${date}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : {})
+      .then(data => {
+        if (Array.isArray(data?.availableSports)) setAvailableSports(data.availableSports);
+      })
+      .catch(() => {});
+  }, [selectedDayISO, todayISO, isOrgSide, mounted]);
+
   // ── Navigation ──
   const goToday = () => setAnchorISO(todayISO);
 
@@ -279,8 +300,12 @@ export default function WorkoutsCalendarPage() {
     return `${left} – ${right}`;
   }, [range.start, range.end]);
 
-  // ── Day sheet ──
-  const openDay  = (iso) => { setSelectedDayISO(String(iso || "").slice(0, 10)); setDayOpen(true); };
+  // ── Day sheet — clicking a day also updates the sidebar ──
+  const openDay  = (iso) => {
+    const clean = String(iso || "").slice(0, 10);
+    setSelectedDayISO(clean);
+    setDayOpen(true);
+  };
   const closeDay = () => setDayOpen(false);
 
   // ── Create / Edit ──
@@ -323,6 +348,9 @@ export default function WorkoutsCalendarPage() {
 
   const clientReady = mounted && todayISO && anchorISO;
 
+  // Resolved sidebar date — falls back to today until a day is selected
+  const sidebarDate = selectedDayISO === "2000-01-01" ? todayISO : selectedDayISO;
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -356,65 +384,82 @@ export default function WorkoutsCalendarPage() {
         onOpenSeasonCalendar={() => setSeasonCalendarOpen(true)}
       />
 
-      {/* ── Calendar ── */}
-      <div style={{ padding: "16px 20px" }}>
+      {/* ── Main: 75% calendar + 25% coach schedule ── */}
+      <div style={{ display: "flex", alignItems: "stretch" }}>
 
-        {/* Filter strip */}
-        {!loading && filterLabel && (
-          <div style={{
-            marginBottom: 8,
-            padding: "8px 14px",
-            backgroundColor: DS.brandBg,
-            border: `1px solid ${DS.brandBorder}`,
-            display: "flex", alignItems: "center", gap: 8,
-          }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>
-              Filtered: {filterLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedSports([])}
-              style={{
-                fontSize: 10, fontWeight: 900, color: DS.brand,
-                background: "none", border: "none", cursor: "pointer",
-                textTransform: "uppercase", letterSpacing: "0.06em", marginLeft: 4,
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        )}
+        {/* Calendar — 75% */}
+        <div style={{ flex: "0 0 75%", minWidth: 0, padding: "16px 20px" }}>
 
-        {/* Calendar card - gated on mounted to prevent SSR/client hydration mismatch */}
-        <div style={{
-          backgroundColor: DS.cardBg,
-          border: `1px solid ${DS.border}`,
-          borderTop: `3px solid ${DS.brand}`,
-          overflow: "hidden",
-        }}>
-          {!mounted ? (
-            <div style={{ minHeight: 320 }} />
-          ) : viewMode === "week" ? (
-            <WeekView
-              weekDays={weekDays}
-              todayISO={todayISO}
-              loading={loading}
-              workoutsByDate={workoutsByDate}
-              onOpenDay={openDay}
-              onCreateForDay={openCreateForDay}
-            />
-          ) : (
-            <MonthView
-              monthDays={days}
-              anchorISO={anchorISO}
-              todayISO={todayISO}
-              loading={loading}
-              workoutsByDate={workoutsByDate}
-              onOpenDay={openDay}
-              onJumpToMonth={(iso) => setAnchorISO(iso)}
-            />
+          {/* Filter strip */}
+          {!loading && filterLabel && (
+            <div style={{
+              marginBottom: 8, padding: "8px 14px",
+              backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`,
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>
+                Filtered: {filterLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedSports([])}
+                style={{
+                  fontSize: 10, fontWeight: 900, color: DS.brand,
+                  background: "none", border: "none", cursor: "pointer",
+                  textTransform: "uppercase", letterSpacing: "0.06em", marginLeft: 4,
+                }}
+              >
+                Clear
+              </button>
+            </div>
           )}
+
+          {/* Calendar card */}
+          <div style={{
+            backgroundColor: DS.cardBg,
+            border: `1px solid ${DS.border}`,
+            borderTop: `3px solid ${DS.brand}`,
+            overflow: "hidden",
+          }}>
+            {!mounted ? (
+              <div style={{ minHeight: 320 }} />
+            ) : viewMode === "week" ? (
+              <WeekView
+                weekDays={weekDays}
+                todayISO={todayISO}
+                loading={loading}
+                workoutsByDate={workoutsByDate}
+                onOpenDay={openDay}
+                onCreateForDay={openCreateForDay}
+              />
+            ) : (
+              <MonthView
+                monthDays={days}
+                anchorISO={anchorISO}
+                todayISO={todayISO}
+                loading={loading}
+                workoutsByDate={workoutsByDate}
+                onOpenDay={openDay}
+                onJumpToMonth={(iso) => setAnchorISO(iso)}
+              />
+            )}
+          </div>
         </div>
+
+        {/* Coach schedule — 25%, sticky, full height */}
+        <div style={{
+          flex: "0 0 25%", minWidth: 260, maxWidth: 360,
+          position: "sticky", top: 0,
+          height: "100vh", overflowY: "auto",
+        }}>
+          <CoachDaySchedule
+            selectedDate={sidebarDate}
+            workoutsByDate={workoutsByDate}
+            sports={availableSports.length ? availableSports : SPORTS_ALL}
+            memberId={memberId}
+          />
+        </div>
+
       </div>
 
       {/* ── Modals + drawers ── */}

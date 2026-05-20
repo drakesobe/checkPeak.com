@@ -673,6 +673,7 @@ export default function CreateWorkoutDrawer({
   const [repeatEnd,       setRepeatEnd]       = useState("");
   const [everyN,          setEveryN]          = useState(7);
   const [occurrences,     setOccurrences]     = useState(8);
+  const [scheduledTime, setScheduledTime] = useState("");
 
   const [templates,        setTemplates]        = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -786,6 +787,7 @@ export default function CreateWorkoutDrawer({
         EvidenceRequired:String(it?.EvidenceRequired||"none"),
         groupId:         it?.groupId || null,  // ← preserve groupId
       })));
+      setScheduledTime(String(editWorkout.ScheduledTime || editWorkout.scheduledTime || "").slice(0, 5));
       setShowItems(true);
       const incoming = Array.isArray(editWorkout.athleteIds) ? editWorkout.athleteIds : [];
       if (incoming.length) { const sel={}; incoming.forEach(t=>{ if(t) sel[String(t)]=true; }); setSelected(sel); } else setSelected({});
@@ -797,6 +799,7 @@ export default function CreateWorkoutDrawer({
       setCreateDate(dateISO || "");
       setRepeatOn(false); setRepeatMode("daysOfWeek");
       setRepeatDays([]); setRepeatEnd(""); setEveryN(7); setOccurrences(8);
+      setScheduledTime("");
     }
   }, [open, isEdit]);
 
@@ -950,7 +953,7 @@ export default function CreateWorkoutDrawer({
     setSaving(true);
     try {
       if (isEdit) {
-        const body = { id:editWorkout.id, title:String(title).trim(), status, athleteIds:selectedTokens, ...(editDate?{date:String(editDate).slice(0,10)}:{}), ...(editSport?{sport:String(editSport).toLowerCase()}:{}), items:finalItems };
+        const body = { id:editWorkout.id, title:String(title).trim(), status, athleteIds:selectedTokens, ...(editDate?{date:String(editDate).slice(0,10)}:{}), ...(editSport?{sport:String(editSport).toLowerCase()}:{}), ...(scheduledTime !== undefined ? { scheduledTime } : {}), items:finalItems };
         const res  = await fetch("/api/org/workouts/update-full", { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error||"Update failed");
@@ -959,7 +962,7 @@ export default function CreateWorkoutDrawer({
       } else {
         if (!computedDates.length) return setErr("Missing date.");
         if (!selectedTokens.length) return setErr("Select at least one athlete.");
-        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(activeSport?{sport:String(activeSport)}:{}) };
+        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(activeSport?{sport:String(activeSport)}:{}), ...(scheduledTime ? { scheduledTime } : {}) };
         const res  = await fetch("/api/org/workouts/create", { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error||"Create failed");
@@ -1127,6 +1130,28 @@ export default function CreateWorkoutDrawer({
               </div>
 
               <div>
+                <span style={lbl}>
+                  Scheduled time{" "}
+                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>
+                    (optional)
+                  </span>
+                </span>
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={e => setScheduledTime(e.target.value)}
+                  style={{ ...inp, maxWidth: 180 }}
+                  onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                  onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                />
+                {scheduledTime && (
+                  <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: 5 }}>
+                    Athletes will see this workout at {scheduledTime}.
+                  </p>
+                )}
+              </div>
+
+              <div>
                 <span style={lbl}>Workout title *</span>
                 <input value={title} onChange={e => setTitle(e.target.value)}
                   placeholder="e.g. Upper Body - Strength Block Week 3" autoFocus style={inp}
@@ -1255,6 +1280,22 @@ export default function CreateWorkoutDrawer({
                         {SPORT_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
+                  </div>
+                  <div>
+                    <span style={lbl}>
+                      Scheduled time{" "}
+                      <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>
+                        (optional)
+                      </span>
+                    </span>
+                    <input
+                      type="time"
+                      value={scheduledTime}
+                      onChange={e => setScheduledTime(e.target.value)}
+                      style={{ ...inp, maxWidth: 180 }}
+                      onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                      onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                    />
                   </div>
                   <div style={{ height:1, background:DS.border }} />
                 </div>

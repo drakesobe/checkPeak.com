@@ -287,6 +287,7 @@ export default async function handler(req, res) {
         AthleteToken: f.AthleteToken || athleteToken,
         ReviewStatus: reviewStatus,
         ReviewedNotes: reviewedNotes,
+        ScheduledTime: f.ScheduleTime || null,
       },
       items,
       debug: {

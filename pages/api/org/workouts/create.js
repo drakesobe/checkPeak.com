@@ -50,6 +50,7 @@ const DW = {
   CREATEDBY:    F?.DW_CREATEDBY    || "CreatedBy",
   ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
   WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
+  SCHEDTIME:    F?.DW_SCHEDTIME     || "ScheduleTime",
 };
 
 const WI = {
@@ -172,7 +173,7 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const { athleteId, athleteIds, date, dates, title, sport, status, items = [] } = req.body || {};
+    const { athleteId, athleteIds, date, dates, title, sport, status, scheduledTime, items = [] } = req.body || {};
 
     // Support multi-date: dates[] takes priority over single date
     const allDates = Array.isArray(dates) && dates.length
@@ -224,6 +225,7 @@ export default async function handler(req, res) {
           [DW.TITLE]:     String(title || "Daily Workout"),
           [DW.STATUS]:    String(status || "assigned"),
           ...(sport ? { [DW.SPORT]: String(sport) } : {}),
+          ...(scheduledTime ? { [DW.SCHEDTIME]: String(scheduledTime) } : {}),
           [DW.CREATEDBY]: [memberId],
           [DW.ATHTOKEN]:  String(a.athleteToken),
         };

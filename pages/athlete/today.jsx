@@ -53,6 +53,7 @@ function computeStreak(who) {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MEAL_TIMES = { breakfast: 7*60, lunch: 12*60, afternoon: 15*60, dinner: 18*60+30 };
 const DAY_GROUPS = [
+  { label: "Anytime",   dot: "#64748B", range: [0,        5*60+59]  },
   { label: "Morning",   dot: "#F59E0B", range: [0,        11*60+59] },
   { label: "Midday",    dot: "#1A6FE8", range: [12*60,    14*60+59] },
   { label: "Afternoon", dot: "#22C55E", range: [15*60,    18*60+59] },
@@ -60,37 +61,50 @@ const DAY_GROUPS = [
 ];
 const SWIPE_HINT_KEY = "cp_swipe_hint:shown";
 
+// ─── parseTimeToMinutes ───────────────────────────────────────────────────────
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim(), isPM = /pm/i.test(s);
+  const parts = s.replace(/[^0-9:]/g, "").split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return null;
+  if (isPM && h < 12) h += 12;
+  if (!isPM && h === 12) h = 0;
+  return h * 60 + m;
+}
+
 // ─── buildDayRoute ────────────────────────────────────────────────────────────
-// `loading` - skips the workout while a new date is being fetched.
-// `mealTimeOverrides` - { mealKey: startMinutes } set when user drags a meal
-//   block in DayPlannerSheet. Overrides the default MEAL_TIMES constants so
-//   the RouteList reflects the user's customised schedule immediately.
 function buildDayRoute({
-  dailyWorkout, items, mealBlocks, hasPlan,
+  dailyWorkout, items, dailyWorkouts, mealBlocks, hasPlan,
   classSchedules, selectedDate, optimisticStatusById,
   dailyHydrationOz, loading, mealTimeOverrides = {},
 }) {
   const events = [];
 
-  if (dailyWorkout && !loading) {
-    // Check if the workout actually belongs to selectedDate.
-    // Reads whichever date field your Airtable record uses.
-    // If no date field exists on the record, dateMatches = true (safe fallback).
-    const rawDate = String(
-      dailyWorkout.Date         ||
-      dailyWorkout.WorkoutDate  ||
-      dailyWorkout.date         ||
-      dailyWorkout.workout_date ||
-      dailyWorkout.fields?.Date ||
-      ""
-    ).trim().slice(0, 10); // take only "YYYY-MM-DD" prefix
+  // Build workout list — use dailyWorkouts array if available, fall back to single
+  const workoutList = Array.isArray(dailyWorkouts) && dailyWorkouts.length
+    ? dailyWorkouts
+    : (dailyWorkout ? [{ dailyWorkout, items }] : []);
 
-    const dateMatches = !rawDate || rawDate === selectedDate;
+  if (!loading) {
+    workoutList.forEach(({ dailyWorkout: dw, items: dwItems }, idx) => {
+      if (!dw) return;
 
-    if (dateMatches) {
-      const sub = (items || []).map(item => {
+      const rawDate = String(
+        dw.Date         ||
+        dw.WorkoutDate  ||
+        dw.date         ||
+        dw.workout_date ||
+        dw.fields?.Date ||
+        ""
+      ).trim().slice(0, 10);
+
+      const dateMatches = !rawDate || rawDate === selectedDate;
+      if (!dateMatches) return;
+
+      const sub = (dwItems || []).map(item => {
         const evRaw = String(item.EvidenceRequired || "").toLowerCase();
-        // Normalise video URL - try common Airtable field name variations
         const rawVideo = String(
           item.VideoURL || item.VideoUrl || item.Video ||
           item.video_url || item.video || item.VideoLink || ""
@@ -111,21 +125,27 @@ function buildDayRoute({
           item,
         };
       });
-      const scheduledMin = dailyWorkout.ScheduledMinutes
-        ?? (dailyWorkout.ScheduledTime ? parseTimeToMinutes(dailyWorkout.ScheduledTime) : null)
-        ?? 9 * 60;
+
+      const isScheduled = !!(dw.ScheduledMinutes ?? dw.ScheduledTime);
+      const scheduledMin = dw.ScheduledMinutes
+        ?? (dw.ScheduledTime ? parseTimeToMinutes(dw.ScheduledTime) : null)
+        ?? (idx * 30); // ← also change to idx * 30 so unscheduled lands in Anytime (0–5am)
+
       events.push({
-        id: "workout_session", type: "workout",
-        title: dailyWorkout.Title || "Team Workout",
+        id: `workout_session_${dw.id || idx}`,
+        type: "workout",
+        title: dw.Title || "Team Workout",
         meta: `${sub.length} exercise${sub.length !== 1 ? "s" : ""} · Coach assigned`,
-        startMinutes: scheduledMin, durationMinutes: 90, sub,
+        startMinutes: scheduledMin,
+        durationMinutes: 90,
+        sub,
+        selfSchedule: !isScheduled,
       });
-    }
+    });
   }
 
   if (hasPlan) {
     Object.entries(MEAL_TIMES).forEach(([key, defaultStart]) => {
-      // Use planner override if the user has moved this meal block
       const startMinutes = mealTimeOverrides?.[key] ?? defaultStart;
       const block   = mealBlocks?.[key];
       const targets = block?.targets || {};
@@ -167,18 +187,6 @@ function buildDayRoute({
     (g || grouped[grouped.length - 1]).items.push(ev);
   });
   return grouped.filter(g => g.items.length > 0);
-}
-
-function parseTimeToMinutes(str) {
-  if (!str) return null;
-  const s = String(str).trim(), isPM = /pm/i.test(s);
-  const parts = s.replace(/[^0-9:]/g, "").split(":");
-  let h = parseInt(parts[0], 10);
-  const m = parseInt(parts[1] || "0", 10);
-  if (isNaN(h)) return null;
-  if (isPM && h < 12) h += 12;
-  if (!isPM && h === 12) h = 0;
-  return h * 60 + m;
 }
 
 // ─── PROGRESS RING ────────────────────────────────────────────────────────────
@@ -257,26 +265,26 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
     const id = setInterval(() => { const n = new Date(); setNowMin(n.getHours() * 60 + n.getMinutes()); }, 60_000);
     return () => clearInterval(id);
   }, [isToday]);
- 
+
   return useMemo(() => {
     if (!isToday) return null;
     const all = groups.flatMap(g => g.items);
- 
+
     function itemDone(ev) {
       if (ev.type === "meal") { const c = nutritionCompletion?.[ev.mealKey]; return Boolean(c?.mealDone && c?.hydrationDone); }
       if (ev.type === "workout" && ev.sub) return ev.sub.length > 0 && ev.sub.every(s => (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed");
       return false;
     }
- 
+
     const current  = all.find(ev => nowMin >= ev.startMinutes && nowMin < ev.startMinutes + (ev.durationMinutes || 60));
     const upcoming = all.find(ev => ev.startMinutes > nowMin);
     const colorMap = { workout: "#EF4444", meal: "#4FABFF", class: "#FBBF24" };
- 
+
     if (current && !itemDone(current)) {
       return {
         label: "Right now", title: current.title, isNow: true,
         color: colorMap[current.type] || "#9AA0B4", type: "current",
-        activeItemId: current.id,   // ← NEW: identifies which row is live
+        activeItemId: current.id,
         nextItemId:   null,
       };
     }
@@ -287,7 +295,7 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
           label: `Up next · in ${minOut}m`, title: upcoming.title, isNow: false,
           color: colorMap[upcoming.type] || "#9AA0B4", type: "upcoming",
           activeItemId: null,
-          nextItemId:   upcoming.id,  // ← NEW: identifies the next row
+          nextItemId:   upcoming.id,
         };
       }
       const h = Math.floor(upcoming.startMinutes / 60) % 24, m = upcoming.startMinutes % 60;
@@ -297,7 +305,7 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
         label: "All clear", title: `Next up at ${timeStr} · ${upcoming.title}`, isNow: false,
         color: "#9AA0B4", type: "clear",
         activeItemId: null,
-        nextItemId:   upcoming.id,  // ← still pass it even when far away
+        nextItemId:   upcoming.id,
       };
     }
     const allDone = all.length > 0 && all.every(ev => itemDone(ev));
@@ -313,8 +321,6 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
 }
 
 // ─── ALL DONE CELEBRATION ─────────────────────────────────────────────────────
-// Drop-in replacement for AllDoneState in today.jsx
-// Cinematic dark version matching homepage / WorkoutSheet energy
 function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutritionDone, nutritionTotal, hasPlan, onReview }) {
   return (
     <div style={{
@@ -330,14 +336,12 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
 
-      {/* Background glow */}
       <div aria-hidden="true" style={{
         position: "absolute", inset: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse 60% 50% at 50% 60%, rgba(0,200,81,0.08) 0%, transparent 70%)",
         animation: "glowPulse 3s ease-in-out infinite",
       }} />
 
-      {/* Check ring */}
       <div style={{
         width: 64, height: 64, borderRadius: "50%",
         background: "rgba(0,200,81,0.1)",
@@ -352,7 +356,6 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         </svg>
       </div>
 
-      {/* Headline */}
       <div style={{
         fontFamily: "'Barlow Condensed', -apple-system, sans-serif",
         fontWeight: 900, fontStyle: "italic",
@@ -365,7 +368,6 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         Day<br /><span style={{ color: "#00C851" }}>Cleared.</span>
       </div>
 
-      {/* Sub */}
       <div style={{
         fontSize: 14, color: "rgba(255,255,255,0.35)", fontWeight: 500,
         marginBottom: 36, position: "relative", zIndex: 1,
@@ -374,7 +376,6 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         {firstName}, you finished {totalDone} {totalDone === 1 ? "thing" : "things"} today.
       </div>
 
-      {/* Stats */}
       <div style={{
         width: "100%", maxWidth: 280,
         background: "#111111", border: "1px solid #1E1E1E",
@@ -414,7 +415,6 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         )}
       </div>
 
-      {/* Review button */}
       <button onClick={onReview} style={{
         padding: "11px 28px",
         background: "transparent",
@@ -457,7 +457,7 @@ export default function AthleteToday() {
   }, [athleteToken, user]);
 
   // ── Workout ───────────────────────────────────────────────────────────────
-  const { selectedDate, setSelectedDate, loading, dailyWorkout, items, err, setErr, reload } =
+  const { selectedDate, setSelectedDate, loading, dailyWorkout, dailyWorkouts, items, err, setErr, reload } =
     useAthleteToday({ authReady, user, isAthlete });
 
   const {
@@ -544,8 +544,6 @@ export default function AthleteToday() {
   // ── Day planner sheet ─────────────────────────────────────────────────────
   const [plannerOpen, setPlannerOpen] = useState(false);
 
-  // When the user drags a meal block in the planner, these overrides replace
-  // the default MEAL_TIMES in buildDayRoute so the RouteList updates instantly.
   const [plannerMealTimeOverrides, setPlannerMealTimeOverrides] = useState({});
   const handleNutritionTimesChange = useCallback((times) => {
     setPlannerMealTimeOverrides(prev => ({ ...prev, ...times }));
@@ -616,13 +614,17 @@ export default function AthleteToday() {
   }, [selectedDate]);
 
   // ── Route + counts ────────────────────────────────────────────────────────
-  // Pass `loading` so stale workouts are suppressed during date transitions.
   const groups = useMemo(() => buildDayRoute({
-    dailyWorkout, items,
+    dailyWorkout, items, dailyWorkouts,
     mealBlocks: nutrition.mealBlocks, hasPlan: nutrition.hasPlan,
     classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
     loading, mealTimeOverrides: plannerMealTimeOverrides,
-  }), [dailyWorkout, items, nutrition.mealBlocks, nutrition.hasPlan, classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz, loading, plannerMealTimeOverrides]);
+  }), [
+    dailyWorkout, items, dailyWorkouts,
+    nutrition.mealBlocks, nutrition.hasPlan,
+    classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
+    loading, plannerMealTimeOverrides,
+  ]);
 
   const { totalDone, totalItems, workoutDone, workoutTotal, nutritionDone, nutritionTotal } = useMemo(() => {
     let wD = 0, wT = 0, nD = 0, nT = 0;
@@ -728,7 +730,6 @@ export default function AthleteToday() {
 
         {/* Sub-bar: now context + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
-          {/* Now context - left side */}
           {nowCtx ? (
             <div style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0 }}>
               <div style={{
@@ -750,10 +751,8 @@ export default function AthleteToday() {
             </div>
           )}
 
-          {/* Action buttons - right side, always visible */}
           {!isPastDay && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {/* Add class */}
               <button
                 type="button"
                 onClick={() => setClassModal({ schedule: null })}
@@ -770,7 +769,6 @@ export default function AthleteToday() {
                 Class
               </button>
 
-              {/* Plan day */}
               <button
                 type="button"
                 onClick={() => setPlannerOpen(true)}
@@ -822,7 +820,7 @@ export default function AthleteToday() {
             isPastDay={isPastDay}
             dateLabel={dateLabel}
             showSwipeHint={showSwipeHint}
-            />
+          />
         )}
       </div>
 

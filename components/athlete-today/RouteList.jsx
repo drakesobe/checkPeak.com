@@ -179,8 +179,11 @@ function MiniRing({ done, total }) {
 
 // ─── Section header ───────────────────────────────────────────────────────────
 const TIME_RANGES = {
-  Morning: "until noon", Midday: "12–3pm",
-  Afternoon: "3–7pm",   Evening: "7pm+",
+  Anytime:   "self-schedule",
+  Morning:   "until noon",
+  Midday:    "12–3pm",
+  Afternoon: "3–7pm",
+  Evening:   "7pm+",
 };
 
 function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, isReadOnly }) {
@@ -237,7 +240,7 @@ function SectionHeader({ label, dot, done, total, collapsed, onToggleCollapse, i
 }
 
 // ─── WORKOUT ROW ──────────────────────────────────────────────────────────────
-function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive }) {
+function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive, selfSchedule }) {
   const subDone = item.sub?.filter(s =>
     (optimisticStatusById?.[s.id] || s.item?.Status) === "Completed"
   ).length ?? 0;
@@ -319,6 +322,24 @@ function WorkoutRow({ item, onTap, optimisticStatusById, isReadOnly, isActive })
             }}>
               Coach assigned
             </span>
+            {selfSchedule && !allDone && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 5, marginTop: 5,
+              }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                  stroke={D.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span style={{
+                  fontSize: 10, fontWeight: 500, color: D.muted, lineHeight: 1,
+                }}>
+                  Self-schedule · use Plan Day to set a time
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -931,6 +952,7 @@ export default function RouteList({
                             optimisticStatusById={optimisticStatusById}
                             isReadOnly={isReadOnly}
                             isActive={item.id === activeItemId}
+                            selfSchedule={item.selfSchedule}
                           />
                         );
                       }

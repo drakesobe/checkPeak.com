@@ -1673,6 +1673,189 @@ function FinalCta() {
   );
 }
 
+function PromoVideo() {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-10%" });
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef(null);
+
+  const handlePlay = () => {
+    if (videoRef.current) {
+      videoRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <section ref={ref} style={{
+      width: "100%",
+      background: BLACK,
+      padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
+      borderTop: "0.5px solid rgba(255,255,255,0.08)",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+
+      {/* Film grain */}
+      <div aria-hidden="true" style={{
+        position: "absolute", inset: 0, zIndex: 1,
+        backgroundImage: GRAIN_URL, backgroundRepeat: "repeat",
+        backgroundSize: "256px 256px", opacity: 0.04,
+        mixBlendMode: "screen", pointerEvents: "none",
+      }} />
+
+      {/* Ambient glow behind video */}
+      <div aria-hidden="true" style={{
+        position: "absolute", left: "50%", top: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "70vw", height: "40vw",
+        borderRadius: "50%", zIndex: 0, pointerEvents: "none",
+        background: `radial-gradient(ellipse, rgba(79,171,255,0.07) 0%, transparent 70%)`,
+      }} />
+
+      <div style={{ position: "relative", zIndex: 2 }}>
+
+        {/* Eyebrow */}
+        <motion.div
+          initial={{ opacity: 0, x: -12 }}
+          animate={inView ? { opacity: 1, x: 0 } : {}}
+          transition={{ duration: 0.5 }}
+          style={{ display: "flex", alignItems: "center", gap: "0.85rem", justifyContent: "center", marginBottom: "clamp(1.5rem, 3vw, 2.5rem)" }}
+        >
+          <motion.div
+            initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
+            transition={{ duration: 0.8, delay: 0.05 }}
+            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "left" }}
+          />
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
+            The proof
+          </span>
+          <motion.div
+            initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
+            transition={{ duration: 0.8, delay: 0.05 }}
+            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "right" }}
+          />
+        </motion.div>
+
+        {/* Headline */}
+        <motion.div
+          initial={{ opacity: 0, y: 32 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          style={{ textAlign: "center", marginBottom: "clamp(2.5rem, 5vw, 4rem)" }}
+        >
+          <p style={{
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 900,
+            fontStyle: "italic",
+            fontSize: "clamp(2.5rem, 7vw, 7rem)",
+            lineHeight: 0.88,
+            letterSpacing: "-0.03em",
+            textTransform: "uppercase",
+            color: WHITE,
+          }}>
+            This is what <span style={{ color: ACCENT }}>ready</span> looks like.
+          </p>
+        </motion.div>
+
+        {/* Video container */}
+        <motion.div
+          initial={{ opacity: 0, y: 48, rotateX: 4 }}
+          animate={inView ? { opacity: 1, y: 0, rotateX: 0 } : {}}
+          transition={{ duration: 1.2, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          style={{
+            maxWidth: 960,
+            margin: "0 auto",
+            borderRadius: 12,
+            overflow: "hidden",
+            position: "relative",
+            aspectRatio: "16/9",
+            transform: "perspective(1400px) rotateX(1deg)",
+            transformOrigin: "center top",
+            boxShadow: `
+              0 2px 0 rgba(255,255,255,0.07),
+              0 32px 100px rgba(0,0,0,0.85),
+              0 12px 40px rgba(0,0,0,0.6),
+              0 0 0 1px rgba(255,255,255,0.08),
+              0 0 80px rgba(79,171,255,0.08)
+            `,
+          }}
+        >
+          <video
+            ref={videoRef}
+            controls={playing}
+            playsInline
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+            poster="/images/promo-poster.jpg"
+          >
+            <source src="/video/app-promo.mp4" type="video/mp4" />
+          </video>
+
+          {/* Custom play overlay - hides once playing */}
+          {!playing && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handlePlay}
+              style={{
+                position: "absolute", inset: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "rgba(6,8,16,0.35)",
+                cursor: "none",
+              }}
+            >
+              {/* Play button */}
+              <motion.div
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.96 }}
+                style={{
+                  width: "clamp(56px, 8vw, 80px)",
+                  height: "clamp(56px, 8vw, 80px)",
+                  borderRadius: "50%",
+                  background: ACCENT,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: `0 0 0 12px rgba(79,171,255,0.15), 0 8px 32px rgba(0,0,0,0.5)`,
+                }}
+              >
+                <svg
+                  width="28" height="28" viewBox="0 0 24 24"
+                  fill="#060810" stroke="none"
+                  style={{ marginLeft: "3px" }}
+                >
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              </motion.div>
+            </motion.div>
+          )}
+        </motion.div>
+
+        {/* Caption */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={inView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.6, delay: 0.9 }}
+          style={{
+            textAlign: "center",
+            marginTop: "clamp(1.5rem, 3vw, 2.5rem)",
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontWeight: 700,
+            fontSize: "0.85rem",
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "rgba(255,255,255,0.28)",
+          }}
+        >
+          No excuses.&nbsp;&nbsp;No surprises.&nbsp;&nbsp;No shortcuts.
+        </motion.p>
+
+      </div>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // PAGE
 // ---------------------------------------------------------------------------
@@ -1718,6 +1901,9 @@ export default function HomePage() {
         {/* Beat 3: "Now you will." */}
         <DeclarationBeat index={2} lines={BEATS[2].lines} footnote={BEATS[2].footnote}
           isClimax={true} threeLines={false} bgImage={BEAT_IMAGES[2]} watermark={BEAT_WATERMARKS[2]} total={4} />
+
+        {/* Promo Video */}
+        <PromoVideo />
 
         {/* Beat 4: "Built around the rules." */}
         <DeclarationBeat index={3} lines={BEATS[3].lines} footnote={BEATS[3].footnote}

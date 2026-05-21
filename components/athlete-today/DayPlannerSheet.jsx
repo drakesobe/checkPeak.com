@@ -1,15 +1,5 @@
 // components/athlete-today/DayPlannerSheet.jsx
 // Outlook-style day planner. Slides up over today.jsx.
-//
-// Changes from original:
-// 1. SCROLL FIX - touchmove listener is now passive:true. We never call
-//    preventDefault() so there's no reason for it to be non-passive.
-//    Swipe-to-change-day now requires a predominantly horizontal gesture
-//    (|dx|>60 AND |dy|<50) so vertical scrolling never accidentally flips days.
-//    Sheet container gets explicit height:"100dvh" so flex overflow works on iOS.
-// 2. PERSISTENCE - after every drag/resize, onNutritionTimesChange fires with
-//    { breakfast, lunch, afternoon, dinner } → startMinutes so today.jsx can
-//    update the RouteList time display without a server round-trip.
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -54,10 +44,18 @@ const MEAL_LABELS={breakfast:"Breakfast",lunch:"Lunch",afternoon:"Afternoon",din
 const minutesToY   = m => (m/60)*HOUR_HEIGHT;
 const yToMinutes   = y => Math.round((y/HOUR_HEIGHT)*60/SNAP_MINUTES)*SNAP_MINUTES;
 const clamp        = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
-const toISODate    = d => d.toISOString().split("T")[0];
+const toISODate    = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; };
 const isTodayDate  = d => toISODate(d)===toISODate(new Date());
 const getCurrentMin= () => { const n=new Date(); return n.getHours()*60+n.getMinutes(); };
 const safeNum      = v => { const n=Number(String(v??"").trim()); return Number.isFinite(n)?n:null; };
+
+// ─── PERSONAL EVENT SOURCES ───────────────────────────────────────────────────
+// Only these events are saved/loaded from Airtable.
+// nutrition and coach_workout are always regenerated dynamically.
+const TRANSIENT_SOURCES = new Set(["nutrition","coach_workout","coachworkout","class_schedule"]);
+function isPersonalEvent(ev) {
+  return !TRANSIENT_SOURCES.has(ev?.source);
+}
 
 function formatHour(h){ if(h===0)return"12 AM"; if(h===12)return"12 PM"; return h<12?`${h} AM`:`${h-12} PM`; }
 function formatTime(m){ const h=Math.floor(m/60)%24,mn=m%60,ap=h>=12?"PM":"AM",dh=h===0?12:h>12?h-12:h; return `${dh}:${String(mn).padStart(2,"0")} ${ap}`; }
@@ -83,7 +81,7 @@ const lsNutKey=(tok,date)=>`checkpeak:nutritionCompletion:${tok}:${date}`;
 function lsGet(k){try{return typeof window!=="undefined"?localStorage.getItem(k):null;}catch{return null;}}
 function lsSet(k,v){try{if(typeof window!=="undefined")localStorage.setItem(k,v);}catch{}}
 
-// ─── DRAG HOOK - passive touch, onDragEnd callback ────────────────────────────
+// ─── DRAG HOOK ────────────────────────────────────────────────────────────────
 function usePointerDrag({gridRef,events,setEvents,onDragEnd}){
   const dragRef=useRef(null), resizeRef=useRef(null);
   const [dragging,setDragging]=useState(null);
@@ -131,7 +129,6 @@ function usePointerDrag({gridRef,events,setEvents,onDragEnd}){
       dragRef.current=null; resizeRef.current=null;
       setDragging(null); setResizing(null);
     };
-    // passive:true - we never call preventDefault, so native scroll is unaffected
     window.addEventListener("mousemove",move,{passive:true});
     window.addEventListener("touchmove",move,{passive:true});
     window.addEventListener("mouseup",up);
@@ -215,6 +212,9 @@ function EventBlock({event,onDragStart,onResizeStart,onClick,isDragging,isResizi
         {tall&&<span style={{fontSize:10,color:T.textFaint,flexShrink:0,marginTop:1}}>{formatTime(event.startMinutes)}</span>}
       </div>
       {tall&&<p style={{fontSize:11,color:cfg.meta,margin:"3px 0 0"}}>{formatTime(event.startMinutes)} - {formatTime(event.startMinutes+event.durationMinutes)}{event.notes?<span style={{color:T.textFaint}}> · {event.notes}</span>:null}</p>}
+      {event.source==="coach_workout"&&event.selfSchedule&&(
+        <p style={{fontSize:10,color:T.redText,margin:"4px 0 0",opacity:0.7}}>Drag to schedule</p>
+      )}
       <ResizeHandle color={cfg.border} onMouseDown={(e)=>{e.stopPropagation();onResizeStart(e,event.id);}} onTouchStart={(e)=>{e.stopPropagation();onResizeStart(e,event.id);}}/>
     </div>
   );
@@ -237,23 +237,6 @@ function ClassBlock({event,schedule,onClick}){
   );
 }
 
-function CoachWorkoutBlock({dailyWorkout,items,optimisticStatusById,onClick,scheduledTime}){
-  const doneCount=items?.filter(i=>(optimisticStatusById?.[i.id]||i.Status)==="Completed").length||0;
-  const totalCount=items?.length||0,allDone=totalCount>0&&doneCount>=totalCount;
-  const height=Math.max(minutesToY(Math.min(Math.max(60,(items?.length||1)*20),120)),MIN_BLOCK_PX);
-  const startMin = (scheduledTime ? parseTimeToMinutes(scheduledTime) : null) ?? 9*60;
-  return(
-    <div onClick={(e)=>{e.stopPropagation();onClick();}}
-      style={{position:"absolute",left:4,right:4,top:minutesToY(startMin),height,background:allDone?"rgba(35,134,54,0.12)":T.redBg,borderLeft:`3px solid ${allDone?T.green:T.red}`,padding:"9px 10px",cursor:"pointer",userSelect:"none",zIndex:3,overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"space-between",transition:"background 0.2s, border-color 0.2s"}}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:8,justifyContent:"space-between"}}>
-        <p style={{fontSize:13,fontWeight:600,color:allDone?T.greenText:T.textPrimary,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{dailyWorkout?.Title||"Coach Workout"}</p>
-        <span style={{fontSize:11,fontWeight:700,color:allDone?T.greenText:T.redText,background:allDone?"rgba(35,134,54,0.2)":"rgba(218,54,51,0.15)",padding:"2px 8px",flexShrink:0}}>{totalCount>0?`${doneCount}/${totalCount}`:"Tap to log"}</span>
-      </div>
-      <p style={{fontSize:11,color:T.textFaint,margin:0}}>{formatTime(startMin)} - Tap to log exercises</p>
-    </div>
-  );
-}
-
 // ─── MACRO MODAL ─────────────────────────────────────────────────────────────
 function MacroModal({mealKey,mealData,event,nutritionCompletion,onToggle,onClose}){
   const targets=mealData?.targets||{};
@@ -267,7 +250,7 @@ function MacroModal({mealKey,mealData,event,nutritionCompletion,onToggle,onClose
   const comp=nutritionCompletion?.[mealKey]||{};
   useEffect(()=>{const fn=(e)=>{if(e.key==="Escape")onClose();};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn);},[onClose]);
   return(
-    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <div style={{background:T.bgElevated,width:"100%",maxWidth:480,borderTop:`0.5px solid ${T.borderMid}`}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}><div style={{width:28,height:3,background:T.borderMid,borderRadius:1.5}}/></div>
         <div style={{padding:"14px 18px 12px",borderBottom:`0.5px solid ${T.border}`,display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
@@ -314,7 +297,7 @@ function WorkoutDetailModal({dailyWorkout,items,optimisticStatusById,onClose,onO
   const sorted=useMemo(()=>[...(items||[])].sort((a,b)=>(Number(a.Order)||0)-(Number(b.Order)||0)),[items]);
   useEffect(()=>{const fn=(e)=>{if(e.key==="Escape")onClose();};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn);},[onClose]);
   return(
-    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <div style={{background:T.bgElevated,width:"100%",maxWidth:480,maxHeight:"88vh",borderTop:`0.5px solid ${T.borderMid}`,display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0",flexShrink:0}}><div style={{width:28,height:3,background:T.borderMid,borderRadius:1.5}}/></div>
         <div style={{padding:"14px 18px 12px",borderBottom:`0.5px solid ${T.border}`,flexShrink:0,display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
@@ -360,7 +343,7 @@ function EventModal({event,defaultStartMinutes,onSave,onDelete,onClose,onOpenCla
   const save=()=>{if(type==="class"){onClose();onOpenClassSchedule({startMinutes:defaultStartMinutes});return;}if(title.trim())onSave({title:title.trim(),type,notes});};
   const si={width:"100%",padding:"11px 12px",border:`0.5px solid ${T.border}`,background:T.bgBlock,fontSize:14,color:T.textPrimary,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
   return(
-    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={(e)=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <div style={{background:T.bgElevated,width:"100%",maxWidth:480,borderTop:`0.5px solid ${T.borderMid}`}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}><div style={{width:28,height:3,background:T.borderMid,borderRadius:1.5}}/></div>
         <div style={{padding:"14px 18px 12px",borderBottom:`0.5px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -403,7 +386,8 @@ export default function DayPlannerSheet({
   isOpen, onClose,
   classSchedules, onUpsertClass, onRemoveClass,
   authReady, user, isAthlete, athleteToken, firstName,
-  onNutritionTimesChange, // fires with { mealKey: startMinutes } after drag ends
+  onNutritionTimesChange,
+  onWorkoutTimeChange,
 }){
   const [currentDate,setCurrentDate]=useState(()=>new Date());
   const dateStr=toISODate(currentDate);
@@ -452,84 +436,152 @@ export default function DayPlannerSheet({
   const handleNutritionToggle=useCallback((mealKey,field)=>{ setNutritionCompletion(prev=>({...prev,[mealKey]:{...prev[mealKey],[field]:!prev[mealKey][field]}})); },[]);
 
   // ── Planner events ────────────────────────────────────────────────────────
+  // events = all visible blocks (personal + nutrition + coach_workout injected below)
+  // Only PERSONAL events (isPersonalEvent) are persisted to Airtable.
   const[events,setEvents]=useState([]);
   const[loadingEvents,setLoadingEvents]=useState(false);
   const[saveStatus,setSaveStatus]=useState(null);
   const hydratingRef=useRef(false),saveTimer=useRef(null);
 
+  // Ref always mirrors latest events so save/delete can read current value
+  // synchronously for immediate saves, without stale-closure issues.
+  const eventsRef=useRef([]);
+  useEffect(()=>{ eventsRef.current=events; },[events]);
+
+  // ── Save: only persist personal events ────────────────────────────────────
+  const saveToAirtable=useCallback((evts)=>{
+    if(!athleteToken||!dateStr)return;
+    // Strip transient events — nutrition and coach_workout are always
+    // regenerated dynamically and must NOT be persisted to Airtable.
+    // Persisting them caused race conditions that erased personal events
+    // like "Film Study" on reload or date change.
+    const personalEvts=evts.filter(isPersonalEvent);
+    setSaveStatus("saving");
+    fetch(`/api/athlete/day-planner/upsert?date=${encodeURIComponent(dateStr)}`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:personalEvts})})
+      .then(r=>r.ok?r.json():Promise.reject())
+      .then(data=>{
+        if(data?.ok){
+          setSaveStatus("saved");
+          lsSet(lsKey(athleteToken,dateStr),JSON.stringify(personalEvts));
+          setTimeout(()=>setSaveStatus(null),2500);
+        }else setSaveStatus("error");
+      })
+      .catch(()=>setSaveStatus("error"));
+  },[athleteToken,dateStr]);
+
+  // ── Load: fetch only personal events from Airtable ────────────────────────
   useEffect(()=>{
     if(!authReady||!user||!isAthlete||!athleteToken||!isOpen)return;
     hydratingRef.current=true; setLoadingEvents(true);
+
+    // Seed from localStorage cache (personal events only)
     const cached=lsGet(lsKey(athleteToken,dateStr));
-    if(cached){try{setEvents(JSON.parse(cached));}catch{setEvents([]);}}else{setEvents([]);}
+    if(cached){
+      try{
+        const parsed=JSON.parse(cached);
+        // Cache might contain old transient events from before this fix —
+        // filter them out so they don't pollute the seed.
+        setEvents(parsed.filter(isPersonalEvent));
+      }catch{setEvents([]);}
+    }else{
+      setEvents([]);
+    }
+
     fetch(`/api/athlete/day-planner/upsert?date=${encodeURIComponent(dateStr)}`,{method:"GET",credentials:"include"})
-      .then(r=>r.ok?r.json():null).then(data=>{if(!data?.ok||!data.hasRecord)return;const n=Array.isArray(data.events)?data.events:[];setEvents(n);lsSet(lsKey(athleteToken,dateStr),JSON.stringify(n));}).catch(()=>{})
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{
+        // Restore hasRecord check: if no record exists yet, keep whatever
+        // the cache seeded — do NOT overwrite with an empty array.
+        if(!data?.ok||!data.hasRecord)return;
+        const raw=Array.isArray(data.events)?data.events:[];
+        // Only trust personal events from Airtable; transient ones are injected
+        const personal=raw.filter(isPersonalEvent);
+        setEvents(personal);
+        lsSet(lsKey(athleteToken,dateStr),JSON.stringify(personal));
+      })
+      .catch(()=>{})
       .finally(()=>{hydratingRef.current=false;setLoadingEvents(false);});
   },[authReady,user,isAthlete,athleteToken,dateStr,isOpen]); // eslint-disable-line
 
-  useEffect(()=>{ if(loadingEvents||nutritionLoading||!mealBlocks)return; setEvents(prev=>{if(prev.some(e=>e.source==="nutrition"))return prev;return[...prev,...buildNutritionDefaults(mealBlocks)];}); },[loadingEvents,nutritionLoading,mealBlocks]);
-
+  // ── Inject nutrition defaults ─────────────────────────────────────────────
   useEffect(()=>{
-  if(!isOpen || workoutLoading || loadingEvents)return;
-  const list = Array.isArray(dailyWorkouts) && dailyWorkouts.length
-    ? dailyWorkouts
-    : (dailyWorkout ? [{ dailyWorkout, items: workoutItems }] : []);
-  if(!list.length)return;
-  setEvents(prev=>{
-    const withoutOld = prev.filter(e=>e.source!=="coach_workout");
-    const workoutBlocks = list.map(({ dailyWorkout: dw })=>{
-      const scheduledMin = dw.ScheduledTime
-        ? parseTimeToMinutes(dw.ScheduledTime)
-        : null;
-      return {
-        id: `coach_workout_${dw.id}`,
-        source: "coach_workout",
-        dwId: dw.id,
-        type: "workout",
-        title: dw.Title || "Team Workout",
-        startMinutes: scheduledMin ?? 5 * 60,
-        durationMinutes: 90,
-        selfSchedule: scheduledMin === null,
-      };
+    if(loadingEvents||nutritionLoading||!mealBlocks)return;
+    setEvents(prev=>{
+      if(prev.some(e=>e.source==="nutrition"))return prev;
+      return[...prev,...buildNutritionDefaults(mealBlocks)];
     });
-    return [...withoutOld, ...workoutBlocks];
-  });
-},[isOpen, workoutLoading, loadingEvents, dailyWorkout, dailyWorkouts, workoutItems]);
+  },[loadingEvents,nutritionLoading,mealBlocks]);
 
-  const saveToAirtable=useCallback((evts)=>{
-    if(!athleteToken||!dateStr)return;
-    setSaveStatus("saving");
-    fetch(`/api/athlete/day-planner/upsert?date=${encodeURIComponent(dateStr)}`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:evts})})
-      .then(r=>r.ok?r.json():Promise.reject()).then(data=>{if(data?.ok){setSaveStatus("saved");lsSet(lsKey(athleteToken,dateStr),JSON.stringify(evts));setTimeout(()=>setSaveStatus(null),2500);}else setSaveStatus("error");}).catch(()=>setSaveStatus("error"));
-  },[athleteToken,dateStr]);
+  // ── Inject coach workout blocks as draggable events ───────────────────────
+  useEffect(()=>{
+    if(!isOpen||workoutLoading||loadingEvents)return;
+    const list=Array.isArray(dailyWorkouts)&&dailyWorkouts.length
+      ?dailyWorkouts
+      :(dailyWorkout?[{dailyWorkout,items:workoutItems}]:[]);
+    if(!list.length)return;
+    setEvents(prev=>{
+      // Preserve positions the athlete has already dragged to
+      const savedPositions=new Map(
+        prev.filter(e=>e.source==="coach_workout").map(e=>[e.dwId,e.startMinutes])
+      );
+      const withoutOld=prev.filter(e=>
+        e.source!=="coach_workout"&&e.source!=="coachworkout"
+      );
+      const workoutBlocks=list.map(({dailyWorkout:dw})=>{
+        const scheduledMin=dw.ScheduledTime?parseTimeToMinutes(dw.ScheduledTime):null;
+        const savedMin=savedPositions.get(dw.id);
+        return{
+          id:`coach_workout_${dw.id}`,
+          source:"coach_workout",
+          dwId:dw.id,
+          type:"workout",
+          title:dw.Title||"Team Workout",
+          startMinutes:scheduledMin??savedMin??5*60,
+          durationMinutes:90,
+          selfSchedule:scheduledMin===null,
+        };
+      });
+      return[...withoutOld,...workoutBlocks];
+    });
+  },[isOpen,workoutLoading,loadingEvents,dailyWorkout,dailyWorkouts,workoutItems]); // eslint-disable-line
 
+  // ── Debounced save — fires when events change ─────────────────────────────
+  // saveToAirtable is in deps so a stale dateStr closure can't fire a save
+  // to the wrong date after navigation.
+  //
+  // CRITICAL GUARD: only auto-save when there is at least one personal event.
+  // If the Airtable fetch fails (or returns before Film Study is set), events
+  // will contain only transient nutrition/workout blocks. Without this guard,
+  // saveToAirtable would filter them all out, POST events=[], and permanently
+  // erase Film Study from Airtable.
+  //
+  // Explicit user actions (create / delete) call saveToAirtable directly with
+  // the full updated array and bypass this guard intentionally.
   useEffect(()=>{
     if(hydratingRef.current||!authReady||!isAthlete||!athleteToken||!isOpen)return;
+    // Don't auto-save when there are no personal events — that would overwrite
+    // existing Airtable data with an empty array.
+    if(!events.some(isPersonalEvent))return;
     clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(()=>saveToAirtable(events),800);
     return()=>clearTimeout(saveTimer.current);
-  },[events]); // eslint-disable-line
+  },[events,saveToAirtable]); // eslint-disable-line
 
-  // ── Drag end → propagate nutrition times to RouteList ─────────────────────
+  // ── Drag end → propagate times to today.jsx ───────────────────────────────
   const handleDragEnd=useCallback(()=>{
-  // Propagate nutrition times
-  if(onNutritionTimesChange){
-    const times={};
-    events.forEach(ev=>{if(ev.source==="nutrition"&&ev.mealKey)times[ev.mealKey]=ev.startMinutes;});
-    if(Object.keys(times).length>0) onNutritionTimesChange(times);
-  }
-  // Save new scheduled time for dragged coach workouts
-  events.forEach(ev=>{
-    if(ev.source!=="coach_workout"||!ev.dwId)return;
-    const h=Math.floor(ev.startMinutes/60), m=ev.startMinutes%60;
-    const timeStr=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-    fetch("/api/org/workouts/update-full",{
-      method:"POST", credentials:"include",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ id: ev.dwId, scheduledTime: timeStr }),
-    }).catch(()=>{});
-  });
-},[events,onNutritionTimesChange]);
+    // Nutrition meal times
+    if(onNutritionTimesChange){
+      const times={};
+      events.forEach(ev=>{if(ev.source==="nutrition"&&ev.mealKey)times[ev.mealKey]=ev.startMinutes;});
+      if(Object.keys(times).length>0) onNutritionTimesChange(times);
+    }
+    // Coach workout times
+    if(onWorkoutTimeChange){
+      const times={};
+      events.forEach(ev=>{if(ev.source==="coach_workout"&&ev.dwId)times[ev.dwId]=ev.startMinutes;});
+      if(Object.keys(times).length>0) onWorkoutTimeChange(times);
+    }
+  },[events,onNutritionTimesChange,onWorkoutTimeChange]);
 
   // ── Now line ──────────────────────────────────────────────────────────────
   const[nowMinutes,setNowMinutes]=useState(null);
@@ -542,6 +594,7 @@ export default function DayPlannerSheet({
   const[modal,setModal]=useState(null);
   const[macroModal,setMacroModal]=useState(null);
   const[workoutModal,setWorkoutModal]=useState(false);
+  const[workoutModalDW,setWorkoutModalDW]=useState(null);
   const[classModal,setClassModal]=useState(null);
   const[ghostMinutes,setGhostMinutes]=useState(null);
   const anySubModal=Boolean(modal||macroModal||workoutModal||modalOpen||classModal);
@@ -553,8 +606,32 @@ export default function DayPlannerSheet({
     setModal({event:{type:"workout",startMinutes,durationMinutes:60},mode:"create",defaultStartMinutes:startMinutes});
   },[dragging,resizing]);
 
-  const handleModalSave=useCallback((data)=>{ if(modal.mode==="create")setEvents(prev=>[...prev,{id:`ev_${Date.now()}`,...modal.event,...data}]);else setEvents(prev=>prev.map(ev=>ev.id===modal.event.id?{...ev,...data}:ev)); setModal(null); },[modal]);
-  const handleModalDelete=useCallback(()=>{ setEvents(prev=>prev.filter(ev=>ev.id!==modal.event.id)); setModal(null); },[modal]);
+  // handleModalSave: compute updated events from the ref (synchronous, no
+  // stale closure) and immediately flush to Airtable so a fast page refresh
+  // can't race ahead of the 800ms debounce and lose the new event.
+  const handleModalSave=useCallback((data)=>{
+    if(!modal)return;
+    const newEvent={id:`ev_${Date.now()}`,...modal.event,...data};
+    const current=eventsRef.current;
+    const updated=modal.mode==="create"
+      ?[...current,newEvent]
+      :current.map(ev=>ev.id===modal.event.id?{...ev,...data}:ev);
+    setEvents(updated);
+    setModal(null);
+    // Immediate flush — don't wait for the 800ms debounce.
+    clearTimeout(saveTimer.current);
+    saveToAirtable(updated);
+  },[modal,saveToAirtable]);
+
+  const handleModalDelete=useCallback(()=>{
+    if(!modal)return;
+    const updated=eventsRef.current.filter(ev=>ev.id!==modal.event.id);
+    setEvents(updated);
+    setModal(null);
+    // Immediate flush on delete too.
+    clearTimeout(saveTimer.current);
+    saveToAirtable(updated);
+  },[modal,saveToAirtable]);
 
   const handleClassSave=useCallback((data)=>{
     const existingId=classModal?.schedule?.id||null;
@@ -577,20 +654,27 @@ export default function DayPlannerSheet({
 
   const classEvents=useMemo(()=>classesToDayEvents(classSchedules,dateStr),[classSchedules,dateStr]);
   const nutritionEvents=events.filter(e=>e.source==="nutrition");
-  const athleteEvents=events.filter(e=>e.source!=="nutrition");
+  const athleteEvents=events.filter(e=>e.source!=="nutrition"&&e.source!=="class_schedule");
+
+  // Find the workout object for the clicked coach_workout block
+  const getWorkoutForBlock=(ev)=>{
+    if(!ev.dwId)return dailyWorkout;
+    const match=Array.isArray(dailyWorkouts)&&dailyWorkouts.find(w=>w.dailyWorkout?.id===ev.dwId);
+    return match?.dailyWorkout||dailyWorkout;
+  };
 
   const canonicalItem=workoutItems?.find(i=>String(i?.id||"")===String(activeItem?.id||""));
   const evRaw=String(canonicalItem?.EvidenceRequired??activeItem?.EvidenceRequired??"").toLowerCase();
   const evidenceRequired=evRaw!==""&&evRaw!=="none"&&evRaw!=="false"&&evRaw!=="voluntary_activity_vara";
 
-  // ── Swipe nav - horizontal only ───────────────────────────────────────────
+  // ── Swipe nav ─────────────────────────────────────────────────────────────
   const swipeRef=useRef({x:null,y:null});
   const handleTouchStart=useCallback((e)=>{ swipeRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; },[]);
   const handleTouchEnd=useCallback((e)=>{
     if(swipeRef.current.x===null||dragging||resizing)return;
     const dx=e.changedTouches[0].clientX-swipeRef.current.x;
     const dy=Math.abs(e.changedTouches[0].clientY-swipeRef.current.y);
-    if(Math.abs(dx)>60&&dy<50) goToDate(dx<0?1:-1); // only horizontal gestures change day
+    if(Math.abs(dx)>60&&dy<50) goToDate(dx<0?1:-1);
     swipeRef.current={x:null,y:null};
   },[dragging,resizing,goToDate]);
 
@@ -600,20 +684,20 @@ export default function DayPlannerSheet({
       {/* Backdrop */}
       <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9990,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(2px)",pointerEvents:isOpen?"auto":"none",opacity:isOpen?1:0,transition:"opacity 0.3s ease"}}/>
 
-      {/* Sheet - height:100dvh ensures flex overflow works correctly on iOS */}
+      {/* Sheet */}
       <div style={{
         position:"fixed",inset:0,zIndex:9991,
         background:T.bg,
         fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif",
         display:"flex",flexDirection:"column",
-        height:"100dvh", // explicit height so flex children can compute overflow
+        height:"100dvh",
         transform:isOpen?"translateY(0)":"translateY(100%)",
         transition:"transform 0.35s cubic-bezier(0.16,1,0.3,1)",
         willChange:"transform",
       }}>
 
         {/* ── Header ── */}
-        <div style={{background:T.bg,borderBottom:`0.5px solid ${T.border}`,flexShrink:0,paddingTop:"max(env(safe-area-inset-top,0px), 60px)"}}>
+        <div style={{background:T.bg,borderBottom:`0.5px solid ${T.border}`,flexShrink:0,paddingTop:"max(env(safe-area-inset-top,0px),60px)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px 0"}}>
             <button onClick={onClose} style={{background:"none",border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><X size={13}/></button>
             <button onClick={()=>goToDate(-1)} style={{background:"none",border:`0.5px solid ${T.border}`,color:T.textMuted,width:30,height:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><ChevronLeft size={14}/></button>
@@ -636,16 +720,10 @@ export default function DayPlannerSheet({
           </div>
         </div>
 
-        {/* ── Scrollable timeline grid ── */}
+        {/* ── Timeline ── */}
         <div
           ref={gridRef}
-          style={{
-            flex:1,
-            overflowY: anySubModal ? "hidden" : "auto",
-            overflowX:"hidden",
-            WebkitOverflowScrolling:"touch",
-            position:"relative",
-          }}
+          style={{flex:1,overflowY:anySubModal?"hidden":"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",position:"relative"}}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
@@ -690,11 +768,31 @@ export default function DayPlannerSheet({
                 </div>
               )}
 
+              {/* Nutrition blocks */}
               {nutritionEvents.map(ev=>(<NutritionBlock key={ev.id} event={ev} mealData={mealBlocks?.[ev.mealKey]} nutritionCompletion={nutritionCompletion} onDragStart={startDrag} onResizeStart={startResize} onClick={(e)=>setMacroModal({event:e,mealKey:e.mealKey})} isDragging={dragging===ev.id} isResizing={resizing===ev.id}/>))}
-              {classEvents.map(ev=>{ const sched=classSchedules.find(c=>c.id===ev.scheduleId); return<ClassBlock key={ev.id} event={ev} schedule={sched} onClick={()=>sched&&setClassModal({schedule:sched})}/>; })}
-              {athleteEvents.map(ev=>(<EventBlock key={ev.id} event={ev} onDragStart={startDrag} onResizeStart={startResize} onClick={(e)=>{ if(e.source==="coach_workout"){setWorkoutModal(true);return;} setModal({event:e,mode:"edit",defaultStartMinutes:e.startMinutes}); }} isDragging={dragging===ev.id} isResizing={resizing===ev.id}/>))}
 
-              {athleteEvents.length===0&&!dailyWorkout&&nutritionEvents.length===0&&classEvents.length===0&&!isLoading&&(
+              {/* Class blocks (read-only) */}
+              {classEvents.map(ev=>{ const sched=classSchedules.find(c=>c.id===ev.scheduleId); return<ClassBlock key={ev.id} event={ev} schedule={sched} onClick={()=>sched&&setClassModal({schedule:sched})}/>; })}
+
+              {/* Athlete + coach_workout blocks (all draggable) */}
+              {athleteEvents.map(ev=>(
+                <EventBlock key={ev.id} event={ev}
+                  onDragStart={startDrag}
+                  onResizeStart={startResize}
+                  onClick={(e)=>{
+                    if(e.source==="coach_workout"){
+                      setWorkoutModalDW(getWorkoutForBlock(e));
+                      setWorkoutModal(true);
+                      return;
+                    }
+                    setModal({event:e,mode:"edit",defaultStartMinutes:e.startMinutes});
+                  }}
+                  isDragging={dragging===ev.id}
+                  isResizing={resizing===ev.id}
+                />
+              ))}
+
+              {athleteEvents.length===0&&nutritionEvents.length===0&&classEvents.length===0&&!isLoading&&(
                 <div style={{position:"absolute",top:minutesToY(8*60),left:"50%",transform:"translateX(-50%)",textAlign:"center",pointerEvents:"none",whiteSpace:"nowrap"}}>
                   <p style={{fontSize:15,fontWeight:500,color:T.bgElevated,margin:"0 0 4px"}}>Tap anywhere to add a block</p>
                   <p style={{fontSize:11,color:T.bgElevated}}>Or use the + button below</p>
@@ -714,7 +812,7 @@ export default function DayPlannerSheet({
       {isOpen&&modal&&<EventModal event={modal.event} defaultStartMinutes={modal.defaultStartMinutes} onSave={handleModalSave} onDelete={modal.mode==="edit"?handleModalDelete:undefined} onClose={()=>setModal(null)} onOpenClassSchedule={(opts)=>{setModal(null);setClassModal({schedule:null,defaultStartMinutes:opts.startMinutes});}}/>}
       {isOpen&&classModal!==null&&<ClassScheduleModal schedule={classModal.schedule||null} defaultStartMinutes={classModal.defaultStartMinutes} onSave={handleClassSave} onDelete={classModal.schedule?handleClassDelete:undefined} onClose={()=>setClassModal(null)}/>}
       {isOpen&&macroModal&&<MacroModal mealKey={macroModal.mealKey} mealData={mealBlocks?.[macroModal.mealKey]} event={macroModal.event} nutritionCompletion={nutritionCompletion} onToggle={handleNutritionToggle} onClose={()=>setMacroModal(null)}/>}
-      {isOpen&&workoutModal&&<WorkoutDetailModal dailyWorkout={dailyWorkout} items={workoutItems} optimisticStatusById={optimisticStatusById} onClose={()=>setWorkoutModal(false)} onOpenItem={(item)=>{setWorkoutModal(false);openModal(item);}}/>}
+      {isOpen&&workoutModal&&<WorkoutDetailModal dailyWorkout={workoutModalDW||dailyWorkout} items={workoutItems} optimisticStatusById={optimisticStatusById} onClose={()=>{setWorkoutModal(false);setWorkoutModalDW(null);}} onOpenItem={(item)=>{setWorkoutModal(false);setWorkoutModalDW(null);openModal(item);}}/>}
       {isOpen&&modalOpen&&<CompleteItemModal open={modalOpen} item={activeItem} selectedFile={selectedFile} coachNote={coachNote} submitting={Boolean(submittingId&&activeItem?.id===submittingId)} onClose={closeModal} onPickFile={setSelectedFile} onChangeNote={setCoachNote} evidenceRequiredOverride={evidenceRequired} onSubmit={()=>{if(evidenceRequired&&!selectedFile)return;submitCompletion({workoutItemId:String(activeItem?.id||""),evidenceRequired:String(canonicalItem?.EvidenceRequired??activeItem?.EvidenceRequired??""),dailyWorkoutId:String(dailyWorkout?.id||dailyWorkout?.ID||dailyWorkout?.recordId||"")});}}/>}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

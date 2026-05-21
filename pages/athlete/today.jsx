@@ -54,7 +54,7 @@ function computeStreak(who) {
 const MEAL_TIMES = { breakfast: 7*60, lunch: 12*60, afternoon: 15*60, dinner: 18*60+30 };
 const DAY_GROUPS = [
   { label: "Anytime",   dot: "#64748B", range: [0,        5*60+59]  },
-  { label: "Morning",   dot: "#F59E0B", range: [0,        11*60+59] },
+  { label: "Morning",   dot: "#F59E0B", range: [6*60,     11*60+59] },
   { label: "Midday",    dot: "#1A6FE8", range: [12*60,    14*60+59] },
   { label: "Afternoon", dot: "#22C55E", range: [15*60,    18*60+59] },
   { label: "Evening",   dot: "#8B5CF6", range: [19*60,    24*60]    },
@@ -78,11 +78,10 @@ function parseTimeToMinutes(str) {
 function buildDayRoute({
   dailyWorkout, items, dailyWorkouts, mealBlocks, hasPlan,
   classSchedules, selectedDate, optimisticStatusById,
-  dailyHydrationOz, loading, mealTimeOverrides = {},
+  dailyHydrationOz, loading, mealTimeOverrides = {}, workoutTimeOverrides = {}, plannerPersonalEvents = [],
 }) {
   const events = [];
 
-  // Build workout list — use dailyWorkouts array if available, fall back to single
   const workoutList = Array.isArray(dailyWorkouts) && dailyWorkouts.length
     ? dailyWorkouts
     : (dailyWorkout ? [{ dailyWorkout, items }] : []);
@@ -126,10 +125,11 @@ function buildDayRoute({
         };
       });
 
-      const isScheduled = !!(dw.ScheduledMinutes ?? dw.ScheduledTime);
-      const scheduledMin = dw.ScheduledMinutes
+      const isScheduled = !!(workoutTimeOverrides?.[dw.id] ?? dw.ScheduledMinutes ?? dw.ScheduledTime);
+      const scheduledMin = workoutTimeOverrides?.[dw.id]
+        ?? dw.ScheduledMinutes
         ?? (dw.ScheduledTime ? parseTimeToMinutes(dw.ScheduledTime) : null)
-        ?? (idx * 30); // ← also change to idx * 30 so unscheduled lands in Anytime (0–5am)
+        ?? (5 * 60 + idx * 30);
 
       events.push({
         id: `workout_session_${dw.id || idx}`,
@@ -177,6 +177,17 @@ function buildDayRoute({
       title: cls.title, meta: cls.notes || "",
       startMinutes: cls.startMinutes, durationMinutes: cls.durationMinutes,
       badge: dayPattern(cls.days) || "Class", scheduleId: cls.id,
+    });
+  });
+
+  (plannerPersonalEvents || []).forEach(ev => {
+    events.push({
+      id: ev.id,
+      type: "personal",
+      title: ev.title,
+      meta: ev.notes || "",
+      startMinutes: ev.startMinutes,
+      durationMinutes: ev.durationMinutes || 60,
     });
   });
 
@@ -549,6 +560,66 @@ export default function AthleteToday() {
     setPlannerMealTimeOverrides(prev => ({ ...prev, ...times }));
   }, []);
 
+  const [workoutTimeOverrides, setWorkoutTimeOverrides] = useState({});
+  const [plannerEvents, setPlannerEvents] = useState([]);
+  const handleWorkoutTimesChange = useCallback((times) => {
+    setWorkoutTimeOverrides(prev => ({ ...prev, ...times }));
+  }, []);
+
+  // Reset overrides on date change
+  useEffect(() => {
+    setPlannerMealTimeOverrides({});
+    setWorkoutTimeOverrides({});
+  }, [selectedDate]);
+
+  // ── Planner personal events ───────────────────────────────────────────────
+  // useCallback declared first so the useEffects below can reference it.
+  const prevPlannerOpenRef = useRef(false);
+  const fetchPlannerEvents = useCallback(() => {
+    console.log("[plannerEvents] fired", { authReady, hasUser: !!user, isAthlete, selectedDate });
+    if (!authReady || !user || !isAthlete || !selectedDate) {
+      console.log("[plannerEvents] bailing — conditions not met");
+      return;
+    }
+    const url = `/api/athlete/day-planner/upsert?date=${encodeURIComponent(selectedDate)}`;
+    console.log("[plannerEvents] fetching", url);
+    fetch(url, { method: "GET", credentials: "include" })
+      .then(r => {
+        console.log("[plannerEvents] status", r.status, r.ok);
+        return r.ok ? r.json() : null;
+      })
+      .then(data => {
+        console.log("[plannerEvents] data", JSON.stringify(data));
+        if (!data?.ok || !data.hasRecord) {
+          console.log("[plannerEvents] no record — clearing");
+          setPlannerEvents([]);
+          return;
+        }
+        const personal = (data.events || []).filter(e =>
+          e.source !== "nutrition" &&
+          e.source !== "coach_workout" &&
+          e.source !== "coachworkout" &&
+          e.title
+        );
+        console.log("[plannerEvents] setting", personal.length, "events", JSON.stringify(personal));
+        setPlannerEvents(personal);
+      })
+      .catch(err => {
+        console.error("[plannerEvents] error", err);
+        setPlannerEvents([]);
+      });
+  }, [authReady, user, isAthlete, selectedDate]);
+
+  // Fetch on mount and whenever auth/date deps change
+  useEffect(() => { fetchPlannerEvents(); }, [fetchPlannerEvents]);
+
+  // Re-fetch when planner closes so newly created events appear immediately
+  useEffect(() => {
+    if (prevPlannerOpenRef.current && !plannerOpen) fetchPlannerEvents();
+    prevPlannerOpenRef.current = plannerOpen;
+  }, [plannerOpen, fetchPlannerEvents]);
+
+  // ── Workout tap / sheet ───────────────────────────────────────────────────
   const handleWorkoutTap = useCallback((item) => {
     setWorkoutSheetItem(item);
     setWorkoutSheetOpen(true);
@@ -618,12 +689,15 @@ export default function AthleteToday() {
     dailyWorkout, items, dailyWorkouts,
     mealBlocks: nutrition.mealBlocks, hasPlan: nutrition.hasPlan,
     classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
-    loading, mealTimeOverrides: plannerMealTimeOverrides,
+    loading,
+    mealTimeOverrides: plannerMealTimeOverrides,
+    workoutTimeOverrides,
+    plannerPersonalEvents: plannerEvents,
   }), [
     dailyWorkout, items, dailyWorkouts,
     nutrition.mealBlocks, nutrition.hasPlan,
     classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
-    loading, plannerMealTimeOverrides,
+    loading, plannerMealTimeOverrides, workoutTimeOverrides, plannerEvents,
   ]);
 
   const { totalDone, totalItems, workoutDone, workoutTotal, nutritionDone, nutritionTotal } = useMemo(() => {
@@ -686,7 +760,6 @@ export default function AthleteToday() {
       {/* ── HEADER ── */}
       <div style={{ background: "#1A2B40", position: "sticky", top: 0, zIndex: 20, paddingTop: "env(safe-area-inset-top, 0)" }}>
 
-        {/* Top row */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px 0" }}>
           <button type="button" onClick={() => router.push("/dashboard")}
             style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px 0 0", display: "flex", alignItems: "center", flexShrink: 0 }}>
@@ -723,12 +796,10 @@ export default function AthleteToday() {
           </div>
         </div>
 
-        {/* Week strip */}
         <div style={{ padding: "0 18px" }}>
           <WeekStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} classSchedules={classSchedules} todayHasContent={groups.length > 0} />
         </div>
 
-        {/* Sub-bar: now context + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
           {nowCtx ? (
             <div style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0 }}>
@@ -753,36 +824,13 @@ export default function AthleteToday() {
 
           {!isPastDay && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={() => setClassModal({ schedule: null })}
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  background: "rgba(255,255,255,0.07)",
-                  border: "0.5px solid rgba(255,255,255,0.14)",
-                  borderRadius: 7, padding: "5px 9px",
-                  cursor: "pointer", color: "rgba(255,255,255,0.55)",
-                  fontSize: 11, fontWeight: 600,
-                }}
-              >
-                <Plus size={11} />
-                Class
+              <button type="button" onClick={() => setClassModal({ schedule: null })}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.07)", border: "0.5px solid rgba(255,255,255,0.14)", borderRadius: 7, padding: "5px 9px", cursor: "pointer", color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: 600 }}>
+                <Plus size={11} /> Class
               </button>
-
-              <button
-                type="button"
-                onClick={() => setPlannerOpen(true)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  background: "rgba(96,165,250,0.12)",
-                  border: "0.5px solid rgba(96,165,250,0.25)",
-                  borderRadius: 7, padding: "5px 9px",
-                  cursor: "pointer", color: "#93C5FD",
-                  fontSize: 11, fontWeight: 600,
-                }}
-              >
-                <Calendar size={11} />
-                Plan day
+              <button type="button" onClick={() => setPlannerOpen(true)}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(96,165,250,0.12)", border: "0.5px solid rgba(96,165,250,0.25)", borderRadius: 7, padding: "5px 9px", cursor: "pointer", color: "#93C5FD", fontSize: 11, fontWeight: 600 }}>
+                <Calendar size={11} /> Plan day
               </button>
             </div>
           )}
@@ -862,7 +910,6 @@ export default function AthleteToday() {
         />
       )}
 
-      {/* ── DAY PLANNER SHEET ── */}
       <DayPlannerSheet
         isOpen={plannerOpen}
         onClose={() => setPlannerOpen(false)}
@@ -875,6 +922,7 @@ export default function AthleteToday() {
         athleteToken={athleteToken}
         firstName={firstName}
         onNutritionTimesChange={handleNutritionTimesChange}
+        onWorkoutTimeChange={handleWorkoutTimesChange}
       />
     </div>
   );

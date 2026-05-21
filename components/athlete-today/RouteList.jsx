@@ -17,9 +17,9 @@ const D = {
   line:     "#1E1E1E",
   line2:    "#2A2A2A",
   white:    "#FFFFFF",
-  dim:      "rgba(255,255,255,0.65)",  // was 0.45 — secondary text, readable at 11-13px
-  muted:    "rgba(255,255,255,0.45)",  // was 0.25 — tertiary text, labels, times
-  faint:    "rgba(255,255,255,0.10)",  // was 0.07 — backgrounds, subtle fills
+  dim:      "rgba(255,255,255,0.65)",
+  muted:    "rgba(255,255,255,0.45)",
+  faint:    "rgba(255,255,255,0.10)",
   accent:   "#4FABFF",
   green:    "#00C851",
   greenDim: "rgba(0,200,81,0.12)",
@@ -609,6 +609,35 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
   );
 }
 
+// ─── PERSONAL ROW ─────────────────────────────────────────────────────────────
+function PersonalRow({ item }) {
+  const h = Math.floor(item.startMinutes / 60) % 24;
+  const m = item.startMinutes % 60;
+  const ap = h >= 12 ? "PM" : "AM";
+  const dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const timeStr = `${dh}:${String(m).padStart(2, "0")} ${ap}`;
+  return (
+    <div style={{
+      borderBottom: `1px solid ${D.line}`,
+      borderLeft: "3px solid #64748B",
+      background: D.s1,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px" }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748B", flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: D.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {item.title}
+          </div>
+          {item.meta && (
+            <div style={{ fontSize: 11, color: D.muted, marginTop: 2 }}>{item.meta}</div>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: D.muted, flexShrink: 0 }}>{timeStr}</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── CLASS ROW ────────────────────────────────────────────────────────────────
 function ClassRow({ item, done, onComplete, onCompleteWithPhoto, onTap, isReadOnly, showHint, isNext }) {
   const [expanded,   setExpanded]   = useState(false);
@@ -969,6 +998,9 @@ export default function RouteList({
                             isNext={item.id === nextItemId}
                           />
                         );
+                      }
+                      if (item.type === "personal") {
+                        return <PersonalRow key={item.id} item={item} />;
                       }
                       return (
                         <ClassRow key={item.id} item={item}

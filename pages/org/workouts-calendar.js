@@ -101,7 +101,6 @@ export default function WorkoutsCalendarPage() {
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
 
-  // memberId — unique per coach, used as Firestore namespace for personal blocks
   const memberId = useMemo(() =>
     String(user?.memberId || user?.orgId || "default"),
   [user]);
@@ -126,7 +125,6 @@ export default function WorkoutsCalendarPage() {
       const t = nyDateISO();
       setTodayISO(t);
       setAnchorISO((prev) => (prev && prev !== "2000-01-01" ? prev : t));
-      // Default sidebar to today
       setSelectedDayISO((prev) => (prev === "2000-01-01" ? t : prev));
     } catch {}
     try {
@@ -151,7 +149,7 @@ export default function WorkoutsCalendarPage() {
     try { window.localStorage.setItem(LS_VIEW, viewMode); } catch {}
   }, [viewMode, mounted]);
 
-  // ── Fetch season calendar from Airtable on mount ──
+  // ── Fetch season calendar ──
   useEffect(() => {
     if (!mounted) return;
     fetch("/api/org/season-calendar/get", { credentials: "include" })
@@ -258,8 +256,6 @@ export default function WorkoutsCalendarPage() {
     fetchRange(false);
   }, [user, isOrgSide, mounted, cacheKey, fetchRange]);
 
-  // Fetch availableSports for the selected day from the day API
-  // This is more reliable than Sport field on workout records
   useEffect(() => {
     const date = selectedDayISO === "2000-01-01" ? todayISO : selectedDayISO;
     if (!date || !isOrgSide || !mounted) return;
@@ -300,7 +296,7 @@ export default function WorkoutsCalendarPage() {
     return `${left} – ${right}`;
   }, [range.start, range.end]);
 
-  // ── Day sheet — clicking a day also updates the sidebar ──
+  // ── Day sheet ──
   const openDay  = (iso) => {
     const clean = String(iso || "").slice(0, 10);
     setSelectedDayISO(clean);
@@ -347,8 +343,6 @@ export default function WorkoutsCalendarPage() {
   }, [workouts]);
 
   const clientReady = mounted && todayISO && anchorISO;
-
-  // Resolved sidebar date — falls back to today until a day is selected
   const sidebarDate = selectedDayISO === "2000-01-01" ? todayISO : selectedDayISO;
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -360,6 +354,44 @@ export default function WorkoutsCalendarPage() {
       color: DS.bodyText,
       fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif",
     }}>
+
+      {/* ── Responsive layout CSS ── */}
+      <style>{`
+        .cal-layout {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .cal-main {
+          width: 100%;
+          min-width: 0;
+          padding: 16px 14px;
+        }
+        .cal-sidebar {
+          width: 100%;
+          border-top: 1px solid ${DS.border};
+          min-height: 420px;
+        }
+        @media (min-width: 900px) {
+          .cal-layout { flex-direction: row; }
+          .cal-main {
+            flex: 0 0 75%;
+            padding: 16px 20px;
+          }
+          .cal-sidebar {
+            flex: 0 0 25%;
+            min-width: 260px;
+            max-width: 360px;
+            border-top: none;
+            border-left: 1px solid ${DS.border};
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            min-height: unset;
+          }
+        }
+      `}</style>
 
       {/* ── Header ── */}
       <CalendarHeader
@@ -384,11 +416,11 @@ export default function WorkoutsCalendarPage() {
         onOpenSeasonCalendar={() => setSeasonCalendarOpen(true)}
       />
 
-      {/* ── Main: 75% calendar + 25% coach schedule ── */}
-      <div style={{ display: "flex", alignItems: "stretch" }}>
+      {/* ── Main: calendar + coach schedule ── */}
+      <div className="cal-layout">
 
-        {/* Calendar — 75% */}
-        <div style={{ flex: "0 0 75%", minWidth: 0, padding: "16px 20px" }}>
+        {/* Calendar */}
+        <div className="cal-main">
 
           {/* Filter strip */}
           {!loading && filterLabel && (
@@ -446,12 +478,8 @@ export default function WorkoutsCalendarPage() {
           </div>
         </div>
 
-        {/* Coach schedule — 25%, sticky, full height */}
-        <div style={{
-          flex: "0 0 25%", minWidth: 260, maxWidth: 360,
-          position: "sticky", top: 0,
-          height: "100vh", overflowY: "auto",
-        }}>
+        {/* Coach schedule */}
+        <div className="cal-sidebar">
           <CoachDaySchedule
             selectedDate={sidebarDate}
             workoutsByDate={workoutsByDate}

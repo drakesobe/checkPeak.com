@@ -9,7 +9,7 @@
 //                     gaps between events shown explicitly as clickable rows
 //   Unscheduled     — assigned workouts with no ScheduledTime; tap to set time
 //   Add / Edit form — inline block form
-//   ScheduleModal   — lightweight time-picker for unscheduled assigned workouts
+//   ScheduleModal   — time-picker for assigned workouts (new + already scheduled)
 
 "use client";
 
@@ -30,12 +30,11 @@ const T = {
   dim:      "#5A6B85",
   faint:    "#95A6BC",
   ghost:    "#D5E0EF",
-  brand:    DS.brand      || "#1A56DB",
-  brandBg:  DS.brandBg    || "#EFF6FF",
-  brandBdr: DS.brandBorder|| "#BFDBFE",
+  brand:    DS.brand       || "#1A56DB",
+  brandBg:  DS.brandBg     || "#EFF6FF",
+  brandBdr: DS.brandBorder || "#BFDBFE",
   safe:     "#16A34A",
   safeBg:   "#F0FDF4",
-  safeBdr:  "#BBF7D0",
   now:      "#DC2626",
   nowBg:    "#FFF5F5",
   amber:    "#B45309",
@@ -85,6 +84,23 @@ function getSuggestions(sport) {
 // ─── Time helpers ─────────────────────────────────────────────────────────────
 const SNAP = 15;
 function snapMin(m) { return Math.round(m / SNAP) * SNAP; }
+
+// Handles both 24-hour ("13:00") and 12-hour ("1pm") formats
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const isPM = /pm/i.test(s);
+  const isAM = /am/i.test(s);
+  const parts = s.replace(/[^0-9:]/g, "").split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return null;
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  // 24-hour strings ("12:00" = noon, "13:00" = 1pm) used as-is
+  return h * 60 + m;
+}
+
 function fmtTime(m) {
   if (m == null) return "";
   const h = Math.floor(m / 60) % 24, mn = m % 60;
@@ -119,7 +135,7 @@ async function persistBlocks(mid, date, blocks) {
   } catch (e) { console.warn("CoachDaySchedule:", e?.message); }
 }
 
-// ─── Dedupe assigned workouts ─────────────────────────────────────────────────
+// ─── Dedupe assigned workouts — keeps _allIds for bulk updates ────────────────
 function dedupeWorkouts(list) {
   const map = new Map();
   (list || []).forEach(w => {
@@ -147,9 +163,27 @@ const CSS = `
   .cds-row { animation: cds-in .2s cubic-bezier(.16,1,.3,1) both; }
   .cds-row:hover .cds-del { opacity:1!important; }
   .cds-inp:focus { border-color:${T.brand}!important; box-shadow:0 0 0 3px ${T.brand}18!important; outline:none; }
+  .cds-assigned { transition:box-shadow .15s,background .15s; }
+  .cds-assigned:hover { background:${T.brandBg}!important; box-shadow:0 2px 12px rgba(26,86,219,.1)!important; }
+  .cds-unscheduled { transition:background .15s,border-color .15s; }
   .cds-unscheduled:hover { background:${T.brandBg}!important; border-color:${T.brandBdr}!important; }
   .cds-nav-btn:hover { background:${T.pageBg}!important; }
 `;
+
+// ─── Sport badge ──────────────────────────────────────────────────────────────
+// Only renders if there's a real sport name — avoids "SPORT" fallback showing
+function SportBadge({ sport, color }) {
+  const label = titleSport(sport);
+  if (!label) return null;
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase",
+      color, background: `${color}14`, padding: "2px 6px", borderRadius: 4,
+    }}>
+      {label}
+    </span>
+  );
+}
 
 // ─── NOW card ─────────────────────────────────────────────────────────────────
 function NowCard({ items, nowMin }) {
@@ -166,7 +200,7 @@ function NowCard({ items, nowMin }) {
     const pct     = Math.min(elapsed / active.durationMinutes, 1);
     return (
       <div className="cds-row" style={{
-        margin: "10px 12px 0",
+        margin: "8px 12px 0",
         background: `${color}09`,
         border: `1.5px solid ${color}28`,
         borderLeft: `4px solid ${color}`,
@@ -199,7 +233,7 @@ function NowCard({ items, nowMin }) {
   const color = next.type === "assigned" ? sportColor(next.sport) : (next.color || sportColor(next.sport));
   return (
     <div className="cds-row" style={{
-      margin: "10px 12px 0",
+      margin: "8px 12px 0",
       background: T.amberBg,
       border: `1.5px solid ${T.amberBdr}`,
       borderLeft: `4px solid ${T.amber}`,
@@ -224,22 +258,28 @@ function NowCard({ items, nowMin }) {
   );
 }
 
-// ─── Assigned row ─────────────────────────────────────────────────────────────
-function AssignedRow({ item }) {
+// ─── Assigned row (clickable — opens ScheduleTimeModal) ───────────────────────
+function AssignedRow({ item, onClick }) {
   const color = sportColor(item.sport);
   return (
-    <div className="cds-row" style={{
-      display: "flex", alignItems: "stretch",
-      background: T.card,
-      border: `1px solid ${T.border}`,
-      borderLeft: `4px solid ${color}`,
-      borderRadius: 10,
-      overflow: "hidden",
-      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-    }}>
+    <div
+      className="cds-row cds-assigned"
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "stretch",
+        background: T.card,
+        border: `1px solid ${T.border}`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 10,
+        overflow: "hidden",
+        cursor: "pointer",
+        boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+      }}
+    >
+      {/* Time column */}
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-start",
-        padding: "11px 10px 11px 0", minWidth: 52, flexShrink: 0,
+        padding: "11px 10px 11px 0", minWidth: 56, flexShrink: 0,
       }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: T.dim, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
           {fmtTime(item.startMinutes)}
@@ -248,12 +288,15 @@ function AssignedRow({ item }) {
           {fmtDur(item.durationMinutes)}
         </span>
       </div>
+
+      {/* Content */}
       <div style={{ flex: 1, padding: "11px 12px", borderLeft: `1px solid ${color}1C` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-          <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase", color, background: `${color}14`, padding: "2px 6px", borderRadius: 4 }}>
-            {titleSport(item.sport) || "Sport"}
-          </span>
-          <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+          <SportBadge sport={item.sport} color={color} />
+          <span style={{
+            fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
+            color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4,
+          }}>
             Assigned
           </span>
         </div>
@@ -266,6 +309,16 @@ function AssignedRow({ item }) {
             {item.itemCount > 0 && ` · ${item.itemCount} exercise${item.itemCount !== 1 ? "s" : ""}`}
           </div>
         )}
+      </div>
+
+      {/* Edit time indicator */}
+      <div style={{
+        display: "flex", alignItems: "center", paddingRight: 12,
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 10, color: T.brand, fontWeight: 600, opacity: .6 }}>
+          Edit ›
+        </span>
       </div>
     </div>
   );
@@ -290,9 +343,10 @@ function PersonalRow({ item, isNow, onEdit, onDelete }) {
         transition: "box-shadow .15s, background .15s",
       }}
     >
+      {/* Time column */}
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-start",
-        padding: "11px 10px 11px 0", minWidth: 52, flexShrink: 0,
+        padding: "11px 10px 11px 0", minWidth: 56, flexShrink: 0,
       }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: isNow ? color : T.dim, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>
           {fmtTime(item.startMinutes)}
@@ -301,6 +355,8 @@ function PersonalRow({ item, isNow, onEdit, onDelete }) {
           {fmtDur(item.durationMinutes)}
         </span>
       </div>
+
+      {/* Content */}
       <div style={{ flex: 1, padding: "11px 10px", borderLeft: `1px solid ${color}1C`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           {item.sport && item.sport !== "personal" && (
@@ -342,7 +398,7 @@ function GapRow({ startMin, endMin, onAdd }) {
       onClick={() => onAdd(startMin, dur)}
       style={{
         width: "100%", background: "none", border: "none", cursor: "pointer",
-        padding: "4px 0", display: "flex", alignItems: "center", gap: 8,
+        padding: "3px 0", display: "flex", alignItems: "center", gap: 8,
       }}
     >
       <div style={{ flex: 1, height: 1, borderTop: `1px dashed ${T.border}` }} />
@@ -357,7 +413,7 @@ function GapRow({ startMin, endMin, onAdd }) {
 // ─── Section label ────────────────────────────────────────────────────────────
 function SectionLabel({ children }) {
   return (
-    <div style={{ padding: "0 2px", marginBottom: 6, marginTop: 16 }}>
+    <div style={{ padding: "0 2px", marginBottom: 8, marginTop: 12 }}>
       <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: ".16em", textTransform: "uppercase", color: T.faint }}>
         {children}
       </span>
@@ -402,12 +458,7 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
   };
 
   return (
-    <div style={{
-      background: T.card,
-      borderTop: `3px solid ${color}`,
-      borderBottom: `1px solid ${T.border}`,
-      padding: "14px",
-    }}>
+    <div style={{ background: T.card, borderTop: `3px solid ${color}`, borderBottom: `1px solid ${T.border}`, padding: "14px" }}>
       {/* Sport pills */}
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
         {sports.map(s => {
@@ -444,7 +495,6 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
         ))}
       </div>
 
-      {/* Title */}
       <input
         className="cds-inp"
         autoFocus
@@ -455,7 +505,6 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
         style={{ ...inp, fontWeight: 600, fontSize: 14, marginBottom: 10 }}
       />
 
-      {/* Time + Duration */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, marginBottom: 4 }}>Start</div>
@@ -521,14 +570,24 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
 }
 
 // ─── Schedule time modal ──────────────────────────────────────────────────────
+// Used for BOTH unscheduled workouts and already-scheduled ones (edit mode)
 function ScheduleTimeModal({ workout, onSave, onClose }) {
-  const sport  = String(workout?.Sport || "").toLowerCase().trim();
-  const color  = sportColor(sport);
-  const [startH, setStartH] = useState(9);
-  const [startM, setStartM] = useState(0);
-  const [dur,    setDur]    = useState(90);
+  const sport    = String(workout?.Sport || "").toLowerCase().trim();
+  const color    = sportColor(sport);
+  const isEdit   = workout.ScheduledMinutes != null;
+
+  // Pre-fill with existing time if editing
+  const [startH, setStartH] = useState(() =>
+    isEdit ? Math.floor(workout.ScheduledMinutes / 60) : 9
+  );
+  const [startM, setStartM] = useState(() =>
+    isEdit ? workout.ScheduledMinutes % 60 : 0
+  );
+  const [dur, setDur] = useState(workout.ScheduleDuration || workout._scheduledDur || 90);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
+
+  const previewStart = startH * 60 + startM;
 
   const inp = {
     width: "100%", padding: "8px 10px",
@@ -540,24 +599,25 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
   const handleSave = async () => {
     setSaving(true);
     setErr("");
-    const timeStr = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
-    // Update ALL athlete records that share this workout (dedupe may have merged several)
-    const allIds = (workout._allIds?.length ? workout._allIds : [workout.id]).filter(Boolean);
+    const timeStr  = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+    // Update ALL athlete records sharing this workout
+    const allIds   = (workout._allIds?.length ? workout._allIds : [workout.id]).filter(Boolean);
     try {
       const results = await Promise.all(
         allIds.map(id =>
           fetch("/api/org/workouts/update-full", {
             method: "POST", credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, scheduledTime: timeStr }),
-          }).then(r => r.json().catch(() => ({})).then(data => ({ ok: r.ok, data, id })))
+            body: JSON.stringify({ id, scheduledTime: timeStr, scheduledDuration: dur }),
+          })
+          .then(r => r.json().catch(() => ({})).then(data => ({ ok: r.ok, data, id })))
         )
       );
       const failed = results.find(r => !r.ok);
       if (failed) throw new Error(failed.data?.error || `Failed to save record ${failed.id}`);
       onSave({
         ...workout,
-        ScheduledMinutes: startH * 60 + startM,
+        ScheduledMinutes: previewStart,
         ScheduledTime:    timeStr,
         _scheduledDur:    dur,
       });
@@ -567,7 +627,6 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
     }
   };
 
-  // Close on Escape
   useEffect(() => {
     const fn = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", fn);
@@ -595,10 +654,11 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
         <div style={{ padding: "16px 18px 13px", borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase", color, background: `${color}14`, padding: "2px 7px", borderRadius: 4 }}>
-                {titleSport(sport) || "Workout"}
-              </span>
-              <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4 }}>
+              <SportBadge sport={sport} color={color} />
+              <span style={{
+                fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
+                color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4,
+              }}>
                 Assigned
               </span>
             </div>
@@ -612,7 +672,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
             {workout.Title || "Workout"}
           </div>
           <div style={{ fontSize: 11, color: T.dim }}>
-            When does this workout take place?
+            {isEdit ? "Adjust the scheduled time" : "When does this workout take place?"}
           </div>
           {workout._total > 0 && (
             <div style={{ fontSize: 10, color: T.faint, marginTop: 3 }}>
@@ -672,24 +732,29 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Preview */}
+          {/* Live preview */}
           <div style={{
-            background: `${color}0A`,
+            background: `${color}09`,
             border: `1px solid ${color}20`,
+            borderLeft: `3px solid ${color}`,
             borderRadius: 8,
             padding: "9px 12px",
             marginBottom: 14,
-            display: "flex", alignItems: "center", gap: 8,
+            display: "flex", alignItems: "center", gap: 10,
           }}>
-            <div style={{ width: 3, height: 32, background: color, borderRadius: 2, flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.body }}>
-                {fmtTime(startH * 60 + startM)} – {fmtTime(startH * 60 + startM + dur)}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.body, fontVariantNumeric: "tabular-nums" }}>
+                {fmtTime(previewStart)} – {fmtTime(previewStart + dur)}
               </div>
               <div style={{ fontSize: 10, color: T.dim, marginTop: 1 }}>
                 {fmtDur(dur)} · {workout.Title}
               </div>
             </div>
+            {isEdit && (
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.amber, flexShrink: 0 }}>
+                Editing
+              </span>
+            )}
           </div>
 
           {err && (
@@ -707,7 +772,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
               cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "inherit", transition: "background .15s",
             }}>
-              {saving ? "Saving…" : "Set time"}
+              {saving ? "Saving…" : isEdit ? "Update time" : "Set time"}
             </button>
             <button onClick={onClose} style={{
               padding: "10px 14px", borderRadius: 8, cursor: "pointer",
@@ -731,11 +796,12 @@ export default function CoachDaySchedule({
   const [loading,        setLoading]        = useState(true);
   const [formSeg,        setFormSeg]        = useState(null);
   const [scheduleTarget, setScheduleTarget] = useState(null);
+  const [localOverrides, setLocalOverrides] = useState({});
   const [nowMin,         setNowMin]         = useState(() => {
     const n = new Date(); return n.getHours() * 60 + n.getMinutes();
   });
 
-  // Internal date (allows day navigation independently of prop)
+  // Internal date — allows day navigation independently of prop
   const [currentDate, setCurrentDate] = useState(selectedDate);
   useEffect(() => { setCurrentDate(selectedDate); }, [selectedDate]);
 
@@ -780,22 +846,34 @@ export default function CoachDaySchedule({
   }, [memberId, dateStr]);
 
   // ── Agenda items ─────────────────────────────────────────────────────────────
-  const scheduledWorkouts   = useMemo(() => dedupedWorkouts.filter(w => w.ScheduledMinutes != null), [dedupedWorkouts]);
-  const unscheduledWorkouts = useMemo(() => dedupedWorkouts.filter(w => w.ScheduledMinutes == null), [dedupedWorkouts]);
+  const scheduledWorkouts   = useMemo(() =>
+    dedupedWorkouts.filter(w => w.ScheduledMinutes != null),
+  [dedupedWorkouts]);
+
+  const unscheduledWorkouts = useMemo(() =>
+    dedupedWorkouts.filter(w => w.ScheduledMinutes == null),
+  [dedupedWorkouts]);
 
   const agendaItems = useMemo(() => {
     const items = [];
-    scheduledWorkouts.forEach(w => items.push({
-      id:              w.id || `a_${w.Title}`,
-      type:            "assigned",
-      startMinutes:    w.ScheduledMinutes,
-      durationMinutes: w._scheduledDur || 90,
-      title:           w.Title || "Workout",
-      sport:           String(w.Sport || "").toLowerCase().trim(),
-      athleteCount:    w._total || 0,
-      itemCount:       w.itemCount || 0,
-      data:            w,
-    }));
+    scheduledWorkouts.forEach(w => {
+      const key      = w._allIds?.join(",") || w.id;
+      const override = localOverrides[key];
+      const scheduledMin = override?.ScheduledMinutes
+        ?? w.ScheduledMinutes
+        ?? parseTimeToMinutes(w.ScheduledTime);
+      items.push({
+        id:              w.id || `a_${w.Title}`,
+        type:            "assigned",
+        startMinutes:    scheduledMin,
+        durationMinutes: override?._scheduledDur || w.ScheduleDuration || w._scheduledDur || 90,
+        title:           w.Title || "Workout",
+        sport:           String(w.Sport || "").toLowerCase().trim(),
+        athleteCount:    w._total || 0,
+        itemCount:       w.itemCount || 0,
+        data:            w,
+      });
+    });
     blocks.forEach(b => items.push({
       id:              b.id,
       type:            "personal",
@@ -808,7 +886,7 @@ export default function CoachDaySchedule({
       data:            b,
     }));
     return items.sort((a, b) => a.startMinutes - b.startMinutes);
-  }, [scheduledWorkouts, blocks]);
+  }, [scheduledWorkouts, blocks, localOverrides]);
 
   const activeId = useMemo(() => {
     if (!isToday) return null;
@@ -840,20 +918,25 @@ export default function CoachDaySchedule({
     setFormSeg({ startMinutes: startMin, durationMinutes: Math.min(dur, 60) });
   }, []);
 
-  // ── Schedule time save ───────────────────────────────────────────────────────
   const handleScheduleSave = useCallback((updated) => {
-    // Optimistically move the workout into the scheduled agenda
-    // The parent workoutsByDate won't update until the next fetch,
-    // so we close the modal — the NOW card / agenda will reflect on next load.
-    setScheduleTarget(null);
-  }, []);
+  const key = updated._allIds?.join(",") || updated.id;
+  setLocalOverrides(prev => ({
+    ...prev,
+    [key]: {
+      ScheduledMinutes: updated.ScheduledMinutes,
+      ScheduledTime:    updated.ScheduledTime,
+      _scheduledDur:    updated._scheduledDur,
+    },
+  }));
+  setScheduleTarget(null);
+}, []);
 
   // ── Day navigation ────────────────────────────────────────────────────────────
   const goDay = useCallback((offset) => {
     const d = new Date(`${dateStr}T12:00:00`);
     d.setDate(d.getDate() + offset);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const y   = d.getFullYear();
+    const m   = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     setCurrentDate(`${y}-${m}-${day}`);
   }, [dateStr]);
@@ -878,11 +961,10 @@ export default function CoachDaySchedule({
       <div style={{
         background: T.card,
         borderBottom: `1px solid ${T.border}`,
-        padding: "14px 14px 12px",
+        padding: "12px 14px",
         flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Prev */}
           <button className="cds-nav-btn" onClick={() => goDay(-1)} style={{
             width: 28, height: 28, borderRadius: 7, border: `1px solid ${T.border}`,
             background: "transparent", cursor: "pointer", color: T.dim, fontSize: 13,
@@ -890,7 +972,6 @@ export default function CoachDaySchedule({
             flexShrink: 0, transition: "background .12s",
           }}>←</button>
 
-          {/* Next */}
           <button className="cds-nav-btn" onClick={() => goDay(1)} style={{
             width: 28, height: 28, borderRadius: 7, border: `1px solid ${T.border}`,
             background: "transparent", cursor: "pointer", color: T.dim, fontSize: 13,
@@ -898,17 +979,15 @@ export default function CoachDaySchedule({
             flexShrink: 0, transition: "background .12s",
           }}>→</button>
 
-          {/* Date */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: T.faint, lineHeight: 1, marginBottom: 2 }}>
               {isToday ? "Today · " : ""}{dayName}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1, color: isToday ? T.safe : T.body }}>
+            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1, color: isToday ? T.safe : T.body }}>
               {dateLabel}
             </div>
           </div>
 
-          {/* Stats + controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             {plannedMin > 0 && (
               <div style={{
@@ -965,7 +1044,7 @@ export default function CoachDaySchedule({
       )}
 
       {/* ── Agenda ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px 28px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "6px 12px 28px" }}>
 
         {loading && (
           <div style={{ padding: "32px 0", textAlign: "center" }}>
@@ -975,7 +1054,7 @@ export default function CoachDaySchedule({
 
         {!loading && agendaItems.length === 0 && unscheduledWorkouts.length === 0 && (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 30, marginBottom: 10, opacity: .14 }}>◷</div>
+            <div style={{ fontSize: 28, marginBottom: 10, opacity: .15 }}>◷</div>
             <div style={{ fontSize: 13, fontWeight: 600, color: T.ghost, marginBottom: 4 }}>
               Day is open
             </div>
@@ -1002,7 +1081,10 @@ export default function CoachDaySchedule({
                       <GapRow startMin={gapStart} endMin={gapEnd} onAdd={handleGapAdd} />
                     )}
                     {item.type === "assigned" ? (
-                      <AssignedRow item={item} />
+                      <AssignedRow
+                        item={item}
+                        onClick={() => setScheduleTarget(item.data)}
+                      />
                     ) : (
                       <PersonalRow
                         item={item}
@@ -1049,14 +1131,15 @@ export default function CoachDaySchedule({
                       padding: "11px 13px",
                       cursor: "pointer",
                       boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-                      transition: "background .15s, border-color .15s",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
-                      <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase", color, background: `${color}14`, padding: "2px 6px", borderRadius: 4 }}>
-                        {titleSport(sport) || "Sport"}
-                      </span>
-                      <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.brand, background: T.brandBg, padding: "2px 6px", borderRadius: 4, border: `1px solid ${T.brandBdr}` }}>
+                      <SportBadge sport={sport} color={color} />
+                      <span style={{
+                        fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
+                        color: T.brand, background: T.brandBg, padding: "2px 6px", borderRadius: 4,
+                        border: `1px solid ${T.brandBdr}`,
+                      }}>
                         Tap to schedule
                       </span>
                     </div>
@@ -1071,7 +1154,7 @@ export default function CoachDaySchedule({
                           </div>
                         )}
                       </div>
-                      <div style={{ fontSize: 18, color: T.brand, opacity: .5, flexShrink: 0 }}>+</div>
+                      <div style={{ fontSize: 18, color: T.brand, opacity: .4, flexShrink: 0, fontWeight: 300 }}>+</div>
                     </div>
                   </div>
                 );

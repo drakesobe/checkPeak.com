@@ -155,7 +155,7 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const { id, ids, title, date, status, sport, items, athleteIds, scheduledTime } = req.body || {};
+  const { id, ids, title, date, status, sport, items, athleteIds, scheduledTime, scheduledDuration } = req.body || {};
 
   if (!id || !String(id).trim()) return res.status(400).json({ error: "id is required" });
 
@@ -199,6 +199,10 @@ export default async function handler(req, res) {
       scalarPatch[DW.SCHEDTIME] = String(scheduledTime);
     } else if (scheduledTime === "") {
       scalarPatch[DW.SCHEDTIME] = null;
+    }
+    const DUR_FIELD = F?.DW_SCHEDDUR || "ScheduleDuration";
+    if(scheduledDuration !== undefined && scheduledDuration !== null && scheduledDuration !== "") {
+      scalarPatch[DUR_FIELD] = Number(scheduledDuration);
     }
 
     if (Object.keys(scalarPatch).length) {

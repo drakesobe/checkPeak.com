@@ -59,16 +59,20 @@ function isPersonalEvent(ev) {
 
 function formatHour(h){ if(h===0)return"12 AM"; if(h===12)return"12 PM"; return h<12?`${h} AM`:`${h-12} PM`; }
 function formatTime(m){ const h=Math.floor(m/60)%24,mn=m%60,ap=h>=12?"PM":"AM",dh=h===0?12:h>12?h-12:h; return `${dh}:${String(mn).padStart(2,"0")} ${ap}`; }
-function parseTimeToMinutes(str){
-  if(!str)return null;
-  const s=String(str).trim(),isPM=/pm/i.test(s);
-  const parts=s.replace(/[^0-9:]/g,"").split(":");
-  let h=parseInt(parts[0],10);
-  const m=parseInt(parts[1]||"0",10);
-  if(isNaN(h))return null;
-  if(isPM&&h<12)h+=12;
-  if(!isPM&&h===12)h=0;
-  return h*60+m;
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const isPM = /pm/i.test(s);
+  const isAM = /am/i.test(s);
+  const parts = s.replace(/[^0-9:]/g, "").split(":");
+  let h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return null;
+  // Only apply 12-hour conversion when am/pm is explicitly in the string
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  // 24-hour strings ("12:00", "13:00") are used as-is
+  return h * 60 + m;
 }
 function classMatchesDate(cls,dateStr){ const dow=new Date(`${dateStr}T12:00:00`).getDay(); if(!Array.isArray(cls.days)||!cls.days.includes(dow))return false; if(cls.startDate&&dateStr<cls.startDate)return false; if(cls.endDate&&dateStr>cls.endDate)return false; return true; }
 function classesToDayEvents(schedules,dateStr){ return(schedules||[]).filter(cls=>classMatchesDate(cls,dateStr)).map(cls=>({id:`cls_${cls.id}_${dateStr}`,scheduleId:cls.id,source:"class_schedule",type:"class",title:cls.title,startMinutes:cls.startMinutes,durationMinutes:cls.durationMinutes,notes:cls.notes||""})); }
@@ -537,7 +541,7 @@ export default function DayPlannerSheet({
           type:"workout",
           title:dw.Title||"Team Workout",
           startMinutes:scheduledMin??savedMin??5*60,
-          durationMinutes:90,
+          durationMinutes: dw.ScheduledDuration || 90,
           selfSchedule:scheduledMin===null,
         };
       });

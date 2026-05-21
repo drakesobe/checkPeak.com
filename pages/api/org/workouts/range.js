@@ -148,17 +148,18 @@ export default async function handler(req, res) {
         null;
 
       return {
-        id:               rec.id,
-        Date:             date,
-        Title:            f[DAILY_TITLE_FIELD]  || "Workout",
-        Status:           f[DAILY_STATUS_FIELD] || "assigned",
-        Sport:            f[DAILY_SPORT_FIELD]  || "",
-        ScheduledTime:    String(f[DAILY_SCHED_TIME_FIELD]  || "").trim(),
-        ScheduledMinutes: scheduledMinutes,
-        athleteCount:     athletes.length,
-        athleteToken:     String(f.AthleteToken || "").trim(),
-        itemCount:        items.length,
-      };
+      id:               rec.id,
+      Date:             date,
+      Title:            f[DAILY_TITLE_FIELD]  || "Workout",
+      Status:           f[DAILY_STATUS_FIELD] || "assigned",
+      Sport:            f[DAILY_SPORT_FIELD]  || "",
+      ScheduledTime:    String(f[DAILY_SCHED_TIME_FIELD]  || "").trim(),
+      ScheduledMinutes: scheduledMinutes,
+      ScheduleDuration: f.ScheduleDuration ? Number(f.ScheduleDuration) : null,
+      athleteCount:     athletes.length,
+      athleteToken:     String(f.AthleteToken || "").trim(),
+      itemCount:        items.length,
+    };
     });
 
     // Athlete name enrichment

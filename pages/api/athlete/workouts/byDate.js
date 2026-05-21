@@ -299,6 +299,7 @@ export default async function handler(req, res) {
           Status:       f.Status || "assigned",
           AthleteToken: f.AthleteToken || athleteToken,
           ScheduledTime:f.ScheduleTime || null,   // "HH:MM" text field
+          ScheduledDuration: f.ScheduleDuration ? Number(f.ScheduleDuration) : null,
           ReviewStatus: normalizeTextValue(f.ReviewStatus)  || "pending",
           ReviewedNotes:normalizeTextValue(f.ReviewedNotes) || "",
         },

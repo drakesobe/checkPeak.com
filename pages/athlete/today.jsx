@@ -64,13 +64,17 @@ const SWIPE_HINT_KEY = "cp_swipe_hint:shown";
 // ─── parseTimeToMinutes ───────────────────────────────────────────────────────
 function parseTimeToMinutes(str) {
   if (!str) return null;
-  const s = String(str).trim(), isPM = /pm/i.test(s);
+  const s = String(str).trim();
+  const isPM = /pm/i.test(s);
+  const isAM = /am/i.test(s);
   const parts = s.replace(/[^0-9:]/g, "").split(":");
   let h = parseInt(parts[0], 10);
   const m = parseInt(parts[1] || "0", 10);
   if (isNaN(h)) return null;
+  // Only apply 12-hour conversion when am/pm is explicitly in the string
   if (isPM && h < 12) h += 12;
-  if (!isPM && h === 12) h = 0;
+  if (isAM && h === 12) h = 0;
+  // 24-hour strings ("12:00", "13:00") are used as-is
   return h * 60 + m;
 }
 
@@ -137,7 +141,7 @@ function buildDayRoute({
         title: dw.Title || "Team Workout",
         meta: `${sub.length} exercise${sub.length !== 1 ? "s" : ""} · Coach assigned`,
         startMinutes: scheduledMin,
-        durationMinutes: 90,
+        durationMinutes: dw.ScheduledDuration || 90,
         sub,
         selfSchedule: !isScheduled,
       });

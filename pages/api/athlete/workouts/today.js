@@ -288,6 +288,7 @@ export default async function handler(req, res) {
         ReviewStatus: reviewStatus,
         ReviewedNotes: reviewedNotes,
         ScheduledTime: f.ScheduleTime || null,
+        ScheduledDuration: f.ScheduleDuration ? Number(f.ScheduleDuration) : null,
       },
       items,
       debug: {

@@ -4,34 +4,10 @@ import { requireAthlete } from "@/lib/requireAthlete";
 
 const TABLE = process.env.DAYPLANNER_TABLE_ID || "DayPlannerBlocks";
 
-function cookieMissingOrBroken(req) {
-  try {
-    const raw = req?.cookies?.user || "";
-    if (!raw) return true;
-    const decoded = raw.includes("%7B") || raw.includes("%22")
-      ? decodeURIComponent(raw) : raw;
-    JSON.parse(decoded);
-    return false;
-  } catch { return true; }
-}
-
-function injectAuthFromField(req, authUserField) {
-  if (!authUserField) return;
-  req.cookies        = req.cookies || {};
-  req.cookies.user   = authUserField;
-  req.headers        = req.headers || {};
-  req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
-}
-
 // ── Find record by token + date ───────────────────────────────────────────────
-// The Airtable formula filter on Date was the root cause of all issues:
-//   - Date-type fields store as "2025-05-21T00:00:00.000Z", not "2025-05-21"
-//   - IS_SAME() failed silently on text fields
-//   - eachPage() is callback-based — await on it resolves immediately (broken)
-//
-// Fix: use .all() (returns a real Promise), filter by token only in Airtable,
-// then compare date in JS using .slice(0,10) which normalises any ISO format.
-// Among duplicates pick the record with the most EventsJSON content.
+// Uses .all() (real Promise), filters by token in Airtable,
+// then compares date in JS to avoid IS_SAME() issues with Date fields.
+// Among duplicates picks the record with the most EventsJSON content.
 async function findRecord(base, athleteToken, date) {
   const safe = athleteToken.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
@@ -54,11 +30,6 @@ async function findRecord(base, athleteToken, date) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-  if (cookieMissingOrBroken(req)) {
-    const authUserField = String(req.query?._authUser || req.body?._authUser || "").trim();
-    if (authUserField) injectAuthFromField(req, authUserField);
-  }
 
   const auth = requireAthlete(req);
   if (!auth.ok) {
@@ -84,16 +55,8 @@ export default async function handler(req, res) {
     try {
       const record = await findRecord(base, athleteToken, date);
       if (!record) {
-  return res.json({
-    ok: true, hasRecord: false, events: [],
-    debug: {
-      searchedToken: athleteToken.slice(0, 8) + "...",
-      searchedDate: date,
-      totalRecordsForToken: all.length,
-      sampleDates: all.slice(0, 5).map(r => String(r.fields.Date || "none")),
-    }
-  });
-}
+        return res.json({ ok: true, hasRecord: false, events: [] });
+      }
       let events = [];
       try { events = JSON.parse(record.fields.EventsJSON || "[]"); } catch { events = []; }
       return res.json({ ok: true, hasRecord: true, events });

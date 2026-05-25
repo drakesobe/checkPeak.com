@@ -9,10 +9,6 @@ import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
 
-/* -------------------------------------------------------------------------- */
-/* Utilities                                                                   */
-/* -------------------------------------------------------------------------- */
-
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
@@ -32,10 +28,6 @@ function avatarColor(str) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-/* -------------------------------------------------------------------------- */
-/* Static data                                                                 */
-/* -------------------------------------------------------------------------- */
-
 const ALL_TABS = [
   { name: "Scan",       href: "/nutrition-label-scanner" },
   { name: "Search",     href: "/search"                  },
@@ -54,9 +46,6 @@ const MountainIconFallback = (
   </svg>
 );
 
-/* -------------------------------------------------------------------------- */
-/* NavItem                                                                     */
-/* -------------------------------------------------------------------------- */
 function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) {
   const active        = isActive(tab.href);
   const isMountainTab = tab.icon === "mountain";
@@ -83,11 +72,6 @@ function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) 
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Premium Profile Dropdown                                                    */
-/* -------------------------------------------------------------------------- */
-
-// Section label
 function DropSection({ label }) {
   return (
     <div style={{
@@ -103,7 +87,6 @@ function DropSection({ label }) {
   );
 }
 
-// Single link row
 function DropLink({ href, children, icon, onClick, badge }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -148,12 +131,10 @@ function DropLink({ href, children, icon, onClick, badge }) {
   );
 }
 
-// Divider
 function DropDivider() {
   return <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />;
 }
 
-// The full dropdown panel
 function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout }) {
   const name   = user?.Name || user?.name || "Profile";
   const email  = user?.Email || user?.email || "";
@@ -180,14 +161,13 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
       }}
       role="menu"
     >
-      {/* ── User identity hero ── */}
+      {/* User identity hero */}
       <div style={{
         padding:    "16px 16px 14px",
         background: "rgba(255,255,255,0.03)",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Avatar */}
           <div style={{
             width:          44,
             height:         44,
@@ -201,8 +181,6 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
           }}>
             <span style={{ fontSize: 16, fontWeight: 900, color, letterSpacing: -0.5 }}>{initials}</span>
           </div>
-
-          {/* Name + email + role */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {name}
@@ -220,7 +198,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         </div>
       </div>
 
-      {/* ── Org links ── */}
+      {/* Org links */}
       {isOrgSide && (
         <>
           <div style={{ padding: "6px 0" }}>
@@ -240,10 +218,18 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
               </>
             )}
           </div>
+          {/* ── Commercial entry point ── */}
+          <DropDivider />
+          <div style={{ padding: "0 0 6px" }}>
+            <DropSection label="Commercial" />
+            <DropLink href="/commercial/dashboard" icon="💼" onClick={onClose} badge="New">
+              Trainer Dashboard
+            </DropLink>
+          </div>
         </>
       )}
 
-      {/* ── Athlete links ── */}
+      {/* Athlete links */}
       {isAthlete && (
         <div style={{ padding: "6px 0" }}>
           <DropSection label="My Account" />
@@ -256,7 +242,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 
       <DropDivider />
 
-      {/* ── Help Center ── */}
+      {/* Help Center */}
       {isOrgSide && (
         <>
           <Link
@@ -288,7 +274,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         </>
       )}
 
-      {/* ── Bottom: Account + Sign out ── */}
+      {/* Account + Sign out */}
       <div style={{
         padding:      "10px 10px",
         borderTop:    "1px solid rgba(255,255,255,0.07)",
@@ -341,10 +327,6 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
     </motion.div>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Mobile Menu Panel                                                           */
-/* -------------------------------------------------------------------------- */
 
 function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal }) {
   const name     = user?.Name || user?.name || "Profile";
@@ -402,7 +384,6 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
         <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
 
         {!loggedIn ? (
-          /* ── Auth buttons ── */
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
             <button
               type="button"
@@ -421,7 +402,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
           </div>
         ) : (
           <>
-            {/* ── User identity card ── */}
+            {/* User identity card */}
             <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 44, height: 44, borderRadius: "50%", background: color + "22", border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -440,11 +421,11 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
               </div>
             </div>
 
-            {/* ── Org nav ── */}
+            {/* Org nav */}
             {isOrgSide && (
               <>
                 <div style={{ padding: "4px 0 2px", fontSize: 9, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.25)", paddingLeft: 14, marginBottom: 2 }}>Workspace</div>
-                <MLink href="/org/workouts-calendar"         icon="⬡">Dashboard</MLink>
+                <MLink href="/org/workouts-calendar" icon="⬡">Dashboard</MLink>
                 <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
                 <MLink href="/org/workouts-calendar" icon="◈">Workouts Calendar</MLink>
                 <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>
@@ -459,22 +440,27 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                     <MLink href="/org/trainers" icon="◈">Trainers</MLink>
                   </>
                 )}
+
+                {/* ── Commercial entry point ── */}
+                <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
+                <div style={{ padding: "4px 0 2px", fontSize: 9, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.25)", paddingLeft: 14, marginBottom: 2 }}>Commercial</div>
+                <MLink href="/commercial/dashboard" icon="💼">Trainer Dashboard</MLink>
               </>
             )}
 
-            {/* ── Athlete nav ── */}
+            {/* Athlete nav */}
             {isAthlete && (
               <>
-                <MLink href="/dashboard"     icon="⬡">Athlete Dashboard</MLink>
-                <MLink href="/athlete/today" icon="◎">Today</MLink>
+                <MLink href="/dashboard"       icon="⬡">Athlete Dashboard</MLink>
+                <MLink href="/athlete/today"   icon="◎">Today</MLink>
                 <MLink href="/athlete/journal" icon="◈">Journal</MLink>
-                <MLink href="/scans"         icon="◈">My Scans</MLink>
+                <MLink href="/scans"           icon="◈">My Scans</MLink>
               </>
             )}
 
             <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
 
-            {/* ── Help Center ── */}
+            {/* Help Center */}
             {isOrgSide && (
               <Link
                 href="/org/help"
@@ -489,7 +475,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
               </Link>
             )}
 
-            {/* ── Account + Sign out ── */}
+            {/* Account + Sign out */}
             <div style={{ display: "flex", gap: 8 }}>
               <Link
                 href="/account"
@@ -513,9 +499,6 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* NavBar                                                                      */
-/* -------------------------------------------------------------------------- */
 export default function NavBar() {
   const pathname = usePathname();
   const router   = useRouter();
@@ -532,7 +515,6 @@ export default function NavBar() {
 
   useEffect(() => setIsMounted(true), []);
 
-  /* ── Nav height → CSS variable ── */
   useEffect(() => {
     if (!isMounted || !navRef.current) return;
     const setVar = () => {
@@ -549,7 +531,6 @@ export default function NavBar() {
     return () => { window.removeEventListener("resize", setVar); ro?.disconnect(); };
   }, [isMounted]);
 
-  /* ── Lock body scroll when mobile menu open ── */
   useEffect(() => {
     if (!menuOpen) return;
     const sw = window.innerWidth - document.documentElement.clientWidth;
@@ -558,7 +539,6 @@ export default function NavBar() {
     return () => { document.body.style.overflow = ""; document.body.style.paddingRight = ""; };
   }, [menuOpen]);
 
-  /* ── Role normalisation ── */
   const role = useMemo(() => {
     const raw = (user?.role || user?.Role || "").toString().trim().toLowerCase();
     if (!raw) return "";
@@ -643,7 +623,6 @@ export default function NavBar() {
   const sharedRoleProps = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive };
   const navItemSharedProps = { isActive, stackIconBroken, onStackIconError: handleStackIconError };
 
-  /* ── Profile button label ── */
   const profileButtonLabel = useMemo(() => {
     if (!loggedIn) return "Login";
     const name = user?.Name || user?.name || "";
@@ -661,17 +640,14 @@ export default function NavBar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="relative h-16 md:h-20 flex items-center justify-between">
 
-            {/* Desktop left tabs */}
             <div className="hidden md:flex items-center gap-2 flex-1">
               {DESKTOP_LEFT_TABS.map(tab => (
                 <NavItem key={tab.href} tab={tab} {...navItemSharedProps} />
               ))}
             </div>
 
-            {/* Mobile spacer */}
             <div className="md:hidden h-10 w-10" aria-hidden="true" />
 
-            {/* Logo */}
             <div className="absolute left-1/2 -translate-x-1/2">
               <Link href="/" aria-label="CheckPeak Home" className="inline-flex items-center">
                 <span className="block md:hidden"><Logo size="medium" /></span>
@@ -679,7 +655,6 @@ export default function NavBar() {
               </Link>
             </div>
 
-            {/* Desktop right */}
             <div className="hidden md:flex items-center gap-2 flex-1 justify-end">
               {DESKTOP_RIGHT_TABS.map(tab => (
                 <NavItem key={tab.href} tab={tab} {...navItemSharedProps} />
@@ -747,7 +722,6 @@ export default function NavBar() {
               )}
             </div>
 
-            {/* Mobile hamburger */}
             <div className="md:hidden">
               <button
                 type="button"
@@ -789,7 +763,6 @@ export default function NavBar() {
           </div>
         </div>
 
-        {/* Mobile menu */}
         <AnimatePresence>
           {menuOpen && (
             <div className="md:hidden">

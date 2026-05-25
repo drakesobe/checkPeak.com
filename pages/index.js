@@ -1687,53 +1687,81 @@ function PromoVideo() {
   };
 
   return (
-    <section ref={ref} style={{
-      width: "100%",
-      background: BLACK,
-      padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
-      borderTop: "0.5px solid rgba(255,255,255,0.08)",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-
+    <section
+      ref={ref}
+      style={{
+        width: "100%",
+        background: BLACK,
+        padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
+        borderTop: "0.5px solid rgba(255,255,255,0.08)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
       {/* Film grain */}
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0, zIndex: 1,
-        backgroundImage: GRAIN_URL, backgroundRepeat: "repeat",
-        backgroundSize: "256px 256px", opacity: 0.04,
-        mixBlendMode: "screen", pointerEvents: "none",
-      }} />
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute", inset: 0, zIndex: 1,
+          backgroundImage: GRAIN_URL, backgroundRepeat: "repeat",
+          backgroundSize: "256px 256px", opacity: 0.04,
+          mixBlendMode: "screen", pointerEvents: "none",
+        }}
+      />
 
-      {/* Ambient glow behind video */}
-      <div aria-hidden="true" style={{
-        position: "absolute", left: "50%", top: "50%",
-        transform: "translate(-50%, -50%)",
-        width: "70vw", height: "40vw",
-        borderRadius: "50%", zIndex: 0, pointerEvents: "none",
-        background: `radial-gradient(ellipse, rgba(79,171,255,0.07) 0%, transparent 70%)`,
-      }} />
+      {/* Ambient glow */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute", left: "50%", top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "70vw", height: "40vw",
+          borderRadius: "50%", zIndex: 0, pointerEvents: "none",
+          background: "radial-gradient(ellipse, rgba(79,171,255,0.07) 0%, transparent 70%)",
+        }}
+      />
 
+      {/* Content */}
       <div style={{ position: "relative", zIndex: 2 }}>
 
         {/* Eyebrow */}
         <motion.div
-          initial={{ opacity: 0, x: -12 }}
-          animate={inView ? { opacity: 1, x: 0 } : {}}
+          initial={{ opacity: 0 }}
+          animate={inView ? { opacity: 1 } : {}}
           transition={{ duration: 0.5 }}
-          style={{ display: "flex", alignItems: "center", gap: "0.85rem", justifyContent: "center", marginBottom: "clamp(1.5rem, 3vw, 2.5rem)" }}
+          style={{
+            display: "flex", alignItems: "center",
+            gap: "0.85rem", justifyContent: "center",
+            marginBottom: "clamp(1.5rem, 3vw, 2.5rem)",
+          }}
         >
           <motion.div
-            initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
-            transition={{ duration: 0.8, delay: 0.05 }}
-            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "left" }}
+            initial={{ scaleX: 0 }}
+            animate={inView ? { scaleX: 1 } : {}}
+            transition={{ duration: 0.8 }}
+            style={{
+              width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px",
+              background: "rgba(255,255,255,0.22)", transformOrigin: "left",
+            }}
           />
-          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
+          <span
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: "0.72rem", fontWeight: 900,
+              letterSpacing: "0.2em", textTransform: "uppercase",
+              color: "rgba(255,255,255,0.38)",
+            }}
+          >
             The proof
           </span>
           <motion.div
-            initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
-            transition={{ duration: 0.8, delay: 0.05 }}
-            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "right" }}
+            initial={{ scaleX: 0 }}
+            animate={inView ? { scaleX: 1 } : {}}
+            transition={{ duration: 0.8 }}
+            style={{
+              width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px",
+              background: "rgba(255,255,255,0.22)", transformOrigin: "right",
+            }}
           />
         </motion.div>
 
@@ -1744,41 +1772,39 @@ function PromoVideo() {
           transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           style={{ textAlign: "center", marginBottom: "clamp(2.5rem, 5vw, 4rem)" }}
         >
-          <p style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontWeight: 900,
-            fontStyle: "italic",
-            fontSize: "clamp(2.5rem, 7vw, 7rem)",
-            lineHeight: 0.88,
-            letterSpacing: "-0.03em",
-            textTransform: "uppercase",
-            color: WHITE,
-          }}>
-            This is what <span style={{ color: ACCENT }}>ready</span> looks like.
+          <p
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontWeight: 900, fontStyle: "italic",
+              fontSize: "clamp(2.5rem, 7vw, 7rem)",
+              lineHeight: 0.88, letterSpacing: "-0.03em",
+              textTransform: "uppercase", color: WHITE,
+            }}
+          >
+            This is what{" "}
+            <span style={{ color: ACCENT }}>ready</span>
+            {" "}looks like.
           </p>
         </motion.div>
 
-        {/* Video container */}
+        {/* Video wrapper */}
         <motion.div
-          initial={{ opacity: 0, y: 48, rotateX: 4 }}
-          animate={inView ? { opacity: 1, y: 0, rotateX: 0 } : {}}
+          initial={{ opacity: 0, y: 48 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 1.2, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
           style={{
-            maxWidth: 960,
-            margin: "0 auto",
-            borderRadius: 12,
-            overflow: "hidden",
-            position: "relative",
-            aspectRatio: "16/9",
+            maxWidth: 960, margin: "0 auto",
+            borderRadius: 12, overflow: "hidden",
+            position: "relative", aspectRatio: "16/9",
             transform: "perspective(1400px) rotateX(1deg)",
             transformOrigin: "center top",
-            boxShadow: `
-              0 2px 0 rgba(255,255,255,0.07),
-              0 32px 100px rgba(0,0,0,0.85),
-              0 12px 40px rgba(0,0,0,0.6),
-              0 0 0 1px rgba(255,255,255,0.08),
-              0 0 80px rgba(79,171,255,0.08)
-            `,
+            boxShadow: [
+              "0 2px 0 rgba(255,255,255,0.07)",
+              "0 32px 100px rgba(0,0,0,0.85)",
+              "0 12px 40px rgba(0,0,0,0.6)",
+              "0 0 0 1px rgba(255,255,255,0.08)",
+              "0 0 80px rgba(79,171,255,0.08)",
+            ].join(", "),
           }}
         >
           <video
@@ -1787,18 +1813,17 @@ function PromoVideo() {
             playsInline
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+            style={{
+              width: "100%", height: "100%",
+              display: "block", objectFit: "cover",
+            }}
             poster="/images/promo-poster.jpg"
           >
             <source src="/video/app-promo.mp4" type="video/mp4" />
           </video>
 
-          {/* Custom play overlay - hides once playing */}
           {!playing && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+            <div
               onClick={handlePlay}
               style={{
                 position: "absolute", inset: 0,
@@ -1807,7 +1832,6 @@ function PromoVideo() {
                 cursor: "none",
               }}
             >
-              {/* Play button */}
               <motion.div
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.96 }}
@@ -1817,7 +1841,7 @@ function PromoVideo() {
                   borderRadius: "50%",
                   background: ACCENT,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: `0 0 0 12px rgba(79,171,255,0.15), 0 8px 32px rgba(0,0,0,0.5)`,
+                  boxShadow: "0 0 0 12px rgba(79,171,255,0.15), 0 8px 32px rgba(0,0,0,0.5)",
                 }}
               >
                 <svg
@@ -1828,7 +1852,7 @@ function PromoVideo() {
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
               </motion.div>
-            </motion.div>
+            </div>
           )}
         </motion.div>
 
@@ -1841,15 +1865,55 @@ function PromoVideo() {
             textAlign: "center",
             marginTop: "clamp(1.5rem, 3vw, 2.5rem)",
             fontFamily: "'Barlow Condensed', sans-serif",
-            fontWeight: 700,
-            fontSize: "0.85rem",
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
+            fontWeight: 700, fontSize: "0.85rem",
+            letterSpacing: "0.18em", textTransform: "uppercase",
             color: "rgba(255,255,255,0.28)",
           }}
         >
           No excuses.&nbsp;&nbsp;No surprises.&nbsp;&nbsp;No shortcuts.
         </motion.p>
+
+        {/* Dual CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 1.1 }}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: "clamp(1rem, 3vw, 2.5rem)",
+            marginTop: "clamp(1.5rem, 3vw, 2.5rem)",
+            flexWrap: "wrap",
+          }}
+        >
+          <PilotButton source="promo_video" size="md" />
+
+          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
+
+           <a
+            href="https://apps.apple.com/your-app-link"
+            onClick={() => track("promo_video_athlete_download")}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "0.65rem",
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: "0.92rem", fontWeight: 900,
+              letterSpacing: "0.12em", textTransform: "uppercase",
+              color: "rgba(255,255,255,0.45)",
+              textDecoration: "none", transition: "color 0.18s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = WHITE; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
+          >
+            <svg
+              width="15" height="15" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" />
+              <circle cx="12" cy="9" r="2.5" />
+            </svg>
+            Athlete? Download the app
+          </a>
+        </motion.div>
 
       </div>
     </section>

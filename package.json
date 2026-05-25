@@ -12,6 +12,8 @@
   "dependencies": {
     "@aws-sdk/client-textract": "^3.1005.0",
     "@ericblade/quagga2": "^1.11.0",
+    "@mux/mux-node": "^14.1.0",
+    "@mux/mux-player-react": "^3.13.0",
     "@theo-dev/airtable-connect": "^0.2.34",
     "@vercel/speed-insights": "^1.2.0",
     "@zxing/browser": "^0.1.5",
@@ -39,6 +41,7 @@
     "react-hot-toast": "^2.6.0",
     "react-icons": "^5.5.0",
     "react-responsive": "^10.0.1",
+    "resend": "^6.12.3",
     "string-similarity": "^4.0.4",
     "stripe": "^20.3.1",
     "tesseract.js": "^6.0.1",

@@ -1,7 +1,6 @@
 // pages/trainer/[slug]/library.jsx
-// Client video library — CheckPeak Commercial.
-// Dark "film room" aesthetic: organized, focused, premium.
-// Consistent with the trainer profile page design language.
+// Client video library — with completion tracking.
+// Checkmarks on completed videos. Progress bar in header.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -22,6 +21,7 @@ const D = {
   faint:     "rgba(255,255,255,0.26)",
   whisper:   "rgba(255,255,255,0.1)",
   red:       "#DA3633",
+  green:     "#3FB950",
 };
 
 const TIER = {
@@ -32,7 +32,6 @@ const TIER = {
 
 const TIER_NEXT = { Basic: "Premium", Premium: "Ultra" };
 
-// ─── Global CSS ───────────────────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,900;1,700;1,900&display=swap');
 
@@ -42,6 +41,8 @@ const CSS = `
   @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+  @keyframes checkPop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes barFill { from { width: 0; } to { width: var(--target-pct); } }
 
   .lib-card {
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -72,6 +73,8 @@ const CSS = `
   .nav-link:hover { color: rgba(255,255,255,0.9) !important; }
 
   .modal-anim { animation: scaleIn 0.2s ease both; }
+
+  .check-badge { animation: checkPop 0.3s ease both; }
 
   @media (max-width: 768px) {
     .lib-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important; }
@@ -114,7 +117,7 @@ async function logCompletion(videoId) {
 }
 
 // ─── Video card ───────────────────────────────────────────────────────────────
-function VideoCard({ video, clientTier, onPlay }) {
+function VideoCard({ video, clientTier, onPlay, isCompleted }) {
   const f         = video.fields ?? {};
   const accessible = canAccess(clientTier, f.tier);
   const thumb      = f.muxPlaybackId
@@ -128,12 +131,13 @@ function VideoCard({ video, clientTier, onPlay }) {
     <div
       className={`lib-card${accessible ? "" : " lib-card-locked"}`}
       style={{
-        background:   D.bgCard,
-        border:       `0.5px solid ${D.border}`,
-        borderRadius: 3,
-        overflow:     "hidden",
-        display:      "flex",
-        flexDirection:"column",
+        background:    D.bgCard,
+        border:        `0.5px solid ${isCompleted ? "rgba(63,185,80,0.3)" : D.border}`,
+        borderRadius:  3,
+        overflow:      "hidden",
+        display:       "flex",
+        flexDirection: "column",
+        position:      "relative",
       }}
       onClick={() => accessible && onPlay(video.id)}
     >
@@ -150,10 +154,9 @@ function VideoCard({ video, clientTier, onPlay }) {
           )
         }
 
-        {/* Bottom gradient */}
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 55%)" }} />
 
-        {/* Hover play button */}
+        {/* Hover play */}
         {accessible && (
           <div className="play-btn" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.18)" }}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -179,14 +182,36 @@ function VideoCard({ video, clientTier, onPlay }) {
           </div>
         )}
 
-        {/* Duration */}
+        {/* ✓ Completed badge */}
+        {isCompleted && (
+          <div
+            className="check-badge"
+            style={{
+              position:   "absolute",
+              top:        10,
+              right:      10,
+              width:      26,
+              height:     26,
+              borderRadius: "50%",
+              background: D.green,
+              display:    "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow:  `0 0 0 3px rgba(63,185,80,0.2)`,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        )}
+
         {dur && (
           <span style={{ position: "absolute", bottom: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: "rgba(0,0,0,0.65)", padding: "2px 7px", letterSpacing: "0.04em" }}>
             {dur}
           </span>
         )}
 
-        {/* Tier badge */}
         {tierCfg && (
           <span style={{ position: "absolute", top: 8, left: 8, fontSize: 8, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: tierCfg.color, background: "rgba(0,0,0,0.7)", padding: "3px 8px", backdropFilter: "blur(4px)" }}>
             {f.tier}
@@ -214,7 +239,7 @@ function VideoCard({ video, clientTier, onPlay }) {
 }
 
 // ─── Player modal ─────────────────────────────────────────────────────────────
-function PlayerModal({ video, onClose }) {
+function PlayerModal({ video, onClose, onCompleted }) {
   const f = video?.fields ?? {};
 
   useEffect(() => {
@@ -223,14 +248,17 @@ function PlayerModal({ video, onClose }) {
     return () => window.removeEventListener("keydown", fn);
   }, [onClose]);
 
+  function handleEnded() {
+    logCompletion(video.id);
+    onCompleted(video.id);
+  }
+
   return (
     <div
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px", animation: "fadeIn 0.18s ease" }}
     >
       <div className="modal-anim" style={{ width: "100%", maxWidth: 960, overflow: "hidden", borderRadius: 3, border: `0.5px solid ${D.borderMid}`, boxShadow: "0 40px 100px rgba(0,0,0,0.8)" }}>
-
-        {/* Video */}
         {f.sourceType === "embed" ? (
           <div style={{ position: "relative", paddingBottom: "56.25%", background: "#000" }}>
             <iframe
@@ -244,13 +272,11 @@ function PlayerModal({ video, onClose }) {
           <MuxPlayer
             playbackId={f.muxPlaybackId}
             metadata={{ video_title: f.title }}
-            onEnded={() => logCompletion(video.id)}
+            onEnded={handleEnded}
             autoPlay
             style={{ width: "100%", aspectRatio: "16/9", display: "block" }}
           />
         )}
-
-        {/* Footer bar */}
         <div style={{ background: "#0A0C10", borderTop: `0.5px solid ${D.border}`, padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: D.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
@@ -276,7 +302,6 @@ function PlayerModal({ video, onClose }) {
 function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
   if (!nextTier || lockedCount === 0) return null;
   const cfg = TIER[nextTier];
-
   return (
     <div style={{ marginTop: 48, borderTop: `0.5px solid ${D.border}`, paddingTop: 48 }}>
       <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
@@ -293,10 +318,8 @@ function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
         <p style={{ fontSize: 13, color: D.dim, lineHeight: 1.65, marginBottom: 28 }}>
           Unlock the full {trainerName} program with a {nextTier} subscription.
         </p>
-        <a
-          href={`/trainer/${slug}`}
-          style={{ display: "inline-block", padding: "13px 36px", background: cfg.color, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}
-        >
+        <a href={`/trainer/${slug}`}
+          style={{ display: "inline-block", padding: "13px 36px", background: cfg.color, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
           Upgrade Plan →
         </a>
       </div>
@@ -310,12 +333,13 @@ export default function ClientLibrary() {
   const { slug }     = router.query;
   const { user, authReady } = useAuthContext();
 
-  const [trainer,    setTrainer]    = useState(null);
-  const [videos,     setVideos]     = useState([]);
-  const [clientTier, setClientTier] = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [playing,    setPlaying]    = useState(null);
-  const [filter,     setFilter]     = useState("all");
+  const [trainer,      setTrainer]      = useState(null);
+  const [videos,       setVideos]       = useState([]);
+  const [clientTier,   setClientTier]   = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [playing,      setPlaying]      = useState(null);
+  const [filter,       setFilter]       = useState("all");
+  const [completedIds, setCompletedIds] = useState(new Set());
 
   useEffect(() => {
     if (!authReady) return;
@@ -325,12 +349,14 @@ export default function ClientLibrary() {
     Promise.all([
       fetch(`/api/commercial/trainer-public?slug=${slug}`).then(r => r.json()),
       fetch(`/api/commercial/client-access?slug=${slug}`, { credentials: "include" }).then(r => r.json()),
-    ]).then(([trainerData, accessData]) => {
+      fetch(`/api/commercial/completions?slug=${slug}`, { credentials: "include" }).then(r => r.ok ? r.json() : { completedVideoIds: [] }),
+    ]).then(([trainerData, accessData, completionData]) => {
       if (!trainerData.trainer) { router.push("/"); return; }
       if (!accessData.tier)     { router.push(`/trainer/${slug}`); return; }
       setTrainer(trainerData.trainer);
       setVideos(accessData.videos ?? []);
       setClientTier(accessData.tier);
+      setCompletedIds(new Set(completionData.completedVideoIds ?? []));
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [user, authReady, slug, router]);
@@ -338,7 +364,11 @@ export default function ClientLibrary() {
   const handlePlay  = useCallback(id => setPlaying(id), []);
   const handleClose = useCallback(() => setPlaying(null), []);
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  // Mark video as completed locally for instant feedback
+  const handleCompleted = useCallback((videoId) => {
+    setCompletedIds(prev => new Set([...prev, videoId]));
+  }, []);
+
   if (!authReady || loading) {
     return (
       <div style={{ minHeight: "100vh", background: D.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif" }}>
@@ -353,7 +383,6 @@ export default function ClientLibrary() {
 
   if (!trainer || !clientTier) return null;
 
-  // ── Derived state ────────────────────────────────────────────────────────────
   const tf         = trainer.fields ?? {};
   const allTags    = [...new Set(videos.flatMap(v => Object.values(parseTags(v.fields?.tags))).filter(Boolean))];
   const accessible = videos.filter(v => canAccess(clientTier, v.fields?.tier));
@@ -362,8 +391,9 @@ export default function ClientLibrary() {
   const playingVid = playing ? videos.find(v => v.id === playing) : null;
   const tierCfg    = TIER[clientTier];
   const nextTier   = TIER_NEXT[clientTier] ?? null;
+  const completedCount = accessible.filter(v => completedIds.has(v.id)).length;
+  const progressPct    = accessible.length > 0 ? Math.round((completedCount / accessible.length) * 100) : 0;
 
-  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
       <Head>
@@ -374,13 +404,12 @@ export default function ClientLibrary() {
 
         {/* ── NAV ── */}
         <nav style={{ position: "sticky", top: 0, zIndex: 100, background: "rgba(7,8,8,0.92)", backdropFilter: "blur(12px)", borderBottom: `0.5px solid ${D.border}`, padding: "0 40px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-
           <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-            <a href="/" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase", color: D.faint, textDecoration: "none" }} className="nav-link">
+            <a href="/" className="nav-link" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase", color: D.faint, textDecoration: "none" }}>
               CheckPeak
             </a>
             <div style={{ width: "0.5px", height: 14, background: D.border, flexShrink: 0 }} />
-            <a href={`/trainer/${slug}`} style={{ fontSize: 13, fontWeight: 600, color: D.dim, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="nav-link">
+            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 13, fontWeight: 600, color: D.dim, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {tf.name}
             </a>
           </div>
@@ -391,20 +420,15 @@ export default function ClientLibrary() {
                 {clientTier}
               </span>
             )}
-            <a
-              href={`/trainer/${slug}`}
-              className="nav-link"
-              style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}
-            >
+            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}>
               ← Profile
             </a>
           </div>
         </nav>
 
         {/* ── HEADER ── */}
-        <div style={{ background: D.bgSection, borderBottom: `0.5px solid ${D.border}`, padding: "36px 40px 32px", animation: "slideUp 0.4s ease both" }}>
+        <div style={{ background: D.bgSection, borderBottom: `0.5px solid ${D.border}`, padding: "36px 40px 28px", animation: "slideUp 0.4s ease both" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
               <div style={{ width: 22, height: 2, background: D.red }} />
               <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.22em", textTransform: "uppercase", color: D.red }}>
@@ -412,7 +436,7 @@ export default function ClientLibrary() {
               </span>
             </div>
 
-            <div className="lib-header-row" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
+            <div className="lib-header-row" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
               <div>
                 <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 8 }}>
                   {tf.name}
@@ -427,16 +451,34 @@ export default function ClientLibrary() {
                 </p>
               </div>
 
-              {/* Progress ring placeholder — total accessible */}
+              {/* Completion stat */}
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: tierCfg?.color }}>
-                  {accessible.length}
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: completedCount === accessible.length && accessible.length > 0 ? D.green : tierCfg?.color }}>
+                  {completedCount}/{accessible.length}
                 </div>
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: D.faint }}>
-                  Available
+                  Completed
                 </div>
               </div>
             </div>
+
+            {/* Progress bar */}
+            {accessible.length > 0 && (
+              <div style={{ position: "relative", width: "100%", height: 2, background: "rgba(255,255,255,0.06)", borderRadius: 1, overflow: "hidden" }}>
+                <div
+                  style={{
+                    position:   "absolute",
+                    top:        0,
+                    left:       0,
+                    height:     "100%",
+                    width:      `${progressPct}%`,
+                    background: completedCount === accessible.length ? D.green : (tierCfg?.color ?? D.red),
+                    borderRadius: 1,
+                    transition: "width 1s ease",
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -447,10 +489,7 @@ export default function ClientLibrary() {
               {["all", ...allTags].map(tag => {
                 const isActive = filter === tag;
                 return (
-                  <button
-                    key={tag}
-                    className="filter-btn"
-                    onClick={() => setFilter(tag)}
+                  <button key={tag} className="filter-btn" onClick={() => setFilter(tag)}
                     style={{
                       padding:       "7px 16px",
                       background:    isActive ? tierCfg?.bg ?? D.whisper : "transparent",
@@ -463,8 +502,7 @@ export default function ClientLibrary() {
                       whiteSpace:    "nowrap",
                       fontFamily:    "inherit",
                       borderRadius:  2,
-                    }}
-                  >
+                    }}>
                     {tag === "all" ? "All" : tag}
                   </button>
                 );
@@ -476,85 +514,66 @@ export default function ClientLibrary() {
         {/* ── VIDEO GRID ── */}
         <div style={{ padding: "36px 40px 64px", maxWidth: 1100, margin: "0 auto" }}>
 
-          {/* ── Empty: no videos at all ── */}
-{videos.length === 0 ? (
-  <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
-    <div style={{ marginBottom: 28, display: "flex", justifyContent: "center" }}>
-      <div style={{ width: 56, height: 56, border: `0.5px solid ${D.borderMid}`, borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <rect x="2" y="5" width="20" height="14" rx="2" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/>
-          <polygon points="10,9 10,15 15,12" fill="rgba(255,255,255,0.18)"/>
-        </svg>
+          {videos.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
+              <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
+                The Program<br />Is Loading Up.
+              </h3>
+              <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, marginBottom: 28, maxWidth: 320, margin: "0 auto 28px" }}>
+                {tf.name?.split(" ")[0] || "Your coach"} is building out the library. Check back soon.
+              </p>
+              <a href={`/trainer/${slug}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red, textDecoration: "none" }}>
+                ← Back to Profile
+              </a>
+            </div>
+          ) : accessible.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
+              <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
+                Upgrade to<br />Unlock Content.
+              </h3>
+              <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, maxWidth: 320, margin: "0 auto 28px" }}>
+                All {videos.length} video{videos.length !== 1 ? "s" : ""} require a higher tier.
+              </p>
+              <a href={`/trainer/${slug}`} style={{ display: "inline-block", padding: "12px 32px", background: TIER[nextTier]?.color ?? D.red, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
+                Upgrade Plan →
+              </a>
+            </div>
+          ) : filtered.length === 0 && filter !== "all" ? (
+            <div style={{ textAlign: "center", padding: "80px 0" }}>
+              <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match this filter.</p>
+              <button onClick={() => setFilter("all")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                Show all →
+              </button>
+            </div>
+          ) : (
+            <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
+              {filtered.map(v => (
+                <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} isCompleted={completedIds.has(v.id)} />
+              ))}
+              {filter === "all" && locked.map(v => (
+                <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} isCompleted={false} />
+              ))}
+            </div>
+          )}
+
+          {videos.length > 0 && filter === "all" && (
+            <UpgradePrompt
+              lockedCount={locked.length}
+              nextTier={nextTier}
+              trainerName={tf.name?.split(" ")[0] || "this trainer"}
+              slug={slug}
+            />
+          )}
+        </div>
+
+        {playingVid && (
+          <PlayerModal
+            video={playingVid}
+            onClose={handleClose}
+            onCompleted={handleCompleted}
+          />
+        )}
       </div>
-    </div>
-    <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
-      The Program<br />Is Loading Up.
-    </h3>
-    <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, marginBottom: 28, maxWidth: 320, margin: "0 auto 28px" }}>
-      {tf.name?.split(" ")[0] || "Your coach"} is building out the library. Check back soon.
-    </p>
-    <a href={`/trainer/${slug}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red, textDecoration: "none" }}>
-      ← Back to Profile
-    </a>
-  </div>
-
-) : accessible.length === 0 ? (
-  /* ── Empty: all content locked above tier ── */
-  <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
-    <div style={{ marginBottom: 20, display: "flex", justifyContent: "center" }}>
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-        <rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/>
-        <path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    </div>
-    <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
-      Upgrade to<br />Unlock Content.
-    </h3>
-    <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, maxWidth: 320, margin: "0 auto 28px" }}>
-      All {videos.length} video{videos.length !== 1 ? "s" : ""} in this program require a higher tier.
-    </p>
-    <a href={`/trainer/${slug}`} style={{ display: "inline-block", padding: "12px 32px", background: TIER[nextTier]?.color ?? D.red, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
-      Upgrade Plan →
-    </a>
-  </div>
-
-) : filtered.length === 0 && filter !== "all" ? (
-  /* ── Empty: filter has no results ── */
-  <div style={{ textAlign: "center", padding: "80px 0" }}>
-    <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match this filter.</p>
-    <button onClick={() => setFilter("all")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
-      Show all →
-    </button>
-  </div>
-
-) : (
-  /* ── Grid ── */
-  <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-    {filtered.map(v => (
-      <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} />
-    ))}
-    {filter === "all" && locked.map(v => (
-      <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} />
-    ))}
-  </div>
-)}
-
-{/* Upgrade prompt */}
-{videos.length > 0 && filter === "all" && (
-  <UpgradePrompt
-    lockedCount={locked.length}
-    nextTier={nextTier}
-    trainerName={tf.name?.split(" ")[0] || "this trainer"}
-    slug={slug}
-  />
-)}
-
-       {/* ── PLAYER MODAL ── */}
-        {playingVid && <PlayerModal video={playingVid} onClose={handleClose} />}
-
-      </div>{/* closes grid container */}
-
-      </div>{/* closes outer minHeight wrapper */}
 
       <style>{CSS}</style>
     </>

@@ -159,6 +159,23 @@ function StudioCard({ onClose, trainerSlug }) {
 // ─── Discover card — athlete marketplace section ──────────────────────────────
 
 function DiscoverCard({ onClose }) {
+  return (
+    <div style={{
+      margin: "4px 8px",
+      borderRadius: 12,
+      background: "rgba(218,54,51,0.07)",
+      border: "1px solid rgba(218,54,51,0.18)",
+      overflow: "hidden",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 5px" }}>
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF7B72" }}>Discover</span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,123,114,0.5)", letterSpacing: "0.06em" }}>Marketplace</span>
+      </div>
+      <DropLink href="/trainers"                icon="⬡" onClick={onClose} noMargin>Marketplace</DropLink>
+      <DropLink href="/athlete/libraries"       icon="✦" onClick={onClose} noMargin>My Libraries</DropLink>
+      <div style={{ height: 6 }} />
+    </div>
+  );
 }
 
 // ─── Profile dropdown ─────────────────────────────────────────────────────────
@@ -240,8 +257,8 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
           <div style={{ padding: "6px 0" }}>
             <DropSection label="My Account" />
             <DropLink href="/dashboard"       icon="⬡" onClick={onClose}>Athlete Dashboard</DropLink>
-            <DropLink href="/athlete/today"   icon="◎" onClick={onClose}>Today</DropLink>
-            <DropLink href="/athlete/journal" icon="◈" onClick={onClose}>Journal</DropLink>
+            <DropLink href="/athlete/today"   icon="✦" onClick={onClose}>Today</DropLink>
+            <DropLink href="/athlete/journal" icon="◎" onClick={onClose}>Journal</DropLink>
             <DropLink href="/scans"           icon="◈" onClick={onClose}>My Scans</DropLink>
           </div>
 
@@ -426,6 +443,15 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
 
                 {/* Discover card — mobile */}
+                <div style={{ margin: "4px 0 8px", borderRadius: 12, background: "rgba(218,54,51,0.07)", border: "1px solid rgba(218,54,51,0.18)", overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 4px" }}>
+                    <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF7B72" }}>Discover</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,123,114,0.5)" }}>Marketplace</span>
+                  </div>
+                  <MLink href="/trainers"          icon="⬡">Marketplace</MLink>
+                  <MLink href="/athlete/libraries" icon="✦">My Libraries</MLink>
+                  <div style={{ height: 6 }} />
+                </div>
               </>
             )}
 

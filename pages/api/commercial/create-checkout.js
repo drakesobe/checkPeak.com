@@ -1,8 +1,4 @@
 // pages/api/commercial/create-checkout.js
-// Creates a Stripe Checkout session when a client clicks Subscribe on a trainer profile.
-// Uses dynamic pricing (no pre-created Stripe products needed).
-// Requires: npm install stripe, STRIPE_SECRET_KEY in Vercel env vars.
-
 import Stripe from "stripe";
 import { getTrainerBySlug } from "@/lib/commercial/airtable";
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
@@ -14,15 +10,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  // Must be logged in to subscribe
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ error: "You must be logged in to subscribe." });
 
   const { slug, tier } = req.body;
   if (!slug || !tier) return res.status(400).json({ error: "Missing slug or tier." });
-  if (!["Basic", "Premium", "Ultra"].includes(tier)) {
+  if (!["Basic", "Premium", "Ultra"].includes(tier))
     return res.status(400).json({ error: "Invalid tier." });
-  }
 
   const trainer = await getTrainerBySlug(slug);
   if (!trainer) return res.status(404).json({ error: "Trainer not found." });
@@ -47,10 +41,7 @@ export default async function handler(req, res) {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "subscription",
-
-      // Pre-fill client email in Stripe's form
       customer_email: clientEmail,
-
       line_items: [{
         price_data: {
           currency: "usd",
@@ -58,13 +49,11 @@ export default async function handler(req, res) {
             name:        `${tier} Plan — ${f.name}`,
             description: `Monthly ${tier} access to ${f.name}'s CheckPeak library`,
           },
-          unit_amount: Math.round(priceAmount * 100), // Stripe expects cents
+          unit_amount: Math.round(priceAmount * 100),
           recurring: { interval: "month" },
         },
         quantity: 1,
       }],
-
-      // Metadata flows through to the webhook so we can create the subscription
       metadata: {
         trainerId:   trainer.id,
         trainerSlug: slug,
@@ -73,8 +62,8 @@ export default async function handler(req, res) {
         clientEmail,
         clientName,
       },
-
-      success_url: `${siteUrl}/trainer/${slug}?checkout=success&tier=${encodeURIComponent(tier)}`,
+      // Redirect to welcome screen instead of profile page
+      success_url: `${siteUrl}/trainer/${slug}/welcome?tier=${encodeURIComponent(tier)}`,
       cancel_url:  `${siteUrl}/trainer/${slug}`,
     });
 

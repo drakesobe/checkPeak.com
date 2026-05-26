@@ -26,7 +26,8 @@ export default async function handler(req, res) {
     const existing = await getTrainerByUserId(userId);
     if (existing) return res.status(409).json({ error: "Profile already exists" });
 
-    const { name, specialty, bio, basicPrice, premiumPrice, ultraPrice } = req.body;
+    const { name, specialty, bio, basicPrice, premiumPrice, ultraPrice,
+        clientCount, orgType, goal, sport } = req.body;
     if (!name || !specialty) return res.status(400).json({ error: "Name and specialty required" });
 
     const slug = slugify(name) + "-" + Math.random().toString(36).slice(2, 6);
@@ -41,6 +42,10 @@ export default async function handler(req, res) {
       premiumPrice: Number(premiumPrice) || 0,
       ultraPrice:   Number(ultraPrice)   || 0,
       activeClientCount: 0,
+      clientCount:       clientCount ?? "",
+      orgType:           orgType     ?? "",
+      goal:              goal        ?? "",
+      sport:             sport       ?? "",
     });
 
     return res.status(201).json({ trainer: record });

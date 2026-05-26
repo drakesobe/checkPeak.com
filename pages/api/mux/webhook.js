@@ -1,4 +1,5 @@
 // pages/api/mux/webhook.js
+// @mux/mux-node v14 — Webhooks is now a named export, not a static on the class.
 
 import Mux from "@mux/mux-node";
 import { updateVideo, getVideoByUploadId } from "../../../lib/commercial/airtable";
@@ -12,16 +13,19 @@ export const config = {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  // Read raw body — required for Mux signature verification.
-  // bodyParser must be false or JSON.stringify(req.body) won't match the
-  // original signed string and every webhook call will fail with 401.
+  // Read raw body — required for Mux signature verification
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const rawBody = Buffer.concat(chunks).toString("utf8");
 
-  // Verify the request is actually from Mux.
+  // v14: instantiate the client and use instance webhooks
+  const muxClient = new Mux({
+    tokenId:     process.env.MUX_TOKEN_ID,
+    tokenSecret: process.env.MUX_TOKEN_SECRET,
+  });
+
   try {
-    Mux.Webhooks.verifySignature(
+    muxClient.webhooks.verifySignature(
       rawBody,
       req.headers,
       process.env.MUX_WEBHOOK_SECRET

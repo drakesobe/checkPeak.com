@@ -1890,7 +1890,7 @@ function PromoVideo() {
           <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
 
            <a
-            href="https://apps.apple.com/your-app-link"
+            href="https://apps.apple.com/us/app/checkpeak/id6769081617"
             onClick={() => track("promo_video_athlete_download")}
             style={{
               display: "inline-flex", alignItems: "center", gap: "0.65rem",

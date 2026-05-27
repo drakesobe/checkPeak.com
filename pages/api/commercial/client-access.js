@@ -1,14 +1,20 @@
 // pages/api/commercial/client-access.js
-// Called by the client library page.
-// Checks the user's subscription for this trainer and returns
-// the published videos + their tier access.
+// Returns the client's tier, published videos, and published workouts for a trainer.
+// Both videos and workouts are filtered to the client's access tier.
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 import {
   getTrainerBySlug,
   getSubscriptionByClientAndTrainer,
   getVideosByTrainer,
+  getWorkoutsByTrainer,
 } from "@/lib/commercial/airtable";
+
+const TIER_RANK = { Basic: 1, Premium: 2, Ultra: 3 };
+
+function canAccess(clientTier, contentTier) {
+  return (TIER_RANK[clientTier] ?? 0) >= (TIER_RANK[contentTier] ?? 1);
+}
 
 export default async function handler(req, res) {
   const { slug } = req.query;
@@ -27,8 +33,18 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "No active subscription" });
   }
 
-  const videos    = await getVideosByTrainer(trainer.id, { publishedOnly: true });
   const clientTier = sub.fields?.tier ?? "Basic";
 
-  return res.status(200).json({ tier: clientTier, videos });
+  // Fetch all published videos and workouts in parallel
+  const [allVideos, allWorkouts] = await Promise.all([
+    getVideosByTrainer(trainer.id, { publishedOnly: true }),
+    getWorkoutsByTrainer(trainer.id, { publishedOnly: true }),
+  ]);
+
+  // Return all — client-side and library page handle locked/accessible display
+  return res.status(200).json({
+    tier:     clientTier,
+    videos:   allVideos,
+    workouts: allWorkouts,
+  });
 }

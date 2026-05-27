@@ -1,6 +1,7 @@
 // pages/trainer/[slug]/library.jsx
-// Client video library — with completion tracking.
-// Checkmarks on completed videos. Progress bar in header.
+// Client video + workout library. Dark "film room" aesthetic.
+// Two tabs: Videos (with completion tracking) and Workouts.
+// Workouts: "View Workout →" opens viewer modal → "Add to Today →" → success state.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -34,7 +35,6 @@ const TIER_NEXT = { Basic: "Premium", Premium: "Ultra" };
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,900;1,700;1,900&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   @keyframes spin    { to { transform: rotate(360deg); } }
@@ -42,38 +42,24 @@ const CSS = `
   @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
   @keyframes checkPop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
-  @keyframes barFill { from { width: 0; } to { width: var(--target-pct); } }
 
-  .lib-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    cursor: pointer;
-  }
-  .lib-card:hover {
-    transform: translateY(-3px) scale(1.01);
-    box-shadow: 0 20px 52px rgba(0,0,0,0.6);
-    border-color: rgba(255,255,255,0.15) !important;
-  }
-  .lib-card .play-btn  { opacity: 0; transition: opacity 0.18s; }
+  .lib-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; cursor: pointer; }
+  .lib-card:hover { transform: translateY(-3px) scale(1.01); box-shadow: 0 20px 52px rgba(0,0,0,0.6); border-color: rgba(255,255,255,0.15) !important; }
+  .lib-card .play-btn { opacity: 0; transition: opacity 0.18s; }
   .lib-card:hover .play-btn { opacity: 1; }
+  .lib-card-locked { cursor: default; opacity: 0.55; }
+  .lib-card-locked:hover { transform: none !important; box-shadow: none !important; border-color: rgba(255,255,255,0.07) !important; }
 
-  .lib-card-locked {
-    cursor: default;
-    opacity: 0.55;
-  }
-  .lib-card-locked:hover {
-    transform: none !important;
-    box-shadow: none !important;
-    border-color: rgba(255,255,255,0.07) !important;
-  }
+  .workout-card { transition: border-color 0.16s; cursor: pointer; }
+  .workout-card:hover { border-color: rgba(255,255,255,0.14) !important; }
+  .workout-card-locked { cursor: default; opacity: 0.5; }
+  .workout-card-locked:hover { border-color: rgba(255,255,255,0.07) !important; }
 
   .filter-btn { transition: background 0.14s, border-color 0.14s, color 0.14s; cursor: pointer; }
-  .filter-btn:hover { border-color: rgba(255,255,255,0.22) !important; color: rgba(255,255,255,0.8) !important; }
-
+  .filter-btn:hover { border-color: rgba(255,255,255,0.22) !important; }
   .nav-link { transition: color 0.14s; }
   .nav-link:hover { color: rgba(255,255,255,0.9) !important; }
-
   .modal-anim { animation: scaleIn 0.2s ease both; }
-
   .check-badge { animation: checkPop 0.3s ease both; }
 
   @media (max-width: 768px) {
@@ -83,8 +69,9 @@ const CSS = `
 `;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-function canAccess(clientTier, videoTier) {
-  return (TIER[clientTier]?.rank ?? 0) >= (TIER[videoTier]?.rank ?? 1);
+
+function canAccess(clientTier, contentTier) {
+  return (TIER[clientTier]?.rank ?? 0) >= (TIER[contentTier]?.rank ?? 1);
 }
 
 function parseTags(raw) {
@@ -117,120 +104,58 @@ async function logCompletion(videoId) {
 }
 
 // ─── Video card ───────────────────────────────────────────────────────────────
+
 function VideoCard({ video, clientTier, onPlay, isCompleted }) {
-  const f         = video.fields ?? {};
+  const f          = video.fields ?? {};
   const accessible = canAccess(clientTier, f.tier);
   const thumb      = f.muxPlaybackId
     ? `https://image.mux.com/${f.muxPlaybackId}/thumbnail.jpg?width=560&height=315&fit_mode=smartcrop`
     : null;
-  const tags       = Object.values(parseTags(f.tags)).filter(Boolean).slice(0, 2);
+  const tags       = Object.values(parseTags(f.tags))
+    .flatMap(v => Array.isArray(v) ? v : [v])
+    .filter(Boolean)
+    .slice(0, 2);
   const tierCfg    = TIER[f.tier];
   const dur        = fmtDuration(f.duration);
 
   return (
     <div
       className={`lib-card${accessible ? "" : " lib-card-locked"}`}
-      style={{
-        background:    D.bgCard,
-        border:        `0.5px solid ${isCompleted ? "rgba(63,185,80,0.3)" : D.border}`,
-        borderRadius:  3,
-        overflow:      "hidden",
-        display:       "flex",
-        flexDirection: "column",
-        position:      "relative",
-      }}
+      style={{ background: D.bgCard, border: `0.5px solid ${isCompleted ? "rgba(63,185,80,0.3)" : D.border}`, borderRadius: 3, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}
       onClick={() => accessible && onPlay(video.id)}
     >
-      {/* Thumbnail */}
       <div style={{ position: "relative", paddingBottom: "56.25%", background: "#0A0C10", flexShrink: 0 }}>
         {thumb
           ? <img src={thumb} alt={f.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          : (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <polygon points="5,3 19,12 5,21" fill="rgba(255,255,255,0.08)" />
-              </svg>
-            </div>
-          )
+          : <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><polygon points="5,3 19,12 5,21" fill="rgba(255,255,255,0.08)" /></svg></div>
         }
-
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 55%)" }} />
-
-        {/* Hover play */}
         {accessible && (
           <div className="play-btn" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.18)" }}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <polygon points="5,3 19,12 5,21" fill="rgba(255,255,255,0.92)" />
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="5,3 19,12 5,21" fill="rgba(255,255,255,0.92)" /></svg>
             </div>
           </div>
         )}
-
-        {/* Lock badge */}
         {!accessible && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.32)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/>
-              <path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            {TIER_NEXT[clientTier] && (
-              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier]]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>
-                {TIER_NEXT[clientTier]} only
-              </span>
-            )}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            {TIER_NEXT[clientTier] && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier]]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>{TIER_NEXT[clientTier]} only</span>}
           </div>
         )}
-
-        {/* ✓ Completed badge */}
         {isCompleted && (
-          <div
-            className="check-badge"
-            style={{
-              position:   "absolute",
-              top:        10,
-              right:      10,
-              width:      26,
-              height:     26,
-              borderRadius: "50%",
-              background: D.green,
-              display:    "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow:  `0 0 0 3px rgba(63,185,80,0.2)`,
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
+          <div className="check-badge" style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: "50%", background: D.green, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 3px rgba(63,185,80,0.2)" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
         )}
-
-        {dur && (
-          <span style={{ position: "absolute", bottom: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: "rgba(0,0,0,0.65)", padding: "2px 7px", letterSpacing: "0.04em" }}>
-            {dur}
-          </span>
-        )}
-
-        {tierCfg && (
-          <span style={{ position: "absolute", top: 8, left: 8, fontSize: 8, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: tierCfg.color, background: "rgba(0,0,0,0.7)", padding: "3px 8px", backdropFilter: "blur(4px)" }}>
-            {f.tier}
-          </span>
-        )}
+        {dur && <span style={{ position: "absolute", bottom: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: "rgba(0,0,0,0.65)", padding: "2px 7px", letterSpacing: "0.04em" }}>{dur}</span>}
+        {tierCfg && <span style={{ position: "absolute", top: 8, left: 8, fontSize: 8, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: tierCfg.color, background: "rgba(0,0,0,0.7)", padding: "3px 8px", backdropFilter: "blur(4px)" }}>{f.tier}</span>}
       </div>
-
-      {/* Info */}
       <div style={{ padding: "12px 14px 14px", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: accessible ? D.text : D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
-          {f.title || "Untitled"}
-        </p>
+        <p style={{ fontSize: 13, fontWeight: 700, color: accessible ? D.text : D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>{f.title || "Untitled"}</p>
         {tags.length > 0 && (
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {tags.map(tag => (
-              <span key={tag} style={{ fontSize: 10, fontWeight: 600, color: D.faint, background: D.whisper, padding: "2px 8px", letterSpacing: "0.04em" }}>
-                {tag}
-              </span>
-            ))}
+            {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, color: D.faint, background: D.whisper, padding: "2px 8px", letterSpacing: "0.04em" }}>{tag}</span>)}
           </div>
         )}
       </div>
@@ -238,7 +163,72 @@ function VideoCard({ video, clientTier, onPlay, isCompleted }) {
   );
 }
 
-// ─── Player modal ─────────────────────────────────────────────────────────────
+// ─── Workout card ─────────────────────────────────────────────────────────────
+
+function WorkoutCard({ workout, clientTier, onOpen }) {
+  const f          = workout.fields ?? {};
+  const accessible = canAccess(clientTier, f.tier);
+  const tierCfg    = TIER[f.tier];
+
+  let exercises = [];
+  try { exercises = JSON.parse(f.exercises || "[]"); } catch {}
+  const exerciseCount = exercises.filter(ex => String(ex.ExerciseName || "").trim()).length;
+  const groups        = [...new Set(exercises.map(ex => ex.groupId).filter(Boolean))];
+  const hasGroups     = groups.length > 0;
+
+  return (
+    <div
+      className={`workout-card${accessible ? "" : " workout-card-locked"}`}
+      style={{ background: D.bgCard, border: `0.5px solid ${D.border}`, borderRadius: 3, overflow: "hidden", position: "relative" }}
+      onClick={() => accessible && onOpen(workout.id)}
+    >
+      {tierCfg && <div style={{ height: 2, background: tierCfg.color }} />}
+
+      <div style={{ padding: "16px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: accessible ? D.text : D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em", marginBottom: 4 }}>
+              {f.title || "Untitled"}
+            </p>
+            {f.description && (
+              <p style={{ fontSize: 11, color: D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.description}</p>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
+          {tierCfg && (
+            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "3px 8px" }}>
+              {f.tier}
+            </span>
+          )}
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "3px 8px" }}>
+            {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
+          </span>
+          {hasGroups && (
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9B7AFF", background: "rgba(124,58,237,0.12)", padding: "3px 8px" }}>
+              Supersets
+            </span>
+          )}
+        </div>
+
+        {accessible ? (
+          <div style={{ padding: "10px 14px", background: D.bgSection, border: `0.5px solid ${D.border}`, color: D.text, fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", textAlign: "center", cursor: "pointer" }}>
+            View Workout →
+          </div>
+        ) : (
+          <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: D.faint, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            {TIER_NEXT[clientTier] ?? "upgrade"} required
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Video player modal ───────────────────────────────────────────────────────
+
 function PlayerModal({ video, onClose, onCompleted }) {
   const f = video?.fields ?? {};
 
@@ -254,44 +244,251 @@ function PlayerModal({ video, onClose, onCompleted }) {
   }
 
   return (
-    <div
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px", animation: "fadeIn 0.18s ease" }}
-    >
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px", animation: "fadeIn 0.18s ease" }}>
       <div className="modal-anim" style={{ width: "100%", maxWidth: 960, overflow: "hidden", borderRadius: 3, border: `0.5px solid ${D.borderMid}`, boxShadow: "0 40px 100px rgba(0,0,0,0.8)" }}>
         {f.sourceType === "embed" ? (
           <div style={{ position: "relative", paddingBottom: "56.25%", background: "#000" }}>
-            <iframe
-              src={buildEmbedSrc(f.embedUrl)}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
-              allow="autoplay; fullscreen; picture-in-picture"
-              allowFullScreen
-            />
+            <iframe src={buildEmbedSrc(f.embedUrl)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
           </div>
         ) : (
-          <MuxPlayer
-            playbackId={f.muxPlaybackId}
-            metadata={{ video_title: f.title }}
-            onEnded={handleEnded}
-            autoPlay
-            style={{ width: "100%", aspectRatio: "16/9", display: "block" }}
-          />
+          <MuxPlayer playbackId={f.muxPlaybackId} metadata={{ video_title: f.title }} onEnded={handleEnded} autoPlay style={{ width: "100%", aspectRatio: "16/9", display: "block" }} />
         )}
         <div style={{ background: "#0A0C10", borderTop: `0.5px solid ${D.border}`, padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: D.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
-              {f.title}
-            </p>
-            {fmtDuration(f.duration) && (
-              <p style={{ fontSize: 11, color: D.faint, marginTop: 2 }}>{fmtDuration(f.duration)}</p>
-            )}
+          <p style={{ fontSize: 14, fontWeight: 700, color: D.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>{f.title}</p>
+          <button onClick={onClose} style={{ background: D.whisper, border: `0.5px solid ${D.border}`, color: D.dim, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, flexShrink: 0, fontSize: 16 }}>✕</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Workout viewer modal ─────────────────────────────────────────────────────
+// Shows the full workout with exercise list.
+// Footer: "Add to Today →" → calls API → success state with "Go to Today →" link.
+
+function WorkoutViewer({ workout, clientTier, onClose }) {
+  const f = workout?.fields ?? {};
+
+  const [addingToToday, setAddingToToday] = useState(false);
+  const [addedToToday,  setAddedToToday]  = useState(false);
+  const [addError,      setAddError]      = useState("");
+
+  let exercises = [];
+  try { exercises = JSON.parse(f.exercises || "[]"); } catch {}
+  const meaningful = exercises.filter(ex => String(ex.ExerciseName || "").trim());
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  // Build group colour map for supersets/circuits
+  const groupMap = {};
+  meaningful.forEach(ex => {
+    if (ex.groupId) {
+      if (!groupMap[ex.groupId]) groupMap[ex.groupId] = [];
+      groupMap[ex.groupId].push(ex);
+    }
+  });
+
+  const GROUP_COLORS = ["#7C3AED", "#0891B2", "#D97706", "#059669", "#DC2626"];
+  let groupIdx = 0;
+  const groupColors = {};
+  Object.keys(groupMap).forEach(gid => {
+    groupColors[gid] = GROUP_COLORS[groupIdx % GROUP_COLORS.length];
+    groupIdx++;
+  });
+
+  async function addToToday() {
+    setAddingToToday(true);
+    setAddError("");
+    try {
+      const res = await fetch("/api/commercial/add-workout-to-today", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workoutId: workout.id }),
+      });
+      if (res.ok) {
+        setAddedToToday(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAddError(data.error || "Something went wrong.");
+      }
+    } catch {
+      setAddError("Connection error. Try again.");
+    } finally {
+      setAddingToToday(false);
+    }
+  }
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px", animation: "fadeIn 0.18s ease", overflowY: "auto" }}>
+      <div className="modal-anim" style={{ width: "100%", maxWidth: 640, overflow: "hidden", borderRadius: 3, border: `0.5px solid ${D.borderMid}`, boxShadow: "0 40px 100px rgba(0,0,0,0.8)", background: D.bgSection, display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `0.5px solid ${D.border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 18, height: 2, background: D.red }} />
+                <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.22em", textTransform: "uppercase", color: D.red }}>Workout</span>
+                {TIER[f.tier] && (
+                  <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[f.tier].color, background: TIER[f.tier].bg, padding: "3px 8px" }}>
+                    {f.tier}
+                  </span>
+                )}
+              </div>
+              <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.4rem, 3vw, 2rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: f.description ? 8 : 0 }}>
+                {f.title}
+              </h2>
+              {f.description && <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.6 }}>{f.description}</p>}
+            </div>
+            <button onClick={onClose} style={{ background: D.whisper, border: `0.5px solid ${D.border}`, color: D.dim, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, flexShrink: 0, fontSize: 16 }}>✕</button>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: D.whisper, border: `0.5px solid ${D.border}`, color: D.dim, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, flexShrink: 0, fontSize: 16 }}
-          >
-            ✕
-          </button>
+
+          {/* Exercise count summary */}
+          {meaningful.length > 0 && (
+            <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: D.faint }}>{meaningful.length} exercise{meaningful.length !== 1 ? "s" : ""}</span>
+              {Object.keys(groupColors).length > 0 && (
+                <span style={{ fontSize: 11, color: "#9B7AFF" }}>· includes supersets</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Exercise list */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
+          {meaningful.length === 0 ? (
+            <p style={{ fontSize: 13, color: D.faint, textAlign: "center", padding: "32px 0" }}>No exercises in this workout yet.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {meaningful.map((ex, i) => {
+                const isGrouped = Boolean(ex.groupId);
+                const gColor    = isGrouped ? groupColors[ex.groupId] : null;
+                const isFirst   = isGrouped && meaningful[i - 1]?.groupId !== ex.groupId;
+                const isLast    = isGrouped && meaningful[i + 1]?.groupId !== ex.groupId;
+
+                return (
+                  <div key={i}>
+                    {/* Group header */}
+                    {isGrouped && isFirst && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, paddingLeft: 4 }}>
+                        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: gColor }}>
+                          {groupMap[ex.groupId].length >= 3 ? "Circuit" : "Superset"} · back to back · rest after
+                        </span>
+                      </div>
+                    )}
+
+                    <div style={{
+                      padding:      "12px 14px",
+                      background:   D.bgCard,
+                      border:       `0.5px solid ${isGrouped ? `${gColor}30` : D.border}`,
+                      borderLeft:   isGrouped ? `3px solid ${gColor}` : undefined,
+                      borderRadius: isGrouped && !isFirst && !isLast ? 0
+                                  : isGrouped && isFirst && !isLast  ? "3px 3px 0 0"
+                                  : isGrouped && !isFirst && isLast  ? "0 0 3px 3px"
+                                  : 3,
+                    }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: D.text, letterSpacing: "-0.01em", marginBottom: 6 }}>
+                        {ex.ExerciseName}
+                      </p>
+
+                      {/* Sets/reps/weight row */}
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: ex.Instructions ? 6 : 0 }}>
+                        {[
+                          ex.Sets   && `${ex.Sets} sets`,
+                          ex.Reps   && `${ex.Reps} reps`,
+                          ex.Weight && ex.Weight,
+                          ex.Rest   && `${ex.Rest} rest`,
+                        ].filter(Boolean).map((val, vi) => (
+                          <span key={vi} style={{ fontSize: 11, color: D.faint, fontWeight: 600 }}>{val}</span>
+                        ))}
+                      </div>
+
+                      {ex.Instructions && (
+                        <p style={{ fontSize: 11, color: D.faint, lineHeight: 1.55, fontStyle: "italic" }}>
+                          {ex.Instructions}
+                        </p>
+                      )}
+
+                      {ex.VideoURL && (
+                        <a href={ex.VideoURL} target="_blank" rel="noopener"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 6, fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: D.red, textDecoration: "none" }}
+                          onClick={e => e.stopPropagation()}>
+                          Watch demo →
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer — Add to Today flow */}
+        <div style={{ padding: "16px 24px", borderTop: `0.5px solid ${D.border}`, flexShrink: 0 }}>
+
+          {/* Error */}
+          {addError && (
+            <p style={{ fontSize: 12, color: D.red, fontWeight: 600, textAlign: "center", marginBottom: 10 }}>
+              {addError}
+            </p>
+          )}
+
+          {addedToToday ? (
+            /* Success state */
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "13px", background: "rgba(63,185,80,0.08)", border: `0.5px solid rgba(63,185,80,0.25)` }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={D.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.green }}>
+                  Added to Today!
+                </span>
+              </div>
+              <a
+                href="/athlete/today"
+                style={{ display: "block", padding: "13px", background: D.red, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center" }}
+              >
+                Go to Today →
+              </a>
+            </div>
+          ) : (
+            /* Add to Today button */
+            <button
+              onClick={addToToday}
+              disabled={addingToToday}
+              style={{
+                width:         "100%",
+                padding:       "13px",
+                background:    addingToToday ? "rgba(218,54,51,0.4)" : D.red,
+                border:        "none",
+                color:         "#fff",
+                fontSize:      11,
+                fontWeight:    800,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                cursor:        addingToToday ? "not-allowed" : "pointer",
+                fontFamily:    "inherit",
+                display:       "flex",
+                alignItems:    "center",
+                justifyContent:"center",
+                gap:           8,
+              }}
+            >
+              {addingToToday ? (
+                <>
+                  <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                  Adding…
+                </>
+              ) : "Add to Today →"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -299,6 +496,7 @@ function PlayerModal({ video, onClose, onCompleted }) {
 }
 
 // ─── Upgrade prompt ───────────────────────────────────────────────────────────
+
 function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
   if (!nextTier || lockedCount === 0) return null;
   const cfg = TIER[nextTier];
@@ -307,19 +505,14 @@ function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
       <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 16 }}>
           <div style={{ width: 20, height: "0.5px", background: cfg.color }} />
-          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: cfg.color }}>
-            Upgrade to {nextTier}
-          </span>
+          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: cfg.color }}>Upgrade to {nextTier}</span>
           <div style={{ width: 20, height: "0.5px", background: cfg.color }} />
         </div>
         <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
-          {lockedCount} More {lockedCount === 1 ? "Workout" : "Workouts"}<br />Waiting.
+          {lockedCount} More<br />{lockedCount === 1 ? "Item" : "Items"} Waiting.
         </h3>
-        <p style={{ fontSize: 13, color: D.dim, lineHeight: 1.65, marginBottom: 28 }}>
-          Unlock the full {trainerName} program with a {nextTier} subscription.
-        </p>
-        <a href={`/trainer/${slug}`}
-          style={{ display: "inline-block", padding: "13px 36px", background: cfg.color, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
+        <p style={{ fontSize: 13, color: D.dim, lineHeight: 1.65, marginBottom: 28 }}>Unlock the full {trainerName} program.</p>
+        <a href={`/trainer/${slug}`} style={{ display: "inline-block", padding: "13px 36px", background: cfg.color, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
           Upgrade Plan →
         </a>
       </div>
@@ -328,18 +521,27 @@ function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function ClientLibrary() {
-  const router       = useRouter();
-  const { slug }     = router.query;
+  const router           = useRouter();
+  const { slug }         = router.query;
   const { user, authReady } = useAuthContext();
 
-  const [trainer,      setTrainer]      = useState(null);
-  const [videos,       setVideos]       = useState([]);
-  const [clientTier,   setClientTier]   = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [playing,      setPlaying]      = useState(null);
-  const [filter,       setFilter]       = useState("all");
+  const [trainer,    setTrainer]    = useState(null);
+  const [videos,     setVideos]     = useState([]);
+  const [workouts,   setWorkouts]   = useState([]);
+  const [clientTier, setClientTier] = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [libraryTab, setLibraryTab] = useState("videos");
+
+  // Video state
+  const [playingId,    setPlayingId]    = useState(null);
+  const [videoFilter,  setVideoFilter]  = useState("all");
   const [completedIds, setCompletedIds] = useState(new Set());
+
+  // Workout state
+  const [openWorkoutId,  setOpenWorkoutId]  = useState(null);
+  const [workoutFilter,  setWorkoutFilter]  = useState("all");
 
   useEffect(() => {
     if (!authReady) return;
@@ -355,18 +557,15 @@ export default function ClientLibrary() {
       if (!accessData.tier)     { router.push(`/trainer/${slug}`); return; }
       setTrainer(trainerData.trainer);
       setVideos(accessData.videos ?? []);
+      setWorkouts(accessData.workouts ?? []);
       setClientTier(accessData.tier);
       setCompletedIds(new Set(completionData.completedVideoIds ?? []));
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [user, authReady, slug, router]);
 
-  const handlePlay  = useCallback(id => setPlaying(id), []);
-  const handleClose = useCallback(() => setPlaying(null), []);
-
-  // Mark video as completed locally for instant feedback
-  const handleCompleted = useCallback((videoId) => {
-    setCompletedIds(prev => new Set([...prev, videoId]));
+  const handleVideoCompleted = useCallback((id) => {
+    setCompletedIds(prev => new Set([...prev, id]));
   }, []);
 
   if (!authReady || loading) {
@@ -383,182 +582,157 @@ export default function ClientLibrary() {
 
   if (!trainer || !clientTier) return null;
 
-  const tf         = trainer.fields ?? {};
-  const allTags    = [...new Set(videos.flatMap(v => Object.values(parseTags(v.fields?.tags))).filter(Boolean))];
-  const accessible = videos.filter(v => canAccess(clientTier, v.fields?.tier));
-  const locked     = videos.filter(v => !canAccess(clientTier, v.fields?.tier));
-  const filtered   = accessible.filter(v => filter === "all" || Object.values(parseTags(v.fields?.tags)).includes(filter));
-  const playingVid = playing ? videos.find(v => v.id === playing) : null;
-  const tierCfg    = TIER[clientTier];
-  const nextTier   = TIER_NEXT[clientTier] ?? null;
-  const completedCount = accessible.filter(v => completedIds.has(v.id)).length;
-  const progressPct    = accessible.length > 0 ? Math.round((completedCount / accessible.length) * 100) : 0;
+  const tf       = trainer.fields ?? {};
+  const tierCfg  = TIER[clientTier];
+  const nextTier = TIER_NEXT[clientTier] ?? null;
+
+  // Video derived
+  const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier));
+  const lockedVideos        = videos.filter(v => !canAccess(clientTier, v.fields?.tier));
+  const filteredVideos      = accessibleVideos.filter(v => videoFilter === "all" || Object.values(parseTags(v.fields?.tags)).includes(videoFilter));
+  const allVideoTags        = [...new Set(videos.flatMap(v => Object.values(parseTags(v.fields?.tags))).filter(Boolean))];
+  const videoCompletedCount = accessibleVideos.filter(v => completedIds.has(v.id)).length;
+  const videoProgressPct    = accessibleVideos.length > 0 ? Math.round((videoCompletedCount / accessibleVideos.length) * 100) : 0;
+  const playingVid          = playingId ? videos.find(v => v.id === playingId) : null;
+
+  // Workout derived
+  const accessibleWorkouts = workouts.filter(w => canAccess(clientTier, w.fields?.tier));
+  const lockedWorkouts     = workouts.filter(w => !canAccess(clientTier, w.fields?.tier));
+  const filteredWorkouts   = accessibleWorkouts.filter(w => workoutFilter === "all" || w.fields?.tier === workoutFilter);
+  const openWorkout        = openWorkoutId ? workouts.find(w => w.id === openWorkoutId) : null;
 
   return (
     <>
-      <Head>
-        <title>{tf.name} · Program Library · CheckPeak</title>
-      </Head>
+      <Head><title>{tf.name} · Program Library · CheckPeak</title></Head>
 
       <div style={{ minHeight: "100vh", background: D.bg, color: D.text, fontFamily: "system-ui, -apple-system, sans-serif" }}>
 
-        {/* ── NAV ── */}
+        {/* NAV */}
         <nav style={{ position: "sticky", top: 0, zIndex: 100, background: "rgba(7,8,8,0.92)", backdropFilter: "blur(12px)", borderBottom: `0.5px solid ${D.border}`, padding: "0 40px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-            <a href="/" className="nav-link" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase", color: D.faint, textDecoration: "none" }}>
-              CheckPeak
-            </a>
+            <a href="/" className="nav-link" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase", color: D.faint, textDecoration: "none" }}>CheckPeak</a>
             <div style={{ width: "0.5px", height: 14, background: D.border, flexShrink: 0 }} />
-            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 13, fontWeight: 600, color: D.dim, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {tf.name}
-            </a>
+            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 13, fontWeight: 600, color: D.dim, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tf.name}</a>
           </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            {tierCfg && (
-              <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "5px 12px", border: `0.5px solid ${tierCfg.color}22` }}>
-                {clientTier}
-              </span>
-            )}
-            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}>
-              ← Profile
-            </a>
+            {tierCfg && <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "5px 12px", border: `0.5px solid ${tierCfg.color}22` }}>{clientTier}</span>}
+            <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}>← Profile</a>
           </div>
         </nav>
 
-        {/* ── HEADER ── */}
-        <div style={{ background: D.bgSection, borderBottom: `0.5px solid ${D.border}`, padding: "36px 40px 28px", animation: "slideUp 0.4s ease both" }}>
+        {/* HEADER */}
+        <div style={{ background: D.bgSection, borderBottom: `0.5px solid ${D.border}`, padding: "32px 40px 24px", animation: "slideUp 0.4s ease both" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <div style={{ width: 22, height: 2, background: D.red }} />
-              <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.22em", textTransform: "uppercase", color: D.red }}>
-                The Program
-              </span>
+              <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.22em", textTransform: "uppercase", color: D.red }}>The Program</span>
             </div>
 
-            <div className="lib-header-row" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
+            <div className="lib-header-row" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
               <div>
-                <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 8 }}>
-                  {tf.name}
-                </h1>
+                <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 6 }}>{tf.name}</h1>
                 <p style={{ fontSize: 12, color: D.faint }}>
-                  {accessible.length} video{accessible.length !== 1 ? "s" : ""} on your {clientTier} plan
-                  {locked.length > 0 && (
-                    <span style={{ color: TIER[nextTier]?.color ?? D.faint }}>
-                      {" "}· {locked.length} more with {nextTier ?? "an upgrade"}
-                    </span>
-                  )}
+                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier} plan
                 </p>
               </div>
-
-              {/* Completion stat */}
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: completedCount === accessible.length && accessible.length > 0 ? D.green : tierCfg?.color }}>
-                  {completedCount}/{accessible.length}
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: videoCompletedCount === accessibleVideos.length && accessibleVideos.length > 0 ? D.green : tierCfg?.color }}>
+                  {videoCompletedCount}/{accessibleVideos.length}
                 </div>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: D.faint }}>
-                  Completed
-                </div>
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: D.faint }}>Videos done</div>
               </div>
             </div>
 
             {/* Progress bar */}
-            {accessible.length > 0 && (
-              <div style={{ position: "relative", width: "100%", height: 2, background: "rgba(255,255,255,0.06)", borderRadius: 1, overflow: "hidden" }}>
-                <div
-                  style={{
-                    position:   "absolute",
-                    top:        0,
-                    left:       0,
-                    height:     "100%",
-                    width:      `${progressPct}%`,
-                    background: completedCount === accessible.length ? D.green : (tierCfg?.color ?? D.red),
-                    borderRadius: 1,
-                    transition: "width 1s ease",
-                  }}
-                />
+            {accessibleVideos.length > 0 && (
+              <div style={{ position: "relative", width: "100%", height: 2, background: "rgba(255,255,255,0.06)", borderRadius: 1, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${videoProgressPct}%`, background: videoCompletedCount === accessibleVideos.length ? D.green : (tierCfg?.color ?? D.red), borderRadius: 1, transition: "width 1s ease" }} />
               </div>
             )}
+
+            {/* Tab toggle */}
+            <div style={{ display: "flex", gap: 2 }}>
+              {[
+                { key: "videos",   label: `Videos (${accessibleVideos.length})`    },
+                { key: "workouts", label: `Workouts (${accessibleWorkouts.length})` },
+              ].map(({ key, label }) => (
+                <button key={key} className="filter-btn" onClick={() => setLibraryTab(key)}
+                  style={{ padding: "8px 18px", background: libraryTab === key ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${libraryTab === key ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: libraryTab === key ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: libraryTab === key ? 800 : 600, letterSpacing: "0.06em", fontFamily: "inherit", borderRadius: 2 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* ── FILTER ROW ── */}
-        {allTags.length > 0 && (
-          <div style={{ borderBottom: `0.5px solid ${D.border}`, padding: "0 40px", overflowX: "auto" }}>
-            <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", gap: 2, padding: "10px 0" }}>
-              {["all", ...allTags].map(tag => {
-                const isActive = filter === tag;
-                return (
-                  <button key={tag} className="filter-btn" onClick={() => setFilter(tag)}
-                    style={{
-                      padding:       "7px 16px",
-                      background:    isActive ? tierCfg?.bg ?? D.whisper : "transparent",
-                      border:        `0.5px solid ${isActive ? (tierCfg?.color ?? D.red) + "55" : D.border}`,
-                      color:         isActive ? tierCfg?.color ?? D.text : D.faint,
-                      fontSize:      11,
-                      fontWeight:    isActive ? 800 : 600,
-                      letterSpacing: "0.06em",
-                      cursor:        "pointer",
-                      whiteSpace:    "nowrap",
-                      fontFamily:    "inherit",
-                      borderRadius:  2,
-                    }}>
-                    {tag === "all" ? "All" : tag}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {/* CONTENT */}
+        <div style={{ padding: "32px 40px 64px", maxWidth: 1100, margin: "0 auto" }}>
 
-        {/* ── VIDEO GRID ── */}
-        <div style={{ padding: "36px 40px 64px", maxWidth: 1100, margin: "0 auto" }}>
+          {/* ── VIDEOS ── */}
+          {libraryTab === "videos" && (
+            <>
+              {allVideoTags.length > 0 && (
+                <div style={{ borderBottom: `0.5px solid ${D.border}`, marginBottom: 24, overflowX: "auto" }}>
+                  <div style={{ display: "flex", gap: 2, paddingBottom: 10 }}>
+                    {["all", ...allVideoTags].map(tag => (
+                      <button key={tag} className="filter-btn" onClick={() => setVideoFilter(tag)}
+                        style={{ padding: "7px 16px", background: videoFilter === tag ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${videoFilter === tag ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: videoFilter === tag ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: videoFilter === tag ? 800 : 600, letterSpacing: "0.06em", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", borderRadius: 2 }}>
+                        {tag === "all" ? "All" : tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          {videos.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
-              <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
-                The Program<br />Is Loading Up.
-              </h3>
-              <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, marginBottom: 28, maxWidth: 320, margin: "0 auto 28px" }}>
-                {tf.name?.split(" ")[0] || "Your coach"} is building out the library. Check back soon.
-              </p>
-              <a href={`/trainer/${slug}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red, textDecoration: "none" }}>
-                ← Back to Profile
-              </a>
-            </div>
-          ) : accessible.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "100px 0", animation: "slideUp 0.4s ease both" }}>
-              <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
-                Upgrade to<br />Unlock Content.
-              </h3>
-              <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.65, maxWidth: 320, margin: "0 auto 28px" }}>
-                All {videos.length} video{videos.length !== 1 ? "s" : ""} require a higher tier.
-              </p>
-              <a href={`/trainer/${slug}`} style={{ display: "inline-block", padding: "12px 32px", background: TIER[nextTier]?.color ?? D.red, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
-                Upgrade Plan →
-              </a>
-            </div>
-          ) : filtered.length === 0 && filter !== "all" ? (
-            <div style={{ textAlign: "center", padding: "80px 0" }}>
-              <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match this filter.</p>
-              <button onClick={() => setFilter("all")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
-                Show all →
-              </button>
-            </div>
-          ) : (
-            <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-              {filtered.map(v => (
-                <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} isCompleted={completedIds.has(v.id)} />
-              ))}
-              {filter === "all" && locked.map(v => (
-                <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={handlePlay} isCompleted={false} />
-              ))}
-            </div>
+              {videos.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "100px 0" }}>
+                  <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>The Program<br />Is Loading Up.</h3>
+                  <p style={{ fontSize: 13, color: D.faint }}>Check back soon.</p>
+                </div>
+              ) : filteredVideos.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "60px 0" }}>
+                  <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match this filter.</p>
+                  <button onClick={() => setVideoFilter("all")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Show all →</button>
+                </div>
+              ) : (
+                <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
+                  {filteredVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={setPlayingId} isCompleted={completedIds.has(v.id)} />)}
+                  {videoFilter === "all" && lockedVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={setPlayingId} isCompleted={false} />)}
+                </div>
+              )}
+            </>
           )}
 
-          {videos.length > 0 && filter === "all" && (
+          {/* ── WORKOUTS ── */}
+          {libraryTab === "workouts" && (
+            <>
+              <div style={{ display: "flex", gap: 2, marginBottom: 20 }}>
+                {["all", "Basic", "Premium", "Ultra"].map(f => (
+                  <button key={f} className="filter-btn" onClick={() => setWorkoutFilter(f)}
+                    style={{ padding: "7px 16px", background: workoutFilter === f ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${workoutFilter === f ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: workoutFilter === f ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: workoutFilter === f ? 800 : 600, letterSpacing: "0.06em", cursor: "pointer", fontFamily: "inherit", borderRadius: 2 }}>
+                    {f === "all" ? "All" : f}
+                  </button>
+                ))}
+              </div>
+
+              {workouts.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "80px 0" }}>
+                  <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.6rem, 4vw, 2.5rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>No Workouts Yet.</h3>
+                  <p style={{ fontSize: 13, color: D.faint }}>Your coach hasn't published any workouts yet. Check back soon.</p>
+                </div>
+              ) : (
+                <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
+                  {filteredWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} onOpen={setOpenWorkoutId} />)}
+                  {workoutFilter === "all" && lockedWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} onOpen={setOpenWorkoutId} />)}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Upgrade prompt */}
+          {(lockedVideos.length > 0 || lockedWorkouts.length > 0) && (
             <UpgradePrompt
-              lockedCount={locked.length}
+              lockedCount={lockedVideos.length + lockedWorkouts.length}
               nextTier={nextTier}
               trainerName={tf.name?.split(" ")[0] || "this trainer"}
               slug={slug}
@@ -566,11 +740,19 @@ export default function ClientLibrary() {
           )}
         </div>
 
+        {/* Modals */}
         {playingVid && (
           <PlayerModal
             video={playingVid}
-            onClose={handleClose}
-            onCompleted={handleCompleted}
+            onClose={() => setPlayingId(null)}
+            onCompleted={handleVideoCompleted}
+          />
+        )}
+        {openWorkout && (
+          <WorkoutViewer
+            workout={openWorkout}
+            clientTier={clientTier}
+            onClose={() => setOpenWorkoutId(null)}
           />
         )}
       </div>

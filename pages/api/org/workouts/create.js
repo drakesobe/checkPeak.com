@@ -1,45 +1,26 @@
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
 
-function toStr(v) {
-  if (v === null || typeof v === "undefined") return "";
-  return String(v);
-}
-function toTrimmed(v) {
-  return toStr(v).trim();
-}
+function toStr(v) { if (v === null || typeof v === "undefined") return ""; return String(v); }
+function toTrimmed(v) { return toStr(v).trim(); }
 function toNumOrNull(v) {
   if (v === null || typeof v === "undefined" || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  const n = Number(v); return Number.isFinite(n) ? n : null;
 }
 function chunk(arr, size = 10) {
   const out = [];
   for (let i = 0; i < (arr || []).length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
-function escapeAirtableString(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-function looksLikeAirtableRecordId(v) {
-  const s = String(v || "").trim();
-  return s.startsWith("rec") && s.length >= 10;
-}
-function isAthleteToken(v) {
-  return /^ATH-/i.test(String(v || "").trim());
-}
-
+function escapeAirtableString(str = "") { return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
+function looksLikeAirtableRecordId(v) { const s = String(v || "").trim(); return s.startsWith("rec") && s.length >= 10; }
+function isAthleteToken(v) { return /^ATH-/i.test(String(v || "").trim()); }
 function assertNoUndefinedFieldKeys(fieldObj) {
   for (const k of Object.keys(fieldObj || {})) {
-    if (!k || k === "undefined") {
-      throw new Error(
-        `Airtable field mapping error: attempted to write to an undefined field key. Check airtableOrgWorkoutConfig.js mappings (F.*).`
-      );
-    }
+    if (!k || k === "undefined") throw new Error(`Airtable field mapping error: attempted to write to an undefined field key.`);
   }
 }
 
-// ── Field mappings ─────────────────────────────────────────────────────────────
 const DW = {
   ORG:          F?.DW_ORG          || "Organization",
   ATHLETE:      F?.DW_ATHLETE      || "Athlete",
@@ -50,7 +31,7 @@ const DW = {
   CREATEDBY:    F?.DW_CREATEDBY    || "CreatedBy",
   ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
   WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
-  SCHEDTIME:    F?.DW_SCHEDTIME     || "ScheduleTime",
+  SCHEDTIME:    F?.DW_SCHEDTIME    || "ScheduleTime",   // keep your existing field name
 };
 
 const WI = {
@@ -87,6 +68,7 @@ function normalizeItem(it = {}, idx = 0) {
   return out;
 }
 
+// ── resolveAthletes: now also fetches sport field ─────────────────────────────
 async function resolveAthletes(b, incoming = []) {
   const raw       = (incoming || []).map(x => String(x || "").trim()).filter(Boolean);
   const recordIds = raw.filter(looksLikeAirtableRecordId);
@@ -101,10 +83,15 @@ async function resolveAthletes(b, incoming = []) {
       const orParts = tkChunk.map(t => `{${tokenField}}='${escapeAirtableString(t)}'`).join(",");
       const rows = await Athletes.select({
         filterByFormula: `OR(${orParts})`,
+        fields: [tokenField, "sport"],   // ← added sport
         maxRecords: 100,
       }).firstPage();
       for (const r of rows || []) {
-        found.push({ athleteRecordId: r.id, athleteToken: String(r.fields?.[tokenField] || "").trim() });
+        found.push({
+          athleteRecordId: r.id,
+          athleteToken:    String(r.fields?.[tokenField] || "").trim(),
+          sport:           String(r.fields?.sport        || "").trim().toLowerCase(),
+        });
       }
     }
   }
@@ -114,10 +101,15 @@ async function resolveAthletes(b, incoming = []) {
       const orParts = ids.map(id => `RECORD_ID()='${escapeAirtableString(id)}'`).join(",");
       const rows = await Athletes.select({
         filterByFormula: `OR(${orParts})`,
+        fields: [tokenField, "sport"],   // ← added sport
         maxRecords: 100,
       }).firstPage();
       for (const r of rows || []) {
-        found.push({ athleteRecordId: r.id, athleteToken: String(r.fields?.[tokenField] || "").trim() });
+        found.push({
+          athleteRecordId: r.id,
+          athleteToken:    String(r.fields?.[tokenField] || "").trim(),
+          sport:           String(r.fields?.sport        || "").trim().toLowerCase(),
+        });
       }
     }
   }
@@ -133,7 +125,6 @@ async function resolveAthletes(b, incoming = []) {
 
 async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, items }) {
   if (!Array.isArray(items) || !items.length) return [];
-
   const itemCreates = items.map((it, idx) => {
     const fields = {
       [WI.ORG]:      [orgId],
@@ -147,13 +138,12 @@ async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, item
       ...(toTrimmed(it.instructions) ? { [WI.INSTR]:    toTrimmed(it.instructions) } : {}),
       ...(toTrimmed(it.videoUrl)     ? { [WI.VIDEO]:    toTrimmed(it.videoUrl)     } : {}),
       [WI.EVIDENCE]: it.evidenceRequired || "none",
-      ...(WI.ATHTOKEN                ? { [WI.ATHTOKEN]: String(athleteToken)       } : {}),
-      ...(it.groupId && WI.GROUPID   ? { [WI.GROUPID]:  String(it.groupId)        } : {}),
+      ...(WI.ATHTOKEN              ? { [WI.ATHTOKEN]: String(athleteToken)   } : {}),
+      ...(it.groupId && WI.GROUPID ? { [WI.GROUPID]:  String(it.groupId)    } : {}),
     };
     assertNoUndefinedFieldKeys(fields);
     return { fields };
   });
-
   const createdAll = [];
   for (const batch of chunk(itemCreates, 10)) {
     const created = await b(AT.tables.workoutItems).create(batch);
@@ -162,7 +152,6 @@ async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, item
   return createdAll.map(r => r.id);
 }
 
-// ── Handler ────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -175,21 +164,13 @@ export default async function handler(req, res) {
   try {
     const { athleteId, athleteIds, date, dates, title, sport, status, scheduledTime, items = [] } = req.body || {};
 
-    // Support multi-date: dates[] takes priority over single date
     const allDates = Array.isArray(dates) && dates.length
       ? dates.map(d => String(d).slice(0, 10)).filter(Boolean)
-      : date
-        ? [String(date).slice(0, 10)]
-        : [];
+      : date ? [String(date).slice(0, 10)] : [];
 
     if (!allDates.length) return res.status(400).json({ error: "date or dates[] is required." });
 
-    const incomingAthletes = Array.isArray(athleteIds)
-      ? athleteIds.filter(Boolean)
-      : athleteId
-        ? [athleteId]
-        : [];
-
+    const incomingAthletes = Array.isArray(athleteIds) ? athleteIds.filter(Boolean) : athleteId ? [athleteId] : [];
     if (!incomingAthletes.length) return res.status(400).json({ error: "athleteId or athleteIds[] is required." });
     if (items && !Array.isArray(items)) return res.status(400).json({ error: "items must be an array if provided." });
 
@@ -213,7 +194,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // ── One DailyWorkout per athlete per date ─────────────────────────────────
+    // ── Derive sport from athletes when not explicitly set ────────────────────
+    // If all selected athletes share the same sport, use it.
+    // This ensures Sport is always written to the DailyWorkout record
+    // so the calendar sport filter works correctly.
+    const resolvedSport = (() => {
+      if (sport) return String(sport).toLowerCase().trim();
+      const sports = usable.map(a => a.sport).filter(Boolean);
+      const unique  = [...new Set(sports)];
+      return unique.length === 1 ? unique[0] : "";
+    })();
+
     const createdDailyWorkouts = [];
 
     for (const targetDate of allDates) {
@@ -224,10 +215,10 @@ export default async function handler(req, res) {
           [DW.DATE]:      targetDate,
           [DW.TITLE]:     String(title || "Daily Workout"),
           [DW.STATUS]:    String(status || "assigned"),
-          ...(sport ? { [DW.SPORT]: String(sport) } : {}),
-          ...(scheduledTime ? { [DW.SCHEDTIME]: String(scheduledTime) } : {}),
           [DW.CREATEDBY]: [memberId],
           [DW.ATHTOKEN]:  String(a.athleteToken),
+          ...(a.sport ? { [DW.SPORT]: a.sport } : {}),  // per-athlete sport
+          ...(scheduledTime ? { [DW.SCHEDTIME]: String(scheduledTime)    } : {}),
         };
         assertNoUndefinedFieldKeys(dailyWorkoutFields);
 
@@ -240,7 +231,6 @@ export default async function handler(req, res) {
           workoutItemIds = await createWorkoutItems(b, {
             orgId, dailyWorkoutId, athleteToken: a.athleteToken, items: meaningful,
           });
-
           if (workoutItemIds.length) {
             const patch = { [DW.WORKOUTITEMS]: workoutItemIds };
             assertNoUndefinedFieldKeys(patch);
@@ -250,9 +240,10 @@ export default async function handler(req, res) {
 
         createdDailyWorkouts.push({
           dailyWorkoutId,
-          date: targetDate,
+          date:            targetDate,
           athleteRecordId: a.athleteRecordId,
           athleteToken:    a.athleteToken,
+          sport:           a.sport || resolvedSport,
           workoutItemIds,
           createdItemCount: workoutItemIds.length,
         });
@@ -269,9 +260,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("[org/workouts/create] error:", err);
-    return res.status(500).json({
-      error:   "Failed to create workout",
-      details: err?.message || String(err),
-    });
+    return res.status(500).json({ error: "Failed to create workout", details: err?.message || String(err) });
   }
 }

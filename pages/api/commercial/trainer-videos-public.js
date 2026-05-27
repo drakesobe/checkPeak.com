@@ -1,5 +1,8 @@
 // pages/api/commercial/trainer-videos-public.js
-import { getTrainerBySlug, getVideosByTrainer } from "@/lib/commercial/airtable";
+// Public — no auth needed.
+// Returns Basic-tier video preview (max 4) + total video and workout counts.
+
+import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/airtable";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -10,9 +13,13 @@ export default async function handler(req, res) {
   const record = await getTrainerBySlug(slug);
   if (!record) return res.status(404).json({ error: "Trainer not found" });
 
-  const allVideos = await getVideosByTrainer(record.id, { publishedOnly: true });
+  // Fetch videos and workouts in parallel
+  const [allVideos, allWorkouts] = await Promise.all([
+    getVideosByTrainer(record.id, { publishedOnly: true }),
+    getWorkoutsByTrainer(record.id, { publishedOnly: true }).catch(() => []),
+  ]);
 
-  // Normalize records to plain objects
+  // Normalize video records to plain objects
   const normalized = allVideos.map(v => ({
     id:     v.id,
     fields: v.fields ?? {},
@@ -24,7 +31,9 @@ export default async function handler(req, res) {
     .slice(0, 4);
 
   return res.status(200).json({
-    videos: preview,
-    total:  normalized.length,
+    videos:        preview,
+    total:         normalized.length, // back-compat
+    totalVideos:   normalized.length,
+    totalWorkouts: allWorkouts.length,
   });
 }

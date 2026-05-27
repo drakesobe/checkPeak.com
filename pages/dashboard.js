@@ -54,9 +54,6 @@ const RESPONSIVE_CSS = `
   .cp-sidebar-wrap {
     display: block;
   }
-  .cp-mobile-bar {
-    display: none;
-  }
   .cp-greeting-h1 {
     font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-weight: 900;
@@ -97,9 +94,6 @@ const RESPONSIVE_CSS = `
     }
     .cp-sidebar-wrap {
       display: block;
-    }
-    .cp-mobile-bar {
-      display: flex;
     }
     .cp-chat-panel {
       width: 100%;
@@ -521,21 +515,6 @@ export default function DashboardPage() {
         <Grain />
 
         <div aria-hidden="true" style={{ height: "1px", background: `linear-gradient(90deg, transparent, ${CP.accent} 30%, ${CP.accent} 70%, transparent)`, opacity: 0.25 }} />
-
-        {/* Mobile top bar */}
-        <div className="cp-mobile-bar" style={{
-          alignItems: "center", justifyContent: "space-between",
-          padding: "0 16px", height: "52px",
-          borderBottom: `0.5px solid ${CP.border}`,
-          position: "sticky", top: 0, background: CP.black, zIndex: 20,
-        }}>
-          <p style={{ fontFamily: CP.fontBC, fontWeight: 900, fontSize: "14px", letterSpacing: "0.16em", textTransform: "uppercase", color: CP.white }}>
-            Check<span style={{ color: CP.accent }}>Peak</span>
-          </p>
-          <button onClick={() => {}} style={{ background: "none", border: "none", cursor: "pointer", padding: "8px", display: "flex", flexDirection: "column", gap: "5px" }}>
-            {[0,1,2].map(i => <span key={i} style={{ display: "block", width: "20px", height: "1.5px", background: CP.ghost }} />)}
-          </button>
-        </div>
 
         <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "24px 20px 56px", position: "relative", zIndex: 2 }}>
           <div className="cp-layout">

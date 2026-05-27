@@ -354,7 +354,13 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
       transition={{ duration: 0.2, ease: "easeInOut" }}
       style={{ background: "#111827", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
     >
-      <div style={{ padding: "12px", maxHeight: "calc(100vh - 64px)", overflowY: "auto" }}>
+      <div style={{
+        padding: "12px",
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
+        maxHeight: "calc(100dvh - 64px)",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+      }}>
 
         {/* Public nav */}
         <div style={{ marginBottom: 8 }}>

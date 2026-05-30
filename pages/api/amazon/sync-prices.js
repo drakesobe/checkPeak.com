@@ -67,15 +67,14 @@ async function patchRecord(recordId, fields) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST" && req.method !== "GET") return res.status(405).end();
 
-  const secret = req.headers["x-sync-secret"];
-  if (process.env.SYNC_SECRET && secret !== process.env.SYNC_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  const validCron   = req.headers["authorization"] === `Bearer ${process.env.CRON_SECRET}`;
+  const validManual = req.headers["x-sync-secret"] === process.env.SYNC_SECRET;
+  if (!validCron && !validManual) return res.status(401).json({ error: "Unauthorized" });
 
   if (!AT_KEY || !AT_BASE || !AT_TABLE) {
-    return res.status(503).json({ error: "Missing Airtable config. Check AFFILIATE_API_KEY, AFFILIATE_BASE_ID, AFFILIATE_TABLE_NAME." });
+    return res.status(503).json({ error: "Missing Airtable config." });
   }
 
   let records;

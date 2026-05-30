@@ -34,6 +34,7 @@ function extractAsin(url = "") {
   const patterns = [
     /\/dp\/([A-Z0-9]{10})/i,
     /\/gp\/product\/([A-Z0-9]{10})/i,
+    /\/gp\/aw\/d\/([A-Z0-9]{10})/i,
     /\/product\/([A-Z0-9]{10})/i,
     /[?&]ASIN=([A-Z0-9]{10})/i,
   ];

@@ -120,6 +120,7 @@ export default async function handler(req, res) {
         if (item.reviewCount     != null) fields["Reviews"]       = item.reviewCount;
         if (item.imageUrl                ) fields["Image URL"]    = item.imageUrl;
         if (item.boughtLastMonth != null) fields["Bought"]        = item.boughtLastMonth;
+        if (item.brand                   ) fields["Brand"]        = item.brand;
 
         try {
           await patchRecord(recordId, fields);

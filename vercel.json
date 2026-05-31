@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/sync-prices",
+      "path": "/api/amazon/sync-prices",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/amazon/sync-variations",
+      "schedule": "0 7 * * 1"
     }
   ]
 }

@@ -1,5 +1,6 @@
 // components/commercial/VideoLibrary.jsx
 // Videos + Workouts tabs. Trainer-facing library manager.
+// Cards now surface an "à la carte" price badge when an item has a one-time price.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -100,10 +101,11 @@ function VideoCard({ video, onTogglePublish, onDelete }) {
   const f       = video.fields ?? {};
   const status  = f.status ?? "pending";
   const isReady = status === "ready";
-  const thumb   = f.muxPlaybackId ? muxThumb(f.muxPlaybackId) : null;
+  const thumb = videoThumb(f, 480, 270);
   const tier    = f.tier ?? "Basic";
   const ts      = TIER_STYLE[tier] ?? TIER_STYLE.Basic;
   const ss      = STATUS_STYLE[status] ?? STATUS_STYLE.pending;
+  const price   = Number(f.price) > 0 ? Number(f.price) : null;
   const [publishing, setPublishing] = useState(false);
 
   async function toggle() {
@@ -140,6 +142,11 @@ function VideoCard({ video, onTogglePublish, onDelete }) {
         <div className="flex flex-wrap gap-1 mb-3">
           <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: ts.bg, border: `1px solid ${ts.border}`, color: ts.color }}>{tier}</span>
           <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: ss.bg, color: ss.color }}>{ss.label}</span>
+          {price != null && (
+            <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}>
+              ${price} · à la carte
+            </span>
+          )}
         </div>
         <div className="flex items-center justify-between">
           <button type="button" onClick={isReady && !publishing ? toggle : undefined} disabled={!isReady || publishing} className="flex items-center gap-2 disabled:opacity-40">
@@ -161,12 +168,27 @@ function VideoCard({ video, onTogglePublish, onDelete }) {
   );
 }
 
+function ytId(url = "") {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+// Best available thumbnail: stored → Mux → YouTube-derived → none.
+function videoThumb(f = {}, w = 480, h = 270) {
+  if (f.thumbnailUrl) return f.thumbnailUrl;                 // captured at save time (Vimeo, etc.)
+  if (f.muxPlaybackId) return `https://image.mux.com/${f.muxPlaybackId}/thumbnail.jpg?width=${w}&height=${h}&fit_mode=smartcrop`;
+  const yt = ytId(f.embedUrl);
+  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  return null;                                              // Vimeo w/o stored thumb, or unknown source
+}
+
 // ─── Workout card ─────────────────────────────────────────────────────────────
 
 function WorkoutCard({ workout, onTogglePublish, onDelete, onEdit }) {
   const f         = workout.fields ?? {};
   const tier      = f.tier ?? "Basic";
   const ts        = TIER_STYLE[tier] ?? TIER_STYLE.Basic;
+  const price     = Number(f.price) > 0 ? Number(f.price) : null;
   const [publishing, setPublishing] = useState(false);
 
   let exercises = [];
@@ -206,6 +228,11 @@ function WorkoutCard({ workout, onTogglePublish, onDelete, onEdit }) {
           {hasGroups && (
             <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-semibold" style={{ backgroundColor: "rgba(124,58,237,0.08)", color: "#7C3AED", border: "1px solid rgba(124,58,237,0.2)" }}>
               Supersets
+            </span>
+          )}
+          {price != null && (
+            <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}>
+              ${price} · à la carte
             </span>
           )}
         </div>
@@ -354,14 +381,16 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
 
   // ── Filtered lists ────────────────────────────────────────────────────────
   const filteredVideos = videos.filter(v => {
-    if (videoFilter === "all")  return true;
-    if (videoFilter === "live") return v.fields?.published;
+    if (videoFilter === "all")     return true;
+    if (videoFilter === "live")    return v.fields?.published;
+    if (videoFilter === "forsale") return Number(v.fields?.price) > 0;
     return v.fields?.tier === videoFilter;
   });
 
   const filteredWorkouts = workouts.filter(w => {
-    if (workoutFilter === "all")  return true;
-    if (workoutFilter === "live") return w.fields?.published;
+    if (workoutFilter === "all")     return true;
+    if (workoutFilter === "live")    return w.fields?.published;
+    if (workoutFilter === "forsale") return Number(w.fields?.price) > 0;
     return w.fields?.tier === workoutFilter;
   });
 
@@ -375,6 +404,10 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
     total: workouts.length,
     live:  workouts.filter(w => w.fields?.published).length,
   };
+
+  // Filter chips — "For sale" surfaces à la carte items
+  const FILTERS = ["all", "Basic", "Premium", "Ultra", "live", "forsale"];
+  const filterLabel = f => f === "all" ? "All" : f === "live" ? "Live" : f === "forsale" ? "For sale" : f;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -432,12 +465,12 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
           </div>
 
           {/* Filter */}
-          <div className="flex items-center gap-1 mb-4">
-            {["all", "Basic", "Premium", "Ultra", "live"].map(f => (
+          <div className="flex items-center gap-1 mb-4 flex-wrap">
+            {FILTERS.map(f => (
               <button key={f} type="button" onClick={() => setVideoFilter(f)}
                 className="px-2.5 py-1.5 rounded-sm text-xs font-bold border transition"
                 style={{ backgroundColor: videoFilter === f ? DS.brand + "15" : "transparent", borderColor: videoFilter === f ? DS.brand + "55" : DS.border, color: videoFilter === f ? DS.brand : DS.labelText }}>
-                {f === "all" ? "All" : f === "live" ? "Live" : f}
+                {filterLabel(f)}
               </button>
             ))}
           </div>
@@ -481,12 +514,12 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
           </div>
 
           {/* Filter */}
-          <div className="flex items-center gap-1 mb-4">
-            {["all", "Basic", "Premium", "Ultra", "live"].map(f => (
+          <div className="flex items-center gap-1 mb-4 flex-wrap">
+            {FILTERS.map(f => (
               <button key={f} type="button" onClick={() => setWorkoutFilter(f)}
                 className="px-2.5 py-1.5 rounded-sm text-xs font-bold border transition"
                 style={{ backgroundColor: workoutFilter === f ? DS.brand + "15" : "transparent", borderColor: workoutFilter === f ? DS.brand + "55" : DS.border, color: workoutFilter === f ? DS.brand : DS.labelText }}>
-                {f === "all" ? "All" : f === "live" ? "Live" : f}
+                {filterLabel(f)}
               </button>
             ))}
           </div>

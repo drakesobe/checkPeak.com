@@ -1,11 +1,11 @@
 // components/commercial/VideoUpload.jsx
 // Upload-from-file or embed-from-URL.
-// Equipment is multi-select. Muscle groups expanded.
+// Equipment and Muscle Group are multi-select. All categories support custom tags.
+// Optional one-time price: when set, the video can be bought à la carte (no subscription).
 
 import { useState, useRef } from "react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
 const TIERS = ["Basic", "Premium", "Ultra"];
 const TIER_CONFIG = {
   Basic:   { desc: "All subscribers",        color: DS.safe,    bg: DS.safeBg,    border: DS.safeBorder    },
@@ -17,7 +17,7 @@ const TAGS = {
   "Workout Type": ["Strength", "Conditioning", "Mobility", "Recovery", "HIIT", "Technique", "Speed", "Power", "Agility", "Flexibility"],
   "Muscle Group": ["Full Body", "Upper Body", "Lower Body", "Chest", "Back", "Shoulders", "Biceps", "Triceps", "Forearms", "Lats", "Traps", "Quads", "Hamstrings", "Glutes", "Calves", "Hip Flexors", "Abs", "Obliques", "Core"],
   "Difficulty":   ["Beginner", "Intermediate", "Advanced", "Elite"],
-  "Duration":     ["Under 15 min", "15–30 min", "30–45 min", "45+ min"],
+  "Duration":     ["Under 15 min", "15-30 min", "30-45 min", "45+ min"],
   "Equipment":    ["Bodyweight", "Barbell", "Dumbbell", "Kettlebell", "Cable", "Machine", "Bands", "Smith Machine", "Pull-up Bar", "Bench", "Box / Plyo", "TRX / Suspension", "Sled", "Battle Ropes"],
 };
 
@@ -29,7 +29,6 @@ const TAG_KEYS = {
   "Equipment":    "equipment",
 };
 
-// Equipment is multi-select; all others are single-select
 const MULTI_SELECT = new Set(["Equipment", "Muscle Group"]);
 
 const CSS = `
@@ -37,15 +36,10 @@ const CSS = `
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 8px; padding: 36px 24px;
     border: 2px dashed ${DS.border}; border-radius: 8px;
-    cursor: pointer; background: ${DS.pageBg}; transition: all 0.15s;
-    text-align: center;
+    cursor: pointer; background: ${DS.pageBg}; transition: all 0.15s; text-align: center;
   }
-  .vu-drop:hover, .vu-drop.drag-over {
-    border-color: ${DS.brand}; background: ${DS.brandBg};
-  }
-  .vu-drop.has-file {
-    border-color: ${DS.safe}; background: ${DS.safeBg}; border-style: solid;
-  }
+  .vu-drop:hover, .vu-drop.drag-over { border-color: ${DS.brand}; background: ${DS.brandBg}; }
+  .vu-drop.has-file { border-color: ${DS.safe}; background: ${DS.safeBg}; border-style: solid; }
 
   .vu-tag-btn {
     padding: 4px 11px; border-radius: 99px;
@@ -53,8 +47,47 @@ const CSS = `
     font-size: 11px; font-weight: 600; color: ${DS.labelText};
     cursor: pointer; font-family: inherit; transition: all 0.12s; white-space: nowrap;
   }
-  .vu-tag-btn:hover { border-color: ${DS.brandBorder}; color: ${DS.brand}; background: ${DS.brandBg}; }
+  .vu-tag-btn:hover  { border-color: ${DS.brandBorder}; color: ${DS.brand}; background: ${DS.brandBg}; }
   .vu-tag-btn.active { background: ${DS.brandBg}; border-color: ${DS.brand}; color: ${DS.brand}; font-weight: 700; }
+
+  /* Custom tag pill — has a hidden remove button that appears on hover */
+  .vu-custom-pill {
+    padding: 4px 8px 4px 11px; border-radius: 99px;
+    border: 1px solid ${DS.border}; background: ${DS.pageBg};
+    font-size: 11px; font-weight: 600; color: ${DS.labelText};
+    cursor: pointer; font-family: inherit; transition: all 0.12s; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .vu-custom-pill:hover  { border-color: ${DS.brandBorder}; color: ${DS.brand}; background: ${DS.brandBg}; }
+  .vu-custom-pill.active { background: ${DS.brandBg}; border-color: ${DS.brand}; color: ${DS.brand}; font-weight: 700; }
+  .vu-custom-pill .vu-remove {
+    width: 14px; height: 14px; border-radius: 99px; border: none;
+    background: rgba(0,0,0,0.1); color: inherit; font-size: 10px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.1s; flex-shrink: 0; padding: 0; font-family: inherit;
+  }
+  .vu-custom-pill:hover .vu-remove { opacity: 1; }
+  .vu-custom-pill.active .vu-remove { background: rgba(0,0,0,0.15); }
+
+  /* Dashed + Custom button */
+  .vu-add-custom {
+    padding: 4px 10px; border-radius: 99px;
+    border: 1px dashed ${DS.border}; background: transparent;
+    font-size: 11px; font-weight: 600; color: ${DS.dimText};
+    cursor: pointer; font-family: inherit; transition: all 0.12s;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .vu-add-custom:hover { border-color: ${DS.brandBorder}; color: ${DS.brand}; background: ${DS.brandBg}; }
+
+  /* Inline text input that appears where the + button was */
+  .vu-custom-input {
+    padding: 4px 10px; border-radius: 99px;
+    border: 1px dashed ${DS.brandBorder}; background: ${DS.brandBg};
+    font-size: 11px; font-family: inherit; color: ${DS.bodyText};
+    outline: none; width: 120px; min-width: 80px; transition: border-color 0.12s, width 0.15s;
+  }
+  .vu-custom-input:focus { border-color: ${DS.brand}; width: 150px; }
+  .vu-custom-input::placeholder { color: ${DS.dimText}; }
 
   .vu-mode-btn {
     flex: 1; padding: 8px 0; border: none; border-radius: 6px;
@@ -69,8 +102,8 @@ const CSS = `
     text-align: left; transition: all 0.12s; display: flex; flex-direction: column; gap: 3px;
   }
 
-  @keyframes vu-spin    { to { transform: rotate(360deg); } }
-  @keyframes vu-shine   { 0% { left: -100%; } 100% { left: 200%; } }
+  @keyframes vu-spin  { to { transform: rotate(360deg); } }
+  @keyframes vu-shine { 0% { left: -100%; } 100% { left: 200%; } }
 `;
 
 function SectionLabel({ children }) {
@@ -105,7 +138,7 @@ function StatusBanner({ status, error }) {
       <div style={{ width: 16, height: 16, border: `2px solid ${DS.brandBorder}`, borderTopColor: DS.brand, borderRadius: "50%", animation: "vu-spin 0.8s linear infinite", flexShrink: 0, marginTop: 1 }} />
       <div>
         <p style={{ fontSize: 13, fontWeight: 700, color: DS.brand, marginBottom: 2 }}>Transcoding in progress</p>
-        <p style={{ fontSize: 12, color: DS.labelText, lineHeight: 1.5 }}>Mux is processing your video — usually 1–3 minutes. You can close this window; it will appear in your library automatically when ready.</p>
+        <p style={{ fontSize: 12, color: DS.labelText, lineHeight: 1.5 }}>Mux is processing your video. You can close this window; it will appear in your library automatically when ready.</p>
       </div>
     </div>
   );
@@ -131,45 +164,107 @@ export default function VideoUpload({ trainerId, onSuccess }) {
   const [title,    setTitle]    = useState("");
   const [desc,     setDesc]     = useState("");
   const [tier,     setTier]     = useState("Basic");
+  const [price,    setPrice]    = useState("");   // optional one-time price (à la carte)
   const [tags,     setTags]     = useState({});
   const [progress, setProgress] = useState(0);
   const [status,   setStatus]   = useState("idle");
   const [error,    setError]    = useState("");
   const fileRef = useRef(null);
 
+  // Custom tag state
+  const [customTags,     setCustomTags]     = useState({});   // { categoryLabel: ["My Tag", ...] }
+  const [addingCustomIn, setAddingCustomIn] = useState(null); // which category is open
+  const [customInput,    setCustomInput]    = useState("");
+  const customInputRef = useRef(null);
+
   const isSubmitting = status === "uploading";
   const isDone       = status === "done" || status === "processing";
+
+  const hasPrice = price.trim() !== "" && Number(price) > 0;
+
+  // ── Tag helpers ───────────────────────────────────────────────────────────
+
+  function allOptions(categoryLabel) {
+    return [...(TAGS[categoryLabel] ?? []), ...(customTags[categoryLabel] ?? [])];
+  }
 
   function toggleTag(categoryLabel, value) {
     const key = TAG_KEYS[categoryLabel] ?? categoryLabel;
     if (MULTI_SELECT.has(categoryLabel)) {
-      // Multi-select: toggle in/out of array
       setTags(prev => {
-        const current = Array.isArray(prev[key]) ? prev[key] : [];
-        return {
-          ...prev,
-          [key]: current.includes(value)
-            ? current.filter(v => v !== value)
-            : [...current, value],
-        };
+        const cur = Array.isArray(prev[key]) ? prev[key] : [];
+        return { ...prev, [key]: cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value] };
       });
     } else {
-      // Single-select: deselect if same, otherwise replace
       setTags(prev => ({ ...prev, [key]: prev[key] === value ? undefined : value }));
     }
   }
 
-  function isTagActive(categoryLabel, opt) {
+  function isActive(categoryLabel, opt) {
     const key = TAG_KEYS[categoryLabel] ?? categoryLabel;
     return MULTI_SELECT.has(categoryLabel)
       ? Array.isArray(tags[key]) && tags[key].includes(opt)
       : tags[key] === opt;
   }
 
+  // ── Custom tag actions ────────────────────────────────────────────────────
+
+  function openCustom(categoryLabel) {
+    setAddingCustomIn(categoryLabel);
+    setCustomInput("");
+    setTimeout(() => customInputRef.current?.focus(), 0);
+  }
+
+  function commitCustom(categoryLabel) {
+    const val = customInput.trim();
+    if (!val) { closeCustom(); return; }
+
+    const existing = allOptions(categoryLabel);
+    const match    = existing.find(o => o.toLowerCase() === val.toLowerCase());
+    if (match) {
+      // Already exists — just select it
+      if (!isActive(categoryLabel, match)) toggleTag(categoryLabel, match);
+      closeCustom();
+      return;
+    }
+
+    setCustomTags(prev => ({ ...prev, [categoryLabel]: [...(prev[categoryLabel] ?? []), val] }));
+    // Select it immediately
+    const key = TAG_KEYS[categoryLabel] ?? categoryLabel;
+    if (MULTI_SELECT.has(categoryLabel)) {
+      setTags(prev => ({ ...prev, [key]: [...(Array.isArray(prev[key]) ? prev[key] : []), val] }));
+    } else {
+      setTags(prev => ({ ...prev, [key]: val }));
+    }
+    closeCustom();
+  }
+
+  function closeCustom() {
+    setAddingCustomIn(null);
+    setCustomInput("");
+  }
+
+  function removeCustom(categoryLabel, value) {
+    // Deselect if selected
+    const key = TAG_KEYS[categoryLabel] ?? categoryLabel;
+    if (MULTI_SELECT.has(categoryLabel)) {
+      setTags(prev => ({ ...prev, [key]: (prev[key] ?? []).filter(v => v !== value) }));
+    } else {
+      setTags(prev => prev[key] === value ? { ...prev, [key]: undefined } : prev);
+    }
+    setCustomTags(prev => ({ ...prev, [categoryLabel]: (prev[categoryLabel] ?? []).filter(v => v !== value) }));
+  }
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+
   function reset() {
     setFile(null); setEmbedUrl(""); setTitle(""); setDesc("");
-    setTier("Basic"); setTags({}); setProgress(0); setStatus("idle"); setError("");
+    setTier("Basic"); setPrice(""); setTags({}); setCustomTags({});
+    setProgress(0); setStatus("idle"); setError("");
+    setAddingCustomIn(null); setCustomInput("");
   }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -180,16 +275,18 @@ export default function VideoUpload({ trainerId, onSuccess }) {
     setError("");
     setStatus("uploading");
 
+    // null = subscription-only; number = also purchasable à la carte
+    const priceValue = price.trim() === "" ? null : Math.max(0, Number(price) || 0);
+
     try {
       if (mode === "embed") {
         const res = await fetch("/api/commercial/videos", {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description: desc, sourceType: "embed", embedUrl, tier, tags }),
+          body: JSON.stringify({ title, description: desc, sourceType: "embed", embedUrl, tier, price: priceValue, tags }),
         });
         if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
-        setStatus("done");
-        onSuccess?.();
+        setStatus("done"); onSuccess?.();
         return;
       }
 
@@ -197,7 +294,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
       const initRes = await fetch("/api/commercial/videos", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description: desc, sourceType: "upload", tier, tags }),
+        body: JSON.stringify({ title, description: desc, sourceType: "upload", tier, price: priceValue, tags }),
       });
       if (!initRes.ok) throw new Error((await initRes.json()).error ?? "Failed to create video record");
       const { video: pendingRecord } = await initRes.json();
@@ -234,9 +331,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
       setProgress(100);
       setStatus("processing");
       onSuccess?.();
-
     } catch (err) {
-      console.error("[VideoUpload]", err);
       setStatus("error");
       setError(err.message || "Something went wrong. Please try again.");
     }
@@ -342,12 +437,12 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {TIERS.map(t => {
               const tc = TIER_CONFIG[t];
-              const isActive = tier === t;
+              const on = tier === t;
               return (
                 <button key={t} type="button" className="vu-tier-btn"
                   disabled={isSubmitting || isDone}
                   onClick={() => setTier(t)}
-                  style={{ borderColor: isActive ? tc.color + "88" : DS.border, background: isActive ? tc.bg : DS.pageBg, borderLeftWidth: isActive ? 3 : 1, borderLeftColor: isActive ? tc.color : DS.border }}>
+                  style={{ borderColor: on ? tc.color + "88" : DS.border, background: on ? tc.bg : DS.pageBg, borderLeftWidth: on ? 3 : 1, borderLeftColor: on ? tc.color : DS.border }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: tc.color, letterSpacing: "0.08em", textTransform: "uppercase" }}>{t}</span>
                   <span style={{ fontSize: 11, color: DS.labelText }}>{tc.desc}</span>
                 </button>
@@ -356,14 +451,37 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           </div>
         </div>
 
-        {/* Tags */}
+        {/* One-time price */}
+        <div>
+          <SectionLabel>One-time price <span style={{ textTransform: "none", fontWeight: 500, letterSpacing: 0 }}>(optional)</span></SectionLabel>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: DS.labelText }}>$</span>
+            <input type="number" min="0" step="1"
+              style={{ ...inputStyle, width: 120 }} {...focusHandlers}
+              value={price} onChange={e => setPrice(e.target.value)}
+              placeholder="0" disabled={isSubmitting || isDone} />
+            <span style={{ fontSize: 12, color: DS.dimText }}>one-time</span>
+          </div>
+          <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
+            {hasPrice
+              ? "Clients can buy this video on its own — no subscription needed. Subscribers on the selected tier (and above) still get it included."
+              : "Leave empty to keep this video subscription-only. Add a price to also sell it à la carte."}
+          </p>
+        </div>
+
+        {/* ── Tags with custom tag support ── */}
         <div>
           <SectionLabel>Tags <span style={{ textTransform: "none", fontWeight: 500, letterSpacing: 0 }}>(optional)</span></SectionLabel>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "14px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 7 }}>
-            {Object.entries(TAGS).map(([categoryLabel, options]) => {
-              const isMulti = MULTI_SELECT.has(categoryLabel);
+            {Object.keys(TAGS).map(categoryLabel => {
+              const isMulti   = MULTI_SELECT.has(categoryLabel);
+              const myCustom  = customTags[categoryLabel] ?? [];
+              const isAdding  = addingCustomIn === categoryLabel;
+              const opts      = allOptions(categoryLabel);
+
               return (
                 <div key={categoryLabel}>
+                  {/* Category header */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
                     <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.dimText }}>
                       {categoryLabel}
@@ -374,15 +492,76 @@ export default function VideoUpload({ trainerId, onSuccess }) {
                       </span>
                     )}
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {options.map(opt => (
+
+                  {/* Pills row */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+
+                    {/* Preset pills */}
+                    {opts.filter(o => !myCustom.includes(o)).map(opt => (
                       <button key={opt} type="button"
-                        className={`vu-tag-btn${isTagActive(categoryLabel, opt) ? " active" : ""}`}
+                        className={`vu-tag-btn${isActive(categoryLabel, opt) ? " active" : ""}`}
                         disabled={isSubmitting || isDone}
                         onClick={() => toggleTag(categoryLabel, opt)}>
                         {opt}
                       </button>
                     ))}
+
+                    {/* Custom pills — with removable × */}
+                    {myCustom.map(opt => (
+                      <button key={opt} type="button"
+                        className={`vu-custom-pill${isActive(categoryLabel, opt) ? " active" : ""}`}
+                        disabled={isSubmitting || isDone}
+                        onClick={() => toggleTag(categoryLabel, opt)}>
+                        {opt}
+                        <span
+                          className="vu-remove"
+                          onClick={e => { e.stopPropagation(); removeCustom(categoryLabel, opt); }}
+                          title="Remove">
+                          ×
+                        </span>
+                      </button>
+                    ))}
+
+                    {/* + Custom input or trigger */}
+                    {!isDone && !isSubmitting && (
+                      isAdding ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <input
+                            ref={customInputRef}
+                            className="vu-custom-input"
+                            value={customInput}
+                            placeholder="New tag…"
+                            maxLength={32}
+                            onChange={e => setCustomInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter")  { e.preventDefault(); commitCustom(categoryLabel); }
+                              if (e.key === "Escape") closeCustom();
+                            }}
+                            onBlur={() => setTimeout(() => {
+                              if (customInput.trim()) commitCustom(categoryLabel);
+                              else closeCustom();
+                            }, 160)}
+                          />
+                          <button type="button"
+                            onMouseDown={e => e.preventDefault()} // prevent onBlur firing before click
+                            onClick={() => commitCustom(categoryLabel)}
+                            style={{ padding: "4px 10px", borderRadius: 99, border: `1px solid ${DS.brandBorder}`, background: DS.brand, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                            Add
+                          </button>
+                          <button type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={closeCustom}
+                            style={{ padding: "4px 8px", borderRadius: 99, border: `1px solid ${DS.border}`, background: "transparent", color: DS.dimText, fontSize: 11, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                            ✕
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" className="vu-add-custom" onClick={() => openCustom(categoryLabel)}>
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                          Custom
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
               );
@@ -398,10 +577,8 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           />
         )}
 
-        {/* Status banner */}
         <StatusBanner status={status} error={error} />
 
-        {/* Actions */}
         {!isDone ? (
           <button type="submit" disabled={isSubmitting}
             style={{ padding: "12px", background: isSubmitting ? DS.brand + "99" : DS.brand, color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -420,7 +597,6 @@ export default function VideoUpload({ trainerId, onSuccess }) {
             + Add another video
           </button>
         ) : null}
-
       </form>
     </div>
   );

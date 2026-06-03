@@ -2,6 +2,10 @@
 // Client video + workout library. Dark "film room" aesthetic.
 // Two tabs: Videos (with completion tracking) and Workouts.
 // Workouts: "View Workout →" opens viewer modal → "Add to Today →" → success state.
+//
+// À LA CARTE: clients can reach this page with NO subscription if they've bought
+// individual items. Access per item = (tier rank high enough) OR (item is purchased).
+// Locked items that have a price show a "Buy for $X" button.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -61,6 +65,8 @@ const CSS = `
   .nav-link:hover { color: rgba(255,255,255,0.9) !important; }
   .modal-anim { animation: scaleIn 0.2s ease both; }
   .check-badge { animation: checkPop 0.3s ease both; }
+  .buy-btn { transition: opacity 0.14s; }
+  .buy-btn:hover { opacity: 0.85; }
 
   @media (max-width: 768px) {
     .lib-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important; }
@@ -70,7 +76,9 @@ const CSS = `
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function canAccess(clientTier, contentTier) {
+// Access = tier rank is high enough OR this specific item has been purchased.
+function canAccess(clientTier, contentTier, itemId, purchasedIds = []) {
+  if (itemId && purchasedIds.includes(itemId)) return true;
   return (TIER[clientTier]?.rank ?? 0) >= (TIER[contentTier]?.rank ?? 1);
 }
 
@@ -105,12 +113,11 @@ async function logCompletion(videoId) {
 
 // ─── Video card ───────────────────────────────────────────────────────────────
 
-function VideoCard({ video, clientTier, onPlay, isCompleted }) {
+function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted }) {
   const f          = video.fields ?? {};
-  const accessible = canAccess(clientTier, f.tier);
-  const thumb      = f.muxPlaybackId
-    ? `https://image.mux.com/${f.muxPlaybackId}/thumbnail.jpg?width=560&height=315&fit_mode=smartcrop`
-    : null;
+  const accessible = canAccess(clientTier, f.tier, video.id, purchasedIds);
+  const price      = Number(f.price) > 0 ? Number(f.price) : null;
+  const thumb = videoThumb(f, 560, 315);
   const tags       = Object.values(parseTags(f.tags))
     .flatMap(v => Array.isArray(v) ? v : [v])
     .filter(Boolean)
@@ -138,9 +145,19 @@ function VideoCard({ video, clientTier, onPlay, isCompleted }) {
           </div>
         )}
         {!accessible && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.32)" }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.42)" }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            {TIER_NEXT[clientTier] && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier]]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>{TIER_NEXT[clientTier]} only</span>}
+            {price != null ? (
+              <button
+                type="button"
+                className="buy-btn"
+                onClick={e => { e.stopPropagation(); onBuy("video", video.id); }}
+                style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff", background: D.red, border: "none", padding: "7px 14px", cursor: "pointer", fontFamily: "inherit", borderRadius: 2 }}>
+                Buy for ${price}
+              </button>
+            ) : (
+              TIER_NEXT[clientTier] && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier]]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>{TIER_NEXT[clientTier]} only</span>
+            )}
           </div>
         )}
         {isCompleted && (
@@ -163,11 +180,26 @@ function VideoCard({ video, clientTier, onPlay, isCompleted }) {
   );
 }
 
+function ytId(url = "") {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+// Best available thumbnail: stored → Mux → YouTube-derived → none.
+function videoThumb(f = {}, w = 480, h = 270) {
+  if (f.thumbnailUrl) return f.thumbnailUrl;                 // captured at save time (Vimeo, etc.)
+  if (f.muxPlaybackId) return `https://image.mux.com/${f.muxPlaybackId}/thumbnail.jpg?width=${w}&height=${h}&fit_mode=smartcrop`;
+  const yt = ytId(f.embedUrl);
+  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  return null;                                              // Vimeo w/o stored thumb, or unknown source
+}
+
 // ─── Workout card ─────────────────────────────────────────────────────────────
 
-function WorkoutCard({ workout, clientTier, onOpen }) {
+function WorkoutCard({ workout, clientTier, purchasedIds, onOpen, onBuy }) {
   const f          = workout.fields ?? {};
-  const accessible = canAccess(clientTier, f.tier);
+  const accessible = canAccess(clientTier, f.tier, workout.id, purchasedIds);
+  const price      = Number(f.price) > 0 ? Number(f.price) : null;
   const tierCfg    = TIER[f.tier];
 
   let exercises = [];
@@ -216,6 +248,14 @@ function WorkoutCard({ workout, clientTier, onOpen }) {
           <div style={{ padding: "10px 14px", background: D.bgSection, border: `0.5px solid ${D.border}`, color: D.text, fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", textAlign: "center", cursor: "pointer" }}>
             View Workout →
           </div>
+        ) : price != null ? (
+          <button
+            type="button"
+            className="buy-btn"
+            onClick={e => { e.stopPropagation(); onBuy("workout", workout.id); }}
+            style={{ width: "100%", padding: "10px 14px", background: D.red, border: "none", color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", textAlign: "center", cursor: "pointer", fontFamily: "inherit", borderRadius: 2 }}>
+            Buy for ${price}
+          </button>
         ) : (
           <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: D.faint, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -531,6 +571,7 @@ export default function ClientLibrary() {
   const [videos,     setVideos]     = useState([]);
   const [workouts,   setWorkouts]   = useState([]);
   const [clientTier, setClientTier] = useState(null);
+  const [purchasedIds, setPurchasedIds] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [libraryTab, setLibraryTab] = useState("videos");
 
@@ -554,11 +595,13 @@ export default function ClientLibrary() {
       fetch(`/api/commercial/completions?slug=${slug}`, { credentials: "include" }).then(r => r.ok ? r.json() : { completedVideoIds: [] }),
     ]).then(([trainerData, accessData, completionData]) => {
       if (!trainerData.trainer) { router.push("/"); return; }
-      if (!accessData.tier)     { router.push(`/trainer/${slug}`); return; }
+      // Allow in if the client has a subscription tier OR has bought at least one item.
+      if (!accessData.tier && !(accessData.purchasedIds?.length)) { router.push(`/trainer/${slug}`); return; }
       setTrainer(trainerData.trainer);
       setVideos(accessData.videos ?? []);
       setWorkouts(accessData.workouts ?? []);
       setClientTier(accessData.tier);
+      setPurchasedIds(accessData.purchasedIds ?? []);
       setCompletedIds(new Set(completionData.completedVideoIds ?? []));
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -567,6 +610,22 @@ export default function ClientLibrary() {
   const handleVideoCompleted = useCallback((id) => {
     setCompletedIds(prev => new Set([...prev, id]));
   }, []);
+
+  // Start a one-time checkout for a single video or workout.
+  const handleBuy = useCallback(async (itemType, itemId) => {
+    try {
+      const res  = await fetch("/api/commercial/purchase-checkout", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, itemType, itemId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) window.location.href = data.url;
+      else alert(data.error || "Could not start checkout.");
+    } catch {
+      alert("Connection error.");
+    }
+  }, [slug]);
 
   if (!authReady || loading) {
     return (
@@ -580,15 +639,16 @@ export default function ClientLibrary() {
     );
   }
 
-  if (!trainer || !clientTier) return null;
+  // Need a trainer to render. clientTier may be null if access is purchase-only.
+  if (!trainer) return null;
 
   const tf       = trainer.fields ?? {};
   const tierCfg  = TIER[clientTier];
   const nextTier = TIER_NEXT[clientTier] ?? null;
 
   // Video derived
-  const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier));
-  const lockedVideos        = videos.filter(v => !canAccess(clientTier, v.fields?.tier));
+  const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
+  const lockedVideos        = videos.filter(v => !canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
   const filteredVideos      = accessibleVideos.filter(v => videoFilter === "all" || Object.values(parseTags(v.fields?.tags)).includes(videoFilter));
   const allVideoTags        = [...new Set(videos.flatMap(v => Object.values(parseTags(v.fields?.tags))).filter(Boolean))];
   const videoCompletedCount = accessibleVideos.filter(v => completedIds.has(v.id)).length;
@@ -596,8 +656,8 @@ export default function ClientLibrary() {
   const playingVid          = playingId ? videos.find(v => v.id === playingId) : null;
 
   // Workout derived
-  const accessibleWorkouts = workouts.filter(w => canAccess(clientTier, w.fields?.tier));
-  const lockedWorkouts     = workouts.filter(w => !canAccess(clientTier, w.fields?.tier));
+  const accessibleWorkouts = workouts.filter(w => canAccess(clientTier, w.fields?.tier, w.id, purchasedIds));
+  const lockedWorkouts     = workouts.filter(w => !canAccess(clientTier, w.fields?.tier, w.id, purchasedIds));
   const filteredWorkouts   = accessibleWorkouts.filter(w => workoutFilter === "all" || w.fields?.tier === workoutFilter);
   const openWorkout        = openWorkoutId ? workouts.find(w => w.id === openWorkoutId) : null;
 
@@ -615,7 +675,10 @@ export default function ClientLibrary() {
             <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 13, fontWeight: 600, color: D.dim, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tf.name}</a>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            {tierCfg && <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "5px 12px", border: `0.5px solid ${tierCfg.color}22` }}>{clientTier}</span>}
+            {tierCfg
+              ? <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "5px 12px", border: `0.5px solid ${tierCfg.color}22` }}>{clientTier}</span>
+              : <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "5px 12px", border: `0.5px solid ${D.border}` }}>À la carte</span>
+            }
             <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}>← Profile</a>
           </div>
         </nav>
@@ -632,11 +695,11 @@ export default function ClientLibrary() {
               <div>
                 <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 6 }}>{tf.name}</h1>
                 <p style={{ fontSize: 12, color: D.faint }}>
-                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier} plan
+                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier ? `${clientTier} plan` : "à la carte"}
                 </p>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: videoCompletedCount === accessibleVideos.length && accessibleVideos.length > 0 ? D.green : tierCfg?.color }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em", color: videoCompletedCount === accessibleVideos.length && accessibleVideos.length > 0 ? D.green : (tierCfg?.color ?? D.red) }}>
                   {videoCompletedCount}/{accessibleVideos.length}
                 </div>
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: D.faint }}>Videos done</div>
@@ -696,8 +759,8 @@ export default function ClientLibrary() {
                 </div>
               ) : (
                 <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-                  {filteredVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={setPlayingId} isCompleted={completedIds.has(v.id)} />)}
-                  {videoFilter === "all" && lockedVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} onPlay={setPlayingId} isCompleted={false} />)}
+                  {filteredVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={completedIds.has(v.id)} />)}
+                  {videoFilter === "all" && lockedVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={false} />)}
                 </div>
               )}
             </>
@@ -722,8 +785,8 @@ export default function ClientLibrary() {
                 </div>
               ) : (
                 <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-                  {filteredWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} onOpen={setOpenWorkoutId} />)}
-                  {workoutFilter === "all" && lockedWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} onOpen={setOpenWorkoutId} />)}
+                  {filteredWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
+                  {workoutFilter === "all" && lockedWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
                 </div>
               )}
             </>

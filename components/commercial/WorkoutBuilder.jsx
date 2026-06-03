@@ -2,6 +2,7 @@
 // Workout creation/edit drawer for the commercial dashboard.
 // Uses the shared TemplatePicker from the org side — same template system,
 // same /api/org/templates/list endpoint, same groupId preservation.
+// Optional one-time price: when set, the workout can be bought à la carte (no subscription).
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -243,6 +244,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   const [title,       setTitle]       = useState("");
   const [description, setDescription] = useState("");
   const [tier,        setTier]        = useState("Basic");
+  const [price,       setPrice]       = useState("");   // optional one-time price (à la carte)
   const [exercises,   setExercises]   = useState([newExercise(1)]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState("");
@@ -251,6 +253,8 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   const [templates,         setTemplates]         = useState([]);
   const [loadingTemplates,  setLoadingTemplates]  = useState(false);
   const [appliedTemplateId, setAppliedTemplateId] = useState(null);
+
+  const hasPrice = price.trim() !== "" && Number(price) > 0;
 
   // ── Fetch templates ───────────────────────────────────────────────────────
   const fetchTemplates = useCallback(async () => {
@@ -277,6 +281,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
       setTitle(editWorkout.fields?.title ?? "");
       setDescription(editWorkout.fields?.description ?? "");
       setTier(editWorkout.fields?.tier ?? "Basic");
+      setPrice(editWorkout.fields?.price != null ? String(editWorkout.fields.price) : "");
       try {
         const raw = JSON.parse(editWorkout.fields?.exercises || "[]");
         setExercises(Array.isArray(raw) && raw.length
@@ -294,7 +299,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           : [newExercise(1)]);
       } catch { setExercises([newExercise(1)]); }
     } else {
-      setTitle(""); setDescription(""); setTier("Basic");
+      setTitle(""); setDescription(""); setTier("Basic"); setPrice("");
       setExercises([newExercise(1)]);
     }
   }, [open, isEdit]);
@@ -404,6 +409,8 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           title:       title.trim(),
           description: description.trim(),
           tier,
+          // null = subscription-only; number = also purchasable à la carte
+          price: price.trim() === "" ? null : Math.max(0, Number(price) || 0),
           exercises: meaningful.map((ex, i) => ({
             Order:        i + 1,
             ExerciseName: String(ex.ExerciseName).trim(),
@@ -534,6 +541,28 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
               </p>
             </div>
 
+            {/* One-time price */}
+            <div>
+              <span style={lbl}>One-time price <span style={{ textTransform: "none", fontWeight: 400, letterSpacing: 0 }}>(optional)</span></span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 16, fontWeight: 800, color: DS.labelText }}>$</span>
+                <input
+                  type="number" min="0"
+                  value={price}
+                  onChange={e => setPrice(e.target.value)}
+                  placeholder="0"
+                  style={{ ...inp, width: 120 }}
+                  onFocus={focusStyle} onBlur={blurStyle}
+                />
+                <span style={{ fontSize: 11, color: DS.dimText }}>one-time</span>
+              </div>
+              <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
+                {hasPrice
+                  ? "Clients can buy this workout outright — no subscription needed. Subscribers on the tier (and above) still get it included."
+                  : "Leave empty to keep this workout subscription-only. Add a price to also sell it à la carte."}
+              </p>
+            </div>
+
             <div style={{ height: 1, background: DS.border }} />
 
             {/* ── Template picker — shared org component ── */}
@@ -632,7 +661,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, color: DS.dimText }}>
-              {meaningfulCount} exercise{meaningfulCount !== 1 ? "s" : ""} · {tier}
+              {meaningfulCount} exercise{meaningfulCount !== 1 ? "s" : ""} · {tier}{hasPrice ? ` · $${Math.max(0, Number(price) || 0)}` : ""}
             </span>
             <button type="button" onClick={save} disabled={saving || !title.trim()}
               style={{ padding: "9px 20px", background: title.trim() && !saving ? DS.brand : DS.border, border: "none", fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff", cursor: title.trim() && !saving ? "pointer" : "not-allowed", opacity: title.trim() && !saving ? 1 : 0.5, fontFamily: "inherit" }}>

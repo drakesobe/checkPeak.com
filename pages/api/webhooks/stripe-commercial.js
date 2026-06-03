@@ -1,5 +1,10 @@
 // pages/api/webhooks/stripe-commercial.js
 // Handles: checkout.session.completed, customer.subscription.deleted
+//
+// checkout.session.completed branches on metadata.kind:
+//   - "purchase"      -> write a one-time à la carte purchase row
+//   - (anything else) -> subscription flow (with upgrade replacement)
+//
 // Upgrade flow: if client already has an active subscription for this trainer,
 // cancel the old Stripe subscription and replace with the new one.
 
@@ -9,6 +14,8 @@ import {
   getSubscriptionByClientAndTrainer,
   createSubscription,
   updateSubscription,
+  getPurchaseByEmailAndItem,
+  createPurchase,
 } from "@/lib/commercial/airtable";
 
 export const config = { api: { bodyParser: false } };
@@ -29,14 +36,47 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook error: ${err.message}`);
   }
 
-  // ── checkout.session.completed ───────────────────────────────────────────
+  // == checkout.session.completed ============================================
 
   if (event.type === "checkout.session.completed") {
-    const session  = event.data.object;
-    const meta     = session.metadata ?? {};
+    const session = event.data.object;
+    const meta    = session.metadata ?? {};
+
+    // -- One-time a la carte purchase -----------------------------------------
+    if (meta.kind === "purchase") {
+      const { trainerId, itemType, itemId, clientEmail, clientName } = meta;
+
+      if (!trainerId || !itemId || !clientEmail) {
+        console.error("[stripe-commercial] purchase missing metadata", meta);
+        return res.status(200).json({ received: true });
+      }
+
+      try {
+        // Idempotency: Stripe may deliver the event more than once.
+        const existing = await getPurchaseByEmailAndItem(clientEmail, itemId);
+        if (!existing) {
+          await createPurchase({
+            trainerId,
+            clientEmail,
+            clientName:      clientName ?? "",
+            itemType:        itemType ?? "video",
+            itemId,
+            status:          "active",
+            stripeSessionId: session.id ?? "",
+            createdAt:       new Date().toISOString(),
+          });
+          console.log(`[stripe-commercial] purchase ${clientEmail} -> ${itemType}:${itemId}`);
+        }
+      } catch (err) {
+        console.error("[stripe-commercial] create purchase error:", err);
+      }
+
+      return res.status(200).json({ received: true });
+    }
+
+    // -- Subscription (existing flow) -----------------------------------------
     const {
       trainerId,
-      trainerSlug,
       trainerName,
       tier,
       clientEmail,
@@ -52,7 +92,7 @@ export default async function handler(req, res) {
     const stripeSubscriptionId = session.subscription;
 
     try {
-      // ── Upgrade: cancel any existing active subscription first ────────────
+      // Upgrade: cancel any existing active subscription first
       const existing = await getSubscriptionByClientAndTrainer(clientEmail, trainerId);
       if (existing) {
         const oldStripeSubId = existing.fields?.stripeSubscriptionId;
@@ -60,15 +100,12 @@ export default async function handler(req, res) {
           try {
             await stripe.subscriptions.cancel(oldStripeSubId);
           } catch (e) {
-            // Subscription may already be cancelled — log but don't fail
             console.warn("[stripe-commercial] could not cancel old sub:", e.message);
           }
         }
-        // Mark old Airtable record as upgraded/cancelled
         await updateSubscription(existing.id, { status: "cancelled" });
       }
 
-      // ── Create new subscription record ────────────────────────────────────
       await createSubscription({
         trainerId,
         clientEmail,
@@ -80,23 +117,21 @@ export default async function handler(req, res) {
         stripeCustomerId:      stripeCustomerId ?? "",
       });
 
-      console.log(`[stripe-commercial] subscribed ${clientEmail} → ${trainerName} (${tier})`);
+      console.log(`[stripe-commercial] subscribed ${clientEmail} -> ${trainerName} (${tier})`);
     } catch (err) {
       console.error("[stripe-commercial] create subscription error:", err);
     }
   }
 
-  // ── customer.subscription.deleted ────────────────────────────────────────
+  // == customer.subscription.deleted =========================================
 
   if (event.type === "customer.subscription.deleted") {
-    const sub      = event.data.object;
-    const subId    = sub.id;
-    const email    = sub.metadata?.clientEmail || sub.customer_email;
+    const sub   = event.data.object;
+    const subId = sub.id;
+    const email = sub.metadata?.clientEmail || sub.customer_email;
 
     if (email) {
       try {
-        // Find the Airtable record by stripeSubscriptionId and mark cancelled
-        // (Using a simple search since we may not store all metadata on the sub object)
         console.log(`[stripe-commercial] subscription deleted: ${subId} for ${email}`);
       } catch (err) {
         console.error("[stripe-commercial] deletion handler error:", err);

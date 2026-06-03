@@ -10,6 +10,27 @@ import {
 } from "@/lib/commercial/airtable";
 import mux from "@/lib/mux";
 
+// null  = subscription-only (current behavior)
+// number = also purchasable à la carte for that dollar amount
+// Empty / invalid / <= 0 all normalize to null so a stray "0" never creates a $0 item.
+function normalizePrice(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+// Airtable returns { error: {...} } on failure but our helpers don't check status,
+// so detect it here and surface a real error instead of a fake success.
+function airtableError(record) {
+  if (record?.error) {
+    const e = record.error;
+    return typeof e === "string" ? e : (e.message || "Airtable request failed");
+  }
+  if (!record?.id) return "Airtable returned no record id";
+  return null;
+}
+
 export default async function handler(req, res) {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
@@ -25,14 +46,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { title, sourceType, embedUrl, tier, tags, muxUploadId } = req.body;
+    const { title, sourceType, embedUrl, tier, tags, muxUploadId, price } = req.body;
     if (!title) return res.status(400).json({ error: "Title is required" });
     if (!["Basic", "Premium", "Ultra"].includes(tier))
       return res.status(400).json({ error: "Invalid tier" });
     if (sourceType === "embed" && !embedUrl)
       return res.status(400).json({ error: "embedUrl required for embed type" });
 
-    const record = await createVideo({
+    const fields = {
       trainerId,
       title,
       sourceType:  sourceType ?? "upload",
@@ -43,7 +64,18 @@ export default async function handler(req, res) {
       status:      sourceType === "embed" ? "ready" : "pending",
       published:   false,
       createdAt:   new Date().toISOString(),
-    });
+    };
+    // Only send price when it's actually set, so a missing "Price" column
+    // never blocks creation of a normal subscription-only video.
+    const priceVal = normalizePrice(price);
+    if (priceVal !== null) fields.price = priceVal;
+
+    const record = await createVideo(fields);
+    const err = airtableError(record);
+    if (err) {
+      console.error("[videos POST] create failed:", err);
+      return res.status(502).json({ error: `Could not create video record: ${err}` });
+    }
     return res.status(201).json({ video: record });
   }
 
@@ -58,7 +90,15 @@ export default async function handler(req, res) {
         fields[key] = key === "tags" ? JSON.stringify(req.body[key]) : req.body[key];
       }
     }
+    // price is normalized server-side, never passed through raw
+    if (req.body.price !== undefined) fields.price = normalizePrice(req.body.price);
+
     const updated = await updateVideo(id, fields);
+    const err = airtableError(updated);
+    if (err) {
+      console.error("[videos PUT] update failed:", err);
+      return res.status(502).json({ error: `Could not update video: ${err}` });
+    }
     return res.status(200).json({ video: updated });
   }
 

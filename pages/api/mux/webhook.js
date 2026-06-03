@@ -1,5 +1,6 @@
 // pages/api/mux/webhook.js
 // @mux/mux-node v14 — Webhooks is now a named export, not a static on the class.
+// Adds explicit logging so silent Airtable failures / record-mapping misses surface.
 
 import Mux from "@mux/mux-node";
 import { updateVideo, getVideoByUploadId } from "../../../lib/commercial/airtable";
@@ -9,6 +10,22 @@ export const config = {
     bodyParser: false, // Must be false — signature verification needs the raw body
   },
 };
+
+// Airtable helpers return { error } on failure (no thrown exception), so inspect
+// the result and log loudly instead of silently moving on.
+function logAirtable(tag, result) {
+  if (result?.error) {
+    const e = result.error;
+    console.error(`[mux-webhook] ${tag} airtable error:`, typeof e === "string" ? e : (e.message || JSON.stringify(e)));
+    return false;
+  }
+  if (!result?.id) {
+    console.error(`[mux-webhook] ${tag} airtable returned no record id:`, JSON.stringify(result));
+    return false;
+  }
+  console.log(`[mux-webhook] ${tag} updated record ${result.id}`);
+  return true;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -36,13 +53,14 @@ export default async function handler(req, res) {
   }
 
   const { type, data } = JSON.parse(rawBody);
-  console.log("[mux-webhook] event:", type, data?.id);
+  console.log("[mux-webhook] event:", type, "asset:", data?.id, "upload:", data?.upload_id, "passthrough:", data?.passthrough);
 
   if (type === "video.upload.asset_created") {
     const uploadId = data?.upload_id;
     if (!uploadId) return res.status(200).end();
     const record = await getVideoByUploadId(uploadId);
-    if (record) await updateVideo(record.id, { status: "processing" });
+    if (record) logAirtable("asset_created", await updateVideo(record.id, { status: "processing" }));
+    else console.error("[mux-webhook] asset_created: no record found for uploadId", uploadId);
   }
 
   if (type === "video.asset.ready") {
@@ -52,7 +70,10 @@ export default async function handler(req, res) {
     const duration    = data?.duration;
     const aspectRatio = data?.aspect_ratio;
 
-    if (!assetId || !playbackId) return res.status(200).end();
+    if (!assetId || !playbackId) {
+      console.error("[mux-webhook] asset.ready missing assetId or playbackId", { assetId, playbackId });
+      return res.status(200).end();
+    }
 
     const fields = {
       muxAssetId:    assetId,
@@ -64,17 +85,21 @@ export default async function handler(req, res) {
 
     const recordId = data?.passthrough;
     if (recordId) {
-      await updateVideo(recordId, fields);
+      logAirtable("asset.ready(passthrough)", await updateVideo(recordId, fields));
     } else if (uploadId) {
       const record = await getVideoByUploadId(uploadId);
-      if (record) await updateVideo(record.id, fields);
+      if (record) logAirtable("asset.ready(uploadId)", await updateVideo(record.id, fields));
+      else console.error("[mux-webhook] asset.ready: no record found for uploadId", uploadId);
+    } else {
+      console.error("[mux-webhook] asset.ready: no passthrough and no uploadId — cannot map to a record");
     }
   }
 
   if (type === "video.asset.errored") {
     const uploadId = data?.upload_id;
     const record = await getVideoByUploadId(uploadId);
-    if (record) await updateVideo(record.id, { status: "error" });
+    if (record) logAirtable("asset.errored", await updateVideo(record.id, { status: "error" }));
+    else console.error("[mux-webhook] asset.errored: no record found for uploadId", uploadId);
   }
 
   return res.status(200).json({ received: true });

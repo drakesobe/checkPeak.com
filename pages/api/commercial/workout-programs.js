@@ -1,9 +1,5 @@
 // pages/api/commercial/workout-programs.js
 // CRUD for a trainer's published workout programs.
-// GET    — list all workouts for this trainer
-// POST   — create new workout
-// PUT    — update workout (id in query)
-// DELETE — delete workout (id in query)
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 import {
@@ -13,6 +9,22 @@ import {
   updateWorkout,
   deleteWorkout,
 } from "@/lib/commercial/airtable";
+
+function normalizePrice(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function airtableError(record) {
+  if (record?.error) {
+    const e = record.error;
+    return typeof e === "string" ? e : (e.message || "Airtable request failed");
+  }
+  if (!record?.id) return "Airtable returned no record id";
+  return null;
+}
 
 export default async function handler(req, res) {
   const user = getRequestUser(req);
@@ -29,12 +41,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { title, description, exercises, tier, tags } = req.body;
+    const { title, description, exercises, tier, tags, price } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "Title required" });
     if (!["Basic", "Premium", "Ultra"].includes(tier))
       return res.status(400).json({ error: "Invalid tier" });
 
-    const record = await createWorkout({
+    const fields = {
       trainerId,
       title:       title.trim(),
       description: description ?? "",
@@ -42,7 +54,16 @@ export default async function handler(req, res) {
       tier,
       tags:        JSON.stringify(tags ?? {}),
       published:   false,
-    });
+    };
+    const priceVal = normalizePrice(price);
+    if (priceVal !== null) fields.price = priceVal;
+
+    const record = await createWorkout(fields);
+    const err = airtableError(record);
+    if (err) {
+      console.error("[workout-programs POST] create failed:", err);
+      return res.status(502).json({ error: `Could not create workout: ${err}` });
+    }
     return res.status(201).json({ workout: record });
   }
 
@@ -56,6 +77,7 @@ export default async function handler(req, res) {
     if (req.body.tier        !== undefined) fields.tier        = req.body.tier;
     if (req.body.published   !== undefined) fields.published   = Boolean(req.body.published);
     if (req.body.tags        !== undefined) fields.tags        = JSON.stringify(req.body.tags);
+    if (req.body.price       !== undefined) fields.price       = normalizePrice(req.body.price);
     if (req.body.exercises   !== undefined) {
       fields.exercises = JSON.stringify(
         Array.isArray(req.body.exercises) ? req.body.exercises : []
@@ -63,6 +85,11 @@ export default async function handler(req, res) {
     }
 
     const updated = await updateWorkout(id, fields);
+    const err = airtableError(updated);
+    if (err) {
+      console.error("[workout-programs PUT] update failed:", err);
+      return res.status(502).json({ error: `Could not update workout: ${err}` });
+    }
     return res.status(200).json({ workout: updated });
   }
 

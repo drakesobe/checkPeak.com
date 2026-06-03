@@ -88,7 +88,7 @@ const CSS = `
 // ─── Video preview card ───────────────────────────────────────────────────────
 function VideoCard({ video, isLarge, isLocked }) {
   const f     = video?.fields ?? {};
-  const thumb = f.muxPlaybackId ? muxThumb(f.muxPlaybackId, isLarge ? 900 : 480, isLarge ? 506 : 270) : null;
+  const thumb = videoThumb(f, isLarge ? 900 : 480, isLarge ? 506 : 270);
 
   return (
     <div className="cp-vid" style={{ position: "relative", borderRadius: 2, overflow: "hidden", background: D.bgCard, border: `0.5px solid ${D.border}`, aspectRatio: "16/9" }}>
@@ -114,6 +114,20 @@ function VideoCard({ video, isLarge, isLocked }) {
       </div>
     </div>
   );
+}
+
+function ytId(url = "") {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+// Best available thumbnail: stored → Mux → YouTube-derived → none.
+function videoThumb(f = {}, w = 480, h = 270) {
+  if (f.thumbnailUrl) return f.thumbnailUrl;                 // captured at save time (Vimeo, etc.)
+  if (f.muxPlaybackId) return `https://image.mux.com/${f.muxPlaybackId}/thumbnail.jpg?width=${w}&height=${h}&fit_mode=smartcrop`;
+  const yt = ytId(f.embedUrl);
+  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  return null;                                              // Vimeo w/o stored thumb, or unknown source
 }
 
 // ─── Plan card (for upgrade) ──────────────────────────────────────────────────

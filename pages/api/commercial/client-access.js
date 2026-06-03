@@ -1,20 +1,16 @@
 // pages/api/commercial/client-access.js
-// Returns the client's tier, published videos, and published workouts for a trainer.
-// Both videos and workouts are filtered to the client's access tier.
+// Returns the client's tier, purchased item ids, and published videos/workouts
+// for a trainer. Access is granted by an active subscription OR any à la carte
+// purchase. The library page ORs purchasedIds into its per-item access check.
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 import {
   getTrainerBySlug,
   getSubscriptionByClientAndTrainer,
+  getPurchasesByEmailAndTrainer,
   getVideosByTrainer,
   getWorkoutsByTrainer,
 } from "@/lib/commercial/airtable";
-
-const TIER_RANK = { Basic: 1, Premium: 2, Ultra: 3 };
-
-function canAccess(clientTier, contentTier) {
-  return (TIER_RANK[clientTier] ?? 0) >= (TIER_RANK[contentTier] ?? 1);
-}
 
 export default async function handler(req, res) {
   const { slug } = req.query;
@@ -27,24 +23,25 @@ export default async function handler(req, res) {
   if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
   const clientEmail = user.email || user.Email;
-  const sub = await getSubscriptionByClientAndTrainer(clientEmail, trainer.id);
 
-  if (!sub || sub.fields?.status !== "active") {
-    return res.status(403).json({ error: "No active subscription" });
+  // getSubscriptionByClientAndTrainer already filters to status="active"
+  const sub  = await getSubscriptionByClientAndTrainer(clientEmail, trainer.id);
+  const tier = sub?.fields?.tier ?? null;
+
+  const purchases    = await getPurchasesByEmailAndTrainer(clientEmail, trainer.id);
+  const purchasedIds = purchases.map(p => p.fields?.itemId).filter(Boolean);
+
+  // No subscription AND no purchases -> no access at all.
+  if (!tier && purchasedIds.length === 0) {
+    return res.status(403).json({ error: "No access" });
   }
 
-  const clientTier = sub.fields?.tier ?? "Basic";
-
-  // Fetch all published videos and workouts in parallel
-  const [allVideos, allWorkouts] = await Promise.all([
+  // Fetch all published videos and workouts in parallel.
+  // The client page handles locked/accessible display via tier + purchasedIds.
+  const [videos, workouts] = await Promise.all([
     getVideosByTrainer(trainer.id, { publishedOnly: true }),
     getWorkoutsByTrainer(trainer.id, { publishedOnly: true }),
   ]);
 
-  // Return all — client-side and library page handle locked/accessible display
-  return res.status(200).json({
-    tier:     clientTier,
-    videos:   allVideos,
-    workouts: allWorkouts,
-  });
+  return res.status(200).json({ tier, purchasedIds, videos, workouts });
 }

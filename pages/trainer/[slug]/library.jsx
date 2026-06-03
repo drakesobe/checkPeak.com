@@ -87,6 +87,15 @@ function parseTags(raw) {
   catch { return {}; }
 }
 
+// Flatten the tag object into one list of individual tag strings.
+// Multi-select categories store arrays — e.g. { muscleGroup: ["Chest","Back"] } —
+// so flatten one level so each tag becomes its own filter, not a lumped "Chest,Back".
+function tagList(raw) {
+  return Object.values(parseTags(raw))
+    .flatMap(v => Array.isArray(v) ? v : [v])
+    .filter(Boolean);
+}
+
 function fmtDuration(secs) {
   if (!secs) return null;
   const m = Math.floor(secs / 60), s = secs % 60;
@@ -118,10 +127,7 @@ function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted
   const accessible = canAccess(clientTier, f.tier, video.id, purchasedIds);
   const price      = Number(f.price) > 0 ? Number(f.price) : null;
   const thumb = videoThumb(f, 560, 315);
-  const tags       = Object.values(parseTags(f.tags))
-    .flatMap(v => Array.isArray(v) ? v : [v])
-    .filter(Boolean)
-    .slice(0, 2);
+  const tags       = tagList(f.tags).slice(0, 2);
   const tierCfg    = TIER[f.tier];
   const dur        = fmtDuration(f.duration);
 
@@ -649,8 +655,8 @@ export default function ClientLibrary() {
   // Video derived
   const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
   const lockedVideos        = videos.filter(v => !canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
-  const filteredVideos      = accessibleVideos.filter(v => videoFilter === "all" || Object.values(parseTags(v.fields?.tags)).includes(videoFilter));
-  const allVideoTags        = [...new Set(videos.flatMap(v => Object.values(parseTags(v.fields?.tags))).filter(Boolean))];
+  const filteredVideos      = accessibleVideos.filter(v => videoFilter === "all" || tagList(v.fields?.tags).includes(videoFilter));
+  const allVideoTags        = [...new Set(videos.flatMap(v => tagList(v.fields?.tags)))];
   const videoCompletedCount = accessibleVideos.filter(v => completedIds.has(v.id)).length;
   const videoProgressPct    = accessibleVideos.length > 0 ? Math.round((videoCompletedCount / accessibleVideos.length) * 100) : 0;
   const playingVid          = playingId ? videos.find(v => v.id === playingId) : null;

@@ -2,7 +2,7 @@
 // Handles: checkout.session.completed, customer.subscription.deleted
 //
 // checkout.session.completed branches on metadata.kind:
-//   - "purchase"      -> write a one-time à la carte purchase row
+//   - "purchase"      -> write a one-time purchase row
 //   - (anything else) -> subscription flow (with upgrade replacement)
 //
 // Upgrade flow: if client already has an active subscription for this trainer,

@@ -2,7 +2,7 @@
 // Workout creation/edit drawer for the commercial dashboard.
 // Uses the shared TemplatePicker from the org side — same template system,
 // same /api/org/templates/list endpoint, same groupId preservation.
-// Optional one-time price: when set, the workout can be bought à la carte (no subscription).
+// Optional one-time price: when set, the workout can be bought No Subscription (no subscription).
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -244,7 +244,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   const [title,       setTitle]       = useState("");
   const [description, setDescription] = useState("");
   const [tier,        setTier]        = useState("Basic");
-  const [price,       setPrice]       = useState("");   // optional one-time price (à la carte)
+  const [price,       setPrice]       = useState("");   // optional one-time price (No Subscription)
   const [exercises,   setExercises]   = useState([newExercise(1)]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState("");
@@ -409,7 +409,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           title:       title.trim(),
           description: description.trim(),
           tier,
-          // null = subscription-only; number = also purchasable à la carte
+          // null = subscription-only; number = also purchasable No Subscription
           price: price.trim() === "" ? null : Math.max(0, Number(price) || 0),
           exercises: meaningful.map((ex, i) => ({
             Order:        i + 1,
@@ -559,7 +559,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
               <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
                 {hasPrice
                   ? "Clients can buy this workout outright — no subscription needed. Subscribers on the tier (and above) still get it included."
-                  : "Leave empty to keep this workout subscription-only. Add a price to also sell it à la carte."}
+                  : "Leave empty to keep this workout subscription-only. Add a price to also sell it as a one-time purchase."}
               </p>
             </div>
 

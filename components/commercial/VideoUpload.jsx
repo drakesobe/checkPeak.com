@@ -1,7 +1,7 @@
 // components/commercial/VideoUpload.jsx
 // Upload-from-file or embed-from-URL.
 // Equipment and Muscle Group are multi-select. All categories support custom tags.
-// Optional one-time price: when set, the video can be bought à la carte (no subscription).
+// Optional one-time price: when set, the video can be bought No Subscription (no subscription).
 
 import { useState, useRef } from "react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
@@ -164,7 +164,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
   const [title,    setTitle]    = useState("");
   const [desc,     setDesc]     = useState("");
   const [tier,     setTier]     = useState("Basic");
-  const [price,    setPrice]    = useState("");   // optional one-time price (à la carte)
+  const [price,    setPrice]    = useState("");   // optional one-time price (No Subscription)
   const [tags,     setTags]     = useState({});
   const [progress, setProgress] = useState(0);
   const [status,   setStatus]   = useState("idle");
@@ -275,7 +275,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
     setError("");
     setStatus("uploading");
 
-    // null = subscription-only; number = also purchasable à la carte
+    // null = subscription-only; number = also purchasable No Subscription
     const priceValue = price.trim() === "" ? null : Math.max(0, Number(price) || 0);
 
     try {
@@ -465,7 +465,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
             {hasPrice
               ? "Clients can buy this video on its own — no subscription needed. Subscribers on the selected tier (and above) still get it included."
-              : "Leave empty to keep this video subscription-only. Add a price to also sell it à la carte."}
+              : "Leave empty to keep this video subscription-only. Add a price to also sell it as a one-time purchase."}
           </p>
         </div>
 

@@ -1,6 +1,6 @@
 // components/commercial/VideoLibrary.jsx
 // Videos + Workouts tabs. Trainer-facing library manager.
-// Cards now surface an "à la carte" price badge when an item has a one-time price.
+// Cards now surface a "One-Time" price badge when an item has a one-time price.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -144,7 +144,7 @@ function VideoCard({ video, onTogglePublish, onDelete }) {
           <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: ss.bg, color: ss.color }}>{ss.label}</span>
           {price != null && (
             <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand }}>
-              ${price} · à la carte
+              ${price} · One-Time
             </span>
           )}
         </div>
@@ -232,7 +232,7 @@ function WorkoutCard({ workout, onTogglePublish, onDelete, onEdit }) {
           )}
           {price != null && (
             <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black" style={{ backgroundColor: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}` }}>
-              ${price} · à la carte
+              ${price} · One-Time
             </span>
           )}
         </div>
@@ -405,7 +405,7 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
     live:  workouts.filter(w => w.fields?.published).length,
   };
 
-  // Filter chips — "For sale" surfaces à la carte items
+  // Filter chips — "For sale" surfaces one-time purchasable items
   const FILTERS = ["all", "Basic", "Premium", "Ultra", "live", "forsale"];
   const filterLabel = f => f === "all" ? "All" : f === "live" ? "Live" : f === "forsale" ? "For sale" : f;
 

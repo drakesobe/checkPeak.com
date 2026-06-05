@@ -225,21 +225,87 @@ function CancelConfirm({ onConfirm, onDismiss, cancelling, isPaid }) {
   );
 }
 
+// ─── One-time item card ───────────────────────────────────────────────────────
+function PricedItemCard({ item, itemType, onBuy, buyingItem, user, clientTier }) {
+  const f           = item.fields ?? {};
+  const price       = Number(f.price);
+  const isLoading   = buyingItem === item.id;
+  const thumb       = videoThumb(f, 560, 315);
+  const tierCfg     = TIER[f.tier];
+  const alreadyHas  = tierCfg && TIER[clientTier]?.rank >= tierCfg.rank;
+
+  return (
+    <div style={{ background: D.bgCard, border: `0.5px solid ${D.border}`, borderTop: `2px solid ${tierCfg?.color ?? D.red}`, borderRadius: 2, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {itemType === "video" && (
+        <div style={{ position: "relative", paddingBottom: "56.25%", background: "#0A0C10", flexShrink: 0 }}>
+          {thumb
+            ? <img src={thumb} alt={f.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+            : <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><polygon points="5,3 19,12 5,21" fill="rgba(255,255,255,0.08)" /></svg></div>
+          }
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 50%)" }} />
+          <div style={{ position: "absolute", top: 8, left: 8, padding: "3px 9px", background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)", fontSize: 9, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red }}>
+            One-Time
+          </div>
+        </div>
+      )}
+      {itemType === "workout" && (
+        <div style={{ position: "relative", paddingBottom: "56.25%", background: `radial-gradient(ellipse 80% 70% at 50% 50%, ${tierCfg?.color ?? D.red}12 0%, transparent 70%), #0A0C10`, flexShrink: 0 }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={tierCfg?.color ?? D.red} strokeWidth="1.4" strokeLinecap="round" opacity="0.7"><path d="M6 4v16M18 4v16M6 12h12M3 7h3M18 7h3M3 17h3M18 17h3"/></svg>
+            <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg?.color ?? D.red, opacity: 0.7 }}>Workout</span>
+          </div>
+          <div style={{ position: "absolute", top: 8, left: 8, padding: "3px 9px", background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)", fontSize: 9, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red }}>
+            One-Time
+          </div>
+        </div>
+      )}
+      <div style={{ padding: "12px 16px 16px", flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: D.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em", marginBottom: 4 }}>{f.title || "Untitled"}</p>
+          {f.description && itemType === "workout" && (
+            <p style={{ fontSize: 11, color: D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.description}</p>
+          )}
+          {tierCfg && (
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: alreadyHas ? tierCfg.color : "rgba(255,255,255,0.22)" }}>
+              {alreadyHas ? `${f.tier} · included in your plan` : `Subscribe to ${f.tier} for full access →`}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="cp-btn"
+          onClick={() => onBuy(itemType, item.id)}
+          disabled={!!buyingItem}
+          style={{ width: "100%", padding: "11px", background: isLoading ? `${D.red}88` : D.red, color: "#fff", border: "none", cursor: buyingItem ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "inherit", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: buyingItem && !isLoading ? 0.4 : 1 }}>
+          {isLoading
+            ? <><span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />Redirecting…</>
+            : !user ? `Log In to Unlock · $${price}` : `Own It · $${price} →`
+          }
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function TrainerProfile() {
   const router   = useRouter();
   const { slug } = router.query;
   const { user, authReady } = useAuthContext();
 
-  const [trainer,       setTrainer]      = useState(null);
-  const [previewVideos, setPreview]      = useState([]);
-  const [totalVideos,   setTotal]        = useState(0);
-  const [totalWorkouts, setTotalWorkouts]= useState(0);
-  const [clientTier,    setClientTier]   = useState(null);
-  const [loading,       setLoading]      = useState(true);
-  const [checkoutTier,  setCheckoutTier] = useState(null);
-  const [checkoutError, setCheckoutError]= useState("");
-  const [scrolled,      setScrolled]     = useState(false);
+  const [trainer,        setTrainer]       = useState(null);
+  const [previewVideos,  setPreview]       = useState([]);
+  const [totalVideos,    setTotal]         = useState(0);
+  const [totalWorkouts,  setTotalWorkouts] = useState(0);
+  const [pricedVideos,   setPricedVideos]  = useState([]);
+  const [pricedWorkouts, setPricedWorkouts]= useState([]);
+  const [clientTier,     setClientTier]    = useState(null);
+  const [loading,        setLoading]       = useState(true);
+  const [checkoutTier,   setCheckoutTier]  = useState(null);
+  const [checkoutError,  setCheckoutError] = useState("");
+  const [buyingItem,     setBuyingItem]    = useState(null);
+  const [buyError,       setBuyError]      = useState("");
+  const [scrolled,       setScrolled]      = useState(false);
 
   // Cancel state
   const [cancelMode,    setCancelMode]   = useState(false);
@@ -263,11 +329,13 @@ export default function TrainerProfile() {
         if (!data) return;
         setTrainer(data.trainer);
         return fetch(`/api/commercial/trainer-videos-public?slug=${slug}`)
-          .then(r => r.ok ? r.json() : { videos: [], total: 0, totalVideos: 0, totalWorkouts: 0 })
-          .then(({ videos, total, totalVideos, totalWorkouts }) => {
+          .then(r => r.ok ? r.json() : { videos: [], total: 0, totalVideos: 0, totalWorkouts: 0, pricedVideos: [], pricedWorkouts: [] })
+          .then(({ videos, total, totalVideos, totalWorkouts, pricedVideos: pv, pricedWorkouts: pw }) => {
             setPreview(videos ?? []);
             setTotal(totalVideos ?? total ?? 0);
             setTotalWorkouts(totalWorkouts ?? 0);
+            setPricedVideos(pv ?? []);
+            setPricedWorkouts(pw ?? []);
           });
       })
       .catch(() => {})
@@ -322,6 +390,22 @@ export default function TrainerProfile() {
       setCancelling(false);
     }
   }, [slug]);
+
+  const handleBuyItem = useCallback(async (itemType, itemId) => {
+    if (!user) { router.push(`/login?next=/trainer/${slug}`); return; }
+    setBuyError("");
+    setBuyingItem(itemId);
+    try {
+      const res  = await fetch("/api/commercial/purchase-checkout", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, itemType, itemId, returnTo: "profile" }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) { window.location.href = data.url; }
+      else { setBuyError(data.error || "Could not start checkout."); setBuyingItem(null); }
+    } catch { setBuyError("Connection error."); setBuyingItem(null); }
+  }, [user, slug, router]);
 
   const checkoutSuccess = router.query.checkout === "success";
   const successTier     = router.query.tier || "";
@@ -409,7 +493,7 @@ export default function TrainerProfile() {
 
         {/* ── HERO ── */}
         <section style={{
-          minHeight: "100vh",
+          minHeight: "75vh",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
@@ -422,7 +506,7 @@ export default function TrainerProfile() {
           `,
           padding: "0 56px",
         }}>
-          <div style={{ maxWidth: 1140, margin: "0 auto", width: "100%", paddingTop: 80, paddingBottom: 72 }}>
+          <div style={{ maxWidth: 1140, margin: "0 auto", width: "100%", paddingTop: 80, paddingBottom: 48 }}>
             <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: previewVideos.length > 0 ? "1fr 1fr" : "1fr", gap: 64, alignItems: "center" }}>
 
               {/* LEFT */}
@@ -460,7 +544,7 @@ export default function TrainerProfile() {
                         Start Training →
                       </button>
                       {previewVideos.length > 0 && (
-                        <button className="ghost" onClick={() => document.getElementById("cp-program")?.scrollIntoView({ behavior: "smooth" })}
+                        <button className="ghost" onClick={() => plansRef.current?.scrollIntoView({ behavior: "smooth" })}
                           style={{ padding: "12px 24px", background: "transparent", color: D.dim, border: `0.5px solid rgba(255,255,255,0.16)`, cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "inherit", borderRadius: 2 }}>
                           View Program
                         </button>
@@ -497,7 +581,7 @@ export default function TrainerProfile() {
         </section>
 
         {/* ── PLANS / ACCESS SECTION ── */}
-        <section ref={plansRef} style={{ padding: "72px 56px 88px", background: `radial-gradient(ellipse 60% 50% at 50% 110%, rgba(218,54,51,0.05) 0%, transparent 60%), ${D.bg}` }} className="cp-section">
+        <section ref={plansRef} style={{ padding: "52px 56px 72px", background: `radial-gradient(ellipse 60% 50% at 50% 110%, rgba(218,54,51,0.05) 0%, transparent 60%), ${D.bg}` }} className="cp-section">
           <div style={{ maxWidth: 1140, margin: "0 auto" }}>
 
             {/* Section label */}
@@ -630,6 +714,49 @@ export default function TrainerProfile() {
             )}
           </div>
         </section>
+
+        {/* ── DROP IN: one-time purchasable items ── */}
+        {(pricedVideos.length > 0 || pricedWorkouts.length > 0) && (
+          <section style={{ background: D.bgSection, borderTop: `3px solid ${D.red}` }} className="cp-section">
+            {/* Red tension stripe */}
+            <div style={{ width: "100%", height: 1, background: `linear-gradient(90deg, ${D.red} 0%, transparent 60%)`, opacity: 0.35 }} />
+            <div style={{ padding: "72px 56px 88px", maxWidth: 1140, margin: "0 auto" }}>
+
+              {/* Counter-statement + headline */}
+              <div style={{ marginBottom: 44 }}>
+                <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.28em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
+                  One Shot. No Excuses.
+                </p>
+                <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(3rem, 7vw, 6rem)", lineHeight: 0.85, letterSpacing: "-0.03em", textTransform: "uppercase", color: D.text, marginBottom: 16 }}>
+                  Drop In.
+                </h2>
+                <p style={{ fontSize: 13, color: D.dim, maxWidth: 340, lineHeight: 1.6 }}>
+                  No commitment. One session. Yours forever.
+                </p>
+              </div>
+
+              {buyError && (
+                <div style={{ marginBottom: 20, padding: "11px 16px", background: "rgba(218,54,51,0.1)", border: `0.5px solid rgba(218,54,51,0.28)`, borderRadius: 2, fontSize: 13, color: "#FF7B72", fontWeight: 600 }}>
+                  {buyError}
+                </div>
+              )}
+
+              <div className="cp-plan-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+                {pricedVideos.map(v => (
+                  <PricedItemCard key={v.id} item={v} itemType="video" onBuy={handleBuyItem} buyingItem={buyingItem} user={user} clientTier={clientTier} />
+                ))}
+                {pricedWorkouts.map(w => (
+                  <PricedItemCard key={w.id} item={w} itemType="workout" onBuy={handleBuyItem} buyingItem={buyingItem} user={user} clientTier={clientTier} />
+                ))}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 24 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/><path d="M2 10h20" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5"/></svg>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", letterSpacing: "0.04em" }}>Secured by Stripe · Own it permanently</span>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ── FOOTER ── */}
         <footer style={{ borderTop: `0.5px solid ${D.border}`, padding: "22px 56px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>

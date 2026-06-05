@@ -30,10 +30,21 @@ export default async function handler(req, res) {
     .filter(v => v.fields?.tier === "Basic")
     .slice(0, 4);
 
+  // One-time purchasable items — surfaced publicly so non-subscribers can buy in
+  const pricedVideos = normalized
+    .filter(v => Number(v.fields?.price) > 0)
+    .map(v => ({ id: v.id, fields: { title: v.fields.title, tier: v.fields.tier, price: v.fields.price, muxPlaybackId: v.fields.muxPlaybackId, thumbnailUrl: v.fields.thumbnailUrl, embedUrl: v.fields.embedUrl, duration: v.fields.duration } }));
+
+  const pricedWorkouts = allWorkouts
+    .filter(w => Number(w.fields?.price) > 0)
+    .map(w => ({ id: w.id, fields: { title: w.fields.title, tier: w.fields.tier, price: w.fields.price, description: w.fields.description } }));
+
   return res.status(200).json({
     videos:        preview,
-    total:         normalized.length, // back-compat
+    total:         normalized.length,
     totalVideos:   normalized.length,
     totalWorkouts: allWorkouts.length,
+    pricedVideos,
+    pricedWorkouts,
   });
 }

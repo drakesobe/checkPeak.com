@@ -1,6 +1,6 @@
 // pages/api/commercial/client-access.js
 // Returns the client's tier, purchased item ids, and published videos/workouts
-// for a trainer. Access is granted by an active subscription OR any à la carte
+// for a trainer. Access is granted by an active subscription OR any one-time
 // purchase. The library page ORs purchasedIds into its per-item access check.
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";

@@ -11,7 +11,7 @@ import {
 import mux from "@/lib/mux";
 
 // null  = subscription-only (current behavior)
-// number = also purchasable à la carte for that dollar amount
+// number = also purchasable one-time for that dollar amount
 // Empty / invalid / <= 0 all normalize to null so a stray "0" never creates a $0 item.
 function normalizePrice(v) {
   if (v === null || v === undefined || v === "") return null;

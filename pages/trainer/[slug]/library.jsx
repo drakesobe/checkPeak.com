@@ -3,7 +3,7 @@
 // Two tabs: Videos (with completion tracking) and Workouts.
 // Workouts: "View Workout →" opens viewer modal → "Add to Today →" → success state.
 //
-// À LA CARTE: clients can reach this page with NO subscription if they've bought
+// One-Time: clients can reach this page with NO subscription if they've bought
 // individual items. Access per item = (tier rank high enough) OR (item is purchased).
 // Locked items that have a price show a "Buy for $X" button.
 "use client";
@@ -162,7 +162,7 @@ function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted
                 Buy for ${price}
               </button>
             ) : (
-              TIER_NEXT[clientTier] && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier]]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>{TIER_NEXT[clientTier]} only</span>
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: TIER[TIER_NEXT[clientTier] ?? "Basic"]?.color ?? "rgba(255,255,255,0.4)", background: "rgba(0,0,0,0.65)", padding: "3px 10px", backdropFilter: "blur(4px)" }}>{TIER_NEXT[clientTier] ?? "Basic"} plan required</span>
             )}
           </div>
         )}
@@ -265,7 +265,7 @@ function WorkoutCard({ workout, clientTier, purchasedIds, onOpen, onBuy }) {
         ) : (
           <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: D.faint, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            {TIER_NEXT[clientTier] ?? "upgrade"} required
+            {TIER_NEXT[clientTier] ?? "Basic"} plan required
           </div>
         )}
       </div>
@@ -543,23 +543,32 @@ function WorkoutViewer({ workout, clientTier, onClose }) {
 
 // ─── Upgrade prompt ───────────────────────────────────────────────────────────
 
-function UpgradePrompt({ lockedCount, nextTier, trainerName, slug }) {
-  if (!nextTier || lockedCount === 0) return null;
-  const cfg = TIER[nextTier];
+function UpgradePrompt({ lockedCount, nextTier, clientTier, trainerName, slug }) {
+  if (lockedCount === 0) return null;
+  const targetTier = nextTier ?? "Basic";
+  const cfg        = TIER[targetTier];
+  const isNewSub   = !clientTier;
+
   return (
     <div style={{ marginTop: 48, borderTop: `0.5px solid ${D.border}`, paddingTop: 48 }}>
       <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 16 }}>
           <div style={{ width: 20, height: "0.5px", background: cfg.color }} />
-          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: cfg.color }}>Upgrade to {nextTier}</span>
+          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: cfg.color }}>
+            {isNewSub ? `Subscribe · ${targetTier}` : `Upgrade to ${targetTier}`}
+          </span>
           <div style={{ width: 20, height: "0.5px", background: cfg.color }} />
         </div>
         <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.8rem, 5vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>
           {lockedCount} More<br />{lockedCount === 1 ? "Item" : "Items"} Waiting.
         </h3>
-        <p style={{ fontSize: 13, color: D.dim, lineHeight: 1.65, marginBottom: 28 }}>Unlock the full {trainerName} program.</p>
+        <p style={{ fontSize: 13, color: D.dim, lineHeight: 1.65, marginBottom: 28 }}>
+          {isNewSub
+            ? `Subscribe to ${targetTier} to unlock the full ${trainerName} program.`
+            : `Unlock the full ${trainerName} program.`}
+        </p>
         <a href={`/trainer/${slug}`} style={{ display: "inline-block", padding: "13px 36px", background: cfg.color, color: "#fff", textDecoration: "none", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 2 }}>
-          Upgrade Plan →
+          {isNewSub ? `Subscribe to ${targetTier} →` : "Upgrade Plan →"}
         </a>
       </div>
     </div>
@@ -650,7 +659,7 @@ export default function ClientLibrary() {
 
   const tf       = trainer.fields ?? {};
   const tierCfg  = TIER[clientTier];
-  const nextTier = TIER_NEXT[clientTier] ?? null;
+  const nextTier = TIER_NEXT[clientTier] ?? (clientTier ? null : "Basic");
 
   // Video derived
   const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
@@ -683,7 +692,7 @@ export default function ClientLibrary() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             {tierCfg
               ? <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "5px 12px", border: `0.5px solid ${tierCfg.color}22` }}>{clientTier}</span>
-              : <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "5px 12px", border: `0.5px solid ${D.border}` }}>À la carte</span>
+              : <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "5px 12px", border: `0.5px solid ${D.border}` }}>One-Time Access</span>
             }
             <a href={`/trainer/${slug}`} className="nav-link" style={{ fontSize: 11, color: D.faint, textDecoration: "none", letterSpacing: "0.04em", fontWeight: 600 }}>← Profile</a>
           </div>
@@ -701,7 +710,7 @@ export default function ClientLibrary() {
               <div>
                 <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 6 }}>{tf.name}</h1>
                 <p style={{ fontSize: 12, color: D.faint }}>
-                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier ? `${clientTier} plan` : "à la carte"}
+                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier ? `${clientTier} plan` : "one-time access"}
                 </p>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -803,6 +812,7 @@ export default function ClientLibrary() {
             <UpgradePrompt
               lockedCount={lockedVideos.length + lockedWorkouts.length}
               nextTier={nextTier}
+              clientTier={clientTier}
               trainerName={tf.name?.split(" ")[0] || "this trainer"}
               slug={slug}
             />

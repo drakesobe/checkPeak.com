@@ -1,5 +1,5 @@
 // pages/api/commercial/purchase-checkout.js
-// One-time (à la carte) purchase of a single video or workout.
+// One-time purchase of a single video or workout.
 // Mirrors create-checkout.js but uses mode: "payment" and carries
 // kind: "purchase" in metadata so the shared webhook writes a purchase row.
 
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const user = getRequestUser(req);
   if (!user) return res.status(401).json({ error: "You must be logged in to buy." });
 
-  const { slug, itemType, itemId } = req.body;
+  const { slug, itemType, itemId, returnTo } = req.body;
   if (!slug || !itemType || !itemId)
     return res.status(400).json({ error: "Missing slug, itemType, or itemId." });
   if (!["video", "workout"].includes(itemType))
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
         clientName,
       },
       success_url: `${siteUrl}/trainer/${slug}/library?purchased=${encodeURIComponent(itemId)}`,
-      cancel_url:  `${siteUrl}/trainer/${slug}`,
+      cancel_url:  returnTo === "profile" ? `${siteUrl}/trainer/${slug}` : `${siteUrl}/trainer/${slug}/library`,
     });
 
     return res.status(200).json({ url: session.url });

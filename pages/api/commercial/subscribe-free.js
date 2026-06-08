@@ -35,6 +35,11 @@ export default async function handler(req, res) {
   if (!trainer) return res.status(404).json({ ok: false, error: "Trainer not found" });
 
   const f = trainer.fields ?? {};
+
+  if (f.libraryLocked) {
+    return res.status(403).json({ ok: false, error: "This library is closed to new members." });
+  }
+
   const priceKeys = { Basic: "basicPrice", Premium: "premiumPrice", Ultra: "ultraPrice" };
   const price = Number(f[priceKeys[tier]] ?? 1);
 

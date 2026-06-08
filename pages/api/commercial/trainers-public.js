@@ -31,6 +31,7 @@ export default async function handler(req, res) {
         premiumPrice:      r.fields.premiumPrice      ?? null,
         ultraPrice:        r.fields.ultraPrice        ?? null,
         activeClientCount: r.fields.activeClientCount ?? 0,
+        libraryLocked:     r.fields.libraryLocked     ?? false,
       },
     }));
 

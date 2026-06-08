@@ -25,3 +25,6 @@ Thumbs.db
 # Optional IDE/editor files
 .vscode/
 .idea/
+
+# Sentry Config File
+.env.sentry-build-plugin

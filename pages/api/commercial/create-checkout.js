@@ -22,6 +22,11 @@ export default async function handler(req, res) {
   if (!trainer) return res.status(404).json({ error: "Trainer not found." });
 
   const f = trainer.fields ?? {};
+
+  if (f.libraryLocked) {
+    return res.status(403).json({ error: "This library is closed to new members." });
+  }
+
   const tierPriceMap = {
     Basic:   f.basicPrice,
     Premium: f.premiumPrice,

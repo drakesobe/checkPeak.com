@@ -30,6 +30,10 @@ export default async function handler(req, res) {
   const trainer = await getTrainerBySlug(slug);
   if (!trainer) return res.status(404).json({ error: "Trainer not found." });
 
+  if ((trainer.fields ?? {}).libraryLocked) {
+    return res.status(403).json({ error: "This library is closed to new members." });
+  }
+
   // Fetch the item and re-derive the price server-side — never trust a client price.
   const record = itemType === "video"
     ? await getVideoById(itemId)

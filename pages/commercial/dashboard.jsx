@@ -5,11 +5,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import VideoLibrary from "@/components/commercial/VideoLibrary";
+import AnalyticsTab  from "@/components/commercial/AnalyticsTab";
 import Head from "next/head";
-import { ArrowLeft, RefreshCcw, Users, Video, ExternalLink, X, Plus } from "lucide-react";
+import { ArrowLeft, RefreshCcw, Users, Video, ExternalLink, X, Plus, Mail } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
-const TABS = ["Library", "Clients", "Pricing", "Settings"];
+const TABS = ["Library", "Clients", "Pricing", "Analytics", "Settings"];
 
 const DEFAULT_PERKS = {
   Basic:   ["Full video library access", "Filter by workout type & difficulty", "Watch on any device"],
@@ -320,13 +321,146 @@ function PricingTab({ trainer }) {
   );
 }
 
+// ─── Broadcast Modal ──────────────────────────────────────────────────────────
+
+function BroadcastModal({ trainer, onClose }) {
+  const f = trainer.fields ?? {};
+  const [subject,    setSubject]    = useState("");
+  const [body,       setBody]       = useState("");
+  const [tierFilter, setTierFilter] = useState("all");
+  const [sending,    setSending]    = useState(false);
+  const [result,     setResult]     = useState(null);
+  const [error,      setError]      = useState("");
+
+  async function send() {
+    if (!subject.trim()) { setError("Subject is required."); return; }
+    if (!body.trim())    { setError("Message body is required."); return; }
+    setSending(true); setError(""); setResult(null);
+    const res  = await fetch("/api/commercial/email-broadcast", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject, body, tierFilter }),
+    });
+    const data = await res.json();
+    setSending(false);
+    if (res.ok) setResult(data);
+    else setError(data.error || "Failed to send.");
+  }
+
+  const inputStyle = {
+    padding: "9px 12px", border: `1px solid ${DS.border}`, borderRadius: 6,
+    fontSize: 13, fontFamily: "inherit", color: DS.bodyText, outline: "none",
+    width: "100%", background: "#fff", boxSizing: "border-box",
+  };
+  const focus = {
+    onFocus: e => { e.target.style.borderColor = DS.brand; e.target.style.boxShadow = `0 0 0 3px ${DS.brandBg}`; },
+    onBlur:  e => { e.target.style.borderColor = DS.border; e.target.style.boxShadow = "none"; },
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto"
+      style={{ paddingTop: 80, paddingBottom: 40, paddingLeft: 16, paddingRight: 16, backgroundColor: "rgba(0,0,0,0.55)" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-sm" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+
+        <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: DS.border }}>
+          <div>
+            <p className="text-sm font-black" style={{ color: DS.bodyText }}>Send Email</p>
+            <p className="text-[11px]" style={{ color: DS.dimText }}>Broadcast to your active subscribers</p>
+          </div>
+          <button type="button" onClick={onClose}
+            style={{ color: DS.dimText, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {result ? (
+            <div className="py-8 text-center">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"
+                style={{ backgroundColor: DS.safeBg, border: `1px solid ${DS.safeBorder}` }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M5 13l4 4L19 7" stroke={DS.safe} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <p className="text-sm font-black mb-1" style={{ color: DS.bodyText }}>
+                Sent to {result.sent} subscriber{result.sent !== 1 ? "s" : ""}
+              </p>
+              {result.failed > 0 && (
+                <p className="text-xs mb-2" style={{ color: DS.banned }}>{result.failed} failed to send</p>
+              )}
+              <button type="button" onClick={onClose}
+                className="mt-3 px-5 py-2 rounded-sm text-xs font-black"
+                style={{ backgroundColor: DS.brand, color: "#fff" }}>
+                Done
+              </button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: DS.dimText, marginBottom: 6 }}>
+                  Send to
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {["all", "Basic", "Premium", "Ultra"].map(t => (
+                    <button key={t} type="button" onClick={() => setTierFilter(t)}
+                      className="px-3 py-1.5 rounded-sm text-xs font-bold border transition"
+                      style={{
+                        backgroundColor: tierFilter === t ? DS.brand + "15" : "transparent",
+                        borderColor:     tierFilter === t ? DS.brand + "55" : DS.border,
+                        color:           tierFilter === t ? DS.brand : DS.labelText,
+                      }}>
+                      {t === "all" ? "All subscribers" : `${t} only`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: DS.dimText, marginBottom: 6 }}>Subject</p>
+                <input style={inputStyle} {...focus}
+                  value={subject} onChange={e => setSubject(e.target.value)}
+                  placeholder={`New program just dropped`} />
+              </div>
+
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: DS.dimText, marginBottom: 6 }}>Message</p>
+                <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 150, lineHeight: 1.7 }} {...focus}
+                  value={body} onChange={e => setBody(e.target.value)}
+                  placeholder={`Hey,\n\nJust posted a new 6-week strength block. Check it out in the library.\n\n— ${f.name || "Coach"}`} />
+              </div>
+
+              {error && <p style={{ fontSize: 12, color: DS.banned, fontWeight: 600 }}>{error}</p>}
+
+              <div className="flex items-center justify-between pt-1">
+                <p style={{ fontSize: 11, color: DS.dimText }}>Sent from your CheckPeak library address</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={onClose}
+                    style={{ padding: "9px 16px", borderRadius: 6, border: `1px solid ${DS.border}`, background: "transparent", color: DS.labelText, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={send} disabled={sending}
+                    style={{ padding: "9px 16px", borderRadius: 6, background: sending ? DS.brand + "99" : DS.brand, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {sending ? "Sending…" : "Send email"}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Clients Tab ──────────────────────────────────────────────────────────────
 
 function ClientsTab({ trainer }) {
   const slug = trainer.fields?.slug ?? "";
-  const [clients, setClients] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
+  const [clients,       setClients]       = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [showAdd,       setShowAdd]       = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
   const [name, setName]       = useState("");
   const [email, setEmail]     = useState("");
   const [tier, setTier]       = useState("Basic");
@@ -396,6 +530,11 @@ function ClientsTab({ trainer }) {
               color: copied ? DS.safe : DS.labelText,
               backgroundColor: copied ? DS.safeBg : DS.cardBg }}>
             {copied ? "✓ Copied!" : "Copy library link"}
+          </button>
+          <button type="button" onClick={() => setShowBroadcast(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-bold border transition"
+            style={{ borderColor: DS.border, color: DS.labelText, backgroundColor: DS.cardBg }}>
+            <Mail className="w-3 h-3" /> Send Email
           </button>
           <button type="button" onClick={() => setShowAdd(v => !v)}
             className="px-3 py-1.5 rounded-sm text-xs font-black transition"
@@ -502,6 +641,10 @@ function ClientsTab({ trainer }) {
           })}
         </div>
       )}
+
+      {showBroadcast && (
+        <BroadcastModal trainer={trainer} onClose={() => setShowBroadcast(false)} />
+      )}
     </div>
   );
 }
@@ -514,6 +657,10 @@ function SettingsTab({ trainer }) {
   const [bio,  setBio]  = useState(f.bio  ?? "");
   const [saving, setSaving] = useState(false);
   const [msg,    setMsg]    = useState("");
+
+  const [locked,     setLocked]     = useState(Boolean(f.libraryLocked));
+  const [lockSaving, setLockSaving] = useState(false);
+  const [lockMsg,    setLockMsg]    = useState("");
 
   const inputStyle = {
     backgroundColor: DS.brandBg,
@@ -530,6 +677,23 @@ function SettingsTab({ trainer }) {
     });
     setSaving(false);
     setMsg(res.ok ? "Saved." : "Failed to save.");
+  }
+
+  async function toggleLock() {
+    const next = !locked;
+    setLockSaving(true); setLockMsg("");
+    const res = await fetch("/api/commercial/trainer", {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraryLocked: next }),
+    });
+    setLockSaving(false);
+    if (res.ok) {
+      setLocked(next);
+      setLockMsg(next ? "Library locked." : "Library open.");
+    } else {
+      setLockMsg("Failed to update.");
+    }
   }
 
   return (
@@ -567,6 +731,38 @@ function SettingsTab({ trainer }) {
             checkpeak.com/trainer/{f.slug}
           </a>
         </p>
+      </div>
+
+      {/* Library Access */}
+      <div className="rounded-sm p-4 mb-4"
+        style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${locked ? DS.caution : DS.safe}` }}>
+        <p className="text-[10px] font-black uppercase tracking-wider mb-3" style={{ color: locked ? DS.caution : DS.safe }}>
+          Library Access
+        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <p className="text-xs font-black mb-1" style={{ color: DS.bodyText }}>
+              {locked ? "Members only — library is closed" : "Open — anyone can join"}
+            </p>
+            <p className="text-[11px] leading-relaxed" style={{ color: DS.labelText }}>
+              {locked
+                ? "New subscriptions and purchases are blocked. Only your existing members can access your content. Use this to keep your library private to your own team or athletes."
+                : "Anyone can discover your profile, subscribe, or buy content. Toggle this off to restrict access to existing members only."}
+            </p>
+          </div>
+          <button type="button" onClick={lockSaving ? undefined : toggleLock} disabled={lockSaving}
+            className="flex items-center gap-2 shrink-0 disabled:opacity-40 mt-0.5">
+            <div className="relative transition-colors" style={{ width: 32, height: 18, borderRadius: 99, backgroundColor: locked ? DS.caution : DS.border }}>
+              <div className="absolute top-0.5 transition-all" style={{ left: locked ? 16 : 2, width: 14, height: 14, borderRadius: 99, backgroundColor: "#fff" }} />
+            </div>
+          </button>
+        </div>
+        {lockMsg && (
+          <p className="text-[11px] font-bold mt-3"
+            style={{ color: lockMsg.includes("Failed") ? DS.banned : locked ? DS.caution : DS.safe }}>
+            {lockMsg}
+          </p>
+        )}
       </div>
 
       {msg && <p className="text-xs font-bold mb-3" style={{ color: msg === "Saved." ? DS.safe : DS.banned }}>{msg}</p>}
@@ -649,10 +845,11 @@ export default function CommercialDashboard() {
             ))}
           </div>
 
-          {tab === "Library"  && <VideoLibrary trainerId={trainer.id} trainerSlug={f.slug} onVideoCountChange={setVideoCount} />}
-          {tab === "Clients"  && <ClientsTab trainer={trainer} />}
-          {tab === "Pricing"  && <PricingTab trainer={trainer} />}
-          {tab === "Settings" && <SettingsTab trainer={trainer} />}
+          {tab === "Library"   && <VideoLibrary trainerId={trainer.id} trainerSlug={f.slug} onVideoCountChange={setVideoCount} />}
+          {tab === "Clients"   && <ClientsTab  trainer={trainer} />}
+          {tab === "Pricing"   && <PricingTab  trainer={trainer} />}
+          {tab === "Analytics" && <AnalyticsTab />}
+          {tab === "Settings"  && <SettingsTab trainer={trainer} />}
         </div>
       </div>
     </>

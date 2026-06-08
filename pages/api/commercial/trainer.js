@@ -60,14 +60,16 @@ export default async function handler(req, res) {
       "name", "specialty", "bio",
       "basicPrice", "premiumPrice", "ultraPrice",
       "basicPerks", "premiumPerks", "ultraPerks",
+      "libraryLocked",
     ];
 
     const fields = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
-        // Numeric fields
         if (["basicPrice", "premiumPrice", "ultraPrice"].includes(key)) {
           fields[key] = Number(req.body[key]) || 0;
+        } else if (key === "libraryLocked") {
+          fields[key] = Boolean(req.body[key]);
         } else {
           fields[key] = req.body[key];
         }

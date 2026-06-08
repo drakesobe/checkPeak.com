@@ -6,7 +6,7 @@
 // Add this field to your .env.local: VIDEO_COMPLETIONS_TABLE_ID=tblXXXXXXXX
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
-import { getTrainerBySlug, getCompletionsByClientAndTrainer } from "@/lib/commercial/airtable";
+import { getTrainerBySlug, getCompletionsByClientAndTrainer } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();

@@ -8,7 +8,7 @@ import {
   createWorkout,
   updateWorkout,
   deleteWorkout,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 function normalizePrice(v) {
   if (v === null || v === undefined || v === "") return null;

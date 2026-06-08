@@ -6,7 +6,7 @@ import {
   createSubscription,
   updateSubscription,
   updateTrainer,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   const user = getRequestUser(req);

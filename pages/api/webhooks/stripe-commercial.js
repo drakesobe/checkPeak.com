@@ -16,7 +16,7 @@ import {
   updateSubscription,
   getPurchaseByEmailAndItem,
   createPurchase,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 export const config = { api: { bodyParser: false } };
 

@@ -7,7 +7,7 @@ import {
   createVideo,
   updateVideo,
   deleteVideo,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 import mux from "@/lib/mux";
 
 // null  = subscription-only (current behavior)

@@ -8,7 +8,7 @@ import {
   getTrainerBySlug,
   getVideoById,
   getWorkoutById,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {

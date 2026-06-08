@@ -4,7 +4,7 @@ import {
   getTrainerByUserId,
   createTrainer,
   updateTrainer,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

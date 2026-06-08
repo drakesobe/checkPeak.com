@@ -10,7 +10,7 @@ import {
   getPurchasesByEmailAndTrainer,
   getVideosByTrainer,
   getWorkoutsByTrainer,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   const { slug } = req.query;

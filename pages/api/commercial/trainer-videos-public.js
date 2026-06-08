@@ -2,7 +2,7 @@
 // Public — no auth needed.
 // Returns Basic-tier video preview (max 4) + total video and workout counts.
 
-import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/airtable";
+import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");

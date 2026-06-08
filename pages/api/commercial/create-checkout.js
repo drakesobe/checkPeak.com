@@ -1,6 +1,6 @@
 // pages/api/commercial/create-checkout.js
 import Stripe from "stripe";
-import { getTrainerBySlug } from "@/lib/commercial/airtable";
+import { getTrainerBySlug } from "@/lib/commercial/db";
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {

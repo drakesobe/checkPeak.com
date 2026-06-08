@@ -4,7 +4,7 @@
 // extra round trips.
 
 import { getRequestUser }         from "@/lib/commercial/getRequestUser";
-import { getSubscriptionsByEmail, getTrainerById } from "@/lib/commercial/airtable";
+import { getSubscriptionsByEmail, getTrainerById } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();

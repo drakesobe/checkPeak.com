@@ -2,7 +2,7 @@
 // Public — no auth needed. Returns trainer profile by slug.
 // Used by the client library page to show trainer name/info.
 
-import { getTrainerBySlug } from "@/lib/commercial/airtable";
+import { getTrainerBySlug } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   const { slug } = req.query;

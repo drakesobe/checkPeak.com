@@ -9,7 +9,7 @@ import {
   getTrainerBySlug,
   getSubscriptionByClientAndTrainer,
   updateSubscription,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-04-10" });
 

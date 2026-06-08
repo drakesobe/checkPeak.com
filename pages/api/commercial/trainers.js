@@ -1,7 +1,7 @@
 // pages/api/commercial/trainers.js
 // Public — no auth required. Returns all trainer profiles for the browse page.
 
-import { getPublicTrainers } from "@/lib/commercial/airtable";
+import { getPublicTrainers } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();

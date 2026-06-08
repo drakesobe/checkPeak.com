@@ -5,7 +5,7 @@ import { getRequestUser } from "@/lib/commercial/getRequestUser";
 import {
   getTrainerByUserId,
   getSubscriptionsByTrainer,
-} from "@/lib/commercial/airtable";
+} from "@/lib/commercial/db";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 

@@ -1,6 +1,6 @@
 // pages/api/commercial/completion.js
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
-import { getSubscriptionByClientAndTrainer, getVideoById } from "@/lib/commercial/airtable";
+import { getSubscriptionByClientAndTrainer, getVideoById } from "@/lib/commercial/db";
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const API_KEY = process.env.AIRTABLE_API_KEY;

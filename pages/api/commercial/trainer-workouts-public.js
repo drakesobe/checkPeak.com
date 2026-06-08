@@ -1,7 +1,7 @@
 // pages/api/commercial/trainer-workouts-public.js
 // Public — no auth needed. Returns subscription workouts for a trainer by slug.
 
-import { getTrainerBySlug, getWorkoutsByTrainer } from "@/lib/commercial/airtable";
+import { getTrainerBySlug, getWorkoutsByTrainer } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");

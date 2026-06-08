@@ -51,13 +51,20 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ ok: false, error: "Not logged in" });
+  // Mobile fallback: cookie auth doesn't work in RN — accept athleteToken from body
+  const mobileToken = String(
+    req.body?.athleteToken ?? req.headers?.["x-athlete-token"] ?? ""
+  ).trim();
+
+  if (!user && !mobileToken) {
+    return res.status(401).json({ ok: false, error: "Not logged in" });
+  }
 
   const { workoutId } = req.body ?? {};
   if (!workoutId) return res.status(400).json({ ok: false, error: "Missing workoutId" });
 
-  const email = String(user.Email || user.email || "").trim().toLowerCase();
-  if (!email) return res.status(400).json({ ok: false, error: "No email on account" });
+  const email = user ? String(user.Email || user.email || "").trim().toLowerCase() : "";
+  if (!email && !mobileToken) return res.status(400).json({ ok: false, error: "No email on account" });
 
   const b = getBase();
 
@@ -104,11 +111,12 @@ export default async function handler(req, res) {
   let orgId           = null;
 
   try {
+    const formula = email
+      ? `LOWER({Email}) = "${email.replace(/"/g, '\\"')}"`
+      : `{${tokenField}} = "${mobileToken.replace(/"/g, '\\"')}"`;
+
     const rows = await b(AT.tables.athletes)
-      .select({
-        filterByFormula: `LOWER({Email}) = "${email.replace(/"/g, '\\"')}"`,
-        maxRecords: 1,
-      })
+      .select({ filterByFormula: formula, maxRecords: 1 })
       .firstPage();
 
     if (rows.length > 0) {

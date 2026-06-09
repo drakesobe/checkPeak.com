@@ -17,11 +17,35 @@ function safeJson(v) {
   try { return JSON.parse(v); } catch { return null; }
 }
 
+function cookieMissingOrBroken(req) {
+  try {
+    const raw = req?.cookies?.user || "";
+    if (!raw) return true;
+    const decoded = raw.includes("%7B") || raw.includes("%22")
+      ? decodeURIComponent(raw) : raw;
+    JSON.parse(decoded);
+    return false;
+  } catch { return true; }
+}
+
+function injectAuthFromField(req, authUserField) {
+  if (!authUserField) return;
+  req.cookies      = req.cookies || {};
+  req.cookies.user = authUserField;
+  req.headers      = req.headers || {};
+  req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  if (cookieMissingOrBroken(req)) {
+    const authUserField = asStr(req.query?._authUser || "");
+    if (authUserField) injectAuthFromField(req, authUserField);
+  }
 
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });

@@ -8,6 +8,25 @@ import { supabaseAdmin } from "@/lib/supabase";
 function asStr(v) { return String(v ?? "").trim(); }
 function isISODate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s)); }
 
+function cookieMissingOrBroken(req) {
+  try {
+    const raw = req?.cookies?.user || "";
+    if (!raw) return true;
+    const decoded = raw.includes("%7B") || raw.includes("%22")
+      ? decodeURIComponent(raw) : raw;
+    JSON.parse(decoded);
+    return false;
+  } catch { return true; }
+}
+
+function injectAuthFromField(req, authUserField) {
+  if (!authUserField) return;
+  req.cookies      = req.cookies || {};
+  req.cookies.user = authUserField;
+  req.headers      = req.headers || {};
+  req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;
+}
+
 async function handleGet(req, res, athleteToken) {
   const date = asStr(req.query.date);
   if (!isISODate(date)) return res.status(400).json({ error: "Invalid date. Use YYYY-MM-DD." });
@@ -86,6 +105,11 @@ async function handlePost(req, res, athleteToken, athleteId) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+  if (cookieMissingOrBroken(req)) {
+    const authUserField = asStr(req.query?._authUser || "");
+    if (authUserField) injectAuthFromField(req, authUserField);
+  }
 
   const auth = requireAthlete(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });

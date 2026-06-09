@@ -85,13 +85,8 @@ export default async function handler(req, res) {
       [F.AccountLast4]: cleanLast4(b.accountLast4),
       [F.WireInstructions]: cleanText(b.wireInstructions),
 
-      // Optional notes (enable only if these fields exist in AirtableBilling.F)
-      // [F.InvoiceNotes]: cleanText(b.invoiceNotes),
-      // [F.Notes]: cleanText(b.notes),
-
-      // NOTE:
-      // DO NOT accept StripeCustomerId / StripeSubscriptionId from client.
-      // Those should be set by Stripe flows/webhooks only.
+      // NOTE: StripeCustomerId / StripeSubscriptionId are NEVER accepted from the client.
+      // Those are set exclusively by Stripe checkout flows and webhooks.
     };
 
     // Remove undefined fields (important for cleanSelect)

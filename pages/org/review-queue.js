@@ -725,7 +725,7 @@ export default function ReviewQueuePage() {
     if (role && !isOrgSide) { router.push("/dashboard"); return; }
   }, [user, role, isOrgSide, router]);
 
-  const { billingLoading, billingErr, billing, isPaidOk } = useBillingGate({ user, role, isOrgSide });
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
 
   const { search, setSearch, filterMode, setFilterMode, sortMode, setSortMode, filtered } =
     useReviewQueueFilters(items);
@@ -908,6 +908,9 @@ export default function ReviewQueuePage() {
     );
   }
 
+  // Admins bypass the hard gate but see a sticky warning banner when billing needs attention
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+
   return (
     <div className="flex flex-col min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
 
@@ -918,6 +921,20 @@ export default function ReviewQueuePage() {
         onExport={exportCSV}
         disableExport={!items?.length}
       />
+
+      {showBillingWarning && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+          style={{ backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            className="shrink-0 px-3 py-1 font-black uppercase tracking-wider transition"
+            style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
 
       <FilterBar
         counts={counts} search={search} setSearch={setSearch}

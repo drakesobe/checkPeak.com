@@ -1,75 +1,66 @@
 // pages/api/commercial/add-workout-to-today.js
 // Adds a published commercial workout to the athlete's Today page.
-// Writes directly to DailyWorkouts + WorkoutItems tables using the same
-// field mappings as /api/org/workouts/create - bypasses org auth entirely
-// since this is an athlete-initiated action.
 
-import { getRequestUser } from "@/lib/commercial/getRequestUser";
-import { AT, base as getBase, F } from "@/lib/airtableOrgWorkoutConfig";
+import { createClient } from '@supabase/supabase-js';
+import { getRequestUser } from '@/lib/commercial/getRequestUser';
 
-// ─── Field maps (mirrors /api/org/workouts/create) ────────────────────────────
-const DW = {
-  ORG:          F?.DW_ORG          || "Organization",
-  ATHLETE:      F?.DW_ATHLETE      || "Athlete",
-  DATE:         F?.DW_DATE         || "Date",
-  TITLE:        F?.DW_TITLE        || "Title",
-  STATUS:       F?.DW_STATUS       || "Status",
-  ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
-  WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
-};
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-const WI = {
-  ORG:      F?.WI_ORG      || "Organization",
-  DW:       F?.WI_DW       || "DailyWorkout",
-  ORDER:    F?.WI_ORDER    || "Order",
-  NAME:     F?.WI_NAME     || "ExerciseName",
-  SETS:     F?.WI_SETS     || "Sets",
-  REPS:     F?.WI_REPS     || "Reps",
-  WEIGHT:   F?.WI_WEIGHT   || "Weight",
-  REST:     F?.WI_REST     || "Rest",
-  INSTR:    F?.WI_INSTR    || "Instructions",
-  VIDEO:    F?.WI_VIDEO    || "VideoURL",
-  EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
-  ATHTOKEN: F?.WI_ATHTOKEN || "AthleteToken",
-  GROUPID:  F?.WI_GROUPID  || "GroupId",
-};
-
-function toTrimmed(v) { return String(v ?? "").trim(); }
+function toTrimmed(v) { return String(v ?? '').trim(); }
 function toNumOrNull(v) {
-  if (v === null || v === undefined || v === "") return null;
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-function chunk(arr, size = 10) {
-  const out = [];
-  for (let i = 0; i < (arr || []).length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+
+function nyDateISO() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const d = parts.find(p => p.type === 'day')?.value;
+  return `${y}-${m}-${d}`;
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
-  if (req.method !== "POST") return res.status(405).end();
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method !== 'POST') return res.status(405).end();
 
-  const user = getRequestUser(req);
-  // Mobile fallback: cookie auth doesn't work in RN - accept athleteToken from body
-  const mobileToken = String(
-    req.body?.athleteToken ?? req.headers?.["x-athlete-token"] ?? ""
-  ).trim();
+  // Auth — cookie session (web) or athleteToken/email from body (mobile)
+  const user        = getRequestUser(req);
+  const mobileToken = toTrimmed(req.body?.athleteToken ?? req.headers?.['x-athlete-token'] ?? '');
 
-  if (!user && !mobileToken) {
-    return res.status(401).json({ ok: false, error: "Not logged in" });
+  // _authUser is a JSON string sent by the mobile app as a fallback
+  let mobileUser = null;
+  if (req.body?._authUser) {
+    try { mobileUser = JSON.parse(decodeURIComponent(req.body._authUser)); } catch {}
   }
 
-  const { workoutId } = req.body ?? {};
-  if (!workoutId) return res.status(400).json({ ok: false, error: "Missing workoutId" });
+  if (!user && !mobileToken && !mobileUser) {
+    return res.status(401).json({ ok: false, error: 'Not logged in' });
+  }
 
-  const email = user ? String(user.Email || user.email || "").trim().toLowerCase() : "";
-  if (!email && !mobileToken) return res.status(400).json({ ok: false, error: "No email on account" });
+  const { workoutId, date } = req.body ?? {};
+  if (!workoutId) return res.status(400).json({ ok: false, error: 'Missing workoutId' });
 
-  const b = getBase();
+  const targetDate = toTrimmed(date) || nyDateISO();
 
-  // ── 1. Fetch commercial workout ───────────────────────────────────────────
-  const { default: Airtable } = await import("airtable");
+  // Resolve email for web session, or use token for mobile
+  const email = toTrimmed(
+    user?.Email || user?.email || mobileUser?.Email || mobileUser?.email || ''
+  ).toLowerCase();
+
+  if (!email && !mobileToken) {
+    return res.status(400).json({ ok: false, error: 'No account identifier' });
+  }
+
+  // ── 1. Fetch commercial workout from Airtable ─────────────────────────────
+  const { default: Airtable } = await import('airtable');
   const commercialBase = new Airtable({ apiKey: process.env.COMMERCIAL_TRAINERS_API_KEY })
     .base(process.env.COMMERCIAL_TRAINERS_BASE_ID);
 
@@ -77,154 +68,79 @@ export default async function handler(req, res) {
   try {
     workout = await commercialBase(process.env.WORKOUT_PROGRAMS_TABLE_ID).find(workoutId);
   } catch (err) {
-    console.error("[add-workout-to-today] find workout:", err?.message);
-    return res.status(404).json({ ok: false, error: "Workout not found" });
+    console.error('[add-workout-to-today] find workout:', err?.message);
+    return res.status(404).json({ ok: false, error: 'Workout not found' });
   }
 
   if (!workout.fields.published) {
-    return res.status(403).json({ ok: false, error: "Workout not available" });
+    return res.status(403).json({ ok: false, error: 'Workout not available' });
   }
 
   // ── 2. Parse exercises ────────────────────────────────────────────────────
   let exercises = [];
-  try { exercises = JSON.parse(workout.fields.exercises || "[]"); } catch {}
+  try { exercises = JSON.parse(workout.fields.exercises || '[]'); } catch {}
 
   const meaningful = exercises
     .filter(ex => toTrimmed(ex.ExerciseName))
     .map((ex, i) => ({
-      order:            toNumOrNull(ex.Order) ?? i + 1,
-      exerciseName:     toTrimmed(ex.ExerciseName),
-      sets:             toNumOrNull(ex.Sets),
-      reps:             toTrimmed(ex.Reps)   || null,
-      weight:           toTrimmed(ex.Weight) || null,
-      rest:             toTrimmed(ex.Rest)   || null,
-      instructions:     toTrimmed(ex.Instructions) || null,
-      videoUrl:         toTrimmed(ex.VideoURL) || null,
-      evidenceRequired: "voluntary_activity_vara", // athlete-initiated
-      groupId:          toTrimmed(ex.groupId) || null,
+      exercise_name:     toTrimmed(ex.ExerciseName),
+      sets:              toNumOrNull(ex.Sets),
+      reps:              toTrimmed(ex.Reps) || null,
+      evidence_required: 'voluntary_activity_vara',
+      sort_order:        toNumOrNull(ex.Order) ?? i + 1,
     }));
 
-  // ── 3. Look up athlete by email → get recordId, token, orgId ─────────────
-  const tokenField = F?.ATH_TOKEN || "AthleteToken";
-  let athleteRecordId = null;
-  let athleteToken    = null;
-  let orgId           = null;
+  // ── 3. Look up athlete in Supabase ────────────────────────────────────────
+  const query = email
+    ? supabase.from('athletes').select('id, athlete_token').eq('email', email).single()
+    : supabase.from('athletes').select('id, athlete_token').eq('athlete_token', mobileToken).single();
 
-  try {
-    const formula = email
-      ? `LOWER({Email}) = "${email.replace(/"/g, '\\"')}"`
-      : `{${tokenField}} = "${mobileToken.replace(/"/g, '\\"')}"`;
+  const { data: athleteRow, error: athErr } = await query;
 
-    const rows = await b(AT.tables.athletes)
-      .select({ filterByFormula: formula, maxRecords: 1 })
-      .firstPage();
-
-    if (rows.length > 0) {
-      const r = rows[0];
-      athleteRecordId = r.id;
-      athleteToken    = String(r.fields?.[tokenField] || "").trim();
-      // Organization is a linked field - grab first linked record ID
-      const orgField  = r.fields?.Organization || r.fields?.organization;
-      orgId           = Array.isArray(orgField) ? orgField[0] : (orgField || null);
-    }
-  } catch (err) {
-    console.error("[add-workout-to-today] athlete lookup:", err?.message);
-  }
-
-  if (!athleteRecordId || !athleteToken) {
+  if (athErr || !athleteRow) {
+    console.error('[add-workout-to-today] athlete lookup:', athErr?.message, { email, mobileToken });
     return res.status(400).json({
-      ok:    false,
-      error: "Your account isn't linked to an athlete profile. Ask your coach to add you to the org program.",
+      ok: false,
+      error: "Your account isn't linked to an athlete profile.",
     });
   }
 
-  if (!orgId) {
-    return res.status(400).json({
-      ok:    false,
-      error: "Your athlete profile isn't linked to an organization.",
-    });
+  // ── 4. Create DailyWorkout in Supabase ────────────────────────────────────
+  const { data: dw, error: dwErr } = await supabase
+    .from('daily_workouts')
+    .insert({
+      athlete_id: athleteRow.id,
+      title:      String(workout.fields.title || 'Workout'),
+      date:       targetDate,
+      status:     'assigned',
+    })
+    .select('id')
+    .single();
+
+  if (dwErr || !dw) {
+    console.error('[add-workout-to-today] create DailyWorkout:', dwErr?.message);
+    return res.status(500).json({ ok: false, error: 'Failed to create workout record' });
   }
 
-  if (!/^ATH-/i.test(athleteToken)) {
-    return res.status(400).json({
-      ok:    false,
-      error: "Invalid athlete token format.",
-    });
-  }
-
-  // ── 4. Create DailyWorkout record ─────────────────────────────────────────
-  function nyDateISO() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date());
-  const y = parts.find(p => p.type === "year")?.value;
-  const m = parts.find(p => p.type === "month")?.value;
-  const d = parts.find(p => p.type === "day")?.value;
-  return `${y}-${m}-${d}`;
-}
-
-const today = nyDateISO();
-
-  let dailyWorkoutId;
-  try {
-    const dwFields = {
-      [DW.ORG]:      [orgId],
-      [DW.ATHLETE]:  [athleteRecordId],
-      [DW.DATE]:     today,
-      [DW.TITLE]:    String(workout.fields.title || "Workout"),
-      [DW.STATUS]:   "assigned",
-      [DW.ATHTOKEN]: athleteToken,
-    };
-
-    const created = await b(AT.tables.dailyWorkouts).create([{ fields: dwFields }]);
-    dailyWorkoutId = created?.[0]?.id;
-    if (!dailyWorkoutId) throw new Error("No id returned from DailyWorkouts create");
-  } catch (err) {
-    console.error("[add-workout-to-today] create DailyWorkout:", err?.message);
-    return res.status(500).json({ ok: false, error: "Failed to create workout record" });
-  }
-
-  // ── 5. Create WorkoutItems ────────────────────────────────────────────────
-  let workoutItemIds = [];
+  // ── 5. Create WorkoutItems in Supabase ────────────────────────────────────
   if (meaningful.length > 0) {
-    try {
-      const itemCreates = meaningful.map((it, idx) => ({
-        fields: {
-          [WI.ORG]:      [orgId],
-          [WI.DW]:       [dailyWorkoutId],
-          [WI.ORDER]:    it.order ?? idx + 1,
-          [WI.NAME]:     it.exerciseName,
-          ...(it.sets !== null ? { [WI.SETS]: Number(it.sets) } : {}),
-          ...(it.reps         ? { [WI.REPS]:   it.reps         } : {}),
-          ...(it.weight       ? { [WI.WEIGHT]: it.weight       } : {}),
-          ...(it.rest         ? { [WI.REST]:   it.rest         } : {}),
-          ...(it.instructions ? { [WI.INSTR]:  it.instructions } : {}),
-          ...(it.videoUrl     ? { [WI.VIDEO]:  it.videoUrl     } : {}),
-          [WI.EVIDENCE]:   it.evidenceRequired,
-          [WI.ATHTOKEN]:   athleteToken,
-          ...(it.groupId && WI.GROUPID ? { [WI.GROUPID]: it.groupId } : {}),
-        },
-      }));
+    const items = meaningful.map(it => ({
+      daily_workout_id:  dw.id,
+      athlete_id:        athleteRow.id,
+      exercise_name:     it.exercise_name,
+      sets:              it.sets,
+      reps:              it.reps,
+      evidence_required: it.evidence_required,
+      sort_order:        it.sort_order,
+      status:            'assigned',
+    }));
 
-      for (const batch of chunk(itemCreates, 10)) {
-        const created = await b(AT.tables.workoutItems).create(batch);
-        (created || []).forEach(r => workoutItemIds.push(r.id));
-      }
-
-      // Link items back to the DailyWorkout
-      if (workoutItemIds.length > 0) {
-        await b(AT.tables.dailyWorkouts).update([{
-          id:     dailyWorkoutId,
-          fields: { [DW.WORKOUTITEMS]: workoutItemIds },
-        }]);
-      }
-    } catch (err) {
-      console.error("[add-workout-to-today] create WorkoutItems:", err?.message);
-      // Workout was created - don't fail the whole request, just warn
-    }
+    const { error: itemErr } = await supabase.from('workout_items').insert(items);
+    if (itemErr) console.error('[add-workout-to-today] create items:', itemErr.message);
   }
 
-  console.log("[add-workout-to-today] success:", { dailyWorkoutId, athleteToken, today, items: workoutItemIds.length });
-  return res.json({ ok: true, dailyWorkoutId, itemCount: workoutItemIds.length });
+  console.log('[add-workout-to-today] success:', {
+    dailyWorkoutId: dw.id, athleteId: athleteRow.id, date: targetDate, items: meaningful.length,
+  });
+  return res.json({ ok: true, dailyWorkoutId: dw.id, itemCount: meaningful.length });
 }

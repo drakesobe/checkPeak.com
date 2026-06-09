@@ -70,7 +70,7 @@ const TIER_DEFS = [
   {
     id: "large", label: "Pro",     range: "60+ athletes", badge: null,
     monthly: { price: "$499/mo",    note: "Billed monthly" },
-    yearly:  { price: "$4,188/yr",  note: "$349/mo — billed annually", savings: "Save $1,800/yr" },
+    yearly:  { price: "$349/mo",    note: "Billed as $4,188/yr",       savings: "Save $1,800/yr" },
   },
 ];
 

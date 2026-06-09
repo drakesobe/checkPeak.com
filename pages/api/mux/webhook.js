@@ -3,7 +3,7 @@
 // Adds explicit logging so silent Airtable failures / record-mapping misses surface.
 
 import Mux from "@mux/mux-node";
-import { updateVideo, getVideoByUploadId } from "../../../lib/commercial/airtable";
+import { updateVideo, getVideoByUploadId } from "../../../lib/commercial/db";
 
 export const config = {
   api: {

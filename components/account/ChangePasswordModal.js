@@ -117,6 +117,12 @@ export default function ChangePasswordModal({
     passwordData.newPassword === passwordData.confirmPassword &&
     passwordData.newPassword.length >= 8;
 
+  const canSubmit =
+    !saving &&
+    passwordData.currentPassword.length > 0 &&
+    passwordData.newPassword.length >= 8 &&
+    confirmMatch;
+
   return (
     <AnimatePresence>
       {open && (
@@ -294,14 +300,14 @@ export default function ChangePasswordModal({
                 <button
                   type="button"
                   onClick={onSave}
-                  disabled={saving}
+                  disabled={!canSubmit}
                   className="px-4 py-2 text-sm font-bold transition-all"
                   style={
-                    saving
+                    !canSubmit
                       ? { backgroundColor: DS.border, color: DS.dimText, cursor: "not-allowed" }
                       : { backgroundColor: DS.brand, color: "#fff" }
                   }
-                  onMouseEnter={(e) => { if (!saving) e.currentTarget.style.filter = "brightness(1.12)"; }}
+                  onMouseEnter={(e) => { if (canSubmit) e.currentTarget.style.filter = "brightness(1.12)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.filter = "none"; }}
                 >
                   {saving ? "Saving…" : "Update Password"}

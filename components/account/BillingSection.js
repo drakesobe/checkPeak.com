@@ -55,15 +55,35 @@ function completionScore(data) {
   return { filled, total: required.length };
 }
 
+// Tier definitions — used by the plan selector UI
+const TIER_DEFS = [
+  {
+    id: "free",  label: "Starter", range: "1–10 athletes", badge: null,
+    monthly: { price: "Free",       note: "Forever free" },
+    yearly:  { price: "Free",       note: "Forever free",              savings: null },
+  },
+  {
+    id: "small", label: "Growth",  range: "11–59 athletes", badge: null,
+    monthly: { price: "$69.99/mo",  note: "Billed monthly" },
+    yearly:  { price: "$49.99/mo",  note: "Billed as $599.88/yr",      savings: "Save $240/yr" },
+  },
+  {
+    id: "large", label: "Pro",     range: "60+ athletes", badge: null,
+    monthly: { price: "$499/mo",    note: "Billed monthly" },
+    yearly:  { price: "$4,188/yr",  note: "$349/mo — billed annually", savings: "Save $1,800/yr" },
+  },
+];
+
 // Derive a clean billing state from status + dates
 function deriveBillingState(stripeInfo) {
   const s = String(stripeInfo?.status || "").toLowerCase();
   const now = Date.now();
 
-  if (s.includes("past") || s.includes("due"))    return "past_due";
+  if (s === "free")                                 return "free";
+  if (s.includes("past") || s.includes("due"))      return "past_due";
   if (s.includes("unpaid") || s.includes("suspend")) return "suspended";
-  if (s.includes("cancel"))                         return "canceled";
-  if (s === "active")                               return "active";
+  if (s.includes("cancel"))                          return "canceled";
+  if (s === "active")                                return "active";
   if (s.includes("trial")) {
     const te = stripeInfo?.trialEnds ? new Date(stripeInfo.trialEnds).getTime() : 0;
     return (te && te > now) ? "trial" : "trial_ended";
@@ -116,9 +136,16 @@ const STATE_COPY = {
     accent:   DS.banned,
     border:   DS.bannedBorder,
   },
+  free: {
+    heading:  "Starter plan active",
+    body:     "You're on the free Starter plan (up to 10 athletes). Workouts, Nutrition, Banned Substance Scanning, and Attendance included. Upgrade anytime.",
+    accentBg: DS.safeBg,
+    accent:   DS.safe,
+    border:   DS.safeBorder,
+  },
   canceled: {
     heading:  "Subscription canceled",
-    body:     "Your subscription was canceled. Start a new checkout to reactivate your organization's access.",
+    body:     "Your subscription was canceled. Choose a plan below to reactivate your organization's access.",
     accentBg: DS.pageBg,
     accent:   DS.labelText,
     border:   DS.border,
@@ -252,6 +279,7 @@ function Section({ title, subtitle, open, onToggle, children }) {
 function statusStyle(s) {
   const str = String(s || "").toLowerCase();
   if (!str) return { bg: DS.pageBg, color: DS.dimText, text: "Not started" };
+  if (str === "free")          return { bg: DS.safeBg,    color: DS.safe,    text: "Free" };
   if (str.includes("trial"))   return { bg: DS.brandBg,   color: DS.brand,   text: "Trial" };
   if (str === "active")        return { bg: DS.safeBg,    color: DS.safe,    text: "Active" };
   if (str.includes("past"))    return { bg: DS.cautionBg, color: DS.caution, text: "Past Due" };
@@ -330,6 +358,10 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
   const [openBusiness, setOpenBusiness] = useState(false);
   const [openPayment,  setOpenPayment]  = useState(false);
   const [openBank,     setOpenBank]     = useState(false);
+
+  const [selectedTier,     setSelectedTier]     = useState("");
+  const [showTierSelector, setShowTierSelector] = useState(false);
+  const [billingInterval,  setBillingInterval]  = useState("yearly"); // default to annual (better deal)
 
   const hasChanges = useMemo(() => {
     if (!original) return false;
@@ -455,26 +487,43 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
     // intentionally no finally reset — on success we're navigating away
   };
 
-  const startTrial = async () => {
+  const startCheckout = async (tier) => {
     if (!canEdit || actionLoading || redirecting) return;
-    if (!isBillingProfileComplete) {
+
+    if (tier !== "free" && !isBillingProfileComplete) {
       setErr(`Complete your billing profile first (${req.filled}/${req.total} fields). We need contact info, address, and legal business name.`);
       setOpenContact(true); setOpenAddress(true); setOpenBusiness(true);
       return;
     }
+
     setActionLoading(true); setErr(""); setMsg("");
+
     try {
-      const res  = await fetch("/api/stripe/create-checkout-session", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        credentials: "include", body: JSON.stringify({}),
-      });
-      const json = await safeJson(res);
-      if (!res.ok)    throw new Error(json?.error || "Failed to start checkout.");
-      if (!json?.url) throw new Error("Stripe did not return a checkout URL.");
-      setRedirecting(true);
-      window.location.href = json.url;
+      if (tier === "free") {
+        const res  = await fetch("/api/org/billing/activate-free", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "include", body: JSON.stringify({}),
+        });
+        const json = await safeJson(res);
+        if (!res.ok) throw new Error(json?.error || "Failed to activate free plan.");
+        // Reflect the new state immediately without a full reload
+        setStripeInfo((prev) => ({ ...prev, status: "Free", plan: "Starter" }));
+        setShowTierSelector(false);
+        setMsg("Starter plan activated.");
+        setTimeout(() => setMsg(""), 3000);
+      } else {
+        const res  = await fetch("/api/stripe/create-checkout-session", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "include", body: JSON.stringify({ tier, interval: billingInterval }),
+        });
+        const json = await safeJson(res);
+        if (!res.ok)    throw new Error(json?.error || "Failed to start checkout.");
+        if (!json?.url) throw new Error("Stripe did not return a checkout URL.");
+        setRedirecting(true);
+        window.location.href = json.url;
+      }
     } catch (e) {
-      setErr(e?.message || "Failed to start trial.");
+      setErr(e?.message || "Failed to start plan.");
       setActionLoading(false);
     }
   };
@@ -486,12 +535,17 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
   const hasCustomer    = Boolean(String(stripeInfo?.stripeCustomerId || "").trim());
   const allowTrial     = Boolean(canStartTrial) && !hasStripeSub;
 
-  // Only show dates that are actually set and meaningful
+  // Show the tier selector when: no plan chosen, canceled, or user explicitly opens it
+  const tierSelectorVisible =
+    billingState === "not_started" ||
+    billingState === "canceled"    ||
+    showTierSelector;
+
+  // Only real subscription dates (Stripe customer ID is shown separately in the footer)
   const dateRows = [
-    billingState === "trial" && { label: "Trial ends", value: fmtDate(stripeInfo.trialEnds) },
-    (billingState === "active" || billingState === "past_due") && { label: "Renewal",    value: fmtDate(stripeInfo.renewalDate) },
-    (billingState === "active" || billingState === "past_due") && { label: "Period end", value: fmtDate(stripeInfo.currentPeriodEnd) },
-    hasCustomer && { label: "Stripe ID", value: stripeInfo.stripeCustomerId },
+    billingState === "trial"    && { label: "Trial ends",  value: fmtDate(stripeInfo.trialEnds) },
+    (billingState === "active"  || billingState === "past_due") && { label: "Renewal",    value: fmtDate(stripeInfo.renewalDate) },
+    (billingState === "active"  || billingState === "past_due") && { label: "Period end", value: fmtDate(stripeInfo.currentPeriodEnd) },
   ].filter(Boolean).filter(r => r.value);
 
   return (
@@ -573,84 +627,287 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
         </div>
       )}
 
-      {/* ── Subscription card ─────────────────────────────────────────── */}
-      <div className="p-5"
-        style={{ backgroundColor: stateCopy.accentBg, border: `1px solid ${stateCopy.border}`, borderLeft: `4px solid ${stateCopy.accent}` }}>
-        <div className="flex flex-col sm:flex-row items-start justify-between gap-6">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: stateCopy.accent }}>
-              Subscription
-            </p>
-            <p className="text-sm font-black mb-1" style={{ color: DS.bodyText }}>
-              {stateCopy.heading}
-            </p>
-            <p className="text-xs leading-relaxed mb-4" style={{ color: DS.labelText }}>
-              {stateCopy.body}
-            </p>
+      {/* ── Subscription / plan selection ─────────────────────────────── */}
+      {tierSelectorVisible ? (
+        /* ── Tier selector ── */
+        <div className="p-5"
+          style={{ border: `1px solid ${DS.brandBorder}`, borderTop: `3px solid ${DS.brand}`, backgroundColor: DS.cardBg }}>
 
-            {/* Date grid — only shows when there's real data */}
-            {dateRows.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 mb-2">
-                {dateRows.map(({ label, value }) => (
-                  <div key={label}>
-                    <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: DS.labelText }}>{label}</p>
-                    <div className="text-xs px-3 py-2 font-mono truncate"
-                      style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
-                      {value}
-                    </div>
-                  </div>
-                ))}
+          <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: DS.brand }}>
+            Choose your plan
+          </p>
+          <p className="text-sm font-black mb-1" style={{ color: DS.bodyText }}>
+            Right-size your subscription
+          </p>
+          <p className="text-xs mb-4 leading-relaxed" style={{ color: DS.labelText }}>
+            All plans include Workouts, Nutrition, Banned Substance Scanning, and Attendance. Paid plans start with a 30-day free trial.
+          </p>
+
+          {/* Billing interval — two prominent option cards */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* Monthly */}
+            <button type="button" onClick={() => setBillingInterval("monthly")}
+              className="text-left p-4 transition-all"
+              style={{
+                border:          `2px solid ${billingInterval === "monthly" ? DS.brand : DS.border}`,
+                backgroundColor: billingInterval === "monthly" ? DS.brandBg : "#fff",
+                cursor:          "pointer",
+                outline:         "none",
+              }}
+              onMouseEnter={(e) => { if (billingInterval !== "monthly") e.currentTarget.style.borderColor = DS.brandBorder; }}
+              onMouseLeave={(e) => { if (billingInterval !== "monthly") e.currentTarget.style.borderColor = DS.border; }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center"
+                  style={{ border: `2px solid ${billingInterval === "monthly" ? DS.brand : DS.labelText}` }}>
+                  {billingInterval === "monthly" && (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: DS.brand }} />
+                  )}
+                </div>
+                <span className="text-sm font-black uppercase tracking-wide"
+                  style={{ color: billingInterval === "monthly" ? DS.brand : DS.bodyText }}>
+                  Monthly
+                </span>
               </div>
-            )}
+              <p className="text-xs pl-6" style={{ color: DS.dimText }}>Pay month-to-month, cancel anytime</p>
+            </button>
 
-            <p className="text-xs mt-3" style={{ color: DS.dimText }}>
-              Plan, status, and dates are read-only — synced from Stripe.
+            {/* Annual */}
+            <button type="button" onClick={() => setBillingInterval("yearly")}
+              className="text-left p-4 transition-all relative"
+              style={{
+                border:          `2px solid ${billingInterval === "yearly" ? DS.safe : DS.border}`,
+                backgroundColor: billingInterval === "yearly" ? DS.safeBg : "#fff",
+                cursor:          "pointer",
+                outline:         "none",
+              }}
+              onMouseEnter={(e) => { if (billingInterval !== "yearly") e.currentTarget.style.borderColor = DS.safeBorder; }}
+              onMouseLeave={(e) => { if (billingInterval !== "yearly") e.currentTarget.style.borderColor = DS.border; }}
+            >
+              {/* Best value badge — top right corner */}
+              <span className="absolute top-0 right-0 px-2 py-0.5 text-xs font-black uppercase tracking-wide"
+                style={{ backgroundColor: DS.safe, color: "#fff" }}>
+                Best value
+              </span>
+              <div className="flex items-center gap-2 mb-1 mt-1">
+                <div className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center"
+                  style={{ border: `2px solid ${billingInterval === "yearly" ? DS.safe : DS.labelText}` }}>
+                  {billingInterval === "yearly" && (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: DS.safe }} />
+                  )}
+                </div>
+                <span className="text-sm font-black uppercase tracking-wide"
+                  style={{ color: billingInterval === "yearly" ? DS.safe : DS.bodyText }}>
+                  Annual
+                </span>
+              </div>
+              <p className="text-xs pl-6" style={{ color: billingInterval === "yearly" ? "#1A5C33" : DS.dimText }}>
+                Save up to <strong>30%</strong> vs monthly — billed once a year
+              </p>
+            </button>
+          </div>
+
+          {/* Plan cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+            {TIER_DEFS.map((td) => {
+              const isSel     = selectedTier === td.id;
+              const isCurrent = billingState === "free" && td.id === "free";
+              const pricing   = td.id === "free" ? td.yearly : td[billingInterval] || td.monthly;
+              return (
+                <button key={td.id} type="button" onClick={() => setSelectedTier(td.id)}
+                  className="text-left p-4 transition-all"
+                  style={{
+                    border:          `2px solid ${isSel ? DS.brand : DS.border}`,
+                    backgroundColor: isSel ? DS.brandBg : "#fff",
+                    cursor:          "pointer",
+                    outline:         "none",
+                  }}
+                  onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.borderColor = DS.brandBorder; }}
+                  onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.borderColor = DS.border; }}
+                >
+                  <div className="flex items-start justify-between gap-1 mb-2 min-h-[20px]">
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: isSel ? DS.brand : DS.labelText }}>
+                      {td.label}
+                    </span>
+                    {td.id !== "free" && pricing.savings && (
+                      <span className="shrink-0 text-xs font-black px-1.5 py-0.5 uppercase tracking-wide"
+                        style={{ backgroundColor: DS.safe, color: "#fff" }}>
+                        {pricing.savings}
+                      </span>
+                    )}
+                    {td.id !== "free" && !pricing.savings && td.badge && (
+                      <span className="shrink-0 text-xs font-black px-1.5 py-0.5 uppercase tracking-wide"
+                        style={{ backgroundColor: DS.brand, color: "#fff" }}>
+                        {td.badge}
+                      </span>
+                    )}
+                    {isCurrent && (
+                      <span className="shrink-0 text-xs font-bold px-1.5 py-0.5"
+                        style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}>
+                        Current
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: DS.dimText }}>{td.range}</p>
+                  <p className="text-2xl font-black leading-none" style={{ color: DS.bodyText }}>{pricing.price}</p>
+                  <p className="text-xs mt-1.5" style={{ color: DS.dimText }}>{pricing.note}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── Founder's rate lock callout ── */}
+          <div className="mb-5 px-4 py-4"
+            style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderLeft: `3px solid ${DS.brand}` }}>
+            <p className="text-xs font-black uppercase tracking-wider mb-1.5" style={{ color: DS.brand }}>
+              Your rate, locked in for life
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: DS.bodyText }}>
+              Sign up today and your base plan price never changes. As CheckPeak grows, what you pay now is what you'll
+              always pay — no surprise increases.{" "}
+              <strong style={{ color: DS.brand }}>This is our commitment to the organizations that believe in us early.</strong>{" "}
+              Premium add-ons, like access to our in-house dietician services, are available separately through your account manager.
             </p>
           </div>
 
-          {/* Action buttons */}
-          <div className="shrink-0 flex flex-col gap-3 w-full sm:w-48">
+          {/* Profile completion warning — only required for paid tiers */}
+          {selectedTier && selectedTier !== "free" && !isBillingProfileComplete && (
+            <p className="text-xs mb-3 font-bold" style={{ color: DS.caution }}>
+              Complete your billing profile first ({req.filled}/{req.total} fields required for checkout).
+            </p>
+          )}
 
-            {/* Start trial — shown when no Stripe sub exists */}
-            {!hasStripeSub && (
-              <div>
-                <ActionButton
-                  onClick={startTrial}
-                  disabled={!canEdit || actionLoading || redirecting || !allowTrial}
-                >
-                  {redirecting ? "Redirecting…" : actionLoading ? "Loading…" : "Start 30-day trial"}
-                </ActionButton>
-                {!isBillingProfileComplete && (
-                  <p className="text-xs mt-1.5" style={{ color: DS.caution }}>
-                    Complete billing profile first ({req.filled}/{req.total}).
-                  </p>
-                )}
-                {!canStartTrial && isBillingProfileComplete && (
-                  <p className="text-xs mt-1.5" style={{ color: DS.dimText }}>
-                    Trial already used for this org.
-                  </p>
-                )}
-              </div>
+          {/* CTA */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <ActionButton
+              onClick={() => { if (selectedTier) startCheckout(selectedTier); }}
+              disabled={
+                !canEdit || actionLoading || redirecting || !selectedTier ||
+                (billingState === "free" && selectedTier === "free")
+              }
+            >
+              {redirecting
+                ? "Redirecting…"
+                : actionLoading
+                ? "Loading…"
+                : !selectedTier
+                ? "Select a plan above"
+                : selectedTier === "free"
+                ? billingState === "free" ? "Already on Starter" : "Activate free plan"
+                : selectedTier === "small"
+                ? billingInterval === "yearly" ? "Start trial — Growth ($599.88/yr)" : "Start trial — Growth ($69.99/mo)"
+                : billingInterval === "yearly" ? "Start trial — Pro ($4,188/yr)"    : "Start trial — Pro ($499/mo)"}
+            </ActionButton>
+
+            {/* Back button — only shows when this was opened from the status card */}
+            {showTierSelector && (
+              <button type="button" onClick={() => { setShowTierSelector(false); setSelectedTier(""); }}
+                className="text-xs font-bold hover:underline" style={{ color: DS.labelText }}>
+                Cancel
+              </button>
+            )}
+          </div>
+
+          <p className="text-xs mt-4" style={{ color: DS.dimText }}>
+            Free plan activates immediately. Paid plans redirect to Stripe — no credit card required to start the 30-day trial.
+          </p>
+        </div>
+      ) : (
+        /* ── Status card (active/trial/past_due/free/etc) ── */
+        <div style={{ backgroundColor: stateCopy.accentBg, border: `1px solid ${stateCopy.border}`, borderLeft: `4px solid ${stateCopy.accent}` }}>
+
+          {/* ── Header row: label + status pill ── */}
+          <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3"
+            style={{ borderBottom: `1px solid ${stateCopy.border}` }}>
+            <p className="text-xs font-black uppercase tracking-widest" style={{ color: stateCopy.accent }}>
+              Subscription
+            </p>
+            <StatusPill status={billingState === "free" ? "Free" : (stripeInfo?.status || "")} />
+          </div>
+
+          {/* ── State heading + body ── */}
+          <div className="px-5 pt-4 pb-4">
+            <p className="font-black mb-2"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.35rem", letterSpacing: "0.02em", color: DS.bodyText }}>
+              {stateCopy.heading}
+            </p>
+            <p className="text-sm leading-relaxed" style={{ color: DS.labelText }}>
+              {stateCopy.body}
+            </p>
+          </div>
+
+          {/* ── Date chips — only real subscription dates ── */}
+          {dateRows.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-5 pb-4">
+              {dateRows.map(({ label, value }) => (
+                <div key={label} className="flex items-center gap-2 px-3 py-1.5 text-xs"
+                  style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+                  <span className="font-bold uppercase tracking-wider" style={{ color: DS.dimText }}>{label}</span>
+                  <span className="font-black" style={{ color: DS.bodyText }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Action buttons ── */}
+          <div className="flex flex-col sm:flex-row gap-2 px-5 pb-5">
+            {/* Free plan — upgrade */}
+            {billingState === "free" && (
+              <ActionButton onClick={() => { setShowTierSelector(true); setSelectedTier(""); }}>
+                Upgrade plan
+              </ActionButton>
+            )}
+
+            {/* No sub yet — choose a plan */}
+            {!hasStripeSub && billingState !== "free" && (
+              <ActionButton
+                onClick={() => { setShowTierSelector(true); setSelectedTier(""); }}
+                disabled={!canEdit || actionLoading || redirecting || !allowTrial}
+              >
+                {actionLoading ? "Loading…" : "Choose a plan"}
+              </ActionButton>
             )}
 
             {/* Manage billing portal */}
-            <div>
-              <ActionButton
-                variant="secondary"
-                onClick={openPortal}
-                disabled={!canEdit || actionLoading || redirecting || !hasCustomer}
-              >
-                {redirecting ? "Redirecting…" : actionLoading ? "Loading…" : "Manage billing"}
-              </ActionButton>
-              {!hasCustomer && (
-                <p className="text-xs mt-1.5" style={{ color: DS.dimText }}>
-                  Available after starting a trial or checkout.
-                </p>
-              )}
-            </div>
+            <ActionButton
+              variant="secondary"
+              onClick={openPortal}
+              disabled={!canEdit || actionLoading || redirecting || !hasCustomer}
+            >
+              {redirecting ? "Redirecting…" : actionLoading ? "Loading…" : "Manage billing"}
+            </ActionButton>
           </div>
+
+          {/* ── Founder's rate reminder — shown to active/trial customers ── */}
+          {(billingState === "active" || billingState === "trial") && (
+            <div className="mx-5 mb-4 px-3 py-2.5"
+              style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderLeft: `3px solid ${DS.brand}` }}>
+              <p className="text-xs" style={{ color: DS.brand }}>
+                <strong>Your base plan rate is locked in for life.</strong>{" "}
+                <span style={{ color: DS.bodyText }}>As we grow and improve the platform, your price stays exactly where it is today. Premium add-ons are available separately through your account manager.</span>
+              </p>
+            </div>
+          )}
+
+          {/* ── Metadata footer ── */}
+          {(stripeInfo?.stripeCustomerId || stripeInfo?.plan) && (
+            <div className="flex flex-wrap items-center gap-4 px-5 py-2.5"
+              style={{ borderTop: `1px solid ${stateCopy.border}` }}>
+              {stripeInfo.plan && (
+                <span className="text-xs" style={{ color: DS.dimText }}>
+                  Plan: <span className="font-bold">{stripeInfo.plan}</span>
+                </span>
+              )}
+              {stripeInfo.stripeCustomerId && (
+                <span className="text-xs font-mono truncate" style={{ color: DS.dimText }}>
+                  {stripeInfo.stripeCustomerId}
+                </span>
+              )}
+              <span className="text-xs ml-auto" style={{ color: DS.dimText }}>Synced from Stripe</span>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* ── Collapsible editable sections ─────────────────────────────── */}
       <Section title="Billing Contact" subtitle="Who we contact for invoices, receipts, and billing questions."

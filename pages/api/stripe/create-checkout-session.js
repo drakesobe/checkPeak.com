@@ -25,8 +25,33 @@ export default async function handler(req, res) {
     user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || user?.id || ""
   );
 
-  const priceId = process.env.STRIPE_PRICE_YEARLY;
-  if (!priceId) return res.status(500).json({ error: "Missing STRIPE_PRICE_YEARLY env var." });
+  // Tier + interval → price ID
+  // Growth monthly  ($69.99/mo)  → STRIPE_PRICE_GROWTH_MONTHLY
+  // Growth annual   ($599.88/yr) → STRIPE_PRICE_GROWTH_YEARLY
+  // Pro monthly     ($499/mo)    → STRIPE_PRICE_PRO_MONTHLY
+  // Pro annual      ($4,188/yr)  → STRIPE_PRICE_PRO_YEARLY
+  // Note: Pro pricing reflects full rate. FOUNDER promo code at Stripe checkout
+  //       drops Pro to $99/mo or $1,188/yr — handled entirely by Stripe coupon,
+  //       no code changes needed (allow_promotion_codes: true is set below).
+  const { tier = "large", interval = "yearly" } = req.body || {};
+  const tierKey     = String(tier     || "large").toLowerCase();
+  const intervalKey = String(interval || "yearly").toLowerCase() === "monthly" ? "monthly" : "yearly";
+
+  const PRICE_MAP = {
+    small_monthly: process.env.STRIPE_PRICE_GROWTH_MONTHLY,
+    small_yearly:  process.env.STRIPE_PRICE_GROWTH_YEARLY,
+    large_monthly: process.env.STRIPE_PRICE_PRO_MONTHLY,
+    large_yearly:  process.env.STRIPE_PRICE_PRO_YEARLY,
+  };
+
+  const priceId =
+    PRICE_MAP[`${tierKey}_${intervalKey}`] ||
+    (intervalKey === "monthly" ? process.env.STRIPE_PRICE_MONTHLY : null) ||
+    process.env.STRIPE_PRICE_YEARLY;
+
+  if (!priceId) return res.status(500).json({
+    error: `Missing Stripe price ID for ${tierKey}/${intervalKey}. Set STRIPE_PRICE_GROWTH_MONTHLY, STRIPE_PRICE_GROWTH_YEARLY, STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE_PRO_YEARLY in env.`,
+  });
 
   try {
     const origin = req.headers.origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -45,13 +70,14 @@ export default async function handler(req, res) {
       });
       customerId = customer.id;
 
+      const planLabel = tierKey === "small" ? "Growth" : "Pro";
+
       await upsertBillingForOrgToken(
         token,
         {
-          [F.Token]: token, // ensure stored
+          [F.Token]: token,
           [F.StripeCustomerId]: customerId,
-          [F.Plan]: "Organization",
-          // leave BillingStatus alone if you want, but setting "Trial" here is fine:
+          [F.Plan]: planLabel,
           [F.BillingStatus]: "Trial",
           [F.Currency]: "USD",
         },
@@ -66,7 +92,7 @@ export default async function handler(req, res) {
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
         trial_period_days: 30,
-        metadata: { orgToken: token },
+        metadata: { orgToken: token, tier: tierKey, interval: intervalKey },
       },
       success_url: `${origin}/account?billing=success`,
       cancel_url: `${origin}/account?billing=cancel`,

@@ -107,7 +107,7 @@ export default function PersonalInfoSection({
           />
           {isOrgPrimary && (
             <FieldHint>
-              This may appear as the organization name depending on your Airtable setup.
+              Used as your organization's display name.
             </FieldHint>
           )}
         </div>

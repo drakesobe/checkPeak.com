@@ -28,6 +28,7 @@ function addDays(d, days) {
 function normalizeStatus(v) {
   const s = lower(v);
   if (!s) return "";
+  if (s === "free") return "Free";
   if (s.includes("sandbox")) return "Sandbox";
   if (s.includes("trial")) return "Trial";
   if (s.includes("active")) return "Active";
@@ -137,6 +138,7 @@ export default async function handler(req, res) {
     const outSeDate = parseDateLoose(outSe);
 
     const isPaidOk =
+      outStatusNorm === "Free" ||
       (outStatusNorm === "Sandbox" && outSeDate && now.getTime() <= outSeDate.getTime()) ||
       outStatusNorm === "Trial" ||
       outStatusNorm === "Active";

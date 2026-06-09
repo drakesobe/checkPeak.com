@@ -99,6 +99,8 @@ const GLOBAL_STYLE = `
   }
 `;
 
+// ARENA_STYLE injected alongside GLOBAL_STYLE in <style> tags
+
 // ---------------------------------------------------------------------------
 // Grain overlay - SVG noise, same technique as A24/Nike editorial pages
 // ---------------------------------------------------------------------------
@@ -163,6 +165,225 @@ function PilotButton({ source, size = "md" }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Trainer showcase grid styles (added to GLOBAL_STYLE via injection)
+// ---------------------------------------------------------------------------
+const ARENA_STYLE = `
+  .trainer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(1rem, 2vw, 1.5rem);
+  }
+  @media (max-width: 860px) { .trainer-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 520px) { .trainer-grid { grid-template-columns: 1fr; } }
+  .hero-dual-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+`;
+
+// Browse The Arena — navigates to the public marketplace
+function BrowseButton({ source, size = "md" }) {
+  const lg = size === "lg";
+  return (
+    <a
+      href="/trainers"
+      onClick={() => track("cta_browse_arena", { source })}
+      style={{
+        display: "inline-flex", alignItems: "center",
+        gap: lg ? "0.85rem" : "0.65rem",
+        padding: lg ? "1.1rem 2.5rem" : "0.9rem 2rem",
+        background: ACCENT, color: BLACK,
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: lg ? "1.05rem" : "0.92rem", fontWeight: 900,
+        letterSpacing: "0.12em", textTransform: "uppercase",
+        textDecoration: "none", transition: "filter 0.2s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.15)"; }}
+      onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+    >
+      BROWSE THE ARENA
+      <svg width={lg ? 18 : 15} height={lg ? 18 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+      </svg>
+    </a>
+  );
+}
+
+// For Organizations — scrolls down to the org section
+function OrgButton({ source }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        track("cta_for_orgs", { source });
+        document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" });
+      }}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: "0.65rem",
+        padding: "1.1rem 2.5rem",
+        background: "transparent", color: WHITE,
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontSize: "1.05rem", fontWeight: 900,
+        letterSpacing: "0.12em", textTransform: "uppercase",
+        border: "1px solid rgba(255,255,255,0.22)",
+        transition: "border-color 0.2s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; }}
+    >
+      FOR ORGANIZATIONS
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+      </svg>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TRAINER SHOWCASE — Who's in The Arena
+// ---------------------------------------------------------------------------
+const ARENA_TRAINERS = [
+  {
+    initials: "JC", name: "Joe Coy", specialty: "Strength & Conditioning Coach",
+    bio: "UK-based coach specialising in athlete testing, performance profiling, and evidence-based training. Founder of ATHLETE35.",
+    tags: ["Athlete Testing", "Performance Profiling", "Evidence-Based"],
+    tiers: [{ label: "Basic", price: 24.99 }, { label: "Premium", price: 54.99 }, { label: "Ultra", price: 149.99 }],
+    accent: ACCENT, slug: "joe-coy-6leb",
+  },
+  {
+    initials: "HT", name: "Hunter Tuck", specialty: "Massage Therapist & Personal Trainer",
+    bio: "12 years as a Massage Therapist, 5 as a Personal Trainer and Corrective Exercise Specialist. Focused on overcoming pain and movement dysfunction.",
+    tags: ["Corrective Exercise", "Recovery", "Pain Relief"],
+    tiers: [{ label: "Basic", price: 25 }, { label: "Premium", price: 65 }, { label: "Ultra", price: 150 }],
+    accent: "#3FB950", slug: "hunter-tuck-snaa",
+  },
+];
+
+function TrainerShowcase() {
+  const ref    = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-10%" });
+
+  return (
+    <section id="arena-trainers" style={{
+      width: "100%", background: BLACK,
+      padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
+      borderTop: "0.5px solid rgba(255,255,255,0.08)",
+      position: "relative", overflow: "hidden",
+    }}>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: GRAIN_URL, backgroundRepeat: "repeat", backgroundSize: "256px 256px", opacity: 0.04, mixBlendMode: "screen", pointerEvents: "none" }} />
+
+      <div ref={ref} style={{ position: "relative", zIndex: 1 }}>
+        {/* Eyebrow */}
+        <motion.div initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.5 }}
+          style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.25rem, 2.5vw, 2rem)" }}
+        >
+          <motion.div initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}} transition={{ duration: 0.8 }}
+            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: ACCENT, transformOrigin: "left" }}
+          />
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: ACCENT }}>
+            The Arena
+          </span>
+        </motion.div>
+
+        <motion.h2 initial={{ opacity: 0, y: 32 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.9, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+          style={{
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",
+            fontSize: "clamp(2.5rem, 7vw, 7rem)", lineHeight: 0.88, letterSpacing: "-0.025em",
+            textTransform: "uppercase", color: WHITE, marginBottom: "clamp(3rem, 6vw, 5rem)",
+          }}
+        >
+          Train with<br />
+          <span style={{ color: ACCENT }}>coaches.</span>
+        </motion.h2>
+
+        <div className="trainer-grid">
+          {/* Real trainer cards */}
+          {ARENA_TRAINERS.map((t, i) => (
+            <motion.div key={t.slug}
+              initial={{ opacity: 0, y: 32 }}
+              animate={inView ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.7, delay: 0.18 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
+              style={{ background: "#0B0F17", border: "0.5px solid rgba(255,255,255,0.1)", borderTop: `3px solid ${t.accent}`, borderRadius: 2, overflow: "hidden" }}
+            >
+              <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${t.accent}1A`, border: `1.5px solid ${t.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "0.85rem" }}>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.95rem", color: t.accent }}>{t.initials}</span>
+                </div>
+                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "clamp(1.3rem, 2.2vw, 1.65rem)", lineHeight: 1, color: WHITE, marginBottom: "0.3rem" }}>{t.name}</p>
+                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.75rem" }}>{t.specialty}</p>
+                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", lineHeight: 1.65, color: "rgba(255,255,255,0.52)", marginBottom: "0.9rem" }}>{t.bio}</p>
+                <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                  {t.tags.map(tag => (
+                    <span key={tag} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 7px", border: "0.5px solid rgba(255,255,255,0.13)", color: "rgba(255,255,255,0.38)" }}>{tag}</span>
+                  ))}
+                </div>
+              </div>
+              {/* Pricing tiers */}
+              <div style={{ display: "flex", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
+                {t.tiers.map(({ label, price }, idx) => (
+                  <div key={label} style={{ flex: 1, padding: "0.75rem 0.5rem", textAlign: "center", borderLeft: idx > 0 ? "0.5px solid rgba(255,255,255,0.07)" : "none" }}>
+                    <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "1rem", color: idx === 0 ? "rgba(255,255,255,0.6)" : idx === 1 ? t.accent : WHITE, lineHeight: 1, marginBottom: "0.15rem" }}>${price}</p>
+                    <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.25)" }}>{label}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: "0.85rem 1rem" }}>
+                <a href={`/trainer/${t.slug}`}
+                  onClick={() => track("trainer_card_view", { trainer: t.slug })}
+                  style={{ width: "100%", padding: "0.65rem 1rem", background: "transparent", border: `0.5px solid ${t.accent}44`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.75rem", letterSpacing: "0.12em", textTransform: "uppercase", color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.45rem", transition: "background 0.18s, border-color 0.18s", textDecoration: "none" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = `${t.accent}0F`; e.currentTarget.style.borderColor = t.accent; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = `${t.accent}44`; }}
+                >
+                  View Program
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                  </svg>
+                </a>
+              </div>
+            </motion.div>
+          ))}
+
+          {/* Trainer recruitment card */}
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.7, delay: 0.38, ease: [0.16, 1, 0.3, 1] }}
+            style={{ background: "transparent", border: "1px dashed rgba(255,255,255,0.12)", borderRadius: 2, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "clamp(2rem, 4vw, 3rem) 1.5rem", textAlign: "center", minHeight: "260px" }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "1.25rem" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </div>
+            <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "1.1rem", color: WHITE, letterSpacing: "-0.01em", marginBottom: "0.5rem" }}>
+              Your program here.
+            </p>
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "rgba(255,255,255,0.35)", lineHeight: 1.6, marginBottom: "1.5rem", maxWidth: "22ch" }}>
+              Launch your library and start building recurring revenue.
+            </p>
+            <a href="/commercial/onboard"
+              onClick={() => track("trainer_recruitment_cta")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.75rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", textDecoration: "none", border: "0.5px solid rgba(255,255,255,0.18)", padding: "0.6rem 1rem", transition: "color 0.18s, border-color 0.18s" }}
+              onMouseEnter={e => { e.currentTarget.style.color = WHITE; e.currentTarget.style.borderColor = "rgba(255,255,255,0.5)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; }}
+            >
+              Launch Your Program
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+              </svg>
+            </a>
+          </motion.div>
+        </div>
+
+        <motion.p initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}} transition={{ duration: 0.5, delay: 0.7 }}
+          style={{ textAlign: "center", marginTop: "clamp(2rem, 4vw, 3.5rem)", fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.05em" }}
+        >
+          More trainers joining The Arena every month.
+        </motion.p>
+      </div>
+    </section>
+  );
+}
+
+
 /* ══════════════════════════════════════════════════════════════════════════
    1. HERO
    FIX: Nav hidden on < 540px to avoid crowding wordmark
@@ -214,37 +435,18 @@ function Hero() {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to bottom, transparent, ${BLACK})` }} />
       </motion.div>
 
-      {/* Nav - hidden on mobile via .hero-nav */}
+      {/* Nav */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.6 }}
         className="hero-nav"
         style={{ position: "absolute", top: "clamp(1.25rem, 3vw, 2rem)", right: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 10, gap: "1.75rem" }}
       >
         {[
-          {
-            label: "How it works",
-            action: () => {
-              track("nav_click", { label: "How it works" });
-              document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" });
-            },
-          },
-          {
-            label: "For athletes",
-            action: () => {
-              track("nav_click", { label: "For athletes" });
-              window.location.href = "/nutrition-label-scanner";
-            },
-          },
+          { label: "The Arena",       action: () => { track("nav_click", { label: "The Arena" });       document.getElementById("arena-trainers")?.scrollIntoView({ behavior: "smooth" }); } },
+          { label: "For orgs",        action: () => { track("nav_click", { label: "For orgs" });        document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" }); } },
+          { label: "How it works",    action: () => { track("nav_click", { label: "How it works" });    document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" }); } },
         ].map(({ label, action }) => (
           <button key={label} type="button" onClick={action}
-            style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize:   "0.78rem",   // FIX: was 0.7rem
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color:      "rgba(255,255,255,0.6)",  // FIX: was 0.5
-              background: "none", border: "none", padding: 0, transition: "color 0.18s",
-            }}
+            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", background: "none", border: "none", padding: 0, transition: "color 0.18s" }}
             onMouseEnter={e => { e.currentTarget.style.color = WHITE; }}
             onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
           >{label}</button>
@@ -253,36 +455,45 @@ function Hero() {
 
       {/* Center headline */}
       <motion.div style={{ opacity, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
-        <motion.h1
-          initial={{ opacity: 0, y: 32 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          style={{
-            fontFamily:    "'Barlow Condensed', sans-serif",
-            fontWeight:    900,
-            fontStyle:     "italic",
-            fontSize:      "clamp(2.5rem, 8vw, 8rem)",
-            lineHeight:    0.9,
-            letterSpacing: "-0.02em",
-            textTransform: "uppercase",
-            color:         WHITE,
-            marginBottom:  "clamp(1.75rem, 4vw, 3.5rem)",
-            textShadow:    "0 2px 40px rgba(0,0,0,0.6)",
-          }}
-        >
-          Stop guessing.<br />
-          <span style={{ color: ACCENT }}></span>
-        </motion.h1>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.7 }}>
-          <PilotButton source="hero" size="lg" />
+        {/* CheckPeak brand chip */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem", marginBottom: "clamp(0.5rem, 1vw, 0.85rem)" }}
+        >
+          <div style={{ width: "1.75rem", height: "0.5px", background: ACCENT }} />
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.68rem", fontWeight: 900, letterSpacing: "0.24em", textTransform: "uppercase", color: ACCENT }}>CheckPeak</span>
+          <div style={{ width: "1.75rem", height: "0.5px", background: ACCENT }} />
         </motion.div>
 
-        {/* FIX: opacity 0.35 → 0.6, size 0.68rem → 0.78rem */}
-        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 1.1 }}
-          style={{ marginTop: "1.1rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}
+        <motion.h1
+          initial={{ opacity: 0, y: 32 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.9, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
+          style={{
+            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",
+            fontSize: "clamp(5rem, 18vw, 18rem)", lineHeight: 0.83, letterSpacing: "-0.03em",
+            textTransform: "uppercase", color: WHITE,
+            marginBottom: "clamp(0.5rem, 1vw, 0.85rem)",
+            textShadow: "0 2px 60px rgba(0,0,0,0.6)",
+          }}
         >
-          30 days free · No card required
+          The Arena
+        </motion.h1>
+
+        <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.58 }}
+          style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontStyle: "italic", fontSize: "clamp(0.95rem, 2.2vw, 1.6rem)", letterSpacing: "0.04em", textTransform: "uppercase", color: "rgba(255,255,255,0.48)", marginBottom: "clamp(2rem, 4vw, 3.5rem)" }}
+        >
+          Elite coaching. Zero guesswork.
         </motion.p>
+
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.76 }}>
+          <div className="hero-dual-cta" style={{ marginBottom: "0.9rem" }}>
+            <BrowseButton source="hero" size="lg" />
+            <OrgButton source="hero" />
+          </div>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)" }}>
+            Free to browse · No signup required
+          </p>
+        </motion.div>
       </motion.div>
 
       {/* Scroll indicator */}
@@ -323,7 +534,7 @@ const BEAT_IMAGES = [
 ];
 const BEAT_WATERMARKS = ["OFFSEASON", "PROGRAMS", "KNOW"];
 
-function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, watermark, threeLines = false, total = 3 }) {
+function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, watermark, threeLines = false, total = 3, sectionLabel = null }) {
   const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
 
@@ -421,17 +632,30 @@ function DeclarationBeat({ lines, footnote, isClimax = false, index, bgImage, wa
       {/* Content */}
       <div style={{ position: "relative", zIndex: 3, width: "100%" }}>
 
-        {/* Section counter */}
+        {/* Section counter + optional product label */}
         <motion.div initial={{ opacity: 0, x: -8 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.5 }}
-          style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.5rem, 3.5vw, 2.5rem)" }}
+          style={{ marginBottom: "clamp(1.5rem, 3.5vw, 2.5rem)" }}
         >
-          <motion.div initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}} transition={{ duration: 0.8, delay: 0.05 }}
-            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.25)", transformOrigin: "left" }}
-          />
-          {/* FIX: opacity 0.2→0.38, size 0.58rem→0.72rem */}
-          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
-            {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
-          </span>
+          {sectionLabel && (
+            <motion.div initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.5 }}
+              style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.75rem" }}
+            >
+              <motion.div initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}} transition={{ duration: 0.8 }}
+                style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: ACCENT, transformOrigin: "left" }}
+              />
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: ACCENT }}>
+                {sectionLabel}
+              </span>
+            </motion.div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+            <motion.div initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}} transition={{ duration: 0.8, delay: 0.05 }}
+              style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.25)", transformOrigin: "left" }}
+            />
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.38)" }}>
+              {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
+            </span>
+          </div>
         </motion.div>
 
         {/* Declaration lines */}
@@ -1648,17 +1872,16 @@ function FinalCta() {
         </motion.div>
       </div>
 
-      {/* Bottom-left athlete link - FIX: opacity bump so it's actually usable */}
+      {/* Bottom-left: Arena link */}
       <div style={{ position: "absolute", bottom: "clamp(1.25rem, 2.5vw, 2rem)", left: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 1 }}>
-        {/* FIX: size 0.58→0.78rem, opacity chain bumped */}
         <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
           Athlete?&nbsp;
-          <a href="/nutrition-label-scanner" onClick={() => track("footer_athlete_link")}
-            style={{ color: "rgba(255,255,255,0.58)", textDecoration: "none", transition: "color 0.18s" }}
+          <a href="/trainers" onClick={() => track("footer_arena_link")}
+            style={{ color: "rgba(255,255,255,0.58)", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.18s" }}
             onMouseEnter={e => { e.currentTarget.style.color = ACCENT; }}
             onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.58)"; }}
           >
-            Free supplement tools →
+            Browse The Arena →
           </a>
         </p>
       </div>
@@ -1929,10 +2152,10 @@ export default function HomePage() {
 
   return (
     <>
-      <style>{GLOBAL_STYLE}</style>
+      <style>{GLOBAL_STYLE + ARENA_STYLE}</style>
       <Head>
-        <title>CheckPeak - When athletes leave campus, you still know.</title>
-        <meta name="description" content="CheckPeak helps strength staffs verify off-campus workout completion, monitor nutrition, and catch supplement risk. Built for college programs." />
+        <title>CheckPeak — The Arena & Collegiate Performance Platform</title>
+        <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
         <meta property="og:title"       content="CheckPeak - When athletes leave campus, you still know." />
         <meta property="og:description" content={ogDesc} />
         <meta property="og:type"        content="website" />
@@ -1949,14 +2172,16 @@ export default function HomePage() {
       <main style={{ background: BLACK, color: WHITE }}>
         <Hero />
 
-        {/* Triptych immediately after hero - visual proof before any copy.
-            The claim lands, then three panels of real athletes answer it.
-            Words come after the image, not before. */}
+        {/* Triptych: visual proof immediately after hero — image before copy */}
         <TriptychSection />
 
-        {/* Beat 1: "The offseason doesn't lie." */}
+        {/* THE ARENA — trainer marketplace */}
+        <TrainerShowcase />
+
+        {/* Beat 1: "The offseason doesn't lie." — first beat signals the org product */}
         <DeclarationBeat index={0} lines={BEATS[0].lines} footnote={BEATS[0].footnote}
-          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} total={4} />
+          isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} total={4}
+          sectionLabel="For collegiate programs" />
 
         {/* Beat 2: "Your athletes know it." */}
         <DeclarationBeat index={1} lines={BEATS[1].lines} footnote={BEATS[1].footnote}

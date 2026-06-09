@@ -31,11 +31,12 @@ const ALL_TABS = [
   { name: "Search",     href: "/search"                  },
   { name: "Info",       href: "/info"                    },
   { name: "NCAA Rules", href: "/compliance/ncaa"         },
+  { name: "The Arena",  href: "/trainers", icon: "arena" },
   { name: "SmartStack", href: "/smartstack-compare", icon: "mountain" },
 ];
 
 const DESKTOP_LEFT_TABS  = ALL_TABS.filter(t => ["Scan", "Search", "Info", "NCAA Rules"].includes(t.name));
-const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => ["SmartStack"].includes(t.name));
+const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => ["The Arena", "SmartStack"].includes(t.name));
 const MOBILE_TABS        = ALL_TABS;
 
 const MountainIconFallback = (
@@ -47,6 +48,7 @@ const MountainIconFallback = (
 function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) {
   const active        = isActive(tab.href);
   const isMountainTab = tab.icon === "mountain";
+  const isArenaTab    = tab.icon === "arena";
   return (
     <Link
       href={tab.href}
@@ -54,7 +56,9 @@ function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) 
       aria-current={active ? "page" : undefined}
       className={cx(
         "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
-        active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50"
+        isArenaTab
+          ? "text-gray-900 hover:text-[#46769B] font-black"
+          : active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50"
       )}
     >
       {isMountainTab && (!stackIconBroken

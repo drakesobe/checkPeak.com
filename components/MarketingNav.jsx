@@ -18,7 +18,7 @@ const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
 
 // Pages where the nav should be transparent initially (dark hero bg)
-const HERO_PAGES = ["/"];
+const HERO_PAGES = ["/", "/trainers"];
 
 function track(action, params = {}) {
   if (typeof window !== "undefined" && typeof window.gtag === "function") {
@@ -31,11 +31,12 @@ const ALL_TABS = [
   { name: "Search",     href: "/search"                               },
   { name: "Info",       href: "/info"                                 },
   { name: "NCAA Rules", href: "/compliance/ncaa"                      },
+  { name: "The Arena",  href: "/trainers",             icon: "arena"  },
   { name: "SmartStack", href: "/smartstack-compare", icon: "mountain" },
 ];
 
 const DESKTOP_LEFT_TABS  = ALL_TABS.filter(t => ["Scan","Search","Info","NCAA Rules"].includes(t.name));
-const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => t.name === "SmartStack");
+const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => ["The Arena","SmartStack"].includes(t.name));
 const MOBILE_TABS        = ALL_TABS;
 
 const MountainFallback = (
@@ -46,6 +47,7 @@ const MountainFallback = (
 
 function NavTab({ tab, stackIconBroken, onStackIconError }) {
   const [hov, setHov] = useState(false);
+  const isArena = tab.icon === "arena";
   return (
     <Link
       href={tab.href}
@@ -54,9 +56,10 @@ function NavTab({ tab, stackIconBroken, onStackIconError }) {
       style={{
         display:"inline-flex", alignItems:"center", gap:6,
         fontFamily:"'Barlow Condensed', sans-serif",
-        fontSize:"0.78rem", fontWeight:700,
+        fontSize:"0.78rem", fontWeight: isArena ? 900 : 700,
+        fontStyle: "normal",
         letterSpacing:"0.12em", textTransform:"uppercase",
-        color: hov ? "#fff" : "rgba(255,255,255,0.6)",
+        color: isArena ? (hov ? "#fff" : ACCENT) : (hov ? "#fff" : "rgba(255,255,255,0.6)"),
         textDecoration:"none", transition:"color 0.18s ease", padding:"6px 2px",
       }}
     >
@@ -330,7 +333,8 @@ export default function MarketingNav() {
                       fontFamily:"'Barlow Condensed',sans-serif",
                       fontSize:"clamp(1.5rem,6vw,2rem)", fontWeight:900,
                       fontStyle:"italic", letterSpacing:"-0.01em", textTransform:"uppercase",
-                      color:"rgba(255,255,255,0.7)", textDecoration:"none",
+                      color: tab.icon === "arena" ? ACCENT : "rgba(255,255,255,0.7)",
+                      textDecoration:"none",
                       padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.06)",
                     }}
                   >

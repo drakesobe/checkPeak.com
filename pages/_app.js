@@ -35,12 +35,14 @@ const MARKETING_ROUTES = [
   "/compliance/ncaa",
   "/nutrition-label-scanner",
   "/search",
+  "/trainers",
 ];
 
 const NO_NAV_ROUTES = [
   "/login",
   "/signup",
   "/onboarding",
+  "/trainer",
 ];
 
 function getNavType(pathname) {

@@ -3,6 +3,10 @@
 
 import { useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
+import { useAuthContext } from "@/hooks/useAuth";
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
 
 import { asString } from "@/components/org/nutrition/profile/utils";
 
@@ -59,6 +63,23 @@ function StatusCard({ children }) {
 
 export default function AthleteNutritionProfilePage() {
   const router = useRouter();
+  const { user, logout } = useAuthContext();
+
+  const role = useMemo(() => {
+    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (r === "organization" || r.includes("org"))   return "organization";
+    if (r === "admin"        || r.includes("admin")) return "admin";
+    if (r === "trainer"      || r.includes("train")) return "trainer";
+    if (r.includes("ath"))                           return "athlete";
+    return r;
+  }, [user]);
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
 
   const athleteToken = useMemo(
     () => asString(router?.query?.athleteToken),
@@ -105,8 +126,31 @@ export default function AthleteNutritionProfilePage() {
     );
   }
 
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
   return (
     <Shell>
+      {showBillingWarning && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+          style={{ backgroundColor: "#FFFBF0", border: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
+            style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
       <ProfileHeader
         name={headerName}
         email={headerEmail}

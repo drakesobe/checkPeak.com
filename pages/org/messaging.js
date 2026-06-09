@@ -25,6 +25,9 @@ import {
 } from "lucide-react";
 import { useAuthContext } from "@/hooks/useAuth";
 import { db, storage } from "@/lib/firebase";
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const DS = {
@@ -775,7 +778,7 @@ function NewConversationModal({ onClose, myId, myName, orgId, orgToken, onCreate
 // ══════════════════════════════════════════════════════════════════════════════
 export default function OrgMessagingPage() {
   const router   = useRouter();
-  const { user } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const isMobile = useIsMobile();
 
   // ── Auth guard - wait for user to hydrate ─────────────────────────────────
@@ -787,6 +790,22 @@ export default function OrgMessagingPage() {
   const orgToken = String(user?.Token || "");
 
   const isStaff = normalizeRole(myRole) === "staff";
+
+  const role = useMemo(() => {
+    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (r === "organization" || r.includes("org"))   return "organization";
+    if (r === "admin"        || r.includes("admin")) return "admin";
+    if (r === "trainer"      || r.includes("train")) return "trainer";
+    if (r.includes("ath"))                           return "athlete";
+    return r;
+  }, [user]);
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
 
   const [activeTab,    setActiveTab]    = useState("feed");
   const [activeConvId, setActiveConvId] = useState(null);
@@ -881,6 +900,16 @@ export default function OrgMessagingPage() {
     { key: "leaderboard", label: "Leaderboard", icon: Trophy,       accent: DS.rankAccent,  count: leaderboard.length },
   ];
 
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
   if (!user || !myId) {
     return (
       <div style={{ minHeight: "100vh", background: DS.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -907,6 +936,20 @@ export default function OrgMessagingPage() {
           ← Dashboard
         </button>
       </div>
+
+      {showBillingWarning && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+          style={{ backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
+            style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
 
       {/* ── Tab bar ───────────────────────────────────────────────────────── */}
       <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, display: "flex", flexShrink: 0 }}>

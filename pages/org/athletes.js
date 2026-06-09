@@ -4,7 +4,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
-import { Toaster } from "react-hot-toast";
+import { Toaster, toast } from "react-hot-toast";
+
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
 
 import { cleanString, clamp, normalizeRole, getOrgKey } from "@/lib/org/athletes/utils";
 
@@ -28,12 +32,26 @@ import SavedViewsBar     from "@/components/org/athletes/SavedViewsBar";
 
 export default function OrgAthletesPage() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, logout } = useAuthContext();
 
   const searchRef = useRef(null);
 
   const role      = useMemo(() => normalizeRole(user), [user]);
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
+
+  // Plan-based athlete cap
+  const athleteLimit = useMemo(() => {
+    const p = String(billing?.plan || "").trim().toLowerCase();
+    if (p === "starter") return 10;
+    if (p === "growth")  return 59;
+    return Infinity; // Pro, sandbox, trial — unrestricted
+  }, [billing?.plan]);
 
   const orgKey  = useMemo(() => getOrgKey(user), [user]);
   const LS_COACH = useMemo(() => `${orgKey}:athleteCoachState:v2`, [orgKey]);
@@ -232,6 +250,28 @@ export default function OrgAthletesPage() {
 
   const deleteView = id => setSavedViews(prev => Array.isArray(prev) ? prev.filter(v => v.id !== id) : []);
 
+  const atAthleteLimit = athleteLimit !== Infinity && athletes.length >= athleteLimit;
+  const handleImport = useCallback(() => {
+    if (atAthleteLimit) {
+      toast.error(
+        `You've reached the ${athleteLimit}-athlete limit on the ${billing?.plan || "current"} plan. Upgrade to add more.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+    setImportOpen(true);
+  }, [atAthleteLimit, athleteLimit, billing?.plan]);
+
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen" style={{ background: "#F4F7FB", color: "#1A2535" }}>
       <Toaster
@@ -269,6 +309,20 @@ export default function OrgAthletesPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 pb-28 space-y-4">
 
+        {showBillingWarning && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+            style={{ backgroundColor: "#FFFBF0", border: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+            <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+            <button type="button" onClick={() => router.push("/account")}
+              className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
+              style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+              onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+              onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+              Fix billing
+            </button>
+          </div>
+        )}
+
         {/* ── Header ── */}
         <AthletesHeader
           onDashboard={() => router.push("/org/workouts-calendar")}
@@ -278,8 +332,46 @@ export default function OrgAthletesPage() {
           savedViews={savedViews}
           onApplyView={applyView}
           onDeleteView={deleteView}
-          onImport={() => setImportOpen(true)}
+          onImport={handleImport}
         />
+
+        {/* ── Plan limit indicator ── */}
+        {athleteLimit !== Infinity && (
+          <div
+            className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs"
+            style={{
+              backgroundColor: atAthleteLimit ? "#FFF0F0" : "#F4F7FB",
+              border: `1px solid ${atAthleteLimit ? "#FFC8C8" : "#E8ECF0"}`,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span style={{ color: atAthleteLimit ? "#C8102E" : "#5A6A7D", fontWeight: 600 }}>
+                {athletes.length} / {athleteLimit} athletes · {billing?.plan || "Starter"} plan
+              </span>
+              <div style={{ width: 72, height: 4, background: "#E8ECF0", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.min(100, (athletes.length / athleteLimit) * 100)}%`,
+                  background: atAthleteLimit ? "#C8102E" : athletes.length >= athleteLimit * 0.8 ? "#E87722" : "#00873E",
+                  borderRadius: 2,
+                  transition: "width 0.3s",
+                }} />
+              </div>
+            </div>
+            {atAthleteLimit && (
+              <button
+                type="button"
+                onClick={() => router.push("/account")}
+                className="shrink-0 px-3 py-1 text-xs font-black uppercase tracking-wider"
+                style={{ backgroundColor: "#1E3A5F", color: "#fff", border: "none", cursor: "pointer" }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+              >
+                Upgrade plan
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── Toolbar ── */}
         <AthletesToolbar

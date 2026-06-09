@@ -5,8 +5,12 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthContext } from "@/hooks/useAuth";
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
 
 // ── Video data ────────────────────────────────────────────────────────────────
 
@@ -252,6 +256,24 @@ function EpisodeChip({ video, isActive, isWatched, onClick }) {
 
 export default function HelpPage() {
   const router    = useRouter();
+  const { user, logout } = useAuthContext();
+
+  const role = useMemo(() => {
+    const r = String(user?.role || user?.Role || "").trim().toLowerCase();
+    if (r === "organization" || r.includes("org"))   return "organization";
+    if (r === "admin"        || r.includes("admin")) return "admin";
+    if (r === "trainer"      || r.includes("train")) return "trainer";
+    if (r.includes("ath"))                           return "athlete";
+    return r;
+  }, [user]);
+  const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
+
   const isMobile  = useIsMobile(768);
   const stripRef  = useRef(null);
 
@@ -288,6 +310,16 @@ export default function HelpPage() {
   }, [activeId, isMobile]);
 
   const accent = active?.accent || "#4FABFF";
+
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
 
   return (
     <div style={{
@@ -340,6 +372,18 @@ export default function HelpPage() {
           </div>
         </div>
       </div>
+
+      {showBillingWarning && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px", backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            style={{ flexShrink: 0, padding: "5px 12px", backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
 
       {/* ── Mobile: horizontal episode strip ── */}
       {isMobile && (

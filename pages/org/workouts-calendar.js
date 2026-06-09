@@ -21,6 +21,10 @@ import {
 import { normalizeSport, titleSport } from "@/lib/org/workoutsCalendar/sports";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function safeJson(res) { return res.json().catch(() => ({})); }
@@ -50,7 +54,7 @@ function sumCounts(list) {
 
 export default function WorkoutsCalendarPage() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const [mounted, setMounted] = useState(false);
 
   const LS_KEY  = "org_workouts_calendar_sports_v1";
@@ -100,6 +104,12 @@ export default function WorkoutsCalendarPage() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
+  const onLogout = useCallback(async () => {
+    try { await logout?.(); } finally { router.push("/"); }
+  }, [logout, router]);
 
   const memberId = useMemo(() =>
     String(user?.memberId || user?.orgId || "default"),
@@ -347,6 +357,16 @@ export default function WorkoutsCalendarPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
   return (
     <div style={{
       backgroundColor: DS.pageBg,
@@ -392,6 +412,20 @@ export default function WorkoutsCalendarPage() {
           }
         }
       `}</style>
+
+      {showBillingWarning && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+          style={{ backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
+            style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <CalendarHeader

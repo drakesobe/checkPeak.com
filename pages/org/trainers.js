@@ -5,6 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/hooks/useAuth";
 
+import { useBillingGate }   from "@/hooks/org/useBillingGate";
+import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
+import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
+
 import OrgTrainersHeader from "@/components/org/trainers/OrgTrainersHeader";
 import TrainersTable     from "@/components/org/trainers/TrainersTable";
 import InviteModal       from "@/components/org/trainers/InviteModal";
@@ -65,6 +69,9 @@ export default function TrainersPage() {
   const role            = useMemo(() => parseRole(user), [user]);
   const isOrgSide       = role === "organization" || role === "admin" || role === "trainer";
   const canManageMembers = role === "organization" || role === "admin";
+
+  const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } = useBillingGate({ user, role, isOrgSide });
+  const showBillingWarning = isAdminBypass && !rawIsPaidOk;
 
   useEffect(() => {
     if (!user)       { router.push("/");          return; }
@@ -223,8 +230,33 @@ export default function TrainersPage() {
   /* ─────────────────────────────────────────────────────────
      Render
   ───────────────────────────────────────────────────────── */
+  if (billingLoading) return <BillingLoadingScreen />;
+  if (billingErr || !isPaidOk) {
+    return (
+      <BillingGateScreen
+        role={role} billing={billing} error={billingErr}
+        onLogout={onLogout} onGoAccount={() => router.push("/account")}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F4F7FB" }}>
+
+      {showBillingWarning && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
+          style={{ backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
+          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <button type="button" onClick={() => router.push("/account")}
+            className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
+            style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+            Fix billing
+          </button>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 pb-12 space-y-5">
 
         {/* Header: title, filter chips, search, actions */}

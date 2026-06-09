@@ -151,6 +151,7 @@ export default async function handler(req, res) {
         isPaidOk,
         status: statusRaw || "",
         statusRaw: statusRaw || "",
+        plan: String(f?.[F.Plan] || "").trim(),
         token: String(f?.[F.Token] || sessionToken || "").trim(),
         sandboxEnds: sandboxEnds || "",
         trialEnds: trialEnds || "",

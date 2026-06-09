@@ -31,11 +31,9 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
 
-  // Auth — cookie session (web) or athleteToken/email from body (mobile)
   const user        = getRequestUser(req);
   const mobileToken = toTrimmed(req.body?.athleteToken ?? req.headers?.['x-athlete-token'] ?? '');
 
-  // _authUser is a JSON string sent by the mobile app as a fallback
   let mobileUser = null;
   if (req.body?._authUser) {
     try { mobileUser = JSON.parse(decodeURIComponent(req.body._authUser)); } catch {}
@@ -50,7 +48,6 @@ export default async function handler(req, res) {
 
   const targetDate = toTrimmed(date) || nyDateISO();
 
-  // Resolve email for web session, or use token for mobile
   const email = toTrimmed(
     user?.Email || user?.email || mobileUser?.Email || mobileUser?.email || ''
   ).toLowerCase();
@@ -59,31 +56,40 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: 'No account identifier' });
   }
 
-  // ── 1. Fetch commercial workout from Supabase ─────────────────────────────
-const { data: workout, error: wErr } = await supabase
-  .from('commercial_workouts')
-  .select('id, title, exercises, published')
-  .eq('id', workoutId)
-  .single();
+  // ── 1. Fetch commercial workout ───────────────────────────────────────────
+  const { data: workout, error: wErr } = await supabase
+    .from('commercial_workouts')
+    .select('id, title, exercises, published')
+    .eq('id', workoutId)
+    .single();
 
-if (wErr || !workout) {
-  console.error('[add-workout-to-today] find workout:', wErr?.message, { workoutId });
-  return res.status(404).json({ ok: false, error: 'Workout not found' });
-}
+  if (wErr || !workout) {
+    console.error('[add-workout-to-today] find workout:', wErr?.message, { workoutId });
+    return res.status(404).json({ ok: false, error: 'Workout not found' });
+  }
 
-if (!workout.published) {
-  return res.status(403).json({ ok: false, error: 'Workout not available' });
-}
+  if (!workout.published) {
+    return res.status(403).json({ ok: false, error: 'Workout not available' });
+  }
 
-// ── 2. Parse exercises ────────────────────────────────────────────────────
-let exercises = [];
-try {
-  const raw = workout.exercises;
-  exercises = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
-} catch {}
+  // ── 2. Parse exercises ────────────────────────────────────────────────────
+  let exercises = [];
+  try {
+    const raw = workout.exercises;
+    exercises = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+  } catch {}
 
+  const meaningful = exercises
+    .filter(ex => toTrimmed(ex.ExerciseName || ex.exercise_name || ex.name || ''))
+    .map((ex, i) => ({
+      exercise_name:     toTrimmed(ex.ExerciseName || ex.exercise_name || ex.name || ''),
+      sets:              toNumOrNull(ex.Sets ?? ex.sets),
+      reps:              toTrimmed(ex.Reps ?? ex.reps ?? '') || null,
+      evidence_required: 'voluntary_activity_vara',
+      sort_order:        toNumOrNull(ex.Order ?? ex.order) ?? i + 1,
+    }));
 
-  // ── 3. Look up athlete in Supabase ────────────────────────────────────────
+  // ── 3. Look up athlete ────────────────────────────────────────────────────
   const query = email
     ? supabase.from('athletes').select('id, athlete_token').eq('email', email).single()
     : supabase.from('athletes').select('id, athlete_token').eq('athlete_token', mobileToken).single();
@@ -92,18 +98,15 @@ try {
 
   if (athErr || !athleteRow) {
     console.error('[add-workout-to-today] athlete lookup:', athErr?.message, { email, mobileToken });
-    return res.status(400).json({
-      ok: false,
-      error: "Your account isn't linked to an athlete profile.",
-    });
+    return res.status(400).json({ ok: false, error: "Your account isn't linked to an athlete profile." });
   }
 
-  // ── 4. Create DailyWorkout in Supabase ────────────────────────────────────
+  // ── 4. Create DailyWorkout ────────────────────────────────────────────────
   const { data: dw, error: dwErr } = await supabase
     .from('daily_workouts')
     .insert({
       athlete_id: athleteRow.id,
-      title: String(workout.title || 'Workout'),
+      title:      String(workout.title || 'Workout'),
       date:       targetDate,
       status:     'assigned',
     })
@@ -115,17 +118,15 @@ try {
     return res.status(500).json({ ok: false, error: 'Failed to create workout record' });
   }
 
-  // ── 5. Create WorkoutItems in Supabase ────────────────────────────────────
+  // ── 5. Create WorkoutItems ────────────────────────────────────────────────
   if (meaningful.length > 0) {
     const items = meaningful.map(it => ({
-      daily_workout_id:  dw.id,
-      athlete_id:        athleteRow.id,
-      exercise_name:     it.exercise_name,
-      sets:              it.sets,
-      reps:              it.reps,
+      dailyworkout_id:  dw.id,
+      sort_order:       it.sort_order,
+      exercise_name:    it.exercise_name,
+      sets:             it.sets,
+      reps:             it.reps,
       evidence_required: it.evidence_required,
-      sort_order:        it.sort_order,
-      status:            'assigned',
     }));
 
     const { error: itemErr } = await supabase.from('workout_items').insert(items);

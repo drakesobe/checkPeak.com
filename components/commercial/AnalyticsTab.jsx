@@ -101,7 +101,7 @@ export default function AnalyticsTab() {
       <div className="mb-5">
         <p className="text-sm font-black" style={{ color: DS.bodyText }}>Analytics</p>
         <p className="text-xs mt-0.5" style={{ color: DS.labelText }}>
-          Subscriber breakdown · Est. monthly revenue · {muxAvailable ? "Video views — last 28 days" : "Video views update as plays come in"}
+          Subscriber breakdown · Est. monthly revenue · {muxAvailable ? "Video views - last 28 days" : "Video views update as plays come in"}
         </p>
       </div>
 

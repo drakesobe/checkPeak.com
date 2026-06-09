@@ -1,5 +1,5 @@
 // pages/athlete/libraries.jsx
-// My Programs — dark film room. Shows all subscriptions + completion progress.
+// My Programs - dark film room. Shows all subscriptions + completion progress.
 "use client";
 
 import { useState, useEffect } from "react";
@@ -140,7 +140,7 @@ function LibraryRow({ subscription, index }) {
               )}
             </div>
 
-            {/* Trainer name — big, italic, editorial */}
+            {/* Trainer name - big, italic, editorial */}
             <div style={{ marginBottom: 14 }}>
               {parts.map((part, i) => (
                 <div
@@ -252,7 +252,7 @@ export default function LibrariesPage() {
   return (
     <>
       <Head>
-        <title>My Programs — CheckPeak</title>
+        <title>My Programs - CheckPeak</title>
         <meta name="description" content="Your active coaching library subscriptions on CheckPeak." />
       </Head>
       <style>{GLOBAL_CSS}</style>
@@ -336,7 +336,7 @@ export default function LibrariesPage() {
                   <span style={{ color: D.faint }}>Let's Fix That.</span>
                 </h2>
                 <p style={{ fontSize: 13, color: D.faint, lineHeight: 1.7, maxWidth: 340, margin: "0 auto 32px" }}>
-                  Subscribe to a coach's library to get instant access to their videos, workouts, and programming — all in one place.
+                  Subscribe to a coach's library to get instant access to their videos, workouts, and programming - all in one place.
                 </p>
               </div>
               <a

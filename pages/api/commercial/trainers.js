@@ -1,5 +1,5 @@
 // pages/api/commercial/trainers.js
-// Public — no auth required. Returns all trainer profiles for the browse page.
+// Public - no auth required. Returns all trainer profiles for the browse page.
 
 import { getPublicTrainers } from "@/lib/commercial/db";
 

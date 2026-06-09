@@ -304,7 +304,7 @@ export default function ConversationPage() {
                           wordBreak: "break-word",
                           whiteSpace: "pre-wrap",
                         }}>
-                          {msgText || <span style={{ opacity: 0.3, fontStyle: "italic" }}>—</span>}
+                          {msgText || <span style={{ opacity: 0.3, fontStyle: "italic" }}>-</span>}
                         </div>
 
                         {/* Timestamp */}

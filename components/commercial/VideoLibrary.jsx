@@ -63,7 +63,7 @@ function LaunchChecklist({ trainerSlug, onUploadClick }) {
     { n: 1, done: true,  title: "Profile created",       desc: "Your public trainer profile is live."                               },
     { n: 2, done: false, active: true, title: "Add your first video",  desc: "Upload a file or paste a YouTube/Vimeo link.",
       cta: { label: "Add first video", action: onUploadClick } },
-    { n: 3, done: false, title: "Add your first client", desc: "Add a client by email — they get instant access."                    },
+    { n: 3, done: false, title: "Add your first client", desc: "Add a client by email - they get instant access."                    },
   ];
 
   return (
@@ -695,7 +695,7 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
     live:  workouts.filter(w => w.fields?.published).length,
   };
 
-  // Filter chips — "For sale" surfaces one-time purchasable items
+  // Filter chips - "For sale" surfaces one-time purchasable items
   const FILTERS = ["all", "Basic", "Premium", "Ultra", "live", "forsale"];
   const filterLabel = f => f === "all" ? "All" : f === "live" ? "Live" : f === "forsale" ? "For sale" : f;
 

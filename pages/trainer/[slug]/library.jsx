@@ -88,7 +88,7 @@ function parseTags(raw) {
 }
 
 // Flatten the tag object into one list of individual tag strings.
-// Multi-select categories store arrays — e.g. { muscleGroup: ["Chest","Back"] } —
+// Multi-select categories store arrays - e.g. { muscleGroup: ["Chest","Back"] } -
 // so flatten one level so each tag becomes its own filter, not a lumped "Chest,Back".
 function tagList(raw) {
   return Object.values(parseTags(raw))
@@ -476,7 +476,7 @@ function WorkoutViewer({ workout, clientTier, onClose }) {
           )}
         </div>
 
-        {/* Footer — Add to Today flow */}
+        {/* Footer - Add to Today flow */}
         <div style={{ padding: "16px 24px", borderTop: `0.5px solid ${D.border}`, flexShrink: 0 }}>
 
           {/* Error */}

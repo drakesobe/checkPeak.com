@@ -3,7 +3,7 @@
 -- Tables are ordered to satisfy foreign key dependencies.
 
 -- ════════════════════════════════════════════════════════════════════════════
--- SUPPLEMENT PLATFORM — reference tables (no FKs)
+-- SUPPLEMENT PLATFORM - reference tables (no FKs)
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS ingredients (
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS affiliate_products (
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
--- ORG PLATFORM — core tables
+-- ORG PLATFORM - core tables
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS organizations (
@@ -366,7 +366,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS audit_logs_org_token_idx ON audit_logs(org_token);
 
 -- ════════════════════════════════════════════════════════════════════════════
--- SUPPLEMENT PLATFORM — user data
+-- SUPPLEMENT PLATFORM - user data
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS scans (

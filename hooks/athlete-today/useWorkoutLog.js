@@ -29,7 +29,7 @@ export function useWorkoutLog({ athleteToken, selectedDate }) {
       localStorage.setItem(lsKey(athleteToken), JSON.stringify(updated));
 
       // Fire-and-forget sync to API (writes to Airtable Set Logs table)
-      // localStorage is the primary store — this is just the cross-device layer
+      // localStorage is the primary store - this is just the cross-device layer
       fetch("/api/athlete/workouts/logSet", {
         method: "POST",
         credentials: "include",

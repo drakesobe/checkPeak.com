@@ -6,7 +6,7 @@
 // Body: { recordIds: ["recXXX", "recYYY"] }  ← patch specific records
 //   OR: {}                                    ← process all records missing ASIN
 //
-// Returns matches for review — does NOT auto-patch unless ?confirm=true.
+// Returns matches for review - does NOT auto-patch unless ?confirm=true.
 // When confident (exact name match), use ?confirm=true to auto-patch.
 
 import { searchItems } from "@/lib/amazon/creatorsApi";

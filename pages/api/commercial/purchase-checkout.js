@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "This library is closed to new members." });
   }
 
-  // Fetch the item and re-derive the price server-side — never trust a client price.
+  // Fetch the item and re-derive the price server-side - never trust a client price.
   const record = itemType === "video"
     ? await getVideoById(itemId)
     : await getWorkoutById(itemId);
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
         price_data: {
           currency: "usd",
           product_data: {
-            name:        `${item.title} — ${f.name}`,
+            name:        `${item.title} - ${f.name}`,
             description: `One-time ${label} purchase · ${f.name} on CheckPeak`,
           },
           unit_amount: Math.round(priceAmount * 100),

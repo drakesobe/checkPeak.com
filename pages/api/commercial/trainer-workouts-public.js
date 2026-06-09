@@ -1,5 +1,5 @@
 // pages/api/commercial/trainer-workouts-public.js
-// Public — no auth needed. Returns subscription workouts for a trainer by slug.
+// Public - no auth needed. Returns subscription workouts for a trainer by slug.
 
 import { getTrainerBySlug, getWorkoutsByTrainer } from "@/lib/commercial/db";
 

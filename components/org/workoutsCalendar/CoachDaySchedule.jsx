@@ -3,13 +3,13 @@
 // Premium light-theme agenda view for coaches.
 //
 // Layout:
-//   Header          — date, day navigation, planned-time stat, + Add button
-//   NOW card        — pinned when today; shows active or upcoming event
-//   Agenda list     — merged assigned + personal blocks, sorted by time
+//   Header          - date, day navigation, planned-time stat, + Add button
+//   NOW card        - pinned when today; shows active or upcoming event
+//   Agenda list     - merged assigned + personal blocks, sorted by time
 //                     gaps between events shown explicitly as clickable rows
-//   Unscheduled     — assigned workouts with no ScheduledTime; tap to set time
-//   Add / Edit form — inline block form
-//   ScheduleModal   — time-picker for assigned workouts (new + already scheduled)
+//   Unscheduled     - assigned workouts with no ScheduledTime; tap to set time
+//   Add / Edit form - inline block form
+//   ScheduleModal   - time-picker for assigned workouts (new + already scheduled)
 
 "use client";
 
@@ -135,7 +135,7 @@ async function persistBlocks(mid, date, blocks) {
   } catch (e) { console.warn("CoachDaySchedule:", e?.message); }
 }
 
-// ─── Dedupe assigned workouts — keeps _allIds for bulk updates ────────────────
+// ─── Dedupe assigned workouts - keeps _allIds for bulk updates ────────────────
 function dedupeWorkouts(list) {
   const map = new Map();
   (list || []).forEach(w => {
@@ -171,7 +171,7 @@ const CSS = `
 `;
 
 // ─── Sport badge ──────────────────────────────────────────────────────────────
-// Only renders if there's a real sport name — avoids "SPORT" fallback showing
+// Only renders if there's a real sport name - avoids "SPORT" fallback showing
 function SportBadge({ sport, color }) {
   const label = titleSport(sport);
   if (!label) return null;
@@ -258,7 +258,7 @@ function NowCard({ items, nowMin }) {
   );
 }
 
-// ─── Assigned row (clickable — opens ScheduleTimeModal) ───────────────────────
+// ─── Assigned row (clickable - opens ScheduleTimeModal) ───────────────────────
 function AssignedRow({ item, onClick }) {
   const color = sportColor(item.sport);
   return (
@@ -801,7 +801,7 @@ export default function CoachDaySchedule({
     const n = new Date(); return n.getHours() * 60 + n.getMinutes();
   });
 
-  // Internal date — allows day navigation independently of prop
+  // Internal date - allows day navigation independently of prop
   const [currentDate, setCurrentDate] = useState(selectedDate);
   useEffect(() => { setCurrentDate(selectedDate); }, [selectedDate]);
 
@@ -944,7 +944,7 @@ export default function CoachDaySchedule({
   // ── Header labels ─────────────────────────────────────────────────────────────
   const dateObj   = dateStr && dateStr !== "2000-01-01" ? new Date(`${dateStr}T12:00:00`) : null;
   const dayName   = dateObj?.toLocaleDateString("en-US", { weekday: "long" }) || "";
-  const dateLabel = dateObj?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) || "—";
+  const dateLabel = dateObj?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) || "-";
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (

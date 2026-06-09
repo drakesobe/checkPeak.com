@@ -1,5 +1,5 @@
 // pages/trainer/[slug]/index.jsx
-// Public trainer profile — CheckPeak Commercial.
+// Public trainer profile - CheckPeak Commercial.
 // Subscribers see: current plan, upgrade options, cancel subscription.
 "use client";
 

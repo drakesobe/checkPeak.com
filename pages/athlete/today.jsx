@@ -582,7 +582,7 @@ export default function AthleteToday() {
   const fetchPlannerEvents = useCallback(() => {
     console.log("[plannerEvents] fired", { authReady, hasUser: !!user, isAthlete, selectedDate });
     if (!authReady || !user || !isAthlete || !selectedDate) {
-      console.log("[plannerEvents] bailing — conditions not met");
+      console.log("[plannerEvents] bailing - conditions not met");
       return;
     }
     const url = `/api/athlete/day-planner/upsert?date=${encodeURIComponent(selectedDate)}`;
@@ -595,7 +595,7 @@ export default function AthleteToday() {
       .then(data => {
         console.log("[plannerEvents] data", JSON.stringify(data));
         if (!data?.ok || !data.hasRecord) {
-          console.log("[plannerEvents] no record — clearing");
+          console.log("[plannerEvents] no record - clearing");
           setPlannerEvents([]);
           return;
         }

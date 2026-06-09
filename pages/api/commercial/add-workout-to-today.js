@@ -1,7 +1,7 @@
 // pages/api/commercial/add-workout-to-today.js
 // Adds a published commercial workout to the athlete's Today page.
 // Writes directly to DailyWorkouts + WorkoutItems tables using the same
-// field mappings as /api/org/workouts/create — bypasses org auth entirely
+// field mappings as /api/org/workouts/create - bypasses org auth entirely
 // since this is an athlete-initiated action.
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const user = getRequestUser(req);
-  // Mobile fallback: cookie auth doesn't work in RN — accept athleteToken from body
+  // Mobile fallback: cookie auth doesn't work in RN - accept athleteToken from body
   const mobileToken = String(
     req.body?.athleteToken ?? req.headers?.["x-athlete-token"] ?? ""
   ).trim();
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
       const r = rows[0];
       athleteRecordId = r.id;
       athleteToken    = String(r.fields?.[tokenField] || "").trim();
-      // Organization is a linked field — grab first linked record ID
+      // Organization is a linked field - grab first linked record ID
       const orgField  = r.fields?.Organization || r.fields?.organization;
       orgId           = Array.isArray(orgField) ? orgField[0] : (orgField || null);
     }
@@ -221,7 +221,7 @@ const today = nyDateISO();
       }
     } catch (err) {
       console.error("[add-workout-to-today] create WorkoutItems:", err?.message);
-      // Workout was created — don't fail the whole request, just warn
+      // Workout was created - don't fail the whole request, just warn
     }
   }
 

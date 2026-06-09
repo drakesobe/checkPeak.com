@@ -69,7 +69,7 @@ export default function WorkoutTargets({
     tone === "pending" ? "text-sky-600" :
     tone === "completed" ? "text-emerald-600" : "";
 
-  // Tile accent colors per tone — base now uses brand #4FABFF
+  // Tile accent colors per tone - base now uses brand #4FABFF
   const tileAccent =
     tone === "pending"
       ? { border: "border-sky-100", bg: "bg-sky-50/60", icon: "text-sky-500", value: "text-sky-900", label: "text-sky-500/80" }

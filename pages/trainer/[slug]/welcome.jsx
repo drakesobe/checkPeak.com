@@ -189,7 +189,7 @@ export default function WelcomePage() {
   return (
     <>
       <Head>
-        <title>Welcome — {f.name} · CheckPeak</title>
+        <title>Welcome - {f.name} · CheckPeak</title>
       </Head>
       <style>{GLOBAL_CSS}</style>
 

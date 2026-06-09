@@ -1,5 +1,5 @@
 // pages/trainers.jsx
-// The Arena — compact directory layout. Sticky search + filters.
+// The Arena - compact directory layout. Sticky search + filters.
 // Scales from 1 to 500+ coaches without wasted space.
 "use client";
 
@@ -257,7 +257,7 @@ export default function TrainersPage() {
   return (
     <>
       <Head>
-        <title>The Arena — CheckPeak</title>
+        <title>The Arena - CheckPeak</title>
         <meta name="description" content="Find elite coaches and training programs on CheckPeak." />
       </Head>
       <style>{CSS}</style>
@@ -345,7 +345,7 @@ export default function TrainersPage() {
               );
             })}
 
-            {/* Clear — only when active */}
+            {/* Clear - only when active */}
             {hasFilters && (
               <>
                 <div style={{ width: "0.5px", height: 16, background: D.border, margin: "0 6px", flexShrink: 0 }} />
@@ -361,7 +361,7 @@ export default function TrainersPage() {
         {/* ── Grid ── */}
         <main style={{ maxWidth: 1140, margin: "0 auto", padding: "28px 48px 80px" }}>
 
-          {/* Result count — only when filtered */}
+          {/* Result count - only when filtered */}
           {!loading && hasFilters && (
             <p style={{ fontSize: 11, color: D.faint, marginBottom: 20, letterSpacing: "0.06em", fontWeight: 600, textTransform: "uppercase" }}>
               {filtered.length} result{filtered.length !== 1 ? "s" : ""}

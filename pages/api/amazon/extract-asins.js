@@ -137,7 +137,7 @@ export default async function handler(req, res) {
     if (asin) {
       toEnrich.push({ recordId: record.id, asin, name: f["Product Name"] || "" });
     } else {
-      // Couldn't extract — needs manual attention or search fallback
+      // Couldn't extract - needs manual attention or search fallback
       results.needsLookup.push({
         recordId: record.id,
         name:     f["Product Name"] || "Unknown",
@@ -194,7 +194,7 @@ export default async function handler(req, res) {
       try {
         await patchRecord(recordId, fields);
         results.extracted++;
-        console.log(`[extract-asins] ✓ ${asin} — ${name}`);
+        console.log(`[extract-asins] ✓ ${asin} - ${name}`);
       } catch (e) {
         results.failed.push({ asin, name, error: e.message });
       }
@@ -208,7 +208,7 @@ export default async function handler(req, res) {
     ...results,
     extracted: results.extracted,
     message: results.needsLookup.length > 0
-      ? `${results.needsLookup.length} product(s) couldn't be auto-detected — see needsLookup. Use POST /api/amazon/search-asins to find them by name.`
+      ? `${results.needsLookup.length} product(s) couldn't be auto-detected - see needsLookup. Use POST /api/amazon/search-asins to find them by name.`
       : "All products processed.",
     ...(results.failed.length ? { failed: results.failed } : {}),
   });

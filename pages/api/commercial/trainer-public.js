@@ -1,5 +1,5 @@
 // ─── pages/api/commercial/trainer-public.js ───────────────────────────────────
-// Public — no auth needed. Returns trainer profile by slug.
+// Public - no auth needed. Returns trainer profile by slug.
 // Used by the client library page to show trainer name/info.
 
 import { getTrainerBySlug } from "@/lib/commercial/db";

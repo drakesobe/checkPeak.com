@@ -1,6 +1,6 @@
 // pages/api/commercial/notify-client.js
 // Sends the client their access email when a trainer adds them.
-// Uses Resend — run: npm install resend
+// Uses Resend - run: npm install resend
 // Add RESEND_API_KEY to Vercel env vars.
 // Set your from-domain in Resend dashboard → Domains.
 
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ sent: true });
   } catch (err) {
     console.error("[notify-client]", err);
-    // Don't fail the client-add if email fails — just log it.
+    // Don't fail the client-add if email fails - just log it.
     return res.status(200).json({ sent: false, error: err.message });
   }
 }

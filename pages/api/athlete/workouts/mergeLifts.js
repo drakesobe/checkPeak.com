@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/mergeLifts.js
-// POST — rewrites ExerciseTitle on all matching Set Logs records for this athlete.
+// POST - rewrites ExerciseTitle on all matching Set Logs records for this athlete.
 // Body: { keep: "Barbell Squat", remove: ["BB Squat", "barbell squat"] }
 // All records in `remove` get rewritten to `keep`. Old names disappear.
 

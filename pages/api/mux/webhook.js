@@ -1,5 +1,5 @@
 // pages/api/mux/webhook.js
-// @mux/mux-node v14 — Webhooks is now a named export, not a static on the class.
+// @mux/mux-node v14 - Webhooks is now a named export, not a static on the class.
 // Adds explicit logging so silent Airtable failures / record-mapping misses surface.
 
 import Mux from "@mux/mux-node";
@@ -7,7 +7,7 @@ import { updateVideo, getVideoByUploadId } from "../../../lib/commercial/airtabl
 
 export const config = {
   api: {
-    bodyParser: false, // Must be false — signature verification needs the raw body
+    bodyParser: false, // Must be false - signature verification needs the raw body
   },
 };
 
@@ -30,7 +30,7 @@ function logAirtable(tag, result) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  // Read raw body — required for Mux signature verification
+  // Read raw body - required for Mux signature verification
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const rawBody = Buffer.concat(chunks).toString("utf8");
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
       if (record) logAirtable("asset.ready(uploadId)", await updateVideo(record.id, fields));
       else console.error("[mux-webhook] asset.ready: no record found for uploadId", uploadId);
     } else {
-      console.error("[mux-webhook] asset.ready: no passthrough and no uploadId — cannot map to a record");
+      console.error("[mux-webhook] asset.ready: no passthrough and no uploadId - cannot map to a record");
     }
   }
 

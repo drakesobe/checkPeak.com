@@ -47,7 +47,7 @@ function mergeSessions(localSessions = [], apiSessions = []) {
   const merged = {};
   // Local first (lower priority)
   localSessions.forEach(s => { merged[s.date] = s; });
-  // API overwrites (higher priority — authoritative cross-device data)
+  // API overwrites (higher priority - authoritative cross-device data)
   apiSessions.forEach(s => { merged[s.date] = s; });
   return Object.values(merged).sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -100,7 +100,7 @@ function Sparkline({ sessions, height = 60 }) {
 function PRBadge({ label, value }) {
   return (
     <div style={{ flex: 1, padding: "12px 10px", background: C.surface, border: `1px solid ${C.line2}`, borderRadius: 10, textAlign: "center" }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: C.white, letterSpacing: "-0.03em" }}>{value || "—"}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: C.white, letterSpacing: "-0.03em" }}>{value || "-"}</div>
       <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, marginTop: 4 }}>{label}</div>
     </div>
   );

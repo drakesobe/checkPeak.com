@@ -1,8 +1,8 @@
 // pages/commercial/onboard.jsx
-// Trainer / org onboarding — light theme (org-side), 3 steps.
-// Step 1: Profile   — name, specialty, bio
-// Step 2: Program   — client count, org type, primary goal, sport/focus
-// Step 3: Pricing   — tier pricing with free toggle
+// Trainer / org onboarding - light theme (org-side), 3 steps.
+// Step 1: Profile   - name, specialty, bio
+// Step 2: Program   - client count, org type, primary goal, sport/focus
+// Step 3: Pricing   - tier pricing with free toggle
 "use client";
 
 import { useState, useEffect } from "react";
@@ -10,7 +10,7 @@ import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import Head from "next/head";
 
-// ─── Design tokens — light org theme ─────────────────────────────────────────
+// ─── Design tokens - light org theme ─────────────────────────────────────────
 const DS = {
   brand:         "#1E3A5F",
   brandBg:       "#EEF3F9",
@@ -228,7 +228,7 @@ export default function CommercialOnboard() {
 
   async function handleFinish() {
     const filled = ["Basic", "Premium", "Ultra"].every(t => prices[t] !== "");
-    if (!filled) return setError("Set a price for each tier — or toggle Free.");
+    if (!filled) return setError("Set a price for each tier - or toggle Free.");
 
     setSaving(true);
     setError("");
@@ -315,7 +315,7 @@ export default function CommercialOnboard() {
                   </div>
                 </Field>
 
-                <Field label="Bio" hint="Optional — your background, philosophy, and what athletes can expect.">
+                <Field label="Bio" hint="Optional - your background, philosophy, and what athletes can expect.">
                   <textarea className="ob-textarea" value={bio} onChange={e => setBio(e.target.value)} placeholder="e.g. S&C Coach at Arizona State. Focused on athlete performance and longevity." />
                 </Field>
 
@@ -382,8 +382,8 @@ export default function CommercialOnboard() {
                   </div>
                 </Field>
 
-                {/* Sport focus — optional */}
-                <Field label="Sport or focus area" hint="Optional — skip if multi-sport or general fitness.">
+                {/* Sport focus - optional */}
+                <Field label="Sport or focus area" hint="Optional - skip if multi-sport or general fitness.">
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
                     {SPORT_FOCUSES.map(s => (
                       <button key={s} type="button" className={`ob-pill${sport === s ? " active" : ""}`} onClick={() => setSport(prev => prev === s ? "" : s)} style={{ fontSize: 11, textAlign: "center" }}>

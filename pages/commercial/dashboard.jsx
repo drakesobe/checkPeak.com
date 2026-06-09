@@ -223,7 +223,7 @@ function PricingTab({ trainer }) {
                   </button>
                 </div>
 
-                {/* Price input — hidden when free */}
+                {/* Price input - hidden when free */}
                 {!isFree ? (
                   <div className="flex items-center gap-1.5">
                     <span className="text-lg font-black" style={{ color: DS.labelText }}>$</span>
@@ -427,7 +427,7 @@ function BroadcastModal({ trainer, onClose }) {
                 <p style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: DS.dimText, marginBottom: 6 }}>Message</p>
                 <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 150, lineHeight: 1.7 }} {...focus}
                   value={body} onChange={e => setBody(e.target.value)}
-                  placeholder={`Hey,\n\nJust posted a new 6-week strength block. Check it out in the library.\n\n— ${f.name || "Coach"}`} />
+                  placeholder={`Hey,\n\nJust posted a new 6-week strength block. Check it out in the library.\n\n- ${f.name || "Coach"}`} />
               </div>
 
               {error && <p style={{ fontSize: 12, color: DS.banned, fontWeight: 600 }}>{error}</p>}
@@ -520,7 +520,7 @@ function ClientsTab({ trainer }) {
               : "No clients yet"}
           </p>
           <p className="text-xs mt-0.5" style={{ color: DS.labelText }}>
-            Add clients manually — they get an email with their library link.
+            Add clients manually - they get an email with their library link.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -622,7 +622,7 @@ function ClientsTab({ trainer }) {
                   {(cf.clientName || cf.clientEmail || "?")[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{cf.clientName || "—"}</p>
+                  <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{cf.clientName || "-"}</p>
                   <p className="text-[11px] truncate" style={{ color: DS.labelText }}>{cf.clientEmail}</p>
                 </div>
                 <span className="px-2 py-0.5 rounded-sm text-[10px] font-black"
@@ -742,7 +742,7 @@ function SettingsTab({ trainer }) {
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <p className="text-xs font-black mb-1" style={{ color: DS.bodyText }}>
-              {locked ? "Members only — library is closed" : "Open — anyone can join"}
+              {locked ? "Members only - library is closed" : "Open - anyone can join"}
             </p>
             <p className="text-[11px] leading-relaxed" style={{ color: DS.labelText }}>
               {locked
@@ -822,7 +822,7 @@ export default function CommercialDashboard() {
 
   return (
     <>
-      <Head><title>{f.name} — CheckPeak Commercial</title></Head>
+      <Head><title>{f.name} - CheckPeak Commercial</title></Head>
       <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
 
         <TopBar trainerName={f.name} router={router} />

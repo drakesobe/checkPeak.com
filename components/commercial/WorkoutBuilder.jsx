@@ -1,6 +1,6 @@
 // components/commercial/WorkoutBuilder.jsx
 // Workout creation/edit drawer for the commercial dashboard.
-// Uses the shared TemplatePicker from the org side — same template system,
+// Uses the shared TemplatePicker from the org side - same template system,
 // same /api/org/templates/list endpoint, same groupId preservation.
 // Optional one-time price: when set, the workout can be bought No Subscription (no subscription).
 "use client";
@@ -249,7 +249,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState("");
 
-  // ── Template state — mirrors CreateWorkoutDrawer exactly ─────────────────
+  // ── Template state - mirrors CreateWorkoutDrawer exactly ─────────────────
   const [templates,         setTemplates]         = useState([]);
   const [loadingTemplates,  setLoadingTemplates]  = useState(false);
   const [appliedTemplateId, setAppliedTemplateId] = useState(null);
@@ -314,7 +314,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
-  // ── Template handlers — same pattern as CreateWorkoutDrawer ───────────────
+  // ── Template handlers - same pattern as CreateWorkoutDrawer ───────────────
 
   const applyTemplate = useCallback((template) => {
     // Convert template exercises → commercial exercise format.
@@ -502,7 +502,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
               <input
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Upper Body Strength — Block 1"
+                placeholder="e.g. Upper Body Strength - Block 1"
                 autoFocus
                 style={inp}
                 onFocus={focusStyle} onBlur={blurStyle}
@@ -558,14 +558,14 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
               </div>
               <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
                 {hasPrice
-                  ? "Clients can buy this workout outright — no subscription needed. Subscribers on the tier (and above) still get it included."
+                  ? "Clients can buy this workout outright - no subscription needed. Subscribers on the tier (and above) still get it included."
                   : "Leave empty to keep this workout subscription-only. Add a price to also sell it as a one-time purchase."}
               </p>
             </div>
 
             <div style={{ height: 1, background: DS.border }} />
 
-            {/* ── Template picker — shared org component ── */}
+            {/* ── Template picker - shared org component ── */}
             <TemplatePicker
               templates={templates}
               loading={loadingTemplates}

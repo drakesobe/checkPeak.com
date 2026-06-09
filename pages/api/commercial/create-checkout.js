@@ -51,7 +51,7 @@ export default async function handler(req, res) {
         price_data: {
           currency: "usd",
           product_data: {
-            name:        `${tier} Plan — ${f.name}`,
+            name:        `${tier} Plan - ${f.name}`,
             description: `Monthly ${tier} access to ${f.name}'s CheckPeak library`,
           },
           unit_amount: Math.round(priceAmount * 100),

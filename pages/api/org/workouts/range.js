@@ -141,7 +141,7 @@ export default async function handler(req, res) {
       const items    = safeArray(f[DAILY_ITEMS_LINK_FIELD]);
       const date     = f[DAILY_DATE_FIELD] ? String(f[DAILY_DATE_FIELD]).slice(0, 10) : "";
 
-      // Resolve scheduled time — try ScheduledMinutes first, then parse ScheduledTime string
+      // Resolve scheduled time - try ScheduledMinutes first, then parse ScheduledTime string
       const scheduledMinutes =
         parseTimeToMinutes(f[DAILY_SCHED_MIN_FIELD]) ??
         parseTimeToMinutes(f[DAILY_SCHED_TIME_FIELD]) ??

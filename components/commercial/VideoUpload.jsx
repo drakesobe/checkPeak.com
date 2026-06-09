@@ -50,7 +50,7 @@ const CSS = `
   .vu-tag-btn:hover  { border-color: ${DS.brandBorder}; color: ${DS.brand}; background: ${DS.brandBg}; }
   .vu-tag-btn.active { background: ${DS.brandBg}; border-color: ${DS.brand}; color: ${DS.brand}; font-weight: 700; }
 
-  /* Custom tag pill — has a hidden remove button that appears on hover */
+  /* Custom tag pill - has a hidden remove button that appears on hover */
   .vu-custom-pill {
     padding: 4px 8px 4px 11px; border-radius: 99px;
     border: 1px solid ${DS.border}; background: ${DS.pageBg};
@@ -222,7 +222,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
     const existing = allOptions(categoryLabel);
     const match    = existing.find(o => o.toLowerCase() === val.toLowerCase());
     if (match) {
-      // Already exists — just select it
+      // Already exists - just select it
       if (!isActive(categoryLabel, match)) toggleTag(categoryLabel, match);
       closeCustom();
       return;
@@ -370,7 +370,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           <SectionLabel>Title *</SectionLabel>
           <input style={inputStyle} {...focusHandlers}
             value={title} onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Upper Body Hypertrophy — Week 3 Day 1"
+            placeholder="e.g. Upper Body Hypertrophy - Week 3 Day 1"
             disabled={isSubmitting || isDone} />
         </div>
 
@@ -379,7 +379,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           <SectionLabel>Description <span style={{ textTransform: "none", fontWeight: 500, letterSpacing: 0 }}>(optional)</span></SectionLabel>
           <textarea style={{ ...inputStyle, resize: "vertical", minHeight: 64, lineHeight: 1.5 }} {...focusHandlers}
             value={desc} onChange={e => setDesc(e.target.value)}
-            placeholder="What athletes should know before watching — cues, focus points, context."
+            placeholder="What athletes should know before watching - cues, focus points, context."
             disabled={isSubmitting || isDone} />
         </div>
 
@@ -413,7 +413,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
                     </svg>
                   </div>
                   <p style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>Drop video here or click to browse</p>
-                  <p style={{ fontSize: 11, color: DS.dimText }}>MP4, MOV, WebM — no size limit</p>
+                  <p style={{ fontSize: 11, color: DS.dimText }}>MP4, MOV, WebM - no size limit</p>
                 </>
               )}
             </div>
@@ -426,7 +426,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
               placeholder="https://vimeo.com/... or https://youtube.com/..."
               disabled={isSubmitting || isDone} />
             <p style={{ fontSize: 11, color: DS.dimText, marginTop: 5 }}>
-              Vimeo Pro recommended for paid content — restricts playback to your domain.
+              Vimeo Pro recommended for paid content - restricts playback to your domain.
             </p>
           </div>
         )}
@@ -464,7 +464,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
           </div>
           <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
             {hasPrice
-              ? "Clients can buy this video on its own — no subscription needed. Subscribers on the selected tier (and above) still get it included."
+              ? "Clients can buy this video on its own - no subscription needed. Subscribers on the selected tier (and above) still get it included."
               : "Leave empty to keep this video subscription-only. Add a price to also sell it as a one-time purchase."}
           </p>
         </div>
@@ -506,7 +506,7 @@ export default function VideoUpload({ trainerId, onSuccess }) {
                       </button>
                     ))}
 
-                    {/* Custom pills — with removable × */}
+                    {/* Custom pills - with removable × */}
                     {myCustom.map(opt => (
                       <button key={opt} type="button"
                         className={`vu-custom-pill${isActive(categoryLabel, opt) ? " active" : ""}`}

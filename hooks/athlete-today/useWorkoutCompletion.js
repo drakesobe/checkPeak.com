@@ -110,9 +110,9 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
 
   // ─── quickComplete ───────────────────────────────────────────────────────────
   // Accepts any of these shapes so call-sites don't need to know the internals:
-  //   quickComplete("recXXX")                   — plain Airtable record ID
-  //   quickComplete({ id: "recXXX", ... })      — raw Airtable item object
-  //   quickComplete({ item: { id: "recXXX" } }) — sub-object from WorkoutSheet
+  //   quickComplete("recXXX")                   - plain Airtable record ID
+  //   quickComplete({ id: "recXXX", ... })      - raw Airtable item object
+  //   quickComplete({ item: { id: "recXXX" } }) - sub-object from WorkoutSheet
   const quickComplete = useCallback(
     async (workoutItemOrId, dailyWorkoutId = "") => {
       const rawId =

@@ -125,7 +125,7 @@ export default async function handler(req, res) {
         try {
           await patchRecord(recordId, fields);
           synced++;
-          console.log(`[sync] ✓ ${asin} — $${item.price} | ★${item.rating}`);
+          console.log(`[sync] ✓ ${asin} - $${item.price} | ★${item.rating}`);
         } catch (e) {
           errors++;
           errorList.push(`Patch failed for ${asin}: ${e.message}`);

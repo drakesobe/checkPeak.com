@@ -125,7 +125,7 @@ function DropDivider() {
   return <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />;
 }
 
-// ─── Studio card — org commercial section ────────────────────────────────────
+// ─── Studio card - org commercial section ────────────────────────────────────
 // Two links only: Studio Dashboard + View Public Profile (when slug available).
 // No redundant links pointing at the same page.
 
@@ -160,7 +160,7 @@ function StudioCard({ onClose, trainerSlug }) {
   );
 }
 
-// ─── Discover card — athlete marketplace section ──────────────────────────────
+// ─── Discover card - athlete marketplace section ──────────────────────────────
 
 function DiscoverCard({ onClose }) {
   return (
@@ -250,7 +250,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 
           <DropDivider />
 
-          {/* Studio card — 2 links only */}
+          {/* Studio card - 2 links only */}
           <StudioCard onClose={onClose} trainerSlug={trainerSlug} />
         </>
       )}
@@ -275,7 +275,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 
       <DropDivider />
 
-      {/* Help Center — org only */}
+      {/* Help Center - org only */}
       {isOrgSide && (
         <>
           <Link
@@ -426,7 +426,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
 
                 <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
 
-                {/* Studio card — 2 links only */}
+                {/* Studio card - 2 links only */}
                 <div style={{ margin: "4px 0 8px", borderRadius: 12, background: "rgba(70,118,155,0.09)", border: "1px solid rgba(70,118,155,0.22)", overflow: "hidden" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 4px" }}>
                     <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4FABFF" }}>Studio</span>
@@ -452,7 +452,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
 
                 <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
 
-                {/* Discover card — mobile */}
+                {/* Discover card - mobile */}
                 <div style={{ margin: "4px 0 8px", borderRadius: 12, background: "rgba(218,54,51,0.07)", border: "1px solid rgba(218,54,51,0.18)", overflow: "hidden" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 4px" }}>
                     <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF7B72" }}>Discover</span>
@@ -467,7 +467,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
 
             <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
 
-            {/* Help Center — org mobile */}
+            {/* Help Center - org mobile */}
             {isOrgSide && (
               <Link href="/org/help" onClick={onClose}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.18)", textDecoration: "none", marginBottom: 8 }}

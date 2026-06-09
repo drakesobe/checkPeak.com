@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     const activeCount = allClients.filter(c => c.fields?.status === "active").length;
     await updateTrainer(trainerId, { activeClientCount: activeCount });
 
-    // Fire access email — non-blocking
+    // Fire access email - non-blocking
     fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/commercial/notify-client`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },

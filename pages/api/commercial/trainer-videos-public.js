@@ -1,5 +1,5 @@
 // pages/api/commercial/trainer-videos-public.js
-// Public — no auth needed.
+// Public - no auth needed.
 // Returns Basic-tier video preview (max 4) + total video and workout counts.
 
 import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/db";
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     .filter(v => v.fields?.tier === "Basic")
     .slice(0, 4);
 
-  // One-time purchasable items — surfaced publicly so non-subscribers can buy in
+  // One-time purchasable items - surfaced publicly so non-subscribers can buy in
   const pricedVideos = normalized
     .filter(v => Number(v.fields?.price) > 0)
     .map(v => ({ id: v.id, fields: { title: v.fields.title, tier: v.fields.tier, price: v.fields.price, muxPlaybackId: v.fields.muxPlaybackId, thumbnailUrl: v.fields.thumbnailUrl, embedUrl: v.fields.embedUrl, duration: v.fields.duration } }));

@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   const priceKeys = { Basic: "basicPrice", Premium: "premiumPrice", Ultra: "ultraPrice" };
   const price = Number(f[priceKeys[tier]] ?? 1);
 
-  // Safety guard — only allow this route for genuinely free tiers
+  // Safety guard - only allow this route for genuinely free tiers
   if (price !== 0) {
     return res.status(400).json({ ok: false, error: "This tier is not free" });
   }
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true, alreadySubscribed: true });
     }
   } catch (err) {
-    // Non-fatal — proceed with creation attempt even if the duplicate check fails
+    // Non-fatal - proceed with creation attempt even if the duplicate check fails
     console.warn("[subscribe-free] duplicate check failed (non-fatal):", err?.message);
   }
 
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "Failed to create subscription", detail: err.message });
   }
 
-  // Airtable returns { error: { type, message } } on failure — check for it
+  // Airtable returns { error: { type, message } } on failure - check for it
   if (result?.error) {
     console.error("[subscribe-free] Airtable rejected createSubscription:", result.error);
     return res.status(500).json({

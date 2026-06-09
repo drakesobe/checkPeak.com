@@ -455,7 +455,7 @@ export default function DayPlannerSheet({
   // ── Save: only persist personal events ────────────────────────────────────
   const saveToAirtable=useCallback((evts)=>{
     if(!athleteToken||!dateStr)return;
-    // Strip transient events — nutrition and coach_workout are always
+    // Strip transient events - nutrition and coach_workout are always
     // regenerated dynamically and must NOT be persisted to Airtable.
     // Persisting them caused race conditions that erased personal events
     // like "Film Study" on reload or date change.
@@ -483,7 +483,7 @@ export default function DayPlannerSheet({
     if(cached){
       try{
         const parsed=JSON.parse(cached);
-        // Cache might contain old transient events from before this fix —
+        // Cache might contain old transient events from before this fix -
         // filter them out so they don't pollute the seed.
         setEvents(parsed.filter(isPersonalEvent));
       }catch{setEvents([]);}
@@ -495,7 +495,7 @@ export default function DayPlannerSheet({
       .then(r=>r.ok?r.json():null)
       .then(data=>{
         // Restore hasRecord check: if no record exists yet, keep whatever
-        // the cache seeded — do NOT overwrite with an empty array.
+        // the cache seeded - do NOT overwrite with an empty array.
         if(!data?.ok||!data.hasRecord)return;
         const raw=Array.isArray(data.events)?data.events:[];
         // Only trust personal events from Airtable; transient ones are injected
@@ -549,7 +549,7 @@ export default function DayPlannerSheet({
     });
   },[isOpen,workoutLoading,loadingEvents,dailyWorkout,dailyWorkouts,workoutItems]); // eslint-disable-line
 
-  // ── Debounced save — fires when events change ─────────────────────────────
+  // ── Debounced save - fires when events change ─────────────────────────────
   // saveToAirtable is in deps so a stale dateStr closure can't fire a save
   // to the wrong date after navigation.
   //
@@ -563,7 +563,7 @@ export default function DayPlannerSheet({
   // the full updated array and bypass this guard intentionally.
   useEffect(()=>{
     if(hydratingRef.current||!authReady||!isAthlete||!athleteToken||!isOpen)return;
-    // Don't auto-save when there are no personal events — that would overwrite
+    // Don't auto-save when there are no personal events - that would overwrite
     // existing Airtable data with an empty array.
     if(!events.some(isPersonalEvent))return;
     clearTimeout(saveTimer.current);
@@ -622,7 +622,7 @@ export default function DayPlannerSheet({
       :current.map(ev=>ev.id===modal.event.id?{...ev,...data}:ev);
     setEvents(updated);
     setModal(null);
-    // Immediate flush — don't wait for the 800ms debounce.
+    // Immediate flush - don't wait for the 800ms debounce.
     clearTimeout(saveTimer.current);
     saveToAirtable(updated);
   },[modal,saveToAirtable]);

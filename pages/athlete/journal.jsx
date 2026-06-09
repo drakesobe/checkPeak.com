@@ -1,5 +1,5 @@
 // pages/athlete/journal.jsx
-// Workout Journal — PR-first progress tracking + lift merge tool.
+// Workout Journal - PR-first progress tracking + lift merge tool.
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -15,7 +15,7 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-// ─── Brand tokens — matches pages/index.js exactly ───────────────────────────
+// ─── Brand tokens - matches pages/index.js exactly ───────────────────────────
 const C = {
   bg:     "#060810",
   s1:     "#0C1220",
@@ -176,7 +176,7 @@ function BaselinesSection({ baselines, exercises, onEdit }) {
           <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: C.muted, fontWeight: 600 }}>{lift.unit}</span>
         </div>
       ) : (
-        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: loggedPR ? 4 : 0 }}>—</div>
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: loggedPR ? 4 : 0 }}>-</div>
       )}
 
       {loggedPR && (
@@ -393,7 +393,7 @@ function MergeSheet({ exercises, open, onClose, onMerged }) {
                     </div>
                   )}
                   <button onClick={handleNext} disabled={selected.size<2} style={{width:"100%",padding:"15px",background:selected.size>=2?C.accent:C.s1,border:`1px solid ${selected.size>=2?"transparent":C.line}`,borderRadius:12,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:14,letterSpacing:"0.08em",textTransform:"uppercase",color:selected.size>=2?C.bg:C.muted,cursor:selected.size>=2?"pointer":"not-allowed",transition:"all 0.2s"}}>
-                    {selected.size<2?"Select at least 2 lifts":"Next — Choose Name →"}
+                    {selected.size<2?"Select at least 2 lifts":"Next - Choose Name →"}
                   </button>
                 </div>
               </>
@@ -473,7 +473,7 @@ function MergeSheet({ exercises, open, onClose, onMerged }) {
 function HeroStats({ totalDays, bestPR, streak }) {
   const stats = [
     { value: totalDays, label: "Sessions", sub: "", sublabel: null, color: C.accent, Icon: BarChart2 },
-    { value: bestPR.weight > 0 ? bestPR.weight : "—", sub: bestPR.weight > 0 ? "lb" : "", label: "Best PR", sublabel: bestPR.title || null, color: C.amber, Icon: Award },
+    { value: bestPR.weight > 0 ? bestPR.weight : "-", sub: bestPR.weight > 0 ? "lb" : "", label: "Best PR", sublabel: bestPR.title || null, color: C.amber, Icon: Award },
     { value: streak, label: "Day Streak", sub: "", sublabel: null, color: streak > 0 ? C.orange : C.muted, Icon: Flame },
   ];
   return (

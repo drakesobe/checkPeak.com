@@ -65,7 +65,7 @@ function NotesSection({ value, onChange, disabled }) {
           <div style={{ minWidth:0, textAlign:"left" }}>
             <div style={{ fontSize:13, fontWeight:700, color:C.white }}>Notes</div>
             <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>
-              {hasNote ? "Note added" : "Optional — add if you changed anything"}
+              {hasNote ? "Note added" : "Optional - add if you changed anything"}
             </div>
           </div>
         </div>
@@ -302,7 +302,7 @@ export default function CompleteItemModal({
                     <div style={{ padding:"9px 12px", background:C.greenBg, display:"flex", alignItems:"center", gap:7 }}>
                       <Check size={12} color={C.green} strokeWidth={3} />
                       <span style={{ fontSize:11, fontWeight:700, color:C.green }}>
-                        {evidenceRequired ? "Looking good — ready to submit" : "Photo attached — optional but nice"}
+                        {evidenceRequired ? "Looking good - ready to submit" : "Photo attached - optional but nice"}
                       </span>
                     </div>
                   </div>

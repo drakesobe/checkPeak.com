@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       sortBy:      sort,
     });
 
-    // Cache for 30 min — prices change but not that fast
+    // Cache for 30 min - prices change but not that fast
     res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=3600");
     return res.status(200).json({ items, count: items.length });
   } catch (err) {

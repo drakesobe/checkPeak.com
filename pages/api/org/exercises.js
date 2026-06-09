@@ -1,9 +1,9 @@
 // pages/api/org/exercises.js
-// GET    — returns exercises for this org from ExerciseLibrary
-// POST   — adds a new exercise to the library
-// DELETE — removes an exercise from the library (by record id)
+// GET    - returns exercises for this org from ExerciseLibrary
+// POST   - adds a new exercise to the library
+// DELETE - removes an exercise from the library (by record id)
 //
-// All operations scoped to OrgToken — orgs never see each other's data.
+// All operations scoped to OrgToken - orgs never see each other's data.
 
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── POST — add exercise to library ────────────────────────────────────────
+  // ── POST - add exercise to library ────────────────────────────────────────
   if (req.method === "POST") {
     const { name, category = "" } = req.body || {};
     const normalizedName = normalize(name);
@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── DELETE — remove exercise from library ─────────────────────────────────
+  // ── DELETE - remove exercise from library ─────────────────────────────────
   if (req.method === "DELETE") {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: "id is required" });

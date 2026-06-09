@@ -1,5 +1,5 @@
 // pages/api/commercial/cancel.js
-// POST — cancel an active subscription for this athlete + trainer.
+// POST - cancel an active subscription for this athlete + trainer.
 // Paid plans: cancel_at_period_end so they keep access through the billing cycle.
 // Free plans: instant cancellation.
 
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     let atPeriodEnd = false;
 
     if (stripeSubId) {
-      // Paid plan — cancel at end of current billing period so they keep access
+      // Paid plan - cancel at end of current billing period so they keep access
       await stripe.subscriptions.update(stripeSubId, { cancel_at_period_end: true });
       atPeriodEnd = true;
     }

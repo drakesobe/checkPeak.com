@@ -1,5 +1,5 @@
 // pages/api/commercial/trainers-public.js
-// Public endpoint — no auth required.
+// Public endpoint - no auth required.
 // Returns all trainer profiles that have a slug set.
 // Used by /trainers marketplace page.
 
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       .select({ filterByFormula: `NOT({slug}="")` })
       .all();
 
-    // Only expose public-safe fields — never userId or internal data
+    // Only expose public-safe fields - never userId or internal data
     const trainers = records.map(r => ({
       id: r.id,
       fields: {

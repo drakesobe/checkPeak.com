@@ -275,10 +275,10 @@ function AthleteRow({ athlete, checked, onToggle }) {
 }
 
 // ─── ExerciseRow ──────────────────────────────────────────────────────────────
-// `isGrouped`    — rendered inside a GroupBlock, shows unlink button instead of chain button
-// `canChainDown` — show "chain with next" button (false for last exercise or already has a group gap below)
-// `onGroup`      — called to chain this exercise with the one below
-// `onUngroup`    — called to remove this exercise from its group
+// `isGrouped`    - rendered inside a GroupBlock, shows unlink button instead of chain button
+// `canChainDown` - show "chain with next" button (false for last exercise or already has a group gap below)
+// `onGroup`      - called to chain this exercise with the one below
+// `onUngroup`    - called to remove this exercise from its group
 
 function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canChainDown = false, onGroup, onUngroup, groupColor }) {
   return (
@@ -294,7 +294,7 @@ function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canCh
           Exercise {index+1}
         </span>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          {/* Ungroup button — shown when already in a group */}
+          {/* Ungroup button - shown when already in a group */}
           {isGrouped && onUngroup && (
             <button type="button" onClick={onUngroup}
               style={{ padding:"3px 8px", border:`1px solid transparent`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.dimText }}
@@ -304,7 +304,7 @@ function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canCh
               <Unlink style={{ width:10, height:10 }} /> Unlink
             </button>
           )}
-          {/* Chain-down button — shown on ungrouped exercises that have a next exercise */}
+          {/* Chain-down button - shown on ungrouped exercises that have a next exercise */}
           {!isGrouped && canChainDown && onGroup && (
             <button type="button" onClick={onGroup}
               style={{ padding:"3px 8px", border:`1px solid ${DS.border}`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:DS.brand }}
@@ -490,7 +490,7 @@ function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
         <span style={{ fontSize: 14, flexShrink: 0 }}>✓</span>
         <div>
           <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#0A8A4A", margin: "0 0 2px" }}>
-            Active Season — CARA Permitted
+            Active Season - CARA Permitted
           </p>
           <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
             {fmtDate(activeDate)}{derivedSport ? ` · ${derivedSport}` : ""}. Coach-directed activities allowed. Set evidence per item.
@@ -513,12 +513,12 @@ function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
         <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
         <div>
           <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#C47A00", margin: "0 0 2px" }}>
-            {period?.name || "Out of Season"} — VARA Strongly Preferred
+            {period?.name || "Out of Season"} - VARA Strongly Preferred
           </p>
           <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
             Out-of-season period. CARA is limited to 8 hrs/week. Consider setting evidence to{" "}
             <strong style={{ color: "#C47A00" }}>Voluntary Activity (VARA)</strong>{" "}
-            — athlete-initiated, no coach presence, does not count toward CARA limits.
+            - athlete-initiated, no coach presence, does not count toward CARA limits.
           </p>
         </div>
       </div>
@@ -537,12 +537,12 @@ function ComplianceDateBanner({ varaCheck, activeDate, derivedSport }) {
       <span style={{ fontSize: 14, flexShrink: 0 }}>🚫</span>
       <div>
         <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#D92B3A", margin: "0 0 2px" }}>
-          {period?.name || "Break Period"} — VARA Required
+          {period?.name || "Break Period"} - VARA Required
         </p>
         <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
           No coach-directed activities permitted during this period. All evidence must be set to{" "}
           <strong style={{ color: "#D92B3A" }}>Voluntary Activity (VARA)</strong>{" "}
-          — athlete-initiated only, no coach presence, no attendance recorded.
+          - athlete-initiated only, no coach presence, no attendance recorded.
         </p>
       </div>
     </div>
@@ -1357,12 +1357,12 @@ export default function CreateWorkoutDrawer({
                 {showItems && (
                   <div style={{ padding:16, display:"flex", flexDirection:"column", gap:10 }}>
 
-                    {/* Grouping hint — only shown when 2+ exercises and no groups yet */}
+                    {/* Grouping hint - only shown when 2+ exercises and no groups yet */}
                     {items.length >= 2 && Object.keys(groupMeta).length === 0 && (
                       <div style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"8px 12px", background:DS.brandBg, border:`1px solid ${DS.brandBorder}`, borderLeft:`3px solid ${DS.brand}` }}>
                         <Link2 style={{ width:12, height:12, color:DS.brand, flexShrink:0, marginTop:2 }} />
                         <p style={{ fontFamily:F.body, fontSize:11, color:DS.brand, margin:0, lineHeight:1.5 }}>
-                          <strong>Tip:</strong> Use <strong>Group with next</strong> on any exercise to create a Superset or Circuit — athletes will complete them back to back before resting.
+                          <strong>Tip:</strong> Use <strong>Group with next</strong> on any exercise to create a Superset or Circuit - athletes will complete them back to back before resting.
                         </p>
                       </div>
                     )}

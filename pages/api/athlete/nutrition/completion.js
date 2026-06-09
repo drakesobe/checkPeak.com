@@ -59,7 +59,7 @@ async function handlePost(req, res, athleteToken, athleteId) {
 
   const now = new Date().toISOString();
 
-  // Manual upsert — nutrition_completions has no unique constraint, only an index
+  // Manual upsert - nutrition_completions has no unique constraint, only an index
   const { data: existing, error: selErr } = await supabaseAdmin
     .from("nutrition_completions")
     .select("id")

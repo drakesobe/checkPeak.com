@@ -1,5 +1,5 @@
 // components/athlete-today/RouteList.jsx
-// Dark redesign — matches WorkoutCard/WorkoutSheet/Journal/mobile app.
+// Dark redesign - matches WorkoutCard/WorkoutSheet/Journal/mobile app.
 // All logic preserved, only colors changed.
 "use client";
 
@@ -8,7 +8,7 @@ import { motion, useAnimation, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { formatTime } from "@/lib/athlete-today/utils";
 
-// ─── Dark tokens — matches WorkoutCard + WorkoutSheet ─────────────────────────
+// ─── Dark tokens - matches WorkoutCard + WorkoutSheet ─────────────────────────
 const D = {
   bg:       "#0A0A0A",
   s1:       "#111111",
@@ -838,7 +838,7 @@ function PastDayBanner({ dateLabel }) {
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={D.muted} strokeWidth="2" strokeLinecap="round">
         <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
       </svg>
-      <span style={{ fontSize: 12, fontWeight: 500, color: D.muted }}>Viewing {dateLabel} — read only</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: D.muted }}>Viewing {dateLabel} - read only</span>
     </div>
   );
 }

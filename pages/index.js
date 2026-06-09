@@ -179,7 +179,7 @@ const ARENA_STYLE = `
   .hero-dual-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
 `;
 
-// Browse The Arena — navigates to the public marketplace
+// Browse The Arena - navigates to the public marketplace
 function BrowseButton({ source, size = "md" }) {
   const lg = size === "lg";
   return (
@@ -207,7 +207,7 @@ function BrowseButton({ source, size = "md" }) {
   );
 }
 
-// For Organizations — scrolls down to the org section
+// For Organizations - scrolls down to the org section
 function OrgButton({ source }) {
   return (
     <button
@@ -238,7 +238,7 @@ function OrgButton({ source }) {
 }
 
 // ---------------------------------------------------------------------------
-// TRAINER SHOWCASE — Who's in The Arena
+// TRAINER SHOWCASE - Who's in The Arena
 // ---------------------------------------------------------------------------
 const ARENA_TRAINERS = [
   {
@@ -2154,7 +2154,7 @@ export default function HomePage() {
     <>
       <style>{GLOBAL_STYLE + ARENA_STYLE}</style>
       <Head>
-        <title>CheckPeak — The Arena & Collegiate Performance Platform</title>
+        <title>CheckPeak - The Arena & Collegiate Performance Platform</title>
         <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
         <meta property="og:title"       content="CheckPeak - When athletes leave campus, you still know." />
         <meta property="og:description" content={ogDesc} />
@@ -2172,13 +2172,13 @@ export default function HomePage() {
       <main style={{ background: BLACK, color: WHITE }}>
         <Hero />
 
-        {/* Triptych: visual proof immediately after hero — image before copy */}
+        {/* Triptych: visual proof immediately after hero - image before copy */}
         <TriptychSection />
 
-        {/* THE ARENA — trainer marketplace */}
+        {/* THE ARENA - trainer marketplace */}
         <TrainerShowcase />
 
-        {/* Beat 1: "The offseason doesn't lie." — first beat signals the org product */}
+        {/* Beat 1: "The offseason doesn't lie." - first beat signals the org product */}
         <DeclarationBeat index={0} lines={BEATS[0].lines} footnote={BEATS[0].footnote}
           isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} total={4}
           sectionLabel="For collegiate programs" />

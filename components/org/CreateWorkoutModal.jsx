@@ -673,7 +673,8 @@ export default function CreateWorkoutDrawer({
   const [repeatEnd,       setRepeatEnd]       = useState("");
   const [everyN,          setEveryN]          = useState(7);
   const [occurrences,     setOccurrences]     = useState(8);
-  const [scheduledTime, setScheduledTime] = useState("");
+  const [scheduledTime,     setScheduledTime]     = useState("");
+  const [scheduledDuration, setScheduledDuration] = useState("");
 
   const [templates,        setTemplates]        = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -788,6 +789,7 @@ export default function CreateWorkoutDrawer({
         groupId:         it?.groupId || null,  // ← preserve groupId
       })));
       setScheduledTime(String(editWorkout.ScheduledTime || editWorkout.scheduledTime || "").slice(0, 5));
+      setScheduledDuration(String(editWorkout.ScheduledDuration || editWorkout.scheduledDuration || editWorkout._scheduledDur || ""));
       setShowItems(true);
       const incoming = Array.isArray(editWorkout.athleteIds) ? editWorkout.athleteIds : [];
       if (incoming.length) { const sel={}; incoming.forEach(t=>{ if(t) sel[String(t)]=true; }); setSelected(sel); } else setSelected({});
@@ -799,7 +801,7 @@ export default function CreateWorkoutDrawer({
       setCreateDate(dateISO || "");
       setRepeatOn(false); setRepeatMode("daysOfWeek");
       setRepeatDays([]); setRepeatEnd(""); setEveryN(7); setOccurrences(8);
-      setScheduledTime("");
+      setScheduledTime(""); setScheduledDuration("");
     }
   }, [open, isEdit]);
 
@@ -953,7 +955,7 @@ export default function CreateWorkoutDrawer({
     setSaving(true);
     try {
       if (isEdit) {
-        const body = { id:editWorkout.id, title:String(title).trim(), status, athleteIds:selectedTokens, ...(editDate?{date:String(editDate).slice(0,10)}:{}), ...(editSport?{sport:String(editSport).toLowerCase()}:{}), ...(scheduledTime !== undefined ? { scheduledTime } : {}), items:finalItems };
+        const body = { id:editWorkout.id, title:String(title).trim(), status, athleteIds:selectedTokens, ...(editDate?{date:String(editDate).slice(0,10)}:{}), ...(editSport?{sport:String(editSport).toLowerCase()}:{}), ...(scheduledTime !== undefined ? { scheduledTime } : {}), ...(scheduledDuration !== "" ? { scheduledDuration: Number(scheduledDuration) } : {}), items:finalItems };
         const res  = await fetch("/api/org/workouts/update-full", { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error||"Update failed");
@@ -962,7 +964,7 @@ export default function CreateWorkoutDrawer({
       } else {
         if (!computedDates.length) return setErr("Missing date.");
         if (!selectedTokens.length) return setErr("Select at least one athlete.");
-        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(activeSport?{sport:String(activeSport)}:{}), ...(scheduledTime ? { scheduledTime } : {}) };
+        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(activeSport?{sport:String(activeSport)}:{}), ...(scheduledTime ? { scheduledTime } : {}), ...(scheduledDuration ? { scheduledDuration: Number(scheduledDuration) } : {}) };
         const res  = await fetch("/api/org/workouts/create", { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error||"Create failed");
@@ -1129,27 +1131,45 @@ export default function CreateWorkoutDrawer({
                 {createDate && <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: 5 }}>{fmtDate(createDate)}</p>}
               </div>
 
-              <div>
-                <span style={lbl}>
-                  Scheduled time{" "}
-                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>
-                    (optional)
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <span style={lbl}>
+                    Scheduled time{" "}
+                    <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>(optional)</span>
                   </span>
-                </span>
-                <input
-                  type="time"
-                  value={scheduledTime}
-                  onChange={e => setScheduledTime(e.target.value)}
-                  style={{ ...inp, maxWidth: 180 }}
-                  onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
-                  onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
-                />
-                {scheduledTime && (
-                  <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: 5 }}>
-                    Athletes will see this workout at {scheduledTime}.
-                  </p>
-                )}
+                  <input
+                    type="time"
+                    value={scheduledTime}
+                    onChange={e => setScheduledTime(e.target.value)}
+                    style={inp}
+                    onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                    onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                  />
+                </div>
+                <div>
+                  <span style={lbl}>
+                    Duration{" "}
+                    <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>(optional)</span>
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="number" min="5" max="480" step="5"
+                      value={scheduledDuration}
+                      onChange={e => setScheduledDuration(e.target.value)}
+                      placeholder="90"
+                      style={{ ...inp, width: 90 }}
+                      onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                      onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                    />
+                    <span style={{ fontFamily: F.body, fontSize: 13, color: DS.dimText }}>min</span>
+                  </div>
+                </div>
               </div>
+              {scheduledTime && (
+                <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, marginTop: -8 }}>
+                  Athletes will see this workout at {scheduledTime}{scheduledDuration ? ` · ${scheduledDuration} min` : ""}.
+                </p>
+              )}
 
               <div>
                 <span style={lbl}>Workout title *</span>
@@ -1281,21 +1301,39 @@ export default function CreateWorkoutDrawer({
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <span style={lbl}>
-                      Scheduled time{" "}
-                      <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>
-                        (optional)
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <span style={lbl}>
+                        Scheduled time{" "}
+                        <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>(optional)</span>
                       </span>
-                    </span>
-                    <input
-                      type="time"
-                      value={scheduledTime}
-                      onChange={e => setScheduledTime(e.target.value)}
-                      style={{ ...inp, maxWidth: 180 }}
-                      onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
-                      onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
-                    />
+                      <input
+                        type="time"
+                        value={scheduledTime}
+                        onChange={e => setScheduledTime(e.target.value)}
+                        style={inp}
+                        onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                        onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                      />
+                    </div>
+                    <div>
+                      <span style={lbl}>
+                        Duration{" "}
+                        <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: DS.dimText }}>(optional)</span>
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="number" min="5" max="480" step="5"
+                          value={scheduledDuration}
+                          onChange={e => setScheduledDuration(e.target.value)}
+                          placeholder="90"
+                          style={{ ...inp, width: 90 }}
+                          onFocus={e => { e.currentTarget.style.borderColor = DS.brand; }}
+                          onBlur={e  => { e.currentTarget.style.borderColor = DS.border; }}
+                        />
+                        <span style={{ fontFamily: F.body, fontSize: 13, color: DS.dimText }}>min</span>
+                      </div>
+                    </div>
                   </div>
                   <div style={{ height:1, background:DS.border }} />
                 </div>

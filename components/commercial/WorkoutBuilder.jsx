@@ -245,6 +245,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   const [description, setDescription] = useState("");
   const [tier,        setTier]        = useState("Basic");
   const [price,       setPrice]       = useState("");   // optional one-time price (No Subscription)
+  const [duration,    setDuration]    = useState("");   // estimated workout length in minutes
   const [exercises,   setExercises]   = useState([newExercise(1)]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState("");
@@ -282,6 +283,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
       setDescription(editWorkout.fields?.description ?? "");
       setTier(editWorkout.fields?.tier ?? "Basic");
       setPrice(editWorkout.fields?.price != null ? String(editWorkout.fields.price) : "");
+      setDuration(editWorkout.fields?.duration != null ? String(editWorkout.fields.duration) : "");
       try {
         const raw = JSON.parse(editWorkout.fields?.exercises || "[]");
         setExercises(Array.isArray(raw) && raw.length
@@ -299,7 +301,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           : [newExercise(1)]);
       } catch { setExercises([newExercise(1)]); }
     } else {
-      setTitle(""); setDescription(""); setTier("Basic"); setPrice("");
+      setTitle(""); setDescription(""); setTier("Basic"); setPrice(""); setDuration("");
       setExercises([newExercise(1)]);
     }
   }, [open, isEdit]);
@@ -410,7 +412,8 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
           description: description.trim(),
           tier,
           // null = subscription-only; number = also purchasable No Subscription
-          price: price.trim() === "" ? null : Math.max(0, Number(price) || 0),
+          price:    price.trim() === "" ? null : Math.max(0, Number(price) || 0),
+          duration: duration.trim() === "" ? null : Math.max(1, Number(duration) || 0),
           exercises: meaningful.map((ex, i) => ({
             Order:        i + 1,
             ExerciseName: String(ex.ExerciseName).trim(),
@@ -519,6 +522,27 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
                 style={{ ...inp, minHeight: 60, resize: "vertical" }}
                 onFocus={focusStyle} onBlur={blurStyle}
               />
+            </div>
+
+            {/* Duration */}
+            <div>
+              <span style={lbl}>Duration <span style={{ textTransform: "none", fontWeight: 400, letterSpacing: 0 }}>(optional)</span></span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="number" min="5" max="480" step="5"
+                  value={duration}
+                  onChange={e => setDuration(e.target.value)}
+                  placeholder="45"
+                  style={{ ...inp, width: 100 }}
+                  onFocus={focusStyle} onBlur={blurStyle}
+                />
+                <span style={{ fontSize: 13, color: DS.dimText }}>min</span>
+              </div>
+              {duration && Number(duration) > 0 && (
+                <p style={{ fontSize: 11, color: DS.dimText, marginTop: 5 }}>
+                  Clients will see this as a {duration}-minute workout.
+                </p>
+              )}
             </div>
 
             {/* Tier */}

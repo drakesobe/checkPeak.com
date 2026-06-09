@@ -41,7 +41,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { title, description, exercises, tier, tags, price } = req.body;
+    const { title, description, exercises, tier, tags, price, duration } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "Title required" });
     if (!["Basic", "Premium", "Ultra"].includes(tier))
       return res.status(400).json({ error: "Invalid tier" });
@@ -57,6 +57,8 @@ export default async function handler(req, res) {
     };
     const priceVal = normalizePrice(price);
     if (priceVal !== null) fields.price = priceVal;
+    const durVal = duration != null && duration !== "" ? Math.max(1, Number(duration) || 0) : null;
+    if (durVal) fields.duration = durVal;
 
     const record = await createWorkout(fields);
     const err = airtableError(record);
@@ -78,6 +80,7 @@ export default async function handler(req, res) {
     if (req.body.published   !== undefined) fields.published   = Boolean(req.body.published);
     if (req.body.tags        !== undefined) fields.tags        = JSON.stringify(req.body.tags);
     if (req.body.price       !== undefined) fields.price       = normalizePrice(req.body.price);
+    if (req.body.duration    !== undefined) fields.duration    = req.body.duration != null && req.body.duration !== "" ? Math.max(1, Number(req.body.duration) || 0) : null;
     if (req.body.exercises   !== undefined) {
       fields.exercises = JSON.stringify(
         Array.isArray(req.body.exercises) ? req.body.exercises : []

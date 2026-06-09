@@ -31,7 +31,8 @@ const DW = {
   CREATEDBY:    F?.DW_CREATEDBY    || "CreatedBy",
   ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
   WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
-  SCHEDTIME:    F?.DW_SCHEDTIME    || "ScheduleTime",   // keep your existing field name
+  SCHEDTIME:    F?.DW_SCHEDTIME    || "ScheduleTime",
+  SCHEDDUR:     F?.DW_SCHEDDUR    || "ScheduleDuration",
 };
 
 const WI = {
@@ -162,7 +163,7 @@ export default async function handler(req, res) {
   if (!user) return;
 
   try {
-    const { athleteId, athleteIds, date, dates, title, sport, status, scheduledTime, items = [] } = req.body || {};
+    const { athleteId, athleteIds, date, dates, title, sport, status, scheduledTime, scheduledDuration, items = [] } = req.body || {};
 
     const allDates = Array.isArray(dates) && dates.length
       ? dates.map(d => String(d).slice(0, 10)).filter(Boolean)
@@ -218,7 +219,8 @@ export default async function handler(req, res) {
           [DW.CREATEDBY]: [memberId],
           [DW.ATHTOKEN]:  String(a.athleteToken),
           ...(a.sport ? { [DW.SPORT]: a.sport } : {}),  // per-athlete sport
-          ...(scheduledTime ? { [DW.SCHEDTIME]: String(scheduledTime)    } : {}),
+          ...(scheduledTime     ? { [DW.SCHEDTIME]: String(scheduledTime) }        : {}),
+          ...(scheduledDuration ? { [DW.SCHEDDUR]: Number(scheduledDuration) }    : {}),
         };
         assertNoUndefinedFieldKeys(dailyWorkoutFields);
 

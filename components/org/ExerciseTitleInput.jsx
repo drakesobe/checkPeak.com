@@ -1,7 +1,7 @@
 // components/org/ExerciseTitleInput.jsx
 // Autocomplete input backed by the org's Exercise Library.
 // - Fetches exercises on first focus (lazy, no mount cost)
-// - Filters as you type — matches anywhere in the name
+// - Filters as you type - matches anywhere in the name
 // - × button deletes from the library (scoped to org, safe)
 // - "Add to library" footer when typed name isn't in the library yet
 // - Keyboard: ↑↓ navigate, Enter select, Escape close
@@ -48,7 +48,7 @@ export default function ExerciseTitleInput({
       const data = await res.json();
       if (data.ok) setAllExercises(data.exercises || []);
     } catch {
-      // Silently fail — still works as plain text input
+      // Silently fail - still works as plain text input
     }
   }, [fetched]);
 
@@ -128,7 +128,7 @@ export default function ExerciseTitleInput({
         credentials: "include",
       });
     } catch {
-      // Already removed from local state — silent fail is acceptable
+      // Already removed from local state - silent fail is acceptable
     } finally {
       setDeleting(prev => { const n = new Set(prev); n.delete(exercise.id); return n; });
     }

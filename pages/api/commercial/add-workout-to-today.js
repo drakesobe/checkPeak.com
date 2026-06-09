@@ -59,36 +59,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: 'No account identifier' });
   }
 
-  // ── 1. Fetch commercial workout from Airtable ─────────────────────────────
-  const { default: Airtable } = await import('airtable');
-  const commercialBase = new Airtable({ apiKey: process.env.COMMERCIAL_TRAINERS_API_KEY })
-    .base(process.env.COMMERCIAL_TRAINERS_BASE_ID);
+  // ── 1. Fetch commercial workout from Supabase ─────────────────────────────
+const { data: workout, error: wErr } = await supabase
+  .from('commercial_workouts')
+  .select('id, title, exercises, published')
+  .eq('id', workoutId)
+  .single();
 
-  let workout;
-  try {
-    workout = await commercialBase(process.env.WORKOUT_PROGRAMS_TABLE_ID).find(workoutId);
-  } catch (err) {
-    console.error('[add-workout-to-today] find workout:', err?.message);
-    return res.status(404).json({ ok: false, error: 'Workout not found' });
-  }
+if (wErr || !workout) {
+  console.error('[add-workout-to-today] find workout:', wErr?.message, { workoutId });
+  return res.status(404).json({ ok: false, error: 'Workout not found' });
+}
 
-  if (!workout.fields.published) {
-    return res.status(403).json({ ok: false, error: 'Workout not available' });
-  }
+if (!workout.published) {
+  return res.status(403).json({ ok: false, error: 'Workout not available' });
+}
 
-  // ── 2. Parse exercises ────────────────────────────────────────────────────
-  let exercises = [];
-  try { exercises = JSON.parse(workout.fields.exercises || '[]'); } catch {}
+// ── 2. Parse exercises ────────────────────────────────────────────────────
+let exercises = [];
+try {
+  const raw = workout.exercises;
+  exercises = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+} catch {}
 
-  const meaningful = exercises
-    .filter(ex => toTrimmed(ex.ExerciseName))
-    .map((ex, i) => ({
-      exercise_name:     toTrimmed(ex.ExerciseName),
-      sets:              toNumOrNull(ex.Sets),
-      reps:              toTrimmed(ex.Reps) || null,
-      evidence_required: 'voluntary_activity_vara',
-      sort_order:        toNumOrNull(ex.Order) ?? i + 1,
-    }));
 
   // ── 3. Look up athlete in Supabase ────────────────────────────────────────
   const query = email
@@ -110,7 +103,7 @@ export default async function handler(req, res) {
     .from('daily_workouts')
     .insert({
       athlete_id: athleteRow.id,
-      title:      String(workout.fields.title || 'Workout'),
+      title: String(workout.title || 'Workout'),
       date:       targetDate,
       status:     'assigned',
     })

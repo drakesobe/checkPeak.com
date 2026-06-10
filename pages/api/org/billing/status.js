@@ -2,6 +2,20 @@
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/airtableBilling";
 
+// In-memory cache — survives across warm serverless invocations.
+// Billing status changes infrequently; 5 min TTL is safe.
+const _cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+function cacheGet(key) {
+  const e = _cache.get(key);
+  if (!e) return null;
+  if (Date.now() > e.exp) { _cache.delete(key); return null; }
+  return e.val;
+}
+function cacheSet(key, val) {
+  _cache.set(key, { val, exp: Date.now() + CACHE_TTL });
+}
+
 function toDateOrNull(v) {
   if (!v) return null;
   const d = new Date(v);
@@ -66,7 +80,8 @@ function computeIsPaidOk({ status, sandboxEnds, trialEnds, currentPeriodEnd }) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
+  // Allow browser/CDN to cache for 5 min; revalidate in background up to 10 min
+  res.setHeader("Cache-Control", "private, max-age=300, stale-while-revalidate=600");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
@@ -85,6 +100,12 @@ export default async function handler(req, res) {
   if (!sessionToken && !sessionOrgId) {
     return res.status(400).json({ error: "Missing orgId/token in session." });
   }
+
+  const cacheKey = sessionToken || sessionOrgId;
+
+  // Serve from in-memory cache if available (avoids Airtable on warm instances)
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.status(200).json(cached);
 
   try {
     // ✅ token-first (reliable now that Billing.Token is writable)
@@ -145,7 +166,7 @@ export default async function handler(req, res) {
       currentPeriodEnd,
     });
 
-    return res.status(200).json({
+    const payload = {
       ok: true,
       billing: {
         isPaidOk,
@@ -162,7 +183,9 @@ export default async function handler(req, res) {
         created: createdRaw || "",
         billingRecordId: rec?.id || "",
       },
-    });
+    };
+    cacheSet(cacheKey, payload);
+    return res.status(200).json(payload);
   } catch (e) {
     console.error("[billing/status] error:", e);
     return res.status(500).json({ error: e?.message || "Failed to load billing status." });

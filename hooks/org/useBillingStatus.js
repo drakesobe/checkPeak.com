@@ -61,16 +61,19 @@ export function useBillingStatus({ user, role, isOrgSide, enabled = true } = {})
 
       const p = (async () => {
         try {
-          // 1) Ensure trial once (admins/org owners only)
+          // Fire ensureTrial in the background — don't await it so it doesn't
+          // block the status fetch. On first org load it creates the billing
+          // record; subsequent calls are no-ops. Either way the status fetch
+          // below is what the UI cares about.
           if (canInitTrial && !ensuredTrialRef.current) {
             ensuredTrialRef.current = true;
-            await fetch("/api/org/billing/ensureTrial", {
+            fetch("/api/org/billing/ensureTrial", {
               method: "POST",
               credentials: "include",
             }).catch(() => null);
           }
 
-          // 2) Read billing status
+          // Read billing status immediately (doesn't wait for ensureTrial)
           const res = await fetch("/api/org/billing/status", {
             method: "GET",
             credentials: "include",

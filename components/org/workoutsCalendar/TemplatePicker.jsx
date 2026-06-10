@@ -5,7 +5,7 @@
 // Save-as-template form saves the current exercise set as a new template.
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { Search, Trash2, ChevronDown, ChevronUp, Check, BookOpen, Plus, Save } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
@@ -26,6 +26,20 @@ const SPORT_OPTIONS = [
   "soccer","basketball","xc","football","track",
   "swim","tennis","hockey","baseball","softball","wrestling",
 ];
+
+const GROUP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const PREVIEW_GROUP_COLORS = ["#7C3AED","#0891B2","#D97706","#059669","#DC2626"];
+
+function getPreviewGroupMeta(exercises) {
+  const meta = {}; let idx = 0;
+  (exercises || []).forEach(ex => {
+    const gid = ex?.groupId;
+    if (gid && !meta[gid]) { meta[gid] = { label: GROUP_LETTERS[idx % 26], color: PREVIEW_GROUP_COLORS[idx % PREVIEW_GROUP_COLORS.length], count: 0 }; idx++; }
+    if (gid) meta[gid].count++;
+  });
+  Object.values(meta).forEach(m => { m.type = m.count >= 3 ? "Circuit" : "Superset"; });
+  return meta;
+}
 
 function categoryStyle(value) {
   const cat = CATEGORIES.find(c => c.value === value);
@@ -216,29 +230,61 @@ function TemplateCard({ template, onApply, onDelete, isApplied }) {
       </div>
 
       {/* Preview panel */}
-      {previewing && template.exercises.length > 0 && (
-        <div style={{
-          borderTop: `1px solid ${DS.border}`,
-          background: DS.pageBg,
-          padding: "12px 14px",
-        }}>
-          {template.exercises.map((ex, i) => (
-            <ExercisePreviewRow key={i} ex={ex} index={i} />
-          ))}
-          <button type="button" onClick={() => { onApply(template); setPreviewing(false); }}
-            style={{
-              marginTop: 12, width: "100%",
-              padding: "9px", background: DS.brand, border: "none",
-              fontFamily: F.cond, fontWeight: 900, fontSize: 11,
-              letterSpacing: "0.1em", textTransform: "uppercase",
-              color: "#fff", cursor: "pointer",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.08)"; }}
-            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
-            Apply this template
-          </button>
-        </div>
-      )}
+      {previewing && template.exercises.length > 0 && (() => {
+        const gMeta = getPreviewGroupMeta(template.exercises);
+        const seenGroups = new Set();
+        return (
+          <div style={{ borderTop: `1px solid ${DS.border}`, background: DS.pageBg, padding: "12px 14px" }}>
+            {template.exercises.map((ex, i) => {
+              const gid = ex?.groupId;
+              const gm  = gid ? gMeta[gid] : null;
+              const isFirstInGroup = gm && !seenGroups.has(gid);
+              if (isFirstInGroup) seenGroups.add(gid);
+              return (
+                <div key={i}>
+                  {isFirstInGroup && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      padding: "5px 0 3px",
+                      borderTop: i > 0 ? `1px solid ${DS.border}` : "none",
+                      marginTop: i > 0 ? 4 : 0,
+                    }}>
+                      <span style={{
+                        fontFamily: F.cond, fontWeight: 900, fontSize: 9,
+                        letterSpacing: "0.1em", textTransform: "uppercase",
+                        padding: "2px 7px",
+                        background: gm.color + "18",
+                        border: `1px solid ${gm.color}40`,
+                        color: gm.color,
+                      }}>
+                        {gm.type} {gm.label}
+                      </span>
+                      <span style={{ fontFamily: F.body, fontSize: 10, color: DS.dimText }}>
+                        {gm.count} exercises · back to back
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ paddingLeft: gm ? 10 : 0, borderLeft: gm ? `2px solid ${gm.color}40` : "none" }}>
+                    <ExercisePreviewRow ex={ex} index={i} />
+                  </div>
+                </div>
+              );
+            })}
+            <button type="button" onClick={() => { onApply(template); setPreviewing(false); }}
+              style={{
+                marginTop: 12, width: "100%",
+                padding: "9px", background: DS.brand, border: "none",
+                fontFamily: F.cond, fontWeight: 900, fontSize: 11,
+                letterSpacing: "0.1em", textTransform: "uppercase",
+                color: "#fff", cursor: "pointer",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.08)"; }}
+              onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+              Apply this template
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -523,7 +569,7 @@ export default function TemplatePicker({
           </div>
 
           {/* Template grid */}
-          <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
+          <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
             {loading && (
               <p style={{ fontFamily: F.body, fontSize: 12, color: DS.dimText, textAlign: "center", padding: "24px 0" }}>
                 Loading templates...

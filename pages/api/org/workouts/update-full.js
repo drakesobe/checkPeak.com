@@ -57,7 +57,7 @@ async function updateOne(workoutId, orgToken, { title, date, status, sport, item
         instructions:      clean(item.Instructions ?? item.instructions) ?? "",
         video_url:         clean(item.VideoURL ?? item.video_url) ?? "",
         evidence_required: clean(item.EvidenceRequired ?? item.evidence_required) || "none",
-        group_id:          clean(item.GroupId ?? item.group_id) || null,
+        group_id:          clean(item.groupId ?? item.GroupId ?? item.group_id) || null,
         sort_order:        item.Order != null ? Number(item.Order) : item.sort_order != null ? Number(item.sort_order) : idx + 1,
       }));
 

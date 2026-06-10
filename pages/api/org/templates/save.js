@@ -16,6 +16,7 @@ function sanitizeExercise(ex, idx) {
     Instructions:     String(ex?.Instructions || "").slice(0, 2000),
     VideoURL:         String(ex?.VideoURL     || "").slice(0, 500),
     EvidenceRequired: String(ex?.EvidenceRequired || "none").slice(0, 50),
+    groupId:          ex?.groupId || null,
   };
 }
 

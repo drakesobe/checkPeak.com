@@ -58,7 +58,7 @@ export default async function handler(req, res) {
         Instructions:     item.instructions      || "",
         VideoURL:         item.video_url         || "",
         EvidenceRequired: item.evidence_required || "none",
-        GroupId:          item.group_id          || null,
+        groupId:          item.group_id          || null,
         Order:            item.sort_order        ?? 0,
         Status:           (item.workout_completions ?? [])[0]?.status || "",
       })),

@@ -275,12 +275,15 @@ function AthleteRow({ athlete, checked, onToggle }) {
 }
 
 // ─── ExerciseRow ──────────────────────────────────────────────────────────────
-// `isGrouped`    - rendered inside a GroupBlock, shows unlink button instead of chain button
-// `canChainDown` - show "chain with next" button (false for last exercise or already has a group gap below)
-// `onGroup`      - called to chain this exercise with the one below
-// `onUngroup`    - called to remove this exercise from its group
+// `isGrouped`      - rendered inside a GroupBlock, shows unlink button instead of chain button
+// `canChainDown`   - show "chain with next" button (false for last exercise or already has a group gap below)
+// `onGroup`        - called to chain this exercise with the one below
+// `onUngroup`      - called to remove this exercise from its group
+// `canJoinAbove`   - show "join group above" button (true when exercise sits right after a group)
+// `aboveGroupType` - label for the group above ("Superset" / "Circuit")
+// `onJoinAbove`    - called to add this exercise into the preceding group
 
-function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canChainDown = false, onGroup, onUngroup, groupColor }) {
+function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canChainDown = false, onGroup, onUngroup, groupColor, canJoinAbove = false, aboveGroupType = "", onJoinAbove }) {
   return (
     <div style={{
       border: isGrouped ? "none" : `1px solid ${DS.border}`,
@@ -302,6 +305,16 @@ function ExerciseRow({ item, index, onChange, onRemove, isGrouped = false, canCh
               onMouseEnter={e => { e.currentTarget.style.background=DS.cautionBg; e.currentTarget.style.borderColor=DS.cautionBorder; e.currentTarget.style.color=DS.caution; }}
               onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.color=DS.dimText; }}>
               <Unlink style={{ width:10, height:10 }} /> Unlink
+            </button>
+          )}
+          {/* Join group above - shown when exercise sits immediately after a group */}
+          {!isGrouped && canJoinAbove && onJoinAbove && (
+            <button type="button" onClick={onJoinAbove}
+              style={{ padding:"3px 8px", border:`1px solid ${DS.border}`, background:"transparent", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:"#7C3AED" }}
+              title={`Add to ${aboveGroupType} above`}
+              onMouseEnter={e => { e.currentTarget.style.background="rgba(124,58,237,0.06)"; e.currentTarget.style.borderColor="rgba(124,58,237,0.25)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background="transparent"; e.currentTarget.style.borderColor=DS.border; }}>
+              <Link2 style={{ width:10, height:10 }} /> Add to {aboveGroupType} above
             </button>
           )}
           {/* Chain-down button - shown on ungrouped exercises that have a next exercise */}
@@ -786,7 +799,7 @@ export default function CreateWorkoutDrawer({
         Instructions:    String(it?.Instructions||""),
         VideoURL:        String(it?.VideoURL||""),
         EvidenceRequired:String(it?.EvidenceRequired||"none"),
-        groupId:         it?.groupId || null,  // ← preserve groupId
+        groupId:         it?.groupId || it?.GroupId || null,
       })));
       setScheduledTime(String(editWorkout.ScheduledTime || editWorkout.scheduledTime || "").slice(0, 5));
       setScheduledDuration(String(editWorkout.ScheduledDuration || editWorkout.scheduledDuration || editWorkout._scheduledDur || ""));
@@ -888,6 +901,11 @@ export default function CreateWorkoutDrawer({
   // Ungroup ALL exercises in a group
   const handleUngroupAll = useCallback((groupId) => {
     setItems(prev => prev.map(it => it.groupId === groupId ? { ...it, groupId: null } : it));
+  }, []);
+
+  // Add single exercise at `index` into an adjacent group above it
+  const handleJoinGroup = useCallback((index, groupId) => {
+    setItems(prev => prev.map((it, i) => i === index ? { ...it, groupId } : it));
   }, []);
 
   const applyTemplate = useCallback((template) => {
@@ -1426,6 +1444,11 @@ export default function CreateWorkoutDrawer({
                       const { item, index } = seg;
                       // canChainDown: true if next item exists (regardless of its group state)
                       const canChainDown = index < items.length - 1;
+                      // canJoinAbove: true when this exercise sits directly after a group segment
+                      const prevSeg = si > 0 ? segments[si - 1] : null;
+                      const canJoinAbove = prevSeg?.type === "group";
+                      const aboveGroupId = canJoinAbove ? prevSeg.groupId : null;
+                      const aboveGroupType = canJoinAbove ? (groupMeta[aboveGroupId]?.type || "Group") : "";
 
                       return (
                         <ExerciseRow
@@ -1437,6 +1460,9 @@ export default function CreateWorkoutDrawer({
                           isGrouped={false}
                           canChainDown={canChainDown}
                           onGroup={() => handleGroup(index)}
+                          canJoinAbove={canJoinAbove}
+                          aboveGroupType={aboveGroupType}
+                          onJoinAbove={canJoinAbove ? () => handleJoinGroup(index, aboveGroupId) : null}
                         />
                       );
                     })}

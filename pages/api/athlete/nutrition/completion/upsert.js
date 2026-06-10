@@ -132,27 +132,51 @@ export default async function handler(req, res) {
     }
 
     // POST: upsert completion
-    const completion = normalizeCompletion(req.body?.completion);
-    const nowISO     = new Date().toISOString();
+    // Accept both key names for mobile/web compatibility
+    const rawCompletion = req.body?.completion ?? req.body?.completionJson ?? null;
+    const completion    = normalizeCompletion(rawCompletion);
+    const nowISO        = new Date().toISOString();
 
-    const { data: saved, error } = await db
+    // Manual upsert — table has no unique constraint, only an index, so
+    // .upsert({ onConflict }) would silently insert duplicates instead of updating.
+    const { data: existing, error: selErr } = await db
       .from("nutrition_completions")
-      .upsert({
-        athlete_token:   resolvedToken,
-        date,
-        completion_json: completion,
-        updated_at:      nowISO,
-      }, { onConflict: "athlete_token,date" })
       .select("id")
-      .single();
+      .eq("athlete_token", resolvedToken)
+      .eq("date", date)
+      .maybeSingle();
 
-    if (error) throw error;
+    if (selErr) throw selErr;
+
+    let savedId = null;
+
+    if (existing?.id) {
+      const { error: upErr } = await db
+        .from("nutrition_completions")
+        .update({ completion_json: completion, updated_at: nowISO })
+        .eq("id", existing.id);
+      if (upErr) throw upErr;
+      savedId = existing.id;
+    } else {
+      const { data: inserted, error: insErr } = await db
+        .from("nutrition_completions")
+        .insert({
+          athlete_token:   resolvedToken,
+          date,
+          completion_json: completion,
+          updated_at:      nowISO,
+        })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      savedId = inserted?.id;
+    }
 
     return res.status(200).json({
       ok:        true,
       date,
       completion,
-      recordId:  saved?.id,
+      recordId:  savedId,
     });
 
   } catch (e) {

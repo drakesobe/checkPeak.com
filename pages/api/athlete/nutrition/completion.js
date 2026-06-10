@@ -50,7 +50,10 @@ async function handleGet(req, res, athleteToken) {
 }
 
 async function handlePost(req, res, athleteToken, athleteId) {
-  const { date, completionJson } = req.body ?? {};
+  const body = req.body ?? {};
+  const date = body.date;
+  // Accept both key names — mobile may send either depending on which route it was built against
+  const completionJson = body.completionJson ?? body.completion ?? null;
 
   if (!isISODate(asStr(date))) return res.status(400).json({ error: "Invalid or missing date." });
   if (!completionJson || typeof completionJson !== "object") {

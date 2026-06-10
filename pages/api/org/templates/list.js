@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     const { data: org, error } = await db
       .from("organizations")
       .select("workout_templates")
-      .eq("org_token", orgToken)
+      .eq("token", orgToken)
       .maybeSingle();
 
     if (error) throw error;

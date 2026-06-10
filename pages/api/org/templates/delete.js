@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     const { data: org, error: fetchErr } = await db
       .from("organizations")
       .select("workout_templates")
-      .eq("org_token", orgToken)
+      .eq("token", orgToken)
       .maybeSingle();
 
     if (fetchErr) throw fetchErr;
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     const { error: saveErr } = await db
       .from("organizations")
       .update({ workout_templates: templates })
-      .eq("org_token", orgToken);
+      .eq("token", orgToken);
 
     if (saveErr) throw saveErr;
 

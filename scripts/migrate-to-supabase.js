@@ -153,7 +153,9 @@ async function run() {
       website:       f["Website"] ?? null,
       address:       f["Address"] ?? null,
       notes:         f["Notes"] ?? null,
-      status:        f["Status"] ?? "Active",
+      status:             f["Status"] ?? "Active",
+      workout_templates:  parseJson(f["WorkoutTemplates"], []),
+      season_calendar:    parseJson(f["SeasonCalendar"] ?? f["Season Calendar"], []),
     };
     const { data, error } = await sb.from("organizations").upsert(row, { onConflict: "airtable_id" }).select("id").single();
     if (error) { console.error(`  ✗ org ${r.id}:`, error.message); continue; }

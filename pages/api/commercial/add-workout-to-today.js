@@ -85,6 +85,12 @@ export default async function handler(req, res) {
       exercise_name:     toTrimmed(ex.ExerciseName || ex.exercise_name || ex.name || ''),
       sets:              toNumOrNull(ex.Sets ?? ex.sets),
       reps:              toTrimmed(ex.Reps ?? ex.reps ?? '') || null,
+      weight:            toTrimmed(ex.Weight ?? ex.weight ?? '') || null,
+      rpe:               toTrimmed(ex.RPE ?? ex.rpe ?? '') || null,
+      rest:              toTrimmed(ex.Rest ?? ex.rest ?? '') || null,
+      instructions:      toTrimmed(ex.Instructions ?? ex.instructions ?? '') || null,
+      video_url:         toTrimmed(ex.VideoURL ?? ex.video_url ?? ex.videoUrl ?? '') || null,
+      group_id:          toTrimmed(ex.groupId ?? ex.group_id ?? '') || null,
       evidence_required: null,
       sort_order:        toNumOrNull(ex.Order ?? ex.order) ?? i + 1,
     }));
@@ -122,10 +128,16 @@ export default async function handler(req, res) {
   if (meaningful.length > 0) {
     const items = meaningful.map(it => ({
       daily_workout_id:  dw.id,
-      sort_order:       it.sort_order,
-      exercise_name:    it.exercise_name,
-      sets:             it.sets,
-      reps:             it.reps,
+      sort_order:        it.sort_order,
+      exercise_name:     it.exercise_name,
+      sets:              it.sets,
+      reps:              it.reps,
+      weight:            it.weight,
+      rpe:               it.rpe,
+      rest:              it.rest,
+      instructions:      it.instructions,
+      video_url:         it.video_url,
+      group_id:          it.group_id,
       evidence_required: it.evidence_required,
     }));
 

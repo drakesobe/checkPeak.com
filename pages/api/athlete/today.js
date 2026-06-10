@@ -74,7 +74,7 @@ export default async function handler(req, res) {
       id, date, title, status, org_id, org_token,
       workout_items (
         id, exercise_name, sets, reps, weight, rpe, rest,
-        instructions, video_url, evidence_required, sort_order,
+        instructions, video_url, evidence_required, sort_order, group_id,
         workout_completions (
           id, status, review_note, athlete_id,
           completion_evidence ( id, evidence_type, url )
@@ -119,9 +119,11 @@ export default async function handler(req, res) {
           Sets:             item.sets ?? null,
           Reps:             item.reps ?? "",
           Weight:           item.weight ?? "",
+          RPE:              item.rpe ?? "",
           Rest:             item.rest ?? "",
           Instructions:     item.instructions ?? "",
           VideoURL:         item.video_url ?? "",
+          GroupId:          item.group_id ?? null,
           Status:           mine?.status ?? "",
           CompletionStatus: mine?.status ?? null,
           CompletionId:     mine?.id ?? null,

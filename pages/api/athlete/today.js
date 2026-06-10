@@ -1,9 +1,11 @@
 // pages/api/athlete/today.js
 // GET /api/athlete/today?date=YYYY-MM-DD
 // Returns all daily_workouts + items + completions for the authenticated athlete on a given date.
+// Also fetches org-assigned workouts from Airtable when env vars are present.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin } from "@/lib/supabase";
+import Airtable from "airtable";
 
 function asStr(v) { return String(v ?? "").trim(); }
 function isISODate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s)); }
@@ -135,5 +137,114 @@ export default async function handler(req, res) {
     };
   });
 
-  return res.status(200).json({ workouts });
+  // ── Airtable org-assigned workouts ──────────────────────────────────────────
+  const orgWorkouts = [];
+
+  if (
+    process.env.DAILYWORKOUTS_API_KEY &&
+    process.env.DAILYWORKOUTS_BASE_ID &&
+    process.env.DAILYWORKOUTS_TABLE_ID
+  ) {
+    try {
+      const atBase        = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
+      const DailyWorkouts = atBase(process.env.DAILYWORKOUTS_TABLE_ID);
+
+      const safeToken = athleteToken.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const formula   = `AND({AthleteToken}="${safeToken}", IS_SAME({Date}, "${date}", "day"))`;
+
+      const dwRows = await DailyWorkouts.select({ filterByFormula: formula, maxRecords: 50 }).firstPage();
+
+      const workoutMeta = (dwRows || []).map(rec => {
+        const f = rec.fields || {};
+        return {
+          id:      rec.id,
+          Title:   String(f.Title || "Workout"),
+          Status:  String(f.Status || "assigned"),
+          itemIds: Array.isArray(f.WorkoutItems) ? f.WorkoutItems.filter(Boolean) : [],
+        };
+      });
+
+      const itemsByWorkoutId = {};
+      workoutMeta.forEach(w => { itemsByWorkoutId[w.id] = []; });
+
+      const allItemIds = workoutMeta.flatMap(w => w.itemIds);
+
+      if (allItemIds.length > 0) {
+        const WorkoutItems = atBase(process.env.DAILYWORKOUT_ITEMS_TABLE_ID || "WorkoutItems");
+
+        for (let i = 0; i < allItemIds.length; i += 10) {
+          const batch    = allItemIds.slice(i, i + 10);
+          const idFilter = `OR(${batch.map(id => `RECORD_ID()="${id.replace(/"/g, '\\"')}"`).join(",")})`;
+          const rows     = await WorkoutItems.select({ filterByFormula: idFilter, maxRecords: 50 }).firstPage();
+
+          (rows || []).forEach(rec => {
+            const f        = rec.fields || {};
+            const linkedId =
+              (Array.isArray(f.DailyWorkout)       ? f.DailyWorkout[0]       : null) ||
+              (Array.isArray(f["Daily Workouts"])   ? f["Daily Workouts"][0]  : null) ||
+              (Array.isArray(f["Workout"])          ? f["Workout"][0]         : null) || "";
+
+            if (linkedId && Array.isArray(itemsByWorkoutId[linkedId])) {
+              itemsByWorkoutId[linkedId].push({
+                id:               rec.id,
+                exercise_name:    String(f.ExerciseName || f.Name || ""),
+                sets:             f.Sets != null ? Number(f.Sets) : null,
+                reps:             String(f.Reps         || ""),
+                weight:           String(f.Weight       || ""),
+                rpe:              String(f.RPE          || ""),
+                rest:             String(f.Rest         || ""),
+                instructions:     String(f.Instructions || ""),
+                video_url:        String(f.VideoURL     || ""),
+                evidence_required: String(f.EvidenceRequired || "none"),
+                sort_order:       f.Order != null ? Number(f.Order) : 0,
+                group_id:         String(f.GroupId || "") || null,
+              });
+            }
+          });
+        }
+      }
+
+      for (const wm of workoutMeta) {
+        const sortedItems = [...itemsByWorkoutId[wm.id]].sort(
+          (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+        );
+
+        orgWorkouts.push({
+          dailyWorkout: {
+            id:           `at:${wm.id}`,
+            Date:         date,
+            Title:        wm.Title,
+            Status:       wm.Status,
+            orgId:        null,
+            orgToken:     null,
+            AthleteToken: athleteToken,
+            source:       "airtable",
+          },
+          items: sortedItems.map(item => ({
+            id:               `at:${item.id}`,
+            ExerciseName:     item.exercise_name,
+            EvidenceRequired: item.evidence_required,
+            Sets:             item.sets,
+            Reps:             item.reps,
+            Weight:           item.weight,
+            RPE:              item.rpe,
+            Rest:             item.rest,
+            Instructions:     item.instructions,
+            VideoURL:         item.video_url,
+            GroupId:          item.group_id,
+            Status:           "",
+            CompletionStatus: null,
+            CompletionId:     null,
+            AttachmentSummary: null,
+            ReviewNote:       null,
+            dailyWorkoutId:   `at:${wm.id}`,
+          })),
+        });
+      }
+    } catch (atErr) {
+      console.error("[athlete/today] airtable org workouts:", atErr?.message);
+    }
+  }
+
+  return res.status(200).json({ workouts: [...workouts, ...orgWorkouts] });
 }

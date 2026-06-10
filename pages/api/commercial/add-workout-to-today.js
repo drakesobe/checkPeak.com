@@ -108,41 +108,53 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Your account isn't linked to an athlete profile." });
   }
 
-  // ── 4. Upsert DailyWorkout — unique index on (athlete_id, date, source_workout_id)
-  //       prevents race-condition duplicates at the DB level.
-  //       If a record already exists it is returned unchanged (ignoreDuplicates).
+  // ── 4. Idempotency: return existing record if already added today ──────────
+  const { data: existing } = await supabase
+    .from('daily_workouts')
+    .select('id')
+    .eq('athlete_id', athleteRow.id)
+    .eq('date', targetDate)
+    .eq('source_workout_id', workoutId)
+    .maybeSingle();
+
+  if (existing) {
+    console.log('[add-workout-to-today] already exists:', { dailyWorkoutId: existing.id });
+    return res.json({ ok: true, dailyWorkoutId: existing.id, alreadyAdded: true });
+  }
+
+  // ── 5. Create DailyWorkout ────────────────────────────────────────────────
   const { data: dw, error: dwErr } = await supabase
     .from('daily_workouts')
-    .upsert(
-      {
-        athlete_id:        athleteRow.id,
-        title:             String(workout.title || 'Workout'),
-        date:              targetDate,
-        status:            'assigned',
-        source_workout_id: workoutId,
-      },
-      { onConflict: 'athlete_id,date,source_workout_id', ignoreDuplicates: true }
-    )
+    .insert({
+      athlete_id:        athleteRow.id,
+      title:             String(workout.title || 'Workout'),
+      date:              targetDate,
+      status:            'assigned',
+      source_workout_id: workoutId,
+    })
     .select('id')
     .single();
 
+  // Unique index conflict = race condition duplicate — fetch and return existing
+  if (dwErr?.code === '23505') {
+    const { data: raceExisting } = await supabase
+      .from('daily_workouts')
+      .select('id')
+      .eq('athlete_id', athleteRow.id)
+      .eq('date', targetDate)
+      .eq('source_workout_id', workoutId)
+      .maybeSingle();
+    if (raceExisting) {
+      return res.json({ ok: true, dailyWorkoutId: raceExisting.id, alreadyAdded: true });
+    }
+  }
+
   if (dwErr || !dw) {
-    console.error('[add-workout-to-today] upsert DailyWorkout:', dwErr?.message);
+    console.error('[add-workout-to-today] create DailyWorkout:', dwErr?.message);
     return res.status(500).json({ ok: false, error: 'Failed to create workout record' });
   }
 
-  // If items already exist for this record it was a duplicate call — return early.
-  const { count } = await supabase
-    .from('workout_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('daily_workout_id', dw.id);
-
-  if (count > 0) {
-    console.log('[add-workout-to-today] already exists:', { dailyWorkoutId: dw.id, items: count });
-    return res.json({ ok: true, dailyWorkoutId: dw.id, itemCount: count, alreadyAdded: true });
-  }
-
-  // ── 6. Create WorkoutItems ────────────────────────────────────────────────
+  // ── 6. Create workout items ───────────────────────────────────────────────
   if (meaningful.length > 0) {
     const items = meaningful.map(it => ({
       daily_workout_id:  dw.id,

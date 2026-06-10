@@ -107,14 +107,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Your account isn't linked to an athlete profile." });
   }
 
-  // ── 4. Create DailyWorkout ────────────────────────────────────────────────
+  // ── 4. Idempotency check — return existing if already added today ─────────
+  const { data: existing } = await supabase
+    .from('daily_workouts')
+    .select('id')
+    .eq('athlete_id', athleteRow.id)
+    .eq('date', targetDate)
+    .eq('source_workout_id', workoutId)
+    .maybeSingle();
+
+  if (existing) {
+    console.log('[add-workout-to-today] already exists:', { dailyWorkoutId: existing.id });
+    return res.json({ ok: true, dailyWorkoutId: existing.id, itemCount: 0, alreadyAdded: true });
+  }
+
+  // ── 5. Create DailyWorkout ────────────────────────────────────────────────
   const { data: dw, error: dwErr } = await supabase
     .from('daily_workouts')
     .insert({
-      athlete_id: athleteRow.id,
-      title:      String(workout.title || 'Workout'),
-      date:       targetDate,
-      status:     'assigned',
+      athlete_id:        athleteRow.id,
+      title:             String(workout.title || 'Workout'),
+      date:              targetDate,
+      status:            'assigned',
+      source_workout_id: workoutId,
     })
     .select('id')
     .single();
@@ -124,7 +139,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: 'Failed to create workout record' });
   }
 
-  // ── 5. Create WorkoutItems ────────────────────────────────────────────────
+  // ── 6. Create WorkoutItems ────────────────────────────────────────────────
   if (meaningful.length > 0) {
     const items = meaningful.map(it => ({
       daily_workout_id:  dw.id,

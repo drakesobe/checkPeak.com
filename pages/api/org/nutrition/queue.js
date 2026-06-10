@@ -60,13 +60,30 @@ export default async function handler(req, res) {
   const weeklyExpected = weeklyExpectedChecks(now);
 
   try {
-    // 1) Fetch athletes
-    const { data: athletes } = await db
+    // 1) Fetch athletes — try with reminder columns; fall back to minimal if they don't exist yet
+    let athletes = null;
+    let hasReminderCols = false;
+
+    const { data: fullData, error: fullErr } = await db
       .from("athletes")
-      .select("id, athlete_token, name, email, sport, status")
+      .select("id, athlete_token, name, email, sport, status, last_reminder_sent_at, reminder_count")
       .eq("org_token", orgToken)
-      .eq("status", "active")
+      .or("status.eq.active,status.is.null")
       .limit(2000);
+
+    if (!fullErr) {
+      athletes = fullData;
+      hasReminderCols = true;
+    } else {
+      const { data: minData, error: minErr } = await db
+        .from("athletes")
+        .select("id, athlete_token, name, email, sport, status")
+        .eq("org_token", orgToken)
+        .or("status.eq.active,status.is.null")
+        .limit(2000);
+      if (minErr) throw minErr;
+      athletes = minData;
+    }
 
     if (!athletes?.length) {
       return res.status(200).json({
@@ -155,9 +172,9 @@ export default async function handler(req, res) {
           phase:    asStr(plan.phase),
           status:   "active",
         } : null,
-        lastReminderSentAt: null,
-        reminderCount:      0,
-        lastSeen:           null,
+        lastReminderSentAt: hasReminderCols ? (ath.last_reminder_sent_at || null) : null,
+        reminderCount:      hasReminderCols ? Number(ath.reminder_count || 0) : 0,
+        lastSeen:           completion?.mostRecentDate || null,
       };
     });
 

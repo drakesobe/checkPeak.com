@@ -14,10 +14,10 @@ function todayISO() {
 function buildStatus(period) {
   if (!period) {
     return {
-      phase:  "out-of-season",
-      label:  "No Period Defined",
+      phase:  "unconfigured",
+      label:  "No Calendar Set",
       isCara: false,
-      note:   "No season period is configured for today. Treat as voluntary - do not require nutrition logging.",
+      note:   "No season calendar is configured. Set up your season calendar to enable CARA compliance tracking.",
       period: null,
     };
   }
@@ -52,10 +52,10 @@ function buildStatus(period) {
 
 const FALLBACK = {
   ok:     true,
-  phase:  "out-of-season",
+  phase:  "unconfigured",
   label:  "Calendar Unavailable",
   isCara: false,
-  note:   "Could not load season calendar. Treat as voluntary period.",
+  note:   "Could not load season calendar.",
   period: null,
 };
 

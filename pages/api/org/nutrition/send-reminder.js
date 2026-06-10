@@ -19,14 +19,21 @@ export default async function handler(req, res) {
   if (!asString(athleteToken)) return res.status(400).json({ error: "athleteToken is required." });
 
   try {
+    // Minimal lookup — only guaranteed columns so a missing optional column can't cause 404
     const { data: athlete } = await db
       .from("athletes")
-      .select("id, name, email, athlete_token, last_reminder_sent_at, reminder_count")
+      .select("id, name, email, athlete_token, org_token")
       .eq("athlete_token", asString(athleteToken))
-      .eq("org_token", orgToken)
       .maybeSingle();
 
     if (!athlete) return res.status(404).json({ error: "Athlete not found.", athleteToken });
+
+    // Verify org ownership — soft check (handles case/format differences in stored token)
+    if (orgToken && athlete.org_token) {
+      if (asString(athlete.org_token).toUpperCase() !== orgToken.toUpperCase()) {
+        return res.status(403).json({ error: "Athlete does not belong to this organization." });
+      }
+    }
     if (!athlete.email) {
       return res.status(400).json({ error: "Athlete has no email on record.", athleteToken, athleteName: athlete.name });
     }
@@ -41,9 +48,20 @@ export default async function handler(req, res) {
     );
     const mailto = `mailto:${athlete.email}?subject=${subject}&body=${body}`;
 
-    const nowISO      = new Date().toISOString();
-    const prevCount   = Number(athlete.reminder_count || 0);
-    const nextCount   = prevCount + 1;
+    const nowISO = new Date().toISOString();
+
+    // Read current reminder count — optional columns, non-fatal if they don't exist
+    let prevCount = 0;
+    try {
+      const { data: tally } = await db
+        .from("athletes")
+        .select("reminder_count")
+        .eq("id", athlete.id)
+        .maybeSingle();
+      prevCount = Number(tally?.reminder_count || 0);
+    } catch (_) {}
+
+    const nextCount = prevCount + 1;
 
     // Persist tally — non-fatal
     try {

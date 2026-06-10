@@ -1,23 +1,15 @@
 // pages/api/athlete/workouts/logSet.js
-import Airtable from "airtable";
+// POST — logs a single set for a workout item.
+
 import { requireAthlete } from "@/lib/requireAthlete";
-
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
-  .base(process.env.ATHLETE_BASE_ID);
-
-const TABLE = process.env.SET_LOGS_TABLE_NAME || "Set Logs";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 function getAthleteToken(auth) {
-  return String(
-    auth?.athlete?.AthleteToken ||
-    auth?.athlete?.athleteToken ||
-    auth?.user?.AthleteToken    ||
-    auth?.user?.athleteToken    ||
-    ""
-  ).trim();
+  return String(auth?.athlete?.AthleteToken || auth?.user?.AthleteToken || "").trim();
 }
 
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const auth = requireAthlete(req);
@@ -37,24 +29,33 @@ export default async function handler(req, res) {
   const difficultyValue = difficulty ?? effort ?? null;
 
   try {
-    const record = await base(TABLE).create({
-      AthleteToken:  athleteToken,
-      ExerciseTitle: String(exerciseTitle || ""),
-      WorkoutItemId: String(workoutItemId || ""),
-      Date:          String(date || ""),
-      SetNumber:     Number(setNumber) || 0,
-      TargetReps:    String(targetReps || ""),
-      TargetWeight:  String(targetWeight || ""),
-      ActualReps:    Number(actualReps) || 0,
-      ActualWeight:  Number(actualWeight) || 0,
-      Difficulty:    difficultyValue != null ? Number(difficultyValue) : 0,
-      GroupId:       String(groupId || ""),
-      Timestamp:     Number(timestamp) || Date.now(),
-    }, { typecast: true });
+    const { data, error } = await db
+      .from("set_logs")
+      .insert({
+        athlete_token:  athleteToken,
+        exercise_title: String(exerciseTitle || "").trim(),
+        workout_item_id: workoutItemId ? String(workoutItemId) : null,
+        date:           date          ? String(date).slice(0, 10) : null,
+        set_number:     Number(setNumber) || 0,
+        target_reps:    String(targetReps  || ""),
+        target_weight:  String(targetWeight || ""),
+        actual_reps:    Number(actualReps)   || 0,
+        actual_weight:  Number(actualWeight) || 0,
+        difficulty:     difficultyValue != null ? Number(difficultyValue) : 0,
+        group_id:       groupId ? String(groupId) : null,
+        timestamp:      Number(timestamp) || Date.now(),
+      })
+      .select("id")
+      .single();
 
-    return res.status(200).json({ ok: true, id: record.id });
+    if (error) {
+      console.error("[logSet]", error);
+      return res.status(200).json({ ok: false, warning: "Saved locally, sync failed", details: error.message });
+    }
+
+    return res.status(200).json({ ok: true, id: data.id });
   } catch (err) {
-    console.error("logSet error:", err);
+    console.error("[athlete/workouts/logSet]", err);
     return res.status(200).json({ ok: false, warning: "Saved locally, sync failed" });
   }
 }

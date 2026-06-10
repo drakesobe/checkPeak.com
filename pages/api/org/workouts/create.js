@@ -1,169 +1,50 @@
-import { requireOrgSideUser } from "@/lib/requireUser";
-import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
+// pages/api/org/workouts/create.js
+// POST — creates daily workouts for one or more athletes on one or more dates.
+// Fully migrated to Supabase.
 
-function toStr(v) { if (v === null || typeof v === "undefined") return ""; return String(v); }
+import { requireOrgSideUser } from "@/lib/requireUser";
+import { supabaseAdmin as db } from "@/lib/supabase";
+import { createOrgWorkout, upsertAthleteByToken } from "@/lib/supabaseOrg";
+
+function toStr(v)   { return v == null ? "" : String(v); }
 function toTrimmed(v) { return toStr(v).trim(); }
 function toNumOrNull(v) {
-  if (v === null || typeof v === "undefined" || v === "") return null;
+  if (v == null || v === "") return null;
   const n = Number(v); return Number.isFinite(n) ? n : null;
 }
-function chunk(arr, size = 10) {
-  const out = [];
-  for (let i = 0; i < (arr || []).length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-function escapeAirtableString(str = "") { return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
-function looksLikeAirtableRecordId(v) { const s = String(v || "").trim(); return s.startsWith("rec") && s.length >= 10; }
 function isAthleteToken(v) { return /^ATH-/i.test(String(v || "").trim()); }
-function assertNoUndefinedFieldKeys(fieldObj) {
-  for (const k of Object.keys(fieldObj || {})) {
-    if (!k || k === "undefined") throw new Error(`Airtable field mapping error: attempted to write to an undefined field key.`);
-  }
-}
-
-const DW = {
-  ORG:          F?.DW_ORG          || "Organization",
-  ATHLETE:      F?.DW_ATHLETE      || "Athlete",
-  DATE:         F?.DW_DATE         || "Date",
-  TITLE:        F?.DW_TITLE        || "Title",
-  STATUS:       F?.DW_STATUS       || "Status",
-  SPORT:        F?.DW_SPORT        || "Sport",
-  CREATEDBY:    F?.DW_CREATEDBY    || "CreatedBy",
-  ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
-  WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
-  SCHEDTIME:    F?.DW_SCHEDTIME    || "ScheduleTime",
-  SCHEDDUR:     F?.DW_SCHEDDUR    || "ScheduleDuration",
-};
-
-const WI = {
-  ORG:      F?.WI_ORG      || "Organization",
-  DW:       F?.WI_DW       || "DailyWorkout",
-  ORDER:    F?.WI_ORDER    || "Order",
-  NAME:     F?.WI_NAME     || "ExerciseName",
-  SETS:     F?.WI_SETS     || "Sets",
-  REPS:     F?.WI_REPS     || "Reps",
-  WEIGHT:   F?.WI_WEIGHT   || "Weight",
-  REST:     F?.WI_REST     || "Rest",
-  INSTR:    F?.WI_INSTR    || "Instructions",
-  VIDEO:    F?.WI_VIDEO    || "VideoURL",
-  EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
-  ATHTOKEN: F?.WI_ATHTOKEN || "AthleteToken",
-  GROUPID:  F?.WI_GROUPID  || "GroupId",
-};
 
 function normalizeItem(it = {}, idx = 0) {
-  const out = {
-    order:            toNumOrNull(it?.Order) ?? toNumOrNull(it?.order) ?? idx + 1,
-    exerciseName:     toTrimmed(it?.ExerciseName) || toTrimmed(it?.exerciseName) || toTrimmed(it?.name),
-    sets:             toNumOrNull(it?.Sets) ?? toNumOrNull(it?.sets),
-    reps:             toTrimmed(it?.Reps)         || toTrimmed(it?.reps),
-    weight:           toTrimmed(it?.Weight)       || toTrimmed(it?.weight),
-    rest:             toTrimmed(it?.Rest)         || toTrimmed(it?.rest),
-    instructions:     toTrimmed(it?.Instructions) || toTrimmed(it?.instructions) || toTrimmed(it?.notes),
-    videoUrl:         toTrimmed(it?.VideoURL)     || toTrimmed(it?.videoUrl),
-    evidenceRequired: toTrimmed(it?.EvidenceRequired) || toTrimmed(it?.evidenceRequired) || "none",
-    groupId:          toTrimmed(it?.groupId) || null,
+  const evidenceAllowed = new Set(["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"]);
+  const ev = toTrimmed(it.EvidenceRequired || it.evidenceRequired || "none");
+  return {
+    sort_order:        toNumOrNull(it.Order ?? it.order) ?? idx + 1,
+    exerciseName:      toTrimmed(it.ExerciseName || it.exerciseName || it.name),
+    sets:              toNumOrNull(it.Sets   ?? it.sets),
+    reps:              toTrimmed(it.Reps    ?? it.reps   ?? "")  || null,
+    weight:            toTrimmed(it.Weight  ?? it.weight ?? "")  || null,
+    rpe:               toTrimmed(it.RPE     ?? it.rpe    ?? "")  || null,
+    rest:              toTrimmed(it.Rest    ?? it.rest   ?? "")  || null,
+    instructions:      toTrimmed(it.Instructions ?? it.instructions ?? "") || null,
+    videoUrl:          toTrimmed(it.VideoURL ?? it.videoUrl ?? "") || null,
+    evidenceRequired:  evidenceAllowed.has(ev) ? ev : "none",
+    groupId:           toTrimmed(it.groupId ?? it.GroupId ?? "") || null,
   };
-  const allowed = new Set(["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"]);
-  if (!allowed.has(out.evidenceRequired)) out.evidenceRequired = "none";
-  return out;
-}
-
-// ── resolveAthletes: now also fetches sport field ─────────────────────────────
-async function resolveAthletes(b, incoming = []) {
-  const raw       = (incoming || []).map(x => String(x || "").trim()).filter(Boolean);
-  const recordIds = raw.filter(looksLikeAirtableRecordId);
-  const tokens    = raw.filter(x => !looksLikeAirtableRecordId(x));
-
-  const Athletes   = b(AT.tables.athletes);
-  const tokenField = F?.ATH_TOKEN || "AthleteToken";
-  const found      = [];
-
-  if (tokens.length) {
-    for (const tkChunk of chunk(tokens, 30)) {
-      const orParts = tkChunk.map(t => `{${tokenField}}='${escapeAirtableString(t)}'`).join(",");
-      const rows = await Athletes.select({
-        filterByFormula: `OR(${orParts})`,
-        fields: [tokenField, "sport"],   // ← added sport
-        maxRecords: 100,
-      }).firstPage();
-      for (const r of rows || []) {
-        found.push({
-          athleteRecordId: r.id,
-          athleteToken:    String(r.fields?.[tokenField] || "").trim(),
-          sport:           String(r.fields?.sport        || "").trim().toLowerCase(),
-        });
-      }
-    }
-  }
-
-  if (recordIds.length) {
-    for (const ids of chunk(recordIds, 50)) {
-      const orParts = ids.map(id => `RECORD_ID()='${escapeAirtableString(id)}'`).join(",");
-      const rows = await Athletes.select({
-        filterByFormula: `OR(${orParts})`,
-        fields: [tokenField, "sport"],   // ← added sport
-        maxRecords: 100,
-      }).firstPage();
-      for (const r of rows || []) {
-        found.push({
-          athleteRecordId: r.id,
-          athleteToken:    String(r.fields?.[tokenField] || "").trim(),
-          sport:           String(r.fields?.sport        || "").trim().toLowerCase(),
-        });
-      }
-    }
-  }
-
-  const map = new Map();
-  for (const a of found) {
-    if (!a?.athleteRecordId) continue;
-    const prev = map.get(a.athleteRecordId);
-    if (!prev || (!prev.athleteToken && a.athleteToken)) map.set(a.athleteRecordId, a);
-  }
-  return Array.from(map.values());
-}
-
-async function createWorkoutItems(b, { orgId, dailyWorkoutId, athleteToken, items }) {
-  if (!Array.isArray(items) || !items.length) return [];
-  const itemCreates = items.map((it, idx) => {
-    const fields = {
-      [WI.ORG]:      [orgId],
-      [WI.DW]:       [dailyWorkoutId],
-      [WI.ORDER]:    Number.isFinite(Number(it.order)) ? Number(it.order) : idx + 1,
-      [WI.NAME]:     toTrimmed(it.exerciseName),
-      ...(it.sets !== null && typeof it.sets !== "undefined" ? { [WI.SETS]: Number(it.sets) } : {}),
-      ...(toTrimmed(it.reps)         ? { [WI.REPS]:     toTrimmed(it.reps)         } : {}),
-      ...(toTrimmed(it.weight)       ? { [WI.WEIGHT]:   toTrimmed(it.weight)       } : {}),
-      ...(toTrimmed(it.rest)         ? { [WI.REST]:     toTrimmed(it.rest)         } : {}),
-      ...(toTrimmed(it.instructions) ? { [WI.INSTR]:    toTrimmed(it.instructions) } : {}),
-      ...(toTrimmed(it.videoUrl)     ? { [WI.VIDEO]:    toTrimmed(it.videoUrl)     } : {}),
-      [WI.EVIDENCE]: it.evidenceRequired || "none",
-      ...(WI.ATHTOKEN              ? { [WI.ATHTOKEN]: String(athleteToken)   } : {}),
-      ...(it.groupId && WI.GROUPID ? { [WI.GROUPID]:  String(it.groupId)    } : {}),
-    };
-    assertNoUndefinedFieldKeys(fields);
-    return { fields };
-  });
-  const createdAll = [];
-  for (const batch of chunk(itemCreates, 10)) {
-    const created = await b(AT.tables.workoutItems).create(batch);
-    (created || []).forEach(r => createdAll.push(r));
-  }
-  return createdAll.map(r => r.id);
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
+  const orgToken = String(user.orgToken || user.Token || "").trim();
+  if (!orgToken) return res.status(400).json({ error: "Missing org token on session." });
+
   try {
-    const { athleteId, athleteIds, date, dates, title, sport, status, scheduledTime, scheduledDuration, items = [] } = req.body || {};
+    const { athleteId, athleteIds, date, dates, title, sport, status, items = [] } = req.body || {};
 
     const allDates = Array.isArray(dates) && dates.length
       ? dates.map(d => String(d).slice(0, 10)).filter(Boolean)
@@ -171,97 +52,88 @@ export default async function handler(req, res) {
 
     if (!allDates.length) return res.status(400).json({ error: "date or dates[] is required." });
 
-    const incomingAthletes = Array.isArray(athleteIds) ? athleteIds.filter(Boolean) : athleteId ? [athleteId] : [];
-    if (!incomingAthletes.length) return res.status(400).json({ error: "athleteId or athleteIds[] is required." });
-    if (items && !Array.isArray(items)) return res.status(400).json({ error: "items must be an array if provided." });
+    const incomingTokens = Array.isArray(athleteIds)
+      ? athleteIds.filter(Boolean)
+      : athleteId ? [athleteId] : [];
 
-    const b        = base();
-    const orgId    = user.orgId;
-    const memberId = user.memberId;
+    if (!incomingTokens.length) return res.status(400).json({ error: "athleteId or athleteIds[] is required." });
+    if (items && !Array.isArray(items)) return res.status(400).json({ error: "items must be an array." });
 
-    if (!orgId)    return res.status(400).json({ error: "Missing orgId on session user." });
-    if (!memberId) return res.status(400).json({ error: "Missing memberId on session user. Re-login." });
+    const normalizedItems = items.map((it, i) => normalizeItem(it, i)).filter(it => it.exerciseName);
 
-    const normalized = (Array.isArray(items) ? items : []).map((it, idx) => normalizeItem(it, idx));
-    const meaningful = normalized.filter(it => toTrimmed(it.exerciseName));
+    // Resolve athlete Supabase records by token (or email)
+    const resolvedAthletes = [];
+    for (const token of incomingTokens) {
+      const t = String(token || "").trim();
+      if (!t) continue;
 
-    const resolved = await resolveAthletes(b, incomingAthletes);
-    const usable   = resolved.filter(a => a.athleteToken && isAthleteToken(a.athleteToken));
+      let query = db.from("athletes").select("id, athlete_token, email, sport");
+      if (isAthleteToken(t)) query = query.eq("athlete_token", t);
+      else if (t.includes("@")) query = query.eq("email", t.toLowerCase());
+      else query = query.eq("id", t);
 
-    if (!usable.length) {
-      return res.status(400).json({
-        error: "No selected athletes have a valid AthleteToken (ATH-XXXX) in the Athletes table.",
-        debug: { incomingAthletes, resolved, tokenField: F?.ATH_TOKEN || "AthleteToken" },
-      });
+      const { data: athlete } = await query.maybeSingle();
+
+      if (athlete) {
+        resolvedAthletes.push(athlete);
+      } else if (isAthleteToken(t)) {
+        // Upsert a minimal placeholder so the workout can be linked
+        const { data: upserted } = await upsertAthleteByToken({
+          athlete_token: t,
+          org_token:     orgToken,
+        });
+        if (upserted) resolvedAthletes.push({ id: upserted.id, athlete_token: t, sport: null });
+      }
     }
 
-    // ── Derive sport from athletes when not explicitly set ────────────────────
-    // If all selected athletes share the same sport, use it.
-    // This ensures Sport is always written to the DailyWorkout record
-    // so the calendar sport filter works correctly.
-    const resolvedSport = (() => {
-      if (sport) return String(sport).toLowerCase().trim();
-      const sports = usable.map(a => a.sport).filter(Boolean);
-      const unique  = [...new Set(sports)];
-      return unique.length === 1 ? unique[0] : "";
-    })();
+    if (!resolvedAthletes.length) {
+      return res.status(400).json({ error: "No valid athletes found for provided IDs/tokens." });
+    }
 
     const createdDailyWorkouts = [];
 
     for (const targetDate of allDates) {
-      for (const a of usable) {
-        const dailyWorkoutFields = {
-          [DW.ORG]:       [orgId],
-          [DW.ATHLETE]:   [a.athleteRecordId],
-          [DW.DATE]:      targetDate,
-          [DW.TITLE]:     String(title || "Daily Workout"),
-          [DW.STATUS]:    String(status || "assigned"),
-          [DW.CREATEDBY]: [memberId],
-          [DW.ATHTOKEN]:  String(a.athleteToken),
-          ...(a.sport ? { [DW.SPORT]: a.sport } : {}),  // per-athlete sport
-          ...(scheduledTime     ? { [DW.SCHEDTIME]: String(scheduledTime) }        : {}),
-          ...(scheduledDuration ? { [DW.SCHEDDUR]: Number(scheduledDuration) }    : {}),
-        };
-        assertNoUndefinedFieldKeys(dailyWorkoutFields);
+      for (const athlete of resolvedAthletes) {
+        const resolvedSport = sport
+          ? String(sport).toLowerCase().trim()
+          : (athlete.sport || "");
 
-        const createdDW      = await b(AT.tables.dailyWorkouts).create([{ fields: dailyWorkoutFields }]);
-        const dailyWorkoutId = createdDW?.[0]?.id;
-        if (!dailyWorkoutId) throw new Error("Failed to create DailyWorkout (missing id).");
+        const { data: workout, error } = await createOrgWorkout({
+          orgToken,
+          athleteId:    athlete.id,
+          athleteToken: athlete.athlete_token,
+          title:        String(title || "Daily Workout"),
+          date:         targetDate,
+          status:       String(status || "assigned"),
+          sport:        resolvedSport,
+          items:        normalizedItems,
+        });
 
-        let workoutItemIds = [];
-        if (meaningful.length) {
-          workoutItemIds = await createWorkoutItems(b, {
-            orgId, dailyWorkoutId, athleteToken: a.athleteToken, items: meaningful,
-          });
-          if (workoutItemIds.length) {
-            const patch = { [DW.WORKOUTITEMS]: workoutItemIds };
-            assertNoUndefinedFieldKeys(patch);
-            await b(AT.tables.dailyWorkouts).update([{ id: dailyWorkoutId, fields: patch }]);
-          }
+        if (error) {
+          console.error("[org/workouts/create] createOrgWorkout error:", error);
+          continue;
         }
 
         createdDailyWorkouts.push({
-          dailyWorkoutId,
-          date:            targetDate,
-          athleteRecordId: a.athleteRecordId,
-          athleteToken:    a.athleteToken,
-          sport:           a.sport || resolvedSport,
-          workoutItemIds,
-          createdItemCount: workoutItemIds.length,
+          dailyWorkoutId:   workout.id,
+          date:             targetDate,
+          athleteToken:     athlete.athlete_token,
+          workoutItemIds:   workout.itemIds,
+          createdItemCount: workout.itemIds.length,
         });
       }
     }
 
     return res.status(200).json({
-      ok: true,
+      ok:                true,
       createdDailyWorkouts,
-      totalWorkouts: createdDailyWorkouts.length,
-      warning: meaningful.length === 0
-        ? "No workout items were created because no items had ExerciseName filled in."
+      totalWorkouts:     createdDailyWorkouts.length,
+      warning:           normalizedItems.length === 0
+        ? "No workout items created — no items had ExerciseName set."
         : null,
     });
   } catch (err) {
-    console.error("[org/workouts/create] error:", err);
-    return res.status(500).json({ error: "Failed to create workout", details: err?.message || String(err) });
+    console.error("[org/workouts/create]", err);
+    return res.status(500).json({ error: "Failed to create workout", details: err?.message });
   }
 }

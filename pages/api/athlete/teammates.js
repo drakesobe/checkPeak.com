@@ -1,31 +1,24 @@
 // pages/api/athlete/teammates.js
-// Returns all athletes in the same organization (matched by Token field).
+// GET ?token= — returns all athletes in the same organization.
 // Used by the mobile app to sync teammates to Firestore once per day.
-// Auth: reads session from cookie (same as all other athlete endpoints).
 
-import Airtable from "airtable";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-function asString(v) {
-  return String(v ?? "").trim();
-}
+function asString(v) { return String(v ?? "").trim(); }
 
 function getSessionUser(req) {
   try {
-    const cookieHeader = req.headers.cookie || '';
+    const cookieHeader = req.headers.cookie || "";
     const cookies = {};
-    cookieHeader.split(';').forEach(part => {
-      const eqIdx = part.indexOf('=');
+    cookieHeader.split(";").forEach(part => {
+      const eqIdx = part.indexOf("=");
       if (eqIdx === -1) return;
-      const key = part.slice(0, eqIdx).trim();
-      const val = part.slice(eqIdx + 1).trim();
-      cookies[key] = decodeURIComponent(val);
+      cookies[part.slice(0, eqIdx).trim()] = decodeURIComponent(part.slice(eqIdx + 1).trim());
     });
-    const raw = cookies['user'];
+    const raw = cookies["user"];
     if (!raw) return null;
     return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export default async function handler(req, res) {
@@ -36,71 +29,40 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Accept token from query param (mobile) or session cookie (web)
   let orgToken = asString(req.query?.token || req.query?.orgToken || "");
 
-  // Fallback to session cookie if no query param
   if (!orgToken) {
     const session = getSessionUser(req);
-    if (!session) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-    orgToken = asString(
-      session.Token || session.token ||
-      session.OrgToken || session.orgToken || ""
-    );
+    if (!session) return res.status(401).json({ error: "Not authenticated" });
+    orgToken = asString(session.Token || session.token || session.OrgToken || session.orgToken || "");
   }
 
   if (!orgToken) {
     return res.status(400).json({ error: "No organization token found" });
   }
 
-  const apiKey    = process.env.ATHLETE_API_KEY;
-  const baseId    = process.env.ATHLETE_BASE_ID;
-  const tableName = process.env.ATHLETE_TABLE_NAME;
-
-  if (!apiKey || !baseId || !tableName) {
-    return res.status(500).json({ error: "Athlete Airtable not configured." });
-  }
-
   try {
-    const base    = new Airtable({ apiKey }).base(baseId);
-    const records = [];
+    const { data: records, error } = await db
+      .from("athletes")
+      .select("id, name, email, phone, sport, athlete_token, org_token")
+      .eq("org_token", orgToken);
 
-    // Use .all() instead of .eachPage() - compatible with Vercel serverless
-    const pages = await base(tableName)
-      .select({
-        filterByFormula: `{Token} = '${orgToken.replace(/'/g, "\\'")}'`,
-        fields: ['Name', 'Email', 'Phone', 'sport', 'Token', 'AthleteToken', 'Role', 'Title'],
-        pageSize: 100,
-      })
-      .all();
+    if (error) throw error;
 
-    pages.forEach(record => {
-      const f = record.fields || {};
-      records.push({
-        id:           record.id,
-        name:         asString(f.Name),
-        email:        asString(f.Email).toLowerCase(),
-        phone:        asString(f.Phone),
-        sport:        asString(f.sport).toLowerCase(),
-        role:         asString(f.Role) || 'Athlete',
-        title:        asString(f.Title),
-        athleteToken: asString(f.AthleteToken),
-        orgToken:     asString(f.Token),
-      });
-    });
+    const teammates = (records || []).map(r => ({
+      id:           r.id,
+      name:         asString(r.name),
+      email:        asString(r.email).toLowerCase(),
+      phone:        asString(r.phone),
+      sport:        asString(r.sport).toLowerCase(),
+      role:         "Athlete",
+      athleteToken: asString(r.athlete_token),
+      orgToken:     asString(r.org_token),
+    }));
 
-    return res.status(200).json({
-      ok:        true,
-      teammates: records,
-      count:     records.length,
-    });
+    return res.status(200).json({ ok: true, teammates, count: teammates.length });
   } catch (err) {
     console.error("[teammates] error:", err);
-    return res.status(500).json({
-      error:   "Failed to fetch teammates",
-      details: asString(err?.message || err),
-    });
+    return res.status(500).json({ error: "Failed to fetch teammates", details: asString(err?.message) });
   }
 }

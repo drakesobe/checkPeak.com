@@ -1,18 +1,8 @@
 // pages/api/org/season-calendar/save.js
 // POST { periods: [] } - saves the org's season calendar periods.
-// Writes JSON to the "SeasonCalendar" Long Text field on the org's
-// Organizations Airtable record, identified by session orgId.
 
-import Airtable from "airtable";
 import { requireOrgSideUser } from "@/lib/requireUser";
-
-function getBase() {
-  if (!process.env.ORGANIZATIONS_API_KEY || !process.env.ORGANIZATIONS_BASE_ID) {
-    throw new Error("ORGANIZATIONS_API_KEY or ORGANIZATIONS_BASE_ID env var missing.");
-  }
-  return new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY })
-    .base(process.env.ORGANIZATIONS_BASE_ID);
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 function sanitizePeriod(p) {
   return {
@@ -38,9 +28,9 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const orgId = String(user?.orgId || user?.OrgId || "").trim();
-  if (!orgId) {
-    return res.status(400).json({ error: "No orgId on session - re-login." });
+  const orgToken = String(user?.Token || user?.token || "").trim();
+  if (!orgToken) {
+    return res.status(400).json({ error: "No org token on session - re-login." });
   }
 
   const { periods } = req.body || {};
@@ -48,21 +38,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "periods must be an array." });
   }
 
-  // Sanitize and cap at 60 periods
   const clean = periods.slice(0, 60).map(sanitizePeriod);
 
-  const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
-
   try {
-    await getBase()(table).update(orgId, {
-      SeasonCalendar: JSON.stringify(clean),
-    });
+    const { error } = await db
+      .from("organizations")
+      .update({ season_calendar: clean })
+      .eq("token", orgToken);
+
+    if (error) throw error;
 
     return res.status(200).json({ ok: true, periods: clean });
   } catch (e) {
     console.error("[season-calendar/save]", e?.message || e);
-    return res.status(500).json({
-      error: e?.message || "Failed to save season calendar.",
-    });
+    return res.status(500).json({ error: e?.message || "Failed to save season calendar." });
   }
 }

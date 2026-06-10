@@ -46,13 +46,15 @@ function parseJson(v, fallback = {}) {
 // ─── ID maps (airtable recXXX → supabase UUID) ────────────────────────────────
 
 const maps = {
-  orgs:     {},  // airtable_id → supabase UUID
-  athletes: {},
-  members:  {},
-  trainers: {},
-  workouts: {},  // daily_workouts
-  items:    {},  // workout_items
-  wc:       {},  // workout_completions
+  orgs:          {},  // airtable_id → supabase UUID
+  orgTokens:     {},  // airtable_id → org_token string
+  athletes:      {},  // airtable_id → supabase UUID
+  athleteTokens: {},  // airtable_id → athlete_token string
+  members:       {},
+  trainers:      {},
+  workouts:      {},  // daily_workouts
+  items:         {},  // workout_items
+  wc:            {},  // workout_completions
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -155,7 +157,8 @@ async function run() {
     };
     const { data, error } = await sb.from("organizations").upsert(row, { onConflict: "airtable_id" }).select("id").single();
     if (error) { console.error(`  ✗ org ${r.id}:`, error.message); continue; }
-    maps.orgs[r.id] = data.id;
+    maps.orgs[r.id]      = data.id;
+    maps.orgTokens[r.id] = row.token;
     console.log(`  ✓ ${f["Name"] ?? r.id}`);
   }
 
@@ -258,7 +261,8 @@ async function run() {
     };
     const { data, error } = await sb.from("athletes").upsert(row, { onConflict: "airtable_id" }).select("id").single();
     if (error) { console.error(`  ✗ athlete ${r.id} (${f["Email"]}):`, error.message); continue; }
-    maps.athletes[r.id] = data.id;
+    maps.athletes[r.id]      = data.id;
+    maps.athleteTokens[r.id] = row.athlete_token;
     process.stdout.write(".");
   }
   console.log("");
@@ -439,9 +443,11 @@ async function run() {
     const memberAId = Array.isArray(f["CreatedBy"])    ? f["CreatedBy"][0]    : null;
     const row = {
       airtable_id:    r.id,
-      org_id:         orgAId    ? maps.orgs[orgAId]       : null,
-      athlete_id:     athlAId   ? maps.athletes[athlAId]  : null,
-      created_by_id:  memberAId ? maps.members[memberAId] : null,
+      org_id:         orgAId    ? maps.orgs[orgAId]             : null,
+      org_token:      orgAId    ? (maps.orgTokens[orgAId] ?? null) : null,
+      athlete_id:     athlAId   ? maps.athletes[athlAId]        : null,
+      athlete_token:  athlAId   ? (maps.athleteTokens[athlAId] ?? f["AthleteToken"] ?? null) : (f["AthleteToken"] ?? null),
+      created_by_id:  memberAId ? maps.members[memberAId]       : null,
       date:           f["Date"] ?? new Date().toISOString().slice(0, 10),
       title:          f["Title"] ?? null,
       status:         f["Status"] ?? "assigned",
@@ -549,18 +555,26 @@ async function run() {
     console.log(`  ${rows.length} records`);
     for (const r of rows) {
       const f = r.fields ?? {};
-      const itemAId = Array.isArray(f["WorkoutItem"]) ? f["WorkoutItem"][0] : null;
-      const athlAId = Array.isArray(f["Athlete"])     ? f["Athlete"][0]     : null;
+      const loggedAt = f["Date"] ? new Date(f["Date"]).toISOString() : new Date().toISOString();
       await upsert("set_logs", {
         airtable_id:     r.id,
-        workout_item_id: itemAId ? maps.items[itemAId]     : null,
-        athlete_id:      athlAId ? maps.athletes[athlAId]  : null,
-        set_number:      f["SetNumber"]  ? Number(f["SetNumber"])  : null,
-        reps_completed:  f["Reps"]       ? Number(f["Reps"])       : null,
-        weight_used:     f["Weight"] ?? null,
-        rpe_actual:      f["RPE"] ?? null,
-        notes:           f["Notes"] ?? null,
-        logged_at:       f["LoggedAt"] ?? f["CreatedAt"] ?? new Date().toISOString(),
+        athlete_token:   f["AthleteToken"]  ?? null,
+        workout_item_id: f["WorkoutItemId"] ? (maps.items[f["WorkoutItemId"]] ?? null) : null,
+        set_number:      f["SetNumber"]     ? Number(f["SetNumber"])    : null,
+        exercise_title:  f["ExerciseTitle"] ?? null,
+        date:            f["Date"]          ?? null,
+        actual_reps:     f["ActualReps"]    ? Number(f["ActualReps"])   : null,
+        actual_weight:   f["ActualWeight"]  ? Number(f["ActualWeight"]) : null,
+        difficulty:      f["Difficulty"]    ? Number(f["Difficulty"])   : null,
+        target_reps:     f["TargetReps"]    ?? null,
+        target_weight:   f["TargetWeight"]  ?? null,
+        group_id:        f["GroupId"]       ?? null,
+        timestamp:       f["Timestamp"]     ? Number(f["Timestamp"])    : new Date(loggedAt).getTime(),
+        // old columns kept for compat
+        reps_completed:  f["ActualReps"]    ? Number(f["ActualReps"])   : null,
+        weight_used:     f["ActualWeight"]  ?? null,
+        rpe_actual:      f["Difficulty"]    ? String(f["Difficulty"])   : null,
+        logged_at:       loggedAt,
       }, r.id);
     }
   }

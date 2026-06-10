@@ -1,90 +1,42 @@
 // pages/api/org/deleteAthlete.js
-// DELETE { athleteId?: string, athleteEmail?: string }
-// Permanently removes an athlete record from Airtable.
-// Auth: requireOrg - same pattern as updateAthleteMeta / createPrescription.
+// DELETE — removes an athlete that belongs to this org.
 
-import Airtable from "airtable";
-import { requireOrg } from "@/lib/requireOrg";
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
-}
+import { requireOrgSideUser } from "@/lib/requireUser";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-
-  if (req.method !== "DELETE") {
+  if (req.method !== "DELETE" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const auth = requireOrg(req);
-  if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
+  const user = requireOrgSideUser(req, res);
+  if (!user) return;
 
-  // orgId is the primary identifier (modern); token is legacy fallback
-  const orgId    = String(auth?.org?.id    || "").trim();
-  const orgToken = String(auth?.org?.token || "").trim();
-
-  if (!orgId && !orgToken) {
-    return res.status(401).json({ error: "Organization session missing orgId/token" });
-  }
-
-  if (
-    !process.env.ATHLETE_API_KEY ||
-    !process.env.ATHLETE_BASE_ID ||
-    !process.env.ATHLETE_TABLE_NAME
-  ) {
-    return res.status(500).json({ error: "Athletes Airtable not configured." });
-  }
-
-  const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
-    .base(process.env.ATHLETE_BASE_ID);
-
-  const { athleteId, athleteEmail } = req.body || {};
+  const orgToken     = String(user.orgToken || user.Token || "").trim();
+  const athleteId    = String(req.body?.athleteId    || req.query?.athleteId    || "").trim();
+  const athleteEmail = String(req.body?.athleteEmail || req.query?.athleteEmail || "").trim().toLowerCase();
 
   if (!athleteId && !athleteEmail) {
-    return res.status(400).json({ error: "athleteId or athleteEmail is required" });
+    return res.status(400).json({ error: "athleteId or athleteEmail is required." });
   }
 
   try {
-    let recordId = athleteId;
+    let query = db.from("athletes").select("id, org_token");
+    if (athleteId) query = query.eq("id", athleteId);
+    else           query = query.eq("email", athleteEmail);
 
-    // If we only have email, look up the record and verify it belongs to this org.
-    // Filter by orgId if available, otherwise fall back to legacy Token field.
-    if (!recordId && athleteEmail) {
-      const email     = String(athleteEmail).trim().toLowerCase();
-      const safeEmail = escapeAirtableString(email);
+    const { data: athlete } = await query.maybeSingle();
 
-      const filterFormula = orgId
-        ? `AND(LOWER({Email})='${safeEmail}', {OrgId}='${escapeAirtableString(orgId)}')`
-        : `AND(LOWER({Email})='${safeEmail}', {Token}='${escapeAirtableString(orgToken)}')`;
+    if (!athlete) return res.status(404).json({ error: "Athlete not found." });
+    if (athlete.org_token !== orgToken) return res.status(403).json({ error: "Athlete does not belong to your org." });
 
-      const records = await base(process.env.ATHLETE_TABLE_NAME)
-        .select({
-          filterByFormula,
-          maxRecords: 1,
-          fields:     ["Email"],
-        })
-        .firstPage();
+    const { error } = await db.from("athletes").delete().eq("id", athlete.id);
+    if (error) return res.status(500).json({ error: "Failed to delete athlete.", details: error.message });
 
-      if (!records?.length) {
-        return res.status(404).json({ error: "Athlete not found for this organization" });
-      }
-
-      recordId = records[0].id;
-    }
-
-    await base(process.env.ATHLETE_TABLE_NAME).destroy(String(recordId).trim());
-
-    return res.status(200).json({
-      ok:           true,
-      deletedId:    recordId,
-      athleteEmail: athleteEmail || null,
-    });
+    return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("[deleteAthlete]", err);
-    if (err?.statusCode === 404 || String(err?.message || "").includes("not found")) {
-      return res.status(404).json({ error: "Athlete record not found" });
-    }
-    return res.status(500).json({ error: err?.message || "Failed to delete athlete" });
+    return res.status(500).json({ error: "Failed to delete athlete.", details: err?.message });
   }
 }

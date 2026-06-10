@@ -1,203 +1,70 @@
 // pages/api/update-password.js
-import Airtable from "airtable";
+// Updates the password for the currently logged-in athlete or org member.
+
 import bcrypt from "bcryptjs";
-
-/**
- * Update Password (Athlete + Org Owner + Org Staff)
- *
- * Supports:
- * - Athlete: Password field on Athletes table
- * - Organization owner: Password field on Organizations table
- * - Org staff (Admin/Trainer): PasswordHash field on OrgMembers table
- *
- * Request body:
- * {
- *   role: "athlete" | "organization" | "admin" | "trainer" | "staff" (optional)
- *   currentPassword: string,
- *   newPassword: string,
- *
- *   // one of these depending on role
- *   athleteId?: string,
- *   organizationId?: string,
- *   memberId?: string
- * }
- */
-
-function normRole(role) {
-  const r = String(role || "").trim().toLowerCase();
-  if (r === "org" || r === "owner" || r.includes("organization")) return "organization";
-  if (r.includes("admin")) return "admin";
-  if (r.includes("train")) return "trainer";
-  if (r.includes("staff")) return "staff";
-  if (r.includes("ath")) return "athlete";
-  return r || "athlete";
-}
-
-function pickTruthy(...vals) {
-  for (const v of vals) {
-    if (v != null && String(v).trim() !== "") return String(v).trim();
-  }
-  return "";
-}
-
-function requireEnv(name) {
-  if (!process.env[name]) throw new Error(`Missing env var: ${name}`);
-  return process.env[name];
-}
+import { hashPassword, normalizeEmail, getAthleteByEmail } from "@/lib/supabaseOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
+import { readUserCookie } from "@/lib/requireUser";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  if (req.method !== "PUT") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  const user = readUserCookie(req);
+  if (!user?.email) return res.status(401).json({ error: "Not authenticated" });
 
-  const {
-    role: roleIn,
-    currentPassword,
-    newPassword,
-    athleteId,
-    organizationId,
-    memberId,
-  } = req.body || {};
-
-  const role = normRole(roleIn);
-
+  const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: "Current password and new password are required." });
+    return res.status(400).json({ error: "currentPassword and newPassword are required." });
   }
-  if (String(newPassword).length < 8) {
-    return res.status(400).json({ error: "New password must be at least 8 characters." });
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters." });
   }
+
+  const emailLower = normalizeEmail(user.email);
+  const roleLower  = String(user.role || user.Role || "").toLowerCase();
 
   try {
-    // ----------------------------
-    // ATHLETE
-    // ----------------------------
-    if (role === "athlete") {
-      const id = pickTruthy(athleteId);
-      if (!id) return res.status(400).json({ error: "athleteId is required for athlete password updates." });
+    const new_hash = await hashPassword(newPassword);
 
-      const apiKey = requireEnv("ATHLETE_API_KEY");
-      const baseId = requireEnv("ATHLETE_BASE_ID");
-      const tableName = requireEnv("ATHLETE_TABLE_NAME");
+    if (roleLower === "athlete") {
+      const { data: athlete } = await getAthleteByEmail(emailLower);
+      if (!athlete) return res.status(404).json({ error: "Athlete not found." });
 
-      const base = new Airtable({ apiKey }).base(baseId);
+      const match = await bcrypt.compare(String(currentPassword), athlete.password_hash || "");
+      if (!match) return res.status(401).json({ error: "Current password is incorrect." });
 
-      const record = await base(tableName).find(id);
-      if (!record) return res.status(404).json({ error: "Athlete not found." });
+      const { error } = await db.from("athletes").update({ password_hash: new_hash }).eq("id", athlete.id);
+      if (error) return res.status(500).json({ error: "Failed to update password." });
+    } else {
+      const { data: member } = await db
+        .from("org_members")
+        .select("id, password_hash")
+        .eq("email", emailLower)
+        .maybeSingle();
 
-      const storedHash = String(record.fields?.Password || "");
-      if (!storedHash) return res.status(500).json({ error: "Athlete record missing Password hash." });
-
-      const ok = await bcrypt.compare(String(currentPassword), storedHash);
-      if (!ok) return res.status(401).json({ error: "Current password is incorrect." });
-
-      const hashedNew = await bcrypt.hash(String(newPassword), 10);
-
-      const updated = await base(tableName).update([
-        { id, fields: { Password: hashedNew } },
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        message: "Password updated successfully.",
-        updated: updated?.[0]?.id,
-      });
-    }
-
-    // ----------------------------
-    // ORG OWNER (Organizations table)
-    // ----------------------------
-    if (role === "organization") {
-      const id = pickTruthy(organizationId);
-      if (!id) return res.status(400).json({ error: "organizationId is required for organization password updates." });
-
-      const apiKey = requireEnv("ORGANIZATIONS_API_KEY");
-      const baseId = requireEnv("ORGANIZATIONS_BASE_ID");
-      const tableName = requireEnv("ORGANIZATIONS_TABLE_NAME");
-
-      const base = new Airtable({ apiKey }).base(baseId);
-
-      const record = await base(tableName).find(id);
-      if (!record) return res.status(404).json({ error: "Organization not found." });
-
-      const storedHash = String(record.fields?.Password || "");
-      if (!storedHash) return res.status(500).json({ error: "Organization record missing Password hash." });
-
-      const ok = await bcrypt.compare(String(currentPassword), storedHash);
-      if (!ok) return res.status(401).json({ error: "Current password is incorrect." });
-
-      const hashedNew = await bcrypt.hash(String(newPassword), 10);
-
-      const updated = await base(tableName).update([
-        { id, fields: { Password: hashedNew } },
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        message: "Password updated successfully.",
-        updated: updated?.[0]?.id,
-      });
-    }
-
-    // ----------------------------
-    // ORG STAFF (OrgMembers table)
-    // role: admin/trainer/staff -> PasswordHash
-    // ----------------------------
-    if (role === "admin" || role === "trainer" || role === "staff") {
-      const id = pickTruthy(memberId);
-      if (!id) return res.status(400).json({ error: "memberId is required for staff password updates." });
-
-      const apiKey = requireEnv("ORGANIZATIONS_API_KEY");
-      const baseId = requireEnv("ORGANIZATIONS_BASE_ID");
-
-      // your OrgMembers is stored as a TABLE ID env (works with Airtable SDK)
-      const orgMembersTable =
-        process.env.ORG_MEMBERS_TABLE_ID || "tblRvpw7XeVZfdKIq";
-
-      const base = new Airtable({ apiKey }).base(baseId);
-
-      const record = await base(orgMembersTable).find(id);
-      if (!record) return res.status(404).json({ error: "Staff member not found." });
-
-      const storedHash = String(record.fields?.PasswordHash || "");
-      if (!storedHash) {
-        return res.status(409).json({
-          error: "This staff account isn’t ready yet. Please finish setup from your invite link.",
-        });
+      if (member) {
+        const match = await bcrypt.compare(String(currentPassword), member.password_hash || "");
+        if (!match) return res.status(401).json({ error: "Current password is incorrect." });
+        const { error } = await db.from("org_members").update({ password_hash: new_hash }).eq("id", member.id);
+        if (error) return res.status(500).json({ error: "Failed to update password." });
+      } else {
+        const { data: org } = await db
+          .from("organizations")
+          .select("id, password_hash")
+          .eq("email", emailLower)
+          .maybeSingle();
+        if (!org) return res.status(404).json({ error: "Account not found." });
+        const match = await bcrypt.compare(String(currentPassword), org.password_hash || "");
+        if (!match) return res.status(401).json({ error: "Current password is incorrect." });
+        const { error } = await db.from("organizations").update({ password_hash: new_hash }).eq("id", org.id);
+        if (error) return res.status(500).json({ error: "Failed to update password." });
       }
-
-      const ok = await bcrypt.compare(String(currentPassword), storedHash);
-      if (!ok) return res.status(401).json({ error: "Current password is incorrect." });
-
-      const hashedNew = await bcrypt.hash(String(newPassword), 10);
-
-      const updated = await base(orgMembersTable).update([
-        { id, fields: { PasswordHash: hashedNew } },
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        message: "Password updated successfully.",
-        updated: updated?.[0]?.id,
-      });
     }
 
-    // Fallback (unknown role)
-    return res.status(400).json({ error: "Unsupported role for password updates." });
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("[update-password] error:", err);
-    // Airtable errors often have statusCode/message
-    return res.status(500).json({
-      error: "Failed to update password.",
-      details: err?.message,
-      airtable: {
-        statusCode: err?.statusCode,
-        message: err?.message,
-        error: err?.error,
-      },
-    });
+    console.error("[update-password]", err);
+    return res.status(500).json({ error: "Failed to update password.", details: err?.message });
   }
 }

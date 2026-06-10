@@ -1,100 +1,75 @@
-import { getBase, escapeAirtableString, normalizeEmail } from "@/lib/airtableOrgWorkouts";
-import { F } from "@/lib/orgWorkoutFields";
+// pages/api/org/athlete/completeWorkoutItems.js
+// POST { email, workoutItemId, evidenceType?, fileUrl? }
+// Legacy endpoint: completes a workout item identified by athlete email (no cookie required).
+
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  const { email, workoutItemId, evidenceType = "photo", fileUrl } = req.body || {};
+  const cleanEmail = String(email || "").trim().toLowerCase();
+
+  if (!cleanEmail || !cleanEmail.includes("@")) return res.status(400).json({ error: "Valid email is required." });
+  if (!workoutItemId) return res.status(400).json({ error: "workoutItemId is required." });
+
   try {
-    const { email, workoutItemId, evidenceType, fileUrl } = req.body || {};
-    const cleanEmail = normalizeEmail(email);
+    // Resolve athlete by email
+    const { data: athlete } = await db
+      .from("athletes")
+      .select("id, athlete_token, email")
+      .eq("email", cleanEmail)
+      .maybeSingle();
 
-    if (!cleanEmail || !cleanEmail.includes("@")) return res.status(400).json({ error: "Valid email is required." });
-    if (!workoutItemId) return res.status(400).json({ error: "workoutItemId is required." });
+    if (!athlete) return res.status(404).json({ error: "Athlete not found." });
 
-    const API_KEY = process.env.ORGANIZATIONS_API_KEY;
+    // Get workout item
+    const { data: item } = await db
+      .from("workout_items")
+      .select("id, evidence_required, workout_id")
+      .eq("id", String(workoutItemId).trim())
+      .maybeSingle();
 
-    const ATH_BASE_ID = process.env.ATHLETE_BASE_ID;
-    const ATH_TABLE = process.env.ATHLETE_TABLE_NAME;
+    if (!item) return res.status(404).json({ error: "Workout item not found." });
 
-    const WI_BASE_ID = process.env.WORKOUTITEMS_BASE_ID;
-    const WI_TABLE = process.env.WORKOUTITEMS_TABLE_ID;
+    // Get daily workout for org context
+    const { data: dw } = await db
+      .from("daily_workouts")
+      .select("id, org_token, athlete_token")
+      .eq("id", item.workout_id)
+      .maybeSingle();
 
-    const WC_BASE_ID = process.env.WORKOUTCOMPLETIONS_BASE_ID;
-    const WC_TABLE = process.env.WORKOUTCOMPLETIONS_TABLE_ID;
+    if (!dw) return res.status(404).json({ error: "Daily workout not found." });
 
-    const EV_BASE_ID = process.env.COMPLETIONEVIDENCE_BASE_ID;
-    const EV_TABLE = process.env.COMPLETIONEVIDENCE_TABLE_ID;
+    const evidenceReq   = String(item.evidence_required || "none");
+    const needsEvidence = evidenceReq !== "none";
+    const status        = needsEvidence ? "pending_review" : "completed";
 
-    if (!API_KEY) return res.status(500).json({ error: "Airtable API key missing." });
-    if (!ATH_BASE_ID || !ATH_TABLE) return res.status(500).json({ error: "Athletes Airtable not configured." });
-    if (!WI_BASE_ID || !WI_TABLE) return res.status(500).json({ error: "WorkoutItems Airtable not configured." });
-    if (!WC_BASE_ID || !WC_TABLE) return res.status(500).json({ error: "WorkoutCompletions Airtable not configured." });
-    if (!EV_BASE_ID || !EV_TABLE) return res.status(500).json({ error: "CompletionEvidence Airtable not configured." });
-
-    const athBase = getBase(API_KEY, ATH_BASE_ID);
-    const wiBase = getBase(API_KEY, WI_BASE_ID);
-    const wcBase = getBase(API_KEY, WC_BASE_ID);
-    const evBase = getBase(API_KEY, EV_BASE_ID);
-
-    // 1) athlete record
-    const safeEmail = escapeAirtableString(cleanEmail);
-    const athleteRecords = await athBase(ATH_TABLE)
-      .select({ filterByFormula: `LOWER({${F.ATH_EMAIL}})='${safeEmail}'`, maxRecords: 1 })
-      .firstPage();
-
-    if (!athleteRecords.length) return res.status(404).json({ error: "Athlete not found." });
-    const athlete = athleteRecords[0];
-
-    // 2) workout item record (to read org + evidence requirement)
-    const item = await wiBase(WI_TABLE).find(workoutItemId);
-    const evidenceReq = String(item.fields?.[F.WI_EVIDENCE] || "none");
-
-    const orgLinks = item.fields?.[F.WI_ORG];
-    const orgId = Array.isArray(orgLinks) && orgLinks.length ? orgLinks[0] : null;
-    if (!orgId) return res.status(500).json({ error: "Workout item missing organization link." });
-
-    // 3) decide completion status
-    const needsEvidence = evidenceReq && evidenceReq !== "none";
-    const status = needsEvidence ? "pending_review" : "completed";
-
-    // 4) create completion
-    const completionCreated = await wcBase(WC_TABLE).create([
-      {
-        fields: {
-          [F.WC_ORG]: [orgId],
-          [F.WC_ITEM]: [workoutItemId],
-          [F.WC_ATHLETE]: [athlete.id],
-          [F.WC_STATUS]: status,
-          [F.WC_COMPLETEDAT]: new Date().toISOString(),
-        },
-      },
-    ]);
-
-    const completionId = completionCreated?.[0]?.id;
-
-    // 5) add evidence if provided
-    if (fileUrl) {
-      await evBase(EV_TABLE).create([
+    const { data: completion, error } = await db
+      .from("workout_completions")
+      .upsert(
         {
-          fields: {
-            [F.EV_ORG]: [orgId],
-            [F.EV_COMPLETION]: [completionId],
-            [F.EV_TYPE]: evidenceType || "photo",
-            [F.EV_FILEURL]: String(fileUrl),
-            [F.EV_UPLOADEDAT]: new Date().toISOString(),
-          },
+          workout_item_id: item.id,
+          workout_id:      dw.id,
+          athlete_id:      athlete.id,
+          athlete_token:   athlete.athlete_token || dw.athlete_token,
+          org_token:       dw.org_token,
+          status,
+          ...(fileUrl ? { attachment_url: String(fileUrl), attachment_type: String(evidenceType) } : {}),
+          completed_at:    new Date().toISOString(),
         },
-      ]);
-    }
+        { onConflict: "workout_item_id,athlete_token", ignoreDuplicates: false }
+      )
+      .select("id, status")
+      .single();
 
-    return res.status(200).json({ ok: true, completionId, status });
+    if (error) return res.status(500).json({ error: "Failed to record completion.", details: error.message });
+
+    return res.status(200).json({ ok: true, completionId: completion.id, status: completion.status });
   } catch (err) {
-    console.error("[athlete/completeWorkoutItem] error:", err);
-    return res.status(500).json({
-      error: "Failed to complete workout item",
-      airtable: { statusCode: err?.statusCode, message: err?.message, error: err?.error },
-    });
+    console.error("[org/athlete/completeWorkoutItems]", err);
+    return res.status(500).json({ error: "Failed to complete workout item.", details: err?.message });
   }
 }

@@ -1,313 +1,129 @@
 // pages/api/athlete/workouts/byDate.js
-import Airtable from "airtable";
+// GET ?date=YYYY-MM-DD — returns all daily workouts for the athlete on a specific date.
+
 import { requireAthlete } from "@/lib/requireAthlete";
-
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
-}
-
-function normEmail(s) {
-  return String(s || "").trim().toLowerCase();
-}
-
-function escapeAirtableString(str) {
-  return String(str || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function envMissing() {
-  return {
-    DAILYWORKOUTS_API_KEY: !process.env.DAILYWORKOUTS_API_KEY,
-    DAILYWORKOUTS_BASE_ID: !process.env.DAILYWORKOUTS_BASE_ID,
-    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
-    WORKOUTITEMS_TABLE_ID: !process.env.WORKOUTITEMS_TABLE_ID,
-
-    WORKOUTCOMPLETIONS_API_KEY: !process.env.WORKOUTCOMPLETIONS_API_KEY,
-    WORKOUTCOMPLETIONS_BASE_ID: !process.env.WORKOUTCOMPLETIONS_BASE_ID,
-    WORKOUTCOMPLETIONS_TABLE_ID: !process.env.WORKOUTCOMPLETIONS_TABLE_ID,
-  };
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 function normalizeEvidenceRequired(raw) {
   if (raw === true || raw === "true") return "photo";
-  if (raw === false || raw === "false" || raw == null || raw === "") return "none";
+  if (!raw || raw === false || raw === "false") return "none";
   const s = String(raw).trim().toLowerCase();
   const known = ["none", "photo", "video", "photo_or_video", "voluntary_activity_vara"];
   return known.includes(s) ? s : "none";
 }
 
-const WC_FIELDS = {
-  CompletedAt:           "CompletedAt",
-  Athlete:               "Athlete",
-  AthleteToken:          "AthleteToken",
-  WorkoutItem:           "WorkoutItem",
-  Status:                "Status",
-  Attachment:            "Attachment",
-  AttachmentSummaryA:    "AttachmentSummary",
-  AttachmentSummaryB:    "Attachment Summary",
-  ReviewNote:            "ReviewNote",
-  AthleteAcknowledged:   "AthleteAcknowledged",
-  AthleteAcknowledgedAt: "AthleteAcknowledgedAt",
-};
+function buildWorkoutResponse(dw, athleteToken) {
+  const items = [...(dw.workout_items ?? [])]
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((item, idx) => {
+      const c = (item.workout_completions ?? [])[0] ?? {};
+      const completionStatus = String(c.status || "").toLowerCase();
+      const itemStatus       = String(item.status || "").toLowerCase();
+      const status           = completionStatus || itemStatus || "";
+      const doneForAthlete   = status === "completed" || status === "pending_review" ||
+                               (status === "rejected" && Boolean(c.athlete_acknowledged));
 
-function statusNorm(s) {
-  return String(s || "").trim().toLowerCase();
-}
+      const attachmentSummary = c.review_note || "";
 
-function toBool(v) {
-  if (typeof v === "boolean") return v;
-  const s = String(v ?? "").trim().toLowerCase();
-  return s === "true" || s === "1" || s === "yes";
-}
+      return {
+        id:               item.id,
+        missing:          false,
+        ExerciseName:     item.exercise_name || `Workout Item ${idx + 1}`,
+        EvidenceRequired: normalizeEvidenceRequired(item.evidence_required),
+        Sets:             item.sets  ?? "",
+        Reps:             item.reps  || "",
+        Weight:           item.weight || "",
+        RPE:              item.rpe   || "",
+        Rest:             item.rest  || "",
+        Instructions:     item.instructions || "",
+        VideoURL:         item.video_url    || "",
+        groupId:          item.group_id     || null,
+        Completed:              doneForAthlete ? "true" : "false",
+        Status:                 status,
+        CompletionStatus:       completionStatus,
+        ItemStatus:             itemStatus,
+        CompletedAt:            c.completed_at  || "",
+        CompletionId:           c.id            || "",
+        Note:                   attachmentSummary,
+        AttachmentSummary:      attachmentSummary,
+        AttachmentUrl:          c.attachment_url || "",
+        ReviewNote:             c.review_note    || "",
+        AthleteAcknowledged:    Boolean(c.athlete_acknowledged),
+        AthleteAcknowledgedAt:  c.athlete_acknowledged_at || "",
+      };
+    });
 
-function isAthleteDone(status, acknowledged) {
-  const st = statusNorm(status);
-  if (st === "completed" || st === "pending_review") return true;
-  if (st === "rejected" && Boolean(acknowledged)) return true;
-  return false;
-}
-
-function normalizeTextValue(v) {
-  if (Array.isArray(v)) return String(v?.[0] ?? "").trim();
-  if (v && typeof v === "object") return String(v?.value ?? "").trim();
-  return String(v ?? "").trim();
-}
-
-function mustAthleteToken(auth) {
-  const raw =
-    auth?.athlete?.AthleteToken ||
-    auth?.athlete?.athleteToken ||
-    auth?.user?.AthleteToken    ||
-    auth?.user?.athleteToken    ||
-    auth?.AthleteToken          ||
-    auth?.athleteToken          ||
-    "";
-  const token = String(raw || "").trim();
-  if (!token || !/^ATH-/i.test(token)) return "";
-  return token;
+  return {
+    dailyWorkout: {
+      id:                dw.id,
+      Title:             dw.title             || "Daily Workout",
+      Date:              dw.date,
+      Status:            dw.status            || "assigned",
+      AthleteToken:      dw.athlete_token     || athleteToken,
+      ReviewStatus:      dw.review_status     || "pending",
+      ReviewedNotes:     dw.reviewed_notes    || "",
+      ScheduledTime:     dw.scheduled_time    || null,
+      ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
+    },
+    items,
+  };
 }
 
 function okNull(res, payload = {}) {
   return res.status(200).json({ dailyWorkout: null, items: [], dailyWorkouts: [], ...payload });
 }
 
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-async function hydrateWorkoutItemsByIds(WorkoutItemsTable, ids = []) {
-  const itemIds = safeArray(ids).map(String).map((s) => s.trim()).filter(Boolean);
-  if (!itemIds.length) return [];
-
-  const rows = [];
-  for (const batch of chunk(itemIds, 50)) {
-    const orParts = batch.map((id) => `RECORD_ID()="${escapeAirtableString(id)}"`).join(",");
-    const got = await WorkoutItemsTable.select({
-      filterByFormula: `OR(${orParts})`,
-      pageSize: 100,
-    }).firstPage();
-    rows.push(...(got || []));
-  }
-
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  return itemIds.map((id) => byId.get(id)).filter(Boolean);
-}
-
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const missing = envMissing();
-  if (Object.values(missing).some(Boolean)) {
-    return res.status(500).json({ error: "Airtable env vars missing.", missing });
-  }
-
   const auth = requireAthlete(req);
-  if (!auth.ok) {
-    return okNull(res, { error: auth.error || "Unauthorized", stopRetry: true });
-  }
+  if (!auth.ok) return okNull(res, { error: auth.error || "Unauthorized", stopRetry: true });
 
-  const isoDate = String(req.query?.date || "").trim();
+  const isoDate      = String(req.query?.date || "").trim().slice(0, 10);
+  const athleteToken = String(auth.athlete?.AthleteToken || "").trim();
+
   if (!isoDate) return res.status(400).json({ error: "Missing date (YYYY-MM-DD)." });
 
-  const athleteToken = mustAthleteToken(auth);
   if (!athleteToken) {
     return okNull(res, {
-      error: "Missing AthleteToken (ATH-XXXX) in auth session cookie.",
+      error: "Missing AthleteToken (ATH-XXXX) in session.",
       stopRetry: true,
-      debug: { cookieKeys: Object.keys(auth?.user || {}) },
+      debug: { cookieKeys: Object.keys(auth.user || {}) },
     });
   }
-
-  const athleteRecordId = String(auth?.athlete?.id || "").trim();
-  if (!athleteRecordId) {
-    return okNull(res, {
-      error: "Missing athlete record id in auth session.",
-      stopRetry: true,
-    });
-  }
-
-  const base = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(
-    process.env.DAILYWORKOUTS_BASE_ID
-  );
-  const DailyWorkouts     = base(process.env.DAILYWORKOUTS_TABLE_ID);
-  const WorkoutItemsTable = base(process.env.WORKOUTITEMS_TABLE_ID);
-
-  const wcBase = new Airtable({ apiKey: process.env.WORKOUTCOMPLETIONS_API_KEY }).base(
-    process.env.WORKOUTCOMPLETIONS_BASE_ID
-  );
-  const WorkoutCompletions = wcBase(process.env.WORKOUTCOMPLETIONS_TABLE_ID);
 
   try {
-    const dateEsc  = escapeAirtableString(isoDate);
-    const tokenEsc = escapeAirtableString(athleteToken);
+    const { data: rows, error } = await db
+      .from("daily_workouts")
+      .select(`
+        id, date, title, status, athlete_token, org_token,
+        review_status, reviewed_notes, scheduled_time, scheduled_duration,
+        workout_items (
+          id, exercise_name, sets, reps, weight, rpe, rest,
+          instructions, video_url, evidence_required, sort_order, group_id, status,
+          workout_completions (
+            id, status, attachment_url, review_note,
+            athlete_acknowledged, athlete_acknowledged_at, completed_at
+          )
+        )
+      `)
+      .eq("athlete_token", athleteToken)
+      .eq("date", isoDate)
+      .order("id");
 
-    const formula = `AND(IS_SAME({Date}, "${dateEsc}", "day"), {AthleteToken} = "${tokenEsc}")`;
-
-    const rows = await DailyWorkouts.select({
-      filterByFormula: formula,
-      maxRecords: 10,
-    }).firstPage();
+    if (error) {
+      console.error("[athlete/workouts/byDate] supabase:", error);
+      return res.status(500).json({ error: "Failed to load workout." });
+    }
 
     if (!rows?.length) {
-      return okNull(res, {
-        debug: { reason: "No match for date + AthleteToken", isoDate, athleteToken, formula },
-      });
+      return okNull(res, { debug: { reason: "No workouts found", isoDate, athleteToken } });
     }
 
-    // ── Fetch all completions for this athlete + date in one call ─────────────
-    const wcFormula = `AND(
-      IS_SAME({${WC_FIELDS.CompletedAt}}, "${dateEsc}", "day"),
-      {${WC_FIELDS.AthleteToken}} = "${tokenEsc}"
-    )`;
+    const allWorkouts = (rows || []).map(dw => buildWorkoutResponse(dw, athleteToken));
 
-    const wcRows = await WorkoutCompletions.select({
-      filterByFormula: wcFormula,
-      maxRecords: 500,
-    }).firstPage();
-
-    // Build completions map: workoutItemId → most recent completion record
-    const completionByWorkoutItemId = new Map();
-    for (const r of wcRows || []) {
-      const wf = r.fields || {};
-
-      const athleteLinks = safeArray(wf[WC_FIELDS.Athlete]).map(String);
-      if (athleteLinks.length && !athleteLinks.includes(String(athleteRecordId))) continue;
-
-      const itemLinks = safeArray(wf[WC_FIELDS.WorkoutItem]).map(String);
-      const itemId    = String(itemLinks?.[0] || "").trim();
-      if (!itemId) continue;
-
-      const existing = completionByWorkoutItemId.get(itemId);
-      if (!existing) {
-        completionByWorkoutItemId.set(itemId, r);
-        continue;
-      }
-      const exT = new Date(existing?.fields?.[WC_FIELDS.CompletedAt] || 0).getTime();
-      const nxT = new Date(wf?.[WC_FIELDS.CompletedAt] || 0).getTime();
-      if (!Number.isNaN(nxT) && nxT >= exT) completionByWorkoutItemId.set(itemId, r);
-    }
-
-    // ── Process each DailyWorkout record ──────────────────────────────────────
-    const allWorkouts = [];
-
-    for (const rec of rows) {
-      const f = rec.fields || {};
-
-      // Hydrate items
-      const linkedItemIds = safeArray(f.WorkoutItems).map(String).map(s => s.trim()).filter(Boolean);
-      let hydrated = await hydrateWorkoutItemsByIds(WorkoutItemsTable, linkedItemIds);
-
-      // Fallback: reverse-lookup by DailyWorkout link
-      let wiFormula = "";
-      if (!hydrated.length) {
-        const dwIdEsc = escapeAirtableString(rec.id);
-        wiFormula     = `FIND("${dwIdEsc}", ARRAYJOIN({DailyWorkout}&""))>0`;
-        const wiRows  = await WorkoutItemsTable.select({
-          filterByFormula: wiFormula,
-          pageSize: 100,
-        }).firstPage();
-        hydrated = wiRows || [];
-      }
-
-      hydrated.sort((a, b) =>
-        Number(a?.fields?.Order ?? 999999) - Number(b?.fields?.Order ?? 999999)
-      );
-
-      // Map items using shared completions map
-      const items = hydrated.map((row, idx) => {
-        const id = row.id;
-        const it = row?.fields || {};
-
-        const completionRec = completionByWorkoutItemId.get(id);
-        const cf = completionRec?.fields || {};
-
-        const completionStatus     = statusNorm(cf[WC_FIELDS.Status] || "");
-        const itemStatus           = statusNorm(it.Status || "");
-        const status               = completionStatus || itemStatus || "";
-        const reviewNote           = String(cf[WC_FIELDS.ReviewNote] || "").trim();
-        const athleteAcknowledged  = toBool(cf[WC_FIELDS.AthleteAcknowledged]);
-        const athleteAcknowledgedAt= String(cf[WC_FIELDS.AthleteAcknowledgedAt] || "").trim();
-        const doneForAthlete       = isAthleteDone(status, athleteAcknowledged);
-
-        const attachmentSummary =
-          String(cf[WC_FIELDS.AttachmentSummaryA] || "").trim() ||
-          String(cf[WC_FIELDS.AttachmentSummaryB] || "").trim() ||
-          "";
-
-        const attachmentArr      = safeArray(cf[WC_FIELDS.Attachment]);
-        const evidenceRequired   = normalizeEvidenceRequired(it.EvidenceRequired);
-
-        return {
-          id,
-          missing: false,
-
-          ExerciseName:     it.ExerciseName || it.Title || it.Name || `Workout Item ${idx + 1}`,
-          EvidenceRequired: evidenceRequired,
-          Sets:             it.Sets ?? "",
-          Reps:             it.Reps ?? "",
-          Weight:           it.Weight ?? it.Load ?? "",
-          RPE:              it.RPE ?? "",
-          Rest:             it.Rest ?? "",
-          Instructions:     it.Instructions ?? "",
-          VideoURL:         it.VideoURL ?? it.Video ?? "",
-          groupId:          String(it.GroupId || "") || null,
-
-          Completed:        doneForAthlete ? "true" : "false",
-          Status:           status,
-          CompletionStatus: completionStatus,
-          ItemStatus:       itemStatus,
-          CompletedAt:      cf[WC_FIELDS.CompletedAt] || "",
-          CompletionId:     completionRec?.id || "",
-
-          Note:               attachmentSummary || "",
-          AttachmentSummary:  attachmentSummary || "",
-          Attachment:         attachmentArr,
-          ReviewNote:         reviewNote,
-          AthleteAcknowledged:    athleteAcknowledged,
-          AthleteAcknowledgedAt:  athleteAcknowledgedAt,
-        };
-      });
-
-      allWorkouts.push({
-        dailyWorkout: {
-          id:           rec.id,
-          Title:        f.Title  || "Daily Workout",
-          Date:         f.Date   || isoDate,
-          Status:       f.Status || "assigned",
-          AthleteToken: f.AthleteToken || athleteToken,
-          ScheduledTime:f.ScheduleTime || null,   // "HH:MM" text field
-          ScheduledDuration: f.ScheduleDuration ? Number(f.ScheduleDuration) : null,
-          ReviewStatus: normalizeTextValue(f.ReviewStatus)  || "pending",
-          ReviewedNotes:normalizeTextValue(f.ReviewedNotes) || "",
-        },
-        items,
-      });
-    }
-
-    // Sort workouts by scheduled time so morning comes before afternoon
     allWorkouts.sort((a, b) => {
       const ta = a.dailyWorkout.ScheduledTime || "99:99";
       const tb = b.dailyWorkout.ScheduledTime || "99:99";
@@ -315,21 +131,12 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({
-      // Backward-compat single-workout fields (first/primary workout)
-      dailyWorkout: allWorkouts[0]?.dailyWorkout || null,
-      items:        allWorkouts[0]?.items        || [],
-      // All workouts for the day
+      dailyWorkout:  allWorkouts[0]?.dailyWorkout || null,
+      items:         allWorkouts[0]?.items        || [],
       dailyWorkouts: allWorkouts,
-      debug: {
-        formula,
-        workoutCount:   allWorkouts.length,
-        wcFormula,
-        workoutItemsTableId: process.env.WORKOUTITEMS_TABLE_ID,
-      },
     });
-
-  } catch (e) {
-    console.error("[api/athlete/workouts/byDate] error:", e);
-    return res.status(500).json({ error: "Failed to load workout." });
+  } catch (err) {
+    console.error("[athlete/workouts/byDate]", err);
+    return res.status(500).json({ error: "Failed to load workout.", details: err?.message });
   }
 }

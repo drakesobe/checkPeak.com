@@ -1,13 +1,6 @@
-import Airtable from "airtable";
+// pages/api/org/season-calendar/get.js
 import { requireOrgSideUser } from "@/lib/requireUser";
-
-function getBase() {
-  if (!process.env.ORGANIZATIONS_API_KEY || !process.env.ORGANIZATIONS_BASE_ID) {
-    throw new Error("ORGANIZATIONS_API_KEY or ORGANIZATIONS_BASE_ID env var missing.");
-  }
-  return new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY })
-    .base(process.env.ORGANIZATIONS_BASE_ID);
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -18,51 +11,33 @@ export default async function handler(req, res) {
   }
 
   const user = requireOrgSideUser(req, res);
-  console.log("[season-calendar/get] user:", JSON.stringify(user));
-
   if (!user) return;
 
-  const orgId = String(
-    user?.orgId || user?.OrgId || user?.org_id ||
-    user?.OrganizationId || user?.airtableId || user?.id || ""
-  ).trim();
-
-  console.log("[season-calendar/get] orgId resolved:", orgId);
-
-  if (!orgId) {
-    return res.status(400).json({ error: "No orgId on session - re-login." });
+  const orgToken = String(user?.Token || user?.token || "").trim();
+  if (!orgToken) {
+    return res.status(400).json({ error: "No org token on session - re-login." });
   }
 
-  const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
-
   try {
-    console.log("[season-calendar/get] fetching record:", orgId, "from table:", table);
-    const record = await getBase()(table).find(orgId);
-    console.log("[season-calendar/get] record fields keys:", Object.keys(record?.fields || {}));
+    const { data: org, error } = await db
+      .from("organizations")
+      .select("season_calendar")
+      .eq("token", orgToken)
+      .maybeSingle();
 
-    const raw = (record?.fields?.SeasonCalendar || "").replace(/\\\_/g, "_");
-    console.log("[season-calendar/get] raw value:", raw?.slice(0, 100));
+    if (error) throw error;
 
-    let periods = [];
-    if (raw) {
-      try { periods = JSON.parse(raw); } catch (parseErr) {
-        console.error("[season-calendar/get] JSON parse failed:", parseErr?.message);
-      }
-    }
+    let periods = org?.season_calendar ?? [];
     if (!Array.isArray(periods)) periods = [];
 
-    // Backfill sports field for periods saved before it was added
     periods = periods.map(p => ({
       ...p,
       sports: Array.isArray(p.sports) ? p.sports : [],
     }));
 
-    console.log("[season-calendar/get] returning", periods.length, "periods");
     return res.status(200).json({ ok: true, periods });
-
   } catch (e) {
     console.error("[season-calendar/get] FAILED:", e?.message || e);
-    // Now returns 500 so the frontend actually knows something went wrong
     return res.status(500).json({ error: e?.message || "Failed to load season calendar." });
   }
 }

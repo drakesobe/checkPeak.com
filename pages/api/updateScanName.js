@@ -1,9 +1,7 @@
 // pages/api/updateScanName.js
-import Airtable from "airtable";
+// POST { recordId, newName } — updates scan_name in Supabase.
 
-const base = new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
-  process.env.SCANS_BASE_ID
-);
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -12,39 +10,26 @@ export default async function handler(req, res) {
 
   try {
     const { recordId, newName } = req.body || {};
-
     if (!recordId || !newName || !newName.trim()) {
-      return res
-        .status(400)
-        .json({ error: "Missing or invalid recordId / newName" });
+      return res.status(400).json({ error: "Missing or invalid recordId / newName" });
     }
 
-    const tableName = process.env.SCANS_TABLE_NAME || "Scans";
+    const { data, error } = await db
+      .from("scans")
+      .update({ scan_name: newName.trim() })
+      .eq("id", recordId)
+      .select("id, scan_name")
+      .single();
 
-    const updatedRecords = await base(tableName).update([
-      {
-        id: recordId,
-        fields: {
-          ScanName: newName.trim(),
-        },
-      },
-    ]);
-
-    const updated = updatedRecords[0];
+    if (error) throw error;
 
     return res.status(200).json({
       success: true,
       message: "Scan name updated successfully",
-      scan: {
-        id: updated.id,
-        name: updated.get("ScanName"),
-      },
+      scan: { id: data.id, name: data.scan_name },
     });
   } catch (error) {
     console.error("❌ Error updating scan name:", error);
-    return res.status(500).json({
-      success: false,
-      error: error?.message || "Failed to update scan name",
-    });
+    return res.status(500).json({ success: false, error: error?.message || "Failed to update scan name" });
   }
 }

@@ -1,53 +1,47 @@
 // pages/api/delete-account.js
-// Permanently deletes an athlete account from Airtable.
-// Requires: athleteId + password for confirmation.
-// POST /api/delete-account
+// Permanently deletes an athlete account from Supabase.
+// POST { athleteId?, athleteToken?, password }
 
-import Airtable from "airtable";
-import bcrypt    from "bcryptjs";
+import bcrypt from "bcryptjs";
+import { supabaseAdmin as db } from "@/lib/supabase";
+import { getAthleteById, getAthleteByToken } from "@/lib/supabaseOrg";
 
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
-  process.env.ATHLETE_BASE_ID
-);
+function asString(v) { return String(v ?? "").trim(); }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  res.setHeader("Cache-Control", "no-store");
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { athleteId, password } = req.body;
+  const { athleteId, athleteToken, password } = req.body || {};
+  if (!password) return res.status(400).json({ error: "Password confirmation is required." });
 
-  if (!athleteId || !password) {
-    return res.status(400).json({ error: "Athlete ID and password are required." });
-  }
+  const identifier = asString(athleteId || athleteToken);
+  if (!identifier) return res.status(400).json({ error: "athleteId or athleteToken is required." });
 
   try {
-    // Fetch the record
-    const record = await base(process.env.ATHLETE_TABLE_NAME).find(athleteId);
-    if (!record) {
-      return res.status(404).json({ error: "Account not found." });
+    let athlete = null;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(identifier)) {
+      const { data } = await getAthleteById(identifier);
+      athlete = data;
+    } else {
+      const { data } = await getAthleteByToken(identifier);
+      athlete = data;
     }
 
-    // Verify password before deleting - no one can delete without knowing it
-    const storedHash = record.fields.Password;
-    if (!storedHash) {
-      return res.status(400).json({ error: "Cannot verify account credentials." });
-    }
+    if (!athlete) return res.status(404).json({ error: "Athlete not found." });
+    if (!athlete.password_hash) return res.status(400).json({ error: "Account has no password set." });
 
-    const match = await bcrypt.compare(password, storedHash);
-    if (!match) {
-      return res.status(401).json({ error: "Incorrect password. Account not deleted." });
-    }
+    const match = await bcrypt.compare(String(password), athlete.password_hash);
+    if (!match) return res.status(401).json({ error: "Password is incorrect." });
 
-    // Delete the record
-    await base(process.env.ATHLETE_TABLE_NAME).destroy(athleteId);
+    const { error } = await db.from("athletes").delete().eq("id", athlete.id);
+    if (error) return res.status(500).json({ error: "Failed to delete account.", details: error.message });
 
-    return res.status(200).json({
-      ok:      true,
-      message: "Account deleted successfully.",
-    });
+    // Clear the session cookie
+    res.setHeader("Set-Cookie", "user=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("Delete account error:", err);
-    return res.status(500).json({ error: "Failed to delete account. Please try again." });
+    console.error("[delete-account]", err);
+    return res.status(500).json({ error: "Failed to delete account.", details: err?.message });
   }
 }

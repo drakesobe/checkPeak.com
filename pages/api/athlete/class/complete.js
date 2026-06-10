@@ -1,10 +1,12 @@
 // pages/api/athlete/class/complete.js
+// POST multipart/form-data { classId, classTitle, date, note?, photo, _authUser? }
+// Uploads photo to Cloudinary, upserts class_attendance row in Supabase.
 
-import Airtable   from "airtable";
 import formidable from "formidable";
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import { requireAthlete } from "@/lib/requireAthlete";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export const config = { api: { bodyParser: false } };
 
@@ -15,26 +17,7 @@ cloudinary.config({
   secure:     true,
 });
 
-const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
-const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
-const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
-const ATTENDANCE_TABLE   = process.env.CLASS_ATTENDANCE_TABLE || "ClassAttendance";
-
-const F_TOKEN       = "AthleteToken";
-const F_ATHLETE     = "Athlete";
-const F_CLASS_ID    = "ClassId";
-const F_CLASS_TITLE = "ClassTitle";
-const F_DATE        = "Date";
-const F_PHOTO_URL   = "PhotoUrl";
-const F_PUBLIC_ID   = "PublicId";
-const F_ATTENDED_AT = "AttendedAt";
-const F_COACH_NOTES = "CoachNotes";
-const F_ORG_TOKEN   = "OrgToken";
-const ATH_TOKEN     = "AthleteToken";
-const ATH_EMAIL     = "Email";
-
 function asString(v) { return String(v ?? "").trim(); }
-function escapeAirtable(str = "") { return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function isISODateOnly(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim()); }
 
 function parseForm(req) {
@@ -68,8 +51,7 @@ function cookieMissingOrBroken(req) {
   try {
     const raw = req?.cookies?.user || "";
     if (!raw) return true;
-    const decoded = raw.includes("%7B") || raw.includes("%22")
-      ? decodeURIComponent(raw) : raw;
+    const decoded = raw.includes("%7B") || raw.includes("%22") ? decodeURIComponent(raw) : raw;
     JSON.parse(decoded);
     return false;
   } catch { return true; }
@@ -91,7 +73,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  // Parse multipart FIRST so we can read _authUser field
   let fields, files;
   try {
     ({ fields, files } = await parseForm(req));
@@ -108,7 +89,6 @@ export default async function handler(req, res) {
     return Array.isArray(v) ? v[0] : (v ?? null);
   };
 
-  // Auth fallback for React Native multipart
   if (cookieMissingOrBroken(req)) {
     const authUserField = asString(getValue("_authUser") || getValue("authUser"));
     if (authUserField) injectAuthFromField(req, authUserField);
@@ -125,60 +105,57 @@ export default async function handler(req, res) {
     asString(auth?.user?.AthleteToken)    ||
     asString(auth?.user?.athleteToken);
 
-  const athleteEmail =
-    asString(auth?.athlete?.Email || auth?.athlete?.email ||
-             auth?.user?.Email   || auth?.user?.email);
+  const athleteEmail = asString(
+    auth?.athlete?.email || auth?.athlete?.Email ||
+    auth?.user?.email   || auth?.user?.Email
+  );
 
   const orgToken = asString(
-  auth?.athlete?.OrgToken || auth?.athlete?.orgToken ||
-  auth?.user?.OrgToken   || auth?.user?.orgToken    ||
-  auth?.athlete?.Token   || auth?.user?.Token        || ""
-);
+    auth?.athlete?.OrgToken || auth?.athlete?.orgToken ||
+    auth?.user?.OrgToken   || auth?.user?.orgToken    ||
+    auth?.athlete?.Token   || auth?.user?.Token        || ""
+  );
 
-  // Form fields
   const classId    = asString(getValue("classId"));
   const classTitle = asString(getValue("classTitle"));
   const date       = asString(getValue("date"));
-  const note       = asString(getValue("note"));   // coach note from EvidenceModal
+  const note       = asString(getValue("note"));
   const photoFile  = getFile("photo");
 
   if (!isISODateOnly(date)) {
+    deleteTempFile(photoFile?.filepath);
     return res.status(400).json({ ok: false, error: "date is required (YYYY-MM-DD)" });
   }
   if (!photoFile?.filepath) {
     return res.status(400).json({ ok: false, error: "photo is required" });
   }
 
-  if (!ATHLETE_API_KEY || !ATHLETE_BASE_ID || !ATHLETE_TABLE_NAME) {
-    deleteTempFile(photoFile.filepath);
-    return res.status(500).json({ ok: false, error: "Athlete Airtable not configured." });
-  }
-
-  const athleteBase     = new Airtable({ apiKey: ATHLETE_API_KEY }).base(ATHLETE_BASE_ID);
-  const attendanceTable = athleteBase(ATTENDANCE_TABLE);
-
-  // 1. Resolve athlete record
-  let athleteRec = null;
+  // 1. Resolve athlete record from Supabase
+  let athlete = null;
   try {
-    const filter = athleteToken
-      ? `FIND('${escapeAirtable(athleteToken)}', ARRAYJOIN({${ATH_TOKEN}}&''))`
-      : `LOWER({${ATH_EMAIL}}&'')='${escapeAirtable(athleteEmail.toLowerCase())}'`;
-
-    const found = await athleteBase(ATHLETE_TABLE_NAME)
-      .select({ filterByFormula: filter, maxRecords: 1 })
-      .firstPage();
-    athleteRec = found?.[0] || null;
+    let query = db.from("athletes").select("id, athlete_token");
+    if (athleteToken) {
+      query = query.eq("athlete_token", athleteToken);
+    } else if (athleteEmail) {
+      query = query.eq("email", athleteEmail.toLowerCase());
+    } else {
+      deleteTempFile(photoFile.filepath);
+      return res.status(401).json({ ok: false, error: "Athlete token/email missing from session." });
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) throw error;
+    athlete = data;
   } catch (e) {
     deleteTempFile(photoFile.filepath);
     return res.status(500).json({ ok: false, error: `Athlete lookup failed: ${e.message}` });
   }
 
-  if (!athleteRec?.id) {
+  if (!athlete?.id) {
     deleteTempFile(photoFile.filepath);
     return res.status(404).json({ ok: false, error: "Athlete record not found." });
   }
 
-  const resolvedToken = asString(athleteRec.fields?.[ATH_TOKEN]) || athleteToken;
+  const resolvedToken = asString(athlete.athlete_token) || athleteToken;
 
   // 2. Upload photo to Cloudinary
   let cloudResult;
@@ -206,52 +183,39 @@ export default async function handler(req, res) {
     deleteTempFile(photoFile.filepath);
   }
 
-  // 3. Upsert attendance record in Airtable
-  const isoMidDay   = `${date}T12:00:00.000Z`;
-  const safeToken   = escapeAirtable(resolvedToken);
-  const safeClassId = escapeAirtable(classId);
-
-  const filter = `AND(
-    {${F_TOKEN}}    = '${safeToken}',
-    {${F_CLASS_ID}} = '${safeClassId}',
-    IS_SAME({${F_DATE}}, '${isoMidDay}', 'day')
-  )`;
-
+  // 3. Upsert attendance record in Supabase
   try {
-    const existing = await attendanceTable
-      .select({ filterByFormula: filter, maxRecords: 1 })
-      .firstPage()
-      .then(xs => xs?.[0] || null);
+    const { data: saved, error } = await db
+      .from("class_attendance")
+      .upsert({
+        athlete_token: resolvedToken,
+        athlete_id:    athlete.id,
+        class_id:      classId,
+        class_title:   classTitle,
+        attended_at:   date,
+        photo_url:     cloudResult.secure_url,
+        public_id:     cloudResult.public_id,
+        org_token:     orgToken || null,
+        coach_notes:   note || null,
+        updated_at:    new Date().toISOString(),
+      }, { onConflict: "athlete_token,class_id,attended_at" })
+      .select("id")
+      .single();
 
-    const recordFields = {
-      [F_TOKEN]:       resolvedToken,
-      [F_ATHLETE]:     [athleteRec.id],
-      [F_CLASS_ID]:    classId,
-      [F_CLASS_TITLE]: classTitle,
-      [F_DATE]:        isoMidDay,
-      [F_PHOTO_URL]:   cloudResult.secure_url,
-      [F_PUBLIC_ID]:   cloudResult.public_id,
-      [F_ATTENDED_AT]: new Date().toISOString(),
-      ...(orgToken ? { [F_ORG_TOKEN]: orgToken } : {}),
-      ...(note ? { [F_COACH_NOTES]: note } : {}),
-    };
-
-    const saved = existing?.id
-      ? await attendanceTable.update(existing.id, recordFields)
-      : await attendanceTable.create(recordFields);
+    if (error) throw error;
 
     return res.status(200).json({
-      ok:        true,
+      ok:           true,
       date,
       classId,
       classTitle,
       noteReceived: Boolean(note),
-      recordId:  saved?.id,
-      photoUrl:  cloudResult.secure_url,
-      athleteId: athleteRec.id,
+      recordId:     saved?.id,
+      photoUrl:     cloudResult.secure_url,
+      athleteId:    athlete.id,
     });
   } catch (e) {
-    console.error("[class/complete] Airtable write failed:", e?.message);
+    console.error("[class/complete] Supabase write failed:", e?.message);
     return res.status(500).json({
       ok:       false,
       error:    `Attendance photo uploaded but database write failed: ${e.message}`,

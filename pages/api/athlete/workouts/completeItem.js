@@ -1,77 +1,29 @@
 // pages/api/athlete/workouts/completeItem.js
+// POST (multipart/form-data) — athlete marks a workout item complete, optionally uploading evidence.
 
-import Airtable from "airtable";
-import { requireAthlete } from "@/lib/requireAthlete";
 import formidable from "formidable";
+import { requireAthlete } from "@/lib/requireAthlete";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export const config = {
   api: { bodyParser: false },
 };
 
-function pickFirst(v) {
-  return Array.isArray(v) ? v[0] : v;
-}
-
 function asString(v) {
-  const x = pickFirst(v);
+  const x = Array.isArray(v) ? v[0] : v;
   return String(x ?? "").trim();
 }
 
-function requiresFileEvidence(rawEvidenceRequired) {
-  const s = asString(rawEvidenceRequired).toLowerCase();
+function requiresFileEvidence(raw) {
+  const s = asString(raw).toLowerCase();
   if (s === "false" || s === "none" || s === "voluntary_activity_vara") return false;
   if (s === "true" || s === "photo" || s === "video" || s === "photo_or_video") return true;
   return s.length > 0;
 }
 
-function normalizeItemStatus(v) {
-  const s = asString(v).toLowerCase();
-  if (s === "completed")      return "completed";
-  if (s === "pending_review") return "pending_review";
-  if (s === "rejected")       return "rejected";
-  return "assigned";
-}
-
-function deriveDailyWorkoutStatus(itemStatuses = []) {
-  const statuses = (itemStatuses || []).map(normalizeItemStatus);
-  if (statuses.includes("rejected"))       return "rejected";
-  if (statuses.includes("pending_review")) return "pending_review";
-  if (statuses.length > 0 && statuses.every((s) => s === "completed")) return "completed";
-  return "assigned";
-}
-
-function unwrapAuth(maybe) {
-  if (!maybe) return { ok: false, athlete: null, user: null, raw: null };
-  if (typeof maybe === "object" && "ok" in maybe) {
-    return { ok: Boolean(maybe.ok), athlete: maybe.athlete || null, user: maybe.user || null, raw: maybe };
-  }
-  return { ok: true, athlete: maybe, user: null, raw: maybe };
-}
-
-function mustAthleteToken({ athlete, user, raw, fields }) {
-  const candidates = [
-    athlete?.AthleteToken, athlete?.athleteToken, athlete?.Token, athlete?.token,
-    user?.AthleteToken,    user?.athleteToken,    user?.Token,    user?.token,
-    raw?.AthleteToken,     raw?.athleteToken,     raw?.Token,     raw?.token,
-    raw?.athlete?.AthleteToken, raw?.athlete?.athleteToken,
-    raw?.user?.AthleteToken,    raw?.user?.athleteToken,
-    fields?.AthleteToken, fields?.athleteToken, fields?.token, fields?.Token,
-  ];
-  return asString(candidates.find((x) => asString(x)));
-}
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
-}
-
-const base =
-  process.env.DAILYWORKOUTS_API_KEY && process.env.DAILYWORKOUTS_BASE_ID
-    ? new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID)
-    : null;
-
 async function parseMultipart(req) {
   const form = formidable({ multiples: false, keepExtensions: true, maxFileSize: 15 * 1024 * 1024 });
-  return await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
       if (err) return reject(err);
       resolve({ fields, files });
@@ -99,80 +51,42 @@ async function uploadToCloudinary({ blob, filename }) {
   fd.append("folder", folder);
   fd.append("signature", signature);
 
-  const res  = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
-  let json = {};
-  try { json = await res.json(); } catch {}
-  if (!res.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
+  const r    = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
+  let json   = {};
+  try { json = await r.json(); } catch {}
+  if (!r.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
   return { url: json.secure_url || json.url, bytes: json.bytes };
 }
 
-async function resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId }) {
-  const orgId = asString(
-    auth?.user?.orgId    || auth?.user?.OrgId    ||
-    auth?.raw?.orgId     || auth?.raw?.OrgId     ||
-    auth?.athlete?.orgId || auth?.athlete?.OrgId || ""
-  );
-  const orgToken = asString(
-    auth?.user?.OrgToken    || auth?.user?.orgToken    ||
-    auth?.raw?.OrgToken     || auth?.raw?.orgToken     ||
-    auth?.athlete?.OrgToken || auth?.athlete?.orgToken || ""
-  ).toUpperCase();
+async function recomputeDailyWorkoutStatus(workoutId) {
+  const { data: items } = await db
+    .from("workout_items")
+    .select("status")
+    .eq("workout_id", workoutId);
 
-  if (orgId || orgToken) return { orgId, orgToken, source: "session" };
+  const statuses = (items ?? []).map(i => String(i.status || "assigned").toLowerCase());
+  let status = "assigned";
+  if (statuses.includes("rejected"))       status = "rejected";
+  else if (statuses.includes("pending_review")) status = "pending_review";
+  else if (statuses.length && statuses.every(s => s === "completed")) status = "completed";
 
-  try {
-    let rec = null;
-    if (athleteRecordId) {
-      rec = await base("AthleteScans").find(athleteRecordId);
-    } else if (athleteToken) {
-      const rows = await base("AthleteScans")
-        .select({ maxRecords: 1, filterByFormula: `{AthleteToken}='${escapeAirtableString(athleteToken)}'`, fields: ["Organization", "OrgToken", "AthleteToken"] })
-        .firstPage();
-      rec = rows?.[0] || null;
-    }
-    const f = rec?.fields || {};
-    return {
-      orgId:    asString((Array.isArray(f?.Organization) ? f.Organization : [])?.[0] || ""),
-      orgToken: asString(f?.OrgToken || "").toUpperCase(),
-      source:   rec ? "athleteScans" : "none",
-    };
-  } catch {
-    return { orgId: "", orgToken: "", source: "error" };
-  }
-}
-
-async function recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId }) {
-  if (!dailyWorkoutId) return { updated: false, status: "" };
-  const dw      = await base("DailyWorkouts").find(dailyWorkoutId);
-  const itemIds = Array.isArray(dw?.fields?.WorkoutItems) ? dw.fields.WorkoutItems : [];
-  if (!itemIds.length) {
-    await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: "assigned" } }]);
-    return { updated: true, status: "assigned" };
-  }
-  const orFormula   = `OR(${itemIds.map((id) => `RECORD_ID()='${String(id).replace(/'/g, "\\'")}'`).join(",")})`;
-  const itemRecords = await base("WorkoutItems").select({ filterByFormula: orFormula, fields: ["Status"], pageSize: 100 }).all();
-  const statuses    = itemRecords.map((r) => r?.fields?.Status || "assigned");
-  const next        = deriveDailyWorkoutStatus(statuses);
-  await base("DailyWorkouts").update([{ id: dailyWorkoutId, fields: { Status: next } }]);
-  return { updated: true, status: next };
+  await db.from("daily_workouts").update({ status }).eq("id", workoutId);
+  return status;
 }
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-    if (!base) return res.status(500).json({ error: "Missing DAILYWORKOUTS Airtable env vars" });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    // Parse multipart FIRST so we can use _authUser as cookie fallback
+  try {
     const { fields, files } = await parseMultipart(req);
 
-    // Auth fallback: RN multipart requests mangle the Cookie header.
-    // Mobile client sends user JSON as _authUser form field instead.
+    // Mobile: may send user JSON as _authUser field when cookie is mangled
     const cookieMissingOrBroken = (() => {
       try {
         const raw = req?.cookies?.user || "";
         if (!raw) return true;
-        const decoded = raw.includes("%7B") || raw.includes("%22") ? decodeURIComponent(raw) : raw;
-        JSON.parse(decoded);
+        const dec = raw.includes("%7B") || raw.includes("%22") ? decodeURIComponent(raw) : raw;
+        JSON.parse(dec);
         return false;
       } catch { return true; }
     })();
@@ -186,103 +100,96 @@ export default async function handler(req, res) {
       }
     }
 
-    let authRaw = null;
-    try {
-      authRaw = requireAthlete.length >= 2 ? await requireAthlete(req, res) : requireAthlete(req);
-    } catch (e) {
-      return res.status(401).json({ error: e?.message || "Unauthorized" });
-    }
-    if (res.writableEnded) return;
-
-    const auth = unwrapAuth(authRaw);
-    if (!auth.ok) return res.status(401).json({ error: auth?.raw?.error || "Unauthorized" });
+    const auth = requireAthlete(req);
+    if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
     const workoutItemId  = asString(fields.workoutItemId);
     const evidenceRaw    = asString(fields.evidenceRequired);
-    const needsFile      = requiresFileEvidence(evidenceRaw);
     const isVARA         = evidenceRaw.toLowerCase() === "voluntary_activity_vara";
+    const needsFile      = requiresFileEvidence(evidenceRaw);
     const dailyWorkoutId = asString(fields.dailyWorkoutId);
 
     if (!workoutItemId) {
       return res.status(400).json({ error: "Missing workoutItemId", debug: { fieldsKeys: Object.keys(fields || {}) } });
     }
 
-    const athleteToken    = mustAthleteToken({ athlete: auth.athlete, user: auth.user, raw: auth.raw, fields });
-    const athleteRecordId = asString(auth?.athlete?.id || auth?.raw?.athlete?.id || "");
+    const athleteToken = String(auth.athlete?.AthleteToken || "").trim();
+    if (!athleteToken) return res.status(400).json({ error: "Missing AthleteToken in session." });
 
-    if (!athleteToken) {
-      return res.status(400).json({ error: "Missing AthleteToken in session." });
+    const f = (files?.file || files?.photo || files?.image);
+    const fileEntry = Array.isArray(f) ? f[0] : f;
+    if (needsFile && !isVARA && !fileEntry) {
+      return res.status(400).json({ error: "Photo required", debug: { evidenceRaw } });
     }
-
-    const f = pickFirst(files?.file || files?.photo || files?.image);
-    if (needsFile && !isVARA && !f) {
-      return res.status(400).json({ error: "Photo required", debug: { evidenceRaw, filesKeys: Object.keys(files || {}) } });
-    }
-
-    const orgResolved = await resolveOrgForCompletion({ base, auth, athleteToken, athleteRecordId });
 
     // Upload to Cloudinary
-    let uploaded          = null;
-    let attachment        = [];
-    let attachmentSummary = "";
+    let uploaded  = null;
+    let attachUrl = "";
 
-    if (f && !isVARA) {
+    if (fileEntry && !isVARA) {
       const fs       = await import("fs");
-      const buff     = fs.readFileSync(f.filepath || f.path);
-      const blob     = new Blob([buff], { type: f.mimetype || "image/jpeg" });
-      const filename = f.originalFilename || "proof.jpg";
-
-      uploaded          = await uploadToCloudinary({ blob, filename });
-      attachment        = [{ url: uploaded.url, filename }];
-      const kb          = uploaded.bytes ? Math.round(uploaded.bytes / 1024) : null;
-      attachmentSummary = kb ? `${filename} (${kb} KB)` : filename;
+      const buff     = fs.readFileSync(fileEntry.filepath || fileEntry.path);
+      const blob     = new Blob([buff], { type: fileEntry.mimetype || "image/jpeg" });
+      const filename = fileEntry.originalFilename || "proof.jpg";
+      uploaded  = await uploadToCloudinary({ blob, filename });
+      attachUrl = uploaded.url || "";
     }
 
-    const completionStatus =
-      isVARA    ? "completed"      :
-      uploaded  ? "pending_review" :
-      needsFile ? "pending_review" :
-                  "completed";
+    const completionStatus = isVARA ? "completed" : (uploaded || needsFile) ? "pending_review" : "completed";
 
-    // Write to WorkoutCompletions - only fields that exist in the table
-    const created = await base("WorkoutCompletions").create([{
-      fields: {
-        CompletedAt:  new Date().toISOString(),
-        AthleteToken: athleteToken,
-        ...(athleteRecordId     ? { Athlete:           [athleteRecordId]    } : {}),
-        ...(orgResolved?.orgId  ? { Organization:      [orgResolved.orgId]  } : {}),
-        ...(orgResolved?.orgToken ? { OrgToken:         orgResolved.orgToken } : {}),
-        WorkoutItem:  [workoutItemId],
-        ...(attachment.length   ? { Attachment:         attachment           } : {}),
-        ...(attachmentSummary   ? { AttachmentSummary:  attachmentSummary    } : {}),
-        Status: completionStatus,
-      },
-    }]);
+    // Look up workout_item to get workout_id if not provided
+    let wId = dailyWorkoutId;
+    if (!wId) {
+      const { data: item } = await db
+        .from("workout_items")
+        .select("workout_id")
+        .eq("id", workoutItemId)
+        .maybeSingle();
+      wId = item?.workout_id || "";
+    }
 
-    const wcId = created?.[0]?.id || "";
+    // Upsert completion
+    const { data: completion, error: wcErr } = await db
+      .from("workout_completions")
+      .upsert(
+        {
+          workout_item_id: workoutItemId,
+          workout_id:      wId || null,
+          athlete_id:      auth.athlete?.id || null,
+          athlete_token:   athleteToken,
+          status:          completionStatus,
+          ...(attachUrl ? { attachment_url: attachUrl, attachment_type: "photo" } : {}),
+          completed_at:    new Date().toISOString(),
+        },
+        { onConflict: "workout_item_id,athlete_token", ignoreDuplicates: false }
+      )
+      .select("id, status")
+      .single();
 
-    await base("WorkoutItems").update([{ id: workoutItemId, fields: { Status: completionStatus } }]);
+    if (wcErr) return res.status(500).json({ error: "Failed to save completion.", details: wcErr.message });
 
-    let daily = { updated: false, status: "" };
-    try {
-      daily = await recomputeAndUpdateDailyWorkoutStatus({ base, dailyWorkoutId });
-    } catch (e) {
-      console.error("DailyWorkouts status recompute failed:", e);
+    // Update workout_item status
+    await db.from("workout_items").update({ status: completionStatus }).eq("id", workoutItemId);
+
+    // Recompute daily_workout status
+    let dailyWorkoutStatus = "";
+    if (wId) {
+      try { dailyWorkoutStatus = await recomputeDailyWorkoutStatus(wId); } catch (e) {
+        console.error("[completeItem] recompute failed:", e);
+      }
     }
 
     return res.status(200).json({
       ok:                  true,
-      workoutCompletionId: wcId,
-      status:              completionStatus,
+      workoutCompletionId: completion.id,
+      status:              completion.status,
       isVARA,
-      attachmentUrl:       uploaded?.url || "",
-      dailyWorkoutStatus:  daily?.status || "",
+      attachmentUrl:       attachUrl,
+      dailyWorkoutStatus,
       athleteTokenSent:    athleteToken,
-      athleteLinked:       Boolean(athleteRecordId),
-      orgLinked:           Boolean(orgResolved?.orgId),
     });
-  } catch (e) {
-    console.error("completeItem error:", e);
-    return res.status(500).json({ error: e?.message || "Server error" });
+  } catch (err) {
+    console.error("[athlete/workouts/completeItem]", err);
+    return res.status(500).json({ error: err?.message || "Server error" });
   }
 }

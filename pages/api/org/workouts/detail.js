@@ -1,216 +1,98 @@
 // pages/api/org/workouts/detail.js
-// GET /api/org/workouts/detail?id=recXXXXXXXXXXXXXX
-//
-// Returns:
-//   workout  - full DailyWorkout + expanded WorkoutItems
-//   siblings - every record sharing the same title + date + org,
-//              each shaped as { id, athleteToken, athleteName, isSelf }
-//
-// Athlete names come from a direct Airtable query on the Athletes table
-// using the tokens collected from the sibling records. No mock-response
-// tricks - just a straightforward fetch with the env vars that already exist.
+// GET ?id=<uuid> — full workout detail + sibling workouts.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
-import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-// ── Field maps ─────────────────────────────────────────────────────────────────
-const DW = {
-  ORG:          F?.DW_ORG          || "Organization",
-  TITLE:        F?.DW_TITLE        || "Title",
-  STATUS:       F?.DW_STATUS       || "Status",
-  SPORT:        F?.DW_SPORT        || "Sport",
-  DATE:         F?.DW_DATE         || "Date",
-  WORKOUTITEMS: F?.DW_WORKOUTITEMS || "WorkoutItems",
-  ATHTOKEN:     F?.DW_ATHTOKEN     || "AthleteToken",
-};
-
-const WI = {
-  ORDER:    F?.WI_ORDER    || "Order",
-  NAME:     F?.WI_NAME     || "ExerciseName",
-  SETS:     F?.WI_SETS     || "Sets",
-  REPS:     F?.WI_REPS     || "Reps",
-  WEIGHT:   F?.WI_WEIGHT   || "Weight",
-  REST:     F?.WI_REST     || "Rest",
-  INSTR:    F?.WI_INSTR    || "Instructions",
-  VIDEO:    F?.WI_VIDEO    || "VideoURL",
-  EVIDENCE: F?.WI_EVIDENCE || "EvidenceRequired",
-  GROUPID:  F?.WI_GROUPID  || "GroupId",
-};
-
-function safeArray(v) { return Array.isArray(v) ? v : []; }
-function escStr(s)    { return String(s ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'").trim(); }
-function chunk(arr, n = 30) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-  return out;
-}
-
-// ── Resolve athlete names from the Athletes (AthleteScans) table ───────────────
-// Uses the same env vars as getAthletes.js - no session needed, just the API key.
-async function resolveNames(tokens) {
-  if (!tokens.length) return {};
-
-  const API_KEY = process.env.ATHLETE_API_KEY;
-  const BASE_ID = process.env.ATHLETE_BASE_ID;
-  const TABLE   = process.env.ATHLETE_TABLE_NAME;
-
-  if (!API_KEY || !BASE_ID || !TABLE) {
-    console.warn("[detail] resolveNames: ATHLETE env vars not set, names will be blank");
-    return {};
-  }
-
-  const nameMap = {};
-
-  try {
-    for (const batch of chunk(tokens, 30)) {
-      // Build OR filter: OR({AthleteToken}='tok1', {AthleteToken}='tok2', ...)
-      const orParts = batch.map(t => `{AthleteToken}='${escStr(t)}'`).join(",");
-      const formula = batch.length === 1 ? orParts : `OR(${orParts})`;
-
-      const qs = new URLSearchParams();
-      qs.set("filterByFormula", formula);
-      qs.append("fields[]", "AthleteToken");
-      qs.append("fields[]", "Name");
-      qs.set("pageSize", "100");
-
-      const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE)}?${qs}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${API_KEY}` },
-      });
-
-      if (!res.ok) {
-        console.warn("[detail] resolveNames: Airtable returned", res.status);
-        continue;
-      }
-
-      const data = await res.json().catch(() => ({}));
-      for (const rec of (data?.records || [])) {
-        const token = String(rec?.fields?.AthleteToken || "").trim();
-        const name  = String(rec?.fields?.Name         || "").trim();
-        if (token && name) nameMap[token] = name;
-      }
-    }
-  } catch (e) {
-    console.warn("[detail] resolveNames error:", e?.message);
-  }
-
-  return nameMap;
-}
-
-// ── Handler ────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const id = String(req.query?.id || "").trim();
-  if (!id) return res.status(400).json({ error: "id query param is required" });
+  const orgToken = String(user.orgToken || user.Token || "").trim();
+  const rawId    = String(req.query?.id || "").trim();
 
-  const orgId = user.orgId;
+  if (!rawId) return res.status(400).json({ error: "id is required" });
+
+  // Legacy at: IDs are no longer supported
+  if (rawId.startsWith("at:")) {
+    return res.status(404).json({ error: "Legacy Airtable workout IDs are no longer supported." });
+  }
 
   try {
-    const b     = base();
-    const table = AT.tables.dailyWorkouts;
+    const { data: dw } = await db
+      .from("daily_workouts")
+      .select(`
+        id, date, title, status, sport, athlete_token, org_token,
+        workout_items (
+          id, exercise_name, sets, reps, weight, rpe, rest,
+          instructions, video_url, evidence_required, sort_order, group_id,
+          workout_completions ( id, status, review_note )
+        )
+      `)
+      .eq("id", rawId)
+      .maybeSingle();
 
-    // ── 1. Fetch primary record ──────────────────────────────────────────────
-    const record = await b(table).find(id);
-    if (!record) return res.status(404).json({ error: "Workout not found" });
-
-    const f = record.fields || {};
-    const recordOrgId = safeArray(f[DW.ORG])[0] || f.OrgId || f.orgId || "";
-
-    if (recordOrgId && String(recordOrgId) !== String(orgId)) {
-      return res.status(403).json({ error: "Access denied" });
+    if (!dw || dw.org_token !== orgToken) {
+      return res.status(404).json({ error: "Workout not found." });
     }
 
-    const title   = String(f[DW.TITLE]  || "Workout");
-    const dateISO = String(f[DW.DATE]   || "").slice(0, 10);
-    const status  = String(f[DW.STATUS] || "assigned");
-    const sport   = String(f[DW.SPORT]  || "");
+    const workout = {
+      id:           dw.id,
+      Title:        dw.title  || "Workout",
+      Date:         dw.date,
+      Status:       dw.status || "assigned",
+      Sport:        dw.sport  || "",
+      athleteToken: dw.athlete_token || "",
+      items: [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(item => ({
+        id:               item.id,
+        ExerciseName:     item.exercise_name     || "",
+        Sets:             item.sets              ?? null,
+        Reps:             item.reps              || "",
+        Weight:           item.weight            || "",
+        RPE:              item.rpe               || "",
+        Rest:             item.rest              || "",
+        Instructions:     item.instructions      || "",
+        VideoURL:         item.video_url         || "",
+        EvidenceRequired: item.evidence_required || "none",
+        GroupId:          item.group_id          || null,
+        Order:            item.sort_order        ?? 0,
+        Status:           (item.workout_completions ?? [])[0]?.status || "",
+      })),
+    };
 
-    // ── 2. Fetch linked WorkoutItems ─────────────────────────────────────────
-    const itemIds = safeArray(f[DW.WORKOUTITEMS]);
-    let items = [];
+    // Siblings (same org, same date, same title)
+    const { data: siblings } = await db
+      .from("daily_workouts")
+      .select("id, athlete_token, title")
+      .eq("org_token", orgToken)
+      .eq("date", dw.date)
+      .eq("title", dw.title);
 
-    if (itemIds.length) {
-      const fetched = await Promise.all(
-        itemIds.map(iid => b(AT.tables.workoutItems).find(iid).catch(() => null))
-      );
-      items = fetched
-        .filter(Boolean)
-        .map(r => {
-          const wf = r.fields || {};
-          return {
-            id:               r.id,
-            Order:            Number(wf[WI.ORDER] ?? 0),
-            ExerciseName:     String(wf[WI.NAME]     || ""),
-            Sets:             wf[WI.SETS] != null ? Number(wf[WI.SETS]) : "",
-            Reps:             String(wf[WI.REPS]     || ""),
-            Weight:           String(wf[WI.WEIGHT]   || ""),
-            Rest:             String(wf[WI.REST]      || ""),
-            Instructions:     String(wf[WI.INSTR]    || ""),
-            VideoURL:         String(wf[WI.VIDEO]    || ""),
-            EvidenceRequired: String(wf[WI.EVIDENCE] || "none"),
-            groupId:          String(wf[WI.GROUPID]  || "") || null,
-          };
-        })
-        .sort((a, b) => a.Order - b.Order);
+    const tokens = (siblings ?? []).map(s => s.athlete_token).filter(Boolean);
+    let athletes = [];
+    if (tokens.length) {
+      const { data: rows } = await db
+        .from("athletes")
+        .select("athlete_token, name, email")
+        .in("athlete_token", tokens);
+      athletes = rows ?? [];
     }
 
-    // ── 3. Fetch sibling records (same title + date + org) ───────────────────
-    const orgJoin = `ARRAYJOIN({${DW.ORG}}&"")`;
-    const formula = `AND(
-      FIND("${escStr(recordOrgId || orgId)}", ${orgJoin}),
-      {${DW.TITLE}}="${escStr(title)}",
-      IS_SAME({${DW.DATE}}, "${escStr(dateISO)}", "day")
-    )`;
+    const athleteMap = new Map(athletes.map(a => [a.athlete_token, a]));
+    const siblingsOut = (siblings ?? []).map(s => ({
+      id:           s.id,
+      athleteToken: s.athlete_token || "",
+      athleteName:  athleteMap.get(s.athlete_token)?.name || "",
+      isSelf:       s.id === rawId,
+    }));
 
-    const siblingRows = await b(table).select({
-      filterByFormula: formula,
-      fields:          [DW.ATHTOKEN],
-      maxRecords:      200,
-    }).firstPage();
-
-    // ── 4. Resolve athlete names directly from Athletes table ────────────────
-    const tokens  = (siblingRows || [])
-      .map(r => String(r.fields?.[DW.ATHTOKEN] || "").trim())
-      .filter(Boolean);
-
-    const nameMap = await resolveNames(tokens);
-
-    const siblings = (siblingRows || []).map(r => {
-      const token = String(r.fields?.[DW.ATHTOKEN] || "").trim();
-      return {
-        id:           r.id,
-        athleteToken: token,
-        athleteName:  nameMap[token] || "",
-        isSelf:       r.id === id,
-      };
-    });
-
-    return res.status(200).json({
-      ok: true,
-      workout: {
-        id,
-        Title:        title,
-        Date:         dateISO,
-        Status:       status,
-        Sport:        sport,
-        athleteCount: siblings.length,
-        itemCount:    items.length,
-        items,
-      },
-      siblings,
-    });
-
-  } catch (e) {
-    console.error("[workouts/detail]", e?.message || e);
-    if (e?.statusCode === 404 || String(e?.message || "").includes("not found"))
-      return res.status(404).json({ error: "Workout not found" });
-    return res.status(500).json({ error: e?.message || "Failed to load workout" });
+    return res.status(200).json({ ok: true, workout, siblings: siblingsOut });
+  } catch (err) {
+    console.error("[org/workouts/detail]", err);
+    return res.status(500).json({ error: "Failed to load workout detail.", details: err?.message });
   }
 }

@@ -1,202 +1,70 @@
 // pages/api/org/workouts/range.js
-import Airtable from "airtable";
-import { requireOrgSideUser } from "@/lib/requireUser";
+// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD[&sport=x] — workouts across a date range.
 
-function nyISO(v)    { return String(v || "").trim().slice(0, 10); }
-function safeArray(v){ return Array.isArray(v) ? v : []; }
-function esc(s)      { return String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim(); }
-function normLower(v){ return String(v || "").trim().toLowerCase(); }
+import { requireOrgSideUser } from "@/lib/requireUser";
+import { supabaseAdmin as db } from "@/lib/supabase";
+
+function normLower(v) { return String(v ?? "").trim().toLowerCase(); }
 
 function parseSportsList(q) {
   const raw = String(q || "").trim();
   if (!raw) return [];
-  if (raw.startsWith("[") && raw.endsWith("]")) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(normLower).filter(Boolean);
-    } catch {}
-  }
+  if (raw.startsWith("[")) { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p.map(normLower).filter(Boolean); } catch {} }
   return raw.split(/[,|]/g).map(normLower).filter(Boolean);
-}
-
-function envMissing() {
-  return {
-    DAILYWORKOUTS_API_KEY:  !process.env.DAILYWORKOUTS_API_KEY,
-    DAILYWORKOUTS_BASE_ID:  !process.env.DAILYWORKOUTS_BASE_ID,
-    DAILYWORKOUTS_TABLE_ID: !process.env.DAILYWORKOUTS_TABLE_ID,
-  };
-}
-
-function inclusiveDateRangeFormula(dateField, start, end) {
-  return `AND(
-    OR(IS_SAME({${dateField}}, "${esc(start)}", "day"), IS_AFTER({${dateField}},  "${esc(start)}", "day")),
-    OR(IS_SAME({${dateField}}, "${esc(end)}",   "day"), IS_BEFORE({${dateField}}, "${esc(end)}",   "day"))
-  )`;
-}
-
-function buildOrgCandidates(user) {
-  const orgId    = String(user?.org?.id    || user?.orgId    || user?.OrgId    || "").trim();
-  const orgToken = String(user?.org?.token || user?.Token    || user?.token    || "").trim();
-  const orgName  = String(
-    user?.org?.name || user?.org?.Name || user?.orgName ||
-    user?.OrgName   || user?.organizationName || user?.["Organization Name"] || ""
-  ).trim();
-  const candidates = [orgName, orgToken, orgId].filter(Boolean);
-  return { orgId, orgToken, orgName, candidates };
-}
-
-// Parse Airtable time field → minutes since midnight
-// Handles: "09:00", "9:30am", "14:00", number (already minutes)
-function parseTimeToMinutes(val) {
-  if (val === null || val === undefined || val === "") return null;
-  const n = Number(val);
-  if (Number.isFinite(n) && n >= 0 && n < 1440) return Math.round(n);
-  const s = String(val).trim();
-  if (s.includes("T")) {
-    const d = new Date(s);
-    if (!isNaN(d)) return d.getUTCHours() * 60 + d.getUTCMinutes();
-  }
-  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
-  if (!m) return null;
-  let h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
-  const ap = (m[3] || "").toLowerCase();
-  if (ap === "pm" && h < 12) h += 12;
-  if (ap === "am" && h === 12) h = 0;
-  return h * 60 + mn;
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
-
-  const missing = envMissing();
-  if (missing.DAILYWORKOUTS_API_KEY || missing.DAILYWORKOUTS_BASE_ID || missing.DAILYWORKOUTS_TABLE_ID) {
-    return res.status(500).json({ error: "DailyWorkouts Airtable env vars missing.", missing });
-  }
 
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const { orgId, orgToken, orgName, candidates } = buildOrgCandidates(user);
+  const orgToken  = String(user.orgToken || user.Token || "").trim();
+  const startDate = String(req.query?.start || req.query?.startDate || "").slice(0, 10);
+  const endDate   = String(req.query?.end   || req.query?.endDate   || "").slice(0, 10);
+  const sports    = parseSportsList(req.query?.sport || req.query?.sports || "");
 
-  const start       = nyISO(req.query?.start);
-  const end         = nyISO(req.query?.end);
-  const sportSingle = normLower(req.query?.sport);
-  const sportsList  = parseSportsList(req.query?.sports);
-  const sportsUsed  = sportsList.length ? sportsList : sportSingle ? [sportSingle] : [];
-
-  if (!start || !end) return res.status(400).json({ error: "start and end are required (YYYY-MM-DD)" });
-  if (!candidates.length) {
-    return res.status(400).json({
-      error: "Missing org identity on session (need orgName, orgToken, or orgId).",
-      debug: { has_orgId: Boolean(orgId), has_orgToken: Boolean(orgToken), has_orgName: Boolean(orgName) },
-    });
-  }
-
-  const base     = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
-  const TABLE_ID = process.env.DAILYWORKOUTS_TABLE_ID;
-
-  const DAILY_ORG_LINK_FIELD      = "Organization";
-  const DAILY_ATHLETES_LINK_FIELD = "Athlete";
-  const DAILY_DATE_FIELD          = "Date";
-  const DAILY_TITLE_FIELD         = "Title";
-  const DAILY_STATUS_FIELD        = "Status";
-  const DAILY_SPORT_FIELD         = "Sport";
-  const DAILY_ITEMS_LINK_FIELD    = "WorkoutItems";
-  const DAILY_SCHED_TIME_FIELD    = "ScheduleTime";
-  const DAILY_SCHED_MIN_FIELD     = "ScheduledMinutes";
-
-  const orgJoin  = `ARRAYJOIN({${DAILY_ORG_LINK_FIELD}}&"")`;
-  const orgMatch = candidates.length === 1
-    ? `FIND("${esc(candidates[0])}", ${orgJoin})`
-    : `OR(${candidates.map(c => `FIND("${esc(c)}", ${orgJoin})`).join(",")})`;
-
-  const dateRange = inclusiveDateRangeFormula(DAILY_DATE_FIELD, start, end);
-
-  let sportMatch = "";
-  if (sportsUsed.length === 1) {
-    sportMatch = `LOWER({${DAILY_SPORT_FIELD}}&"")="${esc(sportsUsed[0])}"`;
-  } else if (sportsUsed.length > 1) {
-    sportMatch = `OR(${sportsUsed.map(s => `LOWER({${DAILY_SPORT_FIELD}}&"")="${esc(s)}"`).join(",")})`;
-  }
-
-  const parts   = [orgMatch, dateRange];
-  if (sportMatch) parts.push(sportMatch);
-  const formula = `AND(${parts.join(",")})`;
+  if (!orgToken)  return res.status(400).json({ error: "Missing org token on session." });
+  if (!startDate) return res.status(400).json({ error: "start is required (YYYY-MM-DD)" });
+  if (!endDate)   return res.status(400).json({ error: "end is required (YYYY-MM-DD)" });
 
   try {
-    const rows = await base(TABLE_ID)
-      .select({
-        filterByFormula: formula,
-        maxRecords:      2000,
-        sort:            [{ field: DAILY_DATE_FIELD, direction: "asc" }],
-      })
-      .all();
+    const { data, error } = await db
+      .from("daily_workouts")
+      .select(`
+        id, date, title, status, sport, athlete_token,
+        workout_items ( id, sort_order, exercise_name, group_id )
+      `)
+      .eq("org_token", orgToken)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date");
 
-    const rawWorkouts = (rows || []).map(rec => {
-      const f        = rec.fields || {};
-      const athletes = safeArray(f[DAILY_ATHLETES_LINK_FIELD]);
-      const items    = safeArray(f[DAILY_ITEMS_LINK_FIELD]);
-      const date     = f[DAILY_DATE_FIELD] ? String(f[DAILY_DATE_FIELD]).slice(0, 10) : "";
+    if (error) throw error;
 
-      // Resolve scheduled time - try ScheduledMinutes first, then parse ScheduledTime string
-      const scheduledMinutes =
-        parseTimeToMinutes(f[DAILY_SCHED_MIN_FIELD]) ??
-        parseTimeToMinutes(f[DAILY_SCHED_TIME_FIELD]) ??
-        null;
-
-      return {
-      id:               rec.id,
-      Date:             date,
-      Title:            f[DAILY_TITLE_FIELD]  || "Workout",
-      Status:           f[DAILY_STATUS_FIELD] || "assigned",
-      Sport:            f[DAILY_SPORT_FIELD]  || "",
-      ScheduledTime:    String(f[DAILY_SCHED_TIME_FIELD]  || "").trim(),
-      ScheduledMinutes: scheduledMinutes,
-      ScheduleDuration: f.ScheduleDuration ? Number(f.ScheduleDuration) : null,
-      athleteCount:     athletes.length,
-      athleteToken:     String(f.AthleteToken || "").trim(),
-      itemCount:        items.length,
-    };
-    });
-
-    // Athlete name enrichment
-    let tokenToName = new Map();
-    if (orgToken && process.env.ATHLETE_API_KEY && process.env.ATHLETE_BASE_ID && process.env.ATHLETE_TABLE_NAME) {
-      try {
-        const athleteBase   = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID);
-        const athleteFilter = `FIND("${esc(orgToken)}", ARRAYJOIN({Token}&""))>0`;
-        const athRecs = await athleteBase(process.env.ATHLETE_TABLE_NAME)
-          .select({ filterByFormula: athleteFilter, fields: ["Name", "AthleteToken"], maxRecords: 2000 })
-          .all();
-        tokenToName = new Map(
-          (athRecs || [])
-            .filter(r => r.fields?.AthleteToken && r.fields?.Name)
-            .map(r => [String(r.fields.AthleteToken).trim(), String(r.fields.Name).trim()])
-        );
-      } catch (athErr) {
-        console.warn("[range] athlete name lookup failed:", athErr?.message);
-      }
-    }
-
-    const workouts = rawWorkouts.map(w => ({
-      ...w,
-      athleteName: (w.athleteToken ? tokenToName.get(w.athleteToken) : null) || null,
+    let workouts = (data ?? []).map(dw => ({
+      id:           dw.id,
+      Title:        dw.title  || "Workout",
+      Date:         dw.date,
+      Status:       dw.status || "assigned",
+      Sport:        dw.sport  || "",
+      athleteToken: dw.athlete_token || "",
+      itemCount:    (dw.workout_items ?? []).length,
+      items:        [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(i => ({
+        id:           i.id,
+        ExerciseName: i.exercise_name || "",
+        GroupId:      i.group_id      || null,
+        Order:        i.sort_order    ?? 0,
+      })),
     }));
 
-    return res.status(200).json({ workouts, total: workouts.length });
+    if (sports.length) workouts = workouts.filter(w => sports.includes(normLower(w.Sport)));
+
+    return res.status(200).json({ ok: true, workouts, startDate, endDate });
   } catch (err) {
-    console.error("[api/org/workouts/range] error:", err);
-    const status = err?.statusCode || err?.status || 500;
-    if (status === 401 || status === 403) {
-      return res.status(status).json({ error: "Airtable authorization error. Verify DAILYWORKOUTS_API_KEY scopes." });
-    }
-    return res.status(500).json({
-      error:   "Failed to load workouts range.",
-      details: err?.message || String(err),
-      debug:   { orgId, orgToken, orgName, candidates, start, end, sportSingle, sportsList, sportsUsed, formula },
-    });
+    console.error("[org/workouts/range]", err);
+    return res.status(500).json({ error: "Failed to load workouts.", details: err?.message });
   }
 }

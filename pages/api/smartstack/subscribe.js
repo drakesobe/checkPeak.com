@@ -1,23 +1,14 @@
 // pages/api/smartstack/subscribe.js
-// Saves a price-alert email to the Athletes table (ATHLETE_TABLE_NAME).
-// Matches field names from athlete-signup.js exactly.
+// Saves a price-alert email as a lightweight lead in the athletes table.
 // POST { email, category }
-import Airtable from "airtable";
+
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 function asString(v) { return String(v ?? "").trim(); }
 
 function isValidEmail(e) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(asString(e));
 }
-
-function escapeAirtable(str = "") {
-  return String(str).replace(/'/g, "\\'");
-}
-
-const base =
-  process.env.ATHLETE_API_KEY && process.env.ATHLETE_BASE_ID
-    ? new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(process.env.ATHLETE_BASE_ID)
-    : null;
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -33,46 +24,35 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid email address." });
   }
 
-  if (!base || !process.env.ATHLETE_TABLE_NAME) {
-    console.warn("[smartstack/subscribe] Athletes table not configured - email not saved:", email);
-    return res.status(200).json({ ok: true, saved: false, reason: "not_configured" });
-  }
-
   try {
     // Check for existing record - don't create duplicates
-    const existing = await base(process.env.ATHLETE_TABLE_NAME)
-      .select({
-        filterByFormula: `LOWER({Email})='${escapeAirtable(email)}'`,
-        maxRecords: 1,
-      })
-      .firstPage();
+    const { data: existing } = await db
+      .from("athletes")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
 
-    if (existing.length > 0) {
-      // Already in the table - still a success, just don't duplicate
+    if (existing) {
       console.log(`[smartstack/subscribe] Already exists: ${email}`);
       return res.status(200).json({ ok: true, saved: false, reason: "already_exists" });
     }
 
-    // Create lightweight lead record - same fields as athlete-signup.js
-    await base(process.env.ATHLETE_TABLE_NAME).create([{
-      fields: {
-        Email:     email,
-        Name:      email.split("@")[0], // best guess at a name until they sign up
-        Title:     "Athlete",
-        Role:      "Athlete",
-        Type:      "Athlete",
-        Source:    "price_alert",
-        CreatedAt: new Date().toISOString(),
-        // Tag the category they were interested in - useful for segmenting blasts
-        Notes:     `Price alert subscriber - interested in: ${category}`,
-      },
-    }]);
+    // Create lightweight lead record
+    const { error } = await db.from("athletes").insert({
+      email,
+      name:       email.split("@")[0],
+      source:     "price_alert",
+      notes:      `Price alert subscriber - interested in: ${category}`,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
 
     console.log(`[smartstack/subscribe] Saved: ${email} (${category})`);
     return res.status(200).json({ ok: true, saved: true });
 
   } catch (err) {
-    console.error("[smartstack/subscribe] Airtable error:", err);
+    console.error("[smartstack/subscribe] error:", err);
     // Non-fatal - don't break the UX
     return res.status(200).json({ ok: true, saved: false, reason: err?.message });
   }

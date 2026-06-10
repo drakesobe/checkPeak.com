@@ -1,19 +1,13 @@
 // pages/api/athlete/class-schedule.js
+// GET  — returns recurring class schedules for this athlete
+// POST { schedules[] } — upserts recurring class schedules
 //
-// CHANGED: now reads/writes SchedulesJSON in DayPlannerBlocks table
-// (same table the day planner uses) instead of a separate ClassSchedules table.
-// Recurring schedules are stored on a sentinel record with Date = "recurring"
-// so they don't collide with day-specific EventsJSON records.
-//
-// Auth: same _authUser cookie fallback for React Native multipart/JSON requests.
+// Schedules are stored as a JSONB blob in the class_schedules table.
+// Auth: _authUser cookie fallback for React Native.
 
-import Airtable from "airtable";
+import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireAthlete } from "@/lib/requireAthlete";
 
-const TABLE          = process.env.DAYPLANNER_TABLE_ID || "DayPlannerBlocks";
-const RECURRING_DATE = "recurring"; // sentinel - no real date, just schedules
-
-// ── Auth cookie fallback ──────────────────────────────────────────────────────
 function cookieMissingOrBroken(req) {
   try {
     const raw = req?.cookies?.user || "";
@@ -37,71 +31,61 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  // ── Auth fallback for React Native ─────────────────────────────────────────
   if (cookieMissingOrBroken(req)) {
-    const authUserField = String(
-      req.query?._authUser ||
-      req.body?._authUser  ||
-      ""
-    ).trim();
+    const authUserField = String(req.query?._authUser || req.body?._authUser || "").trim();
     if (authUserField) injectAuthFromField(req, authUserField);
   }
 
   const auth = requireAthlete(req);
-  if (!auth.ok) return res.status(401).json({ ok: false, error: auth.error || "Unauthorized" });
+  if (!auth?.ok) return res.status(401).json({ ok: false, error: auth?.error || "Unauthorized" });
 
   const athleteToken = String(auth.athlete?.AthleteToken || "").trim();
   if (!athleteToken) return res.status(400).json({ ok: false, error: "AthleteToken missing" });
 
-  const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY })
-    .base(process.env.ATHLETE_BASE_ID);
-
-  // Find the recurring schedules record for this athlete
-  const filter = `AND({AthleteToken}="${athleteToken}", {Date}="${RECURRING_DATE}")`;
-
-  // ── GET: load schedules ───────────────────────────────────────────────────
+  // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
-      const records = await base(TABLE)
-        .select({ filterByFormula: filter, maxRecords: 1 })
-        .firstPage();
+      const { data, error } = await db
+        .from("class_schedules")
+        .select("schedules_json")
+        .eq("athlete_token", athleteToken)
+        .maybeSingle();
 
-      if (!records.length) return res.json({ ok: true, schedules: [] });
+      if (error) throw error;
 
       let schedules = [];
-      try { schedules = JSON.parse(records[0].fields.SchedulesJSON || "[]"); } catch {}
-      return res.json({ ok: true, schedules });
+      if (data?.schedules_json) {
+        schedules = Array.isArray(data.schedules_json)
+          ? data.schedules_json
+          : (() => { try { return JSON.parse(data.schedules_json); } catch { return []; } })();
+      }
+
+      return res.status(200).json({ ok: true, schedules });
     } catch (err) {
       console.error("[class-schedule GET]", err);
       return res.status(500).json({ ok: false, error: "Failed to fetch class schedules" });
     }
   }
 
-  // ── POST: upsert schedules ────────────────────────────────────────────────
+  // ── POST ──────────────────────────────────────────────────────────────────
   if (req.method === "POST") {
     const { schedules } = req.body || {};
     if (!Array.isArray(schedules)) {
       return res.status(400).json({ ok: false, error: "schedules must be an array" });
     }
 
-    const schedulesJSON = JSON.stringify(schedules);
-
     try {
-      const existing = await base(TABLE)
-        .select({ filterByFormula: filter, maxRecords: 1 })
-        .firstPage();
+      const { error } = await db
+        .from("class_schedules")
+        .upsert({
+          athlete_token:  athleteToken,
+          schedules_json: schedules,
+          updated_at:     new Date().toISOString(),
+        }, { onConflict: "athlete_token" });
 
-      if (existing.length) {
-        await base(TABLE).update(existing[0].id, { SchedulesJSON: schedulesJSON });
-      } else {
-        await base(TABLE).create({
-          AthleteToken:  athleteToken,
-          Date:          RECURRING_DATE,
-          SchedulesJSON: schedulesJSON,
-        });
-      }
+      if (error) throw error;
 
-      return res.json({ ok: true });
+      return res.status(200).json({ ok: true });
     } catch (err) {
       console.error("[class-schedule POST]", err);
       return res.status(500).json({ ok: false, error: "Failed to save class schedules" });

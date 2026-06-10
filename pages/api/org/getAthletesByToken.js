@@ -1,13 +1,5 @@
 // pages/api/org/getAthletesByToken.js
-import Airtable from "airtable";
-
-const base = new Airtable({ apiKey: process.env.ATHLETE_API_KEY }).base(
-  process.env.ATHLETE_BASE_ID
-);
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -17,30 +9,24 @@ export default async function handler(req, res) {
   const { token } = req.query || {};
   if (!token) return res.status(400).json({ error: "Missing token" });
 
-  const ATHLETES_TABLE = process.env.ATHLETE_TABLE_NAME;
-  if (!ATHLETES_TABLE) {
-    return res.status(500).json({ error: "ATHLETE_TABLE_NAME is not set." });
-  }
-
   try {
-    const safeTok = escapeAirtableString(String(token).trim());
+    const { data: rows, error } = await db
+      .from("athletes")
+      .select("id, name, email, created_at, org_token, athlete_token, status")
+      .eq("org_token", String(token).trim())
+      .order("created_at", { ascending: false });
 
-    const records = await base(ATHLETES_TABLE)
-      .select({
-        filterByFormula: `{Token}='${safeTok}'`,
-        sort: [{ field: "CreatedAt", direction: "desc" }],
-      })
-      .firstPage();
+    if (error) throw error;
 
-    const athletes = records.map((r) => ({
-      id: r.id,
-      name: r.fields?.Name || "",
-      email: r.fields?.Email || "",
-      createdAt: r.fields?.CreatedAt || "",
-      organization: r.fields?.Organization || "",
-      token: r.fields?.Token || "",
-      role: r.fields?.Role || "Athlete",
-      title: r.fields?.Title || "Athlete",
+    const athletes = (rows || []).map(r => ({
+      id:           r.id,
+      name:         r.name         || "",
+      email:        r.email        || "",
+      createdAt:    r.created_at   || "",
+      token:        r.org_token    || "",
+      athleteToken: r.athlete_token || "",
+      role:         "Athlete",
+      title:        "Athlete",
     }));
 
     return res.status(200).json({ athletes });

@@ -1,11 +1,11 @@
 // pages/api/org/exercises.js
-// GET    - returns exercises for this org from ExerciseLibrary
+// GET    - returns exercises for this org from exercise_library
 // POST   - adds a new exercise to the library
-// DELETE - removes an exercise from the library (by record id)
+// DELETE - removes an exercise from the library (by id)
 //
-// All operations scoped to OrgToken - orgs never see each other's data.
+// All operations scoped to org_token - orgs never see each other's data.
 
-import Airtable from "airtable";
+import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";
 
 function normalize(raw) {
@@ -21,31 +21,9 @@ function getOrgToken(auth) {
   ).trim();
 }
 
-// Per-org in-process cache, invalidated after 5 minutes
-const orgCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000;
-
-function getCached(orgToken) {
-  const entry = orgCache.get(orgToken);
-  if (!entry || Date.now() - entry.at > CACHE_TTL) return null;
-  return entry.exercises;
-}
-function setCached(orgToken, exercises) {
-  orgCache.set(orgToken, { exercises, at: Date.now() });
-}
-function bust(orgToken) {
-  orgCache.delete(orgToken);
-}
-
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-
-  if (!process.env.EXERCISE_LIBRARY_API_KEY || !process.env.EXERCISE_LIBRARY_BASE_ID || !process.env.EXERCISE_LIBRARY_TABLE) {
-    return res.status(500).json({ error: "Exercise Library env vars missing. Check EXERCISE_LIBRARY_API_KEY, EXERCISE_LIBRARY_BASE_ID, EXERCISE_LIBRARY_TABLE." });
-  }
-
-  const base  = new Airtable({ apiKey: process.env.EXERCISE_LIBRARY_API_KEY }).base(process.env.EXERCISE_LIBRARY_BASE_ID);
-  const TABLE = process.env.EXERCISE_LIBRARY_TABLE;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   const auth = requireOrg(req);
   if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
@@ -53,38 +31,28 @@ export default async function handler(req, res) {
   const orgToken = getOrgToken(auth);
   if (!orgToken) return res.status(401).json({ error: "OrgToken missing from session. Re-login." });
 
-  const safeToken = orgToken.replace(/'/g, "\\'");
-
   // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
-      let exercises = getCached(orgToken);
-
-      if (!exercises) {
-        const records = await base(TABLE)
-          .select({
-            filterByFormula: `{OrgToken} = '${safeToken}'`,
-            sort: [{ field: "Name", direction: "asc" }],
-          })
-          .all();
-
-        exercises = records
-          .map(r => ({
-            id:       r.id,
-            name:     normalize(r.get("Name")),
-            category: String(r.get("Category") || ""),
-          }))
-          .filter(e => e.name);
-
-        setCached(orgToken, exercises);
-      }
+      let query = db
+        .from("exercise_library")
+        .select("id, name, category")
+        .eq("org_token", orgToken)
+        .order("name", { ascending: true });
 
       const { q = "" } = req.query;
-      const results = q
-        ? exercises.filter(e => e.name.toLowerCase().includes(q.toLowerCase()))
-        : exercises;
+      if (q) query = query.ilike("name", `%${q}%`);
 
-      return res.status(200).json({ ok: true, exercises: results });
+      const { data: records, error } = await query;
+      if (error) throw error;
+
+      const exercises = (records || []).map(r => ({
+        id:       r.id,
+        name:     normalize(r.name),
+        category: String(r.category || ""),
+      })).filter(e => e.name);
+
+      return res.status(200).json({ ok: true, exercises });
     } catch (err) {
       console.error("exercises GET error:", err);
       return res.status(500).json({ error: "Failed to fetch exercises" });
@@ -99,29 +67,28 @@ export default async function handler(req, res) {
 
     try {
       // Guard against duplicates within this org
-      const safeN = normalizedName.replace(/'/g, "\\'");
-      const existing = await base(TABLE)
-        .select({
-          filterByFormula: `AND({OrgToken} = '${safeToken}', {Name} = '${safeN}')`,
-          maxRecords: 1,
-        })
-        .firstPage();
+      const { data: existing } = await db
+        .from("exercise_library")
+        .select("id")
+        .eq("org_token", orgToken)
+        .ilike("name", normalizedName)
+        .maybeSingle();
 
-      if (existing?.length) {
+      if (existing) {
         return res.status(200).json({
-          ok: true,
-          exercise: { id: existing[0].id, name: normalizedName, category },
+          ok:       true,
+          exercise: { id: existing.id, name: normalizedName, category },
           duplicate: true,
         });
       }
 
-      const record = await base(TABLE).create({
-        Name:     normalizedName,
-        OrgToken: orgToken,
-        ...(category ? { Category: category } : {}),
-      });
+      const { data: record, error } = await db
+        .from("exercise_library")
+        .insert({ name: normalizedName, org_token: orgToken, category: category || null })
+        .select("id")
+        .single();
 
-      bust(orgToken);
+      if (error) throw error;
 
       return res.status(200).json({
         ok:       true,
@@ -140,16 +107,23 @@ export default async function handler(req, res) {
 
     try {
       // Verify it belongs to this org before deleting
-      const record = await base(TABLE).find(id).catch(() => null);
-      if (!record) return res.status(404).json({ error: "Exercise not found" });
+      const { data: record } = await db
+        .from("exercise_library")
+        .select("id, org_token")
+        .eq("id", id)
+        .maybeSingle();
 
-      const recordOrg = String(record.get("OrgToken") || "").trim();
-      if (recordOrg !== orgToken) {
+      if (!record) return res.status(404).json({ error: "Exercise not found" });
+      if (record.org_token !== orgToken) {
         return res.status(403).json({ error: "Not authorized to delete this exercise" });
       }
 
-      await base(TABLE).destroy(id);
-      bust(orgToken);
+      const { error } = await db
+        .from("exercise_library")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
 
       return res.status(200).json({ ok: true, deleted: id });
     } catch (err) {

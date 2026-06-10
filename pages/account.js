@@ -117,7 +117,7 @@ function AccountInner({ user }) {
   , [user]);
 
   const orgTokenFromSession = useMemo(() =>
-    String(user?.Token || user?.token || user?.["Organization Token"] || "").trim()
+    String(user?.Token || user?.token || user?.org_token || user?.["Organization Token"] || "").trim()
   , [user]);
 
   /* ---------------------------- profile state ---------------------------- */

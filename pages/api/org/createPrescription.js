@@ -1,115 +1,46 @@
 // pages/api/org/createPrescription.js
-import Airtable from "airtable";
+// POST { athleteEmail, prescription, title?, createdBy?, structured, planJson? }
+// Creates a nutrition plan in Supabase nutrition_plans for the given athlete.
+
 import { requireOrg } from "@/lib/requireOrg";
-import { logAuditEvent } from "@/lib/audit";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-/* ---------------- Helpers ---------------- */
-
-function asString(v) {
-  return String(v ?? "").trim();
-}
-
-function normalizeEmail(email) {
-  return asString(email).toLowerCase();
-}
-
-function cleanString(v) {
-  const s = asString(v);
-  return s.length ? s : "";
-}
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function safeJsonStringify(obj) {
-  try {
-    return JSON.stringify(obj);
-  } catch {
-    return "";
-  }
-}
-
-function safeJsonParseMaybe(v) {
-  if (!v) return null;
-  if (typeof v === "object") return v;
-  const s = cleanString(v);
-  if (!s) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-
-function stripEmpty(fields) {
-  const out = { ...fields };
-  for (const k of Object.keys(out)) {
-    if (out[k] === "" || out[k] === null || typeof out[k] === "undefined") {
-      delete out[k];
-    }
-  }
-  return out;
-}
+function asString(v) { return String(v ?? "").trim(); }
+function normEmail(v) { return asString(v).toLowerCase(); }
 
 function toNumOrBlank(v) {
-  const s = cleanString(v);
-  if (!s) return "";
+  const s = asString(v);
+  if (!s) return null;
   const n = Number(s);
-  return Number.isFinite(n) ? n : s; // supports number or single-line text columns safely
+  return Number.isFinite(n) ? n : null;
 }
 
-function isISODateOnly(s) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
-}
-
-/**
- * Normalize a date input into YYYY-MM-DD (date-only)
- */
 function toISODateOnly(v) {
-  const s = cleanString(v);
+  const s = asString(v);
   if (!s) return "";
-  if (isISODateOnly(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const y  = d.getUTCFullYear();
+  const m  = String(d.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
-function hasAnyStructuredValue(structured = {}) {
-  if (!structured || typeof structured !== "object") return false;
-  const keys = [
-    "phase",
-    "calories",
-    "proteinGrams",
-    "carbsGrams",
-    "fatsGrams",
-    "hydrationOz", // ✅ already included
-    "notesMacros",
-    "notesSupplements",
-    "metaStatus",
-    "metaEffectiveDate",
-  ];
-  return keys.some((k) => cleanString(structured[k]));
+function safeJsonParse(v) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  try { return JSON.parse(v); } catch { return null; }
 }
 
-function formatAirtableError(err) {
-  return {
-    statusCode: err?.statusCode || 500,
-    error: err?.error || "AIRTABLE_ERROR",
-    message: err?.message || "Unknown Airtable error",
-  };
+function hasAnyStructuredValue(s = {}) {
+  return ["phase","calories","proteinGrams","carbsGrams","fatsGrams","hydrationOz","notesMacros","notesSupplements","metaStatus","metaEffectiveDate"]
+    .some(k => asString(s[k]));
 }
-
-/* ---------------- Main ---------------- */
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -118,21 +49,15 @@ export default async function handler(req, res) {
   if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
   const { org, user } = auth;
+  const orgToken = asString(org?.token);
 
-  const {
-    athleteEmail,
-    prescription,
-    title, // optional
-    createdBy, // optional
-    structured,
-    planJson, // object or string
-  } = req.body || {};
+  const { athleteEmail, prescription, title, createdBy, structured, planJson } = req.body || {};
 
-  const email = normalizeEmail(athleteEmail);
+  const email = normEmail(athleteEmail);
   if (!email) return res.status(400).json({ error: "Missing athleteEmail" });
 
-  const text = cleanString(prescription);
-  const s = structured && typeof structured === "object" ? structured : {};
+  const text = asString(prescription);
+  const s    = structured && typeof structured === "object" ? structured : {};
 
   if (!text && !hasAnyStructuredValue(s)) {
     return res.status(400).json({
@@ -140,200 +65,89 @@ export default async function handler(req, res) {
     });
   }
 
-  // ✅ NutritionPlans Airtable config (WRITE TARGET)
-  const NUTRITION_API_KEY = process.env.NUTRITION_API_KEY;
-  const NUTRITION_BASE_ID = process.env.NUTRITION_BASE_ID;
-  const NUTRITION_TABLE_NAME = process.env.NUTRITION_TABLE_NAME || process.env.NUTRITION_PLANS_TABLE;
-
-  if (!NUTRITION_API_KEY || !NUTRITION_BASE_ID || !NUTRITION_TABLE_NAME) {
-    return res.status(500).json({
-      error:
-        "NutritionPlans Airtable not configured. Check NUTRITION_API_KEY / NUTRITION_BASE_ID / NUTRITION_TABLE_NAME.",
-      missing: {
-        NUTRITION_API_KEY: !NUTRITION_API_KEY,
-        NUTRITION_BASE_ID: !NUTRITION_BASE_ID,
-        NUTRITION_TABLE_NAME: !NUTRITION_TABLE_NAME,
-      },
-    });
-  }
-
-  // Athlete table (to find the linked record id)
-  const ATH_API_KEY = process.env.ATHLETE_API_KEY;
-  const ATH_BASE_ID = process.env.ATHLETE_BASE_ID;
-  const ATH_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
-
-  if (!ATH_API_KEY || !ATH_BASE_ID || !ATH_TABLE_NAME) {
-    return res.status(500).json({
-      error:
-        "Athletes Airtable not configured (needed to link NutritionPlans → Athlete). Check ATHLETE_API_KEY / ATHLETE_BASE_ID / ATHLETE_TABLE_NAME.",
-      missing: {
-        ATHLETE_API_KEY: !ATH_API_KEY,
-        ATHLETE_BASE_ID: !ATH_BASE_ID,
-        ATHLETE_TABLE_NAME: !ATH_TABLE_NAME,
-      },
-    });
-  }
-
-  // Field names (match your athlete API defaults)
-  const F_ATHLETE_LINK = "Athlete";
-  const F_STATUS = "Status";
-  const F_CREATED_AT = "CreatedAt";
-  const F_CREATED_BY = "CreatedBy";
-
-  const F_PHASE = "Phase";
-  const F_DCAL = "DailyCalories";
-  const F_DPRO = "DailyProtein";
-  const F_DCARB = "DailyCarbs";
-  const F_DFAT = "DailyFat";
-
-  // ✅ NEW: Daily Hydration (oz) summary field
-  // Make sure your NutritionPlans table column is named exactly "DailyHydration"
-  // (If your Airtable field is named differently, change this constant to match.)
-  const F_DHYDRATION = "DailyHydration";
-
-  const F_PLANJSON = "PlanJson";
-  const F_PRESCRIPTION = "Prescription";
-
-  const nutritionBase = new Airtable({ apiKey: NUTRITION_API_KEY }).base(NUTRITION_BASE_ID);
-  const athleteBase = new Airtable({ apiKey: ATH_API_KEY }).base(ATH_BASE_ID);
-
   try {
-    const nowISO = new Date().toISOString();
+    // 1) Look up athlete by email, verify org membership
+    const { data: athlete, error: athErr } = await db
+      .from("athletes")
+      .select("id, athlete_token, email, name")
+      .eq("email", email)
+      .eq("org_token", orgToken)
+      .maybeSingle();
 
-    // 1) Find athlete record id (linked field needs record id)
-    const safeEmail = escapeAirtableString(email);
-    const found = await athleteBase(ATH_TABLE_NAME)
-      .select({
-        filterByFormula: `LOWER({Email}&'')='${safeEmail}'`,
-        maxRecords: 1,
-      })
-      .firstPage();
-
-    const athleteRec = found?.[0] || null;
-    if (!athleteRec?.id) {
-      return res.status(404).json({
-        error: `No athlete found in Athletes table for ${email}.`,
-      });
+    if (athErr) throw athErr;
+    if (!athlete) {
+      return res.status(404).json({ error: `No athlete found for ${email} in this organization.` });
     }
 
-    // 2) Build effective date (DATE-ONLY) and inject into PlanJson.meta.effectiveDate
-    const parsedPlanJson = safeJsonParseMaybe(planJson) || {};
-    const effDateOnly =
+    // 2) Build effective date + planJson
+    const parsedPlanJson  = safeJsonParse(planJson) || {};
+    const effDateOnly     =
       toISODateOnly(s?.metaEffectiveDate) ||
       toISODateOnly(s?.meta?.effectiveDate) ||
       toISODateOnly(parsedPlanJson?.meta?.effectiveDate) ||
-      ""; // allow blank (legacy)
+      "";
+    const hydrationVal    = asString(s?.hydrationOz) ? toNumOrBlank(s.hydrationOz) : null;
 
-    // ✅ Normalize hydration (oz)
-    const hydrationVal = cleanString(s?.hydrationOz) ? toNumOrBlank(s.hydrationOz) : null;
+    const mergedPlanJson = {
+      ...parsedPlanJson,
+      meta: {
+        ...(parsedPlanJson.meta || {}),
+        ...(effDateOnly ? { effectiveDate: effDateOnly } : {}),
+        status: asString(s?.metaStatus || parsedPlanJson?.meta?.status || "active") || "active",
+      },
+      daily: {
+        ...(parsedPlanJson.daily || {}),
+        ...(asString(s?.calories)     ? { calories: toNumOrBlank(s.calories)     } : {}),
+        ...(asString(s?.proteinGrams) ? { protein:  toNumOrBlank(s.proteinGrams) } : {}),
+        ...(asString(s?.carbsGrams)   ? { carbs:    toNumOrBlank(s.carbsGrams)   } : {}),
+        ...(asString(s?.fatsGrams)    ? { fat:      toNumOrBlank(s.fatsGrams)    } : {}),
+        ...(hydrationVal != null      ? { hydrationOz: hydrationVal, hydration: hydrationVal } : {}),
+      },
+    };
 
-    const mergedPlanJson =
-      parsedPlanJson && typeof parsedPlanJson === "object"
-        ? {
-            ...parsedPlanJson,
-            meta: {
-              ...(parsedPlanJson.meta && typeof parsedPlanJson.meta === "object" ? parsedPlanJson.meta : {}),
-              ...(effDateOnly ? { effectiveDate: effDateOnly } : {}),
-              status: cleanString(s?.metaStatus || parsedPlanJson?.meta?.status || "active") || "active",
-            },
-            // Helpful conveniences (optional)
-            daily: {
-              ...(parsedPlanJson.daily && typeof parsedPlanJson.daily === "object" ? parsedPlanJson.daily : {}),
-              ...(cleanString(s?.calories) ? { calories: toNumOrBlank(s.calories) } : {}),
-              ...(cleanString(s?.proteinGrams) ? { protein: toNumOrBlank(s.proteinGrams) } : {}),
-              ...(cleanString(s?.carbsGrams) ? { carbs: toNumOrBlank(s.carbsGrams) } : {}),
-              ...(cleanString(s?.fatsGrams) ? { fat: toNumOrBlank(s.fatsGrams) } : {}),
+    // 3) Archive any existing active plans for this athlete
+    await db.from("nutrition_plans")
+      .update({ status: "archived", archived_at: new Date().toISOString() })
+      .eq("athlete_token", athlete.athlete_token)
+      .eq("status", "active");
 
-              // ✅ NEW: daily hydration stored in PlanJson
-              ...(hydrationVal != null ? { hydrationOz: hydrationVal, hydration: hydrationVal } : {}),
-            },
-          }
-        : {
-            meta: {
-              ...(effDateOnly ? { effectiveDate: effDateOnly } : {}),
-              status: cleanString(s?.metaStatus || "active") || "active",
-            },
-            daily: {
-              calories: toNumOrBlank(s?.calories),
-              protein: toNumOrBlank(s?.proteinGrams),
-              carbs: toNumOrBlank(s?.carbsGrams),
-              fat: toNumOrBlank(s?.fatsGrams),
+    // 4) Insert new plan
+    const nowISO  = new Date().toISOString();
+    const creator = asString(createdBy) || asString(user?.Email || user?.email || org?.email);
 
-              // ✅ NEW: daily hydration stored in PlanJson
-              ...(hydrationVal != null ? { hydrationOz: hydrationVal, hydration: hydrationVal } : {}),
-            },
-          };
+    const { data: created, error: insertErr } = await db
+      .from("nutrition_plans")
+      .insert({
+        athlete_token:   athlete.athlete_token,
+        athlete_id:      athlete.id,
+        org_token:       orgToken,
+        status:          asString(s?.metaStatus || "active") || "active",
+        phase:           asString(s?.phase),
+        daily_calories:  toNumOrBlank(s?.calories),
+        daily_protein:   toNumOrBlank(s?.proteinGrams),
+        daily_carbs:     toNumOrBlank(s?.carbsGrams),
+        daily_fat:       toNumOrBlank(s?.fatsGrams),
+        daily_hydration: hydrationVal,
+        plan_json:       mergedPlanJson,
+        prescription:    text || asString(title) || "",
+        created_by:      creator,
+        created_at:      nowISO,
+        effective_date:  effDateOnly || null,
+      })
+      .select("id")
+      .single();
 
-    const planJsonString = safeJsonStringify(mergedPlanJson);
-
-    // 3) Create NutritionPlans record
-    const fields = stripEmpty({
-      // Link to athlete
-      [F_ATHLETE_LINK]: [athleteRec.id],
-
-      // Meta
-      [F_STATUS]: cleanString(s?.metaStatus || "active") || "active",
-      [F_CREATED_AT]: nowISO,
-      [F_CREATED_BY]: cleanString(createdBy) || cleanString(user?.Email || user?.email) || cleanString(org?.email),
-
-      // Plan summary fields (optional but nice)
-      [F_PHASE]: cleanString(s?.phase),
-
-      // Daily macros fields (match your athlete api constants)
-      [F_DCAL]: toNumOrBlank(s?.calories),
-      [F_DPRO]: toNumOrBlank(s?.proteinGrams),
-      [F_DCARB]: toNumOrBlank(s?.carbsGrams),
-      [F_DFAT]: toNumOrBlank(s?.fatsGrams),
-
-      // ✅ NEW: Daily hydration field saved to Airtable
-      [F_DHYDRATION]: toNumOrBlank(s?.hydrationOz),
-
-      // Plan payload
-      [F_PLANJSON]: planJsonString,
-
-      // Legacy / notes
-      [F_PRESCRIPTION]: text || cleanString(title) || "",
-    });
-
-    const created = await nutritionBase(NUTRITION_TABLE_NAME).create(fields);
-
-    // Audit (best effort)
-    try {
-      await logAuditEvent({
-        action: "CREATE_NUTRITION_PLAN",
-        actorEmail: cleanString(user?.Email || user?.email || org?.email),
-        actorId: cleanString(user?.id || ""),
-        orgToken: cleanString(org?.token || ""),
-        orgName: cleanString(org?.name || ""),
-        athleteEmail: email,
-        entityType: "NutritionPlan",
-        entityId: created?.id || "",
-        meta: {
-          effectiveDate: effDateOnly || "",
-          status: fields[F_STATUS] || "",
-          // ✅ helpful to log
-          dailyHydrationOz: fields[F_DHYDRATION] ?? "",
-        },
-      });
-    } catch (e) {
-      console.warn("[createPrescription -> NutritionPlans] audit log failed:", e?.message || e);
-    }
+    if (insertErr) throw insertErr;
 
     return res.status(200).json({
-      ok: true,
-      id: created?.id,
-      nutritionPlan: {
-        id: created?.id,
-        fields: created?.fields || {},
-      },
-      effectiveDate: effDateOnly || "",
-      linkedAthleteId: athleteRec.id,
+      ok:              true,
+      id:              created.id,
+      nutritionPlan:   { id: created.id },
+      effectiveDate:   effDateOnly || "",
+      linkedAthleteId: athlete.id,
     });
   } catch (err) {
-    console.error("[createPrescription -> NutritionPlans] Airtable error:", err);
-    return res.status(500).json({
-      error: "Failed to create nutrition plan",
-      airtable: formatAirtableError(err),
-    });
+    console.error("[createPrescription] error:", err);
+    return res.status(500).json({ error: "Failed to create nutrition plan", detail: err?.message });
   }
 }

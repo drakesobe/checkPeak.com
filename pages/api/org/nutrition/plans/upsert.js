@@ -1,5 +1,8 @@
 // pages/api/org/nutrition/plans/upsert.js
-import Airtable from "airtable";
+// POST { athleteToken, phase, status, daily, planJson, prescription, createdBy, metaEffectiveDate }
+// Archives all existing active plans for athlete, creates a fresh active plan.
+
+import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";
 
 /* ---------------- helpers ---------------- */
@@ -9,13 +12,8 @@ function asString(v) {
   return String(v ?? "").trim();
 }
 
-// Recursively strip invalid JSON escape sequences (e.g. \_ in Amazon image URLs).
-// JSON only allows: \" \\ \/ \b \f \n \r \t \uXXXX
-// Any other \X is reduced to just X so JSON.stringify produces valid output.
 function sanitizeForJson(obj) {
-  if (typeof obj === "string") {
-    return obj.replace(/\\([^"\\\/bfnrtu])/g, "$1");
-  }
+  if (typeof obj === "string") return obj.replace(/\\([^"\\\/bfnrtu])/g, "$1");
   if (Array.isArray(obj)) return obj.map(sanitizeForJson);
   if (obj && typeof obj === "object") {
     const out = {};
@@ -25,36 +23,11 @@ function sanitizeForJson(obj) {
   return obj;
 }
 
-function safeJsonStringify(obj) {
-  if (!obj) return "";
-  if (typeof obj === "string") return obj;
-  try { return JSON.stringify(sanitizeForJson(obj)); } catch { return ""; }
-}
-
 function safeJsonParse(s) {
   const raw = asString(s);
   if (!raw) return null;
-
-  // First attempt - clean parse
-  try { return JSON.parse(raw); }
-  catch { /* fall through */ }
-
-  // Second attempt - strip invalid escape sequences then retry
-  try {
-    const sanitized = raw.replace(/\\([^"\\\/bfnrtu])/g, "$1");
-    return JSON.parse(sanitized);
-  } catch {
-    return null;
-  }
-}
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function getTable(apiKey, baseId, tableNameOrId) {
-  if (!apiKey || !baseId || !tableNameOrId) return null;
-  return new Airtable({ apiKey }).base(baseId)(tableNameOrId);
+  try { return JSON.parse(raw); } catch { /* fall through */ }
+  try { return JSON.parse(raw.replace(/\\([^"\\\/bfnrtu])/g, "$1")); } catch { return null; }
 }
 
 function pickFirstNonEmptyString(...vals) {
@@ -77,68 +50,17 @@ function toISODateOnly(v) {
     timeZone: "America/New_York",
     year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(d);
-  const y  = parts.find((p) => p.type === "year")?.value;
-  const m  = parts.find((p) => p.type === "month")?.value;
-  const dd = parts.find((p) => p.type === "day")?.value;
-  return `${y}-${m}-${dd}`;
+  return `${parts.find(p => p.type === "year")?.value}-${parts.find(p => p.type === "month")?.value}-${parts.find(p => p.type === "day")?.value}`;
 }
 
-function isoDateOnlyToNYNoonISO(isoDateOnly) {
-  const d = asString(isoDateOnly);
-  if (!isISODateOnly(d)) return "";
-  const dt = new Date(`${d}T12:00:00-05:00`);
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString();
-}
-
-function normalizePlanStatusInput(v) {
+function normalizePlanStatus(v) {
   const s = asString(v).toLowerCase();
-  if (!s) return "active";
-  if (s === "active")   return "active";
+  if (!s || s === "active") return "active";
   if (s === "no plan" || s === "no_plan" || s === "noplan") return "no_plan";
   if (s === "inactive") return "inactive";
   if (s === "draft")    return "draft";
   return s.replace(/\s+/g, "_");
 }
-
-/* ---------------- optional mirrors ---------------- */
-const ENABLE_TOKEN_TEXT_MIRROR          = false;
-const ENABLE_EFFECTIVE_DATE_TEXT_MIRROR = false;
-
-/* ---------------- env ---------------- */
-const NUTRITION_API_KEY     = process.env.NUTRITION_API_KEY;
-const NUTRITION_BASE_ID     = process.env.NUTRITION_BASE_ID;
-const NUTRITION_PLANS_TABLE =
-  process.env.NUTRITION_PLANS_TABLE ||
-  process.env.NUTRITION_TABLE_NAME  ||
-  process.env.NUTRITION_TABLE_ID    ||
-  "NutritionPlans";
-
-const ATHLETE_API_KEY    = process.env.ATHLETE_API_KEY;
-const ATHLETE_BASE_ID    = process.env.ATHLETE_BASE_ID;
-const ATHLETE_TABLE_NAME = process.env.ATHLETE_TABLE_NAME;
-
-/* ---------------- field names ---------------- */
-const ATH_TOKEN     = "AthleteToken";
-const ATH_ORG_TOKEN = "Token";
-
-const PLAN_ATH_LINK    = "Athlete";
-const PLAN_STATUS      = "Status";
-const PLAN_CREATED_AT  = "CreatedAt";
-const PLAN_UPDATED_AT  = "UpdatedAt";
-const PLAN_ARCHIVED_AT = "ArchivedAt";
-const PLAN_CREATED_BY  = "CreatedBy";
-
-const PLAN_PHASE      = "Phase";
-const PLAN_DCAL       = "DailyCalories";
-const PLAN_DPRO       = "DailyProtein";
-const PLAN_DCARB      = "DailyCarbs";
-const PLAN_DFAT       = "DailyFat";
-const PLAN_DHYDRATION = "DailyHydration";
-
-const PLAN_JSON                = "PlanJson";
-const PLAN_PRESCRIPTION        = "Prescription";
-const PLAN_META_EFFECTIVE_DATE = "Meta Effective Date";
 
 /* ---------------- handler ---------------- */
 export default async function handler(req, res) {
@@ -153,37 +75,12 @@ export default async function handler(req, res) {
   const orgToken = asString(auth?.org?.token);
   if (!orgToken) return res.status(401).json({ error: "Org token missing from session." });
 
-  const plansTable   = getTable(NUTRITION_API_KEY, NUTRITION_BASE_ID, NUTRITION_PLANS_TABLE);
-  const athleteTable = getTable(ATHLETE_API_KEY, ATHLETE_BASE_ID, ATHLETE_TABLE_NAME);
-
-  if (!plansTable) {
-    return res.status(500).json({
-      error: "NutritionPlans Airtable not configured.",
-      missing: {
-        NUTRITION_API_KEY:     !NUTRITION_API_KEY,
-        NUTRITION_BASE_ID:     !NUTRITION_BASE_ID,
-        NUTRITION_PLANS_TABLE: !NUTRITION_PLANS_TABLE,
-      },
-    });
-  }
-
-  if (!athleteTable) {
-    return res.status(500).json({
-      error: "AthleteScans Airtable not configured (needed to link Athlete).",
-      missing: {
-        ATHLETE_API_KEY:    !ATHLETE_API_KEY,
-        ATHLETE_BASE_ID:    !ATHLETE_BASE_ID,
-        ATHLETE_TABLE_NAME: !ATHLETE_TABLE_NAME,
-      },
-    });
-  }
-
   try {
     const body = req.body || {};
 
     const athleteToken = asString(body.athleteToken);
     const phase        = asString(body.phase || "Maintain");
-    const status       = normalizePlanStatusInput(body.status || "active");
+    const status       = normalizePlanStatus(body.status || "active");
     const createdBy    = asString(body.createdBy || "");
     const prescription = asString(body.prescription || "");
 
@@ -204,56 +101,40 @@ export default async function handler(req, res) {
       asString(body.structured?.metaEffectiveDate) ||
       asString(body.planJson?.meta?.effectiveDate) ||
       asString(planJsonObj?.meta?.effectiveDate);
-
-    const effectiveDate               = toISODateOnly(effRaw);
-    const effectiveDateISOForAirtable = effectiveDate ? isoDateOnlyToNYNoonISO(effectiveDate) : "";
+    const effectiveDate = toISODateOnly(effRaw);
 
     /* ── 1) find athlete (must belong to org) ── */
-    const tok = escapeAirtableString(athleteToken);
-    const ot  = escapeAirtableString(orgToken);
+    const { data: athlete, error: athErr } = await db
+      .from("athletes")
+      .select("id, athlete_token, org_token")
+      .eq("athlete_token", athleteToken)
+      .eq("org_token", orgToken)
+      .maybeSingle();
 
-    const athleteFilter = `AND(
-      FIND('${ot}', ARRAYJOIN({${ATH_ORG_TOKEN}}&'')),
-      FIND('${tok}', ARRAYJOIN({${ATH_TOKEN}}&''))
-    )`;
-
-    const athleteRec = await athleteTable
-      .select({ filterByFormula: athleteFilter, maxRecords: 1 })
-      .firstPage()
-      .then((xs) => xs?.length ? xs[0] : null);
-
-    if (!athleteRec) {
-      return res.status(404).json({
-        error: "Athlete not found for this organization.",
-        debug: { athleteFilter },
-      });
+    if (athErr) throw athErr;
+    if (!athlete) {
+      return res.status(404).json({ error: "Athlete not found for this organization.", debug: { athleteToken, orgToken } });
     }
 
     /* ── 2) find all existing active plans for this athlete ── */
-    const planAthMatch       = `FIND('${escapeAirtableString(athleteRec.id)}', ARRAYJOIN({${PLAN_ATH_LINK}}&''))`;
-    const latestActiveFilter = `AND(${planAthMatch}, LOWER({${PLAN_STATUS}}&'')='active')`;
+    const { data: existingActive, error: fetchErr } = await db
+      .from("nutrition_plans")
+      .select("id")
+      .eq("athlete_token", athleteToken)
+      .eq("status", "active");
 
-    const existingActive = await plansTable
-      .select({
-        filterByFormula: latestActiveFilter,
-        sort: [{ field: PLAN_CREATED_AT, direction: "desc" }],
-        maxRecords: 25,
-      })
-      .firstPage();
+    if (fetchErr) throw fetchErr;
 
     /* ── 3) archive all existing active plans ── */
     const now = new Date().toISOString();
 
     if (existingActive?.length) {
-      await Promise.all(
-        existingActive.map((r) =>
-          plansTable.update(r.id, {
-            [PLAN_STATUS]:      "archived",
-            [PLAN_ARCHIVED_AT]: now,
-            [PLAN_UPDATED_AT]:  now,
-          })
-        )
-      );
+      const ids = existingActive.map(r => r.id);
+      const { error: archiveErr } = await db
+        .from("nutrition_plans")
+        .update({ status: "archived", archived_at: now, updated_at: now })
+        .in("id", ids);
+      if (archiveErr) throw archiveErr;
     }
 
     /* ── 4) macro extraction ── */
@@ -269,7 +150,7 @@ export default async function handler(req, res) {
       pjDaily?.hydrationOz, pjDaily?.hydration, pjDaily?.waterOz, pjDaily?.water
     );
 
-    /* ── 5) merge and sanitize PlanJson before storing ── */
+    /* ── 5) merge and sanitize PlanJson ── */
     const mergedPlanJson = planJsonObj && typeof planJsonObj === "object"
       ? {
           ...planJsonObj,
@@ -295,60 +176,50 @@ export default async function handler(req, res) {
           },
         };
 
-    // safeJsonStringify runs sanitizeForJson first - strips \_ and other
-    // invalid escape sequences from Amazon URLs before writing to Airtable.
-    const planJsonString = safeJsonStringify(mergedPlanJson);
+    const safePlanJson = sanitizeForJson(mergedPlanJson);
 
-    /* ── 6) always create a fresh active plan ── */
-    const fields = {
-      [PLAN_ATH_LINK]:  [athleteRec.id],
-      [PLAN_STATUS]:     status || "active",
-      [PLAN_PHASE]:      phase,
+    /* ── 6) create fresh active plan ── */
+    const { data: saved, error: insertErr } = await db
+      .from("nutrition_plans")
+      .insert({
+        athlete_token:   athleteToken,
+        athlete_id:      athlete.id,
+        org_token:       orgToken,
+        status:          status || "active",
+        phase,
+        daily_calories:  dailyCalories  || null,
+        daily_protein:   dailyProtein   || null,
+        daily_carbs:     dailyCarbs     || null,
+        daily_fat:       dailyFat       || null,
+        daily_hydration: dailyHydrationOz || null,
+        plan_json:       safePlanJson,
+        prescription,
+        created_by:      createdBy      || null,
+        effective_date:  effectiveDate  || null,
+        created_at:      now,
+        updated_at:      now,
+      })
+      .select("id")
+      .single();
 
-      [PLAN_DCAL]:       dailyCalories,
-      [PLAN_DPRO]:       dailyProtein,
-      [PLAN_DCARB]:      dailyCarbs,
-      [PLAN_DFAT]:       dailyFat,
-      [PLAN_DHYDRATION]: dailyHydrationOz,
-
-      [PLAN_JSON]:         planJsonString,
-      [PLAN_PRESCRIPTION]: prescription,
-      [PLAN_CREATED_BY]:   createdBy,
-
-      [PLAN_CREATED_AT]: now,
-      [PLAN_UPDATED_AT]: now,
-
-      ...(effectiveDateISOForAirtable
-        ? { [PLAN_META_EFFECTIVE_DATE]: effectiveDateISOForAirtable }
-        : {}),
-    };
-
-    if (ENABLE_TOKEN_TEXT_MIRROR) fields["AthleteTokenText"] = athleteToken;
-    if (ENABLE_EFFECTIVE_DATE_TEXT_MIRROR && effectiveDate)
-      fields["Meta Effective Date ISO"] = effectiveDate;
-
-    const saved = await plansTable.create(fields);
+    if (insertErr) throw insertErr;
 
     return res.status(200).json({
-      ok: true,
-      plan:          { id: saved.id, fields: saved.fields || {} },
+      ok:            true,
+      plan:          { id: saved.id },
       effectiveDate: effectiveDate || "",
       archivedCount: existingActive?.length || 0,
       debug: {
         athleteToken,
-        athleteId:                  athleteRec.id,
-        archivedPlanIds:            (existingActive || []).map((r) => r.id),
+        athleteId:    athlete.id,
+        archivedPlanIds: (existingActive || []).map(r => r.id),
         status,
         effectiveDate,
-        effectiveDateISOForAirtable,
         dailyHydrationOz,
       },
     });
   } catch (e) {
-    console.error("[nutrition/plans/upsert] error:", e);
-    return res.status(500).json({
-      error: e?.message || "Failed to upsert NutritionPlan.",
-      airtable: { statusCode: e?.statusCode, message: e?.message, error: e?.error },
-    });
+    console.error("[org/nutrition/plans/upsert] error:", e);
+    return res.status(500).json({ error: e?.message || "Failed to upsert nutrition plan." });
   }
 }

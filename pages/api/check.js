@@ -14,7 +14,7 @@
 
 import bannedRecordsRaw      from "../../data/banned.json"      assert { type: "json" };
 import ingredientRecordsRaw  from "../../data/ingredients.json" assert { type: "json" };
-import Airtable from "airtable";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 const BANNED_RECORDS     = bannedRecordsRaw;
 const INGREDIENT_RECORDS = ingredientRecordsRaw;
@@ -31,14 +31,6 @@ async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Airtable client - Scans only
-// ---------------------------------------------------------------------------
-
-const scansBase =
-  process.env.SCANS_API_KEY && process.env.SCANS_BASE_ID
-    ? new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(process.env.SCANS_BASE_ID)
-    : null;
 
 // ---------------------------------------------------------------------------
 // Text normalization + matching
@@ -596,11 +588,8 @@ export default async function handler(req, res) {
       candidates:       [],
       externalAttempts: [],
       candidateResults: [],
-      airtable: {
-        bannedRecords:     BANNED_RECORDS.length,
+      bannedRecords:     BANNED_RECORDS.length,
         ingredientRecords: INGREDIENT_RECORDS.length,
-        scansConfigured:   Boolean(scansBase && process.env.SCANS_TABLE_NAME),
-      },
     };
 
     let structured = {
@@ -750,25 +739,22 @@ export default async function handler(req, res) {
       { ProhibitedCount: 0, LimitedCount: 0, OtherBannedCount: 0 }
     );
 
-    // ── Save to Scans Airtable ──────────────────────────────────────────────
-    if (body.userEmail && scansBase && process.env.SCANS_TABLE_NAME) {
+    // ── Save to Supabase scans ──────────────────────────────────────────────
+    if (body.userEmail) {
       try {
-        const now    = new Date();
-        const scanId = body.scanId || `scan-${now.getTime()}`;
-        await scansBase(process.env.SCANS_TABLE_NAME).create([{
-          fields: {
-            UserEmail:      body.userEmail,
-            ScanName:       structured.productName
-              ? `${structured.productName} (${now.toLocaleString("en-US", { hour12: false })})`
-              : `Scan - ${now.toLocaleString("en-US", { hour12: false })}`,
-            ScanDate:       now.toISOString(),
-            StackDetails:   matchingText || "No ingredient text captured",
-            ResultsSummary: `Prohibited: ${bannedDetails.ProhibitedCount}, Limited: ${bannedDetails.LimitedCount}, Other: ${bannedDetails.OtherBannedCount}`,
-            ID:             scanId,
-            BannedDetails:  JSON.stringify(bannedDetails),
-          },
-        }]);
-        debug.scansSaveSuccess = true;
+        const now = new Date();
+        const { error: scanErr } = await db.from("scans").insert({
+          user_email:      body.userEmail,
+          scan_name:       structured.productName
+            ? `${structured.productName} (${now.toLocaleString("en-US", { hour12: false })})`
+            : `Scan - ${now.toLocaleString("en-US", { hour12: false })}`,
+          scan_date:       now.toISOString(),
+          stack_details:   matchingText || "No ingredient text captured",
+          results_summary: `Prohibited: ${bannedDetails.ProhibitedCount}, Limited: ${bannedDetails.LimitedCount}, Other: ${bannedDetails.OtherBannedCount}`,
+          banned_details:  bannedDetails,
+        });
+        debug.scansSaveSuccess = !scanErr;
+        if (scanErr) debug.scansSaveError = String(scanErr?.message || scanErr);
       } catch (err) {
         console.error("[/api/check] Failed to save scan:", err);
         debug.scansSaveError = String(err?.message || err);

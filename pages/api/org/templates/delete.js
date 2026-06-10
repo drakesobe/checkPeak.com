@@ -1,16 +1,8 @@
 // pages/api/org/templates/delete.js
-// POST { id } - removes a template by ID.
+// POST { id } - removes a workout template by ID.
 
-import Airtable from "airtable";
 import { requireOrgSideUser } from "@/lib/requireUser";
-
-function getBase() {
-  if (!process.env.ORGANIZATIONS_API_KEY || !process.env.ORGANIZATIONS_BASE_ID) {
-    throw new Error("ORGANIZATIONS_API_KEY or ORGANIZATIONS_BASE_ID env var missing.");
-  }
-  return new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY })
-    .base(process.env.ORGANIZATIONS_BASE_ID);
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -23,31 +15,37 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const orgId = String(user?.orgId || user?.OrgId || "").trim();
-  if (!orgId) return res.status(400).json({ error: "No orgId on session." });
+  const orgToken = String(user?.Token || user?.token || "").trim();
+  if (!orgToken) return res.status(400).json({ error: "No org token on session." });
 
   const { id } = req.body || {};
   if (!id) return res.status(400).json({ error: "id required." });
 
-  const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
-
   try {
-    const record  = await getBase()(table).find(orgId);
-    const raw     = (record?.fields?.WorkoutTemplates || "").replace(/\\\_/g, "_");
-    let templates = [];
-    try { templates = JSON.parse(raw); } catch {}
+    const { data: org, error: fetchErr } = await db
+      .from("organizations")
+      .select("workout_templates")
+      .eq("org_token", orgToken)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    let templates = org?.workout_templates ?? [];
     if (!Array.isArray(templates)) templates = [];
 
-    const before = templates.length;
-    templates    = templates.filter(t => t.id !== String(id));
+    const before    = templates.length;
+    templates       = templates.filter(t => t.id !== String(id));
 
     if (templates.length === before) {
       return res.status(404).json({ error: "Template not found." });
     }
 
-    await getBase()(table).update(orgId, {
-      WorkoutTemplates: JSON.stringify(templates),
-    });
+    const { error: saveErr } = await db
+      .from("organizations")
+      .update({ workout_templates: templates })
+      .eq("org_token", orgToken);
+
+    if (saveErr) throw saveErr;
 
     return res.status(200).json({ ok: true, deleted: id });
   } catch (e) {

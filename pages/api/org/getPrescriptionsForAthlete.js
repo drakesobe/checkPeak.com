@@ -1,14 +1,10 @@
 // pages/api/org/getPrescriptionsForAthlete.js
-import Airtable from "airtable";
+// GET ?athleteToken= — returns nutrition plan history for an athlete (prescription shape).
+
 import { requireOrg } from "@/lib/requireOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-function asString(v) {
-  return String(v ?? "").trim();
-}
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/'/g, "\\'");
-}
+function asString(v) { return String(v ?? "").trim(); }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -16,85 +12,55 @@ export default async function handler(req, res) {
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const auth = requireOrg(req, res);
+  const auth = requireOrg(req);
   if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
+  const orgToken     = asString(auth?.org?.token);
   const athleteToken = asString(req.query?.athleteToken);
-  if (!athleteToken) {
-    // ✅ Token-only (NO email fallback)
-    return res.status(400).json({ error: "athleteToken is required." });
-  }
 
-  const API_KEY = process.env.NUTRITION_API_KEY;
-  const BASE_ID = process.env.NUTRITION_BASE_ID;
-
-  // NutritionPlans table (you said tblbN4C6BWn6MNWzu)
-  const PLANS_TABLE =
-    process.env.NUTRITION_TABLE_NAME ||
-    process.env.NUTRITION_PLANS_TABLE ||
-    "tblbN4C6BWn6MNWzu";
-
-  const TOKEN_FIELD = process.env.NUTRITION_TOKEN_FIELD || "AthleteToken"; // lookup field
-  const CREATEDAT_FIELD = process.env.NUTRITION_CREATEDAT_FIELD || "CreatedAt";
-  const CREATEDBY_FIELD = "CreatedBy";
-  const STATUS_FIELD = process.env.NUTRITION_STATUS_FIELD || "Status";
-
-  if (!API_KEY || !BASE_ID) {
-    return res.status(500).json({
-      error: "Nutrition Airtable not configured. Set NUTRITION_API_KEY and NUTRITION_BASE_ID.",
-      missing: {
-        NUTRITION_API_KEY: !API_KEY,
-        NUTRITION_BASE_ID: !BASE_ID,
-      },
-    });
-  }
-
-  const base = new Airtable({ apiKey: API_KEY }).base(BASE_ID);
+  if (!athleteToken) return res.status(400).json({ error: "athleteToken is required." });
 
   try {
-    const safe = escapeAirtableString(athleteToken);
+    // Verify athlete belongs to this org
+    const { data: athlete } = await db
+      .from("athletes")
+      .select("id")
+      .eq("athlete_token", athleteToken)
+      .eq("org_token", orgToken)
+      .maybeSingle();
 
-    // ✅ lookup-safe filter (works for lookup arrays)
-    const filterByFormula = `FIND('${safe}', ARRAYJOIN({${TOKEN_FIELD}}&''))>0`;
+    if (!athlete) {
+      return res.status(404).json({ error: "Athlete not found for this organization." });
+    }
 
-    const records = await base(PLANS_TABLE)
-      .select({
-        filterByFormula,
-        sort: [{ field: CREATEDAT_FIELD, direction: "desc" }],
-        maxRecords: 50,
-      })
-      .firstPage();
+    const { data: plans, error } = await db
+      .from("nutrition_plans")
+      .select("id, phase, prescription, status, created_at, created_by")
+      .eq("athlete_token", athleteToken)
+      .order("created_at", { ascending: false })
+      .limit(50);
 
-    // Map NutritionPlans -> PlanHistory “prescriptions” shape
-    const prescriptions = records.map((r) => {
-      const phase = r.get("Phase") || "";
+    if (error) throw error;
+
+    const prescriptions = (plans || []).map(r => {
+      const phase = asString(r.phase);
       return {
-        id: r.id,
-        title: phase ? `Nutrition Plan • ${phase}` : "Nutrition Plan",
-        prescription: r.get("Prescription") || "",
-        createdAt: r.get(CREATEDAT_FIELD) || r._rawJson?.createdTime || "",
-        createdBy: r.get(CREATEDBY_FIELD) || "",
-        status: r.get(STATUS_FIELD) || "",
+        id:           r.id,
+        title:        phase ? `Nutrition Plan • ${phase}` : "Nutrition Plan",
+        prescription: asString(r.prescription),
+        createdAt:    r.created_at || "",
+        createdBy:    asString(r.created_by),
+        status:       asString(r.status),
       };
     });
 
     return res.status(200).json({
       ok: true,
       prescriptions,
-      debug: {
-        source: "NutritionPlans",
-        athleteToken,
-        table: PLANS_TABLE,
-        tokenField: TOKEN_FIELD,
-        filterByFormula,
-        count: prescriptions.length,
-      },
+      debug: { source: "nutrition_plans", athleteToken, count: prescriptions.length },
     });
   } catch (err) {
     console.error("[getPrescriptionsForAthlete] error:", err);
-    return res.status(500).json({
-      error: "Server error",
-      detail: err?.message || String(err),
-    });
+    return res.status(500).json({ error: "Server error", detail: err?.message || String(err) });
   }
 }

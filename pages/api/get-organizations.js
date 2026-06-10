@@ -1,29 +1,23 @@
-import Airtable from "airtable";
+// pages/api/get-organizations.js
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   try {
-    const baseId = process.env.ORGANIZATIONS_BASE_ID;
-    const apiKey = process.env.ORGANIZATIONS_API_KEY;
-    const tableName = process.env.ORGANIZATIONS_TABLE_NAME;
+    const { data: records, error } = await db
+      .from("organizations")
+      .select("*")
+      .order("name");
 
-    if (!baseId || !apiKey || !tableName) {
-      throw new Error("Missing Airtable environment variables for organizations");
-    }
+    if (error) throw error;
 
-    const base = new Airtable({ apiKey }).base(baseId);
-
-    const records = await base(tableName)
-      .select({ view: "Grid view" })
-      .all();
-
-    const organizations = records.map((rec) => ({
-      id: rec.id,
-      fields: rec.fields,
+    const organizations = (records || []).map(rec => ({
+      id:     rec.id,
+      fields: rec,
     }));
 
     res.status(200).json({ organizations });
   } catch (err) {
-    console.error("Get organizations error:", err);
+    console.error("[get-organizations] error:", err);
     res.status(500).json({ error: err.message });
   }
 }

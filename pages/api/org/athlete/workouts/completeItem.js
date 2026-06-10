@@ -1,5 +1,9 @@
+// pages/api/org/athlete/workouts/completeItem.js
+// POST { workoutItemId, fileUrl?, evidenceType? }
+// Athlete marks a single workout item as complete.
+
 import { requireAthleteUser } from "@/lib/requireUser";
-import { AT, base, F, escapeAirtableString } from "@/lib/airtableOrgWorkoutConfig";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -9,63 +13,59 @@ export default async function handler(req, res) {
   const user = requireAthleteUser(req, res);
   if (!user) return;
 
+  const { workoutItemId, fileUrl, evidenceType = "photo" } = req.body || {};
+  if (!workoutItemId) return res.status(400).json({ error: "workoutItemId is required." });
+
   try {
-    const { workoutItemId, fileUrl, evidenceType = "photo" } = req.body || {};
-    if (!workoutItemId) return res.status(400).json({ error: "workoutItemId is required." });
+    // Get the workout item to check evidence_required + get org context
+    const { data: item } = await db
+      .from("workout_items")
+      .select("id, evidence_required, workout_id")
+      .eq("id", String(workoutItemId).trim())
+      .maybeSingle();
 
-    const b = base();
-    const email = String(user.email || "").toLowerCase();
+    if (!item) return res.status(404).json({ error: "Workout item not found." });
 
-    // athlete record
-    const safeEmail = escapeAirtableString(email);
-    const athleteRecords = await b(AT.tables.athletes)
-      .select({ filterByFormula: `LOWER({${F.ATH_EMAIL}})='${safeEmail}'`, maxRecords: 1 })
-      .firstPage();
-    if (!athleteRecords.length) return res.status(404).json({ error: "Athlete not found." });
-    const athlete = athleteRecords[0];
+    // Get the daily workout for org_token + athlete_token
+    const { data: dw } = await db
+      .from("daily_workouts")
+      .select("id, org_token, athlete_token, athlete_id")
+      .eq("id", item.workout_id)
+      .maybeSingle();
 
-    // workout item record (get org + evidence requirement)
-    const item = await b(AT.tables.workoutItems).find(workoutItemId);
-    const orgId = Array.isArray(item.fields?.[F.WI_ORG]) ? item.fields[F.WI_ORG][0] : null;
-    if (!orgId) return res.status(500).json({ error: "Workout item missing Organization link." });
+    if (!dw) return res.status(404).json({ error: "Daily workout not found." });
 
-    const evidenceReq = String(item.fields?.[F.WI_EVIDENCE] || "none");
+    const evidenceReq  = String(item.evidence_required || "none");
     const needsEvidence = evidenceReq !== "none";
-    const status = needsEvidence ? "pending_review" : "completed";
+    const status       = needsEvidence ? "pending_review" : "completed";
 
-    // create completion
-    const created = await b(AT.tables.workoutCompletions).create([
-      {
-        fields: {
-          [F.WC_ORG]: [orgId],
-          [F.WC_ITEM]: [workoutItemId],
-          [F.WC_ATHLETE]: [athlete.id],
-          [F.WC_STATUS]: status,
-          [F.WC_COMPLETEDAT]: new Date().toISOString(),
-        },
-      },
-    ]);
+    // Upsert completion (one per item per athlete)
+    const athleteId    = user.id || user.athleteId || null;
+    const athleteToken = String(user.AthleteToken || user.athleteToken || "").trim() || null;
 
-    const completionId = created?.[0]?.id;
-
-    // evidence (optional but expected if needsEvidence)
-    if (fileUrl) {
-      await b(AT.tables.completionEvidence).create([
+    const { data: completion, error } = await db
+      .from("workout_completions")
+      .upsert(
         {
-          fields: {
-            [F.EV_ORG]: [orgId],
-            [F.EV_COMPLETION]: [completionId],
-            [F.EV_TYPE]: evidenceType,
-            [F.EV_FILEURL]: String(fileUrl),
-            [F.EV_UPLOADEDAT]: new Date().toISOString(),
-          },
+          workout_item_id: item.id,
+          workout_id:      dw.id,
+          athlete_id:      athleteId,
+          athlete_token:   athleteToken || dw.athlete_token,
+          org_token:       dw.org_token,
+          status,
+          ...(fileUrl ? { attachment_url: String(fileUrl), attachment_type: String(evidenceType) } : {}),
+          completed_at:    new Date().toISOString(),
         },
-      ]);
-    }
+        { onConflict: "workout_item_id,athlete_token", ignoreDuplicates: false }
+      )
+      .select("id, status")
+      .single();
 
-    return res.status(200).json({ ok: true, completionId, status });
+    if (error) return res.status(500).json({ error: "Failed to record completion.", details: error.message });
+
+    return res.status(200).json({ ok: true, completionId: completion.id, status: completion.status });
   } catch (err) {
-    console.error("[athlete/workouts/completeItem] error:", err);
-    return res.status(500).json({ error: "Failed to complete item", details: err?.message });
+    console.error("[athlete/workouts/completeItem]", err);
+    return res.status(500).json({ error: "Failed to complete item.", details: err?.message });
   }
 }

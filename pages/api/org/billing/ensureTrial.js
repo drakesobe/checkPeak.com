@@ -1,5 +1,6 @@
 // pages/api/org/billing/ensureTrial.js
 import { requireOrg } from "@/lib/requireOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
 import {
   findBillingRecordByOrgId,
   findBillingRecordByOrgToken,
@@ -50,9 +51,18 @@ export default async function handler(req, res) {
   const auth = requireOrg(req);
   if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
-  // ✅ Canonical org Airtable record id
-  const orgId = asString(auth?.org?.id || auth?.orgId || auth?.OrgId);
-  if (!orgId) return res.status(400).json({ error: "Organization id missing in session." });
+  // Supabase UUID from session
+  const orgSupabaseId = asString(auth?.org?.id || auth?.orgId || auth?.OrgId);
+  if (!orgSupabaseId) return res.status(400).json({ error: "Organization id missing in session." });
+
+  // Resolve Airtable record id (rec...) needed by billing helpers
+  const { data: orgRow } = await db
+    .from("organizations")
+    .select("airtable_id")
+    .eq("id", orgSupabaseId)
+    .maybeSingle();
+  const orgId = asString(orgRow?.airtable_id);
+  if (!orgId) return res.status(400).json({ error: "Organization Airtable ID not found — billing unavailable." });
 
   // Token is lookup/computed - only used for fallback search/relink, never written.
   const orgToken = asString(auth?.org?.token || auth?.org?.Token || auth?.token || auth?.Token || auth?.orgToken).toUpperCase();

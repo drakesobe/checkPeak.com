@@ -1,103 +1,67 @@
 // pages/api/get-athlete.js
-import Airtable from "airtable";
+// GET /api/get-athlete?id=<uuid-or-athlete-token>
 
-function asString(v) {
-  return String(v ?? "").trim();
-}
+import { getAthleteById, getAthleteByToken, normalizeEmail } from "@/lib/supabaseOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-function normalizeEmail(v) {
-  return asString(v).toLowerCase();
-}
+function asString(v) { return String(v ?? "").trim(); }
 
-function looksLikeAirtableRecordId(id) {
-  // Airtable record IDs are typically like "recXXXXXXXXXXXXXX"
-  return /^rec[a-zA-Z0-9]{10,}$/.test(String(id || "").trim());
+function formatAthlete(row) {
+  return {
+    id:           row.id,
+    Name:         row.name         || "",
+    Email:        row.email        || "",
+    AthleteToken: row.athlete_token || "",
+    OrgToken:     row.org_token    || "",
+    Sport:        row.sport        || "",
+    Status:       row.status       || "active",
+    CreatedAt:    row.created_at   || "",
+    role:         "Athlete",
+    Role:         "Athlete",
+  };
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const apiKey = process.env.ATHLETE_API_KEY;
-  const baseId = process.env.ATHLETE_BASE_ID;
-  const tableName = process.env.ATHLETE_TABLE_NAME;
-
-  if (!apiKey || !baseId || !tableName) {
-    return res.status(500).json({
-      error: "Athlete Airtable not configured.",
-      missing: {
-        ATHLETE_API_KEY: !apiKey,
-        ATHLETE_BASE_ID: !baseId,
-        ATHLETE_TABLE_NAME: !tableName,
-      },
-    });
-  }
-
-  const id = asString(req.query?.id || req.query?.athleteId);
-  if (!id) {
-    return res.status(400).json({ error: "Athlete ID is required" });
-  }
-
-  // This will make the underlying bug obvious instead of a confusing 404.
-  if (!looksLikeAirtableRecordId(id)) {
-    return res.status(400).json({
-      error: "Invalid athlete id. Expected an Airtable record id like 'rec...'.",
-      got: id,
-      hint: "Something is calling /api/get-athlete with a route slug (e.g. 'nutrition') instead of a record id.",
-    });
-  }
+  const rawId = asString(req.query?.id || req.query?.athleteId);
+  if (!rawId) return res.status(400).json({ error: "id is required" });
 
   try {
-    const base = new Airtable({ apiKey }).base(baseId);
-    const record = await base(tableName).find(id);
+    let athlete = null;
 
-    if (!record) {
-      return res.status(404).json({ error: "Athlete not found" });
+    // UUID
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(rawId)) {
+      const { data } = await getAthleteById(rawId);
+      athlete = data;
+    }
+    // ATH- token
+    else if (/^ATH-/i.test(rawId)) {
+      const { data } = await getAthleteByToken(rawId);
+      athlete = data;
+    }
+    // Email
+    else if (rawId.includes("@")) {
+      const { data } = await db
+        .from("athletes")
+        .select("*")
+        .eq("email", normalizeEmail(rawId))
+        .maybeSingle();
+      athlete = data;
+    }
+    // Fallback: try by email or token
+    else {
+      const { data } = await getAthleteByToken(rawId);
+      athlete = data;
     }
 
-    const f = record.fields || {};
+    if (!athlete) return res.status(404).json({ error: "Athlete not found" });
 
-    const athlete = {
-      id: record.id,
-      name: asString(f.Name),
-      email: normalizeEmail(f.Email),
-      phone: asString(f.Phone),
-
-      organization: f.Organization || [],
-      orgToken: asString(f.Token),
-      athleteToken: asString(f.AthleteToken),
-
-      title: asString(f.Title),
-      role: asString(f.Role),
-
-      created: asString(f.Created),
-      createdAt: asString(f.CreatedAt),
-      source: asString(f.Source),
-      type: asString(f.Type),
-      plan: asString(f.Plan),
-
-      raw: {
-        Name: f.Name || "",
-        Email: f.Email || "",
-        Phone: f.Phone || "",
-        Organization: f.Organization || "",
-        Title: f.Title || "",
-        Role: f.Role || "",
-        Token: f.Token || "",
-        AthleteToken: f.AthleteToken || "",
-      },
-    };
-
-    return res.status(200).json({ ok: true, athlete });
+    return res.status(200).json({ athlete: formatAthlete(athlete) });
   } catch (err) {
-    console.error("[get-athlete] error:", err);
-    return res.status(500).json({
-      error: "Failed to fetch athlete",
-      details: asString(err?.message || err),
-    });
+    console.error("[get-athlete]", err);
+    return res.status(500).json({ error: "Failed to fetch athlete.", details: err?.message });
   }
 }

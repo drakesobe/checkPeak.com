@@ -1,9 +1,5 @@
 // pages/api/getScans.js
-import Airtable from "airtable";
-
-const base = new Airtable({ apiKey: process.env.SCANS_API_KEY }).base(
-  process.env.SCANS_BASE_ID
-);
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   const { userEmail } = req.query;
@@ -13,30 +9,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const tableName = process.env.SCANS_TABLE_NAME || "Scans";
+    const { data, error } = await db
+      .from("scans")
+      .select("id, scan_name, scan_date, results_summary, stack_details, banned_details")
+      .eq("user_email", userEmail)
+      .order("scan_date", { ascending: false });
 
-    // Simple email sanitization for filterByFormula (escape single quotes)
-    const safeEmail = String(userEmail).replace(/'/g, "\\'");
+    if (error) throw error;
 
-    const records = await base(tableName)
-      .select({
-        filterByFormula: `{UserEmail}='${safeEmail}'`,
-        sort: [{ field: "ScanDate", direction: "desc" }],
-      })
-      .firstPage();
-
-    const scans = records.map((record) => ({
-      id: record.id,
-      name: record.get("ScanName"),
-      date: record.get("ScanDate"),
-      summary: record.get("ResultsSummary") || "",
-      stackDetails: record.get("StackDetails") || "",
-      bannedDetails: record.get("BannedDetails") || null, // JSON string or null
+    const scans = (data || []).map((r) => ({
+      id:           r.id,
+      name:         r.scan_name,
+      date:         r.scan_date,
+      summary:      r.results_summary || "",
+      stackDetails: r.stack_details   || "",
+      bannedDetails: r.banned_details ?? null,
     }));
 
-    res.status(200).json({ scans });
+    return res.status(200).json({ scans });
   } catch (error) {
-    console.error("❌ Error fetching scans from Airtable:", error);
-    res.status(500).json({ error: "Failed to fetch scans from Airtable" });
+    console.error("❌ Error fetching scans:", error);
+    return res.status(500).json({ error: "Failed to fetch scans" });
   }
 }

@@ -1,5 +1,5 @@
 // pages/api/track-event.js
-import Airtable from "airtable";
+import { supabaseAdmin as db } from "@/lib/supabase";
 import crypto from "crypto";
 
 function getClientIp(req) {
@@ -17,63 +17,32 @@ function hashIp(ip) {
   return crypto.createHash("sha256").update(`${salt}:${ip}`).digest("hex");
 }
 
-const analyticsBase =
-  process.env.ANALYTICS_API_KEY && process.env.ANALYTICS_BASE_ID
-    ? new Airtable({ apiKey: process.env.ANALYTICS_API_KEY }).base(process.env.ANALYTICS_BASE_ID)
-    : null;
-
-// Scroll and time milestones are too noisy for Airtable - they still
-// fire to GA on the client, just skip the DB write here.
-const SKIP_AIRTABLE = new Set([
-  "scroll_milestone",
-  "time_milestone",
-]);
+const SKIP_EVENTS = new Set(["scroll_milestone", "time_milestone"]);
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
-  if (!analyticsBase || !process.env.ANALYTICS_TABLE_NAME) {
-    return res.status(500).json({ error: "Analytics Airtable not configured" });
-  }
 
   try {
     const {
-      eventName,
-      eventType,
-      userEmail,
-      path,
-      pageTitle,
-      previousPath,
-      entryPage,
-      source,
-      scrollDepth,
-      timeOnPageSec,
-      isReturnVisitor,
-      payload,
-      anonId,
-      sessionId,
-      consent,
-      client,
-      timestampEst,
-      timestampUtc,
-      consentGiven, // new: sent by no-consent base payload
+      eventName, eventType, userEmail, path, pageTitle,
+      previousPath, entryPage, source, scrollDepth, timeOnPageSec,
+      isReturnVisitor, payload, anonId, sessionId, consent,
+      client, timestampEst, timestampUtc, consentGiven,
     } = req.body || {};
 
     if (!eventName) return res.status(400).json({ error: "eventName is required" });
 
-    if (SKIP_AIRTABLE.has(eventName)) {
+    if (SKIP_EVENTS.has(eventName)) {
       return res.status(200).json({ ok: true, skipped: true });
     }
 
-    // Resolve whether analytics consent was given
-    // Supports both old shape (consent.analytics) and new shape (consentGiven bool)
     const hasConsent =
       consent?.analytics === true ||
       consentGiven === true ||
       consentGiven === "true";
 
-    // Use client-side EST timestamp if present, fallback to server time
     const createdAt  = timestampUtc || new Date().toISOString();
     const createdEst = timestampEst || (() => {
       const now = new Date();
@@ -87,66 +56,48 @@ export default async function handler(req, res) {
       return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} EST`;
     })();
 
-    const ip         = getClientIp(req);
-    const userAgent  = req.headers["user-agent"] || "";
-    const acceptLang = req.headers["accept-language"] || "";
+    const ip        = getClientIp(req);
+    const userAgent = req.headers["user-agent"] || "";
 
-    // ── Fields available regardless of consent ───────────────────────────
-    const baseFields = {
-      "Event Name":        String(eventName),
-      "Event Type":        String(eventType || ""),
-      "Path":              String(path      || ""),
-      "Page Title":        String(pageTitle || ""),
-      "Created At":        createdAt,
-      "Created At (EST)":  createdEst,
-      "Consent":           hasConsent ? "yes" : "no",
-      "Device Type":       String(client?.deviceType || ""),
-      "Referrer":          String(client?.referrer   || ""),
-      "User Agent":        String(userAgent  || ""),
-      "Accept-Language":   String(acceptLang || ""),
-      "IP Hash":           hashIp(ip), // always hashed, never raw - privacy safe
+    const row = {
+      event_name:    String(eventName),
+      event_type:    String(eventType || "") || null,
+      path:          String(path      || "") || null,
+      page_title:    String(pageTitle || "") || null,
+      created_at:    createdAt,
+      created_at_est: createdEst,
+      consent:       hasConsent ? "yes" : "no",
+      device_type:   String(client?.deviceType || "") || null,
+      referrer:      String(client?.referrer   || "") || null,
+      user_agent:    String(userAgent) || null,
+      ip_hash:       hashIp(ip) || null,
+
+      // Consent-gated fields
+      user_email:        hasConsent ? String(userEmail    || "") || null : null,
+      source:            hasConsent ? String(source       || "") || null : null,
+      previous_path:     hasConsent ? String(previousPath || "") || null : null,
+      entry_page:        hasConsent ? String(entryPage    || "") || null : null,
+      scroll_depth:      hasConsent && typeof scrollDepth   === "number" ? scrollDepth   : null,
+      time_on_page:      hasConsent && typeof timeOnPageSec === "number" ? timeOnPageSec : null,
+      anon_id:           hasConsent ? String(anonId    || "") || null : null,
+      session_id:        hasConsent ? String(sessionId || "") || null : null,
+      is_return_visitor: hasConsent && typeof isReturnVisitor === "boolean" ? isReturnVisitor : null,
+      payload_json:      hasConsent ? (payload || null) : null,
+      utm_json:          hasConsent ? (client?.utm || null) : null,
     };
 
-    // ── Fields only written when consent is given ────────────────────────
-    const consentFields = hasConsent ? {
-      "User Email":        String(userEmail    || ""),
-      "Source":            String(source       || ""),
-      "Previous Path":     String(previousPath || ""),
-      "Entry Page":        String(entryPage    || ""),
-      "Scroll Depth":      typeof scrollDepth   === "number" ? scrollDepth   : null,
-      "Time on Page":      typeof timeOnPageSec === "number" ? timeOnPageSec : null,
-      "Anon ID":           String(anonId    || ""),
-      "Session ID":        String(sessionId || ""),
-      "Is Return Visitor": typeof isReturnVisitor === "boolean" ? isReturnVisitor : false,
-      "Connection":        String(client?.connection || ""),
-      "Performance (ms)":  typeof client?.pageLoadMs === "number" ? client.pageLoadMs : null,
-      "Latitude":          typeof client?.geo?.lat === "number" ? client.geo.lat : null,
-      "Longitude":         typeof client?.geo?.lng === "number" ? client.geo.lng : null,
-      "Geo Accuracy (m)":  typeof client?.geo?.accuracy === "number" ? client.geo.accuracy : null,
-      "Timezone":          String(client?.timezone || ""),
-      "Language":          String(client?.language || ""),
-      "UTM (JSON)":        JSON.stringify(client?.utm        || {}),
-      "Viewport (JSON)":   JSON.stringify({ viewport: client?.viewport, screen: client?.screen }),
-      "Payload (JSON)":    JSON.stringify(payload || {}),
-    } : {};
+    const { data: created, error } = await db
+      .from("analytics_events")
+      .insert(row)
+      .select("id")
+      .single();
 
-    // Merge and strip nulls/undefined
-    const fields = Object.fromEntries(
-      Object.entries({ ...baseFields, ...consentFields })
-        .filter(([, v]) => v !== null && v !== undefined)
-    );
+    if (error) throw error;
 
-    const created = await analyticsBase(process.env.ANALYTICS_TABLE_NAME).create([
-      { fields },
-    ]);
-
-    return res.status(200).json({ ok: true, id: created[0].id });
+    return res.status(200).json({ ok: true, id: created?.id });
 
   } catch (err) {
     console.error("[/api/track-event] Error:", err);
-    return res.status(500).json({
-      error:   "Failed to track event",
-      details: err?.message || String(err),
-    });
+    return res.status(500).json({ error: "Failed to track event", details: err?.message });
   }
 }

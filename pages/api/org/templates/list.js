@@ -1,21 +1,9 @@
 // pages/api/org/templates/list.js
 // GET - returns all workout templates for this org.
-// Stored as JSON in the "WorkoutTemplates" Long Text field
-// on the Organizations Airtable record. Same pattern as SeasonCalendar.
-//
-// First run: create a "WorkoutTemplates" Long Text field on your
-// Organizations table in Airtable if it doesn't exist yet.
+// Stored as JSONB in organizations.workout_templates
 
-import Airtable from "airtable";
 import { requireOrgSideUser } from "@/lib/requireUser";
-
-function getBase() {
-  if (!process.env.ORGANIZATIONS_API_KEY || !process.env.ORGANIZATIONS_BASE_ID) {
-    throw new Error("ORGANIZATIONS_API_KEY or ORGANIZATIONS_BASE_ID env var missing.");
-  }
-  return new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY })
-    .base(process.env.ORGANIZATIONS_BASE_ID);
-}
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 function normalizeTemplate(t) {
   return {
@@ -41,26 +29,22 @@ export default async function handler(req, res) {
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
-  const orgId = String(user?.orgId || user?.OrgId || "").trim();
-  if (!orgId) return res.status(400).json({ error: "No orgId on session." });
-
-  const table = process.env.ORGANIZATIONS_TABLE_NAME || "tblDfjURwuvxOI0Su";
+  const orgToken = String(user?.Token || user?.token || "").trim();
+  if (!orgToken) return res.status(400).json({ error: "No org token on session." });
 
   try {
-    const record = await getBase()(table).find(orgId);
-    const raw    = (record?.fields?.WorkoutTemplates || "")
-      .replace(/\\\_/g, "_");  // same Airtable escape fix as SeasonCalendar
+    const { data: org, error } = await db
+      .from("organizations")
+      .select("workout_templates")
+      .eq("org_token", orgToken)
+      .maybeSingle();
 
-    let templates = [];
-    if (raw) {
-      try { templates = JSON.parse(raw); } catch {}
-    }
+    if (error) throw error;
+
+    let templates = org?.workout_templates ?? [];
     if (!Array.isArray(templates)) templates = [];
 
-    return res.status(200).json({
-      ok: true,
-      templates: templates.map(normalizeTemplate),
-    });
+    return res.status(200).json({ ok: true, templates: templates.map(normalizeTemplate) });
   } catch (e) {
     console.error("[templates/list]", e?.message || e);
     return res.status(500).json({ error: e?.message || "Failed to load templates." });

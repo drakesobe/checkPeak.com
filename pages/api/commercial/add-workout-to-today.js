@@ -121,7 +121,7 @@ export default async function handler(req, res) {
   // ── 5. Create WorkoutItems ────────────────────────────────────────────────
   if (meaningful.length > 0) {
     const items = meaningful.map(it => ({
-      dailyworkout_id:  dw.id,
+      daily_workout_id:  dw.id,
       sort_order:       it.sort_order,
       exercise_name:    it.exercise_name,
       sets:             it.sets,

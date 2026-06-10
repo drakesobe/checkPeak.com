@@ -49,12 +49,23 @@ export default async function handler(req, res) {
 
     if (error) throw error;
 
+    // Build athlete-sport lookup so workouts with sport=null fall back to the athlete's sport
+    const athleteTokens = [...new Set((data ?? []).map(dw => dw.athlete_token).filter(Boolean))];
+    let athleteSportMap = {};
+    if (athleteTokens.length > 0) {
+      const { data: athData } = await db
+        .from("athletes")
+        .select("athlete_token, sport")
+        .in("athlete_token", athleteTokens);
+      (athData ?? []).forEach(a => { if (a.athlete_token) athleteSportMap[a.athlete_token] = a.sport || ""; });
+    }
+
     let workouts = (data ?? []).map(dw => ({
       id:           dw.id,
       Title:        dw.title  || "Workout",
       Date:         dw.date,
       Status:       dw.status || "assigned",
-      Sport:            dw.sport  || "",
+      Sport:            dw.sport || athleteSportMap[dw.athlete_token] || "",
       athleteToken:     dw.athlete_token || "",
       ScheduledTime:    dw.scheduled_time    || null,
       ScheduledMinutes: timeStrToMinutes(dw.scheduled_time),

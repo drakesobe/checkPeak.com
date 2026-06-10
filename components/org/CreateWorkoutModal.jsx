@@ -982,7 +982,8 @@ export default function CreateWorkoutDrawer({
       } else {
         if (!computedDates.length) return setErr("Missing date.");
         if (!selectedTokens.length) return setErr("Select at least one athlete.");
-        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(activeSport?{sport:String(activeSport)}:{}), ...(scheduledTime ? { scheduledTime } : {}), ...(scheduledDuration ? { scheduledDuration: Number(scheduledDuration) } : {}) };
+        const effectiveSport = activeSport || derivedSport;
+        const body = { dates:computedDates, date:computedDates[0], title:String(title).trim(), status, athleteIds:selectedTokens, items:finalItems, ...(effectiveSport?{sport:String(effectiveSport)}:{}), ...(scheduledTime ? { scheduledTime } : {}), ...(scheduledDuration ? { scheduledDuration: Number(scheduledDuration) } : {}) };
         const res  = await fetch("/api/org/workouts/create", { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data?.error||"Create failed");

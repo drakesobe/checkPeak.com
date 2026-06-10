@@ -386,7 +386,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
       setPeriods(confirmed);
       onSaved?.(confirmed);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setTimeout(() => onClose?.(), 1200);
     } catch (e) {
       setSaveErr(`Saved locally but server sync failed: ${e?.message || "Unknown error"}.`);
     } finally {

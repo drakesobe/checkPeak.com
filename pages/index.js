@@ -229,7 +229,7 @@ function OrgButton({ source }) {
       onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; }}
     >
-      FOR ORGANIZATIONS
+      FOR UNIVERSITIES
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
       </svg>
@@ -442,7 +442,7 @@ function Hero() {
       >
         {[
           { label: "The Arena",       action: () => { track("nav_click", { label: "The Arena" });       document.getElementById("arena-trainers")?.scrollIntoView({ behavior: "smooth" }); } },
-          { label: "For orgs",        action: () => { track("nav_click", { label: "For orgs" });        document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" }); } },
+          { label: "For universities", action: () => { track("nav_click", { label: "For universities" }); document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" }); } },
           { label: "How it works",    action: () => { track("nav_click", { label: "How it works" });    document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" }); } },
         ].map(({ label, action }) => (
           <button key={label} type="button" onClick={action}
@@ -476,13 +476,13 @@ function Hero() {
             textShadow: "0 2px 60px rgba(0,0,0,0.6)",
           }}
         >
-          The Arena
+          Stop Guessing.
         </motion.h1>
 
         <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.58 }}
           style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontStyle: "italic", fontSize: "clamp(0.95rem, 2.2vw, 1.6rem)", letterSpacing: "0.04em", textTransform: "uppercase", color: "rgba(255,255,255,0.48)", marginBottom: "clamp(2rem, 4vw, 3.5rem)" }}
         >
-          Elite coaching. Zero guesswork.
+          Real coaches. Real results.
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.76 }}>

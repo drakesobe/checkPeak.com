@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       exercise_name:     toTrimmed(ex.ExerciseName || ex.exercise_name || ex.name || ''),
       sets:              toNumOrNull(ex.Sets ?? ex.sets),
       reps:              toTrimmed(ex.Reps ?? ex.reps ?? '') || null,
-      evidence_required: 'voluntary_activity_vara',
+      evidence_required: null,
       sort_order:        toNumOrNull(ex.Order ?? ex.order) ?? i + 1,
     }));
 

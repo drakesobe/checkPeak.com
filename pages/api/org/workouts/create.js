@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   if (!orgToken) return res.status(400).json({ error: "Missing org token on session." });
 
   try {
-    const { athleteId, athleteIds, date, dates, title, sport, status, items = [] } = req.body || {};
+    const { athleteId, athleteIds, date, dates, title, sport, status, items = [], scheduledTime, scheduledDuration } = req.body || {};
 
     const allDates = Array.isArray(dates) && dates.length
       ? dates.map(d => String(d).slice(0, 10)).filter(Boolean)
@@ -100,13 +100,15 @@ export default async function handler(req, res) {
 
         const { data: workout, error } = await createOrgWorkout({
           orgToken,
-          athleteId:    athlete.id,
-          athleteToken: athlete.athlete_token,
-          title:        String(title || "Daily Workout"),
-          date:         targetDate,
-          status:       String(status || "assigned"),
-          sport:        resolvedSport,
-          items:        normalizedItems,
+          athleteId:        athlete.id,
+          athleteToken:     athlete.athlete_token,
+          title:            String(title || "Daily Workout"),
+          date:             targetDate,
+          status:           String(status || "assigned"),
+          sport:            resolvedSport,
+          items:            normalizedItems,
+          scheduledTime:    scheduledTime || null,
+          scheduledDuration: scheduledDuration != null ? Number(scheduledDuration) || null : null,
         });
 
         if (error) {

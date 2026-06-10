@@ -7,6 +7,11 @@ import { supabaseAdmin as db } from "@/lib/supabase";
 function pad2(n) { return String(n).padStart(2, "0"); }
 function toISODateLocal(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function normLower(v) { return String(v ?? "").trim().toLowerCase(); }
+function timeStrToMinutes(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(":").map(Number);
+  return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -26,7 +31,7 @@ export default async function handler(req, res) {
     const { data, error } = await db
       .from("daily_workouts")
       .select(`
-        id, date, title, status, sport, athlete_id, athlete_token, org_token,
+        id, date, title, status, sport, athlete_id, athlete_token, org_token, scheduled_time, scheduled_duration,
         workout_items (
           id, exercise_name, sets, reps, weight, rpe, rest,
           instructions, video_url, evidence_required, sort_order, group_id,
@@ -43,8 +48,11 @@ export default async function handler(req, res) {
       Title:        dw.title  || "Workout",
       Date:         dw.date   || date,
       Status:       dw.status || "assigned",
-      Sport:        dw.sport  || "",
-      athleteToken: dw.athlete_token || "",
+      Sport:            dw.sport  || "",
+      athleteToken:     dw.athlete_token || "",
+      ScheduledTime:    dw.scheduled_time    || null,
+      ScheduledMinutes: timeStrToMinutes(dw.scheduled_time),
+      ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
       items: [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(item => {
         const completion = (item.workout_completions ?? [])[0] ?? null;
         return {

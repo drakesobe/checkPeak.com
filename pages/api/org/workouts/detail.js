@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const { data: dw } = await db
       .from("daily_workouts")
       .select(`
-        id, date, title, status, sport, athlete_token, org_token,
+        id, date, title, status, sport, athlete_token, org_token, scheduled_time, scheduled_duration,
         workout_items (
           id, exercise_name, sets, reps, weight, rpe, rest,
           instructions, video_url, evidence_required, sort_order, group_id,
@@ -45,8 +45,10 @@ export default async function handler(req, res) {
       Title:        dw.title  || "Workout",
       Date:         dw.date,
       Status:       dw.status || "assigned",
-      Sport:        dw.sport  || "",
-      athleteToken: dw.athlete_token || "",
+      Sport:            dw.sport  || "",
+      athleteToken:     dw.athlete_token || "",
+      ScheduledTime:    dw.scheduled_time    || null,
+      ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
       items: [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(item => ({
         id:               item.id,
         ExerciseName:     item.exercise_name     || "",

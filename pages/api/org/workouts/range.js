@@ -5,6 +5,11 @@ import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function normLower(v) { return String(v ?? "").trim().toLowerCase(); }
+function timeStrToMinutes(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(":").map(Number);
+  return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+}
 
 function parseSportsList(q) {
   const raw = String(q || "").trim();
@@ -34,7 +39,7 @@ export default async function handler(req, res) {
     const { data, error } = await db
       .from("daily_workouts")
       .select(`
-        id, date, title, status, sport, athlete_token,
+        id, date, title, status, sport, athlete_token, scheduled_time, scheduled_duration,
         workout_items ( id, sort_order, exercise_name, group_id )
       `)
       .eq("org_token", orgToken)
@@ -49,8 +54,11 @@ export default async function handler(req, res) {
       Title:        dw.title  || "Workout",
       Date:         dw.date,
       Status:       dw.status || "assigned",
-      Sport:        dw.sport  || "",
-      athleteToken: dw.athlete_token || "",
+      Sport:            dw.sport  || "",
+      athleteToken:     dw.athlete_token || "",
+      ScheduledTime:    dw.scheduled_time    || null,
+      ScheduledMinutes: timeStrToMinutes(dw.scheduled_time),
+      ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
       itemCount:    (dw.workout_items ?? []).length,
       items:        [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(i => ({
         id:           i.id,

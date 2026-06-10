@@ -10,7 +10,7 @@ const ALLOWED_STATUSES = ["assigned","complete","completed","draft","archived","
 
 function clean(v) { return v !== undefined && v !== null ? String(v).trim() : undefined; }
 
-async function updateOne(workoutId, orgToken, { title, date, status, sport, items }) {
+async function updateOne(workoutId, orgToken, { title, date, status, sport, items, scheduledTime, scheduledDuration }) {
   // Verify ownership
   const { data: existing } = await db
     .from("daily_workouts")
@@ -31,6 +31,8 @@ async function updateOne(workoutId, orgToken, { title, date, status, sport, item
     if (!ALLOWED_STATUSES.includes(s)) return { error: `Invalid status: ${s}`, status: 400 };
     patch.status = s;
   }
+  if (scheduledTime  !== undefined) patch.scheduled_time     = scheduledTime  ? String(scheduledTime).slice(0, 8) : null;
+  if (scheduledDuration !== undefined) patch.scheduled_duration = scheduledDuration != null ? Number(scheduledDuration) || null : null;
 
   if (Object.keys(patch).length) {
     const { error } = await db.from("daily_workouts").update(patch).eq("id", workoutId);
@@ -84,12 +86,12 @@ export default async function handler(req, res) {
   const ids  = Array.isArray(body.ids) ? body.ids.filter(Boolean) : (body.id ? [body.id] : []);
   if (!ids.length) return res.status(400).json({ error: "id or ids is required" });
 
-  const { title, date, status, sport, items } = body;
+  const { title, date, status, sport, items, scheduledTime, scheduledDuration } = body;
 
   try {
     const results = [];
     for (const id of ids) {
-      const r = await updateOne(String(id).trim(), orgToken, { title, date, status, sport, items });
+      const r = await updateOne(String(id).trim(), orgToken, { title, date, status, sport, items, scheduledTime, scheduledDuration });
       if (r.error) return res.status(r.status || 500).json({ error: r.error });
       results.push(id);
     }

@@ -847,12 +847,18 @@ export default function CoachDaySchedule({
 
   // ── Agenda items ─────────────────────────────────────────────────────────────
   const scheduledWorkouts   = useMemo(() =>
-    dedupedWorkouts.filter(w => w.ScheduledMinutes != null),
-  [dedupedWorkouts]);
+    dedupedWorkouts.filter(w => {
+      const key = w._allIds?.join(",") || w.id;
+      return w.ScheduledMinutes != null || localOverrides[key]?.ScheduledMinutes != null;
+    }),
+  [dedupedWorkouts, localOverrides]);
 
   const unscheduledWorkouts = useMemo(() =>
-    dedupedWorkouts.filter(w => w.ScheduledMinutes == null),
-  [dedupedWorkouts]);
+    dedupedWorkouts.filter(w => {
+      const key = w._allIds?.join(",") || w.id;
+      return w.ScheduledMinutes == null && localOverrides[key]?.ScheduledMinutes == null;
+    }),
+  [dedupedWorkouts, localOverrides]);
 
   const agendaItems = useMemo(() => {
     const items = [];

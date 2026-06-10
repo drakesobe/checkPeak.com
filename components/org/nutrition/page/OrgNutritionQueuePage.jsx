@@ -499,8 +499,21 @@ function ReminderCell({ row, onReminderSent, compact = false }) {
 
 // ─── Assign plan slide-over ───────────────────────────────────────────────────
 function AssignSlideOver({ row, onClose, onSaved }) {
-  const isMobile = useIsMobile();
-  const [values,  setValues]  = useState({ calories:"", protein:"", carbs:"", fat:"", phase:"Maintain", notes:"" });
+  const isMobile  = useIsMobile();
+  const isEditing = Boolean(row?.plan);
+
+  const [values, setValues] = useState(() => {
+    const p = row?.plan;
+    if (!p) return { calories:"", protein:"", carbs:"", fat:"", phase:"Maintain", notes:"" };
+    return {
+      calories: p.calories ? String(p.calories) : "",
+      protein:  p.protein  ? String(p.protein)  : "",
+      carbs:    p.carbs    ? String(p.carbs)     : "",
+      fat:      p.fat      ? String(p.fat)       : "",
+      phase:    p.phase    || "Maintain",
+      notes:    p.notes    || "",
+    };
+  });
   const [preset,  setPreset]  = useState(null);
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState("");
@@ -532,7 +545,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
         <div style={{ padding:isMobile?"16px":"20px 24px", borderBottom:"1px solid var(--rim)", background:"var(--surface)" }}>
           <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
             <div>
-              <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--brand)", marginBottom:4 }}>Assign Nutrition Plan</div>
+              <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--brand)", marginBottom:4 }}>{isEditing ? "Edit Nutrition Plan" : "Assign Nutrition Plan"}</div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <Avatar name={row?.athleteName} size={32} />
                 <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:20, color:"var(--ink)", lineHeight:1.1 }}>{row?.athleteName || "Athlete"}</div>
@@ -587,7 +600,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
         </div>
         <div style={{ padding:isMobile?"12px 16px":"16px 24px", borderTop:"1px solid var(--rim)", display:"flex", gap:10, background:"var(--surface)" }}>
           <button onClick={save} disabled={saving} style={{ flex:1, padding:"12px 20px", background:saving?"var(--muted)":"var(--brand)", border:"none", borderRadius:3, cursor:saving?"not-allowed":"pointer", fontFamily:"var(--font-display)", fontWeight:800, fontSize:14, letterSpacing:"0.08em", textTransform:"uppercase", color:"#fff" }}>
-            {saving ? "Saving…" : "Save Plan"}
+            {saving ? "Saving…" : isEditing ? "Update Plan" : "Save Plan"}
           </button>
           <button onClick={onClose} style={{ padding:"12px 16px", background:"transparent", border:"1px solid var(--rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:13, letterSpacing:"0.06em", textTransform:"uppercase", color:"var(--ghost)" }}>Cancel</button>
         </div>
@@ -653,7 +666,7 @@ function BatchActionBar({ selected, rows, onClear, onReminderSent }) {
 }
 
 // ─── Athlete table ────────────────────────────────────────────────────────────
-function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, onAssign, onReminderSent, onNavigate }) {
+function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, onAssign, onEdit, onReminderSent, onNavigate }) {
   const isMobile  = useIsMobile();
   const [search,  setSearch]  = useState("");
   const [sortKey, setSortKey] = useState("status");
@@ -702,6 +715,18 @@ function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, 
     onSelectChange(next);
   }
 
+  // Small secondary icon button — used alongside a primary action
+  function EditIconBtn({ row }) {
+    return (
+      <button onClick={() => onEdit?.(row)} title="Edit nutrition plan"
+        style={{ padding:"5px 8px", background:"transparent", border:"1px solid var(--rim)", borderRadius:3, cursor:"pointer", color:"var(--muted)", fontSize:13, lineHeight:1, transition:"all 0.12s", flexShrink:0 }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor="var(--wire)"; e.currentTarget.style.color="var(--chalk)"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor="var(--rim)"; e.currentTarget.style.color="var(--muted)"; }}>
+        ✎
+      </button>
+    );
+  }
+
   function ActionCell({ row }) {
     const sg = getSubGroup(row);
     if (sg === "noPlan") return (
@@ -712,16 +737,32 @@ function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, 
         Assign Plan ↗
       </button>
     );
-    if (sg === "noCheckin") return <ReminderCell row={row} onReminderSent={onReminderSent} />;
+    if (sg === "noCheckin") return (
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <ReminderCell row={row} onReminderSent={onReminderSent} />
+        <EditIconBtn row={row} />
+      </div>
+    );
     if (sg === "lowAdherence") return (
-      <button onClick={() => onNavigate?.(row)}
-        style={{ padding:"5px 12px", background:"transparent", border:"1px solid var(--rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:11, textTransform:"uppercase", color:"var(--ghost)", whiteSpace:"nowrap", transition:"all 0.12s" }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor="var(--wire)"; e.currentTarget.style.color="var(--chalk)"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor="var(--rim)"; e.currentTarget.style.color="var(--ghost)"; }}>
-        Review ↗
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <button onClick={() => onNavigate?.(row)}
+          style={{ padding:"5px 12px", background:"transparent", border:"1px solid var(--rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:11, textTransform:"uppercase", color:"var(--ghost)", whiteSpace:"nowrap", transition:"all 0.12s" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor="var(--wire)"; e.currentTarget.style.color="var(--chalk)"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor="var(--rim)"; e.currentTarget.style.color="var(--ghost)"; }}>
+          Review ↗
+        </button>
+        <EditIconBtn row={row} />
+      </div>
+    );
+    // onTrack — plan exists, edit is the only relevant action
+    return (
+      <button onClick={() => onEdit?.(row)}
+        style={{ padding:"5px 12px", background:"var(--green-bg)", border:"1px solid var(--green-rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:11, textTransform:"uppercase", color:"var(--green)", whiteSpace:"nowrap", transition:"all 0.12s" }}
+        onMouseEnter={e => { e.currentTarget.style.background="var(--green)"; e.currentTarget.style.color="#fff"; }}
+        onMouseLeave={e => { e.currentTarget.style.background="var(--green-bg)"; e.currentTarget.style.color="var(--green)"; }}>
+        ✎ Edit Plan
       </button>
     );
-    return <span style={{ fontFamily:"var(--font-mono)", fontSize:16, color:"var(--green)" }}>✓</span>;
   }
 
   // ── All Clear state ─────────────────────────────────────────────────────────
@@ -1039,6 +1080,7 @@ export default function OrgNutritionQueuePage() {
   const [filter,     setFilter]     = useState("all");
   const [selected,   setSelected]   = useState(new Set());
   const [assignRow,  setAssignRow]  = useState(null);
+  const [editRow,    setEditRow]    = useState(null);
   const [focusMode,  setFocusMode]  = useState(false);
 
   const actionCount = useMemo(() => rows.filter(r => getUrgency(r) < 3).length, [rows]);
@@ -1142,6 +1184,7 @@ export default function OrgNutritionQueuePage() {
                 selected={selected}
                 onSelectChange={setSelected}
                 onAssign={row => setAssignRow(row)}
+                onEdit={row => setEditRow(row)}
                 onReminderSent={handleReminderSent}
                 onNavigate={navigateToAthlete}
               />
@@ -1185,6 +1228,13 @@ export default function OrgNutritionQueuePage() {
             row={assignRow}
             onClose={() => setAssignRow(null)}
             onSaved={() => { setAssignRow(null); refresh(); }}
+          />
+        )}
+        {editRow && (
+          <AssignSlideOver
+            row={editRow}
+            onClose={() => setEditRow(null)}
+            onSaved={() => { setEditRow(null); refresh(); }}
           />
         )}
       </div>

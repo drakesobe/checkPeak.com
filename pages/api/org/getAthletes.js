@@ -21,12 +21,12 @@ export default async function handler(req, res) {
 
     const formatted = athletes.map(a => ({
       id:           a.id,
-      Name:         a.name         || "",
-      Email:        a.email        || "",
+      name:         a.name          || "",
+      email:        a.email         || "",
       AthleteToken: a.athlete_token || "",
-      Sport:        a.sport        || "",
-      Status:       a.status       || "active",
-      CreatedAt:    a.created_at   || "",
+      sport:        a.sport         || "",
+      status:       a.status        || "active",
+      createdAt:    a.created_at    || "",
     }));
 
     return res.status(200).json({ ok: true, athletes: formatted });

@@ -13,6 +13,9 @@ export function usePlanHistory({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyOffset, setHistoryOffset] = useState(null);
+  // Which athlete token the current historyItems were fetched for.
+  // Guards against showing stale data from a previous athlete during the reset window.
+  const [fetchedForToken, setFetchedForToken] = useState("");
 
   // reset when athlete changes (via nonce)
   useEffect(() => {
@@ -20,6 +23,7 @@ export function usePlanHistory({
     setHistoryItems([]);
     setHistoryHasMore(false);
     setHistoryOffset(null);
+    setFetchedForToken("");
   }, [historyResetNonce]);
 
   const searchHistory = useCallback(
@@ -63,6 +67,7 @@ export function usePlanHistory({
 
         if (reset) setHistoryItems(mapped);
         else setHistoryItems((prev) => prev.concat(mapped));
+        setFetchedForToken(token);
 
         const nextOffset = data?.nextOffset ? String(data.nextOffset) : null;
         const hasMore = Boolean(data?.hasMore) || Boolean(nextOffset);
@@ -71,7 +76,7 @@ export function usePlanHistory({
         setHistoryHasMore(hasMore);
       } catch (err) {
         console.error("[org/prescriptions] searchHistory error:", err);
-        if (reset) setHistoryItems([]);
+        if (reset) { setHistoryItems([]); setFetchedForToken(""); }
         setHistoryHasMore(false);
         setHistoryOffset(null);
         setError(err?.message || "Failed to load plans.");
@@ -92,6 +97,7 @@ export function usePlanHistory({
     historyItems,
     historyLoading,
     historyHasMore,
+    fetchedForToken,
     searchHistory,
     loadMoreHistory,
 

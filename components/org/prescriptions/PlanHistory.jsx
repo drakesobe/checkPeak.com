@@ -34,6 +34,174 @@ function extractTitleHint(p) {
   return created ? `Plan · ${created}` : "Plan";
 }
 
+/* ── Macro grid for expanded view ── */
+function MacroRow({ label, value, unit }) {
+  if (!safeText(value)) return null;
+  return (
+    <div className="flex items-center justify-between py-1.5" style={{ borderBottom: `1px solid ${DS.border}` }}>
+      <span className="text-xs" style={{ color: DS.labelText }}>{label}</span>
+      <span className="text-xs font-bold tabular-nums" style={{ color: DS.bodyText }}>
+        {value}{unit && <span className="font-normal ml-0.5" style={{ color: DS.dimText }}>{unit}</span>}
+      </span>
+    </div>
+  );
+}
+
+/* ── Pill chip ── */
+function Chip({ label, color = "brand" }) {
+  if (!safeText(label)) return null;
+  const colors = {
+    brand:   { bg: DS.brandBg,   text: DS.brand,   border: DS.brandBorder },
+    safe:    { bg: DS.safeBg,    text: DS.safe,     border: DS.safeBorder  },
+    caution: { bg: DS.cautionBg, text: DS.caution,  border: DS.cautionBorder },
+  };
+  const c = colors[color] || colors.brand;
+  return (
+    <span
+      className="inline-block text-xs font-bold px-2 py-0.5 rounded-sm"
+      style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/* ── Supplement line ── */
+function SuppLine({ label, value }) {
+  if (!safeText(value)) return null;
+  return (
+    <div className="flex gap-2 text-xs py-1" style={{ borderBottom: `1px solid ${DS.border}` }}>
+      <span className="shrink-0 w-28" style={{ color: DS.labelText }}>{label}</span>
+      <span className="flex-1 font-medium" style={{ color: DS.bodyText }}>{value}</span>
+    </div>
+  );
+}
+
+/* ── Full expanded plan detail ── */
+function PlanDetail({ p }) {
+  const raw = p?._raw || {};
+  const pj  = raw?.planJson && typeof raw.planJson === "object" ? raw.planJson : {};
+
+  const phase  = safeText(raw.phase  || pj?.phase  || "");
+  const status = safeText(raw.status || pj?.meta?.status || "");
+
+  const cal  = safeText(raw.dailyCalories  || pj?.daily?.calories  || "");
+  const pro  = safeText(raw.dailyProtein   || pj?.daily?.protein   || "");
+  const carb = safeText(raw.dailyCarbs     || pj?.daily?.carbs     || "");
+  const fat  = safeText(raw.dailyFat       || pj?.daily?.fat       || "");
+  const hyd  = safeText(raw.dailyHydration || pj?.daily?.hydrationOz || pj?.hydrationOz || "");
+
+  const hasMacros = cal || pro || carb || fat || hyd;
+
+  const supp = pj?.supplements && typeof pj.supplements === "object" ? pj.supplements : {};
+  const suppLines = [
+    { label: "Protein",      value: safeText(supp.proteinRecommendation      || "") },
+    { label: "Creatine",     value: safeText(supp.creatineRecommendation     || "") },
+    { label: "BCAA / EAA",   value: safeText(supp.bcaaRecommendation         || "") },
+    { label: "Electrolytes", value: safeText(supp.electrolytesRecommendation || "") },
+    { label: "Pre-Workout",  value: safeText(supp.preWorkoutRecommendation   || "") },
+    { label: "Protein Bar",  value: safeText(supp.proteinBarRecommendation   || "") },
+  ].filter(s => s.value);
+
+  const notesMacros = safeText(pj?.notes?.macros      || pj?.notesMacros      || "");
+  const notesSupp   = safeText(pj?.notes?.supplements || pj?.notesSupplements || "");
+  const freeform    = safeText(raw.prescription || pj?.freeformNotes || "");
+
+  const effDate = safeText(pj?.meta?.effectiveDate || raw.effectiveDate || "");
+
+  const hasAnything = phase || hasMacros || suppLines.length || notesMacros || notesSupp || freeform;
+
+  if (!hasAnything) {
+    return (
+      <p className="text-xs py-2" style={{ color: DS.dimText }}>
+        No plan details stored for this record.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3 mt-3">
+
+      {/* Phase + Status + Effective date */}
+      {(phase || status || effDate) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {phase  && <Chip label={phase} color="brand" />}
+          {status && status !== "active" && <Chip label={status} color={status === "archived" ? "caution" : "safe"} />}
+          {effDate && (
+            <span className="text-xs" style={{ color: DS.dimText }}>
+              Effective {effDate}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Macros */}
+      {hasMacros && (
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest mb-1.5" style={{ color: DS.dimText }}>
+            Daily Targets
+          </p>
+          <div style={{ border: `1px solid ${DS.border}`, padding: "0.5rem 0.75rem", backgroundColor: DS.pageBg }}>
+            <MacroRow label="Calories"  value={cal}  unit="kcal" />
+            <MacroRow label="Protein"   value={pro}  unit="g" />
+            <MacroRow label="Carbs"     value={carb} unit="g" />
+            <MacroRow label="Fat"       value={fat}  unit="g" />
+            <MacroRow label="Hydration" value={hyd}  unit="oz" />
+          </div>
+        </div>
+      )}
+
+      {/* Supplements */}
+      {suppLines.length > 0 && (
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest mb-1.5" style={{ color: DS.dimText }}>
+            Supplements
+          </p>
+          <div style={{ border: `1px solid ${DS.border}`, padding: "0.5rem 0.75rem", backgroundColor: DS.pageBg }}>
+            {suppLines.map(s => <SuppLine key={s.label} label={s.label} value={s.value} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Macro notes */}
+      {notesMacros && (
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest mb-1" style={{ color: DS.dimText }}>Macro Notes</p>
+          <p className="text-xs leading-relaxed" style={{ color: DS.bodyText }}>{notesMacros}</p>
+        </div>
+      )}
+
+      {/* Supplement notes */}
+      {notesSupp && (
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest mb-1" style={{ color: DS.dimText }}>Supplement Notes</p>
+          <p className="text-xs leading-relaxed" style={{ color: DS.bodyText }}>{notesSupp}</p>
+        </div>
+      )}
+
+      {/* Freeform / prescription */}
+      {freeform && (
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest mb-1" style={{ color: DS.dimText }}>Additional Notes</p>
+          <pre
+            className="whitespace-pre-wrap text-xs leading-relaxed overflow-auto"
+            style={{
+              backgroundColor: DS.pageBg,
+              border: `1px solid ${DS.border}`,
+              padding: "0.625rem 0.75rem",
+              maxHeight: 280,
+              color: DS.bodyText,
+              fontFamily: "inherit",
+            }}
+          >
+            {freeform}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlanHistory({
   prescriptions = [],
   selectedAthleteToken,
@@ -169,7 +337,7 @@ export default function PlanHistory({
           className="mx-4 mt-4 px-3 py-2.5 text-xs"
           style={{ backgroundColor: DS.cautionBg, borderLeft: `3px solid ${DS.caution}`, color: DS.caution }}
         >
-          <span className="font-bold">Missing athlete token</span> - fix the roster record to load history.
+          <span className="font-bold">Missing athlete token</span> — fix the roster record to load history.
         </div>
       )}
 
@@ -198,8 +366,10 @@ export default function PlanHistory({
       {/* Empty state */}
       {token && !loading && (Array.isArray(prescriptions) ? prescriptions.length : 0) === 0 && (
         <div className="mx-4 my-3 px-3 py-2.5" style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
-          <p className="text-sm font-bold" style={{ color: DS.bodyText }}>No plans yet</p>
-          <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>Click Refresh to re-check NutritionPlans.</p>
+          <p className="text-sm font-bold" style={{ color: DS.bodyText }}>No plans saved yet</p>
+          <p className="text-xs mt-0.5" style={{ color: DS.dimText }}>
+            Save a plan from the builder above, then click Refresh to see it here.
+          </p>
         </div>
       )}
 
@@ -210,6 +380,19 @@ export default function PlanHistory({
           const isOpen = expanded.has(id);
           const text   = safeText(p?.prescription);
           const by     = safeText(p?.createdBy);
+
+          /* Macro summary line for collapsed state */
+          const raw = p?._raw || {};
+          const cal = safeText(raw.dailyCalories || "");
+          const pro = safeText(raw.dailyProtein  || "");
+          const carb = safeText(raw.dailyCarbs   || "");
+          const fat  = safeText(raw.dailyFat     || "");
+          const macroLine = [
+            cal  && `${Number(cal).toLocaleString()} cal`,
+            pro  && `P ${pro}g`,
+            carb && `C ${carb}g`,
+            fat  && `F ${fat}g`,
+          ].filter(Boolean).join(" · ");
 
           return (
             <div
@@ -229,7 +412,12 @@ export default function PlanHistory({
                     {p?.createdAt ? formatDateTime(p.createdAt) : "-"}
                     {by && ` · ${by}`}
                   </p>
-                  {!isOpen && text && (
+                  {!isOpen && macroLine && (
+                    <p className="mt-1 text-xs font-medium" style={{ color: DS.labelText }}>
+                      {macroLine}
+                    </p>
+                  )}
+                  {!isOpen && !macroLine && text && (
                     <p className="mt-1.5 text-xs leading-relaxed" style={{ color: DS.labelText }}>
                       {snippet(text, 180)}
                     </p>
@@ -270,18 +458,7 @@ export default function PlanHistory({
 
               {isOpen && (
                 <div className="px-3 pb-3" style={{ borderTop: `1px solid ${DS.border}` }}>
-                  <pre
-                    className="mt-3 whitespace-pre-wrap text-sm leading-relaxed overflow-auto"
-                    style={{
-                      backgroundColor: DS.pageBg,
-                      border: `1px solid ${DS.border}`,
-                      padding: "0.75rem",
-                      maxHeight: 360,
-                      color: DS.bodyText,
-                    }}
-                  >
-                    {text || ""}
-                  </pre>
+                  <PlanDetail p={p} />
                 </div>
               )}
             </div>
@@ -291,7 +468,7 @@ export default function PlanHistory({
 
       {token && (Array.isArray(prescriptions) ? prescriptions.length : 0) > 0 && (
         <div className="px-4 pb-3 text-xs" style={{ color: DS.dimText }}>
-          {hasMore ? "Showing latest plans - Load more for older ones." : "End of history."}
+          {hasMore ? "Showing latest plans — Load more for older ones." : "End of history."}
         </div>
       )}
     </div>

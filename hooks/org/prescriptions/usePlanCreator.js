@@ -133,6 +133,7 @@ export function usePlanCreator({
   setError,
   advanceSafely,
   goToNextAthlete,
+  onSuccess,
 }) {
   const [createLoading, setCreateLoading] = useState(false);
 
@@ -200,8 +201,9 @@ export function usePlanCreator({
           throw new Error(msg);
         }
 
-        try { markDone?.(athleteEmail); }            catch {}
+        try { markDone?.(athleteEmail); }              catch {}
         try { markDoneFromPlanStatus?.(athleteEmail); } catch {}
+        try { onSuccess?.(); }                          catch {}
 
         try {
           if (view === "history" && typeof searchHistory === "function") {
@@ -229,7 +231,7 @@ export function usePlanCreator({
       orgAuthHeaders, user, selectedAthleteEmail, selectedAthleteToken,
       structured, validateBuilder, markDone, markDoneFromPlanStatus,
       view, searchHistory, setHistoryOffset, setView, setError,
-      advanceSafely, goToNextAthlete,
+      advanceSafely, goToNextAthlete, onSuccess,
     ]
   );
 

@@ -500,6 +500,13 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                 </>
               )}
             </div>
+            {/* Persistent swipe affordance — faint hint so athletes always know the gesture */}
+            {!allDone && !isReadOnly && !expanded && (
+              <div style={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.18 }}>
+                <span style={{ fontSize: 7, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.white }}>swipe</span>
+                <ChevronRight size={7} color={D.white} />
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
@@ -521,25 +528,50 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
 
           {/* Action toggles */}
           {!isReadOnly && (
-            <div style={{ padding: "12px 18px 10px", display: "flex", gap: 8 }}>
+            <div style={{ padding: "14px 18px 12px", display: "flex", gap: 10 }}>
               {[
-                { field: "mealDone",      label: "Meal",    done: mealDone,      color: D.green,  bg: D.greenDim, border: "rgba(0,200,81,0.3)"  },
-                { field: "hydrationDone", label: hydLabel,  done: hydrationDone, color: D.accent, bg: "rgba(79,171,255,0.1)", border: "rgba(79,171,255,0.3)" },
-              ].map(({ field, label, done, color, bg, border }) => (
+                { field: "mealDone",      label: "Meal logged",  done: mealDone,      color: D.green,  bg: "rgba(0,200,81,0.12)",    border: "rgba(0,200,81,0.45)",    glowColor: "rgba(0,200,81,0.15)"  },
+                { field: "hydrationDone", label: hydLabel,        done: hydrationDone, color: D.accent, bg: "rgba(79,171,255,0.12)",  border: "rgba(79,171,255,0.45)",  glowColor: "rgba(79,171,255,0.15)" },
+              ].map(({ field, label, done, color, bg, border, glowColor }) => (
                 <button key={field}
                   onClick={e => { e.stopPropagation(); haptic(8); onToggleField(item.mealKey, field); }}
                   style={{
-                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    padding: "11px 10px",
-                    background: done ? bg : D.faint,
-                    border: `1.5px solid ${done ? border : D.line2}`,
-                    borderRadius: 10, cursor: "pointer",
-                    fontSize: 12, fontWeight: 600,
-                    color: done ? color : D.dim,
-                    transition: "all 0.15s",
+                    flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 7,
+                    padding: "14px 10px",
+                    background: done ? bg : "#1C1C1C",
+                    border: `1.5px solid ${done ? border : "rgba(255,255,255,0.14)"}`,
+                    borderRadius: 14, cursor: "pointer",
+                    boxShadow: done ? `0 0 0 3px ${glowColor}` : "none",
+                    transition: "all 0.18s",
+                    WebkitTapHighlightColor: "transparent",
                   }}>
-                  {done && <Check size={12} color={color} strokeWidth={3} style={{ animation: "popIn 0.35s cubic-bezier(0.16,1,0.3,1)" }} />}
-                  {label}
+                  {/* Icon */}
+                  <div style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: done ? bg : "rgba(255,255,255,0.06)",
+                    border: `1.5px solid ${done ? border : "rgba(255,255,255,0.18)"}`,
+                    flexShrink: 0,
+                    transition: "all 0.18s",
+                  }}>
+                    {done
+                      ? <Check size={13} color={color} strokeWidth={3} style={{ animation: "popIn 0.35s cubic-bezier(0.16,1,0.3,1)" }} />
+                      : <div style={{ width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,0.2)" }} />
+                    }
+                  </div>
+                  {/* Label */}
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: "0.01em",
+                    color: done ? color : "rgba(255,255,255,0.4)",
+                    lineHeight: 1, textAlign: "center",
+                    transition: "color 0.18s",
+                  }}>{label}</span>
+                  {/* Tap hint — only when not done */}
+                  {!done && (
+                    <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.18)" }}>
+                      tap to mark
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -574,6 +606,14 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
           {/* Macro targets */}
           {hasMacros && (
             <div style={{ padding: "4px 18px 14px", borderTop: `1px solid ${D.line}` }}>
+              {item.isDailyTarget && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, marginTop: 4 }}>
+                  <div style={{ width: 3, height: 3, borderRadius: "50%", background: D.muted, flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.muted }}>
+                    Daily targets — distribute across your meals
+                  </span>
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 8 }}>
                 {[
                   { label: "Cal",   value: item.targets?.calories, color: D.amber  },

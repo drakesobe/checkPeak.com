@@ -185,7 +185,11 @@ export function useAthleteNutritionToday({ authReady, user, isAthlete, selectedD
     return isISODateOnly(d) ? d : "";
   }, [serverSelectedDate, selectedDate]);
 
-  const hasPlan = Boolean(plan && (planJson || mealBlocks || safeText(plan?.prescription)));
+  const dailyHasData = Boolean(
+    plan?.daily &&
+    (safeText(plan.daily.calories) || safeText(plan.daily.protein) || safeText(plan.daily.hydrationOz))
+  );
+  const hasPlan = Boolean(plan && (planJson || mealBlocks || safeText(plan?.prescription) || dailyHasData));
 
   // If no plan effective today but there is a next plan in the future
   const isFuture = useMemo(() => {

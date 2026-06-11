@@ -497,6 +497,56 @@ function ReminderCell({ row, onReminderSent, compact = false }) {
   );
 }
 
+// ─── Meal distribution helpers ────────────────────────────────────────────────
+const MEAL_DEFS = [
+  { key: "breakfast", label: "Breakfast" },
+  { key: "lunch",     label: "Lunch"     },
+  { key: "afternoon", label: "Afternoon" },
+  { key: "dinner",    label: "Dinner"    },
+];
+const DEFAULT_PCTS = { breakfast: 25, lunch: 30, afternoon: 15, dinner: 30 };
+
+function derivePctsFromPlanJson(planJson, dailyCalories) {
+  const mb = planJson?.mealBlocks;
+  const cal = Number(dailyCalories) || 0;
+  if (!mb || !cal) return { ...DEFAULT_PCTS };
+  const pcts = {};
+  let remaining = 100;
+  MEAL_DEFS.forEach(({ key }, i) => {
+    const mealCal = Number(mb[key]?.targets?.calories) || 0;
+    if (i < MEAL_DEFS.length - 1) {
+      const p = cal > 0 ? Math.round((mealCal / cal) * 100) : DEFAULT_PCTS[key];
+      pcts[key] = p;
+      remaining -= p;
+    } else {
+      pcts[key] = remaining; // last slot absorbs rounding
+    }
+  });
+  return pcts;
+}
+
+function buildPlanJson(values) {
+  const cal  = Number(values.calories) || 0;
+  const pro  = Number(values.protein)  || 0;
+  const carb = Number(values.carbs)    || 0;
+  const fat  = Number(values.fat)      || 0;
+  const pcts = values.mealPcts;
+  const mealBlocks = {};
+  MEAL_DEFS.forEach(({ key, label }) => {
+    const pct = (Number(pcts[key]) || 0) / 100;
+    mealBlocks[key] = {
+      name: label,
+      targets: {
+        calories: cal  > 0 ? Math.round(cal  * pct) : null,
+        protein:  pro  > 0 ? Math.round(pro  * pct) : null,
+        carbs:    carb > 0 ? Math.round(carb * pct) : null,
+        fat:      fat  > 0 ? Math.round(fat  * pct) : null,
+      },
+    };
+  });
+  return { mealBlocks, daily: { calories: String(cal), protein: String(pro), carbs: String(carb), fat: String(fat) } };
+}
+
 // ─── Assign plan slide-over ───────────────────────────────────────────────────
 function AssignSlideOver({ row, onClose, onSaved }) {
   const isMobile  = useIsMobile();
@@ -504,7 +554,8 @@ function AssignSlideOver({ row, onClose, onSaved }) {
 
   const [values, setValues] = useState(() => {
     const p = row?.plan;
-    if (!p) return { calories:"", protein:"", carbs:"", fat:"", phase:"Maintain", notes:"" };
+    if (!p) return { calories:"", protein:"", carbs:"", fat:"", phase:"Maintain", notes:"", mealPcts:{ ...DEFAULT_PCTS } };
+    const mealPcts = derivePctsFromPlanJson(p.planJson, p.calories);
     return {
       calories: p.calories ? String(p.calories) : "",
       protein:  p.protein  ? String(p.protein)  : "",
@@ -512,6 +563,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
       fat:      p.fat      ? String(p.fat)       : "",
       phase:    p.phase    || "Maintain",
       notes:    p.notes    || "",
+      mealPcts,
     };
   });
   const [preset,  setPreset]  = useState(null);
@@ -520,16 +572,35 @@ function AssignSlideOver({ row, onClose, onSaved }) {
 
   const inp = { width:"100%", background:"var(--raised)", border:"1px solid var(--rim)", borderRadius:3, padding:"9px 12px", color:"var(--ink)", fontFamily:"var(--font-mono)", fontSize:13, outline:"none", transition:"border-color 0.15s" };
 
-  function applyPreset(p) { setPreset(p.label); setValues(v => ({ ...v, calories:String(p.calories), protein:String(p.protein), carbs:String(p.carbs), fat:String(p.fat), phase:p.phase })); }
+  function applyPreset(p) {
+    setPreset(p.label);
+    setValues(v => ({ ...v, calories:String(p.calories), protein:String(p.protein), carbs:String(p.carbs), fat:String(p.fat), phase:p.phase, mealPcts:{ ...DEFAULT_PCTS } }));
+  }
   function set(key) { return e => { setValues(v => ({ ...v, [key]:e.target.value })); setPreset(null); }; }
+  function setPct(mealKey, raw) {
+    const val = Math.max(0, Math.min(100, Number(raw) || 0));
+    setValues(v => ({ ...v, mealPcts: { ...v.mealPcts, [mealKey]: val } }));
+  }
+
+  const pctTotal = MEAL_DEFS.reduce((s, { key }) => s + (Number(values.mealPcts[key]) || 0), 0);
+  const pctOk    = pctTotal === 100;
 
   async function save() {
     if (!values.calories || !values.protein) { setErr("Calories and protein are required."); return; }
     setSaving(true); setErr("");
     try {
-      const res  = await fetch("/api/org/nutrition/assign-plan", {
+      const planJson = buildPlanJson(values);
+      const res = await fetch("/api/org/nutrition/assign-plan", {
         method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include",
-        body: JSON.stringify({ athleteToken:row?.athleteToken, plan:{ calories:Number(values.calories), protein:Number(values.protein), carbs:Number(values.carbs)||0, fat:Number(values.fat)||0, phase:values.phase, notes:values.notes } }),
+        body: JSON.stringify({
+          athleteToken: row?.athleteToken,
+          plan: {
+            calories: Number(values.calories), protein: Number(values.protein),
+            carbs: Number(values.carbs)||0, fat: Number(values.fat)||0,
+            phase: values.phase, notes: values.notes,
+            planJson,
+          },
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
@@ -537,6 +608,8 @@ function AssignSlideOver({ row, onClose, onSaved }) {
     } catch (e) { setErr(e?.message || "Failed to save."); }
     finally { setSaving(false); }
   }
+
+  const cal = Number(values.calories) || 0;
 
   return (
     <>
@@ -555,7 +628,9 @@ function AssignSlideOver({ row, onClose, onSaved }) {
             <button onClick={onClose} style={{ background:"var(--raised)", border:"1px solid var(--rim)", borderRadius:3, padding:"6px 9px", cursor:"pointer", color:"var(--ghost)", fontSize:16, lineHeight:1 }}>✕</button>
           </div>
         </div>
+
         <div style={{ flex:1, overflowY:"auto", padding:isMobile?"16px":"20px 24px" }}>
+          {/* Quick Fill */}
           <div style={{ marginBottom:18 }}>
             <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ghost)", marginBottom:10 }}>Quick Fill</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
@@ -568,9 +643,12 @@ function AssignSlideOver({ row, onClose, onSaved }) {
               ))}
             </div>
           </div>
+
           <div style={{ height:1, background:"var(--rim)", margin:"0 0 18px" }} />
+
+          {/* Daily Targets */}
           <div style={{ marginBottom:18 }}>
-            <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ghost)", marginBottom:10 }}>Targets</div>
+            <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ghost)", marginBottom:10 }}>Daily Targets</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {[["calories","Calories / day *","3200"],["protein","Protein (g) *","185"],["carbs","Carbs (g)","360"],["fat","Fat (g)","95"]].map(([key,label,ph]) => (
                 <div key={key}>
@@ -582,6 +660,61 @@ function AssignSlideOver({ row, onClose, onSaved }) {
               ))}
             </div>
           </div>
+
+          <div style={{ height:1, background:"var(--rim)", margin:"0 0 18px" }} />
+
+          {/* Meal Distribution */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ghost)" }}>Meal Distribution</div>
+              <div style={{ fontSize:11, fontWeight:700, color: pctOk ? "var(--green)" : pctTotal > 100 ? "var(--red)" : "var(--amber)" }}>
+                {pctTotal}% {pctOk ? "✓" : `of 100%`}
+              </div>
+            </div>
+
+            {/* Visual bar showing the split */}
+            <div style={{ display:"flex", height:6, borderRadius:4, overflow:"hidden", marginBottom:14, gap:1 }}>
+              {MEAL_DEFS.map(({ key }, i) => {
+                const pct = Number(values.mealPcts[key]) || 0;
+                const colors = ["#3B82F6","#10B981","#F59E0B","#8B5CF6"];
+                return <div key={key} style={{ flex: pct, background: colors[i], transition:"flex 0.2s ease", minWidth: pct > 0 ? 2 : 0 }} />;
+              })}
+            </div>
+
+            {MEAL_DEFS.map(({ key, label }, i) => {
+              const pct    = Number(values.mealPcts[key]) || 0;
+              const mealCal = cal > 0 ? Math.round(cal * pct / 100) : null;
+              const colors  = ["#3B82F6","#10B981","#F59E0B","#8B5CF6"];
+              return (
+                <div key={key} style={{ display:"flex", alignItems:"center", gap:10, marginBottom: i < MEAL_DEFS.length - 1 ? 10 : 0 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:colors[i], flexShrink:0 }} />
+                  <div style={{ width:76, fontSize:12, fontWeight:600, color:"var(--ink)", flexShrink:0 }}>{label}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, flex:1 }}>
+                    <input type="number" value={pct} min="0" max="100"
+                      onChange={e => setPct(key, e.target.value)}
+                      style={{ ...inp, width:58, padding:"6px 8px", textAlign:"center", fontWeight:700 }}
+                      onFocus={e => e.target.style.borderColor=colors[i]}
+                      onBlur={e => e.target.style.borderColor="var(--rim)"}
+                    />
+                    <span style={{ fontSize:11, color:"var(--ghost)", flexShrink:0 }}>%</span>
+                  </div>
+                  <div style={{ minWidth:64, textAlign:"right", fontSize:12, fontWeight:700, color:"var(--ghost)", fontFamily:"var(--font-mono)" }}>
+                    {mealCal != null ? `${mealCal} cal` : "—"}
+                  </div>
+                </div>
+              );
+            })}
+
+            {!pctOk && (
+              <div style={{ marginTop:10, padding:"8px 12px", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.2)", borderRadius:4, fontSize:11, color:"var(--amber)" }}>
+                Percentages total {pctTotal}% — adjust to reach 100% for accurate per-meal targets.
+              </div>
+            )}
+          </div>
+
+          <div style={{ height:1, background:"var(--rim)", margin:"0 0 18px" }} />
+
+          {/* Phase + Notes */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:"block", fontFamily:"var(--font-display)", fontWeight:700, fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ghost)", marginBottom:5 }}>Phase</label>
             <select value={values.phase} onChange={set("phase")} style={{ ...inp, cursor:"pointer" }}
@@ -598,6 +731,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
           </div>
           {err && <div style={{ marginTop:10, padding:"10px 14px", background:"var(--red-bg)", border:"1px solid var(--red-rim)", borderRadius:3, color:"var(--red)", fontSize:13 }}>{err}</div>}
         </div>
+
         <div style={{ padding:isMobile?"12px 16px":"16px 24px", borderTop:"1px solid var(--rim)", display:"flex", gap:10, background:"var(--surface)" }}>
           <button onClick={save} disabled={saving} style={{ flex:1, padding:"12px 20px", background:saving?"var(--muted)":"var(--brand)", border:"none", borderRadius:3, cursor:saving?"not-allowed":"pointer", fontFamily:"var(--font-display)", fontWeight:800, fontSize:14, letterSpacing:"0.08em", textTransform:"uppercase", color:"#fff" }}>
             {saving ? "Saving…" : isEditing ? "Update Plan" : "Save Plan"}

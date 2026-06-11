@@ -91,7 +91,42 @@ export default async function handler(req, res) {
       });
     }
 
-    const planJson = safeJsonParse(picked.plan_json);
+    // plan_json is a JSONB column — Supabase returns it already parsed as an object.
+    // safeJsonParse calls asString() first which coerces objects to "[object Object]",
+    // so we must branch on the type before trying to parse.
+    const rawPlanJson = picked.plan_json;
+    let planJson = rawPlanJson == null
+      ? null
+      : typeof rawPlanJson === "object"
+        ? rawPlanJson
+        : safeJsonParse(rawPlanJson);
+
+    // Auto-derive per-meal mealBlocks when plan_json has none.
+    // Covers plans created before per-meal distribution was added to the org sidebar.
+    if (!planJson?.mealBlocks) {
+      const cal  = Number(picked.daily_calories) || 0;
+      const pro  = Number(picked.daily_protein)  || 0;
+      const carb = Number(picked.daily_carbs)    || 0;
+      const fat  = Number(picked.daily_fat)      || 0;
+      if (cal || pro) {
+        const SPLITS = { breakfast: 0.25, lunch: 0.30, afternoon: 0.15, dinner: 0.30 };
+        const LABELS = { breakfast: "Breakfast", lunch: "Lunch", afternoon: "Afternoon", dinner: "Dinner" };
+        const mealBlocks = {};
+        for (const [key, pct] of Object.entries(SPLITS)) {
+          mealBlocks[key] = {
+            name: LABELS[key],
+            targets: {
+              calories: cal  ? Math.round(cal  * pct) : null,
+              protein:  pro  ? Math.round(pro  * pct) : null,
+              carbs:    carb ? Math.round(carb * pct) : null,
+              fat:      fat  ? Math.round(fat  * pct) : null,
+            },
+          };
+        }
+        planJson = { ...(planJson || {}), mealBlocks };
+      }
+    }
+
     const latestPlan = {
       id:    picked.id,
       phase: asString(picked.phase),

@@ -37,15 +37,24 @@ function localDateStr(d = new Date()) {
 function computeStreak(who) {
   if (!who || typeof window === "undefined") return 0;
   let streak = 0;
-  const d = new Date(); d.setDate(d.getDate() - 1);
-  for (let i = 0; i < 60; i++) {
-    const raw = localStorage.getItem(`checkpeak:nutritionCompletion:${who}:${localDateStr(d)}`);
-    if (!raw) break;
-    try {
-      const comp = JSON.parse(raw);
-      if (!Object.values(comp).some(m => m?.mealDone || m?.hydrationDone)) break;
-      streak++; d.setDate(d.getDate() - 1);
-    } catch { break; }
+  const d = new Date();
+  const todayStr = localDateStr(d);
+  for (let i = 0; i <= 60; i++) {
+    const ds  = localDateStr(d);
+    const raw = localStorage.getItem(`checkpeak:nutritionCompletion:${who}:${ds}`);
+    let hasActivity = false;
+    if (raw) {
+      try { hasActivity = Object.values(JSON.parse(raw)).some(m => m?.mealDone || m?.hydrationDone); }
+      catch {}
+    }
+    if (hasActivity) {
+      streak++;
+    } else if (ds === todayStr) {
+      // Today not yet logged — skip it, check yesterday
+    } else {
+      break;
+    }
+    d.setDate(d.getDate() - 1);
   }
   return streak;
 }
@@ -83,6 +92,7 @@ function buildDayRoute({
   dailyWorkout, items, dailyWorkouts, mealBlocks, hasPlan,
   classSchedules, selectedDate, optimisticStatusById,
   dailyHydrationOz, loading, mealTimeOverrides = {}, workoutTimeOverrides = {}, plannerPersonalEvents = [],
+  daily = null, planPrescription = "",
 }) {
   const events = [];
 
@@ -152,22 +162,43 @@ function buildDayRoute({
     Object.entries(MEAL_TIMES).forEach(([key, defaultStart]) => {
       const startMinutes = mealTimeOverrides?.[key] ?? defaultStart;
       const block   = mealBlocks?.[key];
-      const targets = block?.targets || {};
-      const parts   = [];
-      if (targets.calories) parts.push(`${targets.calories} cal`);
-      if (targets.protein)  parts.push(`${targets.protein}g pro`);
-      if (targets.carbs)    parts.push(`${targets.carbs}g carbs`);
+      const blockTargets = block?.targets || {};
+
+      // Fall back to daily plan totals when there are no per-meal targets
+      const hasBlockTargets = blockTargets.calories || blockTargets.protein || blockTargets.carbs || blockTargets.fat;
+      const isDailyTarget   = !hasBlockTargets;
+      const targets = hasBlockTargets ? blockTargets : {
+        calories:    daily?.calories    || null,
+        protein:     daily?.protein     || null,
+        carbs:       daily?.carbs       || null,
+        fat:         daily?.fat         || null,
+        hydrationOz: daily?.hydrationOz || null,
+      };
+
+      const macroParts = [];
+      if (targets.calories) macroParts.push(`${targets.calories} cal`);
+      if (targets.protein)  macroParts.push(`${targets.protein}g pro`);
+      if (targets.carbs)    macroParts.push(`${targets.carbs}g carbs`);
+      // When showing daily totals, prefix the collapsed row meta so athletes
+      // know these aren't per-meal numbers
+      const meta = macroParts.length === 0 ? ""
+        : isDailyTarget ? `Daily · ${macroParts.slice(0, 2).join(" · ")}`
+        : macroParts.join(" · ");
+
       const mealHydOz = targets.hydrationOz ?? targets.hydration ?? dailyHydrationOz;
       events.push({
         id: `meal_${key}`, type: "meal", mealKey: key,
-        title: block?.name || MEAL_LABELS[key], meta: parts.join(" · "),
+        title: block?.name || MEAL_LABELS[key], meta,
+        isDailyTarget,
         startMinutes, durationMinutes: 45,
         targets: {
-          calories: targets.calories ?? null, protein: targets.protein ?? null,
-          carbs: targets.carbs ?? null, fat: targets.fat ?? null,
-          hydrationOz: mealHydOz ?? null,
+          calories:    targets.calories    ?? null,
+          protein:     targets.protein     ?? null,
+          carbs:       targets.carbs       ?? null,
+          fat:         targets.fat         ?? null,
+          hydrationOz: mealHydOz           ?? null,
         },
-        notes: block?.notes || block?.coachNotes || "",
+        notes: block?.notes || block?.coachNotes || planPrescription || "",
         diningHallNotes: block?.diningHallNotes || block?.diningNotes || "",
         hydrationOz: mealHydOz,
       });
@@ -233,7 +264,7 @@ function ProgressRing({ done, total, size = 38, stroke = 3 }) {
 }
 
 // ─── WEEK STRIP ───────────────────────────────────────────────────────────────
-function WeekStrip({ selectedDate, onSelectDate, classSchedules, todayHasContent }) {
+function WeekStrip({ selectedDate, onSelectDate, classSchedules, todayHasContent, completionMap = {} }) {
   const todayISO = localDateStr();
   const days = useMemo(() => {
     const d = new Date(`${selectedDate}T12:00:00`);
@@ -246,28 +277,68 @@ function WeekStrip({ selectedDate, onSelectDate, classSchedules, todayHasContent
         ds, num: day.getDate(), lbl: ["S","M","T","W","T","F","S"][i],
         isSelected: ds === selectedDate, isToday,
         isPast: ds < todayISO,
+        isFuture: ds > todayISO,
         hasItems: (isToday && todayHasContent) || (!isToday && (classSchedules || []).some(c => classMatchesDate(c, ds))),
+        completion: completionMap[ds] || null,
       };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, classSchedules, todayHasContent]);
+  }, [selectedDate, classSchedules, todayHasContent, completionMap]);
 
   return (
     <div style={{ display: "flex", paddingTop: 10, paddingBottom: 2, borderTop: "0.5px solid rgba(255,255,255,0.07)", marginTop: 6 }}>
-      {days.map(day => (
-        <div key={day.ds} onClick={() => onSelectDate(day.ds)}
-          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", paddingBottom: 6 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: day.isSelected ? "#93C5FD" : "rgba(255,255,255,0.3)" }}>
-            {day.lbl}
-          </div>
-          <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: day.isSelected ? "rgba(255,255,255,0.12)" : "transparent", transition: "background 0.2s" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1, color: day.isSelected ? "#fff" : day.isToday ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.4)" }}>
-              {day.num}
+      {days.map(day => {
+        const dotColor = day.isSelected
+          ? "#4FABFF"
+          : day.completion === "full"
+            ? "#00C851"
+            : day.completion === "partial"
+              ? "rgba(0,200,81,0.45)"
+              : day.isFuture && day.hasItems
+                ? "rgba(96,165,250,0.35)"
+                : day.isToday && day.hasItems
+                  ? "rgba(96,165,250,0.5)"
+                  : "transparent";
+
+        const numColor = day.isSelected ? "#fff"
+          : day.isToday ? "rgba(255,255,255,0.85)"
+          : day.completion ? "rgba(255,255,255,0.6)"
+          : "rgba(255,255,255,0.35)";
+
+        const ringColor = day.isSelected
+          ? "rgba(255,255,255,0.12)"
+          : day.completion === "full" && !day.isSelected
+            ? "rgba(0,200,81,0.1)"
+            : "transparent";
+
+        return (
+          <div key={day.ds} onClick={() => onSelectDate(day.ds)}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", paddingBottom: 6 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase",
+              color: day.isSelected ? "#93C5FD" : day.completion ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.25)" }}>
+              {day.lbl}
             </div>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center",
+              justifyContent: "center", position: "relative",
+              background: ringColor,
+              border: day.completion === "full" && !day.isSelected ? "1px solid rgba(0,200,81,0.25)" : "1px solid transparent",
+              transition: "all 0.25s" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1, color: numColor, transition: "color 0.2s" }}>
+                {day.num}
+              </div>
+              {day.completion === "full" && !day.isSelected && (
+                <div style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: "50%",
+                  background: "#00C851", border: "1.5px solid #0A0A0A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="4" height="4" viewBox="0 0 8 8" fill="none">
+                    <path d="M1.5 4l2 2 3-3" stroke="#0A0A0A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+            <div style={{ width: 4, height: 4, borderRadius: "50%", background: dotColor, transition: "background 0.25s" }} />
           </div>
-          <div style={{ width: 4, height: 4, borderRadius: "50%", background: day.isSelected ? "#4FABFF" : day.isPast ? "rgba(255,255,255,0.12)" : day.hasItems ? "rgba(96,165,250,0.4)" : "transparent", transition: "background 0.2s" }} />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -336,19 +407,19 @@ function useNowContext(groups, nutritionCompletion, optimisticStatusById, isToda
 }
 
 // ─── ALL DONE CELEBRATION ─────────────────────────────────────────────────────
-function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutritionDone, nutritionTotal, hasPlan, onReview }) {
+function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutritionDone, nutritionTotal, hasPlan, onReview, onTomorrow, streak }) {
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", minHeight: "65vh",
-      padding: "48px 32px", textAlign: "center",
-      background: "#0A0A0A",
-      position: "relative", overflow: "hidden",
+      padding: "48px 28px 56px", textAlign: "center",
+      background: "#0A0A0A", position: "relative", overflow: "hidden",
     }}>
       <style>{`
         @keyframes glowPulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
         @keyframes dayIn { 0%{opacity:0;transform:translateY(32px) skewY(2deg)} 100%{opacity:1;transform:translateY(0) skewY(0)} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes streakIn { 0%{opacity:0;transform:scale(0.7)} 60%{transform:scale(1.08)} 100%{opacity:1;transform:scale(1)} }
       `}</style>
 
       <div aria-hidden="true" style={{
@@ -357,12 +428,12 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         animation: "glowPulse 3s ease-in-out infinite",
       }} />
 
+      {/* Check ring */}
       <div style={{
         width: 64, height: 64, borderRadius: "50%",
-        background: "rgba(0,200,81,0.1)",
-        border: "1.5px solid rgba(0,200,81,0.3)",
+        background: "rgba(0,200,81,0.1)", border: "1.5px solid rgba(0,200,81,0.3)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        marginBottom: 28, position: "relative", zIndex: 1,
+        marginBottom: 24, position: "relative", zIndex: 1,
         boxShadow: "0 0 0 12px rgba(0,200,81,0.05), 0 0 40px rgba(0,200,81,0.12)",
         animation: "fadeUp 0.5s ease both",
       }}>
@@ -371,38 +442,60 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         </svg>
       </div>
 
+      {/* Headline */}
       <div style={{
         fontFamily: "'Barlow Condensed', -apple-system, sans-serif",
         fontWeight: 900, fontStyle: "italic",
         fontSize: "clamp(3rem, 12vw, 5rem)",
         lineHeight: 0.9, letterSpacing: "-0.03em",
         textTransform: "uppercase", color: "#FFFFFF",
-        marginBottom: 8, position: "relative", zIndex: 1,
+        marginBottom: 10, position: "relative", zIndex: 1,
         animation: "dayIn 0.5s cubic-bezier(0.16,1,0.3,1) 0.1s both",
       }}>
         Day<br /><span style={{ color: "#00C851" }}>Cleared.</span>
       </div>
 
+      {/* Subtext */}
       <div style={{
-        fontSize: 14, color: "rgba(255,255,255,0.35)", fontWeight: 500,
-        marginBottom: 36, position: "relative", zIndex: 1,
-        animation: "fadeUp 0.4s ease 0.3s both",
+        fontSize: 13, color: "rgba(255,255,255,0.32)", fontWeight: 500,
+        marginBottom: streak > 0 ? 20 : 32, position: "relative", zIndex: 1,
+        animation: "fadeUp 0.4s ease 0.25s both",
       }}>
         {firstName}, you finished {totalDone} {totalDone === 1 ? "thing" : "things"} today.
       </div>
 
+      {/* Streak callout */}
+      {streak > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(79,171,255,0.08)", border: "1px solid rgba(79,171,255,0.2)",
+          borderRadius: 24, padding: "7px 16px 7px 12px",
+          marginBottom: 32, position: "relative", zIndex: 1,
+          animation: "streakIn 0.5s cubic-bezier(0.16,1,0.3,1) 0.45s both",
+        }}>
+          <svg width="32" height="14" viewBox="0 0 32 14" fill="none">
+            <polyline points="0,10 4,10 6,4 8,12 10,7 12,9 16,2 20,11 22,8 24,10 28,10 32,10"
+              stroke="#4FABFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#4FABFF", letterSpacing: "0.02em" }}>
+            {streak} day streak
+          </span>
+        </div>
+      )}
+
+      {/* Summary card */}
       <div style={{
         width: "100%", maxWidth: 280,
         background: "#111111", border: "1px solid #1E1E1E",
         borderRadius: 14, overflow: "hidden",
-        marginBottom: 32, position: "relative", zIndex: 1,
-        animation: "fadeUp 0.4s ease 0.4s both",
+        marginBottom: 28, position: "relative", zIndex: 1,
+        animation: "fadeUp 0.4s ease 0.35s both",
       }}>
         {workoutTotal > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: hasPlan ? "1px solid #1E1E1E" : "none" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.45)" }}>Workout</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)" }}>Workout</span>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: workoutDone >= workoutTotal ? "#00C851" : "rgba(255,255,255,0.45)" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: workoutDone >= workoutTotal ? "#00C851" : "rgba(255,255,255,0.4)" }}>
                 {workoutDone}/{workoutTotal}
               </span>
               {workoutDone >= workoutTotal && (
@@ -413,11 +506,11 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
             </div>
           </div>
         )}
-        {hasPlan && (
+        {hasPlan && nutritionTotal > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.45)" }}>Nutrition</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.4)" }}>Nutrition</span>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: nutritionDone >= nutritionTotal ? "#00C851" : "rgba(255,255,255,0.45)" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: nutritionDone >= nutritionTotal ? "#00C851" : "rgba(255,255,255,0.4)" }}>
                 {nutritionDone}/{nutritionTotal}
               </span>
               {nutritionDone >= nutritionTotal && (
@@ -430,18 +523,31 @@ function AllDoneState({ firstName, totalDone, workoutDone, workoutTotal, nutriti
         )}
       </div>
 
-      <button onClick={onReview} style={{
-        padding: "11px 28px",
-        background: "transparent",
-        border: "1px solid #2A2A2A",
-        borderRadius: 10, fontSize: 13, fontWeight: 600,
-        color: "rgba(255,255,255,0.3)", cursor: "pointer",
-        position: "relative", zIndex: 1,
-        animation: "fadeUp 0.4s ease 0.55s both",
-        fontFamily: "inherit",
-      }}>
-        Review today's work
-      </button>
+      {/* CTAs */}
+      <div style={{ display: "flex", gap: 8, width: "100%", maxWidth: 280, position: "relative", zIndex: 1, animation: "fadeUp 0.4s ease 0.5s both" }}>
+        {onTomorrow && (
+          <button onClick={onTomorrow} style={{
+            flex: 1, padding: "12px 0",
+            background: "#1A2B40", border: "1px solid rgba(79,171,255,0.25)",
+            borderRadius: 12, fontSize: 13, fontWeight: 700,
+            color: "#93C5FD", cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>
+            Tomorrow
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        )}
+        <button onClick={onReview} style={{
+          flex: 1, padding: "12px 0",
+          background: "transparent", border: "1px solid #2A2A2A",
+          borderRadius: 12, fontSize: 13, fontWeight: 600,
+          color: "rgba(255,255,255,0.35)", cursor: "pointer", fontFamily: "inherit",
+        }}>
+          Review
+        </button>
+      </div>
     </div>
   );
 }
@@ -465,11 +571,11 @@ export default function AthleteToday() {
 
   // ── Streak ────────────────────────────────────────────────────────────────
   const [streak, setStreak] = useState(0);
-  useEffect(() => {
+  const recomputeStreak = useCallback(() => {
     const who = athleteToken || String(user?.Email || user?.email || "").trim().toLowerCase();
     setStreak(computeStreak(who));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteToken, user]);
+  useEffect(() => { recomputeStreak(); }, [recomputeStreak]);
 
   // ── Workout ───────────────────────────────────────────────────────────────
   const { selectedDate, setSelectedDate, loading, dailyWorkout, dailyWorkouts, items, err, setErr, reload } =
@@ -537,6 +643,55 @@ export default function AthleteToday() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nutritionCompletion]);
 
+  // Recompute streak whenever a meal is checked off (nutritionCompletion now in scope)
+  useEffect(() => { recomputeStreak(); }, [nutritionCompletion, recomputeStreak]);
+
+  // ── Flush dirty nutrition state on page hide/close ────────────────────────
+  useEffect(() => {
+    if (!isAthlete || !nKey) return;
+    function flush() {
+      if (!isDirtyRef.current) return;
+      clearTimeout(nutSaveTimer.current);
+      isDirtyRef.current = false;
+      fetch(`/api/athlete/nutrition/completion/upsert?date=${encodeURIComponent(selectedDate)}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completion: nutritionCompletion }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+    const onHide = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("beforeunload", flush);
+    };
+  }, [isAthlete, nKey, selectedDate, nutritionCompletion]);
+
+  // ── Week completion map (for strip dots) ──────────────────────────────────
+  const weekCompletionMap = useMemo(() => {
+    if (typeof window === "undefined") return {};
+    const who = athleteToken || String(user?.Email || user?.email || "").trim().toLowerCase();
+    if (!who) return {};
+    const map = {};
+    for (let i = 0; i <= 13; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const ds  = localDateStr(d);
+      const raw = localStorage.getItem(`checkpeak:nutritionCompletion:${who}:${ds}`);
+      if (!raw) continue;
+      try {
+        const vals  = Object.values(JSON.parse(raw));
+        const total = vals.length * 2;
+        const done  = vals.reduce((a, m) => a + (m?.mealDone ? 1 : 0) + (m?.hydrationDone ? 1 : 0), 0);
+        if (done >= total && total > 0) map[ds] = "full";
+        else if (done > 0)              map[ds] = "partial";
+      } catch {}
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteToken, user, nutritionCompletion]);
+
   // ── Class schedules ───────────────────────────────────────────────────────
   const { classSchedules, upsertSchedule, removeSchedule } = useClassSchedules({ authReady, isAthlete, athleteToken });
   const [classModal, setClassModal] = useState(null);
@@ -580,38 +735,17 @@ export default function AthleteToday() {
   // useCallback declared first so the useEffects below can reference it.
   const prevPlannerOpenRef = useRef(false);
   const fetchPlannerEvents = useCallback(() => {
-    console.log("[plannerEvents] fired", { authReady, hasUser: !!user, isAthlete, selectedDate });
-    if (!authReady || !user || !isAthlete || !selectedDate) {
-      console.log("[plannerEvents] bailing - conditions not met");
-      return;
-    }
-    const url = `/api/athlete/day-planner/upsert?date=${encodeURIComponent(selectedDate)}`;
-    console.log("[plannerEvents] fetching", url);
-    fetch(url, { method: "GET", credentials: "include" })
-      .then(r => {
-        console.log("[plannerEvents] status", r.status, r.ok);
-        return r.ok ? r.json() : null;
-      })
+    if (!authReady || !user || !isAthlete || !selectedDate) return;
+    fetch(`/api/athlete/day-planner/upsert?date=${encodeURIComponent(selectedDate)}`, { method: "GET", credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
-        console.log("[plannerEvents] data", JSON.stringify(data));
-        if (!data?.ok || !data.hasRecord) {
-          console.log("[plannerEvents] no record - clearing");
-          setPlannerEvents([]);
-          return;
-        }
-        const personal = (data.events || []).filter(e =>
-          e.source !== "nutrition" &&
-          e.source !== "coach_workout" &&
-          e.source !== "coachworkout" &&
-          e.title
-        );
-        console.log("[plannerEvents] setting", personal.length, "events", JSON.stringify(personal));
-        setPlannerEvents(personal);
+        if (!data?.ok || !data.hasRecord) { setPlannerEvents([]); return; }
+        setPlannerEvents((data.events || []).filter(e =>
+          e.source !== "nutrition" && e.source !== "coach_workout" &&
+          e.source !== "coachworkout" && e.title
+        ));
       })
-      .catch(err => {
-        console.error("[plannerEvents] error", err);
-        setPlannerEvents([]);
-      });
+      .catch(() => setPlannerEvents([]));
   }, [authReady, user, isAthlete, selectedDate]);
 
   // Fetch on mount and whenever auth/date deps change
@@ -697,9 +831,11 @@ export default function AthleteToday() {
     mealTimeOverrides: plannerMealTimeOverrides,
     workoutTimeOverrides,
     plannerPersonalEvents: plannerEvents,
+    daily: nutrition.daily,
+    planPrescription: nutrition.plan?.prescription || "",
   }), [
     dailyWorkout, items, dailyWorkouts,
-    nutrition.mealBlocks, nutrition.hasPlan,
+    nutrition.mealBlocks, nutrition.hasPlan, nutrition.daily, nutrition.plan,
     classSchedules, selectedDate, optimisticStatusById, dailyHydrationOz,
     loading, plannerMealTimeOverrides, workoutTimeOverrides, plannerEvents,
   ]);
@@ -731,18 +867,24 @@ export default function AthleteToday() {
   // ── All-done state ────────────────────────────────────────────────────────
   const [showAllDone, setShowAllDone] = useState(false);
   const [reviewMode,  setReviewMode]  = useState(false);
-  const prevTotal = useRef(0);
+  // True once we've seen at least one incomplete item this session —
+  // prevents the celebration firing on page load when everything is pre-done.
+  const seenIncompleteRef = useRef(false);
+
+  useEffect(() => {
+    if (totalItems > 0 && totalDone < totalItems) seenIncompleteRef.current = true;
+  }, [totalItems, totalDone]);
 
   useEffect(() => {
     if (!isToday || reviewMode) return;
-    if (totalItems > 0 && totalDone >= totalItems && prevTotal.current > 0 && prevTotal.current < totalItems) {
+    if (totalItems > 0 && totalDone >= totalItems && seenIncompleteRef.current) {
+      seenIncompleteRef.current = false;
       const t = setTimeout(() => setShowAllDone(true), 700);
       return () => clearTimeout(t);
     }
-    prevTotal.current = totalDone;
   }, [totalDone, totalItems, isToday, reviewMode]);
 
-  useEffect(() => { setShowAllDone(false); setReviewMode(false); prevTotal.current = 0; }, [selectedDate]);
+  useEffect(() => { setShowAllDone(false); setReviewMode(false); seenIncompleteRef.current = false; }, [selectedDate]);
 
   // ── Now context ───────────────────────────────────────────────────────────
   const nowCtx = useNowContext(groups, nutritionCompletion, optimisticStatusById, isToday);
@@ -801,7 +943,7 @@ export default function AthleteToday() {
         </div>
 
         <div style={{ padding: "0 18px" }}>
-          <WeekStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} classSchedules={classSchedules} todayHasContent={groups.length > 0} />
+          <WeekStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} classSchedules={classSchedules} todayHasContent={groups.length > 0} completionMap={weekCompletionMap} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 18px 10px", borderTop: "0.5px solid rgba(255,255,255,0.06)", minHeight: 38 }}>
@@ -849,7 +991,15 @@ export default function AthleteToday() {
             workoutDone={workoutDone} workoutTotal={workoutTotal}
             nutritionDone={nutritionDone} nutritionTotal={nutritionTotal}
             hasPlan={nutrition.hasPlan}
+            streak={streak}
             onReview={() => { setReviewMode(true); setShowAllDone(false); }}
+            onTomorrow={() => {
+              const d = new Date(`${selectedDate}T12:00:00`);
+              d.setDate(d.getDate() + 1);
+              setSelectedDate(localDateStr(d));
+              setShowAllDone(false);
+              setReviewMode(false);
+            }}
           />
         ) : (
           <RouteList

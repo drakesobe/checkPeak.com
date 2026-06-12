@@ -3,12 +3,12 @@
 // Org-side banned substance scanner for SmartStack products.
 //
 // Flow:
-//   1. If nutritionLabelUrl is provided → fetch image → Textract OCR → check-smartstack
-//   2. Otherwise → check-smartstack with productName + category as text
+//   1. nutritionLabelUrl present → fetch image → Textract OCR → /api/check
+//   2. No label → return caution (name-only scanning produces false positives)
 //
-// Calls existing proprietary endpoints:
-//   /api/ocr/textract       (AWS Textract - returns { text })
-//   /api/check-smartstack   (banned DB match - returns { bannedSubstances, ingredients })
+// Uses /api/check (same engine as pages/ocr.js) — synonyms are phrase-matched
+// only, not tokenized, which avoids false positives like "Other Anti-estrogens"
+// matching on generic words in product names.
 
 function siteUrl(req) {
   if (process.env.SITE_URL) return process.env.SITE_URL;
@@ -41,13 +41,13 @@ async function ocrWithTextract(base, imageBuffer, contentType) {
   return String(data?.text ?? "").trim();
 }
 
-async function runCheckSmartstack(base, ingredientsText) {
-  const res = await fetch(`${base}/api/check-smartstack`, {
+async function runCheck(base, text) {
+  const res = await fetch(`${base}/api/check`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ ingredientsText }),
+    body:    JSON.stringify({ text }),
   });
-  if (!res.ok) throw new Error(`check-smartstack failed (${res.status})`);
+  if (!res.ok) throw new Error(`check failed (${res.status})`);
   return await res.json();
 }
 
@@ -70,7 +70,10 @@ function formatFlag(b) {
 }
 
 function formatResponse(checkData, source) {
-  const banned = Array.isArray(checkData?.bannedSubstances) ? checkData.bannedSubstances : [];
+  // /api/check returns matchedBanned; /api/check-smartstack used bannedSubstances
+  const banned = Array.isArray(checkData?.matchedBanned) ? checkData.matchedBanned
+               : Array.isArray(checkData?.bannedSubstances) ? checkData.bannedSubstances
+               : [];
 
   const hardBanned = banned.filter((b) => banSeverity(b) === "hard");
   const softBanned = banned.filter((b) => banSeverity(b) === "soft");
@@ -125,7 +128,7 @@ export default async function handler(req, res) {
       const ocrText = await ocrWithTextract(base, buffer, contentType);
 
       if (ocrText) {
-        const checkData = await runCheckSmartstack(base, ocrText);
+        const checkData = await runCheck(base, ocrText);
         return res.status(200).json(formatResponse(checkData, "label"));
       }
 

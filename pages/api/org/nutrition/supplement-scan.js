@@ -17,16 +17,28 @@ function siteUrl(req) {
   return `${proto}://${host}`;
 }
 
+// Formats AWS Textract accepts for DetectDocumentText
+const TEXTRACT_SUPPORTED = ["image/jpeg", "image/jpg", "image/png", "image/tiff", "application/pdf"];
+
+function isTextractSupported(contentType = "") {
+  const ct = contentType.split(";")[0].trim().toLowerCase();
+  return TEXTRACT_SUPPORTED.includes(ct);
+}
+
 async function fetchImageBuffer(imageUrl) {
   const res = await fetch(imageUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; CheckPeak/1.0)",
-      "Accept":     "image/webp,image/avif,image/*,*/*;q=0.8",
+      // Explicitly exclude WebP/AVIF — Textract doesn't support them.
+      // CDNs respect this and serve JPEG/PNG when available.
+      "Accept": "image/jpeg,image/png,image/tiff,application/pdf,image/*;q=0.5",
     },
   });
   if (!res.ok) throw new Error(`Image fetch failed (${res.status})`);
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.startsWith("image/")) throw new Error("URL does not point to an image");
+  const ct = (res.headers.get("content-type") || "").split(";")[0].trim();
+  if (!ct.startsWith("image/") && ct !== "application/pdf") {
+    throw new Error("URL does not point to an image");
+  }
   return { buffer: Buffer.from(await res.arrayBuffer()), contentType: ct };
 }
 
@@ -125,6 +137,16 @@ export default async function handler(req, res) {
   if (nutritionLabelUrl) {
     try {
       const { buffer, contentType } = await fetchImageBuffer(nutritionLabelUrl);
+
+      if (!isTextractSupported(contentType)) {
+        return res.status(200).json({
+          status:  "caution",
+          summary: `Label is ${contentType} — Textract requires JPEG or PNG. Update the label URL in SmartStack.`,
+          flags:   [],
+          source:  "label-unsupported-format",
+        });
+      }
+
       const ocrText = await ocrWithTextract(base, buffer, contentType);
 
       if (ocrText) {

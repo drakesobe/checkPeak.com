@@ -408,6 +408,19 @@ export default function GridCard({
           )}
         </AnimatePresence>
 
+        {/* Coach Pick badge - top-left (hidden when safety scan result is shown) */}
+        {stack?.coachPick && !isDone && (
+          <div style={{
+            position:"absolute", top:8, left:8,
+            padding:"3px 9px",
+            background:"rgba(15,23,42,0.78)", backdropFilter:"blur(4px)",
+          }}>
+            <span style={{ fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.08em", color:"#fff" }}>
+              ★ Coach Pick
+            </span>
+          </div>
+        )}
+
         {/* Safety result badge - post-scan */}
         <AnimatePresence>
           {isDone && (

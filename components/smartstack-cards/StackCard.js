@@ -203,6 +203,7 @@ export default function StackCard({
   maxCompare = 3,
   compact    = false,
   index      = 0,
+  coachPick  = false,
 }) {
   const { user } = useAuthContext();
 
@@ -317,10 +318,30 @@ export default function StackCard({
         </div>
       )}
 
-      {/* Top: save heart only - compare moves to body button stack */}
+      {/* Top: coach pick badge (left) + save heart (right) */}
       <div className="absolute top-2 right-2">
         <SaveButton isSaved={isSaved} saving={saving} pulse={pulse} onClick={toggleSave} />
       </div>
+      {(coachPick || stack?.coachPick) && (
+        <div className="absolute top-2 left-2">
+          <span
+            className="flex items-center gap-1 rounded px-1.5 py-0.5"
+            style={{
+              background:     "rgba(91,158,201,0.22)",
+              border:         "1px solid rgba(91,158,201,0.45)",
+              backdropFilter: "blur(6px)",
+              color:          "#5B9EC9",
+              fontSize:       9,
+              fontWeight:     700,
+              letterSpacing:  "0.07em",
+              textTransform:  "uppercase",
+              fontFamily:     "'Barlow Condensed', sans-serif",
+            }}
+          >
+            ★ Coach Pick
+          </span>
+        </div>
+      )}
 
       {/* Bottom: category chip (left) + scan label chip (right, if available) */}
       <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between">

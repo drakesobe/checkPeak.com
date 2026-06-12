@@ -28,9 +28,14 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error("[amazon/search]", err.message);
 
-    // Surface auth errors clearly
-    if (err.message.includes("token error") || err.message.includes("credentials not configured")) {
-      return res.status(503).json({ error: "Amazon API credentials not configured or invalid.", detail: err.message });
+    if (err.message.includes("credentials not configured")) {
+      return res.status(503).json({ error: "Amazon credentials not configured.", detail: err.message });
+    }
+    if (err.message.includes("AssociateNotEligible")) {
+      return res.status(503).json({
+        error: "Amazon API not yet active.",
+        detail: "Your Associates account needs 10 qualifying sales within the past 30 days before Creator API access activates. No code changes needed — check back once you hit the threshold.",
+      });
     }
 
     return res.status(500).json({ error: "Amazon search failed.", detail: err.message });

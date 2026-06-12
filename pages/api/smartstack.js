@@ -93,6 +93,10 @@ export default async function handler(req, res) {
         // Value
         valueScore,
 
+        // Brand / Coach Pick
+        brand:     f["Brand"]      || "",
+        coachPick: Boolean(f["Coach Pick"]),
+
         rawFields: f,
       };
     });

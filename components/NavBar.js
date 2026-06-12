@@ -233,7 +233,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             <DropLink href="/org/workouts-calendar" icon="⬡" onClick={onClose}>Workouts Calendar</DropLink>
             <DropLink href="/org/review-queue"      icon="✦" onClick={onClose}>Review Queue</DropLink>
             <DropLink href="/org/nutrition"         icon="◎" onClick={onClose}>Nutrition</DropLink>
-            <DropLink href="/org/prescriptions"     icon="✦" onClick={onClose}>Prescriptions</DropLink>
+            <DropLink href="/org/prescriptions"     icon="✦" onClick={onClose}>Nutrition Plans</DropLink>
           </div>
 
           <DropDivider />
@@ -413,7 +413,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 <MLink href="/org/workouts-calendar" icon="⬡">Workouts Calendar</MLink>
                 <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
                 <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>
-                <MLink href="/org/prescriptions"     icon="✦">Prescriptions</MLink>
+                <MLink href="/org/prescriptions"     icon="✦">Nutrition Plans</MLink>
 
                 <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
 

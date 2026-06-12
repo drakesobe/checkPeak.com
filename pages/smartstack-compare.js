@@ -178,6 +178,13 @@ const SORT_OPTIONS = [
   { id:"popular",    label:"Most Popular" },
 ];
 
+const PRICE_RANGES = [
+  { id:"under050", label:"Under $0.50",   max:0.50            },
+  { id:"050to100", label:"$0.50 – $1.00", min:0.50, max:1.00 },
+  { id:"100to200", label:"$1.00 – $2.00", min:1.00, max:2.00 },
+  { id:"over200",  label:"$2.00+",        min:2.00            },
+];
+
 const SEO_BY_CAT = {
   "pre-workout":    { title: "Best Pre-Workout 2025 – Ranked by Price Per Serving | SmartStack",       desc: "We ranked every pre-workout supplement by true cost per serving vs. the category median. No sponsored picks. Find the best value pre-workout on Amazon today." },
   "protein":        { title: "Best Protein Powder 2025 – Cheapest Per Serving Ranked | SmartStack",    desc: "Compare protein powders by real price-per-serving. Optimum Nutrition, Transparent Labs, Nutricost and more - independently ranked. No paid placements." },
@@ -947,8 +954,11 @@ export default function SmartStackComparePage() {
   const [activeCatSlug,setActiveCatSlug]= useState(null);
   const [sortBy,       setSortBy]       = useState("best_value");
   const [searchRaw,    setSearchRaw]    = useState("");
-  const [comparing,    setComparing]    = useState([]);
-  const [visibleLimit, setLimit]        = useState(24);
+  const [comparing,         setComparing]         = useState([]);
+  const [visibleLimit,      setLimit]             = useState(24);
+  const [showCoachPickOnly, setShowCoachPickOnly] = useState(false);
+  const [activePriceRange,  setActivePriceRange]  = useState(null);
+  const sentinelRef = useRef(null);
 
   const searchQuery = useDebounce(searchRaw, 280);
 
@@ -992,6 +1002,11 @@ export default function SmartStackComparePage() {
     return map;
   }, [allStacks, stats]);
 
+  const handleSortChange = useCallback((newSort) => {
+    setSortBy(newSort);
+    router.replace({ pathname:router.pathname, query:{ ...router.query, sort:newSort } }, undefined, { shallow:true, scroll:false });
+  }, [router]);
+
   const handleSelectBrand = useCallback((brandName) => {
     setActiveCatSlug("all"); setSearchRaw(brandName); setLimit(24);
     router.replace({ pathname:router.pathname, query:{ ...router.query, cat:"all", brand:brandName } }, undefined, { shallow:true, scroll:false });
@@ -1006,18 +1021,49 @@ export default function SmartStackComparePage() {
   const activeCatLabel   = activeCatConfig?.label || "";
   const activeBrandName  = useMemo(() => { if (!searchQuery.trim()) return null; const match = BRAND_CONFIG.find(b => b.name.toLowerCase() === searchQuery.trim().toLowerCase()); return match ? match.name : null; }, [searchQuery]);
 
+  const brandsInCategory = useMemo(() => {
+    if (!activeCatSlug) return [];
+    let pool = allStacks;
+    if (activeCatSlug !== "all" && activeCatConfig) pool = pool.filter(s => activeCatConfig.cats.includes(String(s?.category||"").trim()));
+    const brandSet = new Set(pool.map(s => s?.brand).filter(Boolean));
+    return BRAND_CONFIG.filter(b => brandSet.has(b.name));
+  }, [allStacks, activeCatSlug, activeCatConfig]);
+
   const filtered = useMemo(() => {
     let result = allStacks;
     if (activeCatSlug && activeCatSlug !== "all" && activeCatConfig) result = result.filter(s => activeCatConfig.cats.includes(String(s?.category||"").trim()));
     if (searchQuery.trim()) { const q = searchQuery.toLowerCase(); result = result.filter(s => (s?.name||"").toLowerCase().includes(q)); }
+    if (showCoachPickOnly) result = result.filter(s => s?.coachPick);
+    if (activePriceRange) {
+      const range = PRICE_RANGES.find(r => r.id === activePriceRange);
+      if (range) result = result.filter(s => {
+        const p = getPPS(s);
+        if (p == null) return false;
+        if (range.min != null && p < range.min) return false;
+        if (range.max != null && p >= range.max) return false;
+        return true;
+      });
+    }
     return sortStacks(result, sortBy, stats);
-  }, [allStacks, activeCatSlug, activeCatConfig, searchQuery, sortBy, stats]);
+  }, [allStacks, activeCatSlug, activeCatConfig, searchQuery, sortBy, stats, showCoachPickOnly, activePriceRange]);
 
-  useEffect(() => { setLimit(24); }, [activeCatSlug, searchQuery, sortBy]);
+  useEffect(() => { setLimit(24); }, [activeCatSlug, searchQuery, sortBy, showCoachPickOnly, activePriceRange]);
+  useEffect(() => { setShowCoachPickOnly(false); setActivePriceRange(null); }, [activeCatSlug]);
 
   const gridStacks  = useMemo(() => filtered.slice(0, visibleLimit), [filtered, visibleLimit]);
   const canLoadMore = visibleLimit < filtered.length;
   const totalCount  = allStacks.length;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !canLoadMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setLimit(v => v + 24); },
+      { rootMargin:"400px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canLoadMore]);
 
   const bestSeller = useMemo(() => {
     if (!activeCatConfig) return null;
@@ -1042,6 +1088,29 @@ export default function SmartStackComparePage() {
   const pageUrl   = `https://checkpeak.com/smartstack-compare${activeCatSlug ? `?cat=${activeCatSlug}` : ""}`;
   const isEmailCaptureActive = comparing.length === 0;
 
+  const jsonLd = useMemo(() => {
+    if (!filtered.length) return null;
+    return {
+      "@context":"https://schema.org",
+      "@type":"ItemList",
+      name: pageTitle,
+      description: pageDesc,
+      numberOfItems: filtered.length,
+      itemListElement: filtered.slice(0,10).map((s,i) => ({
+        "@type":"ListItem",
+        position: i+1,
+        item: {
+          "@type":"Product",
+          name: s.name,
+          ...(s.brand       ? { brand:{ "@type":"Brand", name:s.brand } } : {}),
+          ...(s.imageUrl    ? { image:s.imageUrl } : {}),
+          ...(s.Price       ? { offers:{ "@type":"Offer", price:String(s.Price), priceCurrency:"USD", availability:"https://schema.org/InStock", ...(s.affiliateLink ? { url:s.affiliateLink } : {}) } } : {}),
+          ...(s.rating && s.reviewCount ? { aggregateRating:{ "@type":"AggregateRating", ratingValue:s.rating, reviewCount:s.reviewCount } } : {}),
+        },
+      })),
+    };
+  }, [filtered, pageTitle, pageDesc]);
+
   return (
     <>
       <Head>
@@ -1064,6 +1133,7 @@ export default function SmartStackComparePage() {
           @media (min-width:480px) { .ss-cat-grid { grid-template-columns:repeat(3,1fr) !important; } }
           @media (min-width:680px) { .ss-cat-grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important; } }
         `}</style>
+        {jsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />}
       </Head>
 
       <div style={{ minHeight:"100vh", background:C.pageBg, fontFamily:F.body, paddingBottom: comparing.length > 0 || isEmailCaptureActive ? 72 : 0 }}>
@@ -1259,8 +1329,8 @@ export default function SmartStackComparePage() {
                 </div>
               </div>
 
-              {/* Category chips + sort */}
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:14 }}>
+              {/* Category chips + Coach Pick + sort */}
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
                 <div style={{ display:"flex", gap:4, overflowX:"auto", paddingBottom:2, flex:1, scrollbarWidth:"none", minWidth:0 }}>
                   {CAT_CONFIG.map(c => {
                     const active = activeCatSlug === c.slug;
@@ -1276,10 +1346,14 @@ export default function SmartStackComparePage() {
                     style={{ flexShrink:0, padding:"5px 13px", background:activeCatSlug==="all"?C.accent:C.surface, border:`1px solid ${activeCatSlug==="all"?C.accent:C.border}`, color:activeCatSlug==="all"?"#fff":C.secondary, fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", whiteSpace:"nowrap" }}>
                     All
                   </button>
+                  <button type="button" onClick={() => setShowCoachPickOnly(v => !v)}
+                    style={{ flexShrink:0, padding:"5px 13px", background:showCoachPickOnly?C.ink:C.surface, border:`1px solid ${showCoachPickOnly?C.ink:C.border}`, color:showCoachPickOnly?"#fff":C.secondary, fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", whiteSpace:"nowrap", transition:"all 0.12s" }}>
+                    ★ Coach Picks
+                  </button>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
                   <span style={{ fontFamily:F.cond, fontSize:11, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:C.secondary }}>Sort:</span>
-                  <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                  <select value={sortBy} onChange={e => handleSortChange(e.target.value)}
                     style={{ padding:"5px 10px", border:`1px solid ${C.border}`, fontSize:12, fontFamily:F.body, color:C.ink, background:C.surface, cursor:"pointer", outline:"none" }}
                   >
                     {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -1287,11 +1361,55 @@ export default function SmartStackComparePage() {
                 </div>
               </div>
 
+              {/* Price per serving filter chips */}
+              <div style={{ display:"flex", gap:5, alignItems:"center", marginBottom:10, flexWrap:"wrap" }}>
+                <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, flexShrink:0 }}>$/srv:</span>
+                {PRICE_RANGES.map(range => {
+                  const active = activePriceRange === range.id;
+                  return (
+                    <button key={range.id} type="button" onClick={() => setActivePriceRange(active ? null : range.id)}
+                      style={{ padding:"4px 10px", background:active?C.accentDk:C.surface, border:`1px solid ${active?C.accentDk:C.border}`, color:active?"#fff":C.secondary, fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", transition:"all 0.12s", whiteSpace:"nowrap" }}>
+                      {range.label}
+                    </button>
+                  );
+                })}
+                {activePriceRange && (
+                  <button type="button" onClick={() => setActivePriceRange(null)}
+                    style={{ background:"none", border:"none", cursor:"pointer", color:C.muted, fontFamily:F.body, fontSize:11, padding:"2px 4px" }}>
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Inline brand filter (only shows brands present in active category) */}
+              {brandsInCategory.length > 0 && (
+                <div style={{ display:"flex", gap:5, overflowX:"auto", scrollbarWidth:"none", paddingBottom:4, marginBottom:10, alignItems:"center" }}>
+                  <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase", color:C.muted, flexShrink:0 }}>Brand:</span>
+                  {brandsInCategory.map(brand => {
+                    const active = activeBrandName === brand.name;
+                    return (
+                      <button key={brand.name} type="button" onClick={() => setSearchRaw(active ? "" : brand.name)}
+                        style={{ flexShrink:0, padding:"4px 12px", background:active?C.ink:C.surface, border:`1px solid ${active?C.ink:C.border}`, color:active?"#fff":C.body, fontFamily:F.body, fontSize:11, fontWeight:600, cursor:"pointer", transition:"all 0.12s", whiteSpace:"nowrap" }}>
+                        {brand.name}
+                      </button>
+                    );
+                  })}
+                  {activeBrandName && (
+                    <button type="button" onClick={() => setSearchRaw("")}
+                      style={{ background:"none", border:"none", cursor:"pointer", color:C.muted, fontFamily:F.body, fontSize:11, padding:"2px 4px", flexShrink:0 }}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+              )}
+
               {!loading && (
                 <p style={{ fontFamily:F.cond, fontSize:11, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:C.secondary, marginBottom:14 }}>
                   {filtered.length} result{filtered.length !== 1 ? "s" : ""}
                   {activeBrandName ? ` · ${activeBrandName}` : activeCatLabel && activeCatSlug !== "all" ? ` · ${activeCatLabel}` : ""}
                   {searchQuery && !activeBrandName ? ` matching "${searchQuery}"` : ""}
+                  {showCoachPickOnly ? " · Coach Picks only" : ""}
+                  {activePriceRange ? ` · ${PRICE_RANGES.find(r => r.id === activePriceRange)?.label ?? ""}` : ""}
                 </p>
               )}
 
@@ -1349,17 +1467,8 @@ export default function SmartStackComparePage() {
                     </div>
                   )}
 
-                  {canLoadMore && (
-                    <div style={{ display:"flex", justifyContent:"center", marginTop:32 }}>
-                      <button type="button" onClick={() => setLimit(v => v + 24)}
-                        style={{ padding:"10px 28px", background:C.surface, border:`1.5px solid ${C.accent}`, color:C.accent, fontFamily:F.cond, fontSize:12, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", cursor:"pointer", transition:"all 0.12s" }}
-                        onMouseEnter={e => { e.currentTarget.style.background=C.accent; e.currentTarget.style.color="#fff"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background=C.surface; e.currentTarget.style.color=C.accent; }}
-                      >
-                        Load more ({filtered.length - visibleLimit} remaining)
-                      </button>
-                    </div>
-                  )}
+                  {/* Infinite scroll sentinel — triggers next page when near viewport */}
+                  {canLoadMore && <div ref={sentinelRef} style={{ height:60 }} aria-hidden="true" />}
 
                   {!canLoadMore && gridStacks.length > 0 && (
                     <p style={{ textAlign:"center", marginTop:32, fontFamily:F.cond, fontSize:11, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:C.ghost }}>
@@ -1380,23 +1489,35 @@ export default function SmartStackComparePage() {
 
           {/* CTA closer */}
           {activeCatSlug && (
-            <section style={{ marginTop:56, marginBottom:48, padding:"clamp(2rem,4vw,3rem)", background:C.ink, textAlign:"center" }}>
-              <p style={{ fontFamily:F.cond, fontWeight:900, fontStyle:"italic", fontSize:"clamp(1.2rem,4vw,2rem)", letterSpacing:"-0.01em", textTransform:"uppercase", color:"#fff", margin:"0 0 0.75rem" }}>
-                Serious about your supplements?
-              </p>
-              <p style={{ fontFamily:F.body, fontSize:14, color:"rgba(255,255,255,0.55)", margin:"0 0 1.5rem", lineHeight:1.7, maxWidth:480, marginLeft:"auto", marginRight:"auto" }}>
-                CheckPeak helps you track nutrition, manage workouts, and scan supplements for banned substances - all in one place.
-              </p>
-              <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
-                <a href="/dashboard" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", background:C.accent, color:"#fff", fontFamily:F.cond, fontSize:13, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", textDecoration:"none", transition:"filter 0.2s" }}
-                  onMouseEnter={e => { e.currentTarget.style.filter="brightness(1.1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.filter="none"; }}
-                >
-                  Get started free →
-                </a>
-                <a href="/nutrition-label-scanner" style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"12px 24px", background:"transparent", color:"rgba(255,255,255,0.65)", fontFamily:F.cond, fontSize:13, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", textDecoration:"none", border:`1px solid rgba(255,255,255,0.2)` }}>
-                  Scan your supplements
-                </a>
+            <section style={{ marginTop:56, marginBottom:48, background:C.ink, overflow:"hidden" }}>
+              <div style={{ padding:"clamp(2rem,4vw,3rem)", maxWidth:660, margin:"0 auto", textAlign:"center" }}>
+                <div style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"4px 14px", border:"1px solid rgba(220,38,38,0.4)", background:"rgba(220,38,38,0.1)", marginBottom:"1.25rem" }}>
+                  <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", color:"#FCA5A5" }}>
+                    ⚠ Banned Substance Alert
+                  </span>
+                </div>
+                <p style={{ fontFamily:F.cond, fontWeight:900, fontStyle:"italic", fontSize:"clamp(1.5rem,4.5vw,2.6rem)", letterSpacing:"-0.02em", textTransform:"uppercase", color:"#fff", margin:"0 0 1rem", lineHeight:0.95 }}>
+                  Would your stack<br/><span style={{ color:C.accent }}>fail a drug test?</span>
+                </p>
+                <p style={{ fontFamily:F.body, fontSize:14, color:"rgba(255,255,255,0.55)", margin:"0 0 0.6rem", lineHeight:1.7, maxWidth:420, marginLeft:"auto", marginRight:"auto" }}>
+                  Hidden banned substances show up in mainstream supplements more often than you'd think. CheckPeak scans every ingredient against our anti-doping database — instantly, for free.
+                </p>
+                <p style={{ fontFamily:F.body, fontSize:11, color:"rgba(255,255,255,0.25)", margin:"0 0 1.75rem", letterSpacing:"0.04em" }}>
+                  WADA · NCAA · NFL · MLB · IOC databases included
+                </p>
+                <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
+                  <a href="/nutrition-label-scanner"
+                    style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"13px 28px", background:C.accent, color:"#fff", fontFamily:F.cond, fontSize:13, fontWeight:900, letterSpacing:"0.1em", textTransform:"uppercase", textDecoration:"none", transition:"filter 0.2s", boxShadow:"0 4px 20px rgba(79,171,255,0.25)" }}
+                    onMouseEnter={e => { e.currentTarget.style.filter="brightness(1.1)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.filter="none"; }}
+                  >
+                    Scan your label free →
+                  </a>
+                  <a href="/dashboard"
+                    style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"13px 24px", background:"transparent", color:"rgba(255,255,255,0.6)", fontFamily:F.cond, fontSize:13, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", textDecoration:"none", border:"1px solid rgba(255,255,255,0.18)" }}>
+                    Track my nutrition
+                  </a>
+                </div>
               </div>
             </section>
           )}

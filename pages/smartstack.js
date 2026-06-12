@@ -1,7 +1,7 @@
 // pages/smartstack.js
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuthContext } from "../hooks/useAuth";
 import useMediaQuery from "../hooks/useMediaQuery";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,7 +16,6 @@ import {
   FaRegStar,
   FaTimes,
   FaFilter,
-  FaChevronDown,
 } from "react-icons/fa";
 import StackCard from "../components/smartstack-cards/StackCard";
 import NutritionModal from "../components/Modal/NutritionModal";
@@ -32,6 +31,7 @@ const SHIMMER_STYLE = `
     0%   { background-position: -400px 0; }
     100% { background-position:  400px 0; }
   }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .ss-shimmer {
     background: linear-gradient(
       90deg,
@@ -82,6 +82,21 @@ const VITAMIN_SUBCATEGORIES = [
 ];
 
 const VALUE_FILTERS = ["Best Value", "Good Value", "Decent Value", "Value N/A"];
+
+const PRICE_RANGES = [
+  { key: "budget",  label: "Budget",    desc: "< $0.50/srv",    max: 0.50 },
+  { key: "mid",     label: "Mid-Range", desc: "$0.50–$1/srv",   min: 0.50, max: 1.00 },
+  { key: "premium", label: "Premium",   desc: "> $1/srv",       min: 1.00 },
+];
+
+const SORT_OPTIONS = [
+  { key: "relevance",     label: "Relevance"  },
+  { key: "best_value",    label: "Best Value" },
+  { key: "highest_rated", label: "Top Rated"  },
+  { key: "price_asc",     label: "Price ↑"    },
+  { key: "price_desc",    label: "Price ↓"    },
+  { key: "az",            label: "A–Z"        },
+];
 
 const VALUE_THRESHOLD_GOOD = 0.9;
 const VALUE_THRESHOLD_BEST = 1.15;
@@ -369,6 +384,8 @@ function ActiveFilterPills({
   activeCategory, setActiveCategory,
   activeVitaminCategory, setActiveVitaminCategory,
   activeValueFilters, toggleValueFilter,
+  activePriceFilters, togglePriceFilter,
+  activeSort, setActiveSort,
   showSavedOnly, setShowSavedOnly,
 }) {
   const pills = [];
@@ -383,6 +400,14 @@ function ActiveFilterPills({
     const c = VALUE_COLOR[f];
     pills.push({ key: `val-${f}`, label: f, onRemove: () => toggleValueFilter(f), color: { text: c.text, border: c.border, bg: c.bg } });
   });
+  activePriceFilters.forEach((key) => {
+    const r = PRICE_RANGES.find((p) => p.key === key);
+    if (r) pills.push({ key: `price-${key}`, label: r.label, onRemove: () => togglePriceFilter(key), color: { text: "#a78bfa", border: "rgba(167,139,250,0.3)", bg: "rgba(167,139,250,0.1)" } });
+  });
+  if (activeSort !== "relevance") {
+    const s = SORT_OPTIONS.find((o) => o.key === activeSort);
+    if (s) pills.push({ key: `sort-${activeSort}`, label: `Sort: ${s.label}`, onRemove: () => setActiveSort("relevance"), color: { text: "rgba(255,255,255,0.7)", border: "rgba(255,255,255,0.2)", bg: "rgba(255,255,255,0.07)" } });
+  }
   if (showSavedOnly) {
     pills.push({ key: "saved", label: "Saved only", onRemove: () => setShowSavedOnly(false), color: { text: "#5B9EC9", border: "rgba(91,158,201,0.3)", bg: "rgba(91,158,201,0.1)" } });
   }
@@ -555,11 +580,14 @@ export default function SmartStackPage() {
   const [searchQuery,           setSearchQuery]           = useState("");
   const [showSavedOnly,         setShowSavedOnly]         = useState(false);
   const [nudgeDismissed,        setNudgeDismissed]        = useState(false);
+  const [activeSort,            setActiveSort]            = useState("relevance");
+  const [activePriceFilters,    setActivePriceFilters]    = useState([]);
 
   const isMobile = useMediaQuery("(max-width: 639px)");
   const isXL     = useMediaQuery("(min-width: 1280px)");
   const itemsPerChunk = isXL ? 25 : 24;
   const [visibleLimit, setVisibleLimit] = useState(itemsPerChunk);
+  const sentinelRef = useRef(null);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -581,18 +609,14 @@ export default function SmartStackPage() {
     activeCategory !== "All" ||
     (activeCategory === "Vitamins" && activeVitaminCategory !== "All Vitamins") ||
     activeValueFilters.length > 0 ||
+    activePriceFilters.length > 0 ||
+    activeSort !== "relevance" ||
     showSavedOnly ||
     debouncedSearchQuery.length > 0;
 
-  const activeFilterCount =
-    (activeCategory !== "All" ? 1 : 0) +
-    (activeCategory === "Vitamins" && activeVitaminCategory !== "All Vitamins" ? 1 : 0) +
-    activeValueFilters.length +
-    (showSavedOnly ? 1 : 0);
-
   const gridKey = useMemo(
-    () => JSON.stringify({ cat: activeCategory, vitamin: activeVitaminCategory, val: [...activeValueFilters].sort(), q: debouncedSearchQuery.toLowerCase(), saved: showSavedOnly, limit: visibleLimit }),
-    [activeCategory, activeVitaminCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, visibleLimit]
+    () => JSON.stringify({ cat: activeCategory, vitamin: activeVitaminCategory, val: [...activeValueFilters].sort(), price: [...activePriceFilters].sort(), sort: activeSort, q: debouncedSearchQuery.toLowerCase(), saved: showSavedOnly, limit: visibleLimit }),
+    [activeCategory, activeVitaminCategory, activeValueFilters, activePriceFilters, activeSort, debouncedSearchQuery, showSavedOnly, visibleLimit]
   );
 
   // ── Page view ──────────────────────────────────────────────────────────────
@@ -650,7 +674,19 @@ export default function SmartStackPage() {
 
   useEffect(() => {
     setVisibleLimit(itemsPerChunk);
-  }, [activeCategory, activeVitaminCategory, activeValueFilters, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
+  }, [activeCategory, activeVitaminCategory, activeValueFilters, activePriceFilters, activeSort, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
+
+  // Infinite scroll — auto-load next chunk when sentinel enters viewport
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !canLoadMore) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisibleLimit((prev) => prev + itemsPerChunk); },
+      { rootMargin: "300px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [canLoadMore, itemsPerChunk]);
 
   // ── Filtering ──────────────────────────────────────────────────────────────
   const filteredStacks = useMemo(() => {
@@ -672,17 +708,56 @@ export default function SmartStackPage() {
     if (showSavedOnly) {
       result = savedStackIDs.length === 0 ? [] : result.filter((s) => savedStackIDs.includes(String(s.id)));
     }
+    if (activePriceFilters.length > 0) {
+      result = result.filter((s) => {
+        const pps = getPricePerServing(s);
+        if (pps == null) return false;
+        return activePriceFilters.some((key) => {
+          const range = PRICE_RANGES.find((r) => r.key === key);
+          if (!range) return false;
+          if (range.min != null && pps < range.min) return false;
+          if (range.max != null && pps >= range.max) return false;
+          return true;
+        });
+      });
+    }
     if (debouncedSearchQuery) {
       const q = debouncedSearchQuery.toLowerCase();
-      result = result.filter((s) => s.name?.toLowerCase().includes(q));
+      result = result.filter((s) =>
+        s.name?.toLowerCase().includes(q) ||
+        s.brand?.toLowerCase().includes(q)
+      );
     }
     return result;
-  }, [allStacks, activeCategory, activeVitaminCategory, activeValueFilters, bucketStats, showSavedOnly, savedStackIDs, debouncedSearchQuery]);
+  }, [allStacks, activeCategory, activeVitaminCategory, activeValueFilters, activePriceFilters, bucketStats, showSavedOnly, savedStackIDs, debouncedSearchQuery]);
+
+  const sortedStacks = useMemo(() => {
+    if (activeSort === "relevance") return filteredStacks;
+    const arr = [...filteredStacks];
+    switch (activeSort) {
+      case "best_value":
+        arr.sort((a, b) => (getValueScore(b, bucketStats) ?? -Infinity) - (getValueScore(a, bucketStats) ?? -Infinity));
+        break;
+      case "highest_rated":
+        arr.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+        break;
+      case "price_asc":
+        arr.sort((a, b) => (getPricePerServing(a) ?? Infinity) - (getPricePerServing(b) ?? Infinity));
+        break;
+      case "price_desc":
+        arr.sort((a, b) => (getPricePerServing(b) ?? -Infinity) - (getPricePerServing(a) ?? -Infinity));
+        break;
+      case "az":
+        arr.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        break;
+    }
+    return arr;
+  }, [filteredStacks, activeSort, bucketStats]);
 
   const totalCount     = allStacks.length;
-  const visibleCount   = filteredStacks.length;
+  const visibleCount   = sortedStacks.length;
   const effectiveLimit = visibleCount === 0 ? 0 : Math.min(visibleLimit, visibleCount);
-  const pageStacks     = filteredStacks.map((stack) => ({
+  const pageStacks     = sortedStacks.map((stack) => ({
     ...stack,
     valueScore:       getValueScore(stack, bucketStats),
     valueLabel:       getValueLabel(stack, bucketStats),
@@ -691,10 +766,9 @@ export default function SmartStackPage() {
   const canLoadMore = effectiveLimit < visibleCount;
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleLoadMore = useCallback(() => {
-    setVisibleLimit((prev) => prev + itemsPerChunk);
-    track(EVENTS.CTA_CLICK, { userEmail, source: "smartstack_load_more", payload: { currentLimit: visibleLimit, visibleCount, category: activeCategory } });
-  }, [itemsPerChunk, track, userEmail, visibleLimit, visibleCount, activeCategory]);
+  const togglePriceFilter = useCallback((key) => {
+    setActivePriceFilters((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+  }, []);
 
   const toggleValueFilter = useCallback((label) => {
     setActiveValueFilters((prev) => {
@@ -718,6 +792,8 @@ export default function SmartStackPage() {
     setActiveCategory("All");
     setActiveVitaminCategory("All Vitamins");
     setActiveValueFilters([]);
+    setActivePriceFilters([]);
+    setActiveSort("relevance");
     setShowSavedOnly(false);
     setSearchQuery("");
     track(EVENTS.ENGAGEMENT, { userEmail, source: "smartstack_clear_filters" });
@@ -935,6 +1011,58 @@ export default function SmartStackPage() {
 
             <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
 
+            {/* Price filter pills */}
+            {PRICE_RANGES.map((range) => {
+              const active = activePriceFilters.includes(range.key);
+              return (
+                <button key={range.key} type="button" onClick={() => togglePriceFilter(range.key)}
+                  className="flex items-center gap-1 rounded-full transition-all"
+                  style={{
+                    flexShrink: 0, padding: active ? "5px 10px" : "5px 9px",
+                    background: active ? "rgba(167,139,250,0.12)" : "rgba(255,255,255,0.04)",
+                    border:     active ? "1.5px solid rgba(167,139,250,0.4)" : "1px solid rgba(255,255,255,0.09)",
+                    color:      active ? "#a78bfa" : "rgba(255,255,255,0.5)",
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: 12, fontWeight: active ? 700 : 500, letterSpacing: "0.02em",
+                    boxShadow: active ? "0 0 10px rgba(167,139,250,0.2)" : "none",
+                  }}
+                  aria-pressed={active}
+                >
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: "#a78bfa", opacity: active ? 1 : 0.3 }} aria-hidden="true" />
+                  {range.label}
+                </button>
+              );
+            })}
+
+            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
+
+            {/* Sort dropdown */}
+            <select
+              value={activeSort}
+              onChange={(e) => setActiveSort(e.target.value)}
+              className="rounded-full text-[12px] font-semibold appearance-none"
+              style={{
+                flexShrink: 0, padding: "5px 22px 5px 10px",
+                background: activeSort !== "relevance" ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)",
+                border:     activeSort !== "relevance" ? "1.5px solid rgba(255,255,255,0.25)" : "1px solid rgba(255,255,255,0.09)",
+                color:      activeSort !== "relevance" ? "#fff" : "rgba(255,255,255,0.5)",
+                fontFamily: "'Barlow Condensed', sans-serif",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.35)'/%3E%3C/svg%3E")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 8px center",
+                cursor: "pointer",
+              }}
+              aria-label="Sort by"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.key} value={opt.key} style={{ background: "#0D1117", color: "#fff" }}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} aria-hidden="true" />
+
             {/* Saved toggle */}
             <button type="button"
               onClick={() => handleToggleSavedOnly((prev) => !prev)}
@@ -1026,6 +1154,53 @@ export default function SmartStackPage() {
               </motion.button>
             </div>
 
+            {/* Price row */}
+            <div className="px-6 hidden sm:flex items-center gap-2 py-1.5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none" style={{ color: "rgba(255,255,255,0.25)" }}>$/Srv</span>
+              {PRICE_RANGES.map((range) => {
+                const active = activePriceFilters.includes(range.key);
+                return (
+                  <motion.button key={range.key} type="button" onClick={() => togglePriceFilter(range.key)}
+                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
+                    style={{
+                      background: active ? "rgba(167,139,250,0.12)" : "rgba(255,255,255,0.04)",
+                      border:     active ? "1.5px solid rgba(167,139,250,0.4)" : "1px solid rgba(255,255,255,0.07)",
+                      color:      active ? "#a78bfa" : "rgba(255,255,255,0.55)",
+                      fontWeight: active ? 700 : 500,
+                      boxShadow:  active ? "0 0 8px rgba(167,139,250,0.2)" : "none",
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#a78bfa", opacity: active ? 1 : 0.3 }} aria-hidden="true" />
+                    {range.label}
+                    <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{range.desc}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            {/* Sort row */}
+            <div className="px-6 hidden sm:flex items-center gap-2 py-1.5 pb-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 select-none" style={{ color: "rgba(255,255,255,0.25)" }}>Sort</span>
+              {SORT_OPTIONS.map((opt) => {
+                const active = activeSort === opt.key;
+                return (
+                  <motion.button key={opt.key} type="button" onClick={() => setActiveSort(opt.key)}
+                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                    className="flex items-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0"
+                    style={{
+                      background: active ? "rgba(255,255,255,0.1)"  : "rgba(255,255,255,0.04)",
+                      border:     active ? "1.5px solid rgba(255,255,255,0.25)" : "1px solid rgba(255,255,255,0.07)",
+                      color:      active ? "#fff" : "rgba(255,255,255,0.5)",
+                      fontWeight: active ? 700 : 500,
+                    }}
+                  >
+                    {opt.label}
+                  </motion.button>
+                );
+              })}
+            </div>
+
             <AnimatePresence>
               {hasActiveFilters && (
                 <motion.div
@@ -1038,6 +1213,8 @@ export default function SmartStackPage() {
                     activeCategory={activeCategory} setActiveCategory={setActiveCategory}
                     activeVitaminCategory={activeVitaminCategory} setActiveVitaminCategory={setActiveVitaminCategory}
                     activeValueFilters={activeValueFilters} toggleValueFilter={toggleValueFilter}
+                    activePriceFilters={activePriceFilters} togglePriceFilter={togglePriceFilter}
+                    activeSort={activeSort} setActiveSort={setActiveSort}
                     showSavedOnly={showSavedOnly} setShowSavedOnly={handleToggleSavedOnly}
                   />
                 </motion.div>
@@ -1137,6 +1314,7 @@ export default function SmartStackPage() {
                       setSavedStacks={setSavedStacks}
                       userEmail={hasUserEmail ? userEmail : ""}
                       compact={isMobile}
+                      coachPick={stack.coachPick}
                     />
                   ))}
                 </motion.div>
@@ -1145,22 +1323,16 @@ export default function SmartStackPage() {
               )}
             </AnimatePresence>
 
+            {/* Infinite scroll sentinel — observer auto-loads next chunk */}
             {canLoadMore && (
-              <div className="mt-10 flex justify-center">
-                <motion.button type="button" onClick={handleLoadMore}
-                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold text-white transition-all"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}
-                >
-                  <FaChevronDown size={10} style={{ color: "rgba(255,255,255,0.4)" }} />
-                  Load {Math.min(itemsPerChunk, visibleCount - effectiveLimit)} more
-                </motion.button>
+              <div ref={sentinelRef} className="mt-10 flex justify-center py-4" aria-hidden="true">
+                <div className="w-5 h-5 rounded-full border-2" style={{ borderColor: "rgba(255,255,255,0.12)", borderTopColor: "#5B9EC9", animation: "spin 0.8s linear infinite" }} />
               </div>
             )}
 
             {!canLoadMore && visibleCount > 0 && (
               <p className="mt-10 text-center text-[11px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-                All {visibleCount} stacks shown - adjust filters to explore more.
+                All {visibleCount} stacks shown — adjust filters to explore more.
               </p>
             )}
 

@@ -51,14 +51,18 @@ function Spinner() {
      structured — current plan state object
      onChange   — (key, value) => void
 ══════════════════════════════════════════════════════════════════════════════ */
-export default function SupplementPicker({ catDef, products, structured, onChange }) {
+export default function SupplementPicker({ catDef, products, structured, onChange, onScanResult }) {
   const [open,      setOpen]      = useState(false);
   const [scanState, setScanState] = useState(null); // null | "loading" | { status, summary, flags }
   const ref                       = useRef(null);
   const selectedProduct           = structured[catDef.productKey] ?? null;
 
   // Reset scan badge when a different product is chosen
-  useEffect(() => { setScanState(null); }, [selectedProduct?.id]);
+  useEffect(() => {
+    setScanState(null);
+    onScanResult?.(catDef.productKey, null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProduct?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,9 +107,13 @@ export default function SupplementPicker({ catDef, products, structured, onChang
         }),
       });
       const data = await resp.json().catch(() => ({}));
-      setScanState(data?.status ? data : { status: "caution", summary: "Could not complete scan — review label manually.", flags: [] });
+      const result = data?.status ? data : { status: "caution", summary: "Could not complete scan — review label manually.", flags: [] };
+      setScanState(result);
+      onScanResult?.(catDef.productKey, result);
     } catch {
-      setScanState({ status: "caution", summary: "Scan unavailable — review label manually.", flags: [] });
+      const result = { status: "caution", summary: "Scan unavailable — review label manually.", flags: [] };
+      setScanState(result);
+      onScanResult?.(catDef.productKey, result);
     }
   }
 
@@ -158,7 +166,10 @@ export default function SupplementPicker({ catDef, products, structured, onChang
           {selectedProduct ? (
             <>
               <p className="text-sm font-bold truncate" style={{ color: DS.brand }}>{selectedProduct.name}</p>
-              {priceLabel && <p className="text-xs tabular-nums" style={{ color: DS.labelText }}>{priceLabel}</p>}
+              {selectedProduct.nutritionLabel
+                ? priceLabel && <p className="text-xs tabular-nums" style={{ color: DS.labelText }}>{priceLabel}</p>
+                : <p className="text-xs" style={{ color: DS.caution }}>⚠ No nutrition label — add in SmartStack to enable scan</p>
+              }
             </>
           ) : (
             <p className="text-sm" style={{ color: DS.dimText }}>- No recommendation -</p>
@@ -280,7 +291,7 @@ export default function SupplementPicker({ catDef, products, structured, onChang
                     </p>
                   )}
                 </div>
-                <button type="button" onClick={() => setScanState(null)}
+                <button type="button" onClick={() => { setScanState(null); onScanResult?.(catDef.productKey, null); }}
                   className="shrink-0 text-xs" style={{ color: DS.dimText }}>✕</button>
               </div>
             </div>

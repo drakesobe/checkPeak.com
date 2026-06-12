@@ -40,6 +40,7 @@ function safeProduct(v) {
     imageUrl:        asString(v.imageUrl       || ""),
     category:        asString(v.category       || ""),
     pricePerServing: v.pricePerServing != null ? Number(v.pricePerServing) || null : null,
+    nutritionLabel:  asString(v.nutritionLabel || ""),
   };
 }
 

@@ -1,7 +1,7 @@
 // components/org/prescriptions/SpeedMode.jsx
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   DEFAULT_STRUCTURED,
   getAthleteToken,
@@ -236,6 +236,12 @@ export default function SpeedMode({
     }
     return out;
   }, [products]);
+
+  const [suppScans, setSuppScans] = useState({});
+  const handleScanResult = useCallback((key, result) => {
+    setSuppScans((prev) => ({ ...prev, [key]: result }));
+  }, []);
+  const anySuppFlagged = Object.values(suppScans).some((s) => s?.status === "flagged");
 
   /* ── Carry all from last plan ── */
   function carryAll() {
@@ -618,6 +624,7 @@ export default function SpeedMode({
                     products={suppGrouped[cat.productKey] ?? []}
                     structured={structured}
                     onChange={onChange}
+                    onScanResult={handleScanResult}
                   />
                 ))}
                 {/* Electrolytes — no SmartStack category, stays as text */}
@@ -666,13 +673,21 @@ export default function SpeedMode({
           </div>
 
           {/* ── Sticky save bar ── */}
+          <div className="sticky bottom-0" style={{ zIndex: 10 }}>
+            {anySuppFlagged && (
+              <div
+                className="flex items-center gap-2 px-5 py-2 text-xs font-bold"
+                style={{ backgroundColor: "#FFF0F0", borderTop: "1px solid #FFC8C8", color: "#C8102E" }}
+              >
+                ⛔ A selected supplement contains a banned substance — verify before prescribing
+              </div>
+            )}
           <div
-            className="flex items-center gap-3 px-5 py-3 sticky bottom-0"
+            className="flex items-center gap-3 px-5 py-3"
             style={{
               backgroundColor: DS.pageBg,
               borderTop: `1px solid ${DS.border}`,
               boxShadow: "0 -4px 12px rgba(0,0,0,0.06)",
-              zIndex: 10,
             }}
           >
             <span className="text-xs flex-1 hidden sm:block" style={{ color: DS.dimText }}>
@@ -708,6 +723,7 @@ export default function SpeedMode({
               {createLoading ? "Saving…" : "Save & Next"}
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
+          </div>
           </div>
         </div>
       </div>

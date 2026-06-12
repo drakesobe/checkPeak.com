@@ -5,7 +5,7 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import MealBlockEditor from "./mealBlocks/MealBlockEditor";
 import PlanHistory from "../PlanHistory";
 import {
-  Zap, Save, ArrowRight, RotateCcw, User, ChevronDown,
+  Zap, Save, ArrowRight, RotateCcw, User, Users, ChevronDown,
   Trash2, RefreshCw, BookOpen, Clock,
 } from "lucide-react";
 import { getAthleteToken, DEFAULT_STRUCTURED } from "@/lib/org/prescriptions/prescriptions-utils";
@@ -135,7 +135,7 @@ function NumField({ label, value, onChange, placeholder, step = 1 }) {
 
 /* ── Section header ──────────────────────────────────────────────────────────── */
 
-function SectionHeader({ label, open, onToggle, summary, badge, accent, pill }) {
+function SectionHeader({ label, open, onToggle, summary, badge, accent, pill, badgeColor }) {
   return (
     <button
       type="button"
@@ -152,7 +152,7 @@ function SectionHeader({ label, open, onToggle, summary, badge, accent, pill }) 
       <div className="flex items-center gap-3 min-w-0">
         <span
           className="shrink-0 h-2 w-2 rounded-full"
-          style={{ backgroundColor: badge ? DS.safe : DS.dimText }}
+          style={{ backgroundColor: badgeColor || (badge ? DS.safe : DS.dimText) }}
         />
         <span
           className="text-xs font-black uppercase tracking-wider shrink-0"
@@ -646,6 +646,11 @@ export default function PlanBuilderForm({
 
   const anySuppSelected = SUPP_CATEGORIES.some((cat) => structured[cat.productKey] != null);
 
+  const [suppScans, setSuppScans] = useState({});
+  const anySuppFlagged = Object.values(suppScans).some((s) => s?.status === "flagged");
+  const anySuppCaution = !anySuppFlagged && Object.values(suppScans).some((s) => s?.status === "caution");
+  const suppScanBadgeColor = anySuppFlagged ? DS.banned : anySuppCaution ? DS.caution : undefined;
+
   const canSave = Boolean(selectedAthleteEmail) && !createLoading;
   const selectedAthleteName = String(selectedAthlete?.name || "").trim();
 
@@ -811,7 +816,8 @@ export default function PlanBuilderForm({
         open={open.supplements}
         onToggle={() => toggle("supplements")}
         summary={suppSummary(structured)}
-        badge={suppBadge}
+        badge={suppBadge || anySuppFlagged || anySuppCaution}
+        badgeColor={suppScanBadgeColor}
       />
       {open.supplements && (
         <div className="px-5 py-5 space-y-5" style={{ borderBottom: `1px solid ${DS.border}` }}>
@@ -845,6 +851,7 @@ export default function PlanBuilderForm({
                 products={suppGrouped[cat.productKey] ?? []}
                 structured={structured}
                 onChange={onChange}
+                onScanResult={(key, result) => setSuppScans((prev) => ({ ...prev, [key]: result }))}
               />
             ))}
           </div>
@@ -973,13 +980,21 @@ export default function PlanBuilderForm({
       {/* ═══════════════════════════════════
           STICKY SAVE BAR
       ═══════════════════════════════════ */}
+      <div className="sticky bottom-0" style={{ zIndex: 10 }}>
+        {anySuppFlagged && (
+          <div
+            className="flex items-center gap-2 px-5 py-2 text-xs font-bold"
+            style={{ backgroundColor: DS.bannedBg, borderTop: `1px solid ${DS.bannedBorder}`, color: DS.banned }}
+          >
+            ⛔ A selected supplement contains a banned substance — verify before prescribing
+          </div>
+        )}
       <div
-        className="flex items-center gap-3 px-5 py-3 sticky bottom-0"
+        className="flex items-center gap-3 px-5 py-3"
         style={{
           backgroundColor: DS.pageBg,
           borderTop:       `1px solid ${DS.border}`,
           boxShadow:       "0 -4px 12px rgba(0,0,0,0.06)",
-          zIndex:          10,
         }}
       >
         {/* Left actions */}
@@ -1016,7 +1031,7 @@ export default function PlanBuilderForm({
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
           >
-            <Zap className="h-3 w-3" />
+            <Users className="h-3 w-3" />
             Group Blast
           </button>
         )}
@@ -1065,6 +1080,7 @@ export default function PlanBuilderForm({
             {createLoading ? "Saving…" : "Save & Next"}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

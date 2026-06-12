@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
-import { X, Zap, RefreshCw } from "lucide-react";
+import { X, Zap, Users, RefreshCw } from "lucide-react";
 
 import { DEFAULT_STRUCTURED } from "@/lib/org/prescriptions/prescriptions-utils";
 import { useOrgPrescriptionsData } from "@/hooks/org/useOrgPrescriptionsData";
@@ -430,7 +430,7 @@ export default function OrgPrescriptionsPage() {
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
             >
-              <Zap className="h-3.5 w-3.5" />
+              <Users className="h-3.5 w-3.5" />
               Group Blast
             </button>
 

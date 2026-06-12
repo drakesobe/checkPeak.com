@@ -80,6 +80,43 @@ function useScrollDepth(threshold = 0.5) {
   return reached;
 }
 
+function usePastThreshold(px = 300) {
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const check = () => setPast(window.scrollY > px);
+    window.addEventListener("scroll", check, { passive: true });
+    check();
+    return () => window.removeEventListener("scroll", check);
+  }, [px]);
+  return past;
+}
+
+function useRecentlyViewed(maxItems = 6) {
+  const KEY = "cp_rv";
+  const [viewed, setViewed] = useState([]);
+  useEffect(() => {
+    try { setViewed(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch {}
+  }, []);
+  const addViewed = useCallback((stack) => {
+    setViewed(prev => {
+      const filtered = prev.filter(s => s.id !== stack.id);
+      const item = {
+        id:             stack.id,
+        name:           stack.name,
+        category:       stack.category,
+        imageUrl:       stack.imageUrl,
+        affiliateLink:  stack.affiliateLink,
+        pricePerServing:stack.pricePerServing,
+        Price:          stack.Price,
+      };
+      const next = [item, ...filtered].slice(0, maxItems);
+      try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [maxItems]);
+  return { viewed, addViewed };
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
    VALUE SCORING (unchanged)
 ════════════════════════════════════════════════════════════════════════════ */
@@ -820,11 +857,185 @@ async function fetchLabelAsFile(url) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+   STICKY TOP PICK BAR
+════════════════════════════════════════════════════════════════════════════ */
+function StickyPickBar({ stack, stats, top = 128 }) {
+  if (!stack) return null;
+  const pps  = getPPS(stack);
+  const tier = getValueTier(getValueScore(stack, stats));
+  return (
+    <div style={{
+      position:"fixed",
+      top,
+      left:0,
+      right:0,
+      zIndex:39,
+      borderTop:`1px solid ${C.border}`,
+      borderBottom:`1px solid ${C.border}`,
+      background:"rgba(255,255,255,0.98)",
+      backdropFilter:"blur(8px)",
+      padding:"6px 16px",
+      overflow:"hidden",
+      boxShadow:"0 2px 8px rgba(0,0,0,0.06)",
+      animation:"slideDown 0.18s ease",
+    }}>
+      <div style={{ maxWidth:1100, margin:"0 auto", display:"flex", alignItems:"center", gap:12 }}>
+        <span style={{ fontFamily:F.cond, fontSize:9, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", color:C.accent, flexShrink:0, whiteSpace:"nowrap" }}>
+          #1 This Week
+        </span>
+        {stack.imageUrl && (
+          <img src={stack.imageUrl} alt={stack.name} style={{ width:32, height:32, objectFit:"contain", background:C.raised, border:`1px solid ${C.border}`, flexShrink:0 }} loading="eager" />
+        )}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontFamily:F.cond, fontSize:12, fontWeight:900, letterSpacing:"0.04em", textTransform:"uppercase", color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {stack.name}
+          </div>
+          {pps && (
+            <div style={{ fontFamily:F.cond, fontSize:10, fontWeight:700, fontStyle:"italic", color:C.accent }}>
+              {ppsLabel(pps)}/serving · Best Value in Category
+            </div>
+          )}
+        </div>
+        <div style={{ flexShrink:0 }}>
+          <AmazonBtn stack={stack} size="sm" showPrice tier={tier} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   RECENTLY VIEWED STRIP
+════════════════════════════════════════════════════════════════════════════ */
+function RecentlyViewedStrip({ items }) {
+  if (!items.length) return null;
+  return (
+    <section style={{ marginTop:48 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14 }}>
+        <div style={{ flex:1, height:1, background:C.border }} />
+        <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", color:C.muted, whiteSpace:"nowrap" }}>
+          Recently Viewed
+        </span>
+        <div style={{ flex:1, height:1, background:C.border }} />
+      </div>
+      <div style={{ display:"flex", gap:1, overflowX:"auto", scrollbarWidth:"none", background:C.border }}>
+        {items.map(item => {
+          const pps = getPPS(item);
+          return (
+            <div key={item.id} style={{ flexShrink:0, width:148, background:C.surface, display:"flex", flexDirection:"column" }}>
+              <div style={{ height:88, background:C.raised, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }}>
+                {item.imageUrl
+                  ? <img src={item.imageUrl} alt={item.name} style={{ width:"100%", height:"100%", objectFit:"contain", padding:8 }} loading="lazy" />
+                  : <span style={{ fontSize:28, opacity:.15 }}>💊</span>
+                }
+              </div>
+              <div style={{ padding:"8px 10px 0", flex:1 }}>
+                <p style={{ fontFamily:F.body, fontSize:11, fontWeight:700, color:C.ink, margin:0, lineHeight:1.35, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                  {item.name}
+                </p>
+                {pps && (
+                  <p style={{ fontFamily:F.cond, fontSize:11, fontWeight:900, fontStyle:"italic", color:C.accent, margin:"3px 0 0" }}>
+                    {ppsLabel(pps)}/srv
+                  </p>
+                )}
+              </div>
+              <div style={{ padding:"8px 10px" }}>
+                {item.affiliateLink ? (
+                  <a href={item.affiliateLink} target="_blank" rel="noopener noreferrer"
+                    style={{ display:"block", padding:"6px", textAlign:"center", background:C.amazon, color:"#fff", fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.06em", textTransform:"uppercase", textDecoration:"none" }}>
+                    Buy
+                  </a>
+                ) : (
+                  <div style={{ padding:"6px", textAlign:"center", background:C.raised, fontFamily:F.body, fontSize:10, color:C.muted }}>N/A</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   EXIT INTENT MODAL
+════════════════════════════════════════════════════════════════════════════ */
+function ExitIntentModal({ stack, stats, onClose }) {
+  if (!stack) return null;
+  const pps  = getPPS(stack);
+  const tier = getValueTier(getValueScore(stack, stats));
+  const tm   = tier ? TIER[tier] : null;
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:200,
+      background:"rgba(13,27,42,0.65)", backdropFilter:"blur(4px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:16,
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:C.surface, maxWidth:440, width:"100%",
+        border:`1px solid ${C.border}`, borderTop:`3px solid ${C.accent}`,
+        boxShadow:"0 24px 64px rgba(0,0,0,0.22)", overflow:"hidden",
+      }}>
+        <div style={{ padding:"12px 20px", background:C.raised, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <span style={{ fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.12em", textTransform:"uppercase", color:C.accent }}>
+            Before you go
+          </span>
+          <button type="button" onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:C.muted, fontSize:18, lineHeight:1, padding:2 }}>✕</button>
+        </div>
+        <div style={{ padding:"24px 20px" }}>
+          <p style={{ fontFamily:F.cond, fontWeight:900, fontStyle:"italic", fontSize:"1.35rem", textTransform:"uppercase", color:C.ink, margin:"0 0 1rem", lineHeight:1, letterSpacing:"-0.01em" }}>
+            Best value pick right now:
+          </p>
+          <div style={{ display:"flex", gap:16, alignItems:"flex-start", marginBottom:20 }}>
+            {stack.imageUrl && (
+              <div style={{ width:72, height:72, background:C.raised, border:`1px solid ${C.border}`, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <img src={stack.imageUrl} alt={stack.name} style={{ width:"100%", height:"100%", objectFit:"contain", padding:6 }} />
+              </div>
+            )}
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ fontFamily:F.cond, fontSize:14, fontWeight:900, textTransform:"uppercase", letterSpacing:"0.04em", color:C.ink, margin:"0 0 6px", lineHeight:1.2 }}>{stack.name}</p>
+              {pps && (
+                <div style={{ display:"flex", alignItems:"baseline", gap:5 }}>
+                  <span style={{ fontFamily:F.cond, fontWeight:900, fontStyle:"italic", fontSize:"1.5rem", color:C.accent, letterSpacing:"-0.02em" }}>{ppsLabel(pps)}</span>
+                  <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:C.muted }}>/serving</span>
+                </div>
+              )}
+              {tm && (
+                <div style={{ display:"inline-flex", alignItems:"center", gap:5, marginTop:5 }}>
+                  <div style={{ width:6, height:6, background:tm.dot }} />
+                  <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", color:tm.text }}>{tm.label}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <AmazonBtn stack={stack} size="lg" showPrice tier={tier} />
+          <p style={{ textAlign:"center", fontFamily:F.body, fontSize:10, color:C.muted, marginTop:8, marginBottom:0 }}>
+            Opens Amazon · Price may vary · Prime eligible
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
    COMPARE PANEL - sticky bottom
 ════════════════════════════════════════════════════════════════════════════ */
 function ComparePanel({ stacks, onRemove, onClear, onScrollToTable }) {
+  const [copied, setCopied] = useState(false);
   if (stacks.length === 0) return null;
   const ready = stacks.length >= 2;
+
+  const handleShare = () => {
+    if (!ready) return;
+    const ids = stacks.map(s => s.id).join(",");
+    const url = `${window.location.origin}${window.location.pathname}?compare=${encodeURIComponent(ids)}`;
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    }).catch(() => {});
+  };
+
   return (
     <div style={{
       position:"fixed", bottom:0, left:0, right:0, zIndex:50,
@@ -859,6 +1070,12 @@ function ComparePanel({ stacks, onRemove, onClear, onScrollToTable }) {
               onMouseLeave={e => { e.currentTarget.style.filter="none"; }}
             >
               Compare now ↓
+            </button>
+          )}
+          {ready && (
+            <button type="button" onClick={handleShare}
+              style={{ padding:"8px 14px", background:copied?"#ECFDF5":"transparent", border:`1px solid ${copied?C.green:C.border}`, color:copied?C.green:C.secondary, fontFamily:F.body, fontSize:12, cursor:"pointer", transition:"all 0.15s", whiteSpace:"nowrap" }}>
+              {copied ? "✓ Copied!" : "Share ↗"}
             </button>
           )}
           <button type="button" onClick={onClear}
@@ -958,7 +1175,27 @@ export default function SmartStackComparePage() {
   const [visibleLimit,      setLimit]             = useState(24);
   const [showCoachPickOnly, setShowCoachPickOnly] = useState(false);
   const [activePriceRange,  setActivePriceRange]  = useState(null);
-  const sentinelRef = useRef(null);
+  const [showExitIntent,    setShowExitIntent]    = useState(false);
+  const sentinelRef    = useRef(null);
+  const compareInitRef = useRef(false);
+  const navRef         = useRef(null);
+  const [navBottomPx,  setNavBottomPx]  = useState(128); // MarketingNav(72) + SmartStack nav(56)
+
+  const showStickyBar   = usePastThreshold(420);
+
+  useEffect(() => {
+    const measure = () => {
+      if (navRef.current) setNavBottomPx(navRef.current.getBoundingClientRect().bottom);
+    };
+    measure();
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  const { viewed: recentlyViewed, addViewed } = useRecentlyViewed(6);
 
   const searchQuery = useDebounce(searchRaw, 280);
 
@@ -969,6 +1206,31 @@ export default function SmartStackComparePage() {
     if (sort && SORT_OPTIONS.find(o => o.id === sort)) setSortBy(sort);
     if (brand) setSearchRaw(String(brand));
   }, [router.isReady, router.query]);
+
+  /* Restore shared comparison from URL (?compare=id1,id2) */
+  useEffect(() => {
+    if (!router.isReady || !allStacks.length || compareInitRef.current) return;
+    compareInitRef.current = true;
+    const { compare } = router.query;
+    if (!compare) return;
+    const ids = String(compare).split(",").map(s => s.trim()).filter(Boolean);
+    const matches = ids.map(id => allStacks.find(s => s.id === id)).filter(Boolean);
+    if (matches.length >= 2) setComparing(matches.slice(0, 3));
+  }, [router.isReady, router.query, allStacks]);
+
+  /* Exit intent — desktop only, once per session */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem("cp_exit_shown")) return;
+    const handler = (e) => {
+      if (e.clientY < 8 && !e.relatedTarget) {
+        setShowExitIntent(true);
+        sessionStorage.setItem("cp_exit_shown", "1");
+      }
+    };
+    document.addEventListener("mouseleave", handler);
+    return () => document.removeEventListener("mouseleave", handler);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1139,7 +1401,7 @@ export default function SmartStackComparePage() {
       <div style={{ minHeight:"100vh", background:C.pageBg, fontFamily:F.body, paddingBottom: comparing.length > 0 || isEmailCaptureActive ? 72 : 0 }}>
 
         {/* ── NAV ─────────────────────────────────────────────────────── */}
-      <nav style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 12px 0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:40, height:56, boxShadow:"0 1px 8px rgba(0,0,0,0.04)" }}>
+      <nav ref={navRef} style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"0 12px 0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:72, zIndex:40, height:56, boxShadow:"0 1px 8px rgba(0,0,0,0.04)" }}>
 
         {/* Add this style block inside nav */}
         <style>{`
@@ -1213,6 +1475,11 @@ export default function SmartStackComparePage() {
           </a>
         </div>
       </nav>
+
+        {/* ── STICKY PICK BAR ─────────────────────────────────────────── */}
+        {showStickyBar && bestSeller && activeCatSlug && activeCatSlug !== "all" && (
+          <StickyPickBar stack={bestSeller} stats={stats} top={navBottomPx} />
+        )}
 
         {/* ── HERO ────────────────────────────────────────────────────── */}
         <div style={{
@@ -1452,6 +1719,7 @@ export default function SmartStackComparePage() {
                             pps={getPPS(stack)}
                             rank={rankInfo?.rank ?? null}
                             totalInCat={rankInfo?.total ?? null}
+                            onView={addViewed}
                           />
                         );
                       })}
@@ -1485,6 +1753,11 @@ export default function SmartStackComparePage() {
             <section style={{ marginTop:12 }}>
               <ManualCompareTable stacks={comparing} stats={stats} onRemove={removeFromCompare} />
             </section>
+          )}
+
+          {/* Recently viewed */}
+          {activeCatSlug && recentlyViewed.length > 0 && (
+            <RecentlyViewedStrip items={recentlyViewed} />
           )}
 
           {/* CTA closer */}
@@ -1526,6 +1799,11 @@ export default function SmartStackComparePage() {
 
         <ComparePanel stacks={comparing} onRemove={removeFromCompare} onClear={clearCompare} onScrollToTable={scrollToManual} />
         {isEmailCaptureActive && activeCatSlug && <EmailCaptureStrip activeCatLabel={activeCatLabel} />}
+
+        {/* Exit intent modal — desktop, once per session */}
+        {showExitIntent && bestSeller && (
+          <ExitIntentModal stack={bestSeller} stats={stats} onClose={() => setShowExitIntent(false)} />
+        )}
       </div>
     </>
   );

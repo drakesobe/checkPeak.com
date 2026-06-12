@@ -245,6 +245,7 @@ export default function GridCard({
   stats,
   rank,
   totalInCat,
+  onView,
 }) {
   const tm        = valueTier ? TIER[valueTier] : null;
   const hasImg    = Boolean(stack?.imageUrl);
@@ -264,6 +265,18 @@ export default function GridCard({
   const [scanResult, setScanResult] = useState(null);
   const [scanError,  setScanError]  = useState("");
   const abortRef = useRef(null);
+  const cardRef  = useRef(null);
+
+  /* ── Recently viewed trigger ── */
+  useEffect(() => {
+    if (!onView || !cardRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { onView(stack); observer.disconnect(); } },
+      { threshold: 0.5 }
+    );
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [stack, onView]);
 
   const canScan   = Boolean(stack?.nutritionLabel);
   const hasBanned = (scanResult?.matchedBanned?.length || 0) > 0;
@@ -314,14 +327,21 @@ export default function GridCard({
 
   const trackAmazon = useCallback(() => {
     try {
-      window.gtag?.("event","amazon_click",{ supplement_name:stack?.name||"", category:stack?.category||"", value_tier:valueTier??"unknown" });
-      window.dataLayer?.push({ event:"amazon_click", supplement_name:stack?.name||"" });
+      window.gtag?.("event","amazon_click",{
+        supplement_name:   stack?.name    || "",
+        category:          stack?.category || "",
+        value_tier:        valueTier      ?? "unknown",
+        list_position:     rank           ?? undefined,
+        price_per_serving: pps            ?? undefined,
+      });
+      window.dataLayer?.push({ event:"amazon_click", supplement_name:stack?.name||"", list_position:rank });
     } catch {}
-  }, [stack, valueTier]);
+  }, [stack, valueTier, rank, pps]);
 
   /* ─── render ─────────────────────────────────────────────────────────── */
   return (
     <motion.div
+      ref={cardRef}
       layout
       style={{
         background:    C.cardBg,

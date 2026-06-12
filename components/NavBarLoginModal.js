@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "react-responsive";
 import { useAuthContext } from "@/hooks/useAuth";
+import { trackSignupConversion } from "@/lib/conversions";
 
 function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
@@ -354,12 +355,14 @@ export default function NavBarLoginModal({
         if (!athleteSignup.email.includes("@")) throw new Error("Please enter a valid email.");
         if (athleteSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
         const data = await signupAthlete({ token: athleteSignup.token, name: athleteSignup.name, email: athleteSignup.email, password: athleteSignup.password });
+        trackSignupConversion(athleteSignup.email, "athlete");
         setSignupSuccess(data); closeAndReset(); router.push("/dashboard"); return;
       }
       if (!orgSignup.name || !orgSignup.email || !orgSignup.password) throw new Error("Please provide organization name, email, and password.");
       if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
       if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
       const data = await signupOrganization({ name: orgSignup.name, email: orgSignup.email, password: orgSignup.password, contactName: orgSignup.contactName, phoneNumber: orgSignup.phoneNumber, website: orgSignup.website });
+      trackSignupConversion(orgSignup.email, "organization");
       setSignupSuccess(data); closeAndReset(); router.push("/org/workouts-calendar");
     } catch (err) {
       console.error("Signup error:", err);

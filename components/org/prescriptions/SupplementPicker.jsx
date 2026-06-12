@@ -274,9 +274,9 @@ export default function SupplementPicker({ catDef, products, structured, onChang
                       Re-scan
                     </button>
                   </div>
-                  {scanState.source === "name" && (
+                  {(scanState.source === "no-label" || scanState.source === "name") && (
                     <p className="text-xs mt-1" style={{ color: DS.dimText }}>
-                      Scanned by product name — add a nutrition label to SmartStack for full ingredient analysis
+                      Add a Nutrition Label URL to this product in SmartStack to enable full ingredient scanning.
                     </p>
                   )}
                 </div>

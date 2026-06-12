@@ -34,6 +34,11 @@ const GroupBlastPanel = dynamic(
   { ssr: false }
 );
 
+const SpeedMode = dynamic(
+  () => import("@/components/org/prescriptions/SpeedMode"),
+  { ssr: false }
+);
+
 /* ── DS tokens ────────────────────────────────────────────────────────────────── */
 const DS = {
   brand:        "#1E3A5F",
@@ -75,6 +80,7 @@ export default function OrgPrescriptionsPage() {
   const [products,        setProducts]         = useState([]);
   const [showGroupBlast,  setShowGroupBlast]   = useState(false);
   const [planSavedAt,     setPlanSavedAt]      = useState(null);
+  const [speedMode,       setSpeedMode]        = useState(false);
 
   const [structured, setStructured] = useState({ ...DEFAULT_STRUCTURED });
   const onChange     = (key, value) => setStructured((prev) => ({ ...prev, [key]: value }));
@@ -321,6 +327,34 @@ export default function OrgPrescriptionsPage() {
     );
   }
 
+  /* ── Speed Mode full-screen render ── */
+  if (speedMode) {
+    return (
+      <SpeedMode
+        filteredAthletes={filteredAthletes}
+        selectedAthlete={selectedAthlete}
+        selectedAthleteEmail={selectedAthleteEmail}
+        selectedAthleteToken={selectedAthleteToken}
+        structured={structured}
+        onChange={onChange}
+        setStructured={setStructured}
+        setTitle={setTitle}
+        products={products}
+        hist={hist}
+        createLoading={createLoading}
+        onSave={(e) => createPlan(e, { advance: false })}
+        onSaveNext={(e) => createPlan(e, { advance: true })}
+        onSkip={goToNextAthleteWithSkip}
+        onExit={() => setSpeedMode(false)}
+        error={error}
+        setError={setError}
+        completedEmails={completedEmails}
+        doneTokens={doneTokens}
+        planSavedAt={planSavedAt}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
 
@@ -374,6 +408,19 @@ export default function OrgPrescriptionsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Speed Mode toggle */}
+            <button
+              type="button"
+              onClick={() => setSpeedMode(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+              style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.brand }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brand; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.color = DS.brand; }}
+            >
+              <Zap className="h-3.5 w-3.5" />
+              Speed Mode
+            </button>
+
             {/* Group blast */}
             <button
               type="button"

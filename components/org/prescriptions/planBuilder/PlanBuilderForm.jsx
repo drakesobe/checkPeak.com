@@ -1,7 +1,7 @@
 // components/org/prescriptions/planBuilder/PlanBuilderForm.jsx
 "use client";
 
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import MealBlockEditor from "./mealBlocks/MealBlockEditor";
 import PlanHistory from "../PlanHistory";
 import {
@@ -9,6 +9,7 @@ import {
   Trash2, RefreshCw, BookOpen, Clock,
 } from "lucide-react";
 import { getAthleteToken, DEFAULT_STRUCTURED } from "@/lib/org/prescriptions/prescriptions-utils";
+import SupplementPicker, { SUPP_CATEGORIES } from "../SupplementPicker";
 
 /* ── DS tokens ────────────────────────────────────────────────────────────────── */
 const DS = {
@@ -41,14 +42,7 @@ const PRESETS = [
   { label: "Skill",    cal: 3600, pro: 195, carbs: 420, fat:  90, phase: "Maintain", desc: "Speed / skill spots"   },
 ];
 
-/* ── Supplement categories ───────────────────────────────────────────────────── */
-const SUPP_CATEGORIES = [
-  { label: "Pre-Workout",   strKey: "preWorkoutRecommendation",  productKey: "preWorkoutProduct",  match: (c) => /pre.?workout/i.test(c)     },
-  { label: "Protein Powder", strKey: "proteinRecommendation",   productKey: "proteinProduct",     match: (c) => /protein.?powder/i.test(c)  },
-  { label: "Creatine",      strKey: "creatineRecommendation",   productKey: "creatineProduct",    match: (c) => /creatine/i.test(c)         },
-  { label: "Protein Bars",  strKey: "proteinBarRecommendation", productKey: "proteinBarProduct",  match: (c) => /protein.?bar/i.test(c)     },
-  { label: "BCAAs",         strKey: "bcaaRecommendation",       productKey: "bcaaProduct",        match: (c) => /bcaa|eaa/i.test(c)         },
-];
+/* SUPP_CATEGORIES imported from SupplementPicker */
 
 /* ── Summary helpers ─────────────────────────────────────────────────────────── */
 
@@ -417,196 +411,59 @@ function AthleteHeader({ selectedAthlete, selectedAthleteEmail, hist, tpl }) {
   );
 }
 
-/* ── CategoryPicker (supplement product dropdown) ────────────────────────────── */
-
-function CategoryPicker({ catDef, products, structured, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref             = useRef(null);
-  const selectedProduct = structured[catDef.productKey] ?? null;
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const handleSelect = useCallback((product) => {
-    if (product === null) {
-      onChange(catDef.productKey, null);
-      onChange(catDef.strKey, "");
-    } else {
-      onChange(catDef.productKey, {
-        id: product.id, name: product.name,
-        affiliateLink: product.affiliateLink, imageUrl: product.imageUrl,
-        category: product.category, pricePerServing: product.pricePerServing,
-        Price: product.Price,
-      });
-      onChange(catDef.strKey, product.name);
-    }
-    setOpen(false);
-  }, [catDef, onChange]);
-
-  const pps = selectedProduct?.pricePerServing;
-  const priceLabel = pps != null
-    ? `$${Number(pps).toFixed(2)} / serving`
-    : selectedProduct?.Price != null
-      ? `$${Number(selectedProduct.Price).toFixed(2)}`
-      : null;
-
-  if (products.length === 0) {
-    return (
-      <div>
-        <Label>{catDef.label}</Label>
-        <p className="text-xs py-2" style={{ color: DS.dimText }}>No {catDef.label} products in SmartStack yet.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <Label>{catDef.label}</Label>
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-sm transition-all"
-        style={{
-          border:          `1px solid ${open ? DS.brand : selectedProduct ? DS.brand : DS.brandBorder}`,
-          backgroundColor: selectedProduct ? DS.brandBg : DS.cardBg,
-          boxShadow:       open ? `0 0 0 2px ${DS.brand}18` : "none",
-        }}
-      >
-        <div className="shrink-0 overflow-hidden rounded-sm" style={{ width: 36, height: 36, backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
-          {selectedProduct?.imageUrl
-            ? <img src={selectedProduct.imageUrl} alt={selectedProduct.name} className="w-full h-full object-cover" loading="lazy" />
-            : <div className="w-full h-full flex items-center justify-center text-sm">💊</div>
-          }
-        </div>
-        <div className="flex-1 min-w-0">
-          {selectedProduct ? (
-            <>
-              <p className="text-sm font-bold truncate" style={{ color: DS.brand }}>{selectedProduct.name}</p>
-              {priceLabel && <p className="text-xs tabular-nums" style={{ color: DS.labelText }}>{priceLabel}</p>}
-            </>
-          ) : (
-            <p className="text-sm" style={{ color: DS.dimText }}>- No recommendation -</p>
-          )}
-        </div>
-        <svg viewBox="0 0 24 24" className="shrink-0 w-4 h-4" style={{ color: DS.dimText, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} fill="none" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute left-0 right-0 z-20 mt-1 overflow-y-auto rounded-sm" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.brand}`, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: 280 }}>
-          <button type="button" onClick={() => handleSelect(null)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
-            style={{ borderBottom: `1px solid ${DS.border}` }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.pageBg; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
-          >
-            <div className="shrink-0 rounded-sm flex items-center justify-center" style={{ width: 36, height: 36, backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: DS.dimText }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-            <p className="text-sm" style={{ color: DS.dimText }}>- No recommendation -</p>
-          </button>
-
-          {products.map((p) => {
-            const isSelected = selectedProduct?.id === p.id;
-            const pLabel = p.pricePerServing != null ? `$${Number(p.pricePerServing).toFixed(2)} / serving` : p.Price != null ? `$${Number(p.Price).toFixed(2)}` : null;
-            return (
-              <button key={p.id} type="button" onClick={() => handleSelect(p)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
-                style={{ backgroundColor: isSelected ? DS.brandBg : "transparent", borderBottom: `1px solid ${DS.border}` }}
-                onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = DS.pageBg; }}
-                onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}
-              >
-                <div className="shrink-0 overflow-hidden rounded-sm" style={{ width: 36, height: 36, backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}>
-                  {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full flex items-center justify-center text-sm">💊</div>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: isSelected ? DS.brand : DS.bodyText }}>{p.name}</p>
-                  {pLabel && <p className="text-xs tabular-nums" style={{ color: DS.dimText }}>{pLabel}</p>}
-                </div>
-                {isSelected && (
-                  <svg viewBox="0 0 24 24" className="shrink-0 w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} style={{ color: DS.brand }}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {p.affiliateLink && (
-                  <a href={p.affiliateLink} target="_blank" rel="noopener noreferrer"
-                    className="shrink-0 text-xs font-bold ml-1" style={{ color: DS.brand }}
-                    onClick={(e) => e.stopPropagation()}>↗</a>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {selectedProduct?.affiliateLink && (
-        <div className="mt-2 flex items-center justify-between px-3 py-2 rounded-sm"
-          style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}>
-          <p className="text-xs" style={{ color: DS.labelText }}>Athlete will see this product with your link.</p>
-          <a href={selectedProduct.affiliateLink} target="_blank" rel="noopener noreferrer"
-            className="shrink-0 text-xs font-black uppercase tracking-wide ml-3" style={{ color: DS.brand }}>
-            View on Amazon ↗
-          </a>
-        </div>
-      )}
-    </div>
-  );
-}
+/* CategoryPicker → replaced by imported SupplementPicker */
 
 /* ── Macro math bar ──────────────────────────────────────────────────────────── */
 
 function MacroMathBar({ structured }) {
-  const pro   = Number(structured?.proteinGrams || 0);
-  const carbs = Number(structured?.carbsGrams   || 0);
-  const fat   = Number(structured?.fatsGrams    || 0);
-  const stated = Number(structured?.calories    || 0);
+  const pro    = Number(structured?.proteinGrams || 0);
+  const carbs  = Number(structured?.carbsGrams   || 0);
+  const fat    = Number(structured?.fatsGrams    || 0);
+  const stated = Number(structured?.calories     || 0);
 
   const calcCal = Math.round(pro * 4 + carbs * 4 + fat * 9);
   if (!calcCal) return null;
 
-  const total    = pro * 4 + carbs * 4 + fat * 9;
-  const pctPro   = total ? Math.round((pro   * 4 / total) * 100) : 0;
-  const pctCarb  = total ? Math.round((carbs * 4 / total) * 100) : 0;
-  const pctFat   = total ? Math.round((fat   * 9 / total) * 100) : 0;
+  const total   = pro * 4 + carbs * 4 + fat * 9;
+  const pctPro  = total ? Math.round((pro   * 4 / total) * 100) : 0;
+  const pctCarb = total ? Math.round((carbs * 4 / total) * 100) : 0;
+  const pctFat  = total ? Math.round((fat   * 9 / total) * 100) : 0;
 
-  const diff     = stated ? calcCal - stated : null;
-  const absDiff  = diff !== null ? Math.abs(diff) : null;
+  const diff       = stated ? calcCal - stated : null;
+  const absDiff    = diff !== null ? Math.abs(diff) : null;
   const matchState = diff === null ? "info" : absDiff <= 50 ? "good" : absDiff <= 150 ? "warn" : "bad";
 
   const stateColors = {
-    info: { text: DS.brand,   bg: DS.brandBg,   border: DS.brandBorder },
-    good: { text: DS.safe,    bg: DS.safeBg,     border: DS.safeBorder  },
+    info: { text: DS.brand,   bg: DS.brandBg,   border: DS.brandBorder   },
+    good: { text: DS.safe,    bg: DS.safeBg,     border: DS.safeBorder    },
     warn: { text: DS.caution, bg: DS.cautionBg,  border: DS.cautionBorder },
-    bad:  { text: "#C8102E",  bg: "#FFF0F0",     border: "#FFC8C8"      },
+    bad:  { text: "#C8102E",  bg: "#FFF0F0",     border: "#FFC8C8"        },
   };
   const c = stateColors[matchState];
 
   return (
     <div
-      className="flex items-center gap-3 px-3 py-2 rounded-sm flex-wrap"
+      className="px-3 py-2 rounded-sm"
       style={{ backgroundColor: c.bg, border: `1px solid ${c.border}` }}
     >
-      <span className="text-xs font-bold shrink-0" style={{ color: c.text }}>
-        {calcCal.toLocaleString()} cal from macros
-      </span>
-      <span className="text-xs" style={{ color: DS.dimText }}>
-        P {pctPro}% · C {pctCarb}% · F {pctFat}%
-      </span>
-      {diff !== null && (
-        <span className="text-xs font-bold ml-auto shrink-0" style={{ color: c.text }}>
-          {matchState === "good"
-            ? "✓ Matches stated"
-            : `${diff > 0 ? "+" : ""}${diff} cal vs stated ${stated.toLocaleString()}`}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-bold shrink-0" style={{ color: c.text }}>
+          {calcCal.toLocaleString()} kcal from macros
         </span>
-      )}
+        <span className="text-xs" style={{ color: DS.dimText }}>
+          P {pctPro}% · C {pctCarb}% · F {pctFat}%
+        </span>
+        {diff !== null && (
+          <span className="text-xs font-bold ml-auto shrink-0" style={{ color: c.text }}>
+            {matchState === "good"
+              ? "✓ Matches calorie target"
+              : `${diff > 0 ? "+" : ""}${diff} kcal vs ${stated.toLocaleString()} target`}
+          </span>
+        )}
+      </div>
+      <p className="text-xs mt-1" style={{ color: DS.dimText }}>
+        1g protein = 4 kcal · 1g carbs = 4 kcal · 1g fat = 9 kcal
+      </p>
     </div>
   );
 }
@@ -982,7 +839,7 @@ export default function PlanBuilderForm({
 
           <div className="grid sm:grid-cols-2 gap-5">
             {SUPP_CATEGORIES.map((cat) => (
-              <CategoryPicker
+              <SupplementPicker
                 key={cat.productKey}
                 catDef={cat}
                 products={suppGrouped[cat.productKey] ?? []}

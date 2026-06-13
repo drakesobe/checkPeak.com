@@ -2,6 +2,7 @@
 // Creates a new organization account in Supabase.
 
 import { createOrg, getOrgByEmail, normalizeEmail } from "@/lib/supabaseOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -45,6 +46,18 @@ export default async function handler(req, res) {
     if (error) {
       console.error("[org-signup]", error);
       return res.status(500).json({ error: "Failed to create organization.", details: error.message });
+    }
+
+    // Create billing record linked to org — Free tier (1-10 athletes, no expiry)
+    const { error: billingError } = await db.from("billing").insert({
+      org_id:         org.id,
+      token:          token.toUpperCase(),
+      billing_status: "Free",
+      plan:           "Starter",
+    });
+    if (billingError) {
+      console.error("[org-signup] billing row creation failed:", billingError);
+      // Non-fatal: org was created; billing can be fixed manually
     }
 
     return res.status(200).json({

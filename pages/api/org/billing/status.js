@@ -1,6 +1,7 @@
 // pages/api/org/billing/status.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/airtableBilling";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 // In-memory cache — survives across warm serverless invocations.
 // Billing status changes infrequently; 5 min TTL is safe.
@@ -108,7 +109,49 @@ export default async function handler(req, res) {
   if (cached) return res.status(200).json(cached);
 
   try {
-    // ✅ token-first (reliable now that Billing.Token is writable)
+    // ✅ Check Supabase billing table first (canonical for orgs created via Supabase signup)
+    let sbRow = null;
+    if (sessionToken) {
+      const { data } = await db.from("billing").select("*").eq("token", sessionToken).maybeSingle();
+      sbRow = data;
+    }
+    if (!sbRow && sessionOrgId) {
+      const { data } = await db.from("billing").select("*").eq("org_id", sessionOrgId).maybeSingle();
+      sbRow = data;
+    }
+
+    if (sbRow) {
+      const statusRaw = String(sbRow.billing_status || "").trim();
+      const isPaidOk = computeIsPaidOk({
+        status:           statusRaw,
+        sandboxEnds:      sbRow.sandbox_ends     || "",
+        trialEnds:        sbRow.trial_ends        || "",
+        currentPeriodEnd: sbRow.current_period_end || "",
+      });
+      const payload = {
+        ok: true,
+        billing: {
+          isPaidOk,
+          status:                statusRaw,
+          statusRaw:             statusRaw,
+          plan:                  String(sbRow.plan || ""),
+          token:                 String(sbRow.token || sessionToken || ""),
+          sandboxEnds:           sbRow.sandbox_ends      ? new Date(sbRow.sandbox_ends).toISOString()      : "",
+          trialEnds:             sbRow.trial_ends         ? new Date(sbRow.trial_ends).toISOString()         : "",
+          currentPeriodEnd:      sbRow.current_period_end ? new Date(sbRow.current_period_end).toISOString() : "",
+          renewalDate:           sbRow.renewal_date        ? new Date(sbRow.renewal_date).toISOString()        : "",
+          stripeCustomerId:      sbRow.stripe_customer_id      || "",
+          stripeSubscriptionId:  sbRow.stripe_subscription_id  || "",
+          created:               sbRow.created_at || "",
+          billingRecordId:       sbRow.id || "",
+          source:                "supabase",
+        },
+      };
+      cacheSet(cacheKey, payload);
+      return res.status(200).json(payload);
+    }
+
+    // Legacy fallback: Airtable billing (orgs created before Supabase migration)
     let rec = sessionToken ? await findBillingRecordByOrgToken(sessionToken) : null;
     if (!rec?.id && sessionOrgId) rec = await findBillingRecordByOrgId(sessionOrgId);
 

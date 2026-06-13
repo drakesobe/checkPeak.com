@@ -5,6 +5,7 @@ import {
   findBillingRecordByOrgId,
   findBillingRecordByOrgToken,
   upsertBillingForOrg,
+  upsertBillingForOrgToken,
   F,
 } from "@/lib/airtableBilling";
 
@@ -55,14 +56,14 @@ export default async function handler(req, res) {
   const orgSupabaseId = asString(auth?.org?.id || auth?.orgId || auth?.OrgId);
   if (!orgSupabaseId) return res.status(400).json({ error: "Organization id missing in session." });
 
-  // Resolve Airtable record id (rec...) needed by billing helpers
+  // Resolve Airtable record id (rec...) needed by billing helpers.
+  // May be null for orgs created via Supabase-only signup; fall through to token-based path.
   const { data: orgRow } = await db
     .from("organizations")
     .select("airtable_id")
     .eq("id", orgSupabaseId)
     .maybeSingle();
   const orgId = asString(orgRow?.airtable_id);
-  if (!orgId) return res.status(400).json({ error: "Organization Airtable ID not found — billing unavailable." });
 
   // Token is lookup/computed - only used for fallback search/relink, never written.
   const orgToken = asString(auth?.org?.token || auth?.org?.Token || auth?.token || auth?.Token || auth?.orgToken).toUpperCase();
@@ -72,62 +73,57 @@ export default async function handler(req, res) {
   try {
     const now = new Date();
 
-    // 1) Prefer canonical lookup by Organization link
-    let rec = await findBillingRecordByOrgId(orgId);
-
-    // 2) Fallback: look up by Token (lookup field) and RELINK it to Organization to prevent dupes
-    if (!rec?.id && orgToken) {
-      const byToken = await findBillingRecordByOrgToken(orgToken);
-
-      if (byToken?.id) {
-        const alreadyLinkedOrgId = Array.isArray(byToken?.fields?.[F.Organization]) ? byToken.fields[F.Organization]?.[0] : "";
-        // If it's not linked, or linked to wrong org, relink by upserting by orgId (canonical)
-        // We do this by updating the existing row via upsertBillingForOrg with the orgId link.
-        // (upsertBillingForOrg will find the canonical record if it exists; since it doesn't, it will create,
-        // so we instead "heal" by creating canonical row AND leaving the orphan behind is bad.)
-        //
-        // Better: we "heal" by writing Organization link onto the existing byToken record.
-        // upsertBillingForOrg can’t update byToken.id directly, so we use Airtable’s update through the helper.
-        // The helper doesn’t expose a raw update, but upsertBillingForOrgToken does. We can use that.
-        //
-        // Since your airtableBilling.js already has upsertBillingForOrgToken, import it if you want.
-        // To keep this file self-contained without adding imports, we’ll do the safe move:
-        // create canonical row (linked to orgId) and you can delete orphan later.
-        //
-        // HOWEVER: you said you want to stop new dupes. Best fix is to import upsertBillingForOrgToken and relink.
-        rec = byToken;
-        // If it isn't linked to this org, we will re-upsert to canonical immediately below (via upsertBillingForOrg)
-        // after we compute patch; this ensures at least one correct linked row exists.
-      }
-    }
-
-    // Determine if we should create or update canonical billing row
     const sandboxEndsISO = addDays(now, SANDBOX_DAYS).toISOString();
 
-    // If no record exists at all -> create canonical Sandbox row linked to org
-    if (!rec?.id) {
-      rec = await upsertBillingForOrg(orgId, {
-        [F.BillingStatus]: "Sandbox",
-        [F.SandboxEnds]: sandboxEndsISO,
-      });
-    } else {
-      // If record exists but is not linked to this org, ensure canonical row exists
-      const linkedOrgId = Array.isArray(rec?.fields?.[F.Organization]) ? rec.fields[F.Organization]?.[0] : "";
-      if (!linkedOrgId || linkedOrgId !== orgId) {
-        // Create/ensure canonical record linked to orgId (prevents future dupes)
+    let rec;
+
+    if (orgId) {
+      // Canonical path: org is linked to an Airtable record
+      rec = await findBillingRecordByOrgId(orgId);
+
+      // Fallback: find by token and relink to org
+      if (!rec?.id && orgToken) {
+        const byToken = await findBillingRecordByOrgToken(orgToken);
+        if (byToken?.id) rec = byToken;
+      }
+
+      if (!rec?.id) {
         rec = await upsertBillingForOrg(orgId, {
-          // Only set Sandbox status if status is blank (don’t stomp Trial/Active)
-          ...(asString(rec?.fields?.[F.BillingStatus] || "") ? {} : { [F.BillingStatus]: "Sandbox" }),
-          [F.SandboxEnds]: asString(rec?.fields?.[F.SandboxEnds] || "") || sandboxEndsISO,
+          [F.BillingStatus]: "Sandbox",
+          [F.SandboxEnds]: sandboxEndsISO,
         });
       } else {
-        // Record is linked correctly; ensure sandboxEnds exists if still in Sandbox
+        const linkedOrgId = Array.isArray(rec?.fields?.[F.Organization]) ? rec.fields[F.Organization]?.[0] : "";
+        if (!linkedOrgId || linkedOrgId !== orgId) {
+          rec = await upsertBillingForOrg(orgId, {
+            ...(asString(rec?.fields?.[F.BillingStatus] || "") ? {} : { [F.BillingStatus]: "Sandbox" }),
+            [F.SandboxEnds]: asString(rec?.fields?.[F.SandboxEnds] || "") || sandboxEndsISO,
+          });
+        } else {
+          const statusNorm = normalizeStatus(rec?.fields?.[F.BillingStatus] || "");
+          const se = parseDateLoose(rec?.fields?.[F.SandboxEnds] || "");
+          if (statusNorm === "Sandbox" && !se) {
+            rec = await upsertBillingForOrg(orgId, { [F.SandboxEnds]: sandboxEndsISO });
+          }
+        }
+      }
+    } else if (orgToken) {
+      // Token-only path: org has no Airtable ID (created via Supabase-only signup)
+      rec = await findBillingRecordByOrgToken(orgToken);
+      if (!rec?.id) {
+        rec = await upsertBillingForOrgToken(orgToken, {
+          [F.BillingStatus]: "Sandbox",
+          [F.SandboxEnds]: sandboxEndsISO,
+        });
+      } else {
         const statusNorm = normalizeStatus(rec?.fields?.[F.BillingStatus] || "");
         const se = parseDateLoose(rec?.fields?.[F.SandboxEnds] || "");
         if (statusNorm === "Sandbox" && !se) {
-          rec = await upsertBillingForOrg(orgId, { [F.SandboxEnds]: sandboxEndsISO });
+          rec = await upsertBillingForOrgToken(orgToken, { [F.SandboxEnds]: sandboxEndsISO });
         }
       }
+    } else {
+      return res.status(400).json({ error: "Organization has no Airtable ID or token — billing unavailable." });
     }
 
     // Post-process: if sandbox expired, flip to Not Started (do not override Trial/Active)
@@ -137,7 +133,9 @@ export default async function handler(req, res) {
     const se = parseDateLoose(seRaw);
 
     if (statusNorm === "Sandbox" && se && now.getTime() > se.getTime()) {
-      rec = await upsertBillingForOrg(orgId, { [F.BillingStatus]: "Not Started" });
+      rec = orgId
+        ? await upsertBillingForOrg(orgId, { [F.BillingStatus]: "Not Started" })
+        : await upsertBillingForOrgToken(orgToken, { [F.BillingStatus]: "Not Started" });
     }
 
     const out = rec?.fields || {};

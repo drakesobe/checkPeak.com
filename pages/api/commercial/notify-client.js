@@ -17,7 +17,7 @@ const TIER_PERKS = {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { clientEmail, clientName, trainerName, trainerSlug, tier } = req.body;
+  const { clientEmail, clientName, trainerName, trainerSlug, tier, welcomeMessage } = req.body;
   if (!clientEmail || !trainerName || !trainerSlug || !tier) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -71,6 +71,13 @@ export default async function handler(req, res) {
           <strong>${trainerName}</strong> has added you to their CheckPeak library on the
           <strong>${tier}</strong> plan. Here's what you have access to:
         </p>
+
+        ${welcomeMessage ? `
+        <!-- Trainer welcome message -->
+        <div style="background:#EEF4FF;border-left:3px solid #0066FF;border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:24px;">
+          <p style="color:#0066FF;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;">From ${trainerName}</p>
+          <p style="color:#1A1A1A;font-size:14px;line-height:1.6;margin:0;white-space:pre-line;">${welcomeMessage}</p>
+        </div>` : ""}
 
         <!-- Perks list -->
         <div style="background:#F7F7F5;border-radius:10px;padding:20px;margin-bottom:28px;">

@@ -61,6 +61,8 @@ export default async function handler(req, res) {
       "basicPrice", "premiumPrice", "ultraPrice",
       "basicPerks", "premiumPerks", "ultraPerks",
       "libraryLocked",
+      "instagramUrl", "youtubeUrl", "websiteUrl",
+      "welcomeMessage", "notifyOnSubscribe",
     ];
 
     const fields = {};
@@ -68,7 +70,7 @@ export default async function handler(req, res) {
       if (req.body[key] !== undefined) {
         if (["basicPrice", "premiumPrice", "ultraPrice"].includes(key)) {
           fields[key] = Number(req.body[key]) || 0;
-        } else if (key === "libraryLocked") {
+        } else if (key === "libraryLocked" || key === "notifyOnSubscribe") {
           fields[key] = Boolean(req.body[key]);
         } else {
           fields[key] = req.body[key];

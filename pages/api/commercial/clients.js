@@ -84,18 +84,40 @@ export default async function handler(req, res) {
     const orgToken = String(user?.orgToken || user?.Token || user?.token || "").trim().toUpperCase();
     syncClientToOrgAthletes({ clientEmail, clientName: clientName ?? "", orgToken });
 
-    // Fire access email - non-blocking
-    fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/commercial/notify-client`, {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://checkpeak.com";
+
+    // Send client access email - non-blocking
+    fetch(`${siteUrl}/api/commercial/notify-client`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clientEmail,
-        clientName:  clientName ?? "",
-        trainerName: trainer.fields?.name ?? "Your trainer",
-        trainerSlug: trainer.fields?.slug ?? "",
+        clientName:      clientName ?? "",
+        trainerName:     trainer.fields?.name ?? "Your trainer",
+        trainerSlug:     trainer.fields?.slug ?? "",
         tier,
+        welcomeMessage:  trainer.fields?.welcomeMessage ?? "",
       }),
-    }).catch(e => console.warn("[clients] notify failed:", e.message));
+    }).catch(e => console.warn("[clients] notify-client failed:", e.message));
+
+    // Send trainer new-subscriber notification if enabled - non-blocking
+    if (trainer.fields?.notifyOnSubscribe !== false) {
+      const trainerEmail = String(user?.email || user?.Email || "").trim();
+      if (trainerEmail) {
+        fetch(`${siteUrl}/api/commercial/notify-trainer`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            trainerEmail,
+            trainerName:  trainer.fields?.name ?? "",
+            clientName:   clientName ?? "",
+            clientEmail,
+            tier,
+            dashboardUrl: `${siteUrl}/commercial/dashboard`,
+          }),
+        }).catch(e => console.warn("[clients] notify-trainer failed:", e.message));
+      }
+    }
 
     return res.status(201).json({ client: record });
   }

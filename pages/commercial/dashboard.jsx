@@ -511,9 +511,10 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
     const data = await res.json();
     setSyncing(false);
     if (res.ok) {
-      setSyncMsg(data.synced > 0
-        ? `${data.synced} client${data.synced !== 1 ? "s" : ""} synced.`
-        : "All clients already synced.");
+      const parts = [];
+      if (data.created > 0) parts.push(`${data.created} added to org`);
+      if (data.updated > 0) parts.push(`${data.updated} name${data.updated !== 1 ? "s" : ""} updated`);
+      setSyncMsg(parts.length > 0 ? parts.join(" · ") + "." : "All synced.");
     } else {
       setSyncMsg(data.error || "Sync failed.");
     }
@@ -827,33 +828,141 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
+function SettingSection({ title, color, children }) {
+  const c = color ?? DS.brand;
+  return (
+    <div className="rounded-sm p-4 mb-4"
+      style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${c}` }}>
+      <p className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: c }}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function SettingField({ label, hint, children }) {
+  return (
+    <div className="mb-4">
+      <label className="block text-[11px] font-bold mb-1" style={{ color: DS.labelText }}>{label}</label>
+      {hint && <p className="text-[10px] mb-1.5" style={{ color: DS.dimText }}>{hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function SaveRow({ saving, msg, onSave }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <button type="button" onClick={onSave} disabled={saving}
+        className="px-4 py-2 rounded-sm text-xs font-black transition disabled:opacity-40"
+        style={{ backgroundColor: DS.brand, color: "#fff" }}>
+        {saving ? "Saving…" : "Save"}
+      </button>
+      {msg && <p className="text-xs font-bold" style={{ color: msg === "Saved." ? DS.safe : DS.banned }}>{msg}</p>}
+    </div>
+  );
+}
+
+function ToggleRow({ label, description, checked, onChange, saving, color }) {
+  const c = color ?? DS.brand;
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1">
+        <p className="text-xs font-black mb-0.5" style={{ color: DS.bodyText }}>{label}</p>
+        <p className="text-[11px] leading-relaxed" style={{ color: DS.labelText }}>{description}</p>
+      </div>
+      <button type="button" onClick={saving ? undefined : onChange} disabled={saving}
+        className="shrink-0 disabled:opacity-40 mt-0.5">
+        <div className="relative transition-colors" style={{ width: 32, height: 18, borderRadius: 99, backgroundColor: checked ? c : DS.border }}>
+          <div className="absolute top-0.5 transition-all"
+            style={{ left: checked ? 16 : 2, width: 14, height: 14, borderRadius: 99, backgroundColor: "#fff" }} />
+        </div>
+      </button>
+    </div>
+  );
+}
+
 function SettingsTab({ trainer }) {
   const f = trainer.fields ?? {};
-  const [name, setName] = useState(f.name ?? "");
-  const [bio,  setBio]  = useState(f.bio  ?? "");
-  const [saving, setSaving] = useState(false);
-  const [msg,    setMsg]    = useState("");
 
-  const [locked,     setLocked]     = useState(Boolean(f.libraryLocked));
-  const [lockSaving, setLockSaving] = useState(false);
-  const [lockMsg,    setLockMsg]    = useState("");
+  const inputCls = "w-full px-2.5 py-1.5 rounded-sm text-xs outline-none";
+  const inputStyle = { backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.bodyText };
+  const focusOn  = e => { e.target.style.borderColor = DS.brand; };
+  const focusOff = e => { e.target.style.borderColor = DS.brandBorder; };
 
-  const inputStyle = {
-    backgroundColor: DS.brandBg,
-    border: `1px solid ${DS.brandBorder}`,
-    color: DS.bodyText,
-  };
+  // ── Profile ──
+  const [name,      setName]      = useState(f.name      ?? "");
+  const [specialty, setSpecialty] = useState(f.specialty ?? "");
+  const [bio,       setBio]       = useState(f.bio       ?? "");
+  const [profSaving, setProfSaving] = useState(false);
+  const [profMsg,    setProfMsg]    = useState("");
 
-  async function save() {
-    setSaving(true); setMsg("");
+  async function saveProfile() {
+    setProfSaving(true); setProfMsg("");
     const res = await fetch("/api/commercial/trainer", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, bio }),
+      body: JSON.stringify({ name, specialty, bio }),
     });
-    setSaving(false);
-    setMsg(res.ok ? "Saved." : "Failed to save.");
+    setProfSaving(false);
+    setProfMsg(res.ok ? "Saved." : "Failed to save.");
   }
+
+  // ── Social links ──
+  const [instagram, setInstagram] = useState(f.instagramUrl ?? "");
+  const [youtube,   setYoutube]   = useState(f.youtubeUrl   ?? "");
+  const [website,   setWebsite]   = useState(f.websiteUrl   ?? "");
+  const [socialSaving, setSocialSaving] = useState(false);
+  const [socialMsg,    setSocialMsg]    = useState("");
+
+  async function saveSocial() {
+    setSocialSaving(true); setSocialMsg("");
+    const res = await fetch("/api/commercial/trainer", {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instagramUrl: instagram, youtubeUrl: youtube, websiteUrl: website }),
+    });
+    setSocialSaving(false);
+    setSocialMsg(res.ok ? "Saved." : "Failed to save.");
+  }
+
+  // ── Welcome message ──
+  const [welcome,      setWelcome]      = useState(f.welcomeMessage ?? "");
+  const [welcomeSaving, setWelcomeSaving] = useState(false);
+  const [welcomeMsg,    setWelcomeMsg]    = useState("");
+
+  async function saveWelcome() {
+    setWelcomeSaving(true); setWelcomeMsg("");
+    const res = await fetch("/api/commercial/trainer", {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ welcomeMessage: welcome }),
+    });
+    setWelcomeSaving(false);
+    setWelcomeMsg(res.ok ? "Saved." : "Failed to save.");
+  }
+
+  // ── Notifications ──
+  const [notifyOnSub,    setNotifyOnSub]    = useState(f.notifyOnSubscribe !== false);
+  const [notifySaving,   setNotifySaving]   = useState(false);
+  const [notifyMsg,      setNotifyMsg]      = useState("");
+
+  async function toggleNotify() {
+    const next = !notifyOnSub;
+    setNotifySaving(true); setNotifyMsg("");
+    const res = await fetch("/api/commercial/trainer", {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notifyOnSubscribe: next }),
+    });
+    setNotifySaving(false);
+    if (res.ok) { setNotifyOnSub(next); setNotifyMsg(next ? "Notifications on." : "Notifications off."); }
+    else setNotifyMsg("Failed to update.");
+  }
+
+  // ── Library lock ──
+  const [locked,     setLocked]     = useState(Boolean(f.libraryLocked));
+  const [lockSaving, setLockSaving] = useState(false);
+  const [lockMsg,    setLockMsg]    = useState("");
 
   async function toggleLock() {
     const next = !locked;
@@ -864,90 +973,120 @@ function SettingsTab({ trainer }) {
       body: JSON.stringify({ libraryLocked: next }),
     });
     setLockSaving(false);
-    if (res.ok) {
-      setLocked(next);
-      setLockMsg(next ? "Library locked." : "Library open.");
-    } else {
-      setLockMsg("Failed to update.");
-    }
+    if (res.ok) { setLocked(next); setLockMsg(next ? "Library locked." : "Library open."); }
+    else setLockMsg("Failed to update.");
   }
 
+
   return (
-    <div className="max-w-md">
-      <div className="rounded-sm p-4 mb-4"
-        style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${DS.brand}` }}>
-        <p className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: DS.brand }}>
-          Profile
-        </p>
+    <div>
 
-        <div className="mb-4">
-          <label className="block text-[11px] font-bold mb-1.5" style={{ color: DS.labelText }}>
-            Display name
-          </label>
-          <input className="w-full px-2.5 py-1.5 rounded-sm text-xs outline-none"
-            style={inputStyle} value={name} onChange={e => setName(e.target.value)}
-            onFocus={e => { e.target.style.borderColor = DS.brand; }}
-            onBlur={e =>  { e.target.style.borderColor = DS.brandBorder; }} />
-        </div>
+      {/* ── Row 1: Profile + Online Presence ── */}
+      <div className="grid gap-4 mb-0" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
 
-        <div className="mb-4">
-          <label className="block text-[11px] font-bold mb-1.5" style={{ color: DS.labelText }}>
-            Bio
-          </label>
-          <textarea className="w-full px-2.5 py-1.5 rounded-sm text-xs outline-none resize-none"
-            style={{ ...inputStyle, minHeight: 80 }} value={bio} onChange={e => setBio(e.target.value)}
-            onFocus={e => { e.target.style.borderColor = DS.brand; }}
-            onBlur={e =>  { e.target.style.borderColor = DS.brandBorder; }} />
-        </div>
+        <SettingSection title="Profile">
+          <SettingField label="Display name">
+            <input className={inputCls} style={inputStyle} value={name}
+              onChange={e => setName(e.target.value)} onFocus={focusOn} onBlur={focusOff} />
+          </SettingField>
 
-        <p className="text-[11px]" style={{ color: DS.dimText }}>
-          Public profile:{" "}
-          <a href={`/trainer/${f.slug}`} target="_blank" rel="noopener"
-            className="font-bold underline" style={{ color: DS.brand }}>
-            checkpeak.com/trainer/{f.slug}
-          </a>
-        </p>
-      </div>
+          <SettingField label="Specialty" hint="Shown under your name on your public profile.">
+            <input className={inputCls} style={inputStyle} value={specialty}
+              placeholder="e.g. Strength & Conditioning Coach"
+              onChange={e => setSpecialty(e.target.value)} onFocus={focusOn} onBlur={focusOff} />
+          </SettingField>
 
-      <div className="rounded-sm p-4 mb-4"
-        style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `3px solid ${locked ? DS.caution : DS.safe}` }}>
-        <p className="text-[10px] font-black uppercase tracking-wider mb-3" style={{ color: locked ? DS.caution : DS.safe }}>
-          Library Access
-        </p>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <p className="text-xs font-black mb-1" style={{ color: DS.bodyText }}>
-              {locked ? "Members only — library is closed" : "Open — anyone can join"}
-            </p>
-            <p className="text-[11px] leading-relaxed" style={{ color: DS.labelText }}>
-              {locked
-                ? "New subscriptions and purchases are blocked. Only your existing members can access your content."
-                : "Anyone can discover your profile, subscribe, or buy content. Toggle this off to restrict access to existing members only."}
-            </p>
-          </div>
-          <button type="button" onClick={lockSaving ? undefined : toggleLock} disabled={lockSaving}
-            className="flex items-center gap-2 shrink-0 disabled:opacity-40 mt-0.5">
-            <div className="relative transition-colors"
-              style={{ width: 32, height: 18, borderRadius: 99, backgroundColor: locked ? DS.caution : DS.border }}>
-              <div className="absolute top-0.5 transition-all"
-                style={{ left: locked ? 16 : 2, width: 14, height: 14, borderRadius: 99, backgroundColor: "#fff" }} />
-            </div>
-          </button>
-        </div>
-        {lockMsg && (
-          <p className="text-[11px] font-bold mt-3"
-            style={{ color: lockMsg.includes("Failed") ? DS.banned : locked ? DS.caution : DS.safe }}>
-            {lockMsg}
+          <SettingField label="Bio">
+            <textarea className={`${inputCls} resize-none`} style={{ ...inputStyle, minHeight: 80 }}
+              value={bio} onChange={e => setBio(e.target.value)} onFocus={focusOn} onBlur={focusOff} />
+          </SettingField>
+
+          <p className="text-[11px] mb-3" style={{ color: DS.dimText }}>
+            Public profile:{" "}
+            <a href={`/trainer/${f.slug}`} target="_blank" rel="noopener"
+              className="font-bold underline" style={{ color: DS.brand }}>
+              checkpeak.com/trainer/{f.slug}
+            </a>
           </p>
-        )}
+
+          <SaveRow saving={profSaving} msg={profMsg} onSave={saveProfile} />
+        </SettingSection>
+
+        <SettingSection title="Online Presence">
+          {[
+            { label: "Instagram", value: instagram, set: setInstagram, placeholder: "https://instagram.com/yourhandle" },
+            { label: "YouTube",   value: youtube,   set: setYoutube,   placeholder: "https://youtube.com/@yourchannel" },
+            { label: "Website",   value: website,   set: setWebsite,   placeholder: "https://yourwebsite.com" },
+          ].map(({ label, value, set, placeholder }) => (
+            <SettingField key={label} label={label}>
+              <input type="url" className={inputCls} style={inputStyle} value={value}
+                placeholder={placeholder}
+                onChange={e => set(e.target.value)} onFocus={focusOn} onBlur={focusOff} />
+            </SettingField>
+          ))}
+          <p className="text-[10px] mb-3" style={{ color: DS.dimText }}>
+            Links appear on your public profile page so clients can follow you.
+          </p>
+          <SaveRow saving={socialSaving} msg={socialMsg} onSave={saveSocial} />
+        </SettingSection>
+
       </div>
 
-      {msg && <p className="text-xs font-bold mb-3" style={{ color: msg === "Saved." ? DS.safe : DS.banned }}>{msg}</p>}
-      <button type="button" onClick={save} disabled={saving}
-        className="px-5 py-2.5 rounded-sm text-xs font-black transition disabled:opacity-40"
-        style={{ backgroundColor: DS.brand, color: "#fff" }}>
-        {saving ? "Saving…" : "Save changes"}
-      </button>
+      {/* ── Row 2: Welcome Message (full width) ── */}
+      <SettingSection title="Welcome Message">
+        <SettingField
+          label="Message to new subscribers"
+          hint="Included in the access email sent when you add a client. Introduce yourself, set expectations, or share a next step.">
+          <textarea className={`${inputCls} resize-none`}
+            style={{ ...inputStyle, minHeight: 100 }}
+            value={welcome}
+            placeholder="Hey! So excited to have you. Start with the Foundations playlist and let me know if you have any questions."
+            onChange={e => setWelcome(e.target.value)}
+            onFocus={focusOn} onBlur={focusOff} />
+        </SettingField>
+        <SaveRow saving={welcomeSaving} msg={welcomeMsg} onSave={saveWelcome} />
+      </SettingSection>
+
+      {/* ── Row 3: Notifications + Library Access ── */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+
+        <SettingSection title="Notifications">
+          <ToggleRow
+            label="New subscriber alerts"
+            description="Get an email when someone subscribes to or is added to your library."
+            checked={notifyOnSub}
+            onChange={toggleNotify}
+            saving={notifySaving}
+          />
+          {notifyMsg && (
+            <p className="text-[11px] font-bold mt-3"
+              style={{ color: notifyMsg.includes("Failed") ? DS.banned : DS.safe }}>
+              {notifyMsg}
+            </p>
+          )}
+        </SettingSection>
+
+        <SettingSection title="Library Access" color={locked ? DS.caution : DS.safe}>
+          <ToggleRow
+            label={locked ? "Members only — library is closed" : "Open — anyone can join"}
+            description={locked
+              ? "New subscriptions and purchases are blocked. Only your existing members can access your content."
+              : "Anyone can discover your profile, subscribe, or buy content. Toggle to restrict access to existing members only."}
+            checked={locked}
+            onChange={toggleLock}
+            saving={lockSaving}
+            color={locked ? DS.caution : DS.safe}
+          />
+          {lockMsg && (
+            <p className="text-[11px] font-bold mt-3"
+              style={{ color: lockMsg.includes("Failed") ? DS.banned : locked ? DS.caution : DS.safe }}>
+              {lockMsg}
+            </p>
+          )}
+        </SettingSection>
+
+      </div>
+
     </div>
   );
 }

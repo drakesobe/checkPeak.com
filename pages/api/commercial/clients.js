@@ -7,6 +7,44 @@ import {
   updateSubscription,
   updateTrainer,
 } from "@/lib/commercial/db";
+import { supabaseAdmin as db } from "@/lib/supabase";
+
+// Generate an ATH-xxx token for a new athlete record
+function genAthleteToken() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let t = "ATH-";
+  for (let i = 0; i < 8; i++) t += chars[Math.floor(Math.random() * chars.length)];
+  return t;
+}
+
+// Upsert client into org athletes table so they appear in the workout calendar + nutrition.
+// Non-fatal — subscription creation succeeds regardless.
+async function syncClientToOrgAthletes({ clientEmail, clientName, orgToken }) {
+  if (!orgToken || !clientEmail) return;
+  try {
+    const email = clientEmail.toLowerCase();
+    // Check if athlete already exists for this org
+    const { data: existing } = await db
+      .from("athletes")
+      .select("id, athlete_token")
+      .eq("email", email)
+      .eq("org_token", orgToken)
+      .maybeSingle();
+    if (existing) return; // already synced
+    // Create minimal athlete record (no password — commercial clients use library link)
+    const athlete_token = genAthleteToken();
+    const { error } = await db.from("athletes").insert({
+      name:          String(clientName || clientEmail).trim(),
+      email,
+      athlete_token,
+      org_token:     orgToken,
+      status:        "active",
+    });
+    if (error) console.warn("[clients] athlete sync insert failed:", error.message);
+  } catch (e) {
+    console.warn("[clients] athlete sync error:", e.message);
+  }
+}
 
 export default async function handler(req, res) {
   const user = getRequestUser(req);
@@ -41,6 +79,10 @@ export default async function handler(req, res) {
     const allClients  = await getSubscriptionsByTrainer(trainerId);
     const activeCount = allClients.filter(c => c.fields?.status === "active").length;
     await updateTrainer(trainerId, { activeClientCount: activeCount });
+
+    // Sync client into org athletes table so they appear in workout calendar + nutrition
+    const orgToken = String(user?.orgToken || user?.Token || user?.token || "").trim().toUpperCase();
+    syncClientToOrgAthletes({ clientEmail, clientName: clientName ?? "", orgToken });
 
     // Fire access email - non-blocking
     fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/commercial/notify-client`, {

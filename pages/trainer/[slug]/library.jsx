@@ -8,7 +8,7 @@
 // Locked items that have a price show a "Buy for $X" button.
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import Head from "next/head";
@@ -96,6 +96,18 @@ function tagList(raw) {
     .filter(Boolean);
 }
 
+function formatCatName(key) {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
+}
+
+function tagsByCategory(raw) {
+  const obj = parseTags(raw);
+  if (Array.isArray(obj)) return obj.filter(Boolean).length ? [{ cat: "", tags: obj.filter(Boolean) }] : [];
+  return Object.entries(obj)
+    .map(([cat, val]) => ({ cat, tags: Array.isArray(val) ? val.filter(Boolean) : val ? [String(val)] : [] }))
+    .filter(e => e.tags.length > 0);
+}
+
 function fmtDuration(secs) {
   if (!secs) return null;
   const m = Math.floor(secs / 60), s = secs % 60;
@@ -122,7 +134,7 @@ async function logCompletion(videoId) {
 
 // ─── Video card ───────────────────────────────────────────────────────────────
 
-function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted }) {
+function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted, onTagClick }) {
   const f          = video.fields ?? {};
   const accessible = canAccess(clientTier, f.tier, video.id, purchasedIds);
   const price      = Number(f.price) > 0 ? Number(f.price) : null;
@@ -178,7 +190,16 @@ function VideoCard({ video, clientTier, purchasedIds, onPlay, onBuy, isCompleted
         <p style={{ fontSize: 13, fontWeight: 700, color: accessible ? D.text : D.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>{f.title || "Untitled"}</p>
         {tags.length > 0 && (
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, color: D.faint, background: D.whisper, padding: "2px 8px", letterSpacing: "0.04em" }}>{tag}</span>)}
+            {tags.map(tag => (
+              <span
+                key={tag}
+                onClick={e => { e.stopPropagation(); onTagClick?.(tag); }}
+                style={{ fontSize: 10, fontWeight: 600, color: D.faint, background: D.whisper, padding: "2px 8px", letterSpacing: "0.04em", cursor: "pointer" }}
+                title={`Search "${tag}"`}
+              >
+                {tag}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -591,13 +612,13 @@ export default function ClientLibrary() {
   const [libraryTab, setLibraryTab] = useState("videos");
 
   // Video state
-  const [playingId,    setPlayingId]    = useState(null);
-  const [videoFilter,  setVideoFilter]  = useState("all");
+  const [playingId,      setPlayingId]      = useState(null);
+  const [videoSearch,  setVideoSearch]  = useState("");
   const [completedIds, setCompletedIds] = useState(new Set());
 
   // Workout state
-  const [openWorkoutId,  setOpenWorkoutId]  = useState(null);
-  const [workoutFilter,  setWorkoutFilter]  = useState("all");
+  const [openWorkoutId, setOpenWorkoutId] = useState(null);
+  const [workoutSearch, setWorkoutSearch] = useState("");
 
   useEffect(() => {
     if (!authReady) return;
@@ -642,6 +663,7 @@ export default function ClientLibrary() {
     }
   }, [slug]);
 
+
   if (!authReady || loading) {
     return (
       <div style={{ minHeight: "100vh", background: D.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif" }}>
@@ -662,10 +684,15 @@ export default function ClientLibrary() {
   const nextTier = TIER_NEXT[clientTier] ?? (clientTier ? null : "Basic");
 
   // Video derived
-  const accessibleVideos    = videos.filter(v => canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
-  const lockedVideos        = videos.filter(v => !canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
-  const filteredVideos      = accessibleVideos.filter(v => videoFilter === "all" || tagList(v.fields?.tags).includes(videoFilter));
-  const allVideoTags        = [...new Set(videos.flatMap(v => tagList(v.fields?.tags)))];
+  const accessibleVideos = videos.filter(v => canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
+  const lockedVideos     = videos.filter(v => !canAccess(clientTier, v.fields?.tier, v.id, purchasedIds));
+  const filteredVideos   = accessibleVideos.filter(v => {
+    const q = videoSearch.trim().toLowerCase();
+    if (!q) return true;
+    const titleMatch = String(v.fields?.title || "").toLowerCase().includes(q);
+    const tagMatch   = tagList(v.fields?.tags).some(t => t.toLowerCase().includes(q));
+    return titleMatch || tagMatch;
+  });
   const videoCompletedCount = accessibleVideos.filter(v => completedIds.has(v.id)).length;
   const videoProgressPct    = accessibleVideos.length > 0 ? Math.round((videoCompletedCount / accessibleVideos.length) * 100) : 0;
   const playingVid          = playingId ? videos.find(v => v.id === playingId) : null;
@@ -673,7 +700,11 @@ export default function ClientLibrary() {
   // Workout derived
   const accessibleWorkouts = workouts.filter(w => canAccess(clientTier, w.fields?.tier, w.id, purchasedIds));
   const lockedWorkouts     = workouts.filter(w => !canAccess(clientTier, w.fields?.tier, w.id, purchasedIds));
-  const filteredWorkouts   = accessibleWorkouts.filter(w => workoutFilter === "all" || w.fields?.tier === workoutFilter);
+  const filteredWorkouts   = accessibleWorkouts.filter(w => {
+    const q = workoutSearch.trim().toLowerCase();
+    if (!q) return true;
+    return String(w.fields?.title || "").toLowerCase().includes(q);
+  });
   const openWorkout        = openWorkoutId ? workouts.find(w => w.id === openWorkoutId) : null;
 
   return (
@@ -749,18 +780,22 @@ export default function ClientLibrary() {
           {/* ── VIDEOS ── */}
           {libraryTab === "videos" && (
             <>
-              {allVideoTags.length > 0 && (
-                <div style={{ borderBottom: `0.5px solid ${D.border}`, marginBottom: 24, overflowX: "auto" }}>
-                  <div style={{ display: "flex", gap: 2, paddingBottom: 10 }}>
-                    {["all", ...allVideoTags].map(tag => (
-                      <button key={tag} className="filter-btn" onClick={() => setVideoFilter(tag)}
-                        style={{ padding: "7px 16px", background: videoFilter === tag ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${videoFilter === tag ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: videoFilter === tag ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: videoFilter === tag ? 800 : 600, letterSpacing: "0.06em", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", borderRadius: 2 }}>
-                        {tag === "all" ? "All" : tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Search */}
+              <div style={{ position: "relative", marginBottom: 20 }}>
+                <svg style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={D.faint} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search by title or tag…"
+                  value={videoSearch}
+                  onChange={e => setVideoSearch(e.target.value)}
+                  style={{ width: "100%", padding: "9px 36px 9px 36px", background: D.bgSection, border: `0.5px solid ${D.border}`, borderRadius: 3, color: D.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}
+                  onFocus={e => { e.currentTarget.style.borderColor = tierCfg?.color ?? D.red; }}
+                  onBlur={e  => { e.currentTarget.style.borderColor = D.border; }}
+                />
+                {videoSearch && (
+                  <button onClick={() => setVideoSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: D.faint, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
+                )}
+              </div>
 
               {videos.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "100px 0" }}>
@@ -769,14 +804,25 @@ export default function ClientLibrary() {
                 </div>
               ) : filteredVideos.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 0" }}>
-                  <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match this filter.</p>
-                  <button onClick={() => setVideoFilter("all")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Show all →</button>
+                  <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No videos match "{videoSearch}".</p>
+                  <button onClick={() => setVideoSearch("")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Clear search →</button>
                 </div>
               ) : (
-                <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-                  {filteredVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={completedIds.has(v.id)} />)}
-                  {videoFilter === "all" && lockedVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={false} />)}
-                </div>
+                <>
+                  {videoSearch && (
+                    <p style={{ fontSize: 11, color: D.faint, marginBottom: 14, letterSpacing: "0.04em" }}>
+                      {filteredVideos.length} result{filteredVideos.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                  <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
+                    {filteredVideos.map(v => (
+                      <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={completedIds.has(v.id)}
+                        onTagClick={tag => setVideoSearch(tag)}
+                      />
+                    ))}
+                    {!videoSearch && lockedVideos.map(v => <VideoCard key={v.id} video={v} clientTier={clientTier} purchasedIds={purchasedIds} onPlay={setPlayingId} onBuy={handleBuy} isCompleted={false} />)}
+                  </div>
+                </>
               )}
             </>
           )}
@@ -784,13 +830,21 @@ export default function ClientLibrary() {
           {/* ── WORKOUTS ── */}
           {libraryTab === "workouts" && (
             <>
-              <div style={{ display: "flex", gap: 2, marginBottom: 20 }}>
-                {["all", "Basic", "Premium", "Ultra"].map(f => (
-                  <button key={f} className="filter-btn" onClick={() => setWorkoutFilter(f)}
-                    style={{ padding: "7px 16px", background: workoutFilter === f ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${workoutFilter === f ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: workoutFilter === f ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: workoutFilter === f ? 800 : 600, letterSpacing: "0.06em", cursor: "pointer", fontFamily: "inherit", borderRadius: 2 }}>
-                    {f === "all" ? "All" : f}
-                  </button>
-                ))}
+              {/* Search */}
+              <div style={{ position: "relative", marginBottom: 20 }}>
+                <svg style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={D.faint} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search workouts…"
+                  value={workoutSearch}
+                  onChange={e => setWorkoutSearch(e.target.value)}
+                  style={{ width: "100%", padding: "9px 36px 9px 36px", background: D.bgSection, border: `0.5px solid ${D.border}`, borderRadius: 3, color: D.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}
+                  onFocus={e => { e.currentTarget.style.borderColor = tierCfg?.color ?? D.red; }}
+                  onBlur={e  => { e.currentTarget.style.borderColor = D.border; }}
+                />
+                {workoutSearch && (
+                  <button onClick={() => setWorkoutSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: D.faint, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
+                )}
               </div>
 
               {workouts.length === 0 ? (
@@ -798,11 +852,23 @@ export default function ClientLibrary() {
                   <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.6rem, 4vw, 2.5rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>No Workouts Yet.</h3>
                   <p style={{ fontSize: 13, color: D.faint }}>Your coach hasn't published any workouts yet. Check back soon.</p>
                 </div>
-              ) : (
-                <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
-                  {filteredWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
-                  {workoutFilter === "all" && lockedWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
+              ) : filteredWorkouts.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "60px 0" }}>
+                  <p style={{ fontSize: 13, color: D.faint, marginBottom: 14 }}>No workouts match "{workoutSearch}".</p>
+                  <button onClick={() => setWorkoutSearch("")} style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: D.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Clear search →</button>
                 </div>
+              ) : (
+                <>
+                  {workoutSearch && (
+                    <p style={{ fontSize: 11, color: D.faint, marginBottom: 14, letterSpacing: "0.04em" }}>
+                      {filteredWorkouts.length} result{filteredWorkouts.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                  <div className="lib-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, animation: "slideUp 0.45s ease 0.1s both" }}>
+                    {filteredWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
+                    {!workoutSearch && lockedWorkouts.map(w => <WorkoutCard key={w.id} workout={w} clientTier={clientTier} purchasedIds={purchasedIds} onOpen={setOpenWorkoutId} onBuy={handleBuy} />)}
+                  </div>
+                </>
               )}
             </>
           )}

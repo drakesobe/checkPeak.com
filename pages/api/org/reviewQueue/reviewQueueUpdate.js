@@ -10,6 +10,15 @@ import { supabaseAdmin as db } from "@/lib/supabase";
 function asString(v)   { return String(v ?? "").trim(); }
 function toLower(v)    { return asString(v).toLowerCase(); }
 
+async function resolveOrgId(auth) {
+  const fromSession = asString(auth?.org?.id || "");
+  if (fromSession) return fromSession;
+  const token = asString(auth?.org?.token || "").toUpperCase();
+  if (!token) return "";
+  const { data } = await db.from("organizations").select("id").eq("token", token).maybeSingle();
+  return asString(data?.id || "");
+}
+
 function normalizeCompletionStatus(nextUi) {
   const s = toLower(nextUi);
   if (s === "approved")   return "completed";
@@ -17,7 +26,7 @@ function normalizeCompletionStatus(nextUi) {
   return "pending_review";
 }
 
-async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgToken, reviewedBy }) {
+async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId }) {
   // Handle legacy Airtable IDs
   if (recordId.startsWith("at:")) {
     const airtableId = recordId.slice(3);
@@ -39,21 +48,22 @@ async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgToken,
 
   const { data: existing } = await db
     .from("workout_completions")
-    .select("id, org_token, workout_item_id")
+    .select("id, org_id, workout_item_id")
     .eq("id", recordId)
     .maybeSingle();
 
   if (!existing) throw Object.assign(new Error("Completion not found"), { statusCode: 404 });
-  if (existing.org_token !== orgToken) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  if (existing.org_id !== orgId) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
 
+  // Always persist notes when provided; only wipe when explicitly clearing (empty + not needs_info)
+  const noteUpdate = reviewNote ? { review_note: reviewNote } : (nextUi === "needs_info" ? { review_note: null } : {});
   await db.from("workout_completions").update({
     status:      nextStatus,
-    review_note: nextUi === "needs_info" ? reviewNote : null,
-    reviewed_by: reviewedBy || null,
     reviewed_at: new Date().toISOString(),
+    ...noteUpdate,
   }).eq("id", recordId);
 
-  // Cascade to workout_items
+  // Cascade to workout_items → daily_workouts
   let workoutItemUpdated = false;
   let dailyWorkoutUpdated = false;
   let dailyWorkoutStatus = "";
@@ -63,19 +73,19 @@ async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgToken,
     workoutItemUpdated = true;
 
     const { data: wi } = await db
-      .from("workout_items").select("workout_id").eq("id", existing.workout_item_id).maybeSingle();
+      .from("workout_items").select("daily_workout_id").eq("id", existing.workout_item_id).maybeSingle();
 
-    if (wi?.workout_id) {
+    if (wi?.daily_workout_id) {
       const { data: items } = await db
-        .from("workout_items").select("status").eq("workout_id", wi.workout_id);
+        .from("workout_items").select("status").eq("daily_workout_id", wi.daily_workout_id);
 
       const statuses = (items ?? []).map(i => toLower(i.status || "assigned"));
       let dwStatus = "assigned";
-      if (statuses.includes("rejected"))       dwStatus = "rejected";
+      if (statuses.includes("rejected"))            dwStatus = "rejected";
       else if (statuses.includes("pending_review")) dwStatus = "pending_review";
       else if (statuses.length && statuses.every(s => s === "completed")) dwStatus = "completed";
 
-      await db.from("daily_workouts").update({ status: dwStatus }).eq("id", wi.workout_id);
+      await db.from("daily_workouts").update({ status: dwStatus }).eq("id", wi.daily_workout_id);
       dailyWorkoutUpdated = true;
       dailyWorkoutStatus  = dwStatus;
     }
@@ -96,9 +106,9 @@ async function updateClassAttendance({ recordId, nextUi, reviewNote, orgToken })
     const base  = new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY }).base(process.env.ORGANIZATIONS_BASE_ID);
     const table = base(process.env.CLASSATTENDANCE_TABLE_ID || "tblgYFnNsVt1VhA4i");
     const reviewStatusMap = { approved: "approved", needs_info: "needs_info", pending: "pending" };
-    const record  = await table.find(airtableId);
-    const f       = record?.fields || {};
-    const updated = await table.update(airtableId, {
+    const record = await table.find(airtableId);
+    const f      = record?.fields || {};
+    await table.update(airtableId, {
       ReviewStatus: reviewStatusMap[nextUi] || "pending",
       CoachNotes:   nextUi === "needs_info" ? reviewNote : asString(f?.CoachNotes || ""),
     });
@@ -116,12 +126,10 @@ async function updateClassAttendance({ recordId, nextUi, reviewNote, orgToken })
   if (existing.org_token !== orgToken) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
 
   const reviewStatusMap = { approved: "approved", needs_info: "needs_info", pending: "pending" };
+  const classNoteUpdate = reviewNote ? { coach_notes: reviewNote } : (nextUi === "needs_info" ? { coach_notes: null } : {});
   await db
     .from("class_attendance")
-    .update({
-      review_status: reviewStatusMap[nextUi] || "pending",
-      coach_notes:   nextUi === "needs_info" ? reviewNote : null,
-    })
+    .update({ review_status: reviewStatusMap[nextUi] || "pending", ...classNoteUpdate })
     .eq("id", recordId);
 
   return { id: recordId, cascades: {} };
@@ -139,9 +147,9 @@ export default async function handler(req, res) {
     const sub = await requireActiveOrgSubscription(req, res, auth);
     if (!sub) return;
 
-    const orgToken    = asString(auth?.org?.token || "");
-    const reviewedBy  = asString(auth?.user?.memberId || auth?.user?.id || "");
-    if (!orgToken) return res.status(401).json({ error: "Unauthorized." });
+    const orgToken = asString(auth?.org?.token || "");
+    const orgId    = await resolveOrgId(auth);
+    if (!orgToken && !orgId) return res.status(401).json({ error: "Unauthorized." });
 
     const body       = req.body || {};
     const recordId   = asString(body?.id || "");
@@ -161,7 +169,7 @@ export default async function handler(req, res) {
     if (itemType === "class") {
       result = await updateClassAttendance({ recordId, nextUi, reviewNote, orgToken });
     } else {
-      result = await updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgToken, reviewedBy });
+      result = await updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId });
     }
 
     return res.status(200).json({

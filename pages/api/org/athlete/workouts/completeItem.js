@@ -17,51 +17,55 @@ export default async function handler(req, res) {
   if (!workoutItemId) return res.status(400).json({ error: "workoutItemId is required." });
 
   try {
-    // Get the workout item to check evidence_required + get org context
+    // Get the workout item to check evidence_required + daily_workout_id
     const { data: item } = await db
       .from("workout_items")
-      .select("id, evidence_required, workout_id")
+      .select("id, evidence_required, daily_workout_id")
       .eq("id", String(workoutItemId).trim())
       .maybeSingle();
 
     if (!item) return res.status(404).json({ error: "Workout item not found." });
 
-    // Get the daily workout for org_token + athlete_token
+    // Get the daily workout for org_id + athlete_id
     const { data: dw } = await db
       .from("daily_workouts")
-      .select("id, org_token, athlete_token, athlete_id")
-      .eq("id", item.workout_id)
+      .select("id, org_id, athlete_id")
+      .eq("id", item.daily_workout_id)
       .maybeSingle();
 
     if (!dw) return res.status(404).json({ error: "Daily workout not found." });
 
-    const evidenceReq  = String(item.evidence_required || "none");
-    const needsEvidence = evidenceReq !== "none";
-    const status       = needsEvidence ? "pending_review" : "completed";
+    const needsEvidence = String(item.evidence_required || "none") !== "none";
+    const status        = needsEvidence ? "pending_review" : "completed";
 
-    // Upsert completion (one per item per athlete)
-    const athleteId    = user.id || user.athleteId || null;
-    const athleteToken = String(user.AthleteToken || user.athleteToken || "").trim() || null;
+    const athleteId = user.id || user.athleteId || dw.athlete_id || null;
 
     const { data: completion, error } = await db
       .from("workout_completions")
       .upsert(
         {
           workout_item_id: item.id,
-          workout_id:      dw.id,
           athlete_id:      athleteId,
-          athlete_token:   athleteToken || dw.athlete_token,
-          org_token:       dw.org_token,
+          org_id:          dw.org_id || null,
           status,
-          ...(fileUrl ? { attachment_url: String(fileUrl), attachment_type: String(evidenceType) } : {}),
           completed_at:    new Date().toISOString(),
         },
-        { onConflict: "workout_item_id,athlete_token", ignoreDuplicates: false }
+        { onConflict: "workout_item_id,athlete_id", ignoreDuplicates: false }
       )
       .select("id, status")
       .single();
 
     if (error) return res.status(500).json({ error: "Failed to record completion.", details: error.message });
+
+    // Store evidence in completion_evidence if a file URL was provided
+    if (fileUrl && completion?.id) {
+      await db.from("completion_evidence").insert({
+        workout_completion_id: completion.id,
+        athlete_id:            athleteId,
+        url:                   String(fileUrl),
+        evidence_type:         String(evidenceType || "photo"),
+      });
+    }
 
     return res.status(200).json({ ok: true, completionId: completion.id, status: completion.status });
   } catch (err) {

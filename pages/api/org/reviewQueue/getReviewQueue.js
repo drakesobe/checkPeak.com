@@ -24,59 +24,95 @@ function reviewBucketFromClassStatus(status) {
   return "pending";
 }
 
-async function fetchWorkoutCompletions(orgToken) {
-  // Only fetch completions that have an attachment (evidence submissions for review)
+// Fingerprint for cross-source dedup: same athlete at the same minute = same attendance record
+function classFingerprint(athleteToken, dateStr) {
+  if (!athleteToken || !dateStr) return null;
+  try { return `${String(athleteToken).trim()}:${new Date(dateStr).toISOString().slice(0, 16)}`; }
+  catch { return null; }
+}
+
+// Resolve org UUID from session or via token lookup (legacy sessions may only have token)
+async function resolveOrgId(auth) {
+  const fromSession = asString(auth?.org?.id || "");
+  if (fromSession) return fromSession;
+  const token = asString(auth?.org?.token || "").toUpperCase();
+  if (!token) return "";
+  const { data } = await db.from("organizations").select("id").eq("token", token).maybeSingle();
+  return asString(data?.id || "");
+}
+
+async function fetchWorkoutCompletions(orgId) {
+  if (!orgId) return [];
+
+  // Filter by org via daily_workouts.org_id (workout_completions.org_id is often null
+  // because completeItem never wrote it — daily_workouts.org_id is the reliable path).
+  // !inner on both join hops so PostgREST lets us filter on the nested column.
   const { data, error } = await db
     .from("workout_completions")
     .select(`
-      id, status, review_note, attachment_url, attachment_type,
-      completed_at, athlete_acknowledged, athlete_acknowledged_at,
-      athlete_token, org_token,
+      id, status, review_note, completed_at, workout_item_id,
       athlete:athletes ( id, name, email ),
-      workout_item:workout_items (
-        id, exercise_name,
-        daily_workout:daily_workouts ( id, title, date )
-      )
+      workout_item:workout_items!inner (
+        id, exercise_name, evidence_required,
+        daily_workout:daily_workouts!inner ( id, title, date, org_id )
+      ),
+      evidence:completion_evidence ( id, url, evidence_type, submitted_at )
     `)
-    .eq("org_token", orgToken)
-    .not("attachment_url", "is", null)
+    .filter("workout_item.daily_workout.org_id", "eq", orgId)
+    .not("status", "eq", "assigned")
     .order("completed_at", { ascending: false })
     .limit(200);
 
   if (error) { console.error("[getReviewQueue] supabase completions:", error); return []; }
 
-  return (data ?? []).map(c => {
-    const exerciseName = c.workout_item?.exercise_name || "";
-    const title        = exerciseName || c.workout_item?.daily_workout?.title || "Workout Completion";
-    return {
-      id:           c.id,
-      type:         "workout",
-      title,
-      exerciseName,
-      date:         c.completed_at || "",
-      status:       c.status || "pending_review",
-      reviewStatus: reviewBucketFromCompletionStatus(c.status),
-      coachNotes:        c.review_note || "",
-      attachmentSummary: "",
-      attachments:       [],
-      photoUrl:          c.attachment_url || "",
-      attachmentType:    c.attachment_type || "",
-      athleteName:       c.athlete?.name  || "",
-      athleteEmail:      c.athlete?.email || "",
-      athleteToken:      c.athlete_token  || "",
-      workoutItem:       c.workout_item?.id ? [c.workout_item.id] : [],
-      athleteAcknowledged:   Boolean(c.athlete_acknowledged),
-      athleteAcknowledgedAt: c.athlete_acknowledged_at || "",
-      createdAt: c.completed_at || "",
-      source: "supabase",
-    };
-  });
+  return (data ?? [])
+    .filter(c => {
+      // Only show evidence-required submissions (not VARA / auto-complete)
+      const evReq = String(c.workout_item?.evidence_required || "none").toLowerCase();
+      return evReq !== "none";
+    })
+    .map(c => {
+      const exerciseName  = c.workout_item?.exercise_name || "";
+      const title         = exerciseName || c.workout_item?.daily_workout?.title || "Workout Completion";
+      const evidenceArr   = Array.isArray(c.evidence) ? c.evidence : [];
+      const firstEvidence = evidenceArr[0] || null;
+      const photoUrl     = firstEvidence?.url || "";
+      const attachType   = firstEvidence?.evidence_type || "photo";
+      return {
+        id:           c.id,
+        type:         "workout",
+        title,
+        exerciseName,
+        date:         c.completed_at || "",
+        status:       c.status || "pending_review",
+        reviewStatus: reviewBucketFromCompletionStatus(c.status),
+        coachNotes:        c.review_note || "",
+        attachmentSummary: "",
+        attachments:       [],
+        photoUrl,
+        attachmentType:    attachType,
+        athleteName:       c.athlete?.name  || "",
+        athleteEmail:      c.athlete?.email || "",
+        athleteToken:      "",
+        workoutItem:       c.workout_item?.id ? [c.workout_item.id] : [],
+        evidenceRequired:  c.workout_item?.evidence_required || "none",
+        athleteAcknowledged:   false,
+        athleteAcknowledgedAt: "",
+        createdAt: c.completed_at || "",
+        source: "supabase",
+      };
+    });
 }
 
 async function fetchClassAttendanceSupabase(orgToken) {
+  // class_attendance uses org_token (text), athlete info via join, review_status added by migration
   const { data, error } = await db
     .from("class_attendance")
-    .select("id, org_token, athlete_token, athlete_name, athlete_email, class_title, attended_at, review_status, coach_notes, photo_url, class_id")
+    .select(`
+      id, org_token, athlete_token, class_title, attended_at,
+      review_status, coach_notes, photo_url, class_id,
+      athlete:athletes ( name, email )
+    `)
     .eq("org_token", orgToken)
     .not("photo_url", "is", null)
     .order("attended_at", { ascending: false })
@@ -96,11 +132,11 @@ async function fetchClassAttendanceSupabase(orgToken) {
     attachmentSummary: "",
     attachments:       [],
     photoUrl:          r.photo_url || "",
-    athleteName:  r.athlete_name  || "",
-    athleteEmail: r.athlete_email || "",
-    athleteToken: r.athlete_token || "",
-    classId:      r.class_id     || "",
-    createdAt:    r.attended_at  || "",
+    athleteName:  r.athlete?.name  || "",
+    athleteEmail: r.athlete?.email || "",
+    athleteToken: r.athlete_token  || "",
+    classId:      r.class_id       || "",
+    createdAt:    r.attended_at    || "",
     source: "supabase",
   }));
 }
@@ -160,17 +196,27 @@ export default async function handler(req, res) {
     if (!sub) return;
 
     const orgToken = asString(auth?.org?.token || "");
-    if (!orgToken) return res.status(401).json({ error: "Unauthorized (missing org token)." });
+    const orgId    = await resolveOrgId(auth);
+
+    if (!orgId && !orgToken) return res.status(401).json({ error: "Unauthorized (missing org id/token)." });
 
     const [workoutItems, classItemsSb, classItemsAt] = await Promise.all([
-      fetchWorkoutCompletions(orgToken),
-      fetchClassAttendanceSupabase(orgToken),
-      fetchClassAttendanceAirtable(orgToken),
+      fetchWorkoutCompletions(orgId),
+      orgToken ? fetchClassAttendanceSupabase(orgToken) : Promise.resolve([]),
+      orgToken ? fetchClassAttendanceAirtable(orgToken) : Promise.resolve([]),
     ]);
 
-    // Merge: deduplicate class attendance by source preference (Supabase wins)
-    const sbClassIds = new Set(classItemsSb.map(c => c.id));
-    const classItems = [...classItemsSb, ...classItemsAt.filter(c => !sbClassIds.has(c.id.replace("at:", "")))];
+    // Merge: deduplicate by athlete+minute fingerprint (Supabase wins over Airtable)
+    const sbFingerprints = new Set(
+      classItemsSb.map(c => classFingerprint(c.athleteToken, c.date)).filter(Boolean)
+    );
+    const classItems = [
+      ...classItemsSb,
+      ...classItemsAt.filter(c => {
+        const fp = classFingerprint(c.athleteToken, c.date);
+        return !fp || !sbFingerprints.has(fp);
+      }),
+    ];
 
     const allItems = [...workoutItems, ...classItems].sort((a, b) => {
       const ta = new Date(a.date || a.createdAt || 0).getTime();

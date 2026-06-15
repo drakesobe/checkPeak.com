@@ -787,7 +787,7 @@ export default function OrgMessagingPage() {
   const myRole  = String(user?.role || user?.Role || "");
   const mySport = String(user?.sport || "").trim().toLowerCase();
   const orgId   = String(user?.orgId || user?.OrgId || user?.organizationId || user?.OrganizationId || user?.id ||"");
-  const orgToken = String(user?.Token || "");
+  const orgToken = String(user?.Token || user?.token || user?.["Organization Token"] || "").trim();
 
   const isStaff = normalizeRole(myRole) === "staff";
 

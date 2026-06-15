@@ -100,17 +100,27 @@ export function normalizeQueueItem(raw = {}) {
     id,
     title,
     date,
-    status, // completion status
-    reviewStatus, // UI bucket
+    status,
+    reviewStatus,
     attachmentSummary,
     attachments,
     athleteName,
     athleteEmail,
     createdAt,
     coachNotes,
-
     athleteAcknowledged,
     athleteAcknowledgedAt,
+
+    // Pass through fields needed by the detail panel
+    type:           normalizeText(raw?.type || raw?.Type || "workout"),
+    photoUrl:       normalizeText(raw?.photoUrl || raw?.PhotoUrl || ""),
+    attachmentType: normalizeText(raw?.attachmentType || raw?.AttachmentType || "photo"),
+    exerciseName:   normalizeText(raw?.exerciseName || raw?.ExerciseName || ""),
+    athleteToken:   normalizeText(raw?.athleteToken || raw?.AthleteToken || ""),
+    classId:        normalizeText(raw?.classId || raw?.ClassId || ""),
+    evidenceRequired: normalizeText(raw?.evidenceRequired || raw?.EvidenceRequired || "none"),
+    workoutItem:    Array.isArray(raw?.workoutItem) ? raw.workoutItem : [],
+    source:         normalizeText(raw?.source || ""),
 
     _raw: raw,
   };
@@ -160,7 +170,17 @@ export function useReviewQueue() {
   const fmtDate = useCallback((value) => {
     const d = safeDate(value);
     if (!d) return value ? String(value) : "";
-    return d.toLocaleString();
+    const now = Date.now();
+    const diff = now - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 2)   return "Just now";
+    if (mins < 60)  return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)   return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days === 1) return `Yesterday · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    if (days < 7)   return `${days}d ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: days > 365 ? "numeric" : undefined });
   }, []);
 
   return {

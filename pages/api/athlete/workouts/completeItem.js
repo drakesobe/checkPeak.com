@@ -58,19 +58,19 @@ async function uploadToCloudinary({ blob, filename }) {
   return { url: json.secure_url || json.url, bytes: json.bytes };
 }
 
-async function recomputeDailyWorkoutStatus(workoutId) {
+async function recomputeDailyWorkoutStatus(dailyWorkoutId) {
   const { data: items } = await db
     .from("workout_items")
     .select("status")
-    .eq("workout_id", workoutId);
+    .eq("daily_workout_id", dailyWorkoutId);
 
   const statuses = (items ?? []).map(i => String(i.status || "assigned").toLowerCase());
   let status = "assigned";
-  if (statuses.includes("rejected"))       status = "rejected";
+  if (statuses.includes("rejected"))            status = "rejected";
   else if (statuses.includes("pending_review")) status = "pending_review";
   else if (statuses.length && statuses.every(s => s === "completed")) status = "completed";
 
-  await db.from("daily_workouts").update({ status }).eq("id", workoutId);
+  await db.from("daily_workouts").update({ status }).eq("id", dailyWorkoutId);
   return status;
 }
 
@@ -137,44 +137,61 @@ export default async function handler(req, res) {
 
     const completionStatus = isVARA ? "completed" : (uploaded || needsFile) ? "pending_review" : "completed";
 
-    // Look up workout_item to get workout_id if not provided
-    let wId = dailyWorkoutId;
-    if (!wId) {
+    // Look up workout_item to get daily_workout_id + org_id
+    let dwId  = dailyWorkoutId;
+    let orgId = "";
+    {
       const { data: item } = await db
         .from("workout_items")
-        .select("workout_id")
+        .select("daily_workout_id")
         .eq("id", workoutItemId)
         .maybeSingle();
-      wId = item?.workout_id || "";
+      if (item?.daily_workout_id) {
+        dwId = item.daily_workout_id;
+        const { data: dw } = await db
+          .from("daily_workouts")
+          .select("org_id")
+          .eq("id", dwId)
+          .maybeSingle();
+        orgId = dw?.org_id || "";
+      }
     }
 
-    // Upsert completion
+    // Upsert completion (no attachment_url — photos go in completion_evidence)
     const { data: completion, error: wcErr } = await db
       .from("workout_completions")
       .upsert(
         {
           workout_item_id: workoutItemId,
-          workout_id:      wId || null,
           athlete_id:      auth.athlete?.id || null,
-          athlete_token:   athleteToken,
+          org_id:          orgId || null,
           status:          completionStatus,
-          ...(attachUrl ? { attachment_url: attachUrl, attachment_type: "photo" } : {}),
           completed_at:    new Date().toISOString(),
         },
-        { onConflict: "workout_item_id,athlete_token", ignoreDuplicates: false }
+        { onConflict: "workout_item_id,athlete_id", ignoreDuplicates: false }
       )
       .select("id, status")
       .single();
 
     if (wcErr) return res.status(500).json({ error: "Failed to save completion.", details: wcErr.message });
 
+    // Store evidence in completion_evidence (normalized — not on the completion row)
+    if (attachUrl && completion?.id) {
+      await db.from("completion_evidence").insert({
+        workout_completion_id: completion.id,
+        athlete_id:            auth.athlete?.id || null,
+        url:                   attachUrl,
+        evidence_type:         "photo",
+      });
+    }
+
     // Update workout_item status
     await db.from("workout_items").update({ status: completionStatus }).eq("id", workoutItemId);
 
     // Recompute daily_workout status
     let dailyWorkoutStatus = "";
-    if (wId) {
-      try { dailyWorkoutStatus = await recomputeDailyWorkoutStatus(wId); } catch (e) {
+    if (dwId) {
+      try { dailyWorkoutStatus = await recomputeDailyWorkoutStatus(dwId); } catch (e) {
         console.error("[completeItem] recompute failed:", e);
       }
     }
@@ -185,8 +202,8 @@ export default async function handler(req, res) {
       status:              completion.status,
       isVARA,
       attachmentUrl:       attachUrl,
+      dailyWorkoutId:      dwId,
       dailyWorkoutStatus,
-      athleteTokenSent:    athleteToken,
     });
   } catch (err) {
     console.error("[athlete/workouts/completeItem]", err);

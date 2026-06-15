@@ -43,7 +43,14 @@ export function useTemplateActions({
         );
       }
 
-      setStructured((prev) => ({ ...prev, ...tpl.structured }));
+      setStructured((prev) => {
+        const next = { ...tpl.structured };
+        // Don't wipe notes/supplements if the template has them blank
+        if (!next.freeformNotes)    delete next.freeformNotes;
+        if (!next.notesSupplements) delete next.notesSupplements;
+        if (!next.notesMacros)      delete next.notesMacros;
+        return { ...prev, ...next };
+      });
       if (!title || title === "Nutrition + Supplements Plan") setTitle(tpl.name || "Nutrition + Supplements Plan");
       setView("builder");
     },

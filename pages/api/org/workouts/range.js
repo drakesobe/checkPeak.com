@@ -5,6 +5,10 @@ import { readUserCookie } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function parseOrgUser(req) {
+  // Direct org_token bypass – mobile uses this (same pattern as getAthletesByToken)
+  const directToken = String(req.query?.org_token || "").trim();
+  if (directToken) return { Token: directToken, orgToken: directToken, role: "Organization" };
+
   const raw = req.query?._authUser ?? req.body?._authUser;
   if (raw) {
     try {
@@ -61,7 +65,6 @@ export default async function handler(req, res) {
 
     if (error) throw error;
 
-    // Build athlete-sport lookup so workouts with sport=null fall back to the athlete's sport
     const athleteTokens = [...new Set((data ?? []).map(dw => dw.athlete_token).filter(Boolean))];
     let athleteSportMap = {};
     if (athleteTokens.length > 0) {

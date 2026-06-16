@@ -136,3 +136,18 @@ CREATE TABLE IF NOT EXISTS lineup_analytics (
 
 CREATE INDEX IF NOT EXISTS idx_lineup_analytics_org  ON lineup_analytics(org_id);
 CREATE INDEX IF NOT EXISTS idx_lineup_analytics_hash ON lineup_analytics(org_id, lineup_hash);
+
+-- ── roster ────────────────────────────────────────────────────────────────────
+-- Players on an org's team — used to map OCR jersey numbers to real names
+CREATE TABLE IF NOT EXISTS roster (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id        text NOT NULL,
+  player_name   text NOT NULL,
+  jersey_number int  NOT NULL,
+  position      text,
+  active        boolean NOT NULL DEFAULT true,
+  created_at    timestamptz DEFAULT now(),
+  UNIQUE(org_id, jersey_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_roster_org ON roster(org_id);

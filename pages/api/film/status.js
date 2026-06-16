@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   try {
     const { data: film, error } = await supabase
       .from("game_films")
-      .select("id, status, progress_pct, play_count, duration_secs, error_message, org_id")
+      .select("id, title, sport, game_date, opponent, home_team, away_team, status, progress_pct, play_count, duration_secs, error_message, org_id")
       .eq("id", filmId)
       .single();
 
@@ -44,12 +44,18 @@ export default async function handler(req, res) {
     if (film.org_id !== orgId) return res.status(403).json({ error: "Not authorized" });
 
     return res.status(200).json({
-      ok:          true,
-      status:      film.status,
-      progressPct: film.progress_pct ?? 0,
-      playCount:   film.play_count   ?? 0,
-      durationSecs:film.duration_secs ?? 0,
-      error:       film.error_message ?? null,
+      ok:           true,
+      title:        film.title        ?? "",
+      sport:        film.sport        ?? "football",
+      game_date:    film.game_date    ?? null,
+      opponent:     film.opponent     ?? null,
+      home_team:    film.home_team    ?? null,
+      away_team:    film.away_team    ?? null,
+      status:       film.status,
+      progressPct:  film.progress_pct  ?? 0,
+      play_count:   film.play_count    ?? 0,
+      durationSecs: film.duration_secs ?? 0,
+      error:        film.error_message ?? null,
     });
   } catch (err) {
     console.error("[film/status]", err);

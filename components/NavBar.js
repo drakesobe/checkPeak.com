@@ -232,6 +232,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             <DropSection label="Workspace" />
             <DropLink href="/org/workouts-calendar" icon="⬡" onClick={onClose}>Workouts Calendar</DropLink>
             <DropLink href="/org/review-queue"      icon="✦" onClick={onClose}>Review Queue</DropLink>
+            <DropLink href="/org/film"              icon="◈" onClick={onClose} badge="Beta">Film Intelligence</DropLink>
             <DropLink href="/org/nutrition"         icon="◎" onClick={onClose}>Nutrition</DropLink>
             <DropLink href="/org/prescriptions"     icon="✦" onClick={onClose}>Nutrition Plans</DropLink>
           </div>
@@ -326,7 +327,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
   const color    = avatarColor(name);
   const initials = getInitials(name);
 
-  const MLink = ({ href, children, icon, external }) => {
+  const MLink = ({ href, children, icon, external, badge }) => {
     const active = isActive(href);
     return (
       <Link href={href} onClick={onClose}
@@ -336,6 +337,11 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
       >
         {icon && <span style={{ fontSize: 16, opacity: 0.6 }}>{icon}</span>}
         <span style={{ flex: 1 }}>{children}</span>
+        {badge && (
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#4FABFF", background: "rgba(79,171,255,0.12)", border: "1px solid rgba(79,171,255,0.25)", borderRadius: 20, padding: "1px 6px", letterSpacing: "0.05em" }}>
+            {badge}
+          </span>
+        )}
         {external && (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.25 }}>
             <path d="M1 9L9 1M9 1H3M9 1v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -412,6 +418,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 <SectionHeader label="Workspace" />
                 <MLink href="/org/workouts-calendar" icon="⬡">Workouts Calendar</MLink>
                 <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
+                <MLink href="/org/film"              icon="◈" badge="Beta">Film Intelligence</MLink>
                 <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>
                 <MLink href="/org/prescriptions"     icon="✦">Nutrition Plans</MLink>
 

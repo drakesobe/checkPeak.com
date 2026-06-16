@@ -9,6 +9,7 @@ import {
   Film, UserCheck, Users, RefreshCw, Play, TrendingUp,
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
 } from "lucide-react";
+import MuxPlayer from "@mux/mux-player-react";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const DS = {
@@ -234,10 +235,8 @@ function FormationDiagram({ tracks = [], roster = [], currentTime = 0, onPlayerC
 }
 
 // ── Video Player ──────────────────────────────────────────────────────────────
-function VideoPlayer({ clipUrl, playNumber, onTimeUpdate, videoRef }) {
-  const [muted, setMuted] = useState(true);
-
-  if (!clipUrl) {
+function VideoPlayer({ playbackId, clipUrl, playNumber, onTimeUpdate, videoRef }) {
+  if (!playbackId && !clipUrl) {
     return (
       <div style={{
         background: "#0a0c12", borderRadius: 10,
@@ -246,8 +245,23 @@ function VideoPlayer({ clipUrl, playNumber, onTimeUpdate, videoRef }) {
       }}>
         <Film size={40} color="rgba(255,255,255,0.1)" />
         <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.28)", fontWeight: 600 }}>
-          {playNumber ? `Play #${playNumber} — clip processing` : "Select a play to load clip"}
+          {playNumber ? `Play #${playNumber} — video preparing` : "Video will appear here once ready"}
         </p>
+      </div>
+    );
+  }
+
+  if (playbackId) {
+    return (
+      <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+        <MuxPlayer
+          ref={videoRef}
+          playbackId={playbackId}
+          streamType="on-demand"
+          style={{ width: "100%", height: "100%" }}
+          onTimeUpdate={e => onTimeUpdate?.(e.target.currentTime)}
+          accentColor="#4FABFF"
+        />
       </div>
     );
   }
@@ -259,22 +273,9 @@ function VideoPlayer({ clipUrl, playNumber, onTimeUpdate, videoRef }) {
         src={clipUrl}
         style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
         controls
-        muted={muted}
         preload="metadata"
         onTimeUpdate={e => onTimeUpdate?.(e.target.currentTime)}
       />
-      <button
-        onClick={() => setMuted(m => !m)}
-        style={{
-          position: "absolute", top: 8, right: 8,
-          background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
-          border: "none", borderRadius: 6, width: 30, height: 30,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", color: "#fff",
-        }}
-      >
-        {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-      </button>
     </div>
   );
 }
@@ -1167,7 +1168,10 @@ export default function FilmDetailPage() {
     setSelPlay(play);
     setVideoTime(0);
     setHlJersey(null);
-    if (videoRef.current) videoRef.current.currentTime = 0;
+    // Seek to the play's start time in the full-film player
+    if (videoRef.current && play?.start_time_secs != null) {
+      videoRef.current.currentTime = play.start_time_secs;
+    }
   }
 
   if (loading) return (
@@ -1349,6 +1353,7 @@ export default function FilmDetailPage() {
                   {/* Left: video + formation + metrics */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <VideoPlayer
+                      playbackId={film?.muxPlaybackId}
                       clipUrl={selPlay?.clip_url}
                       playNumber={selPlay?.play_number}
                       onTimeUpdate={setVideoTime}

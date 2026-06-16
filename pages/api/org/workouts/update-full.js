@@ -44,12 +44,12 @@ async function updateOne(workoutId, orgToken, { title, date, status, sport, item
     const { error: delErr } = await db
       .from("workout_items")
       .delete()
-      .eq("workout_id", workoutId);
+      .eq("daily_workout_id", workoutId);
     if (delErr) return { error: delErr.message, status: 500 };
 
     if (items.length) {
       const rows = items.map((item, idx) => ({
-        workout_id:        workoutId,
+        daily_workout_id:  workoutId,
         exercise_name:     clean(item.ExerciseName || item.exercise_name) || "",
         sets:              item.Sets  != null ? Number(item.Sets)  : item.sets  != null ? Number(item.sets)  : null,
         reps:              clean(item.Reps  ?? item.reps)  ?? "",

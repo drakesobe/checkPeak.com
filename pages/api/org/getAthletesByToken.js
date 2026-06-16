@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     const { data: rows, error } = await db
       .from("athletes")
-      .select("id, name, email, created_at, org_token, athlete_token, status")
+      .select("id, name, email, created_at, org_token, athlete_token, status, sport")
       .eq("org_token", String(token).trim())
       .order("created_at", { ascending: false });
 
@@ -25,6 +25,7 @@ export default async function handler(req, res) {
       createdAt:    r.created_at   || "",
       token:        r.org_token    || "",
       athleteToken: r.athlete_token || "",
+      sport:        r.sport        || "",
       role:         "Athlete",
       title:        "Athlete",
     }));

@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   try {
     const { data: film, error } = await supabase
       .from("game_films")
-      .select("id, title, sport, game_date, opponent, home_team, away_team, status, progress_pct, play_count, duration_secs, error_message, org_id")
+      .select("id, title, sport, game_date, opponent, home_team, away_team, status, progress_pct, play_count, duration_secs, error_message, org_id, mux_playback_id")
       .eq("id", filmId)
       .single();
 
@@ -54,8 +54,9 @@ export default async function handler(req, res) {
       status:       film.status,
       progressPct:  film.progress_pct  ?? 0,
       play_count:   film.play_count    ?? 0,
-      durationSecs: film.duration_secs ?? 0,
-      error:        film.error_message ?? null,
+      durationSecs:   film.duration_secs   ?? 0,
+      muxPlaybackId: film.mux_playback_id ?? null,
+      error:          film.error_message  ?? null,
     });
   } catch (err) {
     console.error("[film/status]", err);

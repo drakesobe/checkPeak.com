@@ -34,6 +34,34 @@ function parseSportsList(q) {
   return raw.split(/[,|]/g).map(normLower).filter(Boolean);
 }
 
+const WORKOUT_SELECT = `
+  id, date, title, status, sport, athlete_token, scheduled_time, scheduled_duration,
+  workout_items ( id, sort_order, exercise_name, group_id )
+`;
+
+function mapWorkout(dw, athleteSportMap) {
+  return {
+    id:                dw.id,
+    Title:             dw.title  || "Workout",
+    Date:              dw.date,
+    Status:            dw.status || "assigned",
+    Sport:             dw.sport  || athleteSportMap[dw.athlete_token] || "",
+    athleteToken:      dw.athlete_token || "",
+    ScheduledTime:     dw.scheduled_time     || null,
+    ScheduledMinutes:  timeStrToMinutes(dw.scheduled_time),
+    ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
+    itemCount:         (dw.workout_items ?? []).length,
+    items:             [...(dw.workout_items ?? [])]
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map(i => ({
+        id:           i.id,
+        ExerciseName: i.exercise_name || "",
+        GroupId:      i.group_id      || null,
+        Order:        i.sort_order    ?? 0,
+      })),
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -52,20 +80,45 @@ export default async function handler(req, res) {
   if (!endDate)   return res.status(400).json({ error: "end is required (YYYY-MM-DD)" });
 
   try {
-    const { data, error } = await db
+    // ── Primary: query by org_token ───────────────────────────────────────────────
+    const { data: primaryData, error: primaryErr } = await db
       .from("daily_workouts")
-      .select(`
-        id, date, title, status, sport, athlete_token, scheduled_time, scheduled_duration,
-        workout_items ( id, sort_order, exercise_name, group_id )
-      `)
+      .select(WORKOUT_SELECT)
       .eq("org_token", orgToken)
       .gte("date", startDate)
       .lte("date", endDate)
       .order("date");
 
-    if (error) throw error;
+    if (primaryErr) throw primaryErr;
 
-    const athleteTokens = [...new Set((data ?? []).map(dw => dw.athlete_token).filter(Boolean))];
+    let rawRows = primaryData ?? [];
+
+    // ── Fallback: look up by athlete ownership ────────────────────────────────────
+    // Covers token mismatches (e.g. Airtable migration: athletes.org_token matches
+    // the mobile session but daily_workouts.org_token was stored under a different value).
+    if (rawRows.length === 0) {
+      const { data: orgAthletes } = await db
+        .from("athletes")
+        .select("id")
+        .eq("org_token", orgToken);
+
+      const athleteIds = (orgAthletes ?? []).map(a => a.id).filter(Boolean);
+
+      if (athleteIds.length > 0) {
+        const { data: fallbackData, error: fallbackErr } = await db
+          .from("daily_workouts")
+          .select(WORKOUT_SELECT)
+          .in("athlete_id", athleteIds)
+          .gte("date", startDate)
+          .lte("date", endDate)
+          .order("date");
+
+        if (!fallbackErr) rawRows = fallbackData ?? [];
+      }
+    }
+
+    // ── Build athlete→sport map ───────────────────────────────────────────────────
+    const athleteTokens = [...new Set(rawRows.map(dw => dw.athlete_token).filter(Boolean))];
     let athleteSportMap = {};
     if (athleteTokens.length > 0) {
       const { data: athData } = await db
@@ -75,24 +128,7 @@ export default async function handler(req, res) {
       (athData ?? []).forEach(a => { if (a.athlete_token) athleteSportMap[a.athlete_token] = a.sport || ""; });
     }
 
-    let workouts = (data ?? []).map(dw => ({
-      id:           dw.id,
-      Title:        dw.title  || "Workout",
-      Date:         dw.date,
-      Status:       dw.status || "assigned",
-      Sport:            dw.sport || athleteSportMap[dw.athlete_token] || "",
-      athleteToken:     dw.athlete_token || "",
-      ScheduledTime:    dw.scheduled_time    || null,
-      ScheduledMinutes: timeStrToMinutes(dw.scheduled_time),
-      ScheduledDuration: dw.scheduled_duration ? Number(dw.scheduled_duration) : null,
-      itemCount:    (dw.workout_items ?? []).length,
-      items:        [...(dw.workout_items ?? [])].sort((a,b)=>(a.sort_order??0)-(b.sort_order??0)).map(i => ({
-        id:           i.id,
-        ExerciseName: i.exercise_name || "",
-        GroupId:      i.group_id      || null,
-        Order:        i.sort_order    ?? 0,
-      })),
-    }));
+    let workouts = rawRows.map(dw => mapWorkout(dw, athleteSportMap));
 
     if (sports.length) workouts = workouts.filter(w => sports.includes(normLower(w.Sport)));
 

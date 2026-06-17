@@ -1,5 +1,5 @@
 // pages/api/waitlist.js
-// POST { email, name?, role?, organization?, source? } — adds an early-access signup.
+// POST { email, name?, role?, organization?, source? } - adds an early-access signup.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

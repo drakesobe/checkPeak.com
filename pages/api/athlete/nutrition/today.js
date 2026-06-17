@@ -1,5 +1,5 @@
 // pages/api/athlete/nutrition/today.js
-// GET ?date=YYYY-MM-DD — returns the active nutrition plan effective for the given date.
+// GET ?date=YYYY-MM-DD - returns the active nutrition plan effective for the given date.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // plan_json is a JSONB column — Supabase returns it already parsed as an object.
+    // plan_json is a JSONB column - Supabase returns it already parsed as an object.
     // safeJsonParse calls asString() first which coerces objects to "[object Object]",
     // so we must branch on the type before trying to parse.
     const rawPlanJson = picked.plan_json;

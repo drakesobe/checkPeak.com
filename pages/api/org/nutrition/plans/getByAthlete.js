@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/plans/getByAthlete.js
-// GET ?athleteToken= — returns nutrition plans for an athlete, newest first.
+// GET ?athleteToken= - returns nutrition plans for an athlete, newest first.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

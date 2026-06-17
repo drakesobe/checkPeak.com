@@ -375,7 +375,7 @@ export default function HelpPage() {
 
       {showBillingWarning && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px", backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
-          <span style={{ fontSize: 12, fontWeight: 700 }}>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>⚠ Billing requires attention - your organization's subscription is not active.</span>
           <button type="button" onClick={() => router.push("/account")}
             style={{ flexShrink: 0, padding: "5px 12px", backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.06em" }}
             onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}

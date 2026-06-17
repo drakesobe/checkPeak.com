@@ -46,10 +46,10 @@ function Spinner() {
 /* ══════════════════════════════════════════════════════════════════════════════
    SupplementPicker
    Props:
-     catDef     — one entry from SUPP_CATEGORIES
-     products   — SmartStack records filtered to this category
-     structured — current plan state object
-     onChange   — (key, value) => void
+     catDef     - one entry from SUPP_CATEGORIES
+     products   - SmartStack records filtered to this category
+     structured - current plan state object
+     onChange   - (key, value) => void
 ══════════════════════════════════════════════════════════════════════════════ */
 export default function SupplementPicker({ catDef, products, structured, onChange, onScanResult }) {
   const [open,      setOpen]      = useState(false);
@@ -107,11 +107,11 @@ export default function SupplementPicker({ catDef, products, structured, onChang
         }),
       });
       const data = await resp.json().catch(() => ({}));
-      const result = data?.status ? data : { status: "caution", summary: "Could not complete scan — review label manually.", flags: [] };
+      const result = data?.status ? data : { status: "caution", summary: "Could not complete scan - review label manually.", flags: [] };
       setScanState(result);
       onScanResult?.(catDef.productKey, result);
     } catch {
-      const result = { status: "caution", summary: "Scan unavailable — review label manually.", flags: [] };
+      const result = { status: "caution", summary: "Scan unavailable - review label manually.", flags: [] };
       setScanState(result);
       onScanResult?.(catDef.productKey, result);
     }
@@ -168,7 +168,7 @@ export default function SupplementPicker({ catDef, products, structured, onChang
               <p className="text-sm font-bold truncate" style={{ color: DS.brand }}>{selectedProduct.name}</p>
               {selectedProduct.nutritionLabel
                 ? priceLabel && <p className="text-xs tabular-nums" style={{ color: DS.labelText }}>{priceLabel}</p>
-                : <p className="text-xs" style={{ color: DS.caution }}>⚠ No nutrition label — add in SmartStack to enable scan</p>
+                : <p className="text-xs" style={{ color: DS.caution }}>⚠ No nutrition label - add in SmartStack to enable scan</p>
               }
             </>
           ) : (

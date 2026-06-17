@@ -1,7 +1,7 @@
 // pages/api/org/events.js
 // Schedule events for the coach calendar.
 //
-// GET  ?start=YYYY-MM-DD&end=YYYY-MM-DD  — list events in date range
+// GET  ?start=YYYY-MM-DD&end=YYYY-MM-DD  - list events in date range
 // POST { title, type, eventDate, startMinutes, durationMinutes, location?, notes?, groupName? }
 // PUT  { id, ...fields }
 // DELETE ?id=uuid

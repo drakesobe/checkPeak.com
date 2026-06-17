@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/today.js
-// GET — returns today's daily workout(s) for the authenticated athlete.
+// GET - returns today's daily workout(s) for the authenticated athlete.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

@@ -86,7 +86,7 @@ function AthleteRow({ a, isActive, done, onSelect }) {
             : { backgroundColor: DS.cautionBg, color: DS.caution, border: `1px solid ${DS.cautionBorder}` }
           }
         >
-          {done ? "✓" : "—"}
+          {done ? "✓" : "-"}
         </span>
       </div>
     </button>

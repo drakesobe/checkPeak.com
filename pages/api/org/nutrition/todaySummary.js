@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/todaySummary.js
-// GET — summary of org athletes: how many have active plans, hydration targets set.
+// GET - summary of org athletes: how many have active plans, hydration targets set.
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";

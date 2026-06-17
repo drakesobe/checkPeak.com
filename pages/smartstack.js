@@ -676,7 +676,7 @@ export default function SmartStackPage() {
     setVisibleLimit(itemsPerChunk);
   }, [activeCategory, activeVitaminCategory, activeValueFilters, activePriceFilters, activeSort, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
 
-  // Infinite scroll — auto-load next chunk when sentinel enters viewport
+  // Infinite scroll - auto-load next chunk when sentinel enters viewport
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !canLoadMore) return;
@@ -1323,7 +1323,7 @@ export default function SmartStackPage() {
               )}
             </AnimatePresence>
 
-            {/* Infinite scroll sentinel — observer auto-loads next chunk */}
+            {/* Infinite scroll sentinel - observer auto-loads next chunk */}
             {canLoadMore && (
               <div ref={sentinelRef} className="mt-10 flex justify-center py-4" aria-hidden="true">
                 <div className="w-5 h-5 rounded-full border-2" style={{ borderColor: "rgba(255,255,255,0.12)", borderTopColor: "#5B9EC9", animation: "spin 0.8s linear infinite" }} />
@@ -1332,7 +1332,7 @@ export default function SmartStackPage() {
 
             {!canLoadMore && visibleCount > 0 && (
               <p className="mt-10 text-center text-[11px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-                All {visibleCount} stacks shown — adjust filters to explore more.
+                All {visibleCount} stacks shown - adjust filters to explore more.
               </p>
             )}
 

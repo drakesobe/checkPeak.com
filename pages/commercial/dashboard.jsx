@@ -114,7 +114,7 @@ function TrainerHero({ trainer, videoCount, clientCount, tierBreakdown, onTabCha
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <TrendingUp className="w-3.5 h-3.5" style={{ color: DS.brand }} />
               <span className="text-xl font-black tabular-nums" style={{ color: DS.bodyText }}>
-                {mrr > 0 ? `$${mrr.toLocaleString()}` : "—"}
+                {mrr > 0 ? `$${mrr.toLocaleString()}` : "-"}
               </span>
             </div>
             <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: DS.dimText }}>Est. MRR</p>
@@ -131,7 +131,7 @@ function TrainerHero({ trainer, videoCount, clientCount, tierBreakdown, onTabCha
         </div>
       </div>
 
-      {/* Tier breakdown — bottom bar, only when there are tiered clients */}
+      {/* Tier breakdown - bottom bar, only when there are tiered clients */}
       {tierPips.length > 0 && (
         <div className="flex items-center gap-3 px-5 py-2 border-t"
           style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}>
@@ -581,7 +581,7 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
               : "No clients yet"}
           </p>
           <p className="text-xs mt-0.5" style={{ color: DS.labelText }}>
-            Add clients manually — they get an email with their library link.
+            Add clients manually - they get an email with their library link.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -683,7 +683,7 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
         </div>
       )}
 
-      {/* Search — only rendered once there are clients */}
+      {/* Search - only rendered once there are clients */}
       {active.length > 0 && (
         <div className="relative mb-3">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -746,11 +746,11 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
 
                 {/* Name + email */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{cf.clientName || "—"}</p>
+                  <p className="text-xs font-black truncate" style={{ color: DS.bodyText }}>{cf.clientName || "-"}</p>
                   <p className="text-[11px] truncate" style={{ color: DS.labelText }}>{cf.clientEmail}</p>
                 </div>
 
-                {/* Tier badge — click to enter edit mode */}
+                {/* Tier badge - click to enter edit mode */}
                 {isEditingTier ? (
                   <div className="flex items-center gap-1 shrink-0">
                     {["Basic", "Premium", "Ultra"].map(t => {
@@ -1014,12 +1014,12 @@ function SettingsTab({ trainer }) {
       <div className="grid gap-4 mb-0" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
 
         <SettingSection title="Profile">
-          <SettingField label="Profile photo">
+          <SettingField label="Banner photo" hint="Displayed across the top of your Arena card. Best results with a wide landscape crop - recommended 1200 × 400 px (3:1). Portrait photos work too; we show from the top down.">
             <div className="flex items-center gap-3 mb-1">
-              <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 88, height: 30, borderRadius: 3, overflow: "hidden", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {photoUrl
-                  ? <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  : <span style={{ fontSize: 20, fontWeight: 900, color: DS.brand }}>{(name || "?")[0].toUpperCase()}</span>
+                  ? <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }} />
+                  : <span style={{ fontSize: 9, fontWeight: 700, color: DS.brand, letterSpacing: "0.06em", textTransform: "uppercase" }}>No photo</span>
                 }
               </div>
               <div>
@@ -1115,7 +1115,7 @@ function SettingsTab({ trainer }) {
 
         <SettingSection title="Library Access" color={locked ? DS.caution : DS.safe}>
           <ToggleRow
-            label={locked ? "Members only — library is closed" : "Open — anyone can join"}
+            label={locked ? "Members only - library is closed" : "Open - anyone can join"}
             description={locked
               ? "New subscriptions and purchases are blocked. Only your existing members can access your content."
               : "Anyone can discover your profile, subscribe, or buy content. Toggle to restrict access to existing members only."}

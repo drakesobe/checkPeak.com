@@ -1,5 +1,5 @@
 // pages/api/org/workouts/day.js
-// GET ?date=YYYY-MM-DD[&sport=x] — returns all workouts for the org on a date.
+// GET ?date=YYYY-MM-DD[&sport=x] - returns all workouts for the org on a date.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

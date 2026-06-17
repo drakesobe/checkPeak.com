@@ -1,5 +1,5 @@
 // pages/api/org/messages/send.js
-// POST — coach sends a message to an athlete.
+// POST - coach sends a message to an athlete.
 // Body: { athleteId, athleteName, text, _authUser? }
 
 import { supabaseAdmin as db } from "@/lib/supabase";
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
         }),
       });
     } catch {
-      // Non-fatal — message is saved regardless
+      // Non-fatal - message is saved regardless
     }
 
     return res.status(201).json({

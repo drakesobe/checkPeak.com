@@ -1,5 +1,5 @@
 // pages/api/commercial/sync-athletes.js
-// POST — bidirectional reconciliation between commercial subscriptions and org athletes.
+// POST - bidirectional reconciliation between commercial subscriptions and org athletes.
 //
 // Forward  (subscriptions → athletes):
 //   Anyone who has an active subscription but no athlete record gets one created,
@@ -10,7 +10,7 @@
 //   athlete record updated if their name is missing. We never auto-create
 //   subscriptions for athletes who haven't subscribed.
 //
-// Idempotent — safe to run multiple times.
+// Idempotent - safe to run multiple times.
 
 import { getRequestUser } from "@/lib/commercial/getRequestUser";
 import { getTrainerByUserId, getSubscriptionsByTrainer } from "@/lib/commercial/db";
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   const orgToken = String(user?.orgToken || user?.Token || user?.token || "").trim().toUpperCase();
-  if (!orgToken) return res.status(400).json({ error: "No org token in session — cannot sync athletes." });
+  if (!orgToken) return res.status(400).json({ error: "No org token in session - cannot sync athletes." });
 
   const trainer = await getTrainerByUserId(user.email || user.Email);
   if (!trainer) return res.status(403).json({ error: "No trainer profile" });
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
     const existing = athleteByEmail.get(email);
 
     if (!existing) {
-      // No athlete record — create one
+      // No athlete record - create one
       try {
         const { error } = await db.from("athletes").insert({
           name:          String(c.fields?.clientName || email).trim(),

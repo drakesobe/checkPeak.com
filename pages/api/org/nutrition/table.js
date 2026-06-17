@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/table.js
-// GET — returns all org athletes with their latest nutrition plan + latest completion.
+// GET - returns all org athletes with their latest nutrition plan + latest completion.
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";

@@ -1,5 +1,5 @@
 // pages/api/org/getPlanTemplates.js
-// GET — returns all plan templates for this org.
+// GET - returns all plan templates for this org.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

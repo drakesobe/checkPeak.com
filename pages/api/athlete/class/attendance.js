@@ -1,5 +1,5 @@
 // pages/api/athlete/class/attendance.js
-// GET ?date=YYYY-MM-DD — returns the class IDs the athlete attended on that date.
+// GET ?date=YYYY-MM-DD - returns the class IDs the athlete attended on that date.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

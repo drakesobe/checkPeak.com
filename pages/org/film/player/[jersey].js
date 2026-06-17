@@ -1,4 +1,4 @@
-// pages/org/film/player/[jersey].js  —  Cross-game player deep dive
+// pages/org/film/player/[jersey].js  -  Cross-game player deep dive
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

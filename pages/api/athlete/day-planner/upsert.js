@@ -1,6 +1,6 @@
 // pages/api/athlete/day-planner/upsert.js
-// GET  ?date=YYYY-MM-DD — returns scheduled events for that day
-// POST { date, events[] } — upserts events for that day
+// GET  ?date=YYYY-MM-DD - returns scheduled events for that day
+// POST { date, events[] } - upserts events for that day
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireAthlete } from "@/lib/requireAthlete";

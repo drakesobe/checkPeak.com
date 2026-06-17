@@ -1,4 +1,4 @@
-// pages/org/film.js  —  Film Intelligence lobby
+// pages/org/film.js  -  Film Intelligence lobby
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -176,7 +176,7 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
         fetchRoster();
         setJerseyMap({});
         setSelected(new Set());
-        toast.success(`Synced — ${d.inserted} added, ${d.updated} updated`);
+        toast.success(`Synced - ${d.inserted} added, ${d.updated} updated`);
       } else {
         toast.error(d.errors?.[0]?.reason ?? "Sync failed");
       }
@@ -231,7 +231,7 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
       if (d.ok) {
         fetchRoster();
         setCsvText(""); setCsvRows([]); setCsvParsed(false);
-        toast.success(`Imported — ${d.inserted} added, ${d.updated} updated`);
+        toast.success(`Imported - ${d.inserted} added, ${d.updated} updated`);
       } else {
         toast.error(d.errors?.[0]?.reason ?? "Import failed");
       }
@@ -334,8 +334,8 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
               <div style={{ padding: "10px 14px", borderRadius: 8, background: syncStatus.ok ? DS.safeBg : DS.warnBg, border: `1px solid ${syncStatus.ok ? DS.safeBorder : "#C8102E30"}` }}>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: syncStatus.ok ? DS.safe : DS.warn }}>
                   {syncStatus.ok
-                    ? `Done — ${syncStatus.inserted} added, ${syncStatus.updated} updated${syncStatus.skipped ? `, ${syncStatus.skipped} skipped` : ""}`
-                    : `Error — ${syncStatus.errors?.[0]?.reason ?? "Unknown"}`}
+                    ? `Done - ${syncStatus.inserted} added, ${syncStatus.updated} updated${syncStatus.skipped ? `, ${syncStatus.skipped} skipped` : ""}`
+                    : `Error - ${syncStatus.errors?.[0]?.reason ?? "Unknown"}`}
                 </p>
               </div>
             )}
@@ -386,7 +386,7 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
                           type="number" placeholder="#" min={0} max={99} value={jerseyVal}
                           onClick={e => e.stopPropagation()}
                           onChange={e => setJerseyMap(prev => ({ ...prev, [a.id]: e.target.value }))}
-                          title={isSynced ? `In roster as #${syncedMap[a.id]} — edit to reassign` : "Assign jersey number"}
+                          title={isSynced ? `In roster as #${syncedMap[a.id]} - edit to reassign` : "Assign jersey number"}
                           style={{ ...inputStyle, width: 58, textAlign: "center", padding: "5px 6px", fontSize: 12, flexShrink: 0, borderColor: DS.border }}
                         />
                       </div>
@@ -412,7 +412,7 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
         {tab === "csv" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ background: DS.pageBg, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: DS.labelText, lineHeight: 1.6 }}>
-              Format: <strong>Name, Jersey #, Position</strong> (one player per line — header row optional)<br />
+              Format: <strong>Name, Jersey #, Position</strong> (one player per line - header row optional)<br />
               <code style={{ color: DS.brand, fontFamily: "monospace", fontSize: 12 }}>Marcus Johnson,12,WR</code><br />
               <code style={{ color: DS.brand, fontFamily: "monospace", fontSize: 12 }}>Tyler Brooks,24,RB</code>
             </div>
@@ -439,8 +439,8 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
               <div style={{ padding: "10px 14px", borderRadius: 8, background: importResult.ok ? DS.safeBg : DS.warnBg, border: `1px solid ${importResult.ok ? DS.safeBorder : "#C8102E30"}` }}>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: importResult.ok ? DS.safe : DS.warn }}>
                   {importResult.ok
-                    ? `Imported — ${importResult.inserted} added, ${importResult.updated} updated`
-                    : `Failed — ${importResult.errors?.[0]?.reason ?? "Unknown"}`}
+                    ? `Imported - ${importResult.inserted} added, ${importResult.updated} updated`
+                    : `Failed - ${importResult.errors?.[0]?.reason ?? "Unknown"}`}
                 </p>
               </div>
             )}
@@ -456,9 +456,9 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
                   <div style={{ maxHeight: 200, overflowY: "auto" }}>
                     {csvRows.map((r, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 70px 90px", padding: "8px 12px", borderBottom: i < csvRows.length - 1 ? `1px solid ${DS.border}` : "none", background: r.err ? DS.warnBg : "transparent" }}>
-                        <span style={{ fontSize: 13, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name || "—"}</span>
-                        <span style={{ fontSize: 13, color: DS.labelText }}>{r.jerseyRaw || "—"}</span>
-                        <span style={{ fontSize: 13, color: DS.labelText }}>{r.position || "—"}</span>
+                        <span style={{ fontSize: 13, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name || "-"}</span>
+                        <span style={{ fontSize: 13, color: DS.labelText }}>{r.jerseyRaw || "-"}</span>
+                        <span style={{ fontSize: 13, color: DS.labelText }}>{r.position || "-"}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: r.err ? DS.warn : DS.safe }}>{r.err || "OK"}</span>
                       </div>
                     ))}
@@ -522,7 +522,7 @@ function UploadModal({ onClose, onUploadStarted }) {
         xhr.send(file);
       });
 
-      // Tell the server the upload is complete — this sends the SQS message
+      // Tell the server the upload is complete - this sends the SQS message
       // that wakes the ECS worker to start transcoding + AI analysis.
       await fetch("/api/film/process", {
         method: "POST", credentials: "include",
@@ -556,7 +556,7 @@ function UploadModal({ onClose, onUploadStarted }) {
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={labelStyle}>Game Title *</label>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="vs Lincoln HS — Week 3" style={inputStyle} disabled={busy} required />
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="vs Lincoln HS - Week 3" style={inputStyle} disabled={busy} required />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
@@ -587,7 +587,7 @@ function UploadModal({ onClose, onUploadStarted }) {
                   <div>
                     <Upload size={20} color={DS.dimText} style={{ marginBottom: 4 }} />
                     <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>Click to select video</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.dimText }}>MP4, MOV — up to 4 GB</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.dimText }}>MP4, MOV - up to 4 GB</p>
                   </div>
                 )}
               </div>
@@ -810,7 +810,7 @@ export default function FilmPage() {
 
   function handleUploadStarted(filmId) {
     fetchFilms();
-    toast.success("Upload started — AI analysis will begin shortly.");
+    toast.success("Upload started - AI analysis will begin shortly.");
     setTimeout(() => startPolling(filmId), 1000);
   }
 
@@ -863,7 +863,7 @@ export default function FilmPage() {
                 <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: DS.bodyText }}>Film Intelligence</h1>
               </div>
               <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
-                Upload game film — AI tracks every player, tags every play, and surfaces what wins games.
+                Upload game film - AI tracks every player, tags every play, and surfaces what wins games.
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

@@ -1,4 +1,4 @@
-// pages/org/film/[id].js  —  Film Intelligence tape room
+// pages/org/film/[id].js  -  Film Intelligence tape room
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -245,7 +245,7 @@ function VideoPlayer({ playbackId, clipUrl, playNumber, onTimeUpdate, videoRef }
       }}>
         <Film size={40} color="rgba(255,255,255,0.1)" />
         <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.28)", fontWeight: 600 }}>
-          {playNumber ? `Play #${playNumber} — video preparing` : "Video will appear here once ready"}
+          {playNumber ? `Play #${playNumber} - video preparing` : "Video will appear here once ready"}
         </p>
       </div>
     );
@@ -383,7 +383,7 @@ function PlayerMetricsRow({ tracks = [], roster, highlightJersey, onHighlight })
   return (
     <div style={{ paddingTop: 14, borderTop: `1px solid ${DS.border}` }}>
       <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>
-        Player Metrics — click to highlight on field
+        Player Metrics - click to highlight on field
       </p>
       <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
         {sorted.map((t, i) => {
@@ -499,7 +499,7 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
         <div>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: DS.bodyText }}>Confirm Player Identity</h3>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: DS.labelText }}>
-            {tracks.length} player{tracks.length !== 1 ? "s" : ""} detected by AI — match to roster to unlock analytics.
+            {tracks.length} player{tracks.length !== 1 ? "s" : ""} detected by AI - match to roster to unlock analytics.
           </p>
         </div>
         <button onClick={load} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
@@ -538,7 +538,7 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
                 onChange={e => setChosen(p => ({ ...p, [track.rekognition_track_id]: e.target.value }))}
                 style={{ flex: 1, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: DS.bodyText, background: DS.pageBg, outline: "none" }}
               >
-                <option value="">— Select player —</option>
+                <option value="">- Select player -</option>
                 {roster.map(p => (
                   <option key={p.id} value={p.id}>
                     #{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}
@@ -1050,7 +1050,7 @@ function DriveLog({ drives }) {
                   {drive.playList.map((p, idx) => {
                     const ok = ["td","success"].includes(p.result ?? "");
                     return (
-                      <span key={idx} title={`Play #${p.playNumber}: ${p.playType} — ${p.result}`} style={{
+                      <span key={idx} title={`Play #${p.playNumber}: ${p.playType} - ${p.result}`} style={{
                         fontSize: 10, borderRadius: 4, padding: "2px 6px", color: DS.labelText,
                         background: p.result === "td" ? DS.safeBg : ok ? "#f0fdf4" : p.result === "failure" ? "#fef2f2" : DS.pageBg,
                         border: `1px solid ${p.result === "td" ? DS.safeBorder : ok ? "#86efac" : p.result === "failure" ? "#fca5a5" : DS.border}`,
@@ -1329,7 +1329,7 @@ export default function FilmDetailPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Lock size={13} color={DS.caution} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: DS.caution }}>
-                      {unconfCount} player{unconfCount !== 1 ? "s" : ""} unconfirmed — analytics may be incomplete.
+                      {unconfCount} player{unconfCount !== 1 ? "s" : ""} unconfirmed - analytics may be incomplete.
                     </span>
                   </div>
                   <button onClick={() => setTab("players")} style={{ background: DS.caution, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

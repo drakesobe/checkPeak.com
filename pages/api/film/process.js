@@ -2,7 +2,7 @@
 // POST { filmId }
 // Called by the upload modal right after the S3 presigned PUT completes.
 // Updates status to 'transcoding' immediately so the UI reflects processing.
-// The actual ECS worker is triggered automatically via S3 → Lambda → SQS —
+// The actual ECS worker is triggered automatically via S3 → Lambda → SQS -
 // no manual SQS send needed here (a duplicate send would cause double DB writes).
 
 import { createClient } from "@supabase/supabase-js";

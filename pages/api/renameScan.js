@@ -1,5 +1,5 @@
 // pages/api/renameScan.js
-// POST { scanId, newName } — updates scan_name in Supabase.
+// POST { scanId, newName } - updates scan_name in Supabase.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

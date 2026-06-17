@@ -2,12 +2,12 @@
 // GET ?secret=xxx&dry=true
 //
 // Backfills Supabase `completion_evidence` from the Airtable WorkoutCompletions
-// table — specifically any records that have native Airtable attachment fields
+// table - specifically any records that have native Airtable attachment fields
 // or a PhotoUrl / AttachmentUrl text field.
 //
 // Also picks up any Supabase workout_completions rows that have attachment_url set.
 //
-// Safe to run multiple times — skips rows where (completion_id + url) already exist.
+// Safe to run multiple times - skips rows where (completion_id + url) already exist.
 
 import Airtable from "airtable";
 import { supabaseAdmin as db } from "@/lib/supabase";
@@ -32,7 +32,7 @@ function allUrls(val) {
   return [];
 }
 
-// ── Source 1: Airtable WorkoutCompletions — scan for any attachment/url fields ─
+// ── Source 1: Airtable WorkoutCompletions - scan for any attachment/url fields ─
 
 async function fetchAirtableCompletionsWithAttachments() {
   const apiKey  = process.env.WORKOUTCOMPLETIONS_API_KEY || "pat1Ao6koEcVayfoB.8027551fd5a3c46ba1dfa888018977f56283a38860df91197b33b468ca483969";
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
 
   const secret = String(req.query?.secret || "").trim();
   if (!secret || secret !== BACKFILL_SECRET) {
-    return res.status(403).json({ error: "Forbidden — pass ?secret=..." });
+    return res.status(403).json({ error: "Forbidden - pass ?secret=..." });
   }
 
   const dry = String(req.query?.dry || "").toLowerCase() !== "false";
@@ -167,7 +167,7 @@ export default async function handler(req, res) {
 
       if (!comp) {
         report.notFoundInSupabase++;
-        // Not an error — Airtable may have records not yet migrated to Supabase
+        // Not an error - Airtable may have records not yet migrated to Supabase
         continue;
       }
 

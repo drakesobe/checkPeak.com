@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/plans/getCompletionMap.js
-// GET ?status=active|all — returns set of athlete_tokens that have nutrition plans.
+// GET ?status=active|all - returns set of athlete_tokens that have nutrition plans.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

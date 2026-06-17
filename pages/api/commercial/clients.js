@@ -18,7 +18,7 @@ function genAthleteToken() {
 }
 
 // Upsert client into org athletes table so they appear in the workout calendar + nutrition.
-// Non-fatal — subscription creation succeeds regardless.
+// Non-fatal - subscription creation succeeds regardless.
 async function syncClientToOrgAthletes({ clientEmail, clientName, orgToken }) {
   if (!orgToken || !clientEmail) return;
   try {
@@ -31,7 +31,7 @@ async function syncClientToOrgAthletes({ clientEmail, clientName, orgToken }) {
       .eq("org_token", orgToken)
       .maybeSingle();
     if (existing) return; // already synced
-    // Create minimal athlete record (no password — commercial clients use library link)
+    // Create minimal athlete record (no password - commercial clients use library link)
     const athlete_token = genAthleteToken();
     const { error } = await db.from("athletes").insert({
       name:          String(clientName || clientEmail).trim(),

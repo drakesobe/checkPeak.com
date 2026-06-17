@@ -61,7 +61,7 @@ export function useBillingStatus({ user, role, isOrgSide, enabled = true } = {})
 
       const p = (async () => {
         try {
-          // Fire ensureTrial in the background — don't await it so it doesn't
+          // Fire ensureTrial in the background - don't await it so it doesn't
           // block the status fetch. On first org load it creates the billing
           // record; subsequent calls are no-ops. Either way the status fetch
           // below is what the UI cares about.

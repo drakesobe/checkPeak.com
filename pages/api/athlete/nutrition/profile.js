@@ -1,5 +1,5 @@
 // pages/api/athlete/nutrition/profile.js
-// GET — returns athlete info + latest active nutrition plan + recent check-ins.
+// GET - returns athlete info + latest active nutrition plan + recent check-ins.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

@@ -525,7 +525,7 @@ function BulkNeedsInfoModal({ count, open, onClose, onConfirm, saving }) {
         style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: DS.border }}>
           <p className="text-sm font-black" style={{ color: DS.bodyText }}>
-            Needs Info — {count} item{count !== 1 ? "s" : ""}
+            Needs Info - {count} item{count !== 1 ? "s" : ""}
           </p>
           <p className="text-xs mt-0.5" style={{ color: DS.labelText }}>
             This note will be attached to all {count} selected item{count !== 1 ? "s" : ""}.
@@ -775,7 +775,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
                     />
                   ) : (
                     <p className="py-8 text-center text-xs" style={{ color: DS.dimText }}>
-                      Preview not available —{" "}
+                      Preview not available -{" "}
                       <a href={selUrl} target="_blank" rel="noreferrer" className="font-bold underline" style={{ color: DS.brand }}>
                         Open in new tab
                       </a>
@@ -796,7 +796,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
             <div className="px-4 py-2 border-b" style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}>
               <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: DS.labelText }}>
                 Message to athlete
-                <span className="normal-case font-normal ml-1" style={{ color: DS.dimText }}>— required for Needs Info</span>
+                <span className="normal-case font-normal ml-1" style={{ color: DS.dimText }}>- required for Needs Info</span>
               </p>
             </div>
             <div className="p-3">
@@ -842,7 +842,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
           </button>
         </div>
 
-        {/* Reopen — only shown for already-reviewed items */}
+        {/* Reopen - only shown for already-reviewed items */}
         {item?.reviewStatus !== "pending" && (
           <button type="button" onClick={() => onReopen?.()} disabled={saving}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold border rounded-sm transition disabled:opacity-40"
@@ -1038,7 +1038,7 @@ export default function ReviewQueuePage() {
         if (idx >= 0) list[idx] = { ...list[idx], coachNotes: note };
         return list;
       });
-    } catch { /* silent — note save failure doesn't warrant a blocking error */ }
+    } catch { /* silent - note save failure doesn't warrant a blocking error */ }
   }, [setItems]);
 
   const bulkUpdate = useCallback(async (status, note = "") => {
@@ -1116,7 +1116,7 @@ export default function ReviewQueuePage() {
       {showBillingWarning && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
           style={{ backgroundColor: "#FFFBF0", borderBottom: "1px solid #FFE0A8", color: "#7A4A0A" }}>
-          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <span>⚠ Billing requires attention - your organization's subscription is not active.</span>
           <button type="button" onClick={() => router.push("/account")}
             className="shrink-0 px-3 py-1 font-black uppercase tracking-wider transition"
             style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}
@@ -1185,7 +1185,7 @@ export default function ReviewQueuePage() {
           </div>
         </div>
 
-        {/* Detail panel — desktop only */}
+        {/* Detail panel - desktop only */}
         <div className="hidden md:flex flex-col flex-1 overflow-hidden" style={{ backgroundColor: DS.pageBg }}>
           <DetailPanel
             item={activeItem} saving={saving} saveErr={saveErr}

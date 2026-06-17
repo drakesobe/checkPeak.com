@@ -1,5 +1,5 @@
 // pages/api/film/unconfirmed.js
-// GET ?filmId=uuid — returns distinct rekognition tracks needing jersey confirmation.
+// GET ?filmId=uuid - returns distinct rekognition tracks needing jersey confirmation.
 // One entry per unique person detected; picks the highest-confidence OCR row per track.
 
 import { readUserCookie } from "@/lib/requireUser";

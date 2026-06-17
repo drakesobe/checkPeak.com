@@ -1,5 +1,5 @@
 // pages/api/org/resolveToken.js
-// GET ?token=ORG-XXX — validates an org token and returns the org name.
+// GET ?token=ORG-XXX - validates an org token and returns the org name.
 
 import { getOrgByToken } from "@/lib/supabaseOrg";
 

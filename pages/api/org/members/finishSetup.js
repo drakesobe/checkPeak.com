@@ -1,5 +1,5 @@
 // pages/api/org/members/finishSetup.js
-// Activates an invited org member — sets their name + password via invite token.
+// Activates an invited org member - sets their name + password via invite token.
 // POST { inviteToken, name, password }
 
 import { getMemberByInviteToken, activateMember } from "@/lib/supabaseOrg";

@@ -1,6 +1,6 @@
 // pages/api/film/roster-bulk.js
 // POST { players: [{playerName, jerseyNumber, position?, grade?}] }
-// Bulk upsert into the roster table. Idempotent — conflicts on (org_id, jersey_number)
+// Bulk upsert into the roster table. Idempotent - conflicts on (org_id, jersey_number)
 // are updated in place.
 // Returns { inserted, updated, skipped, errors }
 

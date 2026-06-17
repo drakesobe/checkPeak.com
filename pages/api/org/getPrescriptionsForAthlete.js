@@ -1,5 +1,5 @@
 // pages/api/org/getPrescriptionsForAthlete.js
-// GET ?athleteToken= — returns nutrition plan history for an athlete (prescription shape).
+// GET ?athleteToken= - returns nutrition plan history for an athlete (prescription shape).
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";

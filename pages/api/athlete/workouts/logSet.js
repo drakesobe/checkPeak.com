@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/logSet.js
-// POST — logs a single set for a workout item.
+// POST - logs a single set for a workout item.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

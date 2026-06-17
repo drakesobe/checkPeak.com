@@ -1,5 +1,5 @@
 // pages/api/org/members/list.js
-// GET — returns all members for the logged-in org.
+// GET - returns all members for the logged-in org.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { getMembersByOrg } from "@/lib/supabaseOrg";

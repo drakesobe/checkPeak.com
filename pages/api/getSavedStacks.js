@@ -1,5 +1,5 @@
 // pages/api/getSavedStacks.js
-// GET ?UserEmail= — returns saved stacks for a user.
+// GET ?UserEmail= - returns saved stacks for a user.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

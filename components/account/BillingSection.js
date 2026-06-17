@@ -55,7 +55,7 @@ function completionScore(data) {
   return { filled, total: required.length };
 }
 
-// Tier definitions — used by the plan selector UI
+// Tier definitions - used by the plan selector UI
 const TIER_DEFS = [
   {
     id: "free",  label: "Starter", range: "1–10 athletes", badge: null,
@@ -88,7 +88,7 @@ function deriveBillingState(stripeInfo) {
     const te = stripeInfo?.trialEnds ? new Date(stripeInfo.trialEnds).getTime() : 0;
     return (te && te > now) ? "trial" : "trial_ended";
   }
-  // No stripe sub yet — check if there's a customer ID (went through checkout at least once)
+  // No stripe sub yet - check if there's a customer ID (went through checkout at least once)
   if (stripeInfo?.stripeCustomerId) return "inactive";
   return "not_started";
 }
@@ -484,7 +484,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
       setErr(e?.message || "Failed to open billing portal.");
       setActionLoading(false);
     }
-    // intentionally no finally reset — on success we're navigating away
+    // intentionally no finally reset - on success we're navigating away
   };
 
   const startCheckout = async (tier) => {
@@ -643,7 +643,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
             All plans include Workouts, Nutrition, Banned Substance Scanning, and Attendance. Paid plans start with a 30-day free trial.
           </p>
 
-          {/* Billing interval — two prominent option cards */}
+          {/* Billing interval - two prominent option cards */}
           <div className="grid grid-cols-2 gap-3 mb-6">
             {/* Monthly */}
             <button type="button" onClick={() => setBillingInterval("monthly")}
@@ -684,7 +684,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
               onMouseEnter={(e) => { if (billingInterval !== "yearly") e.currentTarget.style.borderColor = DS.safeBorder; }}
               onMouseLeave={(e) => { if (billingInterval !== "yearly") e.currentTarget.style.borderColor = DS.border; }}
             >
-              {/* Best value badge — top right corner */}
+              {/* Best value badge - top right corner */}
               <span className="absolute top-0 right-0 px-2 py-0.5 text-xs font-black uppercase tracking-wide"
                 style={{ backgroundColor: DS.safe, color: "#fff" }}>
                 Best value
@@ -702,7 +702,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
                 </span>
               </div>
               <p className="text-xs pl-6" style={{ color: billingInterval === "yearly" ? "#1A5C33" : DS.dimText }}>
-                Save up to <strong>30%</strong> vs monthly — billed once a year
+                Save up to <strong>30%</strong> vs monthly - billed once a year
               </p>
             </button>
           </div>
@@ -764,13 +764,13 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
             </p>
             <p className="text-xs leading-relaxed" style={{ color: DS.bodyText }}>
               Sign up today and your base plan price never changes. As CheckPeak grows, what you pay now is what you'll
-              always pay — no surprise increases.{" "}
+              always pay - no surprise increases.{" "}
               <strong style={{ color: DS.brand }}>This is our commitment to the organizations that believe in us early.</strong>{" "}
               Premium add-ons, like access to our in-house dietician services, are available separately through your account manager.
             </p>
           </div>
 
-          {/* Profile completion warning — only required for paid tiers */}
+          {/* Profile completion warning - only required for paid tiers */}
           {selectedTier && selectedTier !== "free" && !isBillingProfileComplete && (
             <p className="text-xs mb-3 font-bold" style={{ color: DS.caution }}>
               Complete your billing profile first ({req.filled}/{req.total} fields required for checkout).
@@ -795,11 +795,11 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
                 : selectedTier === "free"
                 ? billingState === "free" ? "Already on Starter" : "Activate free plan"
                 : selectedTier === "small"
-                ? billingInterval === "yearly" ? "Start trial — Growth ($599.88/yr)" : "Start trial — Growth ($69.99/mo)"
-                : billingInterval === "yearly" ? "Start trial — Pro ($4,188/yr)"    : "Start trial — Pro ($499/mo)"}
+                ? billingInterval === "yearly" ? "Start trial - Growth ($599.88/yr)" : "Start trial - Growth ($69.99/mo)"
+                : billingInterval === "yearly" ? "Start trial - Pro ($4,188/yr)"    : "Start trial - Pro ($499/mo)"}
             </ActionButton>
 
-            {/* Back button — only shows when this was opened from the status card */}
+            {/* Back button - only shows when this was opened from the status card */}
             {showTierSelector && (
               <button type="button" onClick={() => { setShowTierSelector(false); setSelectedTier(""); }}
                 className="text-xs font-bold hover:underline" style={{ color: DS.labelText }}>
@@ -809,7 +809,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
           </div>
 
           <p className="text-xs mt-4" style={{ color: DS.dimText }}>
-            Free plan activates immediately. Paid plans redirect to Stripe — no credit card required to start the 30-day trial.
+            Free plan activates immediately. Paid plans redirect to Stripe - no credit card required to start the 30-day trial.
           </p>
         </div>
       ) : (
@@ -836,7 +836,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
             </p>
           </div>
 
-          {/* ── Date chips — only real subscription dates ── */}
+          {/* ── Date chips - only real subscription dates ── */}
           {dateRows.length > 0 && (
             <div className="flex flex-wrap gap-2 px-5 pb-4">
               {dateRows.map(({ label, value }) => (
@@ -851,14 +851,14 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
 
           {/* ── Action buttons ── */}
           <div className="flex flex-col sm:flex-row gap-2 px-5 pb-5">
-            {/* Free plan — upgrade */}
+            {/* Free plan - upgrade */}
             {billingState === "free" && (
               <ActionButton onClick={() => { setShowTierSelector(true); setSelectedTier(""); }}>
                 Upgrade plan
               </ActionButton>
             )}
 
-            {/* No sub yet — choose a plan */}
+            {/* No sub yet - choose a plan */}
             {!hasStripeSub && billingState !== "free" && (
               <ActionButton
                 onClick={() => { setShowTierSelector(true); setSelectedTier(""); }}
@@ -878,7 +878,7 @@ export default function BillingSection({ memberId, role, onDirtyChange, onRegist
             </ActionButton>
           </div>
 
-          {/* ── Founder's rate reminder — shown to active/trial customers ── */}
+          {/* ── Founder's rate reminder - shown to active/trial customers ── */}
           {(billingState === "active" || billingState === "trial") && (
             <div className="mx-5 mb-4 px-3 py-2.5"
               style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderLeft: `3px solid ${DS.brand}` }}>

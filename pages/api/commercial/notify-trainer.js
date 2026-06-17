@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     await resend.emails.send({
       from:    `CheckPeak <noreply@${process.env.RESEND_FROM_DOMAIN ?? "checkpeak.com"}>`,
       to:      trainerEmail,
-      subject: `New ${tier} subscriber — ${clientName || clientEmail}`,
+      subject: `New ${tier} subscriber - ${clientName || clientEmail}`,
       html: `
 <!DOCTYPE html>
 <html>

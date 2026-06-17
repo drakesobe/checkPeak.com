@@ -6,7 +6,7 @@
 //   1. nutritionLabelUrl present → fetch image → Textract OCR → /api/check
 //   2. No label → return caution (name-only scanning produces false positives)
 //
-// Uses /api/check (same engine as pages/ocr.js) — synonyms are phrase-matched
+// Uses /api/check (same engine as pages/ocr.js) - synonyms are phrase-matched
 // only, not tokenized, which avoids false positives like "Other Anti-estrogens"
 // matching on generic words in product names.
 
@@ -29,7 +29,7 @@ async function fetchImageBuffer(imageUrl) {
   const res = await fetch(imageUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; CheckPeak/1.0)",
-      // Explicitly exclude WebP/AVIF — Textract doesn't support them.
+      // Explicitly exclude WebP/AVIF - Textract doesn't support them.
       // CDNs respect this and serve JPEG/PNG when available.
       "Accept": "image/jpeg,image/png,image/tiff,application/pdf,image/*;q=0.5",
     },
@@ -78,7 +78,7 @@ function formatFlag(b) {
   const by      = b.fields?.["Banned By"]      || "";
   const limit   = b.fields?.["Dosage Limit"]   || "";
   const extras  = [banType, by, limit].filter(Boolean).join(", ");
-  return extras ? `${name} — ${extras}` : name;
+  return extras ? `${name} - ${extras}` : name;
 }
 
 function formatResponse(checkData, source) {
@@ -93,7 +93,7 @@ function formatResponse(checkData, source) {
   if (hardBanned.length > 0) {
     return {
       status:  "flagged",
-      summary: "Banned substance detected — do not prescribe to athlete",
+      summary: "Banned substance detected - do not prescribe to athlete",
       flags:   hardBanned.map(formatFlag),
       source,
     };
@@ -102,7 +102,7 @@ function formatResponse(checkData, source) {
   if (softBanned.length > 0) {
     return {
       status:  "caution",
-      summary: "Contains monitored or limited substances — verify with athlete's governing body",
+      summary: "Contains monitored or limited substances - verify with athlete's governing body",
       flags:   softBanned.map(formatFlag),
       source,
     };
@@ -111,7 +111,7 @@ function formatResponse(checkData, source) {
   return {
     status:  "clear",
     summary: source === "label"
-      ? "No flags detected — label scanned against your banned substance database"
+      ? "No flags detected - label scanned against your banned substance database"
       : "No flags detected against your banned substance database (name-based scan)",
     flags: [],
     source,
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
       if (!isTextractSupported(contentType)) {
         return res.status(200).json({
           status:  "caution",
-          summary: `Label is ${contentType} — Textract requires JPEG or PNG. Update the label URL in SmartStack.`,
+          summary: `Label is ${contentType} - Textract requires JPEG or PNG. Update the label URL in SmartStack.`,
           flags:   [],
           source:  "label-unsupported-format",
         });
@@ -157,7 +157,7 @@ export default async function handler(req, res) {
       // Textract read the image but found no text (e.g. image is a photo, not a clean label)
       return res.status(200).json({
         status:  "caution",
-        summary: "Could not extract text from label — review ingredients manually before prescribing",
+        summary: "Could not extract text from label - review ingredients manually before prescribing",
         flags:   [],
         source:  "label-ocr-empty",
       });
@@ -165,7 +165,7 @@ export default async function handler(req, res) {
       console.warn("[supplement-scan] Label OCR failed:", err.message);
       return res.status(200).json({
         status:  "caution",
-        summary: "Could not read nutrition label — review ingredients manually before prescribing",
+        summary: "Could not read nutrition label - review ingredients manually before prescribing",
         flags:   [],
         source:  "label-error",
       });
@@ -178,7 +178,7 @@ export default async function handler(req, res) {
   // prompt the coach to add the nutrition label URL to SmartStack instead.
   return res.status(200).json({
     status:  "caution",
-    summary: "No nutrition label on file — add a label to SmartStack for a full ingredient scan",
+    summary: "No nutrition label on file - add a label to SmartStack for a full ingredient scan",
     flags:   [],
     source:  "no-label",
   });

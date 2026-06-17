@@ -1,5 +1,5 @@
 // pages/api/org/workouts/range.js
-// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD[&sport=x] — workouts across a date range.
+// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD[&sport=x] - workouts across a date range.
 
 import { readUserCookie } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

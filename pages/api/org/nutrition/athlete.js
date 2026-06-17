@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/athlete.js
-// GET ?athleteToken= — returns single athlete's nutrition profile (plans + completions).
+// GET ?athleteToken= - returns single athlete's nutrition profile (plans + completions).
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";

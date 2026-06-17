@@ -1,5 +1,5 @@
 // pages/api/org/reviewQueue/getReviewQueue.js
-// GET — fetches workout completions (Supabase) + class attendance (Supabase/Airtable),
+// GET - fetches workout completions (Supabase) + class attendance (Supabase/Airtable),
 // merges them into a single list sorted by date desc.
 
 import Airtable from "airtable";
@@ -51,7 +51,7 @@ async function fetchWorkoutCompletions(orgId) {
   if (!orgId) return [];
 
   // Filter by org via daily_workouts.org_id (workout_completions.org_id is often null
-  // because completeItem never wrote it — daily_workouts.org_id is the reliable path).
+  // because completeItem never wrote it - daily_workouts.org_id is the reliable path).
   // !inner on both join hops so PostgREST lets us filter on the nested column.
   const { data, error } = await db
     .from("workout_completions")

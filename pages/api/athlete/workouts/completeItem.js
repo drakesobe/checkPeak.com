@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/completeItem.js
-// POST (multipart/form-data) — athlete marks a workout item complete, optionally uploading evidence.
+// POST (multipart/form-data) - athlete marks a workout item complete, optionally uploading evidence.
 
 import formidable from "formidable";
 import { requireAthlete } from "@/lib/requireAthlete";
@@ -157,7 +157,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Upsert completion (no attachment_url — photos go in completion_evidence)
+    // Upsert completion (no attachment_url - photos go in completion_evidence)
     const { data: completion, error: wcErr } = await db
       .from("workout_completions")
       .upsert(
@@ -175,7 +175,7 @@ export default async function handler(req, res) {
 
     if (wcErr) return res.status(500).json({ error: "Failed to save completion.", details: wcErr.message });
 
-    // Store evidence in completion_evidence (normalized — not on the completion row)
+    // Store evidence in completion_evidence (normalized - not on the completion row)
     if (attachUrl && completion?.id) {
       await db.from("completion_evidence").insert({
         workout_completion_id: completion.id,

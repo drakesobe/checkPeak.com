@@ -1,5 +1,5 @@
 // pages/api/org/updateAthleteMeta.js
-// PATCH — updates sport or status on an athlete that belongs to this org.
+// PATCH - updates sport or status on an athlete that belongs to this org.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

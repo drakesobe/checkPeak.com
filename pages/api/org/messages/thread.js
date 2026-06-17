@@ -1,5 +1,5 @@
 // pages/api/org/messages/thread.js
-// GET ?athleteId=uuid&_authUser=... — fetch full message thread between coach and one athlete.
+// GET ?athleteId=uuid&_authUser=... - fetch full message thread between coach and one athlete.
 // Also marks incoming (from_coach=false) messages as read.
 
 import { supabaseAdmin as db } from "@/lib/supabase";

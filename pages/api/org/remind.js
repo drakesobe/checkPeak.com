@@ -1,5 +1,5 @@
 // pages/api/org/remind.js
-// POST { athleteId } — send a push notification reminding an athlete to complete today's workout.
+// POST { athleteId } - send a push notification reminding an athlete to complete today's workout.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { readUserCookie }      from "@/lib/requireUser";
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       body:    JSON.stringify([{
         to:      token,
         title:   "Time to grind 💪",
-        body:    `${orgName} is checking in — don't forget today's workout!`,
+        body:    `${orgName} is checking in - don't forget today's workout!`,
         data:    { type: "workout_reminder" },
         sound:   "default",
         channel: "default",

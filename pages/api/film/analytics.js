@@ -1,6 +1,6 @@
 // pages/api/film/analytics.js
 // GET ?filmId=uuid
-// Returns EPA, drives, direction, tempo, motion, personnel, pressure — all server-side.
+// Returns EPA, drives, direction, tempo, motion, personnel, pressure - all server-side.
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";

@@ -1,6 +1,6 @@
 // pages/api/org/billing/activate-free.js
 // Activates the free Starter plan (1-10 athletes) for an organization.
-// No Stripe involved — writes BillingStatus: "Free" directly to Airtable.
+// No Stripe involved - writes BillingStatus: "Free" directly to Airtable.
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import { upsertBillingForOrgToken, F } from "@/lib/airtableBilling";
 

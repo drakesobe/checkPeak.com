@@ -1,5 +1,5 @@
 // pages/api/org/workouts/update.js
-// POST { id, title?, date?, sport?, status? } — patches a daily workout.
+// POST { id, title?, date?, sport?, status? } - patches a daily workout.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { updateOrgWorkout } from "@/lib/supabaseOrg";

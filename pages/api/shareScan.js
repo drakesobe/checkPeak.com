@@ -1,5 +1,5 @@
 // pages/api/shareScan.js
-// POST { scanId, enable } — toggles sharing for a scan.
+// POST { scanId, enable } - toggles sharing for a scan.
 
 import crypto from "crypto";
 import { supabaseAdmin as db } from "@/lib/supabase";

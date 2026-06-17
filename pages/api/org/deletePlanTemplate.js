@@ -1,5 +1,5 @@
 // pages/api/org/deletePlanTemplate.js
-// DELETE { templateId } — deletes a plan template, verifying org ownership.
+// DELETE { templateId } - deletes a plan template, verifying org ownership.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

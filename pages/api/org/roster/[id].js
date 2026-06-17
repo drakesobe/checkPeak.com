@@ -1,6 +1,6 @@
 // pages/api/org/roster/[id].js
-// PUT    — update a player's details
-// DELETE — soft-delete (sets active=false)
+// PUT    - update a player's details
+// DELETE - soft-delete (sets active=false)
 
 import { readUserCookie } from "@/lib/requireUser";
 import { createClient }   from "@supabase/supabase-js";

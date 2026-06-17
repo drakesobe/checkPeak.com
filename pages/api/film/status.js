@@ -1,5 +1,5 @@
 // pages/api/film/status.js
-// GET — poll processing status for a single film.
+// GET - poll processing status for a single film.
 // Query: ?filmId=uuid&_authUser=...
 // Returns: { status, progressPct, playCount, error? }
 // Mobile polls this every 5s after upload completes.

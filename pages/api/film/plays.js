@@ -1,6 +1,6 @@
 // pages/api/film/plays.js
-// GET  — list plays for a film with per-play player metrics.
-// POST — manually tag / update a play (coach input).
+// GET  - list plays for a film with per-play player metrics.
+// POST - manually tag / update a play (coach input).
 // Query (GET):  ?filmId=uuid&_authUser=...
 // Body  (POST): { filmId, playId?, playNumber, result, playType, down, distance, yardsGained, formation }
 

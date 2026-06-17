@@ -1,5 +1,5 @@
 // pages/api/verify-org-token.js
-// GET ?token= — verifies an org token, returns org name.
+// GET ?token= - verifies an org token, returns org name.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

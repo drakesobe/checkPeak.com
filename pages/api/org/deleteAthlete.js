@@ -1,5 +1,5 @@
 // pages/api/org/deleteAthlete.js
-// DELETE — removes an athlete that belongs to this org.
+// DELETE - removes an athlete that belongs to this org.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

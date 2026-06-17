@@ -1,5 +1,5 @@
 // pages/api/film/confirm-jersey.js
-// POST — confirm (or correct) a jersey assignment for a rekognition track ID.
+// POST - confirm (or correct) a jersey assignment for a rekognition track ID.
 // Updating ONE track_id updates ALL plays for that person in the film.
 
 import { readUserCookie } from "@/lib/requireUser";

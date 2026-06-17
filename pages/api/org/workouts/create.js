@@ -1,5 +1,5 @@
 // pages/api/org/workouts/create.js
-// POST — creates daily workouts for one or more athletes on one or more dates.
+// POST - creates daily workouts for one or more athletes on one or more dates.
 // Fully migrated to Supabase.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
       createdDailyWorkouts,
       totalWorkouts:     createdDailyWorkouts.length,
       warning:           normalizedItems.length === 0
-        ? "No workout items created — no items had ExerciseName set."
+        ? "No workout items created - no items had ExerciseName set."
         : null,
     });
   } catch (err) {

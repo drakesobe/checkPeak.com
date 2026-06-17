@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/logs.js
-// GET ?exerciseTitle=&days=120&limit=500 — fetch set logs for the athlete.
+// GET ?exerciseTitle=&days=120&limit=500 - fetch set logs for the athlete.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

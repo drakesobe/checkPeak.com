@@ -1,5 +1,5 @@
 // pages/api/saveStack.js
-// POST { UserEmail, stack: { id, notes? } } — saves a stack for a user.
+// POST { UserEmail, stack: { id, notes? } } - saves a stack for a user.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

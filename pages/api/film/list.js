@@ -1,5 +1,5 @@
 // pages/api/film/list.js
-// GET — returns all game films for the coach's org.
+// GET - returns all game films for the coach's org.
 // Query: ?_authUser=...&limit=20&offset=0
 
 import { createClient } from "@supabase/supabase-js";

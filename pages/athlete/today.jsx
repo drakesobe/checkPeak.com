@@ -50,7 +50,7 @@ function computeStreak(who) {
     if (hasActivity) {
       streak++;
     } else if (ds === todayStr) {
-      // Today not yet logged — skip it, check yesterday
+      // Today not yet logged - skip it, check yesterday
     } else {
       break;
     }
@@ -867,7 +867,7 @@ export default function AthleteToday() {
   // ── All-done state ────────────────────────────────────────────────────────
   const [showAllDone, setShowAllDone] = useState(false);
   const [reviewMode,  setReviewMode]  = useState(false);
-  // True once we've seen at least one incomplete item this session —
+  // True once we've seen at least one incomplete item this session -
   // prevents the celebration firing on page load when everything is pre-done.
   const seenIncompleteRef = useRef(false);
 

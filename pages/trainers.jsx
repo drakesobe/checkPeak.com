@@ -102,6 +102,13 @@ function TrainerCard({ trainer, idx }) {
   const tiers  = ["Basic", "Premium", "Ultra"].filter(t => tierAvailable(f, t));
   const initials = (f.name ?? "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 
+  const bannerBg = f.photoUrl
+    ? `url(${f.photoUrl})`
+    : `radial-gradient(ellipse 120% 100% at 60% 50%, rgba(218,54,51,0.18) 0%, transparent 70%),
+       repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(255,255,255,0.007) 23px, rgba(255,255,255,0.007) 24px),
+       repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(255,255,255,0.007) 23px, rgba(255,255,255,0.007) 24px),
+       ${D.bgSection}`;
+
   return (
     <Link href={`/trainer/${f.slug}`} style={{ textDecoration: "none", display: "block" }}>
       <div className="ac" style={{
@@ -115,63 +122,75 @@ function TrainerCard({ trainer, idx }) {
         position:      "relative",
         animation:     `fadeUp 0.38s ease ${Math.min(idx * 0.04, 0.4)}s both`,
       }}>
-        {/* Hover top bar */}
-        <div className="rbar" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: D.red, zIndex: 2 }} />
 
-        {/* Hero block */}
+        {/* ── Photo banner ── */}
         <div style={{
-          padding:    "18px 20px 14px",
-          background: `
-            radial-gradient(ellipse 80% 60% at 50% 110%, rgba(218,54,51,0.06) 0%, transparent 65%),
-            repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(255,255,255,0.007) 23px, rgba(255,255,255,0.007) 24px),
-            repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(255,255,255,0.007) 23px, rgba(255,255,255,0.007) 24px),
-            ${D.bgSection}
-          `,
+          position:           "relative",
+          height:             100,
+          backgroundImage:    bannerBg,
+          backgroundSize:     f.photoUrl ? "cover" : "auto",
+          backgroundPosition: "center top",
+          flexShrink:         0,
         }}>
-          {/* Avatar + specialty row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <div style={{ width: 38, height: 38, borderRadius: "50%", overflow: "hidden", background: `rgba(218,54,51,0.12)`, border: `0.5px solid rgba(218,54,51,0.25)`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {f.photoUrl
-                ? <img src={f.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <span style={{ fontSize: 13, fontWeight: 900, color: D.red }}>{initials}</span>
-              }
-            </div>
-            <div>
-              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint }}>
-                {spec.icon} {spec.short}
+          {/* Bottom-fade scrim so specialty badge is always readable */}
+          <div style={{
+            position:   "absolute", inset: 0,
+            background: "linear-gradient(to bottom, transparent 40%, rgba(7,8,8,0.72) 100%)",
+          }} />
+
+          {/* Specialty badge - bottom-left of banner */}
+          <div style={{
+            position: "absolute", bottom: 10, left: 14,
+            display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <span style={{ fontSize: 11 }}>{spec.icon}</span>
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
+              {spec.short}
+            </span>
+          </div>
+
+          {/* Fallback initials centered when no photo */}
+          {!f.photoUrl && (
+            <div style={{
+              position: "absolute", inset: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <span style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontWeight: 900, fontStyle: "italic",
+                fontSize: "4rem", color: "rgba(218,54,51,0.25)",
+                letterSpacing: "-0.04em", textTransform: "uppercase", userSelect: "none",
+              }}>
+                {initials}
               </span>
             </div>
-          </div>
-
-          {/* Name */}
-          <div>
-            {parts.map((p, i) => (
-              <div key={i} style={{
-                fontFamily:    "'Barlow Condensed', sans-serif",
-                fontWeight:    900,
-                fontStyle:     "italic",
-                fontSize:      "clamp(1.3rem, 3vw, 1.75rem)",
-                lineHeight:    0.88,
-                letterSpacing: "-0.025em",
-                textTransform: "uppercase",
-                color:         D.text,
-              }}>
-                {p}
-              </div>
-            ))}
-          </div>
+          )}
         </div>
 
-        {/* Divider */}
-        <div style={{ height: "0.5px", background: D.border }} />
+        {/* ── Name block ── */}
+        <div style={{ padding: "14px 16px 10px" }}>
+          {parts.map((p, i) => (
+            <div key={i} style={{
+              fontFamily:    "'Barlow Condensed', sans-serif",
+              fontWeight:    900,
+              fontStyle:     "italic",
+              fontSize:      "clamp(1.4rem, 3vw, 1.9rem)",
+              lineHeight:    0.9,
+              letterSpacing: "-0.025em",
+              textTransform: "uppercase",
+              color:         D.text,
+            }}>
+              {p}
+            </div>
+          ))}
+        </div>
 
-        {/* Body */}
-        <div style={{ padding: "14px 20px", flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* ── Body ── */}
+        <div style={{ padding: "0 16px 12px", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
 
-          {/* Client count */}
           {(f.activeClientCount ?? 0) > 0 && (
-            <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "1.3rem", lineHeight: 1, color: D.text }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "1.1rem", color: D.text }}>
                 {f.activeClientCount}
               </span>
               <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: D.faint }}>
@@ -180,16 +199,14 @@ function TrainerCard({ trainer, idx }) {
             </div>
           )}
 
-          {/* Bio */}
           {f.bio && (
-            <p className="bio-clamp" style={{ fontSize: 11, color: D.faint, lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            <p className="bio-clamp" style={{ fontSize: 11, color: D.faint, lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", margin: 0 }}>
               {f.bio}
             </p>
           )}
 
-          {/* Tier pricing */}
           {tiers.length > 0 && (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: "auto", paddingTop: 4 }}>
               {tiers.map(tier => {
                 const tc    = TIER_COLORS[tier];
                 const price = Number(f[`${tier.toLowerCase()}Price`]);
@@ -203,8 +220,8 @@ function TrainerCard({ trainer, idx }) {
           )}
         </div>
 
-        {/* Footer CTA */}
-        <div style={{ padding: "11px 20px", borderTop: `0.5px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* ── Footer CTA ── */}
+        <div style={{ padding: "10px 16px", borderTop: `0.5px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span className="cta" style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.red }}>
             Start Training →
           </span>
@@ -222,7 +239,7 @@ function TrainerCard({ trainer, idx }) {
 // ─── Skeleton card ────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div style={{ height: 260, background: D.bgCard, border: `0.5px solid ${D.border}`, borderRadius: 3, animation: "pulse 1.5s ease-in-out infinite" }} />
+    <div style={{ height: 310, background: D.bgCard, border: `0.5px solid ${D.border}`, borderRadius: 3, animation: "pulse 1.5s ease-in-out infinite" }} />
   );
 }
 

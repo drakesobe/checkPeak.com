@@ -141,7 +141,7 @@ export default function AthleteNutritionProfilePage() {
       {showBillingWarning && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
           style={{ backgroundColor: "#FFFBF0", border: "1px solid #FFE0A8", color: "#7A4A0A" }}>
-          <span>⚠ Billing requires attention — your organization's subscription is not active.</span>
+          <span>⚠ Billing requires attention - your organization's subscription is not active.</span>
           <button type="button" onClick={() => router.push("/account")}
             className="shrink-0 px-3 py-1 font-black uppercase tracking-wider"
             style={{ backgroundColor: "#E87722", color: "#fff", border: "none", cursor: "pointer" }}

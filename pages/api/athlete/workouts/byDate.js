@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/byDate.js
-// GET ?date=YYYY-MM-DD — returns all daily workouts for the athlete on a specific date.
+// GET ?date=YYYY-MM-DD - returns all daily workouts for the athlete on a specific date.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

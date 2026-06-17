@@ -123,7 +123,7 @@ export default async function handler(req, res) {
         }
       }
     } else {
-      return res.status(400).json({ error: "Organization has no Airtable ID or token — billing unavailable." });
+      return res.status(400).json({ error: "Organization has no Airtable ID or token - billing unavailable." });
     }
 
     // Post-process: if sandbox expired, flip to Not Started (do not override Trial/Active)

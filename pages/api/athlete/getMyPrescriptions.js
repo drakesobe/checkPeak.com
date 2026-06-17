@@ -1,5 +1,5 @@
 // pages/api/athlete/getMyPrescriptions.js
-// GET — returns this athlete's nutrition plans as "prescriptions".
+// GET - returns this athlete's nutrition plans as "prescriptions".
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

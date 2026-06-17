@@ -1,5 +1,5 @@
 // pages/api/org/workouts/detail.js
-// GET ?id=<uuid> — full workout detail + sibling workouts.
+// GET ?id=<uuid> - full workout detail + sibling workouts.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

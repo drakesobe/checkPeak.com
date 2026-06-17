@@ -1,5 +1,5 @@
 // pages/api/org/getAthletes.js
-// GET — returns all athletes linked to this org.
+// GET - returns all athletes linked to this org.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { getAthletesByOrgToken } from "@/lib/supabaseOrg";

@@ -1,5 +1,5 @@
 // pages/api/org/nutrition/queue.js
-// GET — weekly adherence queue for all org athletes.
+// GET - weekly adherence queue for all org athletes.
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
   const weeklyExpected = weeklyExpectedChecks(now);
 
   try {
-    // 1) Fetch athletes — try with reminder columns; fall back to minimal if they don't exist yet
+    // 1) Fetch athletes - try with reminder columns; fall back to minimal if they don't exist yet
     let athletes = null;
     let hasReminderCols = false;
 

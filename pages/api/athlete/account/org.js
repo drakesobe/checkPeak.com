@@ -1,5 +1,5 @@
 // pages/api/athlete/account/org.js
-// GET — returns the athlete's connected organization info.
+// GET - returns the athlete's connected organization info.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireAthlete } from "@/lib/requireAthlete";

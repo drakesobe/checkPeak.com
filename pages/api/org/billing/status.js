@@ -3,7 +3,7 @@ import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
 import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/airtableBilling";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
-// In-memory cache — survives across warm serverless invocations.
+// In-memory cache - survives across warm serverless invocations.
 // Billing status changes infrequently; 5 min TTL is safe.
 const _cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;

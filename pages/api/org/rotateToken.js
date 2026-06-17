@@ -1,5 +1,5 @@
 // pages/api/org/rotateToken.js
-// POST — generates a new org token for the authenticated organization.
+// POST - generates a new org token for the authenticated organization.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

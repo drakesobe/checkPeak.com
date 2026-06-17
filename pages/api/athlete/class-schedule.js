@@ -1,6 +1,6 @@
 // pages/api/athlete/class-schedule.js
-// GET  — returns recurring class schedules for this athlete
-// POST { schedules[] } — upserts recurring class schedules
+// GET  - returns recurring class schedules for this athlete
+// POST { schedules[] } - upserts recurring class schedules
 //
 // Schedules are stored as a JSONB blob in the class_schedules table.
 // Auth: _authUser cookie fallback for React Native.

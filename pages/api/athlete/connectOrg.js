@@ -1,5 +1,5 @@
 // pages/api/athlete/connectOrg.js
-// POST { token, email? } — athlete connects to org by entering the org token code.
+// POST { token, email? } - athlete connects to org by entering the org token code.
 // Updates athlete.org_token in Supabase.
 
 import { supabaseAdmin as db } from "@/lib/supabase";

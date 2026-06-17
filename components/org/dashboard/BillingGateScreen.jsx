@@ -12,7 +12,7 @@ function deriveState(billing) {
   if (s.includes("cancel"))                             return "canceled";
   if (s === "active")                                   return "active";
   if (s.includes("trial"))                              return "trial_ended";
-  // No status at all — check if sandbox data exists
+  // No status at all - check if sandbox data exists
   if (billing?.sandboxEnds)                             return "sandbox_expired";
   return "not_started";
 }

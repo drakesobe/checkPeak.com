@@ -1,6 +1,6 @@
 // pages/api/org/roster/index.js
-// GET  — list active roster players sorted by jersey number
-// POST — add or update a player (upsert on jersey number)
+// GET  - list active roster players sorted by jersey number
+// POST - add or update a player (upsert on jersey number)
 
 import { readUserCookie } from "@/lib/requireUser";
 import { createClient }   from "@supabase/supabase-js";

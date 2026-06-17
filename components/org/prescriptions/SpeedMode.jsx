@@ -31,7 +31,7 @@ const DS = {
 
 const PHASES = ["Maintain", "Bulk", "Cut", "Surplus", "Deficit"];
 
-// Suggested macro starting points per phase — trainer adjusts from here
+// Suggested macro starting points per phase - trainer adjusts from here
 const PHASE_PRESETS = {
   Maintain: { calories: "3200", proteinGrams: "185", carbsGrams: "360", fatsGrams: "95"  },
   Bulk:     { calories: "4200", proteinGrams: "225", carbsGrams: "480", fatsGrams: "110" },
@@ -76,7 +76,7 @@ function MacroRow({ label, unit, value, onChange, lastValue }) {
         className="text-right text-xs tabular-nums"
         style={{ color: hasLast ? DS.dimText : "transparent", userSelect: "none" }}
       >
-        {hasLast ? lastValue : "—"}
+        {hasLast ? lastValue : "-"}
       </span>
       <ChevronRight className="h-3 w-3 shrink-0" style={{ color: DS.dimText }} />
       <input
@@ -471,7 +471,7 @@ export default function SpeedMode({
             <div>
               <div className="flex items-baseline justify-between mb-2">
                 <p className="text-xs font-black uppercase tracking-widest" style={{ color: DS.dimText }}>Phase</p>
-                <p className="text-xs" style={{ color: DS.dimText }}>Loads suggested macros — adjust to fit the athlete</p>
+                <p className="text-xs" style={{ color: DS.dimText }}>Loads suggested macros - adjust to fit the athlete</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {PHASES.map((ph) => {
@@ -517,7 +517,7 @@ export default function SpeedMode({
                 style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}
               >
                 <p className="text-xs" style={{ color: DS.labelText }}>
-                  Previous plan on file — load it and adjust, or enter fresh numbers below.
+                  Previous plan on file - load it and adjust, or enter fresh numbers below.
                 </p>
                 <button
                   type="button"
@@ -627,7 +627,7 @@ export default function SpeedMode({
                     onScanResult={handleScanResult}
                   />
                 ))}
-                {/* Electrolytes — no SmartStack category, stays as text */}
+                {/* Electrolytes - no SmartStack category, stays as text */}
                 <SuppRow
                   label="Electrolytes"
                   value={structured?.electrolytesRecommendation ?? ""}
@@ -679,7 +679,7 @@ export default function SpeedMode({
                 className="flex items-center gap-2 px-5 py-2 text-xs font-bold"
                 style={{ backgroundColor: "#FFF0F0", borderTop: "1px solid #FFC8C8", color: "#C8102E" }}
               >
-                ⛔ A selected supplement contains a banned substance — verify before prescribing
+                ⛔ A selected supplement contains a banned substance - verify before prescribing
               </div>
             )}
           <div

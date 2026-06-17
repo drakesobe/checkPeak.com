@@ -1,6 +1,6 @@
 // pages/api/film/player-stats.js
-// GET — aggregate player_tracks by jersey across all films (or one film) for an org.
-// Query: ?filmId=uuid (optional — omit for all films)
+// GET - aggregate player_tracks by jersey across all films (or one film) for an org.
+// Query: ?filmId=uuid (optional - omit for all films)
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";

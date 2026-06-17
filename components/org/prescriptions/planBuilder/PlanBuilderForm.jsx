@@ -405,7 +405,7 @@ function AthleteHeader({ selectedAthlete, selectedAthleteEmail, hist, tpl }) {
         )}
       </div>
 
-      {/* Templates strip — always visible when athlete is selected */}
+      {/* Templates strip - always visible when athlete is selected */}
       {present && <TemplateStrip tpl={tpl} />}
     </div>
   );
@@ -568,7 +568,7 @@ export default function PlanBuilderForm({
         if (ready) onSave?.(e);
         return;
       }
-      // Ctrl/Cmd+Enter → Save & Next (skip textareas — they handle it themselves)
+      // Ctrl/Cmd+Enter → Save & Next (skip textareas - they handle it themselves)
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         if ((e.target?.tagName || "").toLowerCase() === "textarea") return;
         e.preventDefault();
@@ -682,7 +682,7 @@ export default function PlanBuilderForm({
       />
 
       {/* ═══════════════════════════════════
-          DAILY TARGETS — always visible
+          DAILY TARGETS - always visible
       ═══════════════════════════════════ */}
       <div style={{ borderBottom: `1px solid ${DS.border}` }}>
 
@@ -705,7 +705,7 @@ export default function PlanBuilderForm({
             <div className="flex items-center gap-2 mb-2.5">
               <Zap className="h-3.5 w-3.5" style={{ color: DS.brand }} />
               <span className="text-xs font-black uppercase tracking-wider" style={{ color: DS.brand }}>Quick Presets</span>
-              <span className="text-xs" style={{ color: DS.dimText }}>— fills all targets instantly</span>
+              <span className="text-xs" style={{ color: DS.dimText }}>- fills all targets instantly</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {PRESETS.map((p) => {
@@ -792,7 +792,7 @@ export default function PlanBuilderForm({
       </div>
 
       {/* ═══════════════════════════════════
-          MEAL DISTRIBUTION — collapsible
+          MEAL DISTRIBUTION - collapsible
       ═══════════════════════════════════ */}
       <SectionHeader
         label="Meal Distribution"
@@ -809,7 +809,7 @@ export default function PlanBuilderForm({
       )}
 
       {/* ═══════════════════════════════════
-          SUPPLEMENTS — collapsible
+          SUPPLEMENTS - collapsible
       ═══════════════════════════════════ */}
       <SectionHeader
         label="Supplements"
@@ -878,7 +878,7 @@ export default function PlanBuilderForm({
       )}
 
       {/* ═══════════════════════════════════
-          COACH NOTES — collapsible
+          COACH NOTES - collapsible
       ═══════════════════════════════════ */}
       <SectionHeader
         label="Coach Notes"
@@ -902,7 +902,7 @@ export default function PlanBuilderForm({
                   else onSaveNext?.(e);
                 }
               }}
-              placeholder="e.g. lactose sensitive — avoid whey. Increase carbs on heavy practice days. Prioritize sleep and avoid fast food during the season…"
+              placeholder="e.g. lactose sensitive - avoid whey. Increase carbs on heavy practice days. Prioritize sleep and avoid fast food during the season…"
               onFocus={(e) => { e.currentTarget.style.borderColor = DS.brand; }}
               onBlur={(e)  => { e.currentTarget.style.borderColor = DS.brandBorder; }}
             />
@@ -944,7 +944,7 @@ export default function PlanBuilderForm({
       )}
 
       {/* ═══════════════════════════════════
-          PLAN HISTORY — collapsible, auto-loads
+          PLAN HISTORY - collapsible, auto-loads
       ═══════════════════════════════════ */}
       <SectionHeader
         label="Plan History"
@@ -986,7 +986,7 @@ export default function PlanBuilderForm({
             className="flex items-center gap-2 px-5 py-2 text-xs font-bold"
             style={{ backgroundColor: DS.bannedBg, borderTop: `1px solid ${DS.bannedBorder}`, color: DS.banned }}
           >
-            ⛔ A selected supplement contains a banned substance — verify before prescribing
+            ⛔ A selected supplement contains a banned substance - verify before prescribing
           </div>
         )}
       <div

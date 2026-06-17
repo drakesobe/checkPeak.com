@@ -22,6 +22,7 @@ export default async function handler(req, res) {
           slug:              r.fields.slug              ?? "",
           specialty:         r.fields.specialty         ?? "",
           bio:               r.fields.bio               ?? "",
+          photoUrl:          r.fields.photoUrl          ?? null,
           basicPrice:        r.fields.basicPrice        ?? null,
           premiumPrice:      r.fields.premiumPrice      ?? null,
           ultraPrice:        r.fields.ultraPrice        ?? null,

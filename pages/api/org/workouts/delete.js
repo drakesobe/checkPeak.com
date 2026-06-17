@@ -1,5 +1,5 @@
 // pages/api/org/workouts/delete.js
-// POST { id } — hard-deletes a daily workout after verifying org ownership.
+// POST { id } - hard-deletes a daily workout after verifying org ownership.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

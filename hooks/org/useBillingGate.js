@@ -55,7 +55,7 @@ export function useBillingGate({ user, role, isOrgSide }) {
 
   return useMemo(() => {
     const rawIsPaidOk = Boolean(billing?.isPaidOk);
-    // Admins/org bypass the hard gate — they can always enter to fix billing
+    // Admins/org bypass the hard gate - they can always enter to fix billing
     const isPaidOk    = isAdminBypass || rawIsPaidOk;
     return {
       billingLoading,

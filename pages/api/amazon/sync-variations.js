@@ -90,7 +90,7 @@ export default async function handler(req, res) {
       });
 
       synced++;
-      console.log(`[sync-variations] ✓ ${asin} — ${variations.length} variations`);
+      console.log(`[sync-variations] ✓ ${asin} - ${variations.length} variations`);
     } catch (err) {
       errors++;
       errorList.push(`${asin}: ${err.message}`);

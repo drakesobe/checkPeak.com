@@ -135,7 +135,7 @@ export default async function handler(req, res) {
     .select('id')
     .single();
 
-  // Unique index conflict = race condition duplicate — fetch and return existing
+  // Unique index conflict = race condition duplicate - fetch and return existing
   if (dwErr?.code === '23505') {
     const { data: raceExisting } = await supabase
       .from('daily_workouts')

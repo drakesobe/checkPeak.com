@@ -1,5 +1,5 @@
 // pages/api/film/presign.js
-// POST — generate an S3 presigned URL for direct video upload + create DB record.
+// POST - generate an S3 presigned URL for direct video upload + create DB record.
 // Mobile sends: { title, sport, gameDate?, opponent? }
 // Returns:      { filmId, uploadUrl, s3Key, expiresIn }
 
@@ -22,7 +22,7 @@ const supabase = createClient(
 );
 
 const BUCKET      = process.env.FILM_S3_BUCKET ?? "checkpeak-film-raw";
-const EXPIRES_SEC = 900; // 15 min — enough for a 4GB upload on a good connection
+const EXPIRES_SEC = 900; // 15 min - enough for a 4GB upload on a good connection
 
 function parseUser(req) {
   // Mobile: _authUser in body

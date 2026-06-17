@@ -1,5 +1,5 @@
 // pages/api/org/members/update.js
-// PATCH — updates a member's role, name, or active status.
+// PATCH - updates a member's role, name, or active status.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { updateMember } from "@/lib/supabaseOrg";

@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch push tokens — athleteIds may be UUIDs or athlete_tokens
+    // Fetch push tokens - athleteIds may be UUIDs or athlete_tokens
     const looksLikeUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(athleteIds[0] || ""));
 
     const { data: records, error } = looksLikeUUID

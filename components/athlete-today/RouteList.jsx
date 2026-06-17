@@ -500,7 +500,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                 </>
               )}
             </div>
-            {/* Persistent swipe affordance — faint hint so athletes always know the gesture */}
+            {/* Persistent swipe affordance - faint hint so athletes always know the gesture */}
             {!allDone && !isReadOnly && !expanded && (
               <div style={{ display: "flex", alignItems: "center", gap: 1, opacity: 0.18 }}>
                 <span style={{ fontSize: 7, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.white }}>swipe</span>
@@ -566,7 +566,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                     lineHeight: 1, textAlign: "center",
                     transition: "color 0.18s",
                   }}>{label}</span>
-                  {/* Tap hint — only when not done */}
+                  {/* Tap hint - only when not done */}
                   {!done && (
                     <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.18)" }}>
                       tap to mark
@@ -610,7 +610,7 @@ function MealRow({ item, nutritionCompletion, expanded, onToggleExpand, onToggle
                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, marginTop: 4 }}>
                   <div style={{ width: 3, height: 3, borderRadius: "50%", background: D.muted, flexShrink: 0 }} />
                   <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: D.muted }}>
-                    Daily targets — distribute across your meals
+                    Daily targets - distribute across your meals
                   </span>
                 </div>
               )}

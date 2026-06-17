@@ -1,5 +1,5 @@
 // pages/api/get-org-by-token.js
-// GET ?token= — returns org name for a given org token.
+// GET ?token= - returns org name for a given org token.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

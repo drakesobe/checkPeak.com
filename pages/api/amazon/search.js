@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     if (err.message.includes("AssociateNotEligible")) {
       return res.status(503).json({
         error: "Amazon API not yet active.",
-        detail: "Your Associates account needs 10 qualifying sales within the past 30 days before Creator API access activates. No code changes needed — check back once you hit the threshold.",
+        detail: "Your Associates account needs 10 qualifying sales within the past 30 days before Creator API access activates. No code changes needed - check back once you hit the threshold.",
       });
     }
 

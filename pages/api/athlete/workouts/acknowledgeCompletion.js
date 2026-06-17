@@ -1,5 +1,5 @@
 // pages/api/athlete/workouts/acknowledgeCompletion.js
-// POST { completionId } — athlete acknowledges a rejected completion.
+// POST { completionId } - athlete acknowledges a rejected completion.
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

@@ -1,5 +1,5 @@
 // pages/api/removeSavedStack.js
-// DELETE { UserEmail, recordId? | stackId? } — removes a saved stack.
+// DELETE { UserEmail, recordId? | stackId? } - removes a saved stack.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 

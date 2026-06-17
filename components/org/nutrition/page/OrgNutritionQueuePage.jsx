@@ -303,7 +303,7 @@ function Avatar({ name, size = 36 }) {
 // ─── Plan badge ───────────────────────────────────────────────────────────────
 function PlanBadge({ plan }) {
   if (!plan) return (
-    <span style={{ fontFamily:"var(--font-display)", fontSize:11, color:"var(--muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.04em" }}>—</span>
+    <span style={{ fontFamily:"var(--font-display)", fontSize:11, color:"var(--muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.04em" }}>-</span>
   );
   const phase = plan.phase || "Maintain";
   const cal   = plan.calories ? `${Number(plan.calories).toLocaleString()} cal` : null;
@@ -335,7 +335,7 @@ function CaraChip({ status }) {
   );
 }
 
-// ─── Stats bar (clickable — sets active filter) ───────────────────────────────
+// ─── Stats bar (clickable - sets active filter) ───────────────────────────────
 function StatsBar({ rows, activeFilter, onFilter }) {
   const isMobile = useIsMobile();
   const total    = rows.length;
@@ -350,14 +350,14 @@ function StatsBar({ rows, activeFilter, onFilter }) {
   const tiles = isMobile ? [
     { key:"action",      label:"Need Action", value:action,                          valueColor:action>0?"var(--red)":"var(--green)",  clickable:true  },
     { key:"noCheckin",   label:"No Check-In", value:noCI,                            valueColor:noCI>0?"var(--amber)":"var(--muted)", clickable:true  },
-    { key:null,          label:"Avg WTD",     value:adh!=null?`${adh}%`:"—",         valueColor:adhColor,                             clickable:false },
+    { key:null,          label:"Avg WTD",     value:adh!=null?`${adh}%`:"-",         valueColor:adhColor,                             clickable:false },
     { key:"onTrack",     label:"On Track",    value:onTrack,                         valueColor:onTrack>0?"var(--green)":"var(--muted)",clickable:true },
   ] : [
     { key:"all",         label:"Total",       value:total,                           valueColor:"var(--brand)",                        clickable:true  },
     { key:"action",      label:"Need Action", value:action,                          valueColor:action>0?"var(--red)":"var(--green)",  clickable:true  },
     { key:"noPlan",      label:"No Plan",     value:noPlan,                          valueColor:noPlan>0?"var(--red)":"var(--muted)", clickable:true  },
     { key:"noCheckin",   label:"No Check-In", value:noCI,                            valueColor:noCI>0?"var(--amber)":"var(--muted)",clickable:true  },
-    { key:null,          label:"Avg WTD",     value:adh!=null?`${adh}%`:"—",         valueColor:adhColor,                             clickable:false },
+    { key:null,          label:"Avg WTD",     value:adh!=null?`${adh}%`:"-",         valueColor:adhColor,                             clickable:false },
     { key:"onTrack",     label:"On Track",    value:onTrack,                         valueColor:onTrack>0?"var(--green)":"var(--muted)",clickable:true },
   ];
 
@@ -402,7 +402,7 @@ function AdherenceCell({ row }) {
   const sg       = getSubGroup(row);
   const since    = daysSinceLabel(row?.lastSeen);
 
-  if (sg === "noPlan") return <span style={{ color:"var(--muted)", fontFamily:"var(--font-mono)", fontSize:12 }}>—</span>;
+  if (sg === "noPlan") return <span style={{ color:"var(--muted)", fontFamily:"var(--font-mono)", fontSize:12 }}>-</span>;
 
   if (sg === "noCheckin") {
     const urgency = since ? (since.includes("d") ? "var(--red)" : "var(--amber)") : "var(--amber)";
@@ -419,7 +419,7 @@ function AdherenceCell({ row }) {
     );
   }
 
-  if (adh == null) return <span style={{ color:"var(--muted)", fontFamily:"var(--font-mono)", fontSize:12 }}>—</span>;
+  if (adh == null) return <span style={{ color:"var(--muted)", fontFamily:"var(--font-mono)", fontSize:12 }}>-</span>;
 
   const color = adh >= 80 ? "var(--green)" : adh >= 65 ? "var(--amber)" : "var(--red)";
   return (
@@ -699,7 +699,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
                     <span style={{ fontSize:11, color:"var(--ghost)", flexShrink:0 }}>%</span>
                   </div>
                   <div style={{ minWidth:64, textAlign:"right", fontSize:12, fontWeight:700, color:"var(--ghost)", fontFamily:"var(--font-mono)" }}>
-                    {mealCal != null ? `${mealCal} cal` : "—"}
+                    {mealCal != null ? `${mealCal} cal` : "-"}
                   </div>
                 </div>
               );
@@ -707,7 +707,7 @@ function AssignSlideOver({ row, onClose, onSaved }) {
 
             {!pctOk && (
               <div style={{ marginTop:10, padding:"8px 12px", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.2)", borderRadius:4, fontSize:11, color:"var(--amber)" }}>
-                Percentages total {pctTotal}% — adjust to reach 100% for accurate per-meal targets.
+                Percentages total {pctTotal}% - adjust to reach 100% for accurate per-meal targets.
               </div>
             )}
           </div>
@@ -849,7 +849,7 @@ function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, 
     onSelectChange(next);
   }
 
-  // Small secondary icon button — used alongside a primary action
+  // Small secondary icon button - used alongside a primary action
   function EditIconBtn({ row }) {
     return (
       <button onClick={() => onEdit?.(row)} title="Edit nutrition plan"
@@ -888,7 +888,7 @@ function AthleteTable({ rows, filter, onFilterChange, selected, onSelectChange, 
         <EditIconBtn row={row} />
       </div>
     );
-    // onTrack — plan exists, edit is the only relevant action
+    // onTrack - plan exists, edit is the only relevant action
     return (
       <button onClick={() => onEdit?.(row)}
         style={{ padding:"5px 12px", background:"var(--green-bg)", border:"1px solid var(--green-rim)", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:700, fontSize:11, textTransform:"uppercase", color:"var(--green)", whiteSpace:"nowrap", transition:"all 0.12s" }}
@@ -1054,7 +1054,7 @@ function QueueCard({ row, index, total, onAction }) {
   const s  = {
     noPlan:       { label:"No Plan Assigned",      color:"var(--red)",   action:"Assign Plan",   desc:"This athlete has no nutrition targets set. Assign a plan to unlock check-in tracking." },
     noCheckin:    { label:"Missed Check-In",        color:"var(--amber)", action:"Send Reminder", desc:`Has a plan but hasn't logged this week.${since ? ` Last seen ${since} ago.` : ""}` },
-    lowAdherence: { label:`Low Adherence · ${Math.round(row.adherenceAvg||0)}%`, color:"var(--amber)", action:"Review Plan", desc:"Logging inconsistently — only hitting a fraction of their weekly targets." },
+    lowAdherence: { label:`Low Adherence · ${Math.round(row.adherenceAvg||0)}%`, color:"var(--amber)", action:"Review Plan", desc:"Logging inconsistently - only hitting a fraction of their weekly targets." },
   }[sg];
 
   if (!s) return null;
@@ -1100,7 +1100,7 @@ function QueueCard({ row, index, total, onAction }) {
             ) : null)}
             <div style={{ marginLeft:"auto" }}>
               <div style={{ fontFamily:"var(--font-display)", fontWeight:700, fontSize:9, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--muted)", marginBottom:2 }}>Phase</div>
-              <div style={{ fontFamily:"var(--font-display)", fontWeight:800, fontSize:13, color:"var(--chalk)" }}>{row.plan.phase || "—"}</div>
+              <div style={{ fontFamily:"var(--font-display)", fontWeight:800, fontSize:13, color:"var(--chalk)" }}>{row.plan.phase || "-"}</div>
             </div>
           </div>
         )}
@@ -1148,7 +1148,7 @@ function FocusModeOverlay({ rows, onClose, onReminderSent, onNavigate, onAssign 
 
   return (
     <div style={{ position:"fixed", inset:0, background:"var(--void)", zIndex:100, overflowY:"auto" }}>
-      {/* Focus header (light — matches org DS) */}
+      {/* Focus header (light - matches org DS) */}
       <div style={{ position:"sticky", top:0, zIndex:101, background:"#fff", borderBottom:"1px solid #E8ECF0" }}>
         <div style={{ maxWidth:600, margin:"0 auto", padding:isMobile?"0 12px":"0 20px", height:52, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1235,7 +1235,7 @@ export default function OrgNutritionQueuePage() {
       <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLE }} />
       <div className="onq" style={{ minHeight:"100vh" }}>
 
-        {/* ── Sticky header (light — matches org DS) ── */}
+        {/* ── Sticky header (light - matches org DS) ── */}
         <div style={{ position:"sticky", top:0, zIndex:90, background:"#fff", borderBottom:"1px solid #E8ECF0" }}>
           <div style={{ maxWidth:900, margin:"0 auto", padding:isMobile?"0 12px":"0 24px", height:56, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
             {/* Left */}

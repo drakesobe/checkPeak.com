@@ -1,7 +1,7 @@
 // pages/api/film/roster.js
-// GET  — list all roster players for this org
-// POST — add a new player to the roster
-// DELETE — remove a player (?playerId=uuid)
+// GET  - list all roster players for this org
+// POST - add a new player to the roster
+// DELETE - remove a player (?playerId=uuid)
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";

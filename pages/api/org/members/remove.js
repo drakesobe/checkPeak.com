@@ -1,5 +1,5 @@
 // pages/api/org/members/remove.js
-// DELETE — removes a member from the org.
+// DELETE - removes a member from the org.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { removeMember } from "@/lib/supabaseOrg";

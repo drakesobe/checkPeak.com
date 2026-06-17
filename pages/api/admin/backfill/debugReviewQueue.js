@@ -1,5 +1,5 @@
 // pages/api/admin/backfill/debugReviewQueue.js
-// GET ?secret=xxx  — diagnoses why workout completions aren't showing in review queue
+// GET ?secret=xxx  - diagnoses why workout completions aren't showing in review queue
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { requireOrg } from "@/lib/requireOrg";

@@ -134,7 +134,7 @@ export default async function handler(req, res) {
     } catch (err) {
       errors += batch.length;
       errorList.push(`Batch ${bi + 1} error: ${err.message}`);
-      // Account-level block — no point retrying remaining batches
+      // Account-level block - no point retrying remaining batches
       if (err.message.includes("AssociateNotEligible")) break;
     }
 

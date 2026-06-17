@@ -1,6 +1,6 @@
 // pages/api/athlete/nutrition/completion/upsert.js
-// GET ?date=YYYY-MM-DD — fetch current completion
-// POST { date, completion } — upsert completion
+// GET ?date=YYYY-MM-DD - fetch current completion
+// POST { date, completion } - upsert completion
 //
 // Mobile auth fallback: passes _authUser in query/body when cookie is mangled.
 
@@ -137,7 +137,7 @@ export default async function handler(req, res) {
     const completion    = normalizeCompletion(rawCompletion);
     const nowISO        = new Date().toISOString();
 
-    // Manual upsert — table has no unique constraint, only an index, so
+    // Manual upsert - table has no unique constraint, only an index, so
     // .upsert({ onConflict }) would silently insert duplicates instead of updating.
     const { data: existing, error: selErr } = await db
       .from("nutrition_completions")

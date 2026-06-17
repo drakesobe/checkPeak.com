@@ -48,7 +48,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Failed to create organization.", details: error.message });
     }
 
-    // Create billing record linked to org — Free tier (1-10 athletes, no expiry)
+    // Create billing record linked to org - Free tier (1-10 athletes, no expiry)
     const { error: billingError } = await db.from("billing").insert({
       org_id:         org.id,
       token:          token.toUpperCase(),

@@ -1,5 +1,5 @@
 // pages/api/athlete/teammates.js
-// GET ?token= — returns all athletes in the same organization.
+// GET ?token= - returns all athletes in the same organization.
 // Used by the mobile app to sync teammates to Firestore once per day.
 
 import { supabaseAdmin as db } from "@/lib/supabase";

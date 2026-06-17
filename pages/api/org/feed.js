@@ -1,9 +1,9 @@
 // pages/api/org/feed.js
 // Team announcements feed.
 //
-// GET  ?limit=20&offset=0       — paginated announcements (newest first)
-// POST { content, authorName? } — create announcement
-// POST { action: 'like', id, athleteId } — toggle like on an announcement
+// GET  ?limit=20&offset=0       - paginated announcements (newest first)
+// POST { content, authorName? } - create announcement
+// POST { action: 'like', id, athleteId } - toggle like on an announcement
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { readUserCookie }      from "@/lib/requireUser";

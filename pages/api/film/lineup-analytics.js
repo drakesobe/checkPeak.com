@@ -1,5 +1,5 @@
 // pages/api/film/lineup-analytics.js
-// GET ?filmId=uuid — lineup success rates for a specific film
+// GET ?filmId=uuid - lineup success rates for a specific film
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";

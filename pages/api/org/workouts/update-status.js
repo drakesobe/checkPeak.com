@@ -1,5 +1,5 @@
 // pages/api/org/workouts/update-status.js
-// POST { id, status } — updates only the status field.
+// POST { id, status } - updates only the status field.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";

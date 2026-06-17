@@ -1218,7 +1218,7 @@ export default function SmartStackComparePage() {
     if (matches.length >= 2) setComparing(matches.slice(0, 3));
   }, [router.isReady, router.query, allStacks]);
 
-  /* Exit intent — desktop only, once per session */
+  /* Exit intent - desktop only, once per session */
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (sessionStorage.getItem("cp_exit_shown")) return;
@@ -1735,7 +1735,7 @@ export default function SmartStackComparePage() {
                     </div>
                   )}
 
-                  {/* Infinite scroll sentinel — triggers next page when near viewport */}
+                  {/* Infinite scroll sentinel - triggers next page when near viewport */}
                   {canLoadMore && <div ref={sentinelRef} style={{ height:60 }} aria-hidden="true" />}
 
                   {!canLoadMore && gridStacks.length > 0 && (
@@ -1773,7 +1773,7 @@ export default function SmartStackComparePage() {
                   Would your stack<br/><span style={{ color:C.accent }}>fail a drug test?</span>
                 </p>
                 <p style={{ fontFamily:F.body, fontSize:14, color:"rgba(255,255,255,0.55)", margin:"0 0 0.6rem", lineHeight:1.7, maxWidth:420, marginLeft:"auto", marginRight:"auto" }}>
-                  Hidden banned substances show up in mainstream supplements more often than you'd think. CheckPeak scans every ingredient against our anti-doping database — instantly, for free.
+                  Hidden banned substances show up in mainstream supplements more often than you'd think. CheckPeak scans every ingredient against our anti-doping database - instantly, for free.
                 </p>
                 <p style={{ fontFamily:F.body, fontSize:11, color:"rgba(255,255,255,0.25)", margin:"0 0 1.75rem", letterSpacing:"0.04em" }}>
                   WADA · NCAA · NFL · MLB · IOC databases included
@@ -1800,7 +1800,7 @@ export default function SmartStackComparePage() {
         <ComparePanel stacks={comparing} onRemove={removeFromCompare} onClear={clearCompare} onScrollToTable={scrollToManual} />
         {isEmailCaptureActive && activeCatSlug && <EmailCaptureStrip activeCatLabel={activeCatLabel} />}
 
-        {/* Exit intent modal — desktop, once per session */}
+        {/* Exit intent modal - desktop, once per session */}
         {showExitIntent && bestSeller && (
           <ExitIntentModal stack={bestSeller} stats={stats} onClose={() => setShowExitIntent(false)} />
         )}

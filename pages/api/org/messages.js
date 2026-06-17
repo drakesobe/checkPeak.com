@@ -1,5 +1,5 @@
 // pages/api/org/messages.js
-// GET — returns conversation list (one entry per athlete, showing last message + unread count).
+// GET - returns conversation list (one entry per athlete, showing last message + unread count).
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { readUserCookie }      from "@/lib/requireUser";

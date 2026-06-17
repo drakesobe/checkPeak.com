@@ -94,27 +94,30 @@ export default async function handler(req, res) {
       if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
       let org_name = "";
+      let org_id   = "";
       if (athlete.org_token) {
         const { supabaseAdmin } = await import("@/lib/supabase");
         const { data: org } = await supabaseAdmin
           .from("organizations")
-          .select("name")
+          .select("id, name")
           .eq("token", athlete.org_token)
           .maybeSingle();
         org_name = org?.name || "";
+        org_id   = org?.id   || "";
       }
 
       const userOut = {
-        id:           athlete.id,
-        role:         "Athlete",
-        email:        athlete.email,
-        Email:        athlete.email,
-        name:         athlete.name  || "",
-        Name:         athlete.name  || "",
+        id:            athlete.id,
+        role:          "Athlete",
+        email:         athlete.email,
+        Email:         athlete.email,
+        name:          athlete.name  || "",
+        Name:          athlete.name  || "",
         athlete_token: athlete.athlete_token,
-        org_token:    athlete.org_token || "",
+        org_token:     athlete.org_token || "",
+        org_id,
         org_name,
-        sport:        athlete.sport || "",
+        sport:         athlete.sport || "",
       };
 
       setUserCookie(res, toSessionUser(userOut));

@@ -896,6 +896,35 @@ function SettingsTab({ trainer }) {
   const [profSaving, setProfSaving] = useState(false);
   const [profMsg,    setProfMsg]    = useState("");
 
+  // ── Photo ──
+  const [photoUrl,     setPhotoUrl]     = useState(f.photoUrl ?? "");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoMsg,     setPhotoMsg]     = useState("");
+
+  async function uploadPhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true); setPhotoMsg("");
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const up = await fetch("/api/upload/image", { method: "POST", credentials: "include", body: fd });
+      const { url } = await up.json();
+      if (!url) throw new Error("No URL");
+      setPhotoUrl(url);
+      await fetch("/api/commercial/trainer", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoUrl: url }),
+      });
+      setPhotoMsg("Photo saved.");
+    } catch {
+      setPhotoMsg("Upload failed.");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   async function saveProfile() {
     setProfSaving(true); setProfMsg("");
     const res = await fetch("/api/commercial/trainer", {
@@ -985,6 +1014,24 @@ function SettingsTab({ trainer }) {
       <div className="grid gap-4 mb-0" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
 
         <SettingSection title="Profile">
+          <SettingField label="Profile photo">
+            <div className="flex items-center gap-3 mb-1">
+              <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {photoUrl
+                  ? <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontSize: 20, fontWeight: 900, color: DS.brand }}>{(name || "?")[0].toUpperCase()}</span>
+                }
+              </div>
+              <div>
+                <label style={{ display: "inline-block", padding: "5px 12px", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 3, fontSize: 11, fontWeight: 700, color: DS.bodyText, cursor: photoUploading ? "not-allowed" : "pointer", opacity: photoUploading ? 0.5 : 1 }}>
+                  {photoUploading ? "Uploading…" : "Choose photo"}
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadPhoto} disabled={photoUploading} />
+                </label>
+                {photoMsg && <p className="text-[10px] mt-1 font-bold" style={{ color: photoMsg === "Photo saved." ? DS.safe : DS.banned }}>{photoMsg}</p>}
+              </div>
+            </div>
+          </SettingField>
+
           <SettingField label="Display name">
             <input className={inputCls} style={inputStyle} value={name}
               onChange={e => setName(e.target.value)} onFocus={focusOn} onBlur={focusOff} />

@@ -57,7 +57,7 @@ export default async function handler(req, res) {
 
     // All updatable fields including new perks fields
     const allowed = [
-      "name", "specialty", "bio",
+      "name", "specialty", "bio", "photoUrl",
       "basicPrice", "premiumPrice", "ultraPrice",
       "basicPerks", "premiumPerks", "ultraPerks",
       "libraryLocked",

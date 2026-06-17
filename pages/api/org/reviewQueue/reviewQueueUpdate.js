@@ -5,6 +5,7 @@
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
+import { readUserFromRequest } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function asString(v)   { return String(v ?? "").trim(); }
@@ -16,7 +17,12 @@ async function resolveOrgId(auth) {
   const token = asString(auth?.org?.token || "").toUpperCase();
   if (!token) return "";
   const { data } = await db.from("organizations").select("id").eq("token", token).maybeSingle();
-  return asString(data?.id || "");
+  if (data?.id) return asString(data.id);
+  // Fallback for mobile orgs: look up org_id via daily_workouts
+  const { data: dw } = await db
+    .from("daily_workouts").select("org_id").eq("org_token", token)
+    .not("org_id", "is", null).limit(1).maybeSingle();
+  return asString(dw?.org_id || "");
 }
 
 function normalizeCompletionStatus(nextUi) {
@@ -53,7 +59,10 @@ async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId }) 
     .maybeSingle();
 
   if (!existing) throw Object.assign(new Error("Completion not found"), { statusCode: 404 });
-  if (existing.org_id !== orgId) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  // org_id is often null on older records (completeItem never wrote it); only block if both are set and mismatch
+  if (existing.org_id && orgId && existing.org_id !== orgId) {
+    throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  }
 
   // Always persist notes when provided; only wipe when explicitly clearing (empty + not needs_info)
   const noteUpdate = reviewNote ? { review_note: reviewNote } : (nextUi === "needs_info" ? { review_note: null } : {});
@@ -141,14 +150,26 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const auth = requireOrg(req);
-    if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
+    let orgToken = "";
+    let orgId    = "";
 
-    const sub = await requireActiveOrgSubscription(req, res, auth);
-    if (!sub) return;
+    // Mobile path: _authUser in body bypasses requireOrg + subscription check
+    const mobileSession = readUserFromRequest(req);
+    const isMobile = !!(req.query._authUser || req.body?._authUser);
+    if (isMobile && mobileSession) {
+      orgToken = asString(mobileSession.Token || mobileSession.org_token || "").toUpperCase();
+      if (!orgToken) return res.status(401).json({ error: "Unauthorized" });
+      orgId = await resolveOrgId({ org: { id: "", token: orgToken } });
+    } else {
+      const auth = requireOrg(req);
+      if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
-    const orgToken = asString(auth?.org?.token || "");
-    const orgId    = await resolveOrgId(auth);
+      const sub = await requireActiveOrgSubscription(req, res, auth);
+      if (!sub) return;
+
+      orgToken = asString(auth?.org?.token || "");
+      orgId    = await resolveOrgId(auth);
+    }
     if (!orgToken && !orgId) return res.status(401).json({ error: "Unauthorized." });
 
     const body       = req.body || {};

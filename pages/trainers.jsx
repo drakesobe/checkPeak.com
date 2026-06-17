@@ -65,10 +65,11 @@ const CSS = `
   .si:focus { outline: none; border-color: rgba(218,54,51,0.45) !important; box-shadow: 0 0 0 3px rgba(218,54,51,0.08); }
 
   @media (max-width: 768px) {
-    .ag { grid-template-columns: 1fr !important; }
+    .ag { grid-template-columns: repeat(2, 1fr) !important; }
+    .ag .bio-clamp { -webkit-line-clamp: 2 !important; }
   }
   @media (max-width: 1024px) {
-    .ag { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important; }
+    .ag { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)) !important; }
   }
 `;
 
@@ -99,6 +100,7 @@ function TrainerCard({ trainer, idx }) {
   const spec   = SPECIALTIES[f.specialty] ?? { icon: "💪", short: f.specialty ?? "" };
   const lowest = lowestTier(f);
   const tiers  = ["Basic", "Premium", "Ultra"].filter(t => tierAvailable(f, t));
+  const initials = (f.name ?? "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 
   return (
     <Link href={`/trainer/${f.slug}`} style={{ textDecoration: "none", display: "block" }}>
@@ -118,7 +120,7 @@ function TrainerCard({ trainer, idx }) {
 
         {/* Hero block */}
         <div style={{
-          padding:    "22px 20px 16px",
+          padding:    "18px 20px 14px",
           background: `
             radial-gradient(ellipse 80% 60% at 50% 110%, rgba(218,54,51,0.06) 0%, transparent 65%),
             repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(255,255,255,0.007) 23px, rgba(255,255,255,0.007) 24px),
@@ -126,12 +128,19 @@ function TrainerCard({ trainer, idx }) {
             ${D.bgSection}
           `,
         }}>
-          {/* Specialty */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-            <span style={{ fontSize: 12 }}>{spec.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint }}>
-              {spec.short}
-            </span>
+          {/* Avatar + specialty row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 38, height: 38, borderRadius: "50%", overflow: "hidden", background: `rgba(218,54,51,0.12)`, border: `0.5px solid rgba(218,54,51,0.25)`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {f.photoUrl
+                ? <img src={f.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontSize: 13, fontWeight: 900, color: D.red }}>{initials}</span>
+              }
+            </div>
+            <div>
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint }}>
+                {spec.icon} {spec.short}
+              </span>
+            </div>
           </div>
 
           {/* Name */}
@@ -141,7 +150,7 @@ function TrainerCard({ trainer, idx }) {
                 fontFamily:    "'Barlow Condensed', sans-serif",
                 fontWeight:    900,
                 fontStyle:     "italic",
-                fontSize:      "clamp(1.5rem, 3.5vw, 2rem)",
+                fontSize:      "clamp(1.3rem, 3vw, 1.75rem)",
                 lineHeight:    0.88,
                 letterSpacing: "-0.025em",
                 textTransform: "uppercase",
@@ -173,7 +182,7 @@ function TrainerCard({ trainer, idx }) {
 
           {/* Bio */}
           {f.bio && (
-            <p style={{ fontSize: 11, color: D.faint, lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            <p className="bio-clamp" style={{ fontSize: 11, color: D.faint, lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
               {f.bio}
             </p>
           )}
@@ -226,6 +235,7 @@ export default function TrainersPage() {
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState("");
   const [specialty, setSpecialty] = useState("");
+  const [sortBy,    setSortBy]    = useState("featured");
 
   useEffect(() => {
     fetch("/api/commercial/trainers-public")
@@ -244,13 +254,18 @@ export default function TrainersPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return trainers.filter(t => {
+    const list = trainers.filter(t => {
       const f = t.fields ?? {};
       if (specialty && f.specialty !== specialty) return false;
       if (q && !["name", "specialty", "bio"].some(k => String(f[k] || "").toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [trainers, specialty, search]);
+    if (sortBy === "athletes") return [...list].sort((a, b) => (b.fields?.activeClientCount ?? 0) - (a.fields?.activeClientCount ?? 0));
+    if (sortBy === "price_asc") return [...list].sort((a, b) => (lowestTier(a)?.price ?? 999) - (lowestTier(b)?.price ?? 999));
+    if (sortBy === "price_desc") return [...list].sort((a, b) => (lowestTier(b)?.price ?? 0) - (lowestTier(a)?.price ?? 0));
+    if (sortBy === "az") return [...list].sort((a, b) => (a.fields?.name ?? "").localeCompare(b.fields?.name ?? ""));
+    return list;
+  }, [trainers, specialty, search, sortBy]);
 
   const hasFilters = search.trim() || specialty;
 
@@ -322,7 +337,7 @@ export default function TrainersPage() {
           borderBottom: `0.5px solid ${D.border}`,
           overflowX:    "auto",
         }}>
-          <div style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "flex", alignItems: "center", gap: 2, height: 48, whiteSpace: "nowrap" }}>
+          <div style={{ maxWidth: 1140, margin: "0 auto", padding: "0 48px", display: "flex", alignItems: "center", gap: 2, height: 48, whiteSpace: "nowrap", justifyContent: "space-between" }}>
 
             {/* All */}
             <button className="fp" onClick={() => setSpecialty("")}
@@ -355,6 +370,19 @@ export default function TrainersPage() {
                 </button>
               </>
             )}
+
+            {/* Sort */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", paddingLeft: 12, flexShrink: 0 }}>
+              <span style={{ fontSize: 10, color: D.faint, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Sort</span>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                style={{ background: D.bgCard, border: `0.5px solid ${D.border}`, color: D.dim, fontSize: 11, fontFamily: "inherit", padding: "4px 8px", borderRadius: 2, outline: "none", cursor: "pointer" }}>
+                <option value="featured">Featured</option>
+                <option value="athletes">Most Athletes</option>
+                <option value="price_asc">Price: Low → High</option>
+                <option value="price_desc">Price: High → Low</option>
+                <option value="az">A → Z</option>
+              </select>
+            </div>
           </div>
         </div>
 

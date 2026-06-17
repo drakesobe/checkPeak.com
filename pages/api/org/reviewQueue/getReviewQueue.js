@@ -5,6 +5,7 @@
 import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
+import { readUserFromRequest } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function asString(v) { return String(v ?? "").trim(); }
@@ -31,14 +32,19 @@ function classFingerprint(athleteToken, dateStr) {
   catch { return null; }
 }
 
-// Resolve org UUID from session or via token lookup (legacy sessions may only have token)
+// Resolve org UUID from session, organizations table, or daily_workouts fallback
 async function resolveOrgId(auth) {
   const fromSession = asString(auth?.org?.id || "");
   if (fromSession) return fromSession;
   const token = asString(auth?.org?.token || "").toUpperCase();
   if (!token) return "";
   const { data } = await db.from("organizations").select("id").eq("token", token).maybeSingle();
-  return asString(data?.id || "");
+  if (data?.id) return asString(data.id);
+  // Fallback for mobile orgs: org_id is set on daily_workouts even when not in organizations table
+  const { data: dw } = await db
+    .from("daily_workouts").select("org_id").eq("org_token", token)
+    .not("org_id", "is", null).limit(1).maybeSingle();
+  return asString(dw?.org_id || "");
 }
 
 async function fetchWorkoutCompletions(orgId) {
@@ -189,14 +195,25 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const auth = requireOrg(req);
-    if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
+    let orgToken = "";
+    let orgId    = "";
 
-    const sub = await requireActiveOrgSubscription(req, res, auth);
-    if (!sub) return;
+    // Mobile path: _authUser in query bypasses requireOrg + subscription check
+    const mobileSession = req.query._authUser ? readUserFromRequest(req) : null;
+    if (mobileSession) {
+      orgToken = asString(mobileSession.Token || mobileSession.org_token || "").toUpperCase();
+      if (!orgToken) return res.status(401).json({ error: "Unauthorized" });
+      orgId = await resolveOrgId({ org: { id: "", token: orgToken } });
+    } else {
+      const auth = requireOrg(req);
+      if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 
-    const orgToken = asString(auth?.org?.token || "");
-    const orgId    = await resolveOrgId(auth);
+      const sub = await requireActiveOrgSubscription(req, res, auth);
+      if (!sub) return;
+
+      orgToken = asString(auth?.org?.token || "");
+      orgId    = await resolveOrgId(auth);
+    }
 
     if (!orgId && !orgToken) return res.status(401).json({ error: "Unauthorized (missing org id/token)." });
 

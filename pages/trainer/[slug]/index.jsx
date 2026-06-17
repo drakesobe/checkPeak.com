@@ -295,8 +295,9 @@ export default function TrainerProfile() {
 
   const [trainer,        setTrainer]       = useState(null);
   const [previewVideos,  setPreview]       = useState([]);
-  const [totalVideos,    setTotal]         = useState(0);
-  const [totalWorkouts,  setTotalWorkouts] = useState(0);
+  const [totalVideos,         setTotal]              = useState(0);
+  const [totalWorkouts,       setTotalWorkouts]      = useState(0);
+  const [totalNutritionPlans, setTotalNutritionPlans]= useState(0);
   const [pricedVideos,   setPricedVideos]  = useState([]);
   const [pricedWorkouts, setPricedWorkouts]= useState([]);
   const [clientTier,     setClientTier]    = useState(null);
@@ -329,11 +330,12 @@ export default function TrainerProfile() {
         if (!data) return;
         setTrainer(data.trainer);
         return fetch(`/api/commercial/trainer-videos-public?slug=${slug}`)
-          .then(r => r.ok ? r.json() : { videos: [], total: 0, totalVideos: 0, totalWorkouts: 0, pricedVideos: [], pricedWorkouts: [] })
-          .then(({ videos, total, totalVideos, totalWorkouts, pricedVideos: pv, pricedWorkouts: pw }) => {
+          .then(r => r.ok ? r.json() : { videos: [], total: 0, totalVideos: 0, totalWorkouts: 0, totalNutritionPlans: 0, pricedVideos: [], pricedWorkouts: [] })
+          .then(({ videos, total, totalVideos, totalWorkouts, totalNutritionPlans: tnp, pricedVideos: pv, pricedWorkouts: pw }) => {
             setPreview(videos ?? []);
             setTotal(totalVideos ?? total ?? 0);
             setTotalWorkouts(totalWorkouts ?? 0);
+            setTotalNutritionPlans(tnp ?? 0);
             setPricedVideos(pv ?? []);
             setPricedWorkouts(pw ?? []);
           });
@@ -437,8 +439,9 @@ export default function TrainerProfile() {
   const clientIsPaid = clientTier ? Number(f[TIER[clientTier]?.priceKey] ?? 0) > 0 : false;
 
   const stats = [
-    totalVideos   > 0 && { value: totalVideos,   label: "Videos"   },
-    totalWorkouts > 0 && { value: totalWorkouts,  label: "Workouts" },
+    totalVideos         > 0 && { value: totalVideos,         label: "Videos"    },
+    totalWorkouts       > 0 && { value: totalWorkouts,       label: "Workouts"  },
+    totalNutritionPlans > 0 && { value: totalNutritionPlans, label: "Nutrition Plans" },
   ].filter(Boolean);
 
   return (

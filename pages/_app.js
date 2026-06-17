@@ -135,8 +135,8 @@ export default function MyApp({ Component, pageProps }) {
     if (typeof window.gtag === "function") {
       window.gtag("consent", "update", {
         analytics_storage:  analyticsEnabled ? "granted" : "denied",
-        ad_storage:         "denied",
-        ad_user_data:       "denied",
+        ad_storage:         analyticsEnabled ? "granted" : "denied",
+        ad_user_data:       analyticsEnabled ? "granted" : "denied",
         ad_personalization: "denied",
       });
     }

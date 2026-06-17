@@ -14,7 +14,7 @@ function parseUser(req) {
 }
 
 function getOrgToken(user) {
-  return String(user?.orgToken || user?.Token || user?.token || "").trim();
+  return String(user?.orgToken || user?.Token || user?.token || "").trim().toUpperCase();
 }
 
 export default async function handler(req, res) {

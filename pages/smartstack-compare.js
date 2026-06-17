@@ -1108,6 +1108,7 @@ function EmailCaptureStrip({ activeCatLabel }) {
     setSaving(true);
     try { window.gtag?.("event", "email_capture", { category: activeCatLabel }); window.dataLayer?.push({ event:"email_capture", category: activeCatLabel }); } catch {}
     try { await fetch("/api/smartstack/subscribe", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ email, category: activeCatLabel || "Supplements" }) }); } catch {}
+    try { window.gtag?.("event", "conversion", { send_to: "AW-17990566633/giolCJ2S_70cEOmFyYJD" }); } catch {}
     setSaving(false);
     setSent(true);
     setTimeout(() => setDismissed(true), 3500);

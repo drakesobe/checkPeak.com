@@ -393,6 +393,7 @@ export default function OCRPage() {
         body: JSON.stringify({ email, role, organizationToken: orgToken || null, organizationId: resolvedOrg?.id || null, organizationName: resolvedOrg?.name || null, source: "ocr_unlock_gate" }),
       });
       if (!res.ok) throw new Error("Unable to save. Please try again.");
+      try { window.gtag?.("event", "conversion", { send_to: "AW-17990566633/giolCJ2S_70cEOmFyYJD" }); } catch {}
       setUnlockSuccess(true); setIsUnlocked(true);
       setLs("cp_unlocked", "1"); setLs("cp_unlocked_email", email); setLs("cp_unlocked_role", role);
       setLs("cp_unlocked_org_token", orgToken || ""); setLs("cp_unlocked_org_id", resolvedOrg?.id || ""); setLs("cp_unlocked_org_name", resolvedOrg?.name || "");

@@ -4,9 +4,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle2, Upload, Video, X, ArrowRight, Dumbbell, Plus, Edit2 } from "lucide-react";
+import { CheckCircle2, Upload, Video, X, ArrowRight, Dumbbell, Plus, Edit2, Salad } from "lucide-react";
 import VideoUpload from "./VideoUpload";
 import WorkoutBuilder from "./WorkoutBuilder";
+import NutritionPlans from "./NutritionPlans";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -577,7 +578,8 @@ function UploadModal({ onClose, trainerId, onSuccess }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChange }) {
-  const [libraryTab, setLibraryTab]   = useState("videos");  // "videos" | "workouts"
+  const [libraryTab, setLibraryTab]   = useState("videos");  // "videos" | "workouts" | "nutrition"
+  const [nutritionCount, setNutritionCount] = useState(0);
 
   // Videos state
   const [videos,      setVideos]      = useState([]);
@@ -716,8 +718,9 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
       {/* ── Library tab toggle ── */}
       <div className="flex items-center gap-2 mb-4">
         {[
-          { key: "videos",   label: "Videos",   icon: <Video className="w-3.5 h-3.5" />,    count: videoCounts.total   },
-          { key: "workouts", label: "Workouts", icon: <Dumbbell className="w-3.5 h-3.5" />, count: workoutCounts.total },
+          { key: "videos",    label: "Videos",    icon: <Video className="w-3.5 h-3.5" />,    count: videoCounts.total   },
+          { key: "workouts",  label: "Workouts",  icon: <Dumbbell className="w-3.5 h-3.5" />, count: workoutCounts.total },
+          { key: "nutrition", label: "Nutrition", icon: <Salad className="w-3.5 h-3.5" />,    count: nutritionCount      },
         ].map(({ key, label, icon, count }) => (
           <button key={key} type="button" onClick={() => setLibraryTab(key)}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-bold border transition"
@@ -856,6 +859,11 @@ export default function VideoLibrary({ trainerId, trainerSlug, onVideoCountChang
             </div>
           )}
         </div>
+      )}
+
+      {/* ── NUTRITION TAB ── */}
+      {libraryTab === "nutrition" && (
+        <NutritionPlans trainerId={trainerId} onPlanCountChange={setNutritionCount} />
       )}
     </div>
   );

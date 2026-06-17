@@ -2,7 +2,7 @@
 // Public - no auth needed.
 // Returns Basic-tier video preview (max 4) + total video and workout counts.
 
-import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/db";
+import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer, getNutritionPlansByTrainer } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -14,9 +14,10 @@ export default async function handler(req, res) {
   if (!record) return res.status(404).json({ error: "Trainer not found" });
 
   // Fetch videos and workouts in parallel
-  const [allVideos, allWorkouts] = await Promise.all([
+  const [allVideos, allWorkouts, allNutrition] = await Promise.all([
     getVideosByTrainer(record.id, { publishedOnly: true }),
     getWorkoutsByTrainer(record.id, { publishedOnly: true }).catch(() => []),
+    getNutritionPlansByTrainer(record.id, { publishedOnly: true }).catch(() => []),
   ]);
 
   // Normalize video records to plain objects
@@ -40,10 +41,11 @@ export default async function handler(req, res) {
     .map(w => ({ id: w.id, fields: { title: w.fields.title, tier: w.fields.tier, price: w.fields.price, description: w.fields.description } }));
 
   return res.status(200).json({
-    videos:        preview,
-    total:         normalized.length,
-    totalVideos:   normalized.length,
-    totalWorkouts: allWorkouts.length,
+    videos:              preview,
+    total:               normalized.length,
+    totalVideos:         normalized.length,
+    totalWorkouts:       allWorkouts.length,
+    totalNutritionPlans: allNutrition.length,
     pricedVideos,
     pricedWorkouts,
   });

@@ -15,8 +15,8 @@ const D = {
   border:    "rgba(255,255,255,0.07)",
   borderMid: "rgba(255,255,255,0.13)",
   text:      "#F0F6FC",
-  dim:       "rgba(255,255,255,0.52)",
-  faint:     "rgba(255,255,255,0.26)",
+  dim:       "rgba(255,255,255,0.68)",
+  faint:     "rgba(255,255,255,0.52)",
   whisper:   "rgba(255,255,255,0.08)",
   red:       "#DA3633",
 };

@@ -127,13 +127,20 @@ function aggBy(enriched, keyFn) {
   );
 }
 
+// ── Auth helper (supports _authUser query param for mobile) ──────────────────
+function parseUser(req) {
+  const raw = req.query?._authUser;
+  if (raw) { try { return JSON.parse(decodeURIComponent(String(raw))); } catch {} }
+  return readUserCookie(req);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (req.method !== "GET") return res.status(405).end();
 
-  const user   = readUserCookie(req);
+  const user   = parseUser(req);
   if (!user)   return res.status(401).json({ error: "Not authenticated" });
   const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
   const filmId = String(req.query.filmId ?? "").trim();

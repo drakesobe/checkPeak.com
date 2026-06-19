@@ -235,8 +235,12 @@ function FormationDiagram({ tracks = [], roster = [], currentTime = 0, onPlayerC
 }
 
 // ── Video Player ──────────────────────────────────────────────────────────────
-function VideoPlayer({ playbackId, clipUrl, playNumber, onTimeUpdate, videoRef }) {
-  if (!playbackId && !clipUrl) {
+// Priority: Mux (full film, seekable) → S3 presigned URL (full film fallback) → clip_url (individual play clip)
+function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, videoRef }) {
+  const fullFilmSrc = s3Url || null;
+  const hasVideo = playbackId || fullFilmSrc || clipUrl;
+
+  if (!hasVideo) {
     return (
       <div style={{
         background: "#0a0c12", borderRadius: 10,
@@ -266,11 +270,13 @@ function VideoPlayer({ playbackId, clipUrl, playNumber, onTimeUpdate, videoRef }
     );
   }
 
+  // S3 presigned URL (full film) or individual play clip
+  const src = fullFilmSrc || clipUrl;
   return (
     <div style={{ position: "relative", background: "#000", borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
       <video
         ref={videoRef}
-        src={clipUrl}
+        src={src}
         style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
         controls
         preload="metadata"
@@ -1076,6 +1082,7 @@ export default function FilmDetailPage() {
   const { user } = useAuthContext();
 
   const [film,         setFilm]         = useState(null);
+  const [filmVideoUrl, setFilmVideoUrl] = useState(null);
   const [plays,        setPlays]        = useState([]);
   const [roster,       setRoster]       = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -1096,6 +1103,16 @@ export default function FilmDetailPage() {
     const r = await fetch(`/api/film/status?filmId=${id}`, { credentials: "include" });
     const d = await r.json();
     if (r.ok) setFilm(d);
+    return d;
+  }, [id]);
+
+  const fetchVideoUrl = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch(`/api/film/video-url?filmId=${id}`, { credentials: "include" });
+      const d = await r.json();
+      if (r.ok && d.videoUrl) setFilmVideoUrl(d.videoUrl);
+    } catch {}
   }, [id]);
 
   const fetchPlays = useCallback(async () => {
@@ -1133,8 +1150,12 @@ export default function FilmDetailPage() {
       fetchPlays(),
       fetchAnalytics(),
       fetch("/api/film/roster", { credentials: "include" }).then(r => r.json()).then(d => setRoster(d.players ?? [])),
-    ]).then(() => setLoading(false));
-  }, [id, fetchFilm, fetchPlays, fetchAnalytics]);
+    ]).then(([filmData]) => {
+      setLoading(false);
+      // Fetch S3 presigned URL if Mux isn't available
+      if (!filmData?.muxPlaybackId) fetchVideoUrl();
+    });
+  }, [id, fetchFilm, fetchPlays, fetchAnalytics, fetchVideoUrl]);
 
   // Polling while processing
   useEffect(() => {
@@ -1148,6 +1169,7 @@ export default function FilmDetailPage() {
           if (!["uploading","transcoding","analyzing","tagging"].includes(d.status)) {
             clearInterval(pollRef.current); pollRef.current = null;
             fetchPlays();
+            if (!d.muxPlaybackId) fetchVideoUrl();
           }
         }
       }, 5000);
@@ -1354,6 +1376,7 @@ export default function FilmDetailPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <VideoPlayer
                       playbackId={film?.muxPlaybackId}
+                      s3Url={filmVideoUrl}
                       clipUrl={selPlay?.clip_url}
                       playNumber={selPlay?.play_number}
                       onTimeUpdate={setVideoTime}

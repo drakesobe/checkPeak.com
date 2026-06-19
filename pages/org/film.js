@@ -617,11 +617,14 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete }) {
+function FilmCard({ film, onClick, onDelete, onRetry }) {
   const meta = statusMeta(film.status);
-  const [hovered,   setHovered]   = useState(false);
-  const [deleting,  setDeleting]  = useState(false);
+  const [hovered,    setHovered]    = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [retrying,   setRetrying]   = useState(false);
+
+  const canRetry = film.status === "failed" || film.status === "analyzing" || film.status === "tagging";
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -634,6 +637,18 @@ function FilmCard({ film, onClick, onDelete }) {
     } catch { toast.error("Network error"); }
     setDeleting(false);
     setConfirmDel(false);
+  }
+
+  async function handleRetry(e) {
+    e.stopPropagation();
+    setRetrying(true);
+    try {
+      const r = await fetch("/api/film/retry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filmId: film.id }) });
+      const d = await r.json();
+      if (r.ok) { toast.success("Re-queued for analysis - processing will resume shortly."); onRetry?.(film.id); }
+      else { toast.error(d.error ?? "Retry failed"); }
+    } catch { toast.error("Network error"); }
+    setRetrying(false);
   }
 
   return (
@@ -699,6 +714,25 @@ function FilmCard({ film, onClick, onDelete }) {
           </div>
         )}
       </div>
+
+      {/* Retry */}
+      {hovered && canRetry && (
+        <button
+          onClick={handleRetry}
+          disabled={retrying}
+          title="Retry analysis"
+          style={{
+            background: DS.brandBg, border: `1px solid ${DS.brandBorder}`,
+            borderRadius: 8, padding: "5px 10px",
+            cursor: retrying ? "not-allowed" : "pointer",
+            color: DS.brand, flexShrink: 0, display: "flex", alignItems: "center", gap: 4,
+            fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+          }}
+        >
+          {retrying ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={13} />}
+          {retrying ? "Queuing…" : "Retry"}
+        </button>
+      )}
 
       {/* Delete */}
       {hovered && (
@@ -812,6 +846,11 @@ export default function FilmPage() {
     fetchFilms();
     toast.success("Upload started - AI analysis will begin shortly.");
     setTimeout(() => startPolling(filmId), 1000);
+  }
+
+  function handleFilmRetried(filmId) {
+    setFilms(prev => prev.map(f => f.id === filmId ? { ...f, status: "transcoding", progress_pct: 0, play_count: 0 } : f));
+    setTimeout(() => startPolling(filmId), 2000);
   }
 
   function handleFilmDeleted(filmId) {
@@ -931,7 +970,7 @@ export default function FilmPage() {
                   <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.labelText }}>Processing</h2>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {filteredFilms.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status)).map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onRetry={handleFilmRetried} />
                     ))}
                   </div>
                 </div>
@@ -957,7 +996,7 @@ export default function FilmPage() {
                   <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.warn }}>Failed</h2>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {filteredFilms.filter(f => f.status === "failed").map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onRetry={handleFilmRetried} />
                     ))}
                   </div>
                 </div>

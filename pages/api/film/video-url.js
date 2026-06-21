@@ -27,7 +27,7 @@ const EXPIRES_SEC = 60 * 60 * 4; // 4 hours
 
 function parseUser(req) {
   const raw = req.query?._authUser;
-  if (raw) { try { return JSON.parse(decodeURIComponent(String(raw))); } catch {} }
+  if (raw) { try { return JSON.parse(String(raw)); } catch {} }
   return readUserCookie(req);
 }
 

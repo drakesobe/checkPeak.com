@@ -12,7 +12,7 @@ const supabase = createClient(
 
 function parseUser(req) {
   const raw = req.query?._authUser;
-  if (raw) { try { return JSON.parse(decodeURIComponent(String(raw))); } catch {} }
+  if (raw) { try { return JSON.parse(String(raw)); } catch {} }
   return readUserCookie(req);
 }
 

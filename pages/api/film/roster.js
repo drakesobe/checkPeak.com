@@ -16,7 +16,7 @@ function parseUser(req) {
     ? req.query?._authUser
     : req.body?._authUser;
   if (raw) {
-    try { return JSON.parse(decodeURIComponent(String(raw))); } catch {}
+    try { return JSON.parse(String(raw)); } catch {}
   }
   return readUserCookie(req);
 }

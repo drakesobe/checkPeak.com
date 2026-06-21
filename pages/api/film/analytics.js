@@ -129,8 +129,9 @@ function aggBy(enriched, keyFn) {
 
 // ── Auth helper (supports _authUser query param for mobile) ──────────────────
 function parseUser(req) {
+  // req.query values are already URL-decoded by Next.js — parse directly
   const raw = req.query?._authUser;
-  if (raw) { try { return JSON.parse(decodeURIComponent(String(raw))); } catch {} }
+  if (raw) { try { return JSON.parse(String(raw)); } catch {} }
   return readUserCookie(req);
 }
 
@@ -152,6 +153,7 @@ export default async function handler(req, res) {
       .select(`
         id, play_number, play_type, formation, down, distance,
         field_zone, yards_gained, result, start_time_secs, end_time_secs,
+        hash, yard_line, play_direction, personnel,
         player_tracks ( jersey_number, team, snap_x, snap_y, first_step_ms, distance_traveled_yd )
       `)
       .eq("film_id", filmId)
@@ -162,15 +164,19 @@ export default async function handler(req, res) {
     if (!plays?.length) return res.status(200).json({ ok: true, empty: true, drives: [], direction: [], personnel: [] });
 
     // ── Enrich per play ──────────────────────────────────────────────────────
+    // Coach-tagged fields (play_direction, personnel) take priority over AI detection.
+    // This means analytics work immediately after tagging, before the ECS worker runs.
     const enriched = plays.map(p => {
       const home = (p.player_tracks ?? []).filter(t => t.team === "home");
       const away = (p.player_tracks ?? []).filter(t => t.team === "away");
+      const aiDir  = p.play_type === "run" ? getRunDirection(home) : null;
+      const aiPers = home.length ? detectPersonnel(home) : null;
       return {
         ...p,
         _epa:      calcEPA(p),
         motion:    hasPreSnapMotion(home),
-        personnel: detectPersonnel(home),
-        direction: p.play_type === "run" ? getRunDirection(home) : null,
+        personnel: p.personnel ?? aiPers ?? "?",
+        direction: p.play_direction ?? aiDir,
         pressure:  p.play_type === "pass" && away.length >= 5,
         _homeN:    home.length,
         _awayN:    away.length,
@@ -247,6 +253,45 @@ export default async function handler(req, res) {
     const pressureCount = passPlays.filter(p => p.pressure).length;
     const pressureRate  = passPlays.length > 0 ? Math.round(pressureCount / passPlays.length * 100) : 0;
 
+    // ── Hash tendency ─────────────────────────────────────────────────────────
+    const HASH_ORDER = ["left_wide","left_hash","middle","right_hash","right_wide"];
+    const hashMap = {};
+    for (const p of enriched) {
+      if (!p.hash) continue;
+      if (!hashMap[p.hash]) hashMap[p.hash] = { plays: 0, suc: 0, run: 0, pass: 0 };
+      hashMap[p.hash].plays++;
+      if (["success","td"].includes(p.result)) hashMap[p.hash].suc++;
+      if (p.play_type === "run")  hashMap[p.hash].run++;
+      if (p.play_type === "pass") hashMap[p.hash].pass++;
+    }
+    const hashTendency = HASH_ORDER
+      .filter(h => hashMap[h])
+      .map(h => ({ hash: h, ...hashMap[h], successRate: Math.round(hashMap[h].suc / hashMap[h].plays * 100) }));
+
+    // ── Field zone analysis (from coach-tagged yard_line) ─────────────────────
+    const ZONES = [
+      { key:"own_end_zone", label:"Own 1-19",   min:1,  max:19  },
+      { key:"own_20",       label:"Own 20-39",  min:20, max:39  },
+      { key:"midfield",     label:"Midfield",   min:40, max:59  },
+      { key:"opp_40",       label:"Opp 40-20",  min:60, max:79  },
+      { key:"red_zone",     label:"Red Zone",   min:80, max:99  },
+    ];
+    const zoneStats = ZONES.map(z => {
+      const zPlays = enriched.filter(p => p.yard_line >= z.min && p.yard_line <= z.max);
+      const suc    = zPlays.filter(p => ["success","td"].includes(p.result)).length;
+      const run    = zPlays.filter(p => p.play_type === "run").length;
+      const pass   = zPlays.filter(p => p.play_type === "pass").length;
+      const avgYd  = zPlays.filter(p => p.yards_gained != null);
+      return {
+        ...z,
+        plays:       zPlays.length,
+        successRate: zPlays.length > 0 ? Math.round(suc / zPlays.length * 100) : 0,
+        avgYards:    avgYd.length > 0 ? +(avgYd.reduce((s,p) => s + Number(p.yards_gained), 0) / avgYd.length).toFixed(1) : null,
+        runPct:      zPlays.length > 0 ? Math.round(run / zPlays.length * 100) : null,
+        passPct:     zPlays.length > 0 ? Math.round(pass / zPlays.length * 100) : null,
+      };
+    }).filter(z => z.plays > 0);
+
     // ── Drives ───────────────────────────────────────────────────────────────
     const drives = reconstructDrives(enriched);
 
@@ -271,6 +316,8 @@ export default async function handler(req, res) {
       passPlays: passPlays.length,
       drives,
       opponentTendency,
+      hashTendency,
+      zoneStats,
     });
 
   } catch (err) {

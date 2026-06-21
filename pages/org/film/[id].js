@@ -2,12 +2,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import {
   ArrowLeft, BarChart2, CheckCircle2, AlertCircle, Loader2,
   Film, UserCheck, Users, RefreshCw, Play, TrendingUp,
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
+  X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
+  Trash2, ChevronRight, SkipForward, SkipBack, Bookmark,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -61,16 +64,31 @@ function fmtTime(s) {
 }
 function resultColor(r) {
   const s = String(r || "").toLowerCase();
-  if (s === "success" || s === "td")       return DS.safe;
+  if (s === "td")                          return "#16a34a";
+  if (s === "success")                     return DS.safe;
   if (s === "failure" || s === "turnover") return DS.warn;
-  return DS.caution;
+  if (s === "penalty")                     return DS.caution;
+  return DS.dimText;
 }
 function resultBg(r) {
   const s = String(r || "").toLowerCase();
-  if (s === "success" || s === "td")       return DS.safeBg;
+  if (s === "td" || s === "success")       return DS.safeBg;
   if (s === "failure" || s === "turnover") return DS.warnBg;
-  return DS.cautionBg;
+  if (s === "penalty")                     return DS.cautionBg;
+  return DS.pageBg;
 }
+
+const ORD = ["1st","2nd","3rd","4th"];
+function downLabel(down, distance) {
+  if (!down) return null;
+  return `${ORD[(down - 1) % 4] ?? `${down}th`} & ${distance ?? "–"}`;
+}
+const TYPE_SHORT = { run:"RUN", pass:"PASS", punt:"PUNT", kickoff:"KICK", field_goal:"FG", extra_point:"XP" };
+const TYPE_COLOR = { run:"#1e3a5f", pass:"#2563eb", punt:"#475569", kickoff:"#475569", field_goal:"#b45309", extra_point:"#475569" };
+const TYPE_BG    = { run:"#eef3f9", pass:"#eff6ff", punt:"#f1f5f9", kickoff:"#f1f5f9", field_goal:"#fef3c7", extra_point:"#f1f5f9" };
+function typeShort(t)  { return TYPE_SHORT[t]  ?? String(t || "").toUpperCase(); }
+function typeColor(t)  { return TYPE_COLOR[t]  ?? DS.dimText; }
+function typeBg(t)     { return TYPE_BG[t]     ?? DS.pageBg; }
 
 function interpolatePos(routeJson, t) {
   if (!Array.isArray(routeJson) || routeJson.length === 0) return null;
@@ -236,13 +254,13 @@ function FormationDiagram({ tracks = [], roster = [], currentTime = 0, onPlayerC
 
 // ── Video Player ──────────────────────────────────────────────────────────────
 // Priority: Mux (full film, seekable) → S3 presigned URL (full film fallback) → clip_url (individual play clip)
-function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, videoRef }) {
+function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, onDurationChange, videoRef }) {
   const fullFilmSrc = s3Url || null;
   const hasVideo = playbackId || fullFilmSrc || clipUrl;
 
   if (!hasVideo) {
     return (
-      <div style={{
+      <div className="video-wrap" style={{
         background: "#0a0c12", borderRadius: 10,
         aspectRatio: "16/9", display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center", gap: 10,
@@ -257,23 +275,23 @@ function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, vid
 
   if (playbackId) {
     return (
-      <div style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
+      <div className="video-wrap" style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "#000" }}>
         <MuxPlayer
           ref={videoRef}
           playbackId={playbackId}
           streamType="on-demand"
           style={{ width: "100%", height: "100%" }}
-          onTimeUpdate={e => onTimeUpdate?.(e.target.currentTime)}
+          onTimeUpdate={e => { onTimeUpdate?.(e.target.currentTime); }}
+          onLoadedMetadata={e => onDurationChange?.(e.target.duration)}
           accentColor="#4FABFF"
         />
       </div>
     );
   }
 
-  // S3 presigned URL (full film) or individual play clip
   const src = fullFilmSrc || clipUrl;
   return (
-    <div style={{ position: "relative", background: "#000", borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
+    <div className="video-wrap" style={{ position: "relative", background: "#000", borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
       <video
         ref={videoRef}
         src={src}
@@ -281,95 +299,845 @@ function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, vid
         controls
         preload="metadata"
         onTimeUpdate={e => onTimeUpdate?.(e.target.currentTime)}
+        onLoadedMetadata={e => onDurationChange?.(e.target.duration)}
       />
     </div>
   );
 }
 
+// ── Play Timeline ──────────────────────────────────────────────────────────────
+function PlayTimeline({ plays, duration, currentTime, snapTime, onSeek }) {
+  if (!duration) return null;
+  const pct = t => Math.min(100, Math.max(0, (t / duration) * 100));
+  const blockColor = r => {
+    const s = String(r || "").toLowerCase();
+    if (s === "td")       return "#16a34a";
+    if (s === "success")  return "#22c55e";
+    if (s === "turnover") return "#dc2626";
+    if (s === "failure")  return "#ef4444";
+    if (s === "penalty")  return "#f59e0b";
+    return "#4FABFF";
+  };
+  return (
+    <div style={{ position: "relative", height: 32, background: "#0d1117", borderRadius: 6, cursor: "pointer", overflow: "hidden", userSelect: "none", flexShrink: 0 }}
+      onClick={e => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        onSeek?.(((e.clientX - rect.left) / rect.width) * duration);
+      }}
+      title="Click to seek"
+    >
+      {plays.map(p => {
+        if (p.start_time_secs == null) return null;
+        const l = pct(p.start_time_secs);
+        const w = p.end_time_secs != null ? Math.max(0.4, pct(p.end_time_secs) - l) : 0.4;
+        return (
+          <div key={p.id} title={`Play ${p.play_number}${p.down ? ` · ${p.down}&${p.distance}` : ""}${p.play_type ? ` · ${cap(p.play_type)}` : ""}`}
+            style={{ position: "absolute", top: 6, bottom: 6, left: `${l}%`, width: `${w}%`, minWidth: 3, background: blockColor(p.result), borderRadius: 2, opacity: 0.85 }} />
+        );
+      })}
+      {snapTime != null && (
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(snapTime)}%`, width: 2, background: "#4FABFF" }} />
+      )}
+      <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(currentTime)}%`, width: 2, background: "rgba(255,255,255,0.7)" }} />
+      <div style={{ position: "absolute", bottom: 3, left: 6, fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 600, pointerEvents: "none" }}>{fmtTime(currentTime)}</div>
+      <div style={{ position: "absolute", bottom: 3, right: 6, fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 600, pointerEvents: "none" }}>{fmtTime(duration)}</div>
+    </div>
+  );
+}
+
+// ── Workflow Banner ───────────────────────────────────────────────────────────
+function WorkflowBanner({ plays, isAnalyzing, hasAnalysis, canSubmit, submitting, onSubmit, onStartTagging, isMobile }) {
+  const playCount = plays.length;
+
+  // ── Mobile: single-line strips ────────────────────────────────────────────
+  if (isMobile) {
+    if (hasAnalysis) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
+          <CheckCircle2 size={14} color={DS.safe} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: DS.safe }}>Analysis complete — {playCount} plays</span>
+        </div>
+      );
+    }
+    if (isAnalyzing) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
+          <Loader2 size={14} color="#2563eb" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#1e40af" }}>Analyzing {playCount} plays…</span>
+        </div>
+      );
+    }
+    if (canSubmit) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: DS.bodyText, flex: 1 }}>{playCount} play{playCount !== 1 ? "s" : ""} tagged</span>
+          <button onClick={onSubmit} disabled={submitting} style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            background: DS.brand, border: "none", borderRadius: 7, padding: "7px 14px",
+            color: "#fff", fontSize: 12, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer", flexShrink: 0,
+          }}>
+            {submitting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Sparkles size={12} />}
+            {submitting ? "…" : "Analyze"}
+          </button>
+        </div>
+      );
+    }
+    // Step 1: no plays yet — just a tiny hint bar
+    return (
+      <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
+        <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
+          <strong style={{ color: DS.bodyText }}>Tap S</strong> to snap · <strong style={{ color: DS.bodyText }}>W</strong> to end · <strong style={{ color: DS.bodyText }}>↵</strong> to save
+        </p>
+      </div>
+    );
+  }
+
+  // ── Desktop: full 3-step card ─────────────────────────────────────────────
+  const step = isAnalyzing ? 3 : hasAnalysis ? 4 : playCount > 0 ? 2 : 1;
+
+  const steps = [
+    { n: 1, label: "Upload",    done: true },
+    { n: 2, label: `Tag Plays${playCount > 0 ? ` (${playCount})` : ""}`, done: playCount > 0 || isAnalyzing || hasAnalysis },
+    { n: 3, label: "Analyze",   done: hasAnalysis },
+  ];
+
+  if (hasAnalysis) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
+        <CheckCircle2 size={18} color={DS.safe} style={{ flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.safe }}>Analysis Complete</p>
+          <p style={{ margin: 0, fontSize: 12, color: DS.safe, opacity: 0.8 }}>{playCount} plays with AI player tracking data</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAnalyzing) {
+    return (
+      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <Loader2 size={16} color="#2563eb" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
+            AI analyzing {playCount} plays — player tracking in progress
+          </p>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: "#3b82f6" }}>
+          Rekognition is tracking every player on every play. This takes a few minutes. You&apos;ll see data appear here when it&apos;s ready.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: canSubmit ? 14 : 0 }}>
+        {steps.map((s, i) => (
+          <div key={s.n} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
+                background: s.done ? DS.brand : step === s.n ? DS.brandBg : DS.pageBg,
+                border: `2px solid ${s.done ? DS.brand : step === s.n ? DS.brand : DS.border}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {s.done
+                  ? <CheckCircle2 size={12} color="#fff" strokeWidth={3} />
+                  : <span style={{ fontSize: 10, fontWeight: 800, color: step === s.n ? DS.brand : DS.dimText }}>{s.n}</span>}
+              </div>
+              <span style={{ fontSize: 12, fontWeight: step === s.n ? 700 : 500, color: s.done ? DS.brand : step === s.n ? DS.bodyText : DS.dimText, whiteSpace: "nowrap" }}>
+                {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div style={{ flex: 1, height: 2, background: s.done ? DS.brand : DS.border, margin: "0 10px", minWidth: 20, opacity: s.done ? 1 : 0.4 }} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {playCount === 0 && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${DS.border}` }}>
+          <p style={{ margin: "0 0 2px", fontSize: 12, fontWeight: 600, color: DS.bodyText }}>Tag plays below the video to get started</p>
+          <p style={{ margin: 0, fontSize: 11, color: DS.labelText }}>Press <strong>S</strong> to mark snap · <strong>W</strong> to mark end · <strong>↵</strong> to save</p>
+        </div>
+      )}
+
+      {canSubmit && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 14, borderTop: `1px solid ${DS.border}` }}>
+          <div>
+            <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: DS.bodyText }}>
+              {playCount} play{playCount !== 1 ? "s" : ""} tagged — ready for AI analysis
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
+              Submit to run player tracking, formation detection, and EPA on every play.
+            </p>
+          </div>
+          <button onClick={onSubmit} disabled={submitting} style={{
+            display: "inline-flex", alignItems: "center", gap: 7, flexShrink: 0,
+            background: DS.brand, border: "none", borderRadius: 9, padding: "10px 20px",
+            color: "#fff", fontSize: 13, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer",
+            opacity: submitting ? 0.7 : 1,
+          }}>
+            {submitting
+              ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>
+              : <><Sparkles size={14} /> Submit for Analysis</>}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tag Bar ────────────────────────────────────────────────────────────────────
+const PLAY_TYPES = [
+  { id: "run",         label: "RUN",  key: "R" },
+  { id: "pass",        label: "PASS", key: "P" },
+  { id: "punt",        label: "PUNT", key: "U" },
+  { id: "kickoff",     label: "KICK", key: null },
+  { id: "field_goal",  label: "FG",   key: null },
+  { id: "extra_point", label: "XP",   key: null },
+];
+const FORMATIONS = ["shotgun","under_center","pistol","wildcat","i_formation","singleback"];
+const RESULTS    = ["success","failure","td","turnover","penalty"];
+const SPEEDS     = [0.5, 1, 1.5, 2];
+
+function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onClear, plays, onSaved, onSkip, onUndo, videoRef, speed, onSetSpeed, editingPlay, onCancelEdit }) {
+  const nextNum = plays.length + 1;
+  const [form,     setForm]     = useState({ down: "1", distance: "10", playType: "", formation: "", result: "", yardsGained: "", playDirection: "", hash: "", yardLine: "", personnel: "", labels: "" });
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+  const [showMore, setShowMore] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Populate form when entering edit mode
+  useEffect(() => {
+    if (!editingPlay) return;
+    setForm({
+      down:          String(editingPlay.down ?? ""),
+      distance:      String(editingPlay.distance ?? ""),
+      playType:      editingPlay.play_type ?? "",
+      formation:     editingPlay.formation ?? "",
+      result:        editingPlay.result ?? "",
+      yardsGained:   String(editingPlay.yards_gained ?? ""),
+      playDirection: editingPlay.play_direction ?? "",
+      hash:          editingPlay.hash ?? "",
+      yardLine:      String(editingPlay.yard_line ?? ""),
+      personnel:     editingPlay.personnel ?? "",
+      labels:        (editingPlay.labels ?? []).join(", "),
+    });
+    setShowMore(true); // open details so coach can see all fields
+  }, [editingPlay?.id]);
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const actionsRef = useRef({});
+  actionsRef.current = { onMarkSnap, onMarkWhistle, onSkip, onUndo, videoRef };
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 700);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    function onKey(e) {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const a = actionsRef.current;
+      if (e.key === "s" || e.key === "S") { e.preventDefault(); a.onMarkSnap?.(); }
+      if (e.key === "w" || e.key === "W") { e.preventDefault(); a.onMarkWhistle?.(); }
+      if (e.key === "Enter")              { e.preventDefault(); actionsRef.current.savePlay?.(); }
+      if (e.key === "n" || e.key === "N") { e.preventDefault(); a.onSkip?.(); }
+      if (e.key === "z" || e.key === "Z") { e.preventDefault(); a.onUndo?.(); }
+      if (e.key === "r" || e.key === "R") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "run"  ? "" : "run"  })); }
+      if (e.key === "p" || e.key === "P") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "pass" ? "" : "pass" })); }
+      if (e.key === "u" || e.key === "U") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "punt" ? "" : "punt" })); }
+      if (e.key === "1") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "1" ? "" : "1" })); }
+      if (e.key === "2") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "2" ? "" : "2" })); }
+      if (e.key === "3") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "3" ? "" : "3" })); }
+      if (e.key === "4") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "4" ? "" : "4" })); }
+      if (e.key === "[") { e.preventDefault(); if (a.videoRef?.current) a.videoRef.current.currentTime = Math.max(0, a.videoRef.current.currentTime - 5); }
+      if (e.key === "]") { e.preventDefault(); if (a.videoRef?.current) a.videoRef.current.currentTime += 5; }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  function advanceDown(f) {
+    const yards = Number(f.yardsGained), dist = Number(f.distance), down = Number(f.down);
+    // Auto-advance yard_line based on yards gained (ball moves down the field)
+    const newYL = f.yardLine && !isNaN(yards)
+      ? String(Math.min(99, Math.max(1, Number(f.yardLine) + yards)))
+      : f.yardLine;
+    // Reset: play-specific fields. Keep: personnel, hash, yardLine (auto-advanced), formation
+    const keep = { personnel: f.personnel, hash: f.hash, yardLine: newYL, formation: f.formation };
+    if (!isNaN(yards) && !isNaN(dist) && yards >= dist) {
+      setForm(p => ({ ...p, ...keep, down: "1", distance: "10", yardsGained: "", result: "", playType: "", playDirection: "", labels: "" }));
+    } else if (down > 0 && down < 4) {
+      const nd = !isNaN(yards) ? Math.max(1, dist - yards) : dist;
+      setForm(p => ({ ...p, ...keep, down: String(down + 1), distance: String(nd), yardsGained: "", result: "", playType: "", playDirection: "", labels: "" }));
+    } else {
+      setForm(p => ({ ...p, ...keep, down: "1", distance: "10", yardsGained: "", result: "", playType: "", playDirection: "", labels: "" }));
+    }
+  }
+
+  async function savePlay() {
+    const isEdit = !!editingPlay;
+    if (!isEdit && snapTime == null) { setError("Mark the snap first — press S"); return; }
+    setSaving(true); setError("");
+    try {
+      const body = {
+        filmId,
+        ...(isEdit ? { playId: editingPlay.id } : { playNumber: nextNum }),
+        startTimeSecs: snapTime ?? editingPlay?.start_time_secs,
+        endTimeSecs:   whistleTime ?? editingPlay?.end_time_secs ?? undefined,
+        down:          form.down          ? Number(form.down)        : undefined,
+        distance:      form.distance      ? Number(form.distance)    : undefined,
+        yardsGained:   form.yardsGained   ? Number(form.yardsGained) : undefined,
+        playType:      form.playType      || undefined,
+        formation:     form.formation     || undefined,
+        result:        form.result        || undefined,
+        playDirection: form.playDirection || undefined,
+        hash:          form.hash          || undefined,
+        yardLine:      form.yardLine      ? Number(form.yardLine)    : undefined,
+        personnel:     form.personnel     || undefined,
+        labels:        form.labels ? form.labels.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+      };
+      const r = await fetch("/api/film/plays", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error ?? "Save failed"); setSaving(false); return; }
+      if (isEdit) {
+        onCancelEdit?.();
+      } else {
+        advanceDown({ ...form });
+        if (videoRef?.current) {
+          videoRef.current.currentTime = (whistleTime ?? snapTime) + 8;
+          videoRef.current.play?.().catch(() => {});
+        }
+      }
+      onSaved?.(); onClear?.();
+    } catch { setError("Network error"); }
+    setSaving(false);
+  }
+
+  actionsRef.current.savePlay = savePlay;
+
+  const clipSecs = snapTime != null && whistleTime != null ? (whistleTime - snapTime).toFixed(1) : null;
+  const snapSet  = snapTime != null;
+  const endSet   = whistleTime != null;
+  const mob      = isMobile;
+
+  // Solid dark background required for selects — transparent breaks option readability across browsers
+  const selStyle = {
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 7,
+    padding: mob ? "8px 10px" : "6px 10px",
+    fontSize: mob ? 14 : 12,
+    color: "#e2e8f0",
+    background: "#1e293b",
+    outline: "none",
+    cursor: "pointer",
+  };
+  const optStyle = { background: "#1e293b", color: "#e2e8f0" };
+
+  const markBtn = (active, colors) => ({
+    display: "inline-flex", alignItems: "center", gap: 6,
+    padding: mob ? "10px 12px" : "9px 14px",
+    flex: 1, borderRadius: 8, cursor: "pointer", fontWeight: 800,
+    fontSize: mob ? 13 : 12, color: "#fff",
+    background: active ? colors.bg  : "rgba(255,255,255,0.07)",
+    border: `1.5px solid ${active ? colors.bd : "rgba(255,255,255,0.14)"}`,
+  });
+
+  const typeActive = (id) => form.playType === id;
+  const downActive = (n)  => form.down === String(n);
+
+  return (
+    <div style={{ background: "#0d1117", borderRadius: 12, padding: mob ? "10px 12px" : "12px 16px", display: "flex", flexDirection: "column", gap: mob ? 8 : 10, width: "100%", boxSizing: "border-box" }}>
+
+      {/* ── Edit Mode Banner ── */}
+      {editingPlay && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 7, padding: "7px 12px" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa" }}>✏ Editing Play #{editingPlay.play_number}</span>
+          <button onClick={() => { onCancelEdit?.(); onClear?.(); }}
+            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 2px", fontWeight: 700 }}>
+            ✕ Cancel
+          </button>
+        </div>
+      )}
+
+      {/* ── Row 1: Snap / End ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={onMarkSnap} style={markBtn(snapSet, { bg:"#1d4ed8", bd:"#3b82f6" })}>
+          <span style={{ fontSize: 9, fontWeight: 900, background: snapSet ? "#60a5fa" : "rgba(255,255,255,0.18)", borderRadius: 3, padding: "1px 5px", color: "#0d1117", flexShrink: 0 }}>S</span>
+          <span>{snapSet ? fmtTime(snapTime) : "Snap"}</span>
+          {snapSet && <CheckCircle2 size={12} style={{ marginLeft: "auto", opacity: 0.8 }} />}
+        </button>
+
+        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 18, flexShrink: 0, lineHeight: 1 }}>→</span>
+
+        <button onClick={onMarkWhistle} style={markBtn(endSet, { bg:"#15803d", bd:"#22c55e" })}>
+          <span style={{ fontSize: 9, fontWeight: 900, background: endSet ? "#4ade80" : "rgba(255,255,255,0.18)", borderRadius: 3, padding: "1px 5px", color: "#0d1117", flexShrink: 0 }}>W</span>
+          <span>{endSet ? fmtTime(whistleTime) : "End"}</span>
+          {endSet && <CheckCircle2 size={12} style={{ marginLeft: "auto", opacity: 0.8 }} />}
+        </button>
+
+        {clipSecs && (
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 700, background: "rgba(255,255,255,0.06)", borderRadius: 5, padding: "4px 9px", flexShrink: 0 }}>
+            {clipSecs}s
+          </span>
+        )}
+      </div>
+
+      {/* ── Row 2a: Play Type buttons ── */}
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${PLAY_TYPES.length}, 1fr)`, gap: 4, width: "100%" }}>
+        {PLAY_TYPES.map(t => (
+          <button key={t.id}
+            onClick={() => set("playType", typeActive(t.id) ? "" : t.id)}
+            title={t.key ? `Key: ${t.key}` : undefined}
+            style={{
+              padding: mob ? "9px 4px" : "7px 11px",
+              fontSize: mob ? 11 : 11, fontWeight: 800, letterSpacing: "0.05em",
+              borderRadius: 7, cursor: "pointer",
+              border: `1.5px solid ${typeActive(t.id) ? typeColor(t.id) : "rgba(255,255,255,0.12)"}`,
+              background: typeActive(t.id) ? typeColor(t.id) : "rgba(255,255,255,0.06)",
+              color: typeActive(t.id) ? "#fff" : "rgba(255,255,255,0.5)",
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Row 2b (mobile) / Row 2 cont (desktop): Down + Distance + Direction ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 8 }}>
+        {/* Down buttons */}
+        {[1,2,3,4].map(n => (
+          <button key={n}
+            onClick={() => set("down", downActive(n) ? "" : String(n))}
+            title={`Key: ${n}`}
+            style={{
+              flex: mob ? 1 : "none",
+              width:  mob ? undefined : 32, height: mob ? 36 : 32,
+              fontSize: mob ? 15 : 13, fontWeight: 800, borderRadius: 7, cursor: "pointer",
+              border: `1.5px solid ${downActive(n) ? "#94a3b8" : "rgba(255,255,255,0.12)"}`,
+              background: downActive(n) ? "#334155" : "rgba(255,255,255,0.06)",
+              color: downActive(n) ? "#fff" : "rgba(255,255,255,0.5)",
+            }}>
+            {n}
+          </button>
+        ))}
+
+        <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>&</span>
+
+        <input
+          type="number" value={form.distance}
+          onChange={e => set("distance", e.target.value)}
+          placeholder="10"
+          style={{
+            width: mob ? 42 : 44, padding: mob ? "8px 4px" : "6px 6px",
+            borderRadius: 7, border: "1.5px solid rgba(255,255,255,0.14)",
+            background: "#1e293b", color: "#e2e8f0",
+            fontSize: mob ? 14 : 13, fontWeight: 700, textAlign: "center", outline: "none",
+          }}
+        />
+
+        <div style={{ flex: 1 }} />
+
+        {/* Play Direction */}
+        {[
+          { id:"left",   icon:"←", label:"L" },
+          { id:"middle", icon:"↑", label:"M" },
+          { id:"right",  icon:"→", label:"R" },
+        ].map(d => {
+          const active = form.playDirection === d.id;
+          return (
+            <button key={d.id}
+              onClick={() => set("playDirection", active ? "" : d.id)}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                width: mob ? 36 : 32, height: mob ? 36 : 32,
+                fontSize: mob ? 14 : 11, fontWeight: 800, borderRadius: 7, cursor: "pointer",
+                border: `1.5px solid ${active ? "#64748b" : "rgba(255,255,255,0.1)"}`,
+                background: active ? "#334155" : "rgba(255,255,255,0.05)",
+                color: active ? "#e2e8f0" : "rgba(255,255,255,0.4)",
+                gap: 1, lineHeight: 1,
+              }}>
+              <span style={{ fontSize: mob ? 12 : 9 }}>{d.icon}</span>
+              <span style={{ fontSize: mob ? 9 : 7, letterSpacing: "0.04em" }}>{d.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Row 3: Save · Skip · Speed · Undo ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+        <button onClick={savePlay} disabled={saving || (!editingPlay && !snapSet)}
+          style={{
+            flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
+            padding: mob ? "10px 10px" : "10px 20px",
+            borderRadius: 9, border: "none", fontWeight: 800, fontSize: mob ? 13 : 13,
+            background: (editingPlay || snapSet) ? (editingPlay ? "#1e40af" : DS.brand) : "rgba(255,255,255,0.06)",
+            color: (editingPlay || snapSet) ? "#fff" : "rgba(255,255,255,0.2)",
+            cursor: saving || (!editingPlay && !snapSet) ? "not-allowed" : "pointer",
+            minWidth: 0,
+          }}>
+          {saving
+            ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+            : <CheckCircle2 size={13} style={{ flexShrink: 0 }} />}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {saving ? "Saving…" : editingPlay ? `Update #${editingPlay.play_number}` : `Save #${nextNum}`}
+          </span>
+        </button>
+
+        {!editingPlay && (
+          <button onClick={onSkip} style={{
+            padding: mob ? "10px 10px" : "10px 14px",
+            borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)",
+            fontSize: mob ? 12 : 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+          }}>
+            Skip
+          </button>
+        )}
+
+        {/* Speed buttons — always visible, compact on mobile */}
+        <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+          {SPEEDS.map(s => (
+            <button key={s}
+              onClick={() => { onSetSpeed?.(s); if (videoRef?.current) videoRef.current.playbackRate = s; }}
+              style={{
+                padding: mob ? "7px 7px" : "5px 8px",
+                borderRadius: 6, border: "none", cursor: "pointer",
+                fontSize: mob ? 11 : 10, fontWeight: 800,
+                background: speed === s ? "#4FABFF" : "rgba(255,255,255,0.08)",
+                color:      speed === s ? "#0d1117" : "rgba(255,255,255,0.5)",
+              }}>
+              {s}x
+            </button>
+          ))}
+        </div>
+
+        <button onClick={onUndo} disabled={plays.length === 0}
+          style={{
+            background: "none", border: "none", cursor: plays.length > 0 ? "pointer" : "not-allowed",
+            color: plays.length > 0 ? "#f87171" : "rgba(255,255,255,0.2)",
+            fontSize: mob ? 12 : 11, fontWeight: 700, padding: "4px 4px",
+            display: "flex", alignItems: "center", gap: 2, flexShrink: 0,
+          }}>
+          ↩
+        </button>
+      </div>
+
+      {/* ── Row 4: Details expansion (Formation / Result / Yards) ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 2, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <button onClick={() => setShowMore(m => !m)}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.35)", fontSize: 11, fontWeight: 700, padding: "2px 0", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 9 }}>{showMore ? "▾" : "▸"}</span> {showMore ? "Hide" : "Details"}
+        </button>
+
+        {showMore && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", paddingTop: 4 }}>
+
+            {/* Row A1: Personnel (always one row — 5 buttons fit easily) */}
+            <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>PERS</span>
+              {["10","11","12","21","22"].map(g => {
+                const active = form.personnel === g;
+                return (
+                  <button key={g} onClick={() => set("personnel", active ? "" : g)}
+                    style={{
+                      flex: mob ? 1 : "none",
+                      padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 12 : 11, fontWeight: 800,
+                      borderRadius: 6, cursor: "pointer",
+                      border: `1.5px solid ${active ? DS.brand : "rgba(255,255,255,0.12)"}`,
+                      background: active ? DS.brandBg : "rgba(255,255,255,0.05)",
+                      color: active ? DS.brand : "rgba(255,255,255,0.45)",
+                    }}>
+                    {g}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Row A2: Hash + Yard line (always one row — 5 buttons + YD input) */}
+            <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>HASH</span>
+              {[
+                { id:"left_wide",  short:"LW" },
+                { id:"left_hash",  short:"LH" },
+                { id:"middle",     short:"MID" },
+                { id:"right_hash", short:"RH" },
+                { id:"right_wide", short:"RW" },
+              ].map(h => {
+                const active = form.hash === h.id;
+                return (
+                  <button key={h.id} onClick={() => set("hash", active ? "" : h.id)}
+                    style={{
+                      flex: mob ? 1 : "none",
+                      padding: mob ? "7px 2px" : "5px 8px", fontSize: mob ? 11 : 10, fontWeight: 800,
+                      borderRadius: 6, cursor: "pointer",
+                      border: `1.5px solid ${active ? "#94a3b8" : "rgba(255,255,255,0.1)"}`,
+                      background: active ? "#334155" : "rgba(255,255,255,0.04)",
+                      color: active ? "#e2e8f0" : "rgba(255,255,255,0.4)",
+                    }}>
+                    {h.short}
+                  </button>
+                );
+              })}
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>YD</span>
+              <input type="number" value={form.yardLine} onChange={e => set("yardLine", e.target.value)}
+                placeholder="–"
+                style={{ width: mob ? 44 : 42, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 12, fontWeight: 700, textAlign: "center", outline: "none" }}
+              />
+            </div>
+
+            {/* Row B: Formation + Result + Yards */}
+            <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 6, flexWrap: "wrap" }}>
+              <select value={form.formation} onChange={e => set("formation", e.target.value)} style={selStyle}>
+                <option value="" style={optStyle}>Formation</option>
+                {FORMATIONS.map(f => <option key={f} value={f} style={optStyle}>{cap(f)}</option>)}
+              </select>
+              <select value={form.result} onChange={e => set("result", e.target.value)} style={selStyle}>
+                <option value="" style={optStyle}>Result</option>
+                {RESULTS.map(r => <option key={r} value={r} style={optStyle}>{cap(r)}</option>)}
+              </select>
+              <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)}
+                placeholder="Yards ±"
+                style={{ width: mob ? 80 : 68, padding: mob ? "10px 10px" : "6px 8px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, outline: "none" }} />
+            </div>
+
+            {/* Row C: Custom labels */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>TAGS</span>
+              <input type="text" value={form.labels} onChange={e => set("labels", e.target.value)}
+                placeholder="red_zone, 3rd_down, blitz… (comma-separated)"
+                style={{ flex: 1, padding: mob ? "9px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Keyboard hints — desktop only, when details are collapsed */}
+        {!mob && !showMore && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {[["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"]].map(([k,l]) => (
+              <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>
+                <span style={{ background: "rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 4px", fontWeight: 800, marginRight: 2 }}>{k}</span>{l}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+    </div>
+  );
+}
+
 // ── Play Sidebar ──────────────────────────────────────────────────────────────
-function PlaySidebar({ plays, selectedId, onSelect }) {
+function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const anchorRef = useRef(null);
   const [filter, setFilter] = useState("all");
 
   const types = useMemo(() => {
     const s = new Set(plays.map(p => p.play_type).filter(Boolean));
-    return ["all", ...Array.from(s)];
+    return [...Array.from(s)];
   }, [plays]);
 
   const visible = useMemo(() =>
     filter === "all" ? plays : plays.filter(p => p.play_type === filter),
   [plays, filter]);
 
+  // Mini stats summary
+  const runs       = plays.filter(p => p.play_type === "run").length;
+  const passes     = plays.filter(p => p.play_type === "pass").length;
+  const successes  = plays.filter(p => ["success","td"].includes(p.result)).length;
+  const pct        = plays.length ? Math.round((successes / plays.length) * 100) : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      {/* Filter chips */}
-      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", paddingBottom: 10, borderBottom: `1px solid ${DS.border}`, marginBottom: 10 }}>
-        {types.map(t => (
-          <button key={t} onClick={() => setFilter(t)} style={{
-            border: "none", borderRadius: 20, padding: "4px 10px",
-            fontSize: 10, fontWeight: 700, cursor: "pointer", letterSpacing: "0.04em",
-            textTransform: "uppercase",
-            background: filter === t ? DS.brand : DS.pageBg,
-            color:      filter === t ? "#fff"    : DS.labelText,
-          }}>
-            {t === "all" ? `All (${plays.length})` : cap(t)}
-          </button>
-        ))}
-      </div>
 
-      {/* List */}
+      {/* Mini stats bar */}
+      {plays.length > 0 && (
+        <div style={{ display: "flex", gap: 0, marginBottom: 10, background: DS.pageBg, borderRadius: 8, overflow: "hidden", flexShrink: 0 }}>
+          {[
+            { label: "Runs",    value: runs,    color: TYPE_COLOR.run  },
+            { label: "Passes",  value: passes,  color: TYPE_COLOR.pass },
+            { label: "Success", value: pct != null ? `${pct}%` : "–", color: DS.safe },
+          ].map((s, i) => (
+            <div key={s.label} style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderLeft: i > 0 ? `1px solid ${DS.border}` : "none" }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: s.color }}>{s.value}</p>
+              <p style={{ margin: 0, fontSize: 9, color: DS.dimText, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filter pills */}
+      {types.length > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", paddingBottom: 10, marginBottom: 8, borderBottom: `1px solid ${DS.border}`, flexShrink: 0 }}>
+          <button onClick={() => setFilter("all")} style={{
+            border: "none", borderRadius: 20, padding: "3px 9px",
+            fontSize: 9, fontWeight: 800, cursor: "pointer", letterSpacing: "0.05em", textTransform: "uppercase",
+            background: filter === "all" ? DS.brand : DS.pageBg,
+            color: filter === "all" ? "#fff" : DS.labelText,
+          }}>All {plays.length}</button>
+          {types.map(t => (
+            <button key={t} onClick={() => setFilter(t)} style={{
+              border: "none", borderRadius: 20, padding: "3px 9px",
+              fontSize: 9, fontWeight: 800, cursor: "pointer", letterSpacing: "0.05em", textTransform: "uppercase",
+              background: filter === t ? typeColor(t) : typeBg(t),
+              color: filter === t ? "#fff" : typeColor(t),
+            }}>
+              {typeShort(t)} {plays.filter(p => p.play_type === t).length}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Play list */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
         {visible.map(play => {
           const sel = play.id === selectedId;
+          const dl  = downLabel(play.down, play.distance);
+          const dur = play.start_time_secs != null && play.end_time_secs != null
+            ? `${fmtTime(play.start_time_secs)} – ${fmtTime(play.end_time_secs)}`
+            : play.start_time_secs != null ? fmtTime(play.start_time_secs)
+            : null;
+
           return (
             <div key={play.id} onClick={() => onSelect(play)} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "9px 10px", borderRadius: 8, cursor: "pointer",
-              background: sel ? DS.brandBg : "transparent",
-              border: `1px solid ${sel ? DS.brandBorder : "transparent"}`,
-              transition: "all 0.1s",
+              display: "flex", alignItems: "stretch", cursor: "pointer",
+              borderRadius: 9, border: `1px solid ${sel ? DS.brandBorder : DS.border}`,
+              background: sel ? DS.brandBg : DS.cardBg,
+              overflow: "hidden", transition: "all 0.1s",
+              boxShadow: sel ? `0 0 0 2px ${DS.brandBorder}` : "none",
             }}>
-              <span style={{
-                width: 26, height: 26, borderRadius: 6, flexShrink: 0,
-                background: sel ? DS.brand : DS.pageBg,
-                color: sel ? "#fff" : DS.labelText,
-                fontWeight: 800, fontSize: 11,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {play.play_number}
-              </span>
+              {/* Result color stripe */}
+              <div style={{
+                width: 4, flexShrink: 0,
+                background: play.result ? resultColor(play.result) : (sel ? DS.brand : DS.border),
+              }} />
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 1 }}>
-                  {play.down && play.distance && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: DS.bodyText }}>
-                      {play.down}&amp;{play.distance}
+              {/* Content */}
+              <div style={{ flex: 1, padding: "8px 10px", minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                  {/* Play number */}
+                  <span style={{ fontSize: 9, fontWeight: 700, color: DS.dimText, minWidth: 18 }}>
+                    #{play.play_number}
+                  </span>
+
+                  {/* Down & Distance — headline */}
+                  {dl ? (
+                    <span style={{ fontSize: 12, fontWeight: 800, color: sel ? DS.brand : DS.bodyText }}>
+                      {dl}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: DS.dimText }}>No metadata</span>
+                  )}
+
+                  {/* Type chip */}
+                  {play.play_type && (
+                    <span style={{
+                      fontSize: 8, fontWeight: 800, padding: "2px 5px", borderRadius: 4,
+                      background: sel ? typeColor(play.play_type) : typeBg(play.play_type),
+                      color: sel ? "#fff" : typeColor(play.play_type),
+                      textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0,
+                    }}>
+                      {typeShort(play.play_type)}
                     </span>
                   )}
-                  {play.play_type && (
-                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: DS.dimText }}>
-                      {play.play_type}
+
+                  {/* Yards gained */}
+                  {play.yards_gained != null && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 800, flexShrink: 0,
+                      color: Number(play.yards_gained) >= 0 ? DS.safe : DS.warn,
+                    }}>
+                      {Number(play.yards_gained) > 0 ? "+" : ""}{play.yards_gained}
                     </span>
+                  )}
+
+                  {/* Edit + Add-to-playlist buttons */}
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 2, flexShrink: 0 }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); onEdit?.(play); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, fontSize: 10, color: DS.dimText, lineHeight: 1 }}
+                      title="Edit play metadata"
+                    >✏</button>
+                    <button
+                      ref={openMenuId === play.id ? anchorRef : null}
+                      onClick={e => {
+                        e.stopPropagation();
+                        anchorRef.current = e.currentTarget;
+                        setOpenMenuId(openMenuId === play.id ? null : play.id);
+                      }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, fontSize: 10, color: openMenuId === play.id ? DS.brand : DS.dimText, lineHeight: 1, display: "flex", alignItems: "center" }}
+                      title="Add to playlist"
+                    ><Plus size={11} /></button>
+                    {openMenuId === play.id && (
+                      <AddToPlaylistMenu
+                        play={play}
+                        playlists={playlists ?? []}
+                        onAdd={onAddToPlaylist}
+                        onCreateAndAdd={onCreateAndAddToPlaylist}
+                        onClose={() => setOpenMenuId(null)}
+                        anchorRef={anchorRef}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: timestamp + location + formation */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {dur && (
+                    <span style={{ fontSize: 10, color: DS.dimText, fontVariantNumeric: "tabular-nums" }}>{dur}</span>
+                  )}
+                  {play.yard_line != null && (
+                    <span style={{ fontSize: 9, color: DS.dimText }}>· Yd {play.yard_line}</span>
+                  )}
+                  {play.hash && (
+                    <span style={{ fontSize: 9, color: DS.dimText }}>
+                      · { {left_wide:"LW", left_hash:"LH", middle:"Mid", right_hash:"RH", right_wide:"RW"}[play.hash] ?? play.hash }
+                    </span>
+                  )}
+                  {play.formation && (
+                    <span style={{ fontSize: 9, color: DS.dimText }}>· {cap(play.formation)}</span>
                   )}
                 </div>
-                <span style={{ fontSize: 10, color: DS.dimText }}>{fmtTime(play.start_time_secs)}</span>
-              </div>
 
-              {play.result && (
-                <span style={{
-                  fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 10, flexShrink: 0,
-                  color: resultColor(play.result), background: resultBg(play.result),
-                  textTransform: "uppercase",
-                }}>
-                  {play.yards_gained != null ? fmtYd(play.yards_gained) : cap(play.result)}
-                </span>
-              )}
+                {/* Row 3: personnel chip + direction + labels */}
+                {(play.personnel || play.play_direction || (play.labels ?? []).length > 0) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
+                    {play.personnel && (
+                      <span style={{ fontSize: 8, fontWeight: 800, padding: "2px 5px", borderRadius: 4, background: DS.brandBg, color: DS.brand, textTransform: "uppercase" }}>
+                        {play.personnel} pers
+                      </span>
+                    )}
+                    {play.play_direction && (
+                      <span style={{ fontSize: 9 }}>
+                        { {left:"←", middle:"↑", right:"→"}[play.play_direction] }
+                      </span>
+                    )}
+                    {(play.labels ?? []).map(l => (
+                      <span key={l} style={{ fontSize: 8, fontWeight: 600, padding: "2px 5px", borderRadius: 4, background: "#f1f5f9", color: "#475569" }}>
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
 
-        {visible.length === 0 && (
-          <p style={{ textAlign: "center", color: DS.dimText, fontSize: 12, margin: "24px 0" }}>
-            No {filter !== "all" ? filter : ""} plays
+        {visible.length === 0 && plays.length > 0 && (
+          <p style={{ textAlign: "center", color: DS.dimText, fontSize: 12, margin: "20px 0" }}>
+            No {filter} plays tagged
           </p>
         )}
       </div>
@@ -648,47 +1416,456 @@ function PlayerStatsGrid({ plays, roster, onPlayerClick }) {
   );
 }
 
+// ── Add-to-Playlist Menu ──────────────────────────────────────────────────────
+// Rendered via portal so it escapes the sidebar's overflowY:auto scroll clipping.
+function AddToPlaylistMenu({ play, playlists, onAdd, onCreateAndAdd, onClose, anchorRef }) {
+  const [creating, setCreating] = useState(false);
+  const [newName,  setNewName]  = useState("");
+  const [busy,     setBusy]     = useState(false);
+  const [coords,   setCoords]   = useState(null);
+
+  // Position the menu below the anchor button using fixed coords
+  useEffect(() => {
+    if (!anchorRef?.current) return;
+    const r = anchorRef.current.getBoundingClientRect();
+    const menuW = 220;
+    let left = r.right - menuW;
+    if (left < 8) left = 8;
+    setCoords({ top: r.bottom + 4, left });
+  }, [anchorRef]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handle(e) {
+      if (anchorRef?.current?.contains(e.target)) return;
+      onClose();
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [onClose, anchorRef]);
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    await onCreateAndAdd(name, play);
+    setBusy(false);
+    onClose();
+  }
+
+  async function handleAdd(list) {
+    setBusy(true);
+    await onAdd(list.id, play);
+    setBusy(false);
+    onClose();
+  }
+
+  if (!coords) return null;
+
+  const menu = (
+    <div
+      style={{
+        position: "fixed", zIndex: 9999,
+        top: coords.top, left: coords.left, width: 220,
+        background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 10,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.14)",
+        padding: "6px 0",
+      }}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      {/* Header */}
+      <p style={{ margin: "0 0 4px", padding: "2px 12px 6px", fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.dimText, borderBottom: `1px solid ${DS.border}` }}>
+        Add to playlist
+      </p>
+
+      {/* Existing playlists */}
+      {playlists.length === 0 && !creating && (
+        <p style={{ margin: 0, padding: "8px 14px", fontSize: 12, color: DS.dimText }}>No playlists yet</p>
+      )}
+      {playlists.map(list => {
+        const already = (list.items ?? []).some(p => p.id === play.id);
+        return (
+          <button key={list.id}
+            onClick={() => !already && handleAdd(list)}
+            disabled={already || busy}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              width: "100%", padding: "8px 14px", border: "none",
+              background: "none", cursor: already ? "default" : "pointer", textAlign: "left",
+            }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: already ? DS.dimText : DS.bodyText }}>{list.name}</span>
+            <span style={{ fontSize: 10, color: already ? DS.safe : DS.dimText, fontWeight: 700 }}>
+              {already ? "✓ Added" : `${(list.items ?? []).length}`}
+            </span>
+          </button>
+        );
+      })}
+
+      {/* New playlist */}
+      <div style={{ borderTop: `1px solid ${DS.border}`, marginTop: 2, paddingTop: 2 }}>
+        {creating ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px" }}>
+            <input
+              autoFocus
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") setCreating(false); }}
+              placeholder="Playlist name…"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "7px 10px", borderRadius: 7, fontSize: 13,
+                border: `1px solid ${DS.border}`, outline: "none",
+                background: DS.pageBg, color: DS.bodyText,
+              }}
+            />
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={handleCreate} disabled={busy || !newName.trim()}
+                style={{
+                  flex: 1, background: DS.brand, color: "#fff", border: "none", borderRadius: 7,
+                  padding: "8px 0", fontSize: 12, fontWeight: 800, cursor: newName.trim() ? "pointer" : "not-allowed",
+                  opacity: newName.trim() ? 1 : 0.5,
+                }}>
+                {busy ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setCreating(false)}
+                style={{
+                  background: DS.pageBg, color: DS.labelText, border: `1px solid ${DS.border}`,
+                  borderRadius: 7, padding: "8px 12px", fontSize: 12, cursor: "pointer",
+                }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setCreating(true)}
+            style={{
+              display: "flex", alignItems: "center", gap: 7, width: "100%",
+              padding: "9px 14px", border: "none", background: "none",
+              cursor: "pointer", color: DS.brand, fontSize: 13, fontWeight: 700,
+            }}>
+            <Plus size={13} /> New playlist
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(menu, document.body);
+}
+
+// ── Playlists Tab ─────────────────────────────────────────────────────────────
+function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, filmId, fetchPlaylists }) {
+  const [openId,    setOpenId]    = useState(null);
+  const [renaming,  setRenaming]  = useState(null);
+  const [renameVal, setRenameVal] = useState("");
+  const [busy,      setBusy]      = useState(false);
+
+  const open = playlists.find(l => l.id === openId);
+
+  async function handleDelete(listId) {
+    if (!confirm("Delete this playlist?")) return;
+    setBusy(true);
+    await onDelete(listId);
+    if (openId === listId) setOpenId(null);
+    await fetchPlaylists();
+    setBusy(false);
+  }
+
+  async function handleRemove(itemId) {
+    setBusy(true);
+    await onRemovePlay(itemId);
+    await fetchPlaylists();
+    setBusy(false);
+  }
+
+  async function handleRename(listId) {
+    const name = renameVal.trim();
+    if (!name) return;
+    setBusy(true);
+    await onRename(listId, name);
+    await fetchPlaylists();
+    setRenaming(null);
+    setBusy(false);
+  }
+
+  if (playlists.length === 0) {
+    return (
+      <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+        <ListVideo size={36} color={DS.dimText} style={{ opacity: 0.25, marginBottom: 14 }} />
+        <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: DS.bodyText }}>No cut-ups yet</p>
+        <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
+          Click the <strong>+</strong> button on any play in the sidebar to add it to a playlist.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Playlist list */}
+      {!open && playlists.map(list => (
+        <div key={list.id} style={{
+          background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12,
+          padding: "14px 16px", display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <ListVideo size={20} color={DS.brand} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {renaming === list.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  autoFocus value={renameVal} onChange={e => setRenameVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleRename(list.id); if (e.key === "Escape") setRenaming(null); }}
+                  style={{ flex: 1, padding: "5px 8px", borderRadius: 6, border: `1px solid ${DS.border}`, fontSize: 13, outline: "none", background: DS.pageBg, color: DS.bodyText }}
+                />
+                <button onClick={() => handleRename(list.id)} style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Save</button>
+                <button onClick={() => setRenaming(null)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 12 }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{list.name}</p>
+                <p style={{ margin: 0, fontSize: 11, color: DS.dimText }}>
+                  {(list.items ?? []).length} play{(list.items ?? []).length !== 1 ? "s" : ""}
+                  {list.created_by && ` · by ${list.created_by}`}
+                </p>
+              </>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => onPlay(list)} disabled={!(list.items ?? []).length}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                background: DS.brand, color: "#fff", border: "none", borderRadius: 8,
+                padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: (list.items ?? []).length ? "pointer" : "not-allowed",
+                opacity: (list.items ?? []).length ? 1 : 0.4,
+              }}>
+              <Play size={12} /> Play All
+            </button>
+            <button onClick={() => setOpenId(list.id)}
+              style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: DS.labelText, display: "flex", alignItems: "center", gap: 4 }}>
+              <ChevronRight size={13} /> View
+            </button>
+            <button onClick={() => { setRenaming(list.id); setRenameVal(list.name); }}
+              style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", color: DS.dimText }}>
+              ✏
+            </button>
+            <button onClick={() => handleDelete(list.id)} disabled={busy}
+              style={{ background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", color: DS.warn }}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {/* Open playlist: play-by-play view */}
+      {open && (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, overflow: "hidden" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: `1px solid ${DS.border}` }}>
+            <button onClick={() => setOpenId(null)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: DS.labelText, fontSize: 12, padding: 0 }}>
+              <ArrowLeft size={13} /> Back
+            </button>
+            <div style={{ width: 1, height: 16, background: DS.border }} />
+            <ListVideo size={16} color={DS.brand} />
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: DS.bodyText, flex: 1 }}>{open.name}</p>
+            <button onClick={() => onPlay(open)} disabled={!open.items?.length}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                background: DS.brand, color: "#fff", border: "none", borderRadius: 8,
+                padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>
+              <Play size={14} /> Play All
+            </button>
+          </div>
+
+          {/* Play list */}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {(open.items ?? []).length === 0 && (
+              <p style={{ margin: 0, padding: 24, textAlign: "center", fontSize: 13, color: DS.dimText }}>No plays yet — add some from the sidebar.</p>
+            )}
+            {(open.items ?? []).map((play, idx) => {
+              const dl  = downLabel(play.down, play.distance);
+              const dur = play.start_time_secs != null && play.end_time_secs != null
+                ? `${fmtTime(play.start_time_secs)} – ${fmtTime(play.end_time_secs)}`
+                : play.start_time_secs != null ? fmtTime(play.start_time_secs) : null;
+              return (
+                <div key={play._itemId} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "10px 18px",
+                  borderBottom: `1px solid ${DS.border}`,
+                }}>
+                  <span style={{ width: 22, fontSize: 11, fontWeight: 700, color: DS.dimText, textAlign: "right", flexShrink: 0 }}>{idx + 1}</span>
+                  <div style={{ width: 4, height: 36, borderRadius: 2, flexShrink: 0, background: play.result ? resultColor(play.result) : DS.border }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>
+                        {dl ?? `Play #${play.play_number}`}
+                      </span>
+                      {play.play_type && (
+                        <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 5px", borderRadius: 4, background: typeBg(play.play_type), color: typeColor(play.play_type), textTransform: "uppercase" }}>
+                          {typeShort(play.play_type)}
+                        </span>
+                      )}
+                      {play.yards_gained != null && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: Number(play.yards_gained) >= 0 ? DS.safe : DS.warn }}>
+                          {Number(play.yards_gained) > 0 ? "+" : ""}{play.yards_gained}
+                        </span>
+                      )}
+                    </div>
+                    {dur && <p style={{ margin: 0, fontSize: 10, color: DS.dimText }}>{dur}</p>}
+                  </div>
+                  <button onClick={() => handleRemove(play._itemId)} disabled={busy}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, padding: "4px", borderRadius: 4, display: "flex", alignItems: "center" }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Cut-up Player Overlay ─────────────────────────────────────────────────────
+function CutupOverlay({ cutup, onNext, onPrev, onStop, isMobile }) {
+  if (!cutup) return null;
+  const { name, plays, index } = cutup;
+  const current = plays[index];
+  const dl = downLabel(current?.down, current?.distance);
+
+  return (
+    <div style={{
+      position: "absolute", bottom: 0, left: 0, right: 0,
+      background: "linear-gradient(transparent, rgba(0,0,0,0.85))",
+      padding: isMobile ? "16px 12px 10px" : "24px 20px 14px",
+      display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12,
+      pointerEvents: "none",
+    }}>
+      {/* Left: play info */}
+      <div style={{ pointerEvents: "auto" }}>
+        <p style={{ margin: "0 0 2px", fontSize: isMobile ? 10 : 11, fontWeight: 700, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {name} · {index + 1} / {plays.length}
+        </p>
+        <p style={{ margin: 0, fontSize: isMobile ? 14 : 16, fontWeight: 800, color: "#fff" }}>
+          {dl ?? `Play #${current?.play_number}`}
+          {current?.play_type && (
+            <span style={{ fontSize: 11, fontWeight: 700, marginLeft: 8, background: "rgba(255,255,255,0.15)", borderRadius: 4, padding: "2px 6px" }}>
+              {typeShort(current.play_type)}
+            </span>
+          )}
+        </p>
+      </div>
+
+      {/* Right: controls */}
+      <div style={{ display: "flex", gap: 8, pointerEvents: "auto" }}>
+        <button onClick={onPrev} disabled={index === 0}
+          style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: index > 0 ? "pointer" : "not-allowed", color: "#fff", display: "flex", alignItems: "center", opacity: index === 0 ? 0.4 : 1 }}>
+          <SkipBack size={16} />
+        </button>
+        <button onClick={onNext} disabled={index >= plays.length - 1}
+          style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: index < plays.length - 1 ? "pointer" : "not-allowed", color: "#fff", display: "flex", alignItems: "center", opacity: index >= plays.length - 1 ? 0.4 : 1 }}>
+          <SkipForward size={16} />
+        </button>
+        <button onClick={onStop}
+          style={{ background: "rgba(220,38,38,0.8)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+          ✕ Exit
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Tendency Report ───────────────────────────────────────────────────────────
-function TendencyReport({ plays }) {
+function TendencyReport({ plays, analytics }) {
   const data = useMemo(() => {
-    const byType = {}, byDown = {}, byFormation = {};
-    let rzAtt = 0, rzSuc = 0;
+    const byType = {}, byDown = {}, byFormation = {}, byPersonnel = {}, byDirection = {}, byHash = {};
+    const ZONES = [
+      { key:"own_end_zone", label:"Own 1–19",   min:1,  max:19  },
+      { key:"own_20",       label:"Own 20–39",  min:20, max:39  },
+      { key:"midfield",     label:"Midfield",   min:40, max:59  },
+      { key:"opp_40",       label:"Opp 40–20",  min:60, max:79  },
+      { key:"red_zone",     label:"Red Zone",   min:80, max:99  },
+    ];
+    const byZone = Object.fromEntries(ZONES.map(z => [z.key, { ...z, att:0, suc:0, yds:0, run:0, pass:0 }]));
 
     for (const p of plays) {
-      const ok  = ["success", "td"].includes(String(p.result || "").toLowerCase());
-      const pt  = p.play_type || "other";
-      const yd  = p.yards_gained != null ? Number(p.yards_gained) : null;
+      const ok = ["success","td"].includes(String(p.result || "").toLowerCase());
+      const yd = p.yards_gained != null ? Number(p.yards_gained) : null;
+      const pt = p.play_type || "other";
 
-      if (!byType[pt]) byType[pt] = { att: 0, suc: 0, yds: 0, ydN: 0 };
-      byType[pt].att++; if (ok) byType[pt].suc++; if (yd != null) { byType[pt].yds += yd; byType[pt].ydN++; }
+      if (!byType[pt]) byType[pt] = { att:0, suc:0, yds:0, ydN:0 };
+      byType[pt].att++; if (ok) byType[pt].suc++;
+      if (yd != null) { byType[pt].yds += yd; byType[pt].ydN++; }
 
       if (p.down) {
-        if (!byDown[p.down]) byDown[p.down] = { att: 0, suc: 0 };
+        if (!byDown[p.down]) byDown[p.down] = { att:0, suc:0, run:0, pass:0 };
         byDown[p.down].att++; if (ok) byDown[p.down].suc++;
+        if (pt === "run")  byDown[p.down].run++;
+        if (pt === "pass") byDown[p.down].pass++;
       }
 
       if (p.formation) {
-        if (!byFormation[p.formation]) byFormation[p.formation] = { att: 0, suc: 0 };
+        if (!byFormation[p.formation]) byFormation[p.formation] = { att:0, suc:0, yds:0, ydN:0 };
         byFormation[p.formation].att++; if (ok) byFormation[p.formation].suc++;
+        if (yd != null) { byFormation[p.formation].yds += yd; byFormation[p.formation].ydN++; }
       }
 
-      const inRZ = (p.player_tracks ?? []).some(t => t.snap_y != null && t.snap_y >= 80);
-      if (inRZ) { rzAtt++; if (ok) rzSuc++; }
+      if (p.personnel) {
+        if (!byPersonnel[p.personnel]) byPersonnel[p.personnel] = { att:0, suc:0, run:0, pass:0 };
+        byPersonnel[p.personnel].att++; if (ok) byPersonnel[p.personnel].suc++;
+        if (pt === "run")  byPersonnel[p.personnel].run++;
+        if (pt === "pass") byPersonnel[p.personnel].pass++;
+      }
+
+      if (p.play_direction) {
+        if (!byDirection[p.play_direction]) byDirection[p.play_direction] = { att:0, suc:0, yds:0, ydN:0 };
+        byDirection[p.play_direction].att++; if (ok) byDirection[p.play_direction].suc++;
+        if (yd != null) { byDirection[p.play_direction].yds += yd; byDirection[p.play_direction].ydN++; }
+      }
+
+      if (p.hash) {
+        if (!byHash[p.hash]) byHash[p.hash] = { att:0, suc:0, run:0, pass:0 };
+        byHash[p.hash].att++; if (ok) byHash[p.hash].suc++;
+        if (pt === "run")  byHash[p.hash].run++;
+        if (pt === "pass") byHash[p.hash].pass++;
+      }
+
+      if (p.yard_line != null) {
+        const z = ZONES.find(z => p.yard_line >= z.min && p.yard_line <= z.max);
+        if (z) {
+          byZone[z.key].att++; if (ok) byZone[z.key].suc++;
+          if (yd != null) byZone[z.key].yds += yd;
+          if (pt === "run")  byZone[z.key].run++;
+          if (pt === "pass") byZone[z.key].pass++;
+        }
+      }
     }
-    return { byType, byDown, byFormation, rzAtt, rzSuc };
+    const zones = ZONES.map(z => byZone[z.key]).filter(z => z.att > 0);
+    return { byType, byDown, byFormation, byPersonnel, byDirection, byHash, zones };
   }, [plays]);
 
-  function Bar({ label, att, suc, avgYd }) {
+  const total = plays.length;
+
+  function Bar({ label, att, suc, avgYd, subLabel }) {
     const pct = att > 0 ? Math.round(suc / att * 100) : 0;
     const col = pct >= 60 ? DS.safe : pct >= 40 ? DS.caution : DS.warn;
+    const usePct = att > 0 ? Math.round(att / total * 100) : 0;
     return (
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 13 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: DS.bodyText }}>{label}</span>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: DS.bodyText }}>{label}</span>
+            {subLabel && <span style={{ fontSize: 10, color: DS.dimText, marginLeft: 6 }}>{subLabel}</span>}
+          </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {avgYd != null && <span style={{ fontSize: 11, color: DS.dimText }}>{avgYd.toFixed(1)} avg yd</span>}
-            <span style={{ fontSize: 13, fontWeight: 800, color: col }}>{pct}%</span>
-            <span style={{ fontSize: 10, color: DS.dimText }}>{att} plays</span>
+            {avgYd != null && <span style={{ fontSize: 10, color: DS.dimText }}>{Number(avgYd).toFixed(1)} yd avg</span>}
+            <span style={{ fontSize: 10, color: DS.dimText }}>{usePct}% of plays</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: col, minWidth: 36, textAlign: "right" }}>{pct}%</span>
           </div>
         </div>
         <div style={{ height: 7, background: DS.border, borderRadius: 99, overflow: "hidden" }}>
@@ -698,47 +1875,216 @@ function TendencyReport({ plays }) {
     );
   }
 
-  const SH = ({ children }) => (
-    <h3 style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>
-      {children}
-    </h3>
-  );
+  function SH({ children, sub }) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>{children}</h3>
+        {sub && <p style={{ margin: "2px 0 0", fontSize: 10, color: DS.dimText }}>{sub}</p>}
+      </div>
+    );
+  }
+
+  function Insight({ text }) {
+    return (
+      <div style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>
+        <p style={{ margin: 0, fontSize: 11, color: DS.brand, fontWeight: 600, lineHeight: 1.5 }}>💡 {text}</p>
+      </div>
+    );
+  }
 
   const downSuffix = n => ["st","nd","rd","th"][Math.min(Number(n) - 1, 3)] ?? "th";
+  const PERS_LABELS = { "10":"1 RB · 0 TE","11":"1 RB · 1 TE","12":"1 RB · 2 TE","21":"2 RB · 1 TE","22":"2 RB · 2 TE" };
+  const HASH_LABELS = { left_wide:"Left Wide", left_hash:"Left Hash", middle:"Middle", right_hash:"Right Hash", right_wide:"Right Wide" };
+
+  // Insight generators
+  const typeEntries = Object.entries(data.byType).sort((a,b) => b[1].att - a[1].att);
+  const runPct = total > 0 ? Math.round((data.byType.run?.att ?? 0) / total * 100) : null;
+  const pass3rd = data.byDown["3"];
+  const topHash = Object.entries(data.byHash).sort((a,b) => b[1].att - a[1].att)[0];
+  const topDir  = Object.entries(data.byDirection).sort((a,b) => b[1].att - a[1].att)[0];
+  const topPers = Object.entries(data.byPersonnel).sort((a,b) => b[1].att - a[1].att)[0];
+  const dirEntries = ["left","middle","right"].map(d => [d, data.byDirection[d] ?? {att:0,suc:0,yds:0,ydN:0}]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-      {/* Play type */}
-      <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
-        <SH>By Play Type</SH>
-        {Object.entries(data.byType).sort((a, b) => b[1].att - a[1].att).map(([t, d]) => (
-          <Bar key={t} label={cap(t)} att={d.att} suc={d.suc} avgYd={d.ydN > 0 ? d.yds / d.ydN : null} />
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* Row 1: Type + Down */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="success rate per play type">By Play Type</SH>
+          {typeEntries.map(([t, d]) => (
+            <Bar key={t} label={cap(t)} att={d.att} suc={d.suc} avgYd={d.ydN > 0 ? d.yds / d.ydN : null} />
+          ))}
+          {runPct != null && runPct >= 60 && (
+            <Insight text={`Heavy run team — ${runPct}% runs. Opponents will stack the box. Consider shifting to play-action.`} />
+          )}
+          {runPct != null && runPct <= 30 && (
+            <Insight text={`Pass-heavy offense — ${100-runPct}% passes. Balance the attack to keep defenses honest.`} />
+          )}
+        </div>
+
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="conversion rate by down">By Down</SH>
+          {Object.entries(data.byDown).sort((a,b) => Number(a[0]) - Number(b[0])).map(([dn, d]) => {
+            const runPctDown = d.att > 0 ? Math.round(d.run / d.att * 100) : 0;
+            return (
+              <Bar key={dn}
+                label={`${dn}${downSuffix(dn)} Down`}
+                att={d.att} suc={d.suc}
+                subLabel={d.run > 0 || d.pass > 0 ? `${runPctDown}% run` : undefined}
+              />
+            );
+          })}
+          {pass3rd && pass3rd.att >= 3 && (
+            <Insight text={`${Math.round(pass3rd.pass / pass3rd.att * 100)}% pass on 3rd down (${pass3rd.att} plays). ${Math.round(pass3rd.suc / pass3rd.att * 100)}% conversion rate.`} />
+          )}
+        </div>
       </div>
 
-      {/* By down */}
-      <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
-        <SH>By Down</SH>
-        {Object.entries(data.byDown).sort((a, b) => Number(a[0]) - Number(b[0])).map(([dn, d]) => (
-          <Bar key={dn} label={`${dn}${downSuffix(dn)} Down`} att={d.att} suc={d.suc} />
-        ))}
-        {data.rzAtt > 0 && (
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${DS.border}` }}>
-            <SH>Red Zone</SH>
-            <Bar label="Inside 20" att={data.rzAtt} suc={data.rzSuc} />
+      {/* Play Direction (only if tagged) */}
+      {dirEntries.some(([,d]) => d.att > 0) && (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="where plays are run / thrown">Play Direction</SH>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            {dirEntries.map(([dir, d]) => {
+              const pct    = total > 0 ? Math.round(d.att / total * 100) : 0;
+              const sucPct = d.att > 0 ? Math.round(d.suc / d.att * 100) : 0;
+              const avg    = d.ydN > 0 ? (d.yds / d.ydN).toFixed(1) : null;
+              const col    = sucPct >= 60 ? DS.safe : sucPct >= 40 ? DS.caution : DS.warn;
+              const icons  = { left:"←", middle:"↑", right:"→" };
+              return (
+                <div key={dir} style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "16px 12px", textAlign: "center" }}>
+                  <p style={{ margin: "0 0 4px", fontSize: 22, color: DS.dimText }}>{icons[dir]}</p>
+                  <p style={{ margin: "0 0 2px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText }}>{dir}</p>
+                  <p style={{ margin: "0 0 2px", fontSize: 28, fontWeight: 900, color: DS.bodyText, lineHeight: 1.1 }}>{pct}%</p>
+                  <p style={{ margin: "0 0 8px", fontSize: 10, color: DS.dimText }}>{d.att} plays</p>
+                  <div style={{ height: 4, background: DS.border, borderRadius: 99, overflow: "hidden", marginBottom: 6 }}>
+                    <div style={{ height: "100%", width: `${sucPct}%`, background: col, borderRadius: 99 }} />
+                  </div>
+                  <p style={{ margin: "0 0 2px", fontSize: 12, fontWeight: 800, color: col }}>{sucPct}% success</p>
+                  {avg && <p style={{ margin: 0, fontSize: 10, color: DS.dimText }}>{avg} avg yd</p>}
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+          {topDir && data.byDirection[topDir[0]]?.att >= 4 && (
+            <Insight text={`${cap(topDir[0])} is your most-used direction (${Math.round(topDir[1].att/total*100)}%). Scouting reports will identify this. Consider mixing in counters and misdirection.`} />
+          )}
+        </div>
+      )}
 
-      {/* By formation */}
+      {/* Personnel (only if tagged) */}
+      {Object.keys(data.byPersonnel).length > 0 && (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="offensive personnel groupings">Personnel Groupings</SH>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+            {Object.entries(data.byPersonnel).sort((a,b) => b[1].att - a[1].att).map(([g, d]) => {
+              const pct    = total > 0 ? Math.round(d.att / total * 100) : 0;
+              const sucPct = d.att > 0 ? Math.round(d.suc / d.att * 100) : 0;
+              const runP   = d.att > 0 ? Math.round(d.run / d.att * 100) : 0;
+              const col    = sucPct >= 60 ? DS.safe : sucPct >= 40 ? DS.caution : DS.warn;
+              return (
+                <div key={g} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 10, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 17, fontWeight: 900, color: DS.brand }}>{g}</span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{PERS_LABELS[g] ?? `${g} personnel`}</span>
+                        <span style={{ fontSize: 10, color: DS.dimText, marginLeft: 8 }}>{runP}% run · {pct}% of plays</span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: col }}>{sucPct}% success</span>
+                    </div>
+                    <div style={{ height: 5, background: DS.border, borderRadius: 99, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: DS.brand, borderRadius: 99 }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {topPers && topPers[1].att >= 4 && (
+            <Insight text={`${topPers[0]} personnel is your base grouping (${Math.round(topPers[1].att/total*100)}% of plays). Opponents will scheme specifically to stop ${PERS_LABELS[topPers[0]] ?? topPers[0]}.`} />
+          )}
+        </div>
+      )}
+
+      {/* Hash tendency (only if tagged) */}
+      {Object.keys(data.byHash).length > 0 && (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="success rate by field hash">Hash Tendency</SH>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {["left_wide","left_hash","middle","right_hash","right_wide"].filter(h => data.byHash[h]).map(h => {
+              const d   = data.byHash[h];
+              const pct = total > 0 ? Math.round(d.att / total * 100) : 0;
+              const suc = d.att > 0 ? Math.round(d.suc / d.att * 100) : 0;
+              const col = suc >= 60 ? DS.safe : suc >= 40 ? DS.caution : DS.warn;
+              return (
+                <div key={h} style={{ flex: 1, background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "12px 10px", textAlign: "center" }}>
+                  <p style={{ margin: "0 0 2px", fontSize: 10, fontWeight: 700, color: DS.labelText }}>{HASH_LABELS[h]}</p>
+                  <p style={{ margin: "0 0 2px", fontSize: 22, fontWeight: 900, color: DS.bodyText, lineHeight: 1.1 }}>{pct}%</p>
+                  <p style={{ margin: "0 0 6px", fontSize: 9, color: DS.dimText }}>{d.att} plays</p>
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: col }}>{suc}%</p>
+                  <p style={{ margin: 0, fontSize: 9, color: DS.dimText }}>success</p>
+                </div>
+              );
+            })}
+          </div>
+          {topHash && topHash[1].att >= 4 && (
+            <Insight text={`${Math.round(topHash[1].att/total*100)}% of plays from ${HASH_LABELS[topHash[0]] ?? topHash[0]}. Hash position reveals where you prefer to operate — opponents may over-shift.`} />
+          )}
+        </div>
+      )}
+
+      {/* Formation */}
       {Object.keys(data.byFormation).length > 0 && (
-        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px", gridColumn: "1 / -1" }}>
-          <SH>By Formation</SH>
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="success rate and average yards per formation">By Formation</SH>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
-            {Object.entries(data.byFormation).sort((a, b) => b[1].att - a[1].att).map(([f, d]) => (
-              <Bar key={f} label={cap(f)} att={d.att} suc={d.suc} />
+            {Object.entries(data.byFormation).sort((a,b) => b[1].att - a[1].att).map(([f, d]) => (
+              <Bar key={f} label={cap(f)} att={d.att} suc={d.suc} avgYd={d.ydN > 0 ? d.yds / d.ydN : null} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Field Zone (only if yard_line is tagged) */}
+      {data.zones.length > 0 && (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "18px 18px" }}>
+          <SH sub="play calling and efficiency by field position">Field Zone Analysis</SH>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.zones.map(z => {
+              const suc  = z.att > 0 ? Math.round(z.suc / z.att * 100) : 0;
+              const col  = suc >= 60 ? DS.safe : suc >= 40 ? DS.caution : DS.warn;
+              const runP = z.att > 0 ? Math.round(z.run / z.att * 100) : 0;
+              const avg  = z.att > 0 && (z.yds !== 0) ? (z.yds / z.att).toFixed(1) : null;
+              return (
+                <div key={z.key} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 14px", background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 10 }}>
+                  <div style={{ width: 80, flexShrink: 0 }}>
+                    <p style={{ margin: "0 0 1px", fontSize: 11, fontWeight: 700, color: DS.bodyText }}>{z.label}</p>
+                    <p style={{ margin: 0, fontSize: 9, color: DS.dimText }}>{z.att} plays</p>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
+                      <div style={{ height: 8, width: `${runP}%`, background: TYPE_COLOR.run, borderRadius: "4px 0 0 4px" }} title={`${runP}% run`} />
+                      <div style={{ height: 8, width: `${100-runP}%`, background: TYPE_COLOR.pass, borderRadius: "0 4px 4px 0" }} title={`${100-runP}% pass`} />
+                    </div>
+                    <p style={{ margin: 0, fontSize: 9, color: DS.dimText }}>{runP}% run · {100-runP}% pass{avg ? ` · ${avg} avg yd` : ""}</p>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <p style={{ margin: "0 0 1px", fontSize: 20, fontWeight: 900, color: col, lineHeight: 1 }}>{suc}%</p>
+                    <p style={{ margin: 0, fontSize: 9, color: DS.dimText }}>success</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {data.zones.find(z => z.key === "red_zone" && z.att >= 3) && (() => {
+            const rz = data.zones.find(z => z.key === "red_zone");
+            const rzSuc = Math.round(rz.suc / rz.att * 100);
+            return <Insight text={`Red zone efficiency: ${rzSuc}%${rzSuc < 50 ? " — below 50% means scoring drives stall at the 20. Review red zone play calls." : " — strong red zone performance."}`} />;
+          })()}
         </div>
       )}
     </div>
@@ -1086,6 +2432,11 @@ export default function FilmDetailPage() {
   const [plays,        setPlays]        = useState([]);
   const [roster,       setRoster]       = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [snapTime,     setSnapTime]     = useState(null);
+  const [whistleTime,  setWhistleTime]  = useState(null);
+  const [filmDuration, setFilmDuration] = useState(null);
+  const [speed,        setSpeed]        = useState(1);
+  const [submitting,   setSubmitting]   = useState(false);
   const [tab,          setTab]          = useState("plays");
   const [selPlay,      setSelPlay]      = useState(null);
   const [videoTime,    setVideoTime]    = useState(0);
@@ -1093,10 +2444,23 @@ export default function FilmDetailPage() {
   const [unconfCount,  setUnconfCount]  = useState(0);
   const [copied,       setCopied]       = useState(false);
   const [analytics,    setAnalytics]    = useState(null);
+  const [isMobile,     setIsMobile]     = useState(false);
+  const [editingPlay,  setEditingPlay]  = useState(null);
+  const [pageError,    setPageError]    = useState("");
+  const [playlists,    setPlaylists]    = useState([]);
+  const [cutup,        setCutup]        = useState(null);   // { name, plays:[], index:0 }
+  const [addMenuPlay,  setAddMenuPlay]  = useState(null);   // play that has the menu open
 
   const videoRef   = useRef(null);
   const pollRef    = useRef(null);
   const didAutoSel = useRef(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 700);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const fetchFilm = useCallback(async () => {
     if (!id) return;
@@ -1128,11 +2492,6 @@ export default function FilmDetailPage() {
     }
   }, [id]);
 
-  const handleAllConfirmed = useCallback(() => {
-    setUnconfCount(0);
-    fetchPlays();
-  }, [fetchPlays]);
-
   const fetchAnalytics = useCallback(async () => {
     if (!id) return;
     try {
@@ -1142,6 +2501,21 @@ export default function FilmDetailPage() {
     } catch {}
   }, [id]);
 
+  const fetchPlaylists = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch(`/api/film/playlists?filmId=${id}`, { credentials: "include" });
+      const d = await r.json();
+      if (d.ok) setPlaylists(d.playlists ?? []);
+    } catch {}
+  }, [id]);
+
+  const handleAllConfirmed = useCallback(() => {
+    setUnconfCount(0);
+    fetchPlays();
+    fetchAnalytics();
+  }, [fetchPlays, fetchAnalytics]);
+
   // Initial load
   useEffect(() => {
     if (!id) return;
@@ -1149,6 +2523,7 @@ export default function FilmDetailPage() {
       fetchFilm(),
       fetchPlays(),
       fetchAnalytics(),
+      fetchPlaylists(),
       fetch("/api/film/roster", { credentials: "include" }).then(r => r.json()).then(d => setRoster(d.players ?? [])),
     ]).then(([filmData]) => {
       setLoading(false);
@@ -1157,16 +2532,37 @@ export default function FilmDetailPage() {
     });
   }, [id, fetchFilm, fetchPlays, fetchAnalytics, fetchVideoUrl]);
 
-  // Polling while processing
+  async function handleSubmit() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/film/submit", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setFilm(prev => ({ ...prev, status: "analyzing", progressPct: 0 }));
+        setSnapTime(null); setWhistleTime(null);
+      } else {
+        setPageError(d.error ?? "Submit failed");
+      }
+    } catch { setPageError("Network error — please try again"); }
+    setSubmitting(false);
+  }
+
+  // Polling while processing (including analyzing = submitted for AI)
+  const ACTIVE_STATUSES = ["uploading", "transcoding", "analyzing", "tagging"];
   useEffect(() => {
-    const processing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
+    const processing = film && ACTIVE_STATUSES.includes(film.status);
     if (processing && !pollRef.current) {
       pollRef.current = setInterval(async () => {
         const r = await fetch(`/api/film/status?filmId=${id}`, { credentials: "include" });
         const d = await r.json();
         if (r.ok) {
           setFilm(d);
-          if (!["uploading","transcoding","analyzing","tagging"].includes(d.status)) {
+          if (!ACTIVE_STATUSES.includes(d.status)) {
             clearInterval(pollRef.current); pollRef.current = null;
             fetchPlays();
             if (!d.muxPlaybackId) fetchVideoUrl();
@@ -1176,10 +2572,25 @@ export default function FilmDetailPage() {
     }
     if (!processing && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [film?.status, id, fetchPlays]);
+  }, [film?.status, id, fetchPlays, fetchVideoUrl]);
 
   const selTracks = useMemo(() => Array.isArray(selPlay?.player_tracks) ? selPlay.player_tracks : [], [selPlay]);
-  const isProcessing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
+  const isProcessing   = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
+  const isAnalyzing    = film?.status === "analyzing";
+  const hasAnalysis    = plays.some(p => Array.isArray(p.player_tracks) && p.player_tracks.length > 0);
+  const canSubmit      = plays.length > 0 && !isAnalyzing;
+
+  async function undoLastPlay() {
+    if (!plays.length) return;
+    const last = plays[plays.length - 1];
+    await fetch("/api/film/plays", {
+      method: "DELETE", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filmId: id, playId: last.id }),
+    });
+    fetchPlays();
+    setSnapTime(null); setWhistleTime(null);
+  }
 
   function shareClip() {
     const url = selPlay?.clip_url || window.location.href;
@@ -1190,10 +2601,94 @@ export default function FilmDetailPage() {
     setSelPlay(play);
     setVideoTime(0);
     setHlJersey(null);
-    // Seek to the play's start time in the full-film player
     if (videoRef.current && play?.start_time_secs != null) {
       videoRef.current.currentTime = play.start_time_secs;
     }
+  }
+
+  function startEdit(play) {
+    setEditingPlay(play);
+    selectPlay(play);
+    setSnapTime(play.start_time_secs ?? null);
+    setWhistleTime(play.end_time_secs ?? null);
+  }
+
+  function cancelEdit() {
+    setEditingPlay(null);
+    setSnapTime(null);
+    setWhistleTime(null);
+  }
+
+  // ── Playlist helpers ──────────────────────────────────────────────────────
+  async function playlistAction(body) {
+    await fetch("/api/film/playlists", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    fetchPlaylists();
+  }
+
+  async function addToPlaylist(listId, play) {
+    await playlistAction({ action: "add_play", listId, playId: play.id });
+  }
+
+  async function createAndAdd(name, play) {
+    const r = await fetch("/api/film/playlists", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create", filmId: id, name }),
+    });
+    const d = await r.json();
+    if (d.ok) await playlistAction({ action: "add_play", listId: d.list.id, playId: play.id });
+  }
+
+  async function removePlayFromList(itemId) {
+    await playlistAction({ action: "remove_play", itemId });
+  }
+
+  async function deletePlaylist(listId) {
+    await playlistAction({ action: "delete", listId });
+  }
+
+  async function renamePlaylist(listId, name) {
+    await playlistAction({ action: "rename", listId, name });
+  }
+
+  // ── Cut-up playback ───────────────────────────────────────────────────────
+  function startCutup(list) {
+    const plays = (list.items ?? []).filter(p => p.start_time_secs != null).sort((a, b) => a._position - b._position);
+    if (!plays.length) return;
+    setCutup({ name: list.name, plays, index: 0 });
+    if (videoRef.current) {
+      videoRef.current.currentTime = plays[0].start_time_secs;
+      videoRef.current.play?.().catch(() => {});
+    }
+    setTab("plays");
+  }
+
+  function cutupNext() {
+    setCutup(c => {
+      if (!c || c.index >= c.plays.length - 1) return c;
+      const next = c.plays[c.index + 1];
+      if (videoRef.current && next.start_time_secs != null) {
+        videoRef.current.currentTime = next.start_time_secs;
+        videoRef.current.play?.().catch(() => {});
+      }
+      return { ...c, index: c.index + 1 };
+    });
+  }
+
+  function cutupPrev() {
+    setCutup(c => {
+      if (!c || c.index <= 0) return c;
+      const prev = c.plays[c.index - 1];
+      if (videoRef.current && prev.start_time_secs != null) {
+        videoRef.current.currentTime = prev.start_time_secs;
+        videoRef.current.play?.().catch(() => {});
+      }
+      return { ...c, index: c.index - 1 };
+    });
   }
 
   if (loading) return (
@@ -1203,19 +2698,26 @@ export default function FilmDetailPage() {
   );
 
   const TABS = [
-    { key: "plays",     label: "Plays",     Icon: Play,     badge: plays.length > 0 ? plays.length : null },
-    { key: "players",   label: "Players",   Icon: Users,    badge: unconfCount > 0 ? unconfCount : null, badgeColor: DS.warn },
+    { key: "plays",     label: "Plays",     Icon: Play,      badge: plays.length > 0 ? plays.length : null },
+    { key: "players",   label: "Players",   Icon: Users,     badge: unconfCount > 0 ? unconfCount : null, badgeColor: DS.warn },
     { key: "analytics", label: "Analytics", Icon: BarChart2, badge: null },
     { key: "drives",    label: "Drives",    Icon: Activity,  badge: analytics?.drives?.length > 0 ? analytics.drives.length : null },
+    { key: "cutups",    label: "Cut-ups",   Icon: ListVideo, badge: playlists.length > 0 ? playlists.length : null },
   ];
 
   return (
     <>
       <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes spin  { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+        select option { background: #1e293b; color: #e2e8f0; }
         @media (max-width: 768px) {
+          html, body { overflow-x: hidden; }
           .tape-grid { grid-template-columns: 1fr !important; }
           .sidebar-sticky { position: static !important; max-height: none !important; }
+          .tagbar-hints { display: none !important; }
+          .video-wrap { max-height: 56vw !important; overflow: hidden !important; }
+          .video-wrap video, .video-wrap mux-player { max-height: 56vw !important; }
         }
       `}</style>
 
@@ -1246,6 +2748,7 @@ export default function FilmDetailPage() {
               </span>
             )}
 
+
             {selPlay?.clip_url && (
               <button onClick={shareClip} style={{
                 background: copied ? DS.safeBg : DS.pageBg,
@@ -1268,7 +2771,7 @@ export default function FilmDetailPage() {
               <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>
                 {film.status === "uploading"   ? "Uploading to cloud…" :
                  film.status === "transcoding" ? "Transcoding video…" :
-                 film.status === "analyzing"   ? "AI analyzing player movement…" :
+                 film.status === "analyzing"   ? "AI analyzing player movement on each play…" :
                  "Auto-tagging plays…"}
                 {(film.progressPct ?? 0) > 0 ? ` · ${film.progressPct}%` : ""}
               </span>
@@ -1315,7 +2818,7 @@ export default function FilmDetailPage() {
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)} style={{
                 background: "none", border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 6, padding: "13px 18px",
+                display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "13px 18px",
                 fontSize: 13, fontWeight: tab === t.key ? 700 : 500,
                 color: tab === t.key ? DS.brand : DS.labelText,
                 borderBottom: `2px solid ${tab === t.key ? DS.brand : "transparent"}`,
@@ -1336,11 +2839,31 @@ export default function FilmDetailPage() {
         </div>
 
         {/* ── Content ── */}
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px 16px" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 10px" : "20px 16px" }}>
 
           {/* PLAYS TAB */}
           {tab === "plays" && (
             <>
+              {/* ── Workflow progress ── */}
+              <WorkflowBanner
+                plays={plays}
+                isAnalyzing={isAnalyzing}
+                hasAnalysis={hasAnalysis}
+                canSubmit={canSubmit}
+                submitting={submitting}
+                onSubmit={handleSubmit}
+                onStartTagging={null}
+                isMobile={isMobile}
+              />
+
+              {/* Page-level error (replaces alert()) */}
+              {pageError && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: DS.warn }}>{pageError}</span>
+                  <button onClick={() => setPageError("")} style={{ background: "none", border: "none", cursor: "pointer", color: DS.warn, fontSize: 16, lineHeight: 1, padding: "0 2px" }}>✕</button>
+                </div>
+              )}
+
               {/* Unconfirmed banner */}
               {unconfCount > 0 && (
                 <div style={{
@@ -1360,27 +2883,75 @@ export default function FilmDetailPage() {
                 </div>
               )}
 
-              {plays.length === 0 ? (
-                <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: 52, textAlign: "center" }}>
-                  <Film size={40} color={DS.dimText} style={{ opacity: 0.25, marginBottom: 14 }} />
-                  <h3 style={{ margin: "0 0 6px", fontSize: 17, fontWeight: 700, color: DS.bodyText }}>
-                    {isProcessing ? "Analyzing film…" : "No plays yet"}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
-                    {isProcessing ? "Play detection will appear here once AI analysis completes." : "No plays have been tagged for this film."}
-                  </p>
-                </div>
-              ) : (
-                <div className="tape-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,3fr) minmax(240px,2fr)", gap: 16, alignItems: "start" }}>
-                  {/* Left: video + formation + metrics */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="tape-grid" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,3fr) minmax(240px,2fr)", gap: isMobile ? 12 : 16, alignItems: "start" }}>
+                  {/* Left: video + timeline + tag bar + formation + metrics */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 8 : 14, minWidth: 0, overflow: "hidden" }}>
+                    <div style={{ position: "relative" }}>
                     <VideoPlayer
                       playbackId={film?.muxPlaybackId}
                       s3Url={filmVideoUrl}
                       clipUrl={selPlay?.clip_url}
                       playNumber={selPlay?.play_number}
-                      onTimeUpdate={setVideoTime}
+                      onTimeUpdate={t => {
+                        setVideoTime(t);
+                        // Cut-up auto-advance: when current play ends, jump to next
+                        setCutup(c => {
+                          if (!c) return c;
+                          const cur = c.plays[c.index];
+                          if (cur?.end_time_secs != null && t >= cur.end_time_secs - 0.2) {
+                            if (c.index < c.plays.length - 1) {
+                              const next = c.plays[c.index + 1];
+                              if (videoRef.current && next.start_time_secs != null) {
+                                videoRef.current.currentTime = next.start_time_secs;
+                                videoRef.current.play?.().catch(() => {});
+                              }
+                              return { ...c, index: c.index + 1 };
+                            } else {
+                              // Last play finished — stop cutup
+                              return null;
+                            }
+                          }
+                          return c;
+                        });
+                      }}
+                      onDurationChange={setFilmDuration}
                       videoRef={videoRef}
+                    />
+                    <CutupOverlay
+                      cutup={cutup}
+                      onNext={cutupNext}
+                      onPrev={cutupPrev}
+                      onStop={() => setCutup(null)}
+                      isMobile={isMobile}
+                    />
+                    </div>
+
+                    {!isMobile && (
+                      <PlayTimeline
+                        plays={plays}
+                        duration={filmDuration}
+                        currentTime={videoTime}
+                        snapTime={snapTime}
+                        onSeek={t => { if (videoRef.current) { videoRef.current.currentTime = t; } }}
+                      />
+                    )}
+
+                    <TagBar
+                      filmId={id}
+                      snapTime={snapTime}
+                      whistleTime={whistleTime}
+                      onMarkSnap={() => { if (videoRef.current) { videoRef.current.pause?.(); setSnapTime(videoRef.current.currentTime); setWhistleTime(null); } }}
+                      onMarkWhistle={() => { if (videoRef.current) { videoRef.current.pause?.(); setWhistleTime(videoRef.current.currentTime); } }}
+                      onClear={() => { setSnapTime(null); setWhistleTime(null); }}
+                      plays={plays}
+                      onSaved={() => { fetchPlays(); fetchAnalytics(); }}
+                      onSkip={() => { setSnapTime(null); setWhistleTime(null); if (videoRef.current) { videoRef.current.currentTime += 10; videoRef.current.play?.().catch(() => {}); } }}
+                      onUndo={undoLastPlay}
+                      videoRef={videoRef}
+                      speed={speed}
+                      onSetSpeed={setSpeed}
+                      editingPlay={editingPlay}
+                      onCancelEdit={cancelEdit}
                     />
 
                     {selTracks.some(t => t.snap_x != null) && (
@@ -1415,13 +2986,35 @@ export default function FilmDetailPage() {
                     maxHeight: "calc(100vh - 90px)",
                     display: "flex", flexDirection: "column",
                   }}>
-                    <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>
-                      {plays.length} Plays
-                    </p>
-                    <PlaySidebar plays={plays} selectedId={selPlay?.id} onSelect={selectPlay} />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0 }}>
+                      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>
+                        {plays.length} {plays.length === 1 ? "Play" : "Plays"}
+                      </p>
+                    </div>
+
+                    {plays.length === 0 && (
+                      <div style={{ textAlign: "center", padding: "24px 0", flexShrink: 0 }}>
+                        <Film size={28} color={DS.dimText} style={{ opacity: 0.25, marginBottom: 10 }} />
+                        <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: DS.bodyText }}>
+                          {isProcessing ? "Analyzing film…" : "No plays yet"}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
+                          {isProcessing ? "Play detection in progress." : "Press S to mark snap, W to mark end."}
+                        </p>
+                      </div>
+                    )}
+
+                    <PlaySidebar
+                      plays={plays}
+                      selectedId={selPlay?.id}
+                      onSelect={selectPlay}
+                      onEdit={startEdit}
+                      playlists={playlists}
+                      onAddToPlaylist={addToPlaylist}
+                      onCreateAndAddToPlaylist={createAndAdd}
+                    />
                   </div>
                 </div>
-              )}
             </>
           )}
 
@@ -1471,7 +3064,7 @@ export default function FilmDetailPage() {
                       <Zap size={15} color={DS.brand} />
                       <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: DS.bodyText }}>Play Tendencies</h2>
                     </div>
-                    <TendencyReport plays={plays} />
+                    <TendencyReport plays={plays} analytics={analytics} />
                   </div>
 
                   <div style={{ borderTop: `1px solid ${DS.border}`, paddingTop: 20 }}>
@@ -1507,6 +3100,19 @@ export default function FilmDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <DriveLog drives={analytics?.drives} />
             </div>
+          )}
+
+          {/* CUT-UPS TAB */}
+          {tab === "cutups" && (
+            <PlaylistsTab
+              playlists={playlists}
+              filmId={id}
+              onPlay={startCutup}
+              onDelete={deletePlaylist}
+              onRemovePlay={removePlayFromList}
+              onRename={renamePlaylist}
+              fetchPlaylists={fetchPlaylists}
+            />
           )}
         </div>
       </div>

@@ -46,14 +46,16 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, alreadyStarted: true, status: film.status });
     }
 
-    // Mark as transcoding immediately so the lobby/tape room shows progress
-    // without waiting up to 20s for the ECS worker's SQS long-poll cycle.
+    // Set status=ready so the coach can immediately watch and tag plays.
+    // The S3→Lambda→SQS auto-trigger still fires the ECS worker in the background,
+    // but with mode=analyze_tagged the worker won't run until the coach submits.
+    // (Lambda trigger should be disabled in prod until worker is updated.)
     await supabase
       .from("game_films")
-      .update({ status: "transcoding", updated_at: new Date().toISOString() })
+      .update({ status: "ready", updated_at: new Date().toISOString() })
       .eq("id", filmId);
 
-    console.log(`[film/process] status→transcoding filmId=${filmId} org=${orgId}`);
+    console.log(`[film/process] status→ready filmId=${filmId} org=${orgId}`);
     return res.status(200).json({ ok: true, filmId });
 
   } catch (err) {

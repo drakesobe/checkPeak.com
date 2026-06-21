@@ -8,7 +8,8 @@ import { Toaster, toast } from "react-hot-toast";
 import {
   Film, Upload, Users, Plus, Trash2, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Video, Zap, Activity,
-  Play, TrendingUp, Clock, Volume2, FileText, Search,
+  Play, TrendingUp, Clock, Volume2, FileText, Search, Tag, Brain,
+  ArrowRight, Sparkles,
 } from "lucide-react";
 
 const DS = {
@@ -30,15 +31,28 @@ const DS = {
   border:      "#E8ECF0",
 };
 
-const STATUS_META = {
-  ready:       { label: "Ready",        color: DS.safe,    bg: DS.safeBg,    spin: false },
-  uploading:   { label: "Uploading…",   color: DS.brand,   bg: DS.brandBg,   spin: true  },
-  transcoding: { label: "Transcoding…", color: DS.caution, bg: DS.cautionBg, spin: true  },
-  analyzing:   { label: "Analyzing…",   color: DS.caution, bg: DS.cautionBg, spin: true  },
-  tagging:     { label: "Tagging…",     color: DS.caution, bg: DS.cautionBg, spin: true  },
-  failed:      { label: "Failed",       color: DS.warn,    bg: DS.warnBg,    spin: false },
+// Derive a UI state from film.status + film.play_count
+function filmUIState(film) {
+  const plays = film.play_count ?? 0;
+  if (film.status === "uploading")                      return "uploading";
+  if (film.status === "analyzing")                      return "analyzing";
+  if (film.status === "complete")                       return "complete";
+  if (film.status === "failed")                         return "failed";
+  if (film.status === "ready" && plays === 0)           return "needs-tagging";
+  if (film.status === "ready" && plays > 0)             return "has-plays";
+  // legacy statuses from old auto-processing flow
+  if (["transcoding","tagging"].includes(film.status))  return "analyzing";
+  return "has-plays";
+}
+
+const STATE_CFG = {
+  "uploading":     { accent: DS.brand,   label: "Uploading",       spin: true  },
+  "analyzing":     { accent: "#2563eb",  label: "Analyzing",       spin: true  },
+  "complete":      { accent: DS.safe,    label: "Analysis Done",   spin: false },
+  "failed":        { accent: DS.warn,    label: "Failed",          spin: false },
+  "needs-tagging": { accent: DS.caution, label: "Tag Plays",       spin: false },
+  "has-plays":     { accent: DS.brand,   label: "Ready",           spin: false },
 };
-function statusMeta(s) { return STATUS_META[s] ?? { label: s || "–", color: DS.dimText, bg: DS.pageBg, spin: false }; }
 
 function fmtDate(iso) {
   if (!iso) return "";
@@ -548,9 +562,12 @@ function UploadModal({ onClose, onUploadStarted }) {
 
         {phase === "done" ? (
           <div style={{ textAlign: "center", padding: 24 }}>
-            <CheckCircle2 size={44} color={DS.safe} style={{ marginBottom: 12 }} />
-            <p style={{ fontWeight: 700, fontSize: 16, color: DS.bodyText, margin: "0 0 6px" }}>Upload complete!</p>
-            <p style={{ fontSize: 13, color: DS.labelText, margin: 0 }}>AI processing begins shortly.</p>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: DS.safeBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <CheckCircle2 size={32} color={DS.safe} />
+            </div>
+            <p style={{ fontWeight: 800, fontSize: 18, color: DS.bodyText, margin: "0 0 8px" }}>Film uploaded!</p>
+            <p style={{ fontSize: 13, color: DS.labelText, margin: "0 0 4px" }}>Open it in the Film Room to tag plays.</p>
+            <p style={{ fontSize: 12, color: DS.dimText, margin: 0 }}>Once tagged, submit for AI player tracking and analytics.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -618,13 +635,14 @@ function UploadModal({ onClose, onUploadStarted }) {
 
 // ── Film card ─────────────────────────────────────────────────────────────────
 function FilmCard({ film, onClick, onDelete, onRetry }) {
-  const meta = statusMeta(film.status);
+  const uiState = filmUIState(film);
+  const cfg = STATE_CFG[uiState] ?? STATE_CFG["has-plays"];
+  const playCount = film.play_count ?? 0;
+
   const [hovered,    setHovered]    = useState(false);
   const [deleting,   setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [retrying,   setRetrying]   = useState(false);
-
-  const canRetry = film.status === "failed" || film.status === "analyzing" || film.status === "tagging";
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -635,21 +653,21 @@ function FilmCard({ film, onClick, onDelete, onRetry }) {
       if (r.ok) { toast.success("Film deleted"); onDelete?.(film.id); }
       else { const d = await r.json(); toast.error(d.error ?? "Delete failed"); }
     } catch { toast.error("Network error"); }
-    setDeleting(false);
-    setConfirmDel(false);
+    setDeleting(false); setConfirmDel(false);
   }
 
   async function handleRetry(e) {
-    e.stopPropagation();
-    setRetrying(true);
+    e.stopPropagation(); setRetrying(true);
     try {
       const r = await fetch("/api/film/retry", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filmId: film.id }) });
       const d = await r.json();
-      if (r.ok) { toast.success("Re-queued for analysis - processing will resume shortly."); onRetry?.(film.id); }
+      if (r.ok) { toast.success("Re-queued for analysis."); onRetry?.(film.id); }
       else { toast.error(d.error ?? "Retry failed"); }
     } catch { toast.error("Network error"); }
     setRetrying(false);
   }
+
+  const isProcessing = uiState === "uploading" || uiState === "analyzing";
 
   return (
     <div
@@ -659,119 +677,170 @@ function FilmCard({ film, onClick, onDelete, onRetry }) {
       style={{
         background: DS.cardBg,
         border: `1px solid ${hovered ? DS.brandBorder : DS.border}`,
-        borderRadius: 14, padding: "18px 20px", cursor: "pointer",
-        transition: "all 0.15s", display: "flex", alignItems: "center", gap: 16,
+        borderRadius: 14, cursor: "pointer",
+        transition: "all 0.15s",
         transform: hovered ? "translateY(-1px)" : "none",
-        boxShadow: hovered ? "0 4px 20px rgba(30,58,95,0.08)" : "none",
+        boxShadow: hovered ? "0 4px 24px rgba(30,58,95,0.09)" : "none",
+        overflow: "hidden",
+        display: "flex",
       }}
     >
-      {/* Icon block */}
-      <div style={{
-        width: 52, height: 52, borderRadius: 12, flexShrink: 0,
-        background: film.status === "ready" ? DS.brandBg : DS.pageBg,
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <Film size={22} color={film.status === "ready" ? DS.brand : DS.dimText} />
-      </div>
+      {/* Left accent bar */}
+      <div style={{ width: 4, flexShrink: 0, background: cfg.accent, opacity: isProcessing ? 0.5 : 1 }} />
 
-      {/* Info */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {film.title}
-        </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
-          {film.sport && <span style={{ fontSize: 10, fontWeight: 700, textTransform: "capitalize", color: DS.brand, background: DS.brandBg, borderRadius: 4, padding: "1px 6px" }}>{film.sport}</span>}
-          {film.opponent && <span style={{ fontSize: 12, color: DS.labelText }}>vs {film.opponent}</span>}
-          {film.game_date && <span style={{ fontSize: 12, color: DS.dimText }}>{fmtDate(film.game_date)}</span>}
-          {fmtDuration(film.duration_secs) && <span style={{ fontSize: 11, color: DS.dimText }}>{fmtDuration(film.duration_secs)}</span>}
-        </div>
-      </div>
+      {/* Card body */}
+      <div style={{ flex: 1, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
 
-      {/* Stats */}
-      {film.status === "ready" && (film.play_count ?? 0) > 0 && (
-        <div style={{ textAlign: "center", flexShrink: 0 }}>
-          <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: DS.brand }}>{film.play_count}</p>
-          <p style={{ margin: 0, fontSize: 10, color: DS.dimText }}>plays</p>
-        </div>
-      )}
-
-      {/* Status badge */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          background: meta.bg, color: meta.color,
-          borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700,
+        {/* Icon */}
+        <div style={{
+          width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+          background: uiState === "needs-tagging" ? "#FFF7ED"
+                    : uiState === "complete"       ? DS.safeBg
+                    : uiState === "analyzing"      ? "#EFF6FF"
+                    : DS.brandBg,
+          display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          {meta.spin
-            ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-            : film.status === "ready" ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />
-          }
-          {meta.label}
-        </span>
-        {meta.spin && (film.progress_pct ?? 0) > 0 && (
-          <div style={{ width: 80, height: 3, background: DS.border, borderRadius: 99, overflow: "hidden" }}>
-            <div style={{ height: "100%", background: meta.color, width: `${film.progress_pct}%`, borderRadius: 99 }} />
+          {uiState === "needs-tagging" && <Tag     size={20} color={DS.caution} />}
+          {uiState === "analyzing"     && <Brain   size={20} color="#2563eb" />}
+          {uiState === "complete"      && <CheckCircle2 size={20} color={DS.safe} />}
+          {uiState === "failed"        && <AlertCircle size={20} color={DS.warn} />}
+          {(uiState === "uploading" || uiState === "has-plays") && <Film size={20} color={DS.brand} />}
+        </div>
+
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {film.title}
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+            {film.sport && (
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "capitalize", color: DS.brand, background: DS.brandBg, borderRadius: 4, padding: "1px 6px" }}>
+                {film.sport}
+              </span>
+            )}
+            {film.opponent && <span style={{ fontSize: 12, color: DS.labelText }}>vs {film.opponent}</span>}
+            {film.game_date && <span style={{ fontSize: 12, color: DS.dimText }}>{fmtDate(film.game_date)}</span>}
+            {fmtDuration(film.duration_secs) && <span style={{ fontSize: 11, color: DS.dimText }}>{fmtDuration(film.duration_secs)}</span>}
           </div>
-        )}
+
+          {/* Progress bar for processing states */}
+          {isProcessing && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                <span style={{ fontSize: 10, color: DS.labelText }}>
+                  {uiState === "uploading" ? "Uploading to cloud…" : "AI analyzing player movement…"}
+                </span>
+                {(film.progress_pct ?? 0) > 0 && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: cfg.accent }}>{film.progress_pct}%</span>
+                )}
+              </div>
+              <div style={{ height: 3, background: DS.border, borderRadius: 99, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", background: cfg.accent, borderRadius: 99,
+                  width: `${Math.max(film.progress_pct ?? 0, 4)}%`,
+                  transition: "width 0.5s ease",
+                  animation: (film.progress_pct ?? 0) === 0 ? "pulse 1.5s ease-in-out infinite" : "none",
+                }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right side — state-specific CTA */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+
+          {/* Play count chip */}
+          {(uiState === "has-plays" || uiState === "complete") && playCount > 0 && (
+            <div style={{ textAlign: "center" }}>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: uiState === "complete" ? DS.safe : DS.brand, lineHeight: 1 }}>{playCount}</p>
+              <p style={{ margin: 0, fontSize: 9, color: DS.dimText, fontWeight: 600, letterSpacing: "0.04em" }}>PLAYS</p>
+            </div>
+          )}
+
+          {/* State CTA */}
+          {uiState === "needs-tagging" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FFF7ED", border: `1px solid #FED7AA`, borderRadius: 9, padding: "8px 14px" }}>
+              <Tag size={13} color={DS.caution} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: DS.caution }}>Tag Plays</span>
+              <ArrowRight size={13} color={DS.caution} />
+            </div>
+          )}
+
+          {uiState === "has-plays" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 9, padding: "8px 14px" }}>
+              <Sparkles size={13} color={DS.brand} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: DS.brand }}>Submit Analysis</span>
+              <ArrowRight size={13} color={DS.brand} />
+            </div>
+          )}
+
+          {uiState === "complete" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderRadius: 9, padding: "8px 14px" }}>
+              <CheckCircle2 size={13} color={DS.safe} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: DS.safe }}>View Analysis</span>
+            </div>
+          )}
+
+          {uiState === "analyzing" && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#EFF6FF", color: "#2563eb", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700 }}>
+              <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+              Analyzing…
+            </span>
+          )}
+
+          {uiState === "uploading" && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: DS.brandBg, color: DS.brand, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700 }}>
+              <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+              Uploading…
+            </span>
+          )}
+
+          {uiState === "failed" && (
+            <button onClick={handleRetry} disabled={retrying}
+              style={{ display: "flex", alignItems: "center", gap: 5, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 8, padding: "7px 12px", cursor: retrying ? "not-allowed" : "pointer", color: DS.brand, fontSize: 11, fontWeight: 700 }}>
+              {retrying ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={12} />}
+              {retrying ? "Queuing…" : "Retry"}
+            </button>
+          )}
+
+          {/* Delete */}
+          {hovered && !isProcessing && (
+            <button onClick={handleDelete} disabled={deleting}
+              title={confirmDel ? "Click again to confirm" : "Delete"}
+              style={{
+                background: confirmDel ? DS.warnBg : "none",
+                border: confirmDel ? `1px solid #C8102E44` : "none",
+                borderRadius: 7, padding: confirmDel ? "5px 9px" : "4px",
+                cursor: deleting ? "not-allowed" : "pointer",
+                color: DS.warn, display: "flex", alignItems: "center", gap: 4,
+                fontSize: 11, fontWeight: 700,
+              }}>
+              {deleting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={12} />}
+              {confirmDel && !deleting && "Confirm?"}
+            </button>
+          )}
+
+          <ChevronRight size={15} color={DS.dimText} style={{ opacity: 0.5 }} />
+        </div>
       </div>
-
-      {/* Retry */}
-      {hovered && canRetry && (
-        <button
-          onClick={handleRetry}
-          disabled={retrying}
-          title="Retry analysis"
-          style={{
-            background: DS.brandBg, border: `1px solid ${DS.brandBorder}`,
-            borderRadius: 8, padding: "5px 10px",
-            cursor: retrying ? "not-allowed" : "pointer",
-            color: DS.brand, flexShrink: 0, display: "flex", alignItems: "center", gap: 4,
-            fontSize: 11, fontWeight: 700, transition: "all 0.15s",
-          }}
-        >
-          {retrying ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={13} />}
-          {retrying ? "Queuing…" : "Retry"}
-        </button>
-      )}
-
-      {/* Delete */}
-      {hovered && (
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          title={confirmDel ? "Click again to confirm delete" : "Delete film"}
-          style={{
-            background: confirmDel ? DS.warnBg : "none",
-            border: confirmDel ? `1px solid #C8102E44` : "none",
-            borderRadius: 8, padding: confirmDel ? "5px 10px" : 4,
-            cursor: deleting ? "not-allowed" : "pointer",
-            color: DS.warn, flexShrink: 0, display: "flex", alignItems: "center", gap: 4,
-            fontSize: 11, fontWeight: 700, transition: "all 0.15s",
-          }}
-        >
-          {deleting ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={13} />}
-          {confirmDel && !deleting && "Confirm?"}
-        </button>
-      )}
-
-      <ChevronRight size={16} color={DS.dimText} />
     </div>
   );
 }
 
 // ── Stats header ──────────────────────────────────────────────────────────────
 function StatsHeader({ films }) {
-  const ready      = films.filter(f => f.status === "ready");
-  const processing = films.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status));
-  const totalPlays = ready.reduce((s, f) => s + (f.play_count ?? 0), 0);
-
   if (!films.length) return null;
+  const needsTagging = films.filter(f => filmUIState(f) === "needs-tagging").length;
+  const hasPlays     = films.filter(f => filmUIState(f) === "has-plays").length;
+  const analyzing    = films.filter(f => filmUIState(f) === "analyzing").length;
+  const complete     = films.filter(f => filmUIState(f) === "complete").length;
+  const totalPlays   = films.reduce((s, f) => s + (f.play_count ?? 0), 0);
 
   const stats = [
-    { label: "Total Films",       value: films.length,   Icon: Film },
-    { label: "Plays Analyzed",    value: totalPlays,     Icon: Play },
-    { label: "Ready",             value: ready.length,   Icon: CheckCircle2 },
-    { label: "Processing",        value: processing.length, Icon: Loader2 },
+    { label: "Total Films",      value: films.length,  Icon: Film,          color: DS.brand   },
+    { label: "Plays Tagged",     value: totalPlays,    Icon: Play,          color: DS.brand   },
+    { label: "Needs Tagging",    value: needsTagging,  Icon: Tag,           color: DS.caution },
+    { label: "Analysis Done",    value: complete,       Icon: CheckCircle2, color: DS.safe    },
   ];
 
   return (
@@ -779,7 +848,7 @@ function StatsHeader({ films }) {
       {stats.map(s => (
         <div key={s.label} style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 36, height: 36, borderRadius: 9, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <s.Icon size={16} color={DS.brand} />
+            <s.Icon size={16} color={s.color} />
           </div>
           <div>
             <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: DS.bodyText }}>{s.value}</p>
@@ -805,14 +874,15 @@ export default function FilmPage() {
   const pollingRef = useRef({});
   const pollSetRef = useRef(new Set());
 
+  const ACTIVE_STATUSES = ["uploading", "transcoding", "analyzing", "tagging"];
+
   const fetchFilms = useCallback(async () => {
     try {
       const r = await fetch("/api/film/list", { credentials: "include" });
       const d = await r.json();
       if (d.films) {
         setFilms(d.films);
-        d.films.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status))
-               .forEach(f => startPolling(f.id));
+        d.films.filter(f => ACTIVE_STATUSES.includes(f.status)).forEach(f => startPolling(f.id));
       }
     } catch {}
     setLoading(false);
@@ -827,7 +897,7 @@ export default function FilmPage() {
         const d = await r.json();
         if (d.status) {
           setFilms(prev => prev.map(f => f.id === filmId ? { ...f, status: d.status, progress_pct: d.progressPct, play_count: d.play_count } : f));
-          if (d.status === "ready" || d.status === "failed") {
+          if (!ACTIVE_STATUSES.includes(d.status)) {
             clearInterval(pollingRef.current[filmId]);
             delete pollingRef.current[filmId];
             pollSetRef.current.delete(filmId);
@@ -844,12 +914,12 @@ export default function FilmPage() {
 
   function handleUploadStarted(filmId) {
     fetchFilms();
-    toast.success("Upload started - AI analysis will begin shortly.");
+    toast.success("Film uploaded — open it to start tagging plays.");
     setTimeout(() => startPolling(filmId), 1000);
   }
 
   function handleFilmRetried(filmId) {
-    setFilms(prev => prev.map(f => f.id === filmId ? { ...f, status: "transcoding", progress_pct: 0, play_count: 0 } : f));
+    setFilms(prev => prev.map(f => f.id === filmId ? { ...f, status: "analyzing", progress_pct: 0 } : f));
     setTimeout(() => startPolling(filmId), 2000);
   }
 
@@ -880,14 +950,19 @@ export default function FilmPage() {
     </div>
   );
 
-  const processing = films.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status));
-  const ready      = films.filter(f => f.status === "ready");
-  const failed     = films.filter(f => f.status === "failed");
+  const inProgress    = filteredFilms.filter(f => ["uploading","analyzing","transcoding","tagging"].includes(f.status));
+  const needsTagging  = filteredFilms.filter(f => filmUIState(f) === "needs-tagging");
+  const hasPlays      = filteredFilms.filter(f => filmUIState(f) === "has-plays");
+  const complete      = filteredFilms.filter(f => filmUIState(f) === "complete");
+  const failed        = filteredFilms.filter(f => f.status === "failed");
 
   return (
     <>
       <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+      `}</style>
 
       <div style={{ minHeight: "100vh", background: DS.pageBg, padding: "32px 16px", fontFamily: "system-ui, sans-serif" }}>
         <div style={{ maxWidth: 920, margin: "0 auto" }}>
@@ -963,44 +1038,91 @@ export default function FilmPage() {
               <p style={{ margin: 0, fontSize: 14, color: DS.labelText }}>No films match your search.</p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              {/* Processing */}
-              {filteredFilms.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status)).length > 0 && (
-                <div>
-                  <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.labelText }}>Processing</h2>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filteredFilms.filter(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status)).map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onRetry={handleFilmRetried} />
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-              {/* Ready */}
-              {filteredFilms.filter(f => f.status === "ready").length > 0 && (
-                <div>
-                  {filteredFilms.some(f => ["uploading","transcoding","analyzing","tagging"].includes(f.status)) && (
-                    <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.labelText }}>Ready</h2>
-                  )}
+              {/* Needs Tagging — most urgent, show first */}
+              {needsTagging.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <Tag size={13} color={DS.caution} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.caution }}>
+                      Needs Tagging — {needsTagging.length} film{needsTagging.length !== 1 ? "s" : ""}
+                    </h2>
+                  </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filteredFilms.filter(f => f.status === "ready").map(f => (
+                    {needsTagging.map(f => (
                       <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
                     ))}
                   </div>
-                </div>
+                </section>
               )}
 
-              {/* Failed */}
-              {filteredFilms.filter(f => f.status === "failed").length > 0 && (
-                <div>
-                  <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.warn }}>Failed</h2>
+              {/* Has plays — ready to submit for analysis */}
+              {hasPlays.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <Sparkles size={13} color={DS.brand} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.brand }}>
+                      Ready for Analysis — {hasPlays.length} film{hasPlays.length !== 1 ? "s" : ""}
+                    </h2>
+                  </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filteredFilms.filter(f => f.status === "failed").map(f => (
+                    {hasPlays.map(f => (
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* In Progress */}
+              {inProgress.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.brand }}>
+                      In Progress
+                    </h2>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {inProgress.map(f => (
                       <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onRetry={handleFilmRetried} />
                     ))}
                   </div>
-                </div>
+                </section>
               )}
+
+              {/* Complete */}
+              {complete.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <CheckCircle2 size={13} color={DS.safe} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.safe }}>
+                      Analysis Complete
+                    </h2>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {complete.map(f => (
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Failed */}
+              {failed.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <AlertCircle size={13} color={DS.warn} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.warn }}>Failed</h2>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {failed.map(f => (
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onRetry={handleFilmRetried} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
             </div>
           )}
 

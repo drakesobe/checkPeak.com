@@ -504,7 +504,7 @@ const SPEEDS     = [0.5, 1, 1.5, 2];
 
 function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onClear, plays, onSaved, onSkip, onUndo, videoRef, speed, onSetSpeed, editingPlay, onCancelEdit }) {
   const nextNum = plays.length + 1;
-  const [form,     setForm]     = useState({ down: "1", distance: "10", playType: "", formation: "", result: "", yardsGained: "", playDirection: "", hash: "", yardLine: "", personnel: "", labels: "" });
+  const [form,     setForm]     = useState({ down: "1", distance: "10", playType: "", formation: "", result: "", yardsGained: "", playDirection: "", hash: "", yardLine: "", personnel: "", labels: "", notes: "" });
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState("");
   const [showMore, setShowMore] = useState(false);
@@ -525,6 +525,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       yardLine:      String(editingPlay.yard_line ?? ""),
       personnel:     editingPlay.personnel ?? "",
       labels:        (editingPlay.labels ?? []).join(", "),
+      notes:         editingPlay.notes ?? "",
     });
     setShowMore(true); // open details so coach can see all fields
   }, [editingPlay?.id]);
@@ -602,6 +603,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
         yardLine:      form.yardLine      ? Number(form.yardLine)    : undefined,
         personnel:     form.personnel     || undefined,
         labels:        form.labels ? form.labels.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        notes:         form.notes?.trim() || undefined,
       };
       const r = await fetch("/api/film/plays", {
         method: "POST", credentials: "include",
@@ -917,6 +919,15 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
                 placeholder="red_zone, 3rd_down, blitz… (comma-separated)"
                 style={{ flex: 1, padding: mob ? "9px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none" }} />
             </div>
+
+            {/* Row D: Coach notes */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, paddingTop: 8 }}>NOTE</span>
+              <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
+                placeholder="Coach note for this play…"
+                rows={2}
+                style={{ flex: 1, padding: mob ? "8px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none", resize: "none", fontFamily: "inherit" }} />
+            </div>
           </div>
         )}
 
@@ -1129,6 +1140,14 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPl
                       </span>
                     ))}
                   </div>
+                )}
+
+                {/* Coach note */}
+                {play.notes && (
+                  <p style={{ margin: "4px 0 0", fontSize: 10, color: DS.labelText, fontStyle: "italic", lineHeight: 1.35,
+                    overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                    "{play.notes}"
+                  </p>
                 )}
               </div>
             </div>
@@ -1555,9 +1574,21 @@ function AddToPlaylistMenu({ play, playlists, onAdd, onCreateAndAdd, onClose, an
 }
 
 // ── Playlists Tab ─────────────────────────────────────────────────────────────
-function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, filmId, fetchPlaylists }) {
-  const [openId,    setOpenId]    = useState(null);
-  const [renaming,  setRenaming]  = useState(null);
+function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, filmId, fetchPlaylists, onCreateCrossGame }) {
+  const [openId,      setOpenId]      = useState(null);
+  const [renaming,    setRenaming]    = useState(null);
+  const [newCGName,   setNewCGName]   = useState("");
+  const [showNewCG,   setShowNewCG]   = useState(false);
+  const [busyCG,      setBusyCG]      = useState(false);
+
+  async function createCrossGame() {
+    const name = newCGName.trim(); if (!name) return;
+    setBusyCG(true);
+    await onCreateCrossGame(name);
+    setNewCGName(""); setShowNewCG(false);
+    await fetchPlaylists();
+    setBusyCG(false);
+  }
   const [renameVal, setRenameVal] = useState("");
   const [busy,      setBusy]      = useState(false);
 
@@ -1589,20 +1620,51 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, fil
     setBusy(false);
   }
 
-  if (playlists.length === 0) {
+  const filmPlaylists = playlists.filter(l => l.film_id);
+  const crossPlaylists = playlists.filter(l => !l.film_id);
+
+  if (playlists.length === 0 && !showNewCG) {
     return (
-      <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
-        <ListVideo size={36} color={DS.dimText} style={{ opacity: 0.25, marginBottom: 14 }} />
-        <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: DS.bodyText }}>No cut-ups yet</p>
-        <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
-          Click the <strong>+</strong> button on any play in the sidebar to add it to a playlist.
-        </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <ListVideo size={36} color={DS.dimText} style={{ opacity: 0.25, marginBottom: 14 }} />
+          <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: DS.bodyText }}>No cut-ups yet</p>
+          <p style={{ margin: "0 0 20px", fontSize: 13, color: DS.labelText }}>
+            Click the <strong>+</strong> button on any play in the sidebar to add it to a film playlist, or create a cross-game cut-up below.
+          </p>
+          <button onClick={() => setShowNewCG(true)}
+            style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 9, padding: "10px 20px", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Plus size={14} /> New Cross-Game Cut-up
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+      {/* New cross-game playlist form */}
+      {!open && (showNewCG ? (
+        <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", gap: 10, alignItems: "center" }}>
+          <ListVideo size={18} color={DS.brand} style={{ flexShrink: 0 }} />
+          <input autoFocus value={newCGName} onChange={e => setNewCGName(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") createCrossGame(); if (e.key === "Escape") setShowNewCG(false); }}
+            placeholder="Cross-game cut-up name…"
+            style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: `1px solid ${DS.border}`, fontSize: 13, outline: "none", background: DS.pageBg, color: DS.bodyText }} />
+          <button onClick={createCrossGame} disabled={busyCG || !newCGName.trim()}
+            style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+            {busyCG ? "…" : "Create"}
+          </button>
+          <button onClick={() => setShowNewCG(false)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 18 }}>✕</button>
+        </div>
+      ) : (
+        <button onClick={() => setShowNewCG(true)}
+          style={{ alignSelf: "flex-start", background: DS.brandBg, color: DS.brand, border: `1px solid ${DS.brandBorder}`, borderRadius: 9, padding: "8px 16px", fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <Plus size={13} /> New Cross-Game Cut-up
+        </button>
+      ))}
+
       {/* Playlist list */}
       {!open && playlists.map(list => (
         <div key={list.id} style={{
@@ -1626,7 +1688,14 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, fil
               </div>
             ) : (
               <>
-                <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{list.name}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{list.name}</p>
+                  {!list.film_id && (
+                    <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      All Games
+                    </span>
+                  )}
+                </div>
                 <p style={{ margin: 0, fontSize: 11, color: DS.dimText }}>
                   {(list.items ?? []).length} play{(list.items ?? []).length !== 1 ? "s" : ""}
                   {list.created_by && ` · by ${list.created_by}`}
@@ -1775,6 +1844,301 @@ function CutupOverlay({ cutup, onNext, onPrev, onStop, isMobile }) {
           style={{ background: "rgba(220,38,38,0.8)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
           ✕ Exit
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Telestration — canvas only, no toolbar ────────────────────────────────────
+const TELE_TOOLS  = [
+  { id: "arrow", label: "Arrow",  icon: "↗" },
+  { id: "pen",   label: "Pen",    icon: "✏" },
+  { id: "rect",  label: "Rect",   icon: "□" },
+  { id: "circle",label: "Circle", icon: "○" },
+  { id: "line",  label: "Line",   icon: "—" },
+];
+const TELE_COLORS = ["#FF3B30","#FFCC00","#FFFFFF","#34C759","#007AFF","#FF9500"];
+
+function Telestration({ active, strokes, onStrokesChange, tool, color }) {
+  const setStrokes = onStrokesChange;
+  const canvasRef  = useRef(null);
+  const isDown     = useRef(false);
+  const livePts    = useRef([]);
+
+  const visible = active || strokes.length > 0;
+
+  useEffect(() => {
+    if (!visible || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const fit = () => {
+      const parent = canvas.parentElement;
+      canvas.width  = parent.offsetWidth;
+      canvas.height = parent.offsetHeight;
+      redrawAll();
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(canvas.parentElement);
+    return () => ro.disconnect();
+  }, [visible]);
+
+  useEffect(() => { if (visible) redrawAll(); }, [strokes, visible]);
+
+  function redrawAll(extra) {
+    const c = canvasRef.current; if (!c) return;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    for (const s of strokes) paint(ctx, s, c.width, c.height);
+    if (extra) paint(ctx, extra, c.width, c.height);
+  }
+
+  function paint(ctx, stroke, W, H) {
+    const pts = stroke.points; if (!pts?.length) return;
+    ctx.strokeStyle = stroke.color; ctx.fillStyle = stroke.color;
+    ctx.lineWidth = stroke.lw; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (stroke.type === "pen" || stroke.type === "line") {
+      ctx.beginPath(); ctx.moveTo(pts[0].x*W, pts[0].y*H);
+      for (let i=1; i<pts.length; i++) ctx.lineTo(pts[i].x*W, pts[i].y*H);
+      ctx.stroke();
+    } else if (stroke.type === "arrow") {
+      if (pts.length < 2) return;
+      const [p0,p1] = [pts[0], pts[pts.length-1]];
+      const x1=p0.x*W, y1=p0.y*H, x2=p1.x*W, y2=p1.y*H;
+      const head=Math.max(stroke.lw*5,18), ang=Math.atan2(y2-y1,x2-x1);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x2,y2);
+      ctx.lineTo(x2-head*Math.cos(ang-Math.PI/7), y2-head*Math.sin(ang-Math.PI/7));
+      ctx.lineTo(x2-head*Math.cos(ang+Math.PI/7), y2-head*Math.sin(ang+Math.PI/7));
+      ctx.closePath(); ctx.fill();
+    } else if (stroke.type === "rect") {
+      if (pts.length < 2) return;
+      const [p0,p1] = [pts[0], pts[pts.length-1]];
+      ctx.strokeRect(p0.x*W, p0.y*H, (p1.x-p0.x)*W, (p1.y-p0.y)*H);
+    } else if (stroke.type === "circle") {
+      if (pts.length < 2) return;
+      const [p0,p1] = [pts[0], pts[pts.length-1]];
+      const cx=((p0.x+p1.x)/2)*W, cy=((p0.y+p1.y)/2)*H;
+      const rx=Math.abs(p1.x-p0.x)*W/2, ry=Math.abs(p1.y-p0.y)*H/2;
+      if (rx<1||ry<1) return;
+      ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.stroke();
+    }
+  }
+
+  function getXY(e) {
+    const c=canvasRef.current; const r=c.getBoundingClientRect();
+    const src=e.touches?e.touches[0]:e;
+    return { x:(src.clientX-r.left)/r.width, y:(src.clientY-r.top)/r.height };
+  }
+  function handleDown(e) { e.preventDefault(); isDown.current=true; livePts.current=[getXY(e)]; }
+  function handleMove(e) {
+    e.preventDefault(); if (!isDown.current) return;
+    livePts.current.push(getXY(e));
+    redrawAll({ type:tool, color, lw:3, points:[...livePts.current] });
+  }
+  function handleUp(e) {
+    e.preventDefault(); if (!isDown.current) return;
+    isDown.current=false;
+    if (livePts.current.length>0)
+      setStrokes(prev=>[...prev,{type:tool,color,lw:3,points:[...livePts.current]}]);
+    livePts.current=[];
+  }
+
+  if (!visible) return null;
+  return (
+    <canvas ref={canvasRef}
+      onPointerDown={active?handleDown:undefined} onPointerMove={active?handleMove:undefined}
+      onPointerUp={active?handleUp:undefined}     onPointerLeave={active?handleUp:undefined}
+      style={{
+        position:"absolute", top:0, left:0, right:0, bottom:48, zIndex:20,
+        pointerEvents:active?"all":"none",
+        cursor:active?"crosshair":"default",
+        touchAction:active?"none":"auto",
+      }}
+    />
+  );
+}
+
+// ── Video Control Bar — one strip, always at the bottom, never moves ──────────
+function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesChange, tool, onToolChange, color, onColorChange, onFullscreenToggle }) {
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const vid = videoRef?.current; if (!vid) return;
+    const onPlay  = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    vid.addEventListener("play",  onPlay);
+    vid.addEventListener("pause", onPause);
+    setPlaying(!vid.paused);
+    return () => { vid.removeEventListener("play",onPlay); vid.removeEventListener("pause",onPause); };
+  });
+
+  function togglePlay() {
+    const vid = videoRef?.current; if (!vid) return;
+    vid.paused ? vid.play().catch(()=>{}) : vid.pause();
+  }
+
+  const btn = (style={}) => ({
+    background:"rgba(255,255,255,0.08)", border:"none", color:"#fff",
+    borderRadius:7, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+    ...style,
+  });
+
+  return (
+    <div style={{
+      position:"absolute", bottom:0, left:0, right:0, zIndex:60,
+      background:"rgba(8,10,18,0.88)", backdropFilter:"blur(14px)",
+      borderTop:"1px solid rgba(255,255,255,0.07)",
+    }}>
+      {/* Drawing tools row — only when drawing */}
+      {drawMode && (
+        <div style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexWrap:"wrap" }}>
+          {TELE_TOOLS.map(t => (
+            <button key={t.id} onClick={()=>onToolChange(t.id)}
+              style={{ ...btn(), width:32, height:32, fontSize:14,
+                background: tool===t.id ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.06)",
+                outline: tool===t.id ? "1px solid rgba(255,255,255,0.45)" : "none",
+              }}>{t.icon}</button>
+          ))}
+          <div style={{width:1,height:22,background:"rgba(255,255,255,0.15)"}} />
+          {TELE_COLORS.map(c => (
+            <button key={c} onClick={()=>onColorChange(c)}
+              style={{ width:20,height:20,border:"none",borderRadius:"50%",background:c,cursor:"pointer",
+                outline:color===c?"2px solid #fff":"2px solid transparent", outlineOffset:1 }} />
+          ))}
+          <div style={{width:1,height:22,background:"rgba(255,255,255,0.15)"}} />
+          <button onClick={()=>onStrokesChange(s=>s.slice(0,-1))} disabled={!strokes.length}
+            style={{...btn({padding:"4px 9px",fontSize:11,fontWeight:700,opacity:strokes.length?1:0.35})}}>
+            ↩ Undo
+          </button>
+          <button onClick={()=>onStrokesChange([])} disabled={!strokes.length}
+            style={{...btn({padding:"4px 9px",fontSize:11,fontWeight:700,opacity:strokes.length?1:0.35})}}>
+            ✕ Clear
+          </button>
+        </div>
+      )}
+
+      {/* Main controls row — always same layout, never moves */}
+      <div style={{ display:"flex", alignItems:"center", padding:"8px 12px", gap:8 }}>
+        {/* Play — always far left */}
+        <button onClick={togglePlay} style={{...btn({width:36,height:36,fontSize:18})}}>
+          {playing ? "⏸" : "▶"}
+        </button>
+
+        <div style={{flex:1}} />
+
+        {/* Draw / Done — always same spot, second from right */}
+        <button onClick={onDrawToggle}
+          style={{...btn({padding:"6px 14px",fontSize:12,fontWeight:700,
+            background: drawMode ? "#1E3A5F" : "rgba(255,255,255,0.08)",
+          })}}>
+          {drawMode ? "✓ Done" : "✏ Draw"}
+        </button>
+
+        {/* Maximize — always far right */}
+        <button onClick={onFullscreenToggle} style={{...btn({width:36,height:36,fontSize:16})}}>⛶</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Share Modal ───────────────────────────────────────────────────────────────
+function ShareModal({ film, playlists, onClose }) {
+  const [type,       setType]       = useState("film");
+  const [playlistId, setPlaylistId] = useState(playlists?.[0]?.id ?? "");
+  const [link,       setLink]       = useState("");
+  const [copied,     setCopied]     = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [err,        setErr]        = useState("");
+
+  async function generate() {
+    setLoading(true); setErr("");
+    const body = type === "film"
+      ? { filmId: film?.id, type: "film" }
+      : { playlistId, type: "cutup" };
+    try {
+      const r = await fetch("/api/film/share", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (d.ok) setLink(`${window.location.origin}/film-share/${d.token}`);
+      else setErr(d.error ?? "Failed to generate link");
+    } catch { setErr("Network error"); }
+    setLoading(false);
+  }
+
+  function copy() {
+    navigator.clipboard?.writeText(link);
+    setCopied(true); setTimeout(() => setCopied(false), 2500);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: DS.cardBg, borderRadius: 18, padding: "24px 24px 22px", maxWidth: 440, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.18)" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Share2 size={18} color={DS.brand} />
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: DS.bodyText }}>Share Film</h2>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 20, lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Type selector */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {[{id:"film",label:"Full Film"},{id:"cutup",label:"Cut-up"}].map(opt => (
+            <button key={opt.id} onClick={() => { setType(opt.id); setLink(""); }}
+              disabled={opt.id === "cutup" && !playlists?.length}
+              style={{
+                flex: 1, padding: "9px 0", borderRadius: 9,
+                border: `1px solid ${type === opt.id ? DS.brand : DS.border}`,
+                background: type === opt.id ? DS.brandBg : "none",
+                color: type === opt.id ? DS.brand : DS.labelText,
+                fontWeight: 700, fontSize: 13, cursor: "pointer",
+                opacity: opt.id === "cutup" && !playlists?.length ? 0.4 : 1,
+              }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {type === "cutup" && (playlists ?? []).length > 0 && (
+          <select value={playlistId} onChange={e => { setPlaylistId(e.target.value); setLink(""); }}
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${DS.border}`, fontSize: 13, marginBottom: 14, color: DS.bodyText, background: DS.pageBg, outline: "none" }}>
+            {(playlists ?? []).map(p => (
+              <option key={p.id} value={p.id}>{p.name} · {(p.items ?? []).length} plays</option>
+            ))}
+          </select>
+        )}
+
+        {err && <p style={{ margin: "0 0 12px", fontSize: 12, color: DS.warn }}>{err}</p>}
+
+        {!link ? (
+          <button onClick={generate} disabled={loading || (type === "cutup" && !playlistId)}
+            style={{ width: "100%", padding: "12px 0", borderRadius: 10, background: DS.brand, color: "#fff", border: "none", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+            {loading ? "Generating…" : "Generate Link"}
+          </button>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input readOnly value={link} onClick={e => e.target.select()}
+                style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: `1px solid ${DS.border}`, fontSize: 12, background: DS.pageBg, color: DS.labelText, outline: "none" }} />
+              <button onClick={copy}
+                style={{ padding: "9px 16px", borderRadius: 8, background: copied ? DS.safe : DS.brand, color: "#fff", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", transition: "background 0.2s" }}>
+                {copied ? "✓ Copied!" : "Copy"}
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: 11, color: DS.dimText, textAlign: "center" }}>
+              Anyone with this link can view — no login required.
+            </p>
+            <button onClick={() => setLink("")}
+              style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 0", color: DS.labelText, fontSize: 12, cursor: "pointer" }}>
+              Generate different link
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2450,6 +2814,15 @@ export default function FilmDetailPage() {
   const [playlists,    setPlaylists]    = useState([]);
   const [cutup,        setCutup]        = useState(null);   // { name, plays:[], index:0 }
   const [addMenuPlay,  setAddMenuPlay]  = useState(null);   // play that has the menu open
+  const [drawMode,     setDrawMode]     = useState(false);
+  const [showShare,    setShowShare]    = useState(false);
+  const [isFullscreen,  setIsFullscreen]  = useState(false);
+  const [showOverlay,   setShowOverlay]   = useState(true);
+  const [teleStrokes,   setTeleStrokes]   = useState([]);
+  const [teleTool,      setTeleTool]      = useState("arrow");
+  const [teleColor,     setTeleColor]     = useState("#FF3B30");
+  const filmLeftRef   = useRef(null);
+  const hideTimer     = useRef(null);
 
   const videoRef   = useRef(null);
   const pollRef    = useRef(null);
@@ -2643,6 +3016,15 @@ export default function FilmDetailPage() {
     if (d.ok) await playlistAction({ action: "add_play", listId: d.list.id, playId: play.id });
   }
 
+  async function createCrossGamePlaylist(name) {
+    await fetch("/api/film/playlists", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create", crossGame: true, name }),
+    });
+    fetchPlaylists();
+  }
+
   async function removePlayFromList(itemId) {
     await playlistAction({ action: "remove_play", itemId });
   }
@@ -2666,6 +3048,41 @@ export default function FilmDetailPage() {
     }
     setTab("plays");
   }
+
+  // ── Fullscreen ────────────────────────────────────────────────────────────
+  function toggleFullscreen() {
+    const el = filmLeftRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.())?.catch?.(() => {});
+      setShowOverlay(true);
+      clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => setShowOverlay(false), 3000);
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+
+  function handleFSMouseMove() {
+    if (!isFullscreen) return;
+    setShowOverlay(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowOverlay(false), 3000);
+  }
+
+  useEffect(() => {
+    function onFSChange() {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs) { setShowOverlay(true); clearTimeout(hideTimer.current); setDrawMode(false); }
+    }
+    document.addEventListener("fullscreenchange", onFSChange);
+    document.addEventListener("webkitfullscreenchange", onFSChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFSChange);
+      document.removeEventListener("webkitfullscreenchange", onFSChange);
+    };
+  }, []);
 
   function cutupNext() {
     setCutup(c => {
@@ -2719,6 +3136,36 @@ export default function FilmDetailPage() {
           .video-wrap { max-height: 56vw !important; overflow: hidden !important; }
           .video-wrap video, .video-wrap mux-player { max-height: 56vw !important; }
         }
+
+        /* ── Fullscreen mode ── */
+        .film-left-col:fullscreen,
+        .film-left-col:-webkit-full-screen {
+          background: #000; display: flex; flex-direction: column; position: relative;
+        }
+        .film-left-col:fullscreen .video-wrap,
+        .film-left-col:-webkit-full-screen .video-wrap {
+          flex: 1; min-height: 0;
+          max-height: none !important; aspect-ratio: unset !important; overflow: hidden;
+        }
+        .film-left-col:fullscreen .video-wrap video,
+        .film-left-col:fullscreen .video-wrap mux-player,
+        .film-left-col:-webkit-full-screen .video-wrap video,
+        .film-left-col:-webkit-full-screen .video-wrap mux-player {
+          max-height: none !important; height: 100% !important; object-fit: contain;
+        }
+        .film-left-col:fullscreen .fs-hide,
+        .film-left-col:-webkit-full-screen .fs-hide { display: none !important; }
+        .film-left-col:fullscreen .fs-tagbar,
+        .film-left-col:-webkit-full-screen .fs-tagbar {
+          position: absolute; bottom: 52px; left: 0; right: 0; z-index: 50;
+          background: rgba(8,10,18,0.92); backdrop-filter: blur(14px);
+          border-top: 1px solid rgba(255,255,255,0.06);
+          transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+        .film-left-col:fullscreen .fs-tagbar.hidden,
+        .film-left-col:-webkit-full-screen .fs-tagbar.hidden {
+          opacity: 0; transform: translateY(20px); pointer-events: none;
+        }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: DS.pageBg, fontFamily: "system-ui, sans-serif" }}>
@@ -2760,8 +3207,23 @@ export default function FilmDetailPage() {
                 <Share2 size={12} /> {copied ? "Copied!" : "Share Clip"}
               </button>
             )}
+
+            {/* Share film / cut-up link */}
+            <button onClick={() => setShowShare(true)}
+              style={{
+                background: DS.brand, color: "#fff", border: "none",
+                borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+              }}>
+              <Share2 size={13} /> Share
+            </button>
           </div>
         </div>
+
+        {/* Share modal */}
+        {showShare && (
+          <ShareModal film={film} playlists={playlists} onClose={() => setShowShare(false)} />
+        )}
 
         {/* ── Processing banner ── */}
         {isProcessing && (
@@ -2885,76 +3347,99 @@ export default function FilmDetailPage() {
 
               <div className="tape-grid" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,3fr) minmax(240px,2fr)", gap: isMobile ? 12 : 16, alignItems: "start" }}>
                   {/* Left: video + timeline + tag bar + formation + metrics */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 8 : 14, minWidth: 0, overflow: "hidden" }}>
+                  <div
+                    ref={filmLeftRef}
+                    className="film-left-col"
+                    style={{ display: "flex", flexDirection: "column", gap: isMobile ? 8 : 14, minWidth: 0, overflow: "hidden", position: "relative" }}
+                    onMouseMove={handleFSMouseMove}
+                  >
+                    {/* Video wrapper */}
                     <div style={{ position: "relative" }}>
-                    <VideoPlayer
-                      playbackId={film?.muxPlaybackId}
-                      s3Url={filmVideoUrl}
-                      clipUrl={selPlay?.clip_url}
-                      playNumber={selPlay?.play_number}
-                      onTimeUpdate={t => {
-                        setVideoTime(t);
-                        // Cut-up auto-advance: when current play ends, jump to next
-                        setCutup(c => {
-                          if (!c) return c;
-                          const cur = c.plays[c.index];
-                          if (cur?.end_time_secs != null && t >= cur.end_time_secs - 0.2) {
-                            if (c.index < c.plays.length - 1) {
-                              const next = c.plays[c.index + 1];
-                              if (videoRef.current && next.start_time_secs != null) {
-                                videoRef.current.currentTime = next.start_time_secs;
-                                videoRef.current.play?.().catch(() => {});
+                      <VideoPlayer
+                        playbackId={film?.muxPlaybackId}
+                        s3Url={filmVideoUrl}
+                        clipUrl={selPlay?.clip_url}
+                        playNumber={selPlay?.play_number}
+                        onTimeUpdate={t => {
+                          setVideoTime(t);
+                          setCutup(c => {
+                            if (!c) return c;
+                            const cur = c.plays[c.index];
+                            if (cur?.end_time_secs != null && t >= cur.end_time_secs - 0.2) {
+                              if (c.index < c.plays.length - 1) {
+                                const next = c.plays[c.index + 1];
+                                if (videoRef.current && next.start_time_secs != null) {
+                                  videoRef.current.currentTime = next.start_time_secs;
+                                  videoRef.current.play?.().catch(() => {});
+                                }
+                                return { ...c, index: c.index + 1 };
+                              } else {
+                                return null;
                               }
-                              return { ...c, index: c.index + 1 };
-                            } else {
-                              // Last play finished — stop cutup
-                              return null;
                             }
-                          }
-                          return c;
-                        });
-                      }}
-                      onDurationChange={setFilmDuration}
-                      videoRef={videoRef}
-                    />
-                    <CutupOverlay
-                      cutup={cutup}
-                      onNext={cutupNext}
-                      onPrev={cutupPrev}
-                      onStop={() => setCutup(null)}
-                      isMobile={isMobile}
-                    />
+                            return c;
+                          });
+                        }}
+                        onDurationChange={setFilmDuration}
+                        videoRef={videoRef}
+                      />
+                      <CutupOverlay
+                        cutup={cutup}
+                        onNext={cutupNext}
+                        onPrev={cutupPrev}
+                        onStop={() => setCutup(null)}
+                        isMobile={isMobile}
+                      />
+                      <Telestration active={drawMode} strokes={teleStrokes} onStrokesChange={setTeleStrokes} tool={teleTool} color={teleColor} />
+                      <VideoControlBar
+                        videoRef={videoRef}
+                        drawMode={drawMode}
+                        onDrawToggle={() => setDrawMode(d => !d)}
+                        strokes={teleStrokes}
+                        onStrokesChange={setTeleStrokes}
+                        tool={teleTool}
+                        onToolChange={setTeleTool}
+                        color={teleColor}
+                        onColorChange={setTeleColor}
+                        onFullscreenToggle={toggleFullscreen}
+                      />
                     </div>
 
+                    {/* Timeline — hidden in fullscreen */}
                     {!isMobile && (
-                      <PlayTimeline
-                        plays={plays}
-                        duration={filmDuration}
-                        currentTime={videoTime}
-                        snapTime={snapTime}
-                        onSeek={t => { if (videoRef.current) { videoRef.current.currentTime = t; } }}
-                      />
+                      <div className="fs-hide">
+                        <PlayTimeline
+                          plays={plays}
+                          duration={filmDuration}
+                          currentTime={videoTime}
+                          snapTime={snapTime}
+                          onSeek={t => { if (videoRef.current) { videoRef.current.currentTime = t; } }}
+                        />
+                      </div>
                     )}
 
-                    <TagBar
-                      filmId={id}
-                      snapTime={snapTime}
-                      whistleTime={whistleTime}
-                      onMarkSnap={() => { if (videoRef.current) { videoRef.current.pause?.(); setSnapTime(videoRef.current.currentTime); setWhistleTime(null); } }}
-                      onMarkWhistle={() => { if (videoRef.current) { videoRef.current.pause?.(); setWhistleTime(videoRef.current.currentTime); } }}
-                      onClear={() => { setSnapTime(null); setWhistleTime(null); }}
-                      plays={plays}
-                      onSaved={() => { fetchPlays(); fetchAnalytics(); }}
-                      onSkip={() => { setSnapTime(null); setWhistleTime(null); if (videoRef.current) { videoRef.current.currentTime += 10; videoRef.current.play?.().catch(() => {}); } }}
-                      onUndo={undoLastPlay}
-                      videoRef={videoRef}
-                      speed={speed}
-                      onSetSpeed={setSpeed}
-                      editingPlay={editingPlay}
-                      onCancelEdit={cancelEdit}
-                    />
+                    {/* TagBar — inline normally, overlay in fullscreen */}
+                    <div className={`fs-tagbar${isFullscreen && (!showOverlay || drawMode) ? " hidden" : ""}`}>
+                      <TagBar
+                        filmId={id}
+                        snapTime={snapTime}
+                        whistleTime={whistleTime}
+                        onMarkSnap={() => { if (videoRef.current) { videoRef.current.pause?.(); setSnapTime(videoRef.current.currentTime); setWhistleTime(null); } }}
+                        onMarkWhistle={() => { if (videoRef.current) { videoRef.current.pause?.(); setWhistleTime(videoRef.current.currentTime); } }}
+                        onClear={() => { setSnapTime(null); setWhistleTime(null); }}
+                        plays={plays}
+                        onSaved={() => { fetchPlays(); fetchAnalytics(); }}
+                        onSkip={() => { setSnapTime(null); setWhistleTime(null); if (videoRef.current) { videoRef.current.currentTime += 10; videoRef.current.play?.().catch(() => {}); } }}
+                        onUndo={undoLastPlay}
+                        videoRef={videoRef}
+                        speed={speed}
+                        onSetSpeed={setSpeed}
+                        editingPlay={editingPlay}
+                        onCancelEdit={cancelEdit}
+                      />
+                    </div>
 
-                    {selTracks.some(t => t.snap_x != null) && (
+                    {!isFullscreen && selTracks.some(t => t.snap_x != null) && (
                       <div>
                         <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.labelText }}>
                           Formation at Snap · Play #{selPlay?.play_number}
@@ -2971,12 +3456,12 @@ export default function FilmDetailPage() {
                       </div>
                     )}
 
-                    <PlayerMetricsRow
+                    {!isFullscreen && <PlayerMetricsRow
                       tracks={selTracks}
                       roster={roster}
                       highlightJersey={hlJersey}
                       onHighlight={j => setHlJersey(h => h === j ? null : j)}
-                    />
+                    />}
                   </div>
 
                   {/* Right: sticky play sidebar */}
@@ -3112,6 +3597,7 @@ export default function FilmDetailPage() {
               onRemovePlay={removePlayFromList}
               onRename={renamePlaylist}
               fetchPlaylists={fetchPlaylists}
+              onCreateCrossGame={createCrossGamePlaylist}
             />
           )}
         </div>

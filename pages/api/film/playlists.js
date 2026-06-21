@@ -38,21 +38,23 @@ export default async function handler(req, res) {
       const filmId = String(req.query.filmId ?? "").trim();
       if (!filmId) return res.status(400).json({ error: "filmId required" });
 
+      // Return both film-specific and org-level (cross-game, film_id IS NULL) playlists
       const { data: lists, error } = await supabase
         .from("game_play_lists")
         .select(`
-          id, name, description, created_by, created_at,
+          id, name, description, created_by, created_at, film_id,
           game_play_list_items (
             id, position, note,
             game_plays (
               id, play_number, play_type, down, distance, yards_gained,
               result, start_time_secs, end_time_secs, clip_url,
-              formation, play_direction, hash, yard_line, personnel, labels
+              formation, play_direction, hash, yard_line, personnel, labels,
+              film_id
             )
           )
         `)
-        .eq("film_id", filmId)
         .eq("org_id", orgId)
+        .or(`film_id.eq.${filmId},film_id.is.null`)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -70,20 +72,24 @@ export default async function handler(req, res) {
 
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    const { action, filmId, listId, playId, itemId, name, description, orderedIds } = req.body ?? {};
+    const { action, filmId, listId, playId, itemId, name, description, orderedIds, crossGame } = req.body ?? {};
 
     // ── CREATE ───────────────────────────────────────────────────────────────
     if (action === "create") {
-      if (!filmId || !name?.trim()) return res.status(400).json({ error: "filmId and name required" });
+      if (!name?.trim()) return res.status(400).json({ error: "name required" });
 
-      // Verify org owns this film
-      const { data: film } = await supabase.from("game_films").select("id, org_id").eq("id", filmId).single();
-      if (!film || film.org_id !== orgId) return res.status(404).json({ error: "Film not found" });
+      let resolvedFilmId = null;
+      if (!crossGame) {
+        if (!filmId) return res.status(400).json({ error: "filmId required for film-specific playlists" });
+        const { data: film } = await supabase.from("game_films").select("id, org_id").eq("id", filmId).single();
+        if (!film || film.org_id !== orgId) return res.status(404).json({ error: "Film not found" });
+        resolvedFilmId = filmId;
+      }
 
       const { data, error } = await supabase
         .from("game_play_lists")
-        .insert({ film_id: filmId, org_id: orgId, name: name.trim(), description: description ?? null, created_by: user.email ?? "coach" })
-        .select("id, name, created_at")
+        .insert({ film_id: resolvedFilmId, org_id: orgId, name: name.trim(), description: description ?? null, created_by: user.email ?? "coach" })
+        .select("id, name, film_id, created_at")
         .single();
 
       if (error) throw error;

@@ -35,21 +35,41 @@ async function getPlays(req, res, orgId) {
 
   if (!film || film.org_id !== orgId) return res.status(404).json({ error: "Film not found" });
 
-  const { data: plays, error } = await supabase
+  // Fetch core play data; notes added a column migration — try with notes, fall back without.
+  let plays, error;
+  ({ data: plays, error } = await supabase
     .from("game_plays")
     .select(`
       id, play_number, start_time_secs, end_time_secs, clip_url,
       formation, play_type, down, distance, yards_gained, result, tagged_by,
-      hash, yard_line, play_direction, personnel, labels,
+      hash, yard_line, play_direction, personnel, labels, notes,
       player_tracks (
         jersey_number, team, max_speed_mph, avg_speed_mph,
         accel_peak_ms2, first_step_ms, snap_x, snap_y
       )
     `)
     .eq("film_id", filmId)
-    .order("play_number", { ascending: true });
+    .order("play_number", { ascending: true }));
 
-  if (error) throw error;
+  if (error) {
+    // If the notes column doesn't exist yet, retry without it
+    if (error.code === "42703" || error.message?.includes("notes")) {
+      ({ data: plays, error } = await supabase
+        .from("game_plays")
+        .select(`
+          id, play_number, start_time_secs, end_time_secs, clip_url,
+          formation, play_type, down, distance, yards_gained, result, tagged_by,
+          hash, yard_line, play_direction, personnel, labels,
+          player_tracks (
+            jersey_number, team, max_speed_mph, avg_speed_mph,
+            accel_peak_ms2, first_step_ms, snap_x, snap_y
+          )
+        `)
+        .eq("film_id", filmId)
+        .order("play_number", { ascending: true }));
+    }
+    if (error) throw error;
+  }
 
   return res.status(200).json({ ok: true, plays: plays ?? [], filmStatus: film.status });
 }
@@ -59,7 +79,7 @@ async function tagPlay(req, res, orgId, user) {
     filmId, playId, playNumber,
     result, playType, down, distance, yardsGained, formation,
     startTimeSecs, endTimeSecs,
-    hash, yardLine, playDirection, personnel, labels,
+    hash, yardLine, playDirection, personnel, labels, notes,
   } = req.body ?? {};
 
   if (!filmId) return res.status(400).json({ error: "filmId required" });
@@ -88,6 +108,7 @@ async function tagPlay(req, res, orgId, user) {
     play_direction:   playDirection ?? undefined,
     personnel:        personnel     ?? undefined,
     labels:           Array.isArray(labels) && labels.length ? labels : undefined,
+    notes:            notes != null ? String(notes) : undefined,
   };
 
   // Clean undefined

@@ -634,7 +634,7 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete, onRetry }) {
+function FilmCard({ film, onClick, onDelete, onRetry, onSubmit }) {
   const uiState = filmUIState(film);
   const cfg = STATE_CFG[uiState] ?? STATE_CFG["has-plays"];
   const playCount = film.play_count ?? 0;
@@ -643,6 +643,7 @@ function FilmCard({ film, onClick, onDelete, onRetry }) {
   const [deleting,   setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [retrying,   setRetrying]   = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -767,11 +768,33 @@ function FilmCard({ film, onClick, onDelete, onRetry }) {
           )}
 
           {uiState === "has-plays" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 9, padding: "8px 14px" }}>
-              <Sparkles size={13} color={DS.brand} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: DS.brand }}>Submit Analysis</span>
-              <ArrowRight size={13} color={DS.brand} />
-            </div>
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (submitting) return;
+                setSubmitting(true);
+                try {
+                  const r = await fetch("/api/film/submit", {
+                    method: "POST", credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filmId: film.id }),
+                  });
+                  const d = await r.json();
+                  if (r.ok) {
+                    onSubmit?.(film.id);
+                    toast.success("Submitted for AI analysis!");
+                  } else {
+                    toast.error(d.error ?? "Submit failed");
+                  }
+                } catch { toast.error("Network error"); }
+                setSubmitting(false);
+              }}
+              disabled={submitting}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 9, padding: "8px 14px", cursor: submitting ? "not-allowed" : "pointer" }}>
+              {submitting
+                ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} color={DS.brand} /><span style={{ fontSize: 12, fontWeight: 700, color: DS.brand }}>Submitting…</span></>
+                : <><Sparkles size={13} color={DS.brand} /><span style={{ fontSize: 12, fontWeight: 700, color: DS.brand }}>Submit Analysis</span><ArrowRight size={13} color={DS.brand} /></>}
+            </button>
           )}
 
           {uiState === "complete" && (
@@ -923,6 +946,11 @@ export default function FilmPage() {
     setTimeout(() => startPolling(filmId), 2000);
   }
 
+  function handleFilmSubmitted(filmId) {
+    setFilms(prev => prev.map(f => f.id === filmId ? { ...f, status: "analyzing", progress_pct: 0 } : f));
+    setTimeout(() => startPolling(filmId), 2000);
+  }
+
   function handleFilmDeleted(filmId) {
     setFilms(prev => prev.filter(f => f.id !== filmId));
     if (pollingRef.current[filmId]) { clearInterval(pollingRef.current[filmId]); delete pollingRef.current[filmId]; }
@@ -1068,7 +1096,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {hasPlays.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onSubmit={handleFilmSubmitted} />
                     ))}
                   </div>
                 </section>

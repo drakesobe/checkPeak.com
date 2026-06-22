@@ -22,7 +22,7 @@ const supabase = createClient(
 );
 
 const BUCKET      = process.env.FILM_S3_BUCKET ?? "checkpeak-film-raw";
-const EXPIRES_SEC = 900; // 15 min - enough for a 4GB upload on a good connection
+const EXPIRES_SEC = 7200; // 2 hours - large files on slow school wifi
 
 function parseUser(req) {
   // Mobile: _authUser in body

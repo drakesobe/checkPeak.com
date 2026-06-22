@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
+import { Toaster, toast } from "react-hot-toast";
 import {
   ArrowLeft, BarChart2, CheckCircle2, AlertCircle, Loader2,
   Film, UserCheck, Users, RefreshCw, Play, TrendingUp,
@@ -1073,6 +1074,13 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPl
                     </span>
                   )}
 
+                  {/* AI tracked badge */}
+                  {(play.player_tracks ?? []).length > 0 && (
+                    <span style={{ fontSize: 7, fontWeight: 800, padding: "1px 5px", borderRadius: 3, background: DS.safeBg, color: DS.safe, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, border: `1px solid ${DS.safeBorder}` }}>
+                      AI ✓
+                    </span>
+                  )}
+
                   {/* Edit + Add-to-playlist buttons */}
                   <div style={{ marginLeft: "auto", display: "flex", gap: 2, flexShrink: 0 }}>
                     <button
@@ -1230,10 +1238,11 @@ function PlayerMetricsRow({ tracks = [], roster, highlightJersey, onHighlight })
 
 // ── Jersey Confirm Panel ──────────────────────────────────────────────────────
 function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
-  const [tracks, setTracks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving,  setSaving]  = useState(null);
-  const [chosen,  setChosen]  = useState({});
+  const [tracks,        setTracks]        = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [saving,        setSaving]        = useState(null);
+  const [chosen,        setChosen]        = useState({});
+  const [autoConfirmed, setAutoConfirmed] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1242,6 +1251,7 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
       const d = await r.json();
       const unc = d.unconfirmed ?? [];
       setTracks(unc);
+      setAutoConfirmed(d.autoConfirmed ?? 0);
       onCountKnown?.(unc.length);
       if (d.allConfirmed) onAllConfirmed?.();
     } catch {}
@@ -1251,7 +1261,12 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
   useEffect(() => { load(); }, [load]);
 
   async function confirm(trackId) {
-    const rosterId = chosen[trackId];
+    const track    = tracks.find(t => t.rekognition_track_id === trackId);
+    const rosterId = chosen[trackId] ?? (
+      track?.jersey_number != null
+        ? roster.find(p => p.jersey_number === track.jersey_number)?.id
+        : null
+    );
     if (!rosterId) return;
     setSaving(trackId);
     try {
@@ -1281,7 +1296,9 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
       <CheckCircle2 size={20} color={DS.safe} />
       <div>
         <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: DS.safe }}>All players confirmed</p>
-        <p style={{ margin: "2px 0 0", fontSize: 12, color: DS.labelText }}>Full analytics are unlocked.</p>
+        <p style={{ margin: "2px 0 0", fontSize: 12, color: DS.labelText }}>
+          Full analytics unlocked.{autoConfirmed > 0 ? ` ${autoConfirmed} auto-confirmed by AI.` : ""}
+        </p>
       </div>
     </div>
   );
@@ -1292,7 +1309,8 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
         <div>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: DS.bodyText }}>Confirm Player Identity</h3>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: DS.labelText }}>
-            {tracks.length} player{tracks.length !== 1 ? "s" : ""} detected by AI - match to roster to unlock analytics.
+            {tracks.length} player{tracks.length !== 1 ? "s" : ""} need review · confirm once to unlock all their plays
+            {autoConfirmed > 0 && <span style={{ color: DS.safe, fontWeight: 600 }}> · {autoConfirmed} auto-confirmed ✓</span>}
           </p>
         </div>
         <button onClick={load} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
@@ -1302,59 +1320,89 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {tracks.map(track => {
-          const guess = track.jersey_number != null ? roster.find(p => p.jersey_number === track.jersey_number) : null;
-          const conf  = track.jersey_confidence != null ? Math.round(track.jersey_confidence * 100) : null;
+          const isHome    = track.team === "home";
+          const isAway    = track.team === "away";
+          // Filter roster by team — home detections only show your roster, away show opponent side
+          const rosterOpts = isAway
+            ? []  // no opponent roster yet — handled by "Unknown #X (opponent)" below
+            : roster;
+          const guess     = track.jersey_number != null ? roster.find(p => p.jersey_number === track.jersey_number) : null;
+          const conf      = track.jersey_confidence != null ? Math.round(track.jersey_confidence * 100) : null;
+          const selVal    = chosen[track.rekognition_track_id] ?? guess?.id ?? "";
+          const canSubmit = !!selVal && !isAway;
 
           return (
             <div key={track.rekognition_track_id} style={{
               display: "flex", alignItems: "center", gap: 12,
               border: `1px solid ${DS.border}`, borderRadius: 10, padding: "12px 14px", background: DS.cardBg,
             }}>
+              {/* Jersey number + confidence */}
               <div style={{
-                width: 48, height: 48, borderRadius: 10, background: DS.brandBg, flexShrink: 0,
+                width: 52, height: 52, borderRadius: 10, flexShrink: 0,
+                background: isAway ? "#fef2f2" : DS.brandBg,
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
               }}>
-                <span style={{ fontWeight: 800, fontSize: 16, color: DS.brand, lineHeight: 1 }}>
+                <span style={{ fontWeight: 800, fontSize: 17, color: isAway ? DS.warn : DS.brand, lineHeight: 1 }}>
                   {track.jersey_number != null ? `#${track.jersey_number}` : "?"}
                 </span>
-                {conf != null && <span style={{ fontSize: 9, color: DS.dimText, marginTop: 2 }}>{conf}% conf.</span>}
+                <span style={{ fontSize: 8, color: DS.dimText, marginTop: 2, fontWeight: 600 }}>
+                  {isAway ? "OPP" : "HOME"}
+                </span>
               </div>
 
-              {guess && (
-                <p style={{ margin: 0, fontSize: 12, color: DS.labelText, flexShrink: 0 }}>
-                  <span style={{ color: DS.safe, fontWeight: 600 }}>AI: </span>{guess.player_name}
-                </p>
+              {/* Context: confidence + play count */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, minWidth: 72 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: DS.bodyText }}>
+                  {track.play_count} play{track.play_count !== 1 ? "s" : ""}
+                </span>
+                {conf != null && (
+                  <span style={{ fontSize: 10, color: conf >= 80 ? DS.safe : conf >= 60 ? DS.caution : DS.warn, fontWeight: 600 }}>
+                    {conf}% conf.
+                  </span>
+                )}
+                {guess && !isAway && (
+                  <span style={{ fontSize: 10, color: DS.safe, fontWeight: 600 }}>AI: {guess.player_name.split(" ")[0]}</span>
+                )}
+              </div>
+
+              {/* Roster select — filtered to home/away appropriately */}
+              {isAway ? (
+                <div style={{ flex: 1, fontSize: 12, color: DS.dimText, fontStyle: "italic" }}>
+                  Opponent player — roster import coming soon
+                </div>
+              ) : (
+                <select
+                  value={selVal}
+                  onChange={e => setChosen(p => ({ ...p, [track.rekognition_track_id]: e.target.value }))}
+                  style={{ flex: 1, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: DS.bodyText, background: DS.pageBg, outline: "none" }}
+                >
+                  <option value="">— Select player —</option>
+                  {rosterOpts.map(p => (
+                    <option key={p.id} value={p.id}>
+                      #{p.jersey_number} {p.player_name}{p.position ? ` · ${p.position}` : ""}
+                    </option>
+                  ))}
+                </select>
               )}
 
-              <select
-                value={chosen[track.rekognition_track_id] ?? (guess?.id ?? "")}
-                onChange={e => setChosen(p => ({ ...p, [track.rekognition_track_id]: e.target.value }))}
-                style={{ flex: 1, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: DS.bodyText, background: DS.pageBg, outline: "none" }}
-              >
-                <option value="">- Select player -</option>
-                {roster.map(p => (
-                  <option key={p.id} value={p.id}>
-                    #{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => confirm(track.rekognition_track_id)}
-                disabled={saving === track.rekognition_track_id || !(chosen[track.rekognition_track_id] ?? guess?.id)}
-                style={{
-                  background: DS.brand, color: "#fff", border: "none", borderRadius: 8,
-                  padding: "9px 16px", fontWeight: 700, fontSize: 12, cursor: "pointer",
-                  flexShrink: 0, opacity: saving === track.rekognition_track_id ? 0.6 : 1,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}
-              >
-                {saving === track.rekognition_track_id
-                  ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-                  : <CheckCircle2 size={12} />
-                }
-                Confirm
-              </button>
+              {!isAway && (
+                <button
+                  onClick={() => confirm(track.rekognition_track_id)}
+                  disabled={saving === track.rekognition_track_id || !canSubmit}
+                  style={{
+                    background: canSubmit ? DS.brand : DS.border, color: canSubmit ? "#fff" : DS.dimText,
+                    border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 12,
+                    cursor: canSubmit && saving !== track.rekognition_track_id ? "pointer" : "not-allowed",
+                    flexShrink: 0, opacity: saving === track.rekognition_track_id ? 0.6 : 1,
+                    display: "flex", alignItems: "center", gap: 5,
+                  }}
+                >
+                  {saving === track.rekognition_track_id
+                    ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                    : <CheckCircle2 size={12} />}
+                  Confirm
+                </button>
+              )}
             </div>
           );
         })}
@@ -2785,6 +2833,96 @@ function DriveLog({ drives }) {
   );
 }
 
+// ── Pipeline status bar ───────────────────────────────────────────────────────
+function PStep({ done, active, n, label }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+      <div style={{
+        width: 22, height: 22, borderRadius: "50%",
+        background: done ? DS.safe : active ? DS.brand : DS.border,
+        color: (done || active) ? "#fff" : DS.dimText,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 11, fontWeight: 800, flexShrink: 0,
+      }}>{done ? "✓" : n}</div>
+      <span style={{ fontSize: 12, fontWeight: (done || active) ? 700 : 500, color: done ? DS.safe : active ? DS.brand : DS.dimText }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+function PConn({ active }) {
+  return <div style={{ width: 20, height: 2, margin: "0 4px", flexShrink: 0, background: active ? DS.safeBorder : DS.border, borderRadius: 1 }} />;
+}
+function PipelineStatusBar({ film, plays, hasAnalysis, isAnalyzing, submitting, canSubmit, onSubmit, analyzedCount }) {
+  const uploading = film?.status === "uploading" || film?.status === "transcoding";
+  const failed    = film?.status === "failed";
+  if (uploading) {
+    return (
+      <div style={{ background: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}`, padding: "9px 20px" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>Processing video — you can tag plays once it's ready.</span>
+        </div>
+      </div>
+    );
+  }
+  const s1 = true;
+  const s2 = plays.length > 0;
+  const s3 = isAnalyzing || hasAnalysis || film?.status === "complete";
+  const s4 = hasAnalysis;
+  if (s4 && !failed) return null;
+  return (
+    <div style={{ background: s3 ? "rgba(0,135,62,0.04)" : DS.brandBg, borderBottom: `1px solid ${s3 ? DS.safeBorder : DS.brandBorder}`, padding: "12px 20px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, flexWrap: "wrap", rowGap: 8 }}>
+          <PStep done={s1} active={false} n="1" label="Film Uploaded" />
+          <PConn active={s1} />
+          <PStep done={s2} active={s1 && !s2} n="2" label={s2 ? `${plays.length} Play${plays.length !== 1 ? "s" : ""} Tagged` : "Tag Plays"} />
+          <PConn active={s2} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <PStep done={s3} active={s2 && !s3} n="3" label={isAnalyzing ? "Submitted for AI" : "Submit for AI"} />
+            {s2 && !s3 && !failed && (
+              <button
+                onClick={onSubmit}
+                disabled={submitting || !canSubmit}
+                style={{
+                  background: DS.brand, color: "#fff", border: "none",
+                  borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700,
+                  cursor: (submitting || !canSubmit) ? "not-allowed" : "pointer",
+                  opacity: (submitting || !canSubmit) ? 0.7 : 1,
+                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                }}>
+                {submitting
+                  ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>
+                  : <><Sparkles size={12} /> Submit for AI Analysis</>}
+              </button>
+            )}
+          </div>
+          <PConn active={s3} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <PStep done={s4} active={isAnalyzing} n="4" label={isAnalyzing ? "AI Analyzing…" : "AI Analysis"} />
+            {isAnalyzing && (
+              <>
+                <Loader2 size={12} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
+                {analyzedCount > 0
+                  ? <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{analyzedCount}/{plays.length} plays</span>
+                  : (film?.progressPct ?? 0) > 0
+                    ? <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{film.progressPct}%</span>
+                    : null}
+              </>
+            )}
+          </div>
+        </div>
+        {failed && (
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: DS.warn }}>
+            Analysis failed. Use Retry from the Films list, or re-tag plays and resubmit.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FilmDetailPage() {
   const router   = useRouter();
@@ -2918,6 +3056,13 @@ export default function FilmDetailPage() {
       if (r.ok) {
         setFilm(prev => ({ ...prev, status: "analyzing", progressPct: 0 }));
         setSnapTime(null); setWhistleTime(null);
+        fetchAnalytics();
+        const excluded = d.excludedCount ?? 0;
+        if (excluded > 0) {
+          toast(`${d.playCount} play${d.playCount !== 1 ? "s" : ""} sent for AI analysis. ${excluded} skipped — no snap timestamp. Press S while watching to mark them.`, { duration: 7000, icon: "⚠️" });
+        } else {
+          toast.success(`${d.playCount} play${d.playCount !== 1 ? "s" : ""} submitted for AI analysis!`);
+        }
       } else {
         setPageError(d.error ?? "Submit failed");
       }
@@ -2936,22 +3081,28 @@ export default function FilmDetailPage() {
         if (r.ok) {
           setFilm(d);
           if (!ACTIVE_STATUSES.includes(d.status)) {
+            // Analysis finished — do a final full refresh
             clearInterval(pollRef.current); pollRef.current = null;
             fetchPlays();
+            fetchAnalytics();
             if (!d.muxPlaybackId) fetchVideoUrl();
+          } else if (d.status === "analyzing") {
+            // While analyzing, pull plays on every tick so results appear play by play
+            fetchPlays();
           }
         }
       }, 5000);
     }
     if (!processing && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [film?.status, id, fetchPlays, fetchVideoUrl]);
+  }, [film?.status, id, fetchPlays, fetchVideoUrl, fetchAnalytics]);
 
-  const selTracks = useMemo(() => Array.isArray(selPlay?.player_tracks) ? selPlay.player_tracks : [], [selPlay]);
-  const isProcessing   = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
-  const isAnalyzing    = film?.status === "analyzing";
-  const hasAnalysis    = plays.some(p => Array.isArray(p.player_tracks) && p.player_tracks.length > 0);
-  const canSubmit      = plays.length > 0 && !isAnalyzing;
+  const selTracks    = useMemo(() => Array.isArray(selPlay?.player_tracks) ? selPlay.player_tracks : [], [selPlay]);
+  const isProcessing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
+  const isAnalyzing  = film?.status === "analyzing";
+  const hasAnalysis  = plays.some(p => Array.isArray(p.player_tracks) && p.player_tracks.length > 0);
+  const canSubmit    = plays.length > 0 && !isAnalyzing;
+  const analyzedCount = useMemo(() => plays.filter(p => (p.player_tracks ?? []).length > 0).length, [plays]);
 
   async function undoLastPlay() {
     if (!plays.length) return;
@@ -3116,7 +3267,7 @@ export default function FilmDetailPage() {
 
   const TABS = [
     { key: "plays",     label: "Plays",     Icon: Play,      badge: plays.length > 0 ? plays.length : null },
-    { key: "players",   label: "Players",   Icon: Users,     badge: unconfCount > 0 ? unconfCount : null, badgeColor: DS.warn },
+    { key: "players",   label: "Jersey ID", Icon: UserCheck, badge: unconfCount > 0 ? unconfCount : null, badgeColor: DS.warn },
     { key: "analytics", label: "Analytics", Icon: BarChart2, badge: null },
     { key: "drives",    label: "Drives",    Icon: Activity,  badge: analytics?.drives?.length > 0 ? analytics.drives.length : null },
     { key: "cutups",    label: "Cut-ups",   Icon: ListVideo, badge: playlists.length > 0 ? playlists.length : null },
@@ -3124,6 +3275,7 @@ export default function FilmDetailPage() {
 
   return (
     <>
+      <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
       <style>{`
         @keyframes spin  { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
@@ -3185,13 +3337,17 @@ export default function FilmDetailPage() {
 
             {film?.opponent && <span style={{ fontSize: 12, color: DS.labelText, flexShrink: 0 }}>vs {film.opponent}</span>}
 
-            {film?.status && (
+            {film && (
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,
-                background: film.status === "ready" ? DS.safeBg : isProcessing ? DS.brandBg : DS.pageBg,
-                color:      film.status === "ready" ? DS.safe   : isProcessing ? DS.brand  : DS.dimText,
+                background: hasAnalysis ? DS.safeBg : isAnalyzing ? DS.brandBg : plays.length > 0 ? "#FFF7ED" : DS.brandBg,
+                color:      hasAnalysis ? DS.safe   : isAnalyzing ? DS.brand   : plays.length > 0 ? DS.caution : DS.brand,
               }}>
-                {film.status === "ready" ? "Ready" : isProcessing ? `${cap(film.status)}…` : film.status}
+                {hasAnalysis      ? "Analysis Complete"
+                : isAnalyzing    ? "AI Analyzing…"
+                : plays.length > 0 ? "Ready to Submit"
+                : isProcessing   ? `${cap(film.status)}…`
+                : "Tag Plays"}
               </span>
             )}
 
@@ -3225,26 +3381,17 @@ export default function FilmDetailPage() {
           <ShareModal film={film} playlists={playlists} onClose={() => setShowShare(false)} />
         )}
 
-        {/* ── Processing banner ── */}
-        {isProcessing && (
-          <div style={{ background: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}`, padding: "9px 20px" }}>
-            <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: 12 }}>
-              <Loader2 size={14} color={DS.brand} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>
-                {film.status === "uploading"   ? "Uploading to cloud…" :
-                 film.status === "transcoding" ? "Transcoding video…" :
-                 film.status === "analyzing"   ? "AI analyzing player movement on each play…" :
-                 "Auto-tagging plays…"}
-                {(film.progressPct ?? 0) > 0 ? ` · ${film.progressPct}%` : ""}
-              </span>
-              {(film.progressPct ?? 0) > 0 && (
-                <div style={{ flex: 1, maxWidth: 180, height: 4, background: DS.brandBorder, borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ height: "100%", background: DS.brand, width: `${film.progressPct}%`, borderRadius: 99, transition: "width 0.5s" }} />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* ── Pipeline status ── */}
+        <PipelineStatusBar
+          film={film}
+          plays={plays}
+          hasAnalysis={hasAnalysis}
+          isAnalyzing={isAnalyzing}
+          submitting={submitting}
+          canSubmit={canSubmit}
+          onSubmit={handleSubmit}
+          analyzedCount={analyzedCount}
+        />
 
         {/* ── Game metadata bar ── */}
         {film && !isProcessing && (film.game_date || film.sport || film.home_team || film.away_team) && (
@@ -3438,6 +3585,13 @@ export default function FilmDetailPage() {
                         onCancelEdit={cancelEdit}
                       />
                     </div>
+
+                    {!isFullscreen && isAnalyzing && selPlay && selTracks.length === 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 10 }}>
+                        <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>Analyzing Play #{selPlay.play_number}… results will appear here</span>
+                      </div>
+                    )}
 
                     {!isFullscreen && selTracks.some(t => t.snap_x != null) && (
                       <div>

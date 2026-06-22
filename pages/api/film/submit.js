@@ -60,6 +60,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Film is still uploading — wait for it to finish" });
     }
 
+    if (!film.s3_key_raw) {
+      return res.status(400).json({ error: "No video file found for this film. Try re-uploading." });
+    }
+
     // Load all tagged plays with timestamps
     const { data: plays, error: pe } = await supabase
       .from("game_plays")
@@ -69,9 +73,12 @@ export default async function handler(req, res) {
 
     if (pe) throw pe;
 
-    const taggedPlays = (plays ?? []).filter(p => p.start_time_secs != null);
+    const allPlays    = plays ?? [];
+    const taggedPlays = allPlays.filter(p => p.start_time_secs != null);
+    const excluded    = allPlays.length - taggedPlays.length;
+
     if (taggedPlays.length === 0) {
-      return res.status(400).json({ error: "Tag at least one play before submitting for analysis" });
+      return res.status(400).json({ error: "Tag at least one play with a snap timestamp before submitting for analysis" });
     }
 
     // Set film to analyzing
@@ -87,36 +94,42 @@ export default async function handler(req, res) {
 
     if (!QUEUE_URL) {
       console.warn("[film/submit] FILM_SQS_URL not set — skipping SQS send (dev mode)");
-      return res.status(200).json({ ok: true, filmId, status: "analyzing", playCount: taggedPlays.length, devMode: true });
+      return res.status(200).json({ ok: true, filmId, status: "analyzing", playCount: taggedPlays.length, excludedCount: excluded, devMode: true });
     }
 
-    const s3Key = film.s3_key_raw ?? `raw/${orgId}/${filmId}.mp4`;
+    const s3Key = film.s3_key_raw;
 
-    // Send SQS message with play timestamps so the worker skips auto-segmentation
-    // and runs Rekognition only on these specific time windows.
-    await sqs.send(new SendMessageCommand({
-      QueueUrl:    QUEUE_URL,
-      MessageBody: JSON.stringify({
-        film_id:   filmId,
-        s3_key:    s3Key,
-        bucket:    BUCKET,
-        org_id:    orgId,
-        mode:      "analyze_tagged",
-        plays:     taggedPlays.map(p => ({
-          id:              p.id,
-          play_number:     p.play_number,
-          start_time_secs: p.start_time_secs,
-          end_time_secs:   p.end_time_secs ?? p.start_time_secs + 8,
-          down:            p.down,
-          distance:        p.distance,
-          play_type:       p.play_type,
-          formation:       p.formation,
-        })),
-      }),
-    }));
+    // Send one SQS message per play so the worker handles each independently.
+    // This enables parallel processing, accurate per-play progress tracking,
+    // and results that arrive back play-by-play instead of all at once.
+    // Worker protocol: mode="analyze_play", one play per message.
+    // Worker should: run Rekognition on the time window, write player_tracks,
+    // update progress_pct = (plays_with_tracks / total_plays * 100),
+    // then set status="complete" when all plays have tracking data.
+    await Promise.all(taggedPlays.map(play =>
+      sqs.send(new SendMessageCommand({
+        QueueUrl:    QUEUE_URL,
+        MessageBody: JSON.stringify({
+          mode:            "analyze_play",
+          film_id:         filmId,
+          play_id:         play.id,
+          play_number:     play.play_number,
+          s3_key:          s3Key,
+          bucket:          BUCKET,
+          org_id:          orgId,
+          total_plays:     taggedPlays.length,
+          start_time_secs: play.start_time_secs,
+          end_time_secs:   play.end_time_secs ?? play.start_time_secs + 8,
+          down:            play.down,
+          distance:        play.distance,
+          play_type:       play.play_type,
+          formation:       play.formation,
+        }),
+      }))
+    ));
 
-    console.log(`[film/submit] filmId=${filmId} org=${orgId} plays=${taggedPlays.length}`);
-    return res.status(200).json({ ok: true, filmId, status: "analyzing", playCount: taggedPlays.length });
+    console.log(`[film/submit] filmId=${filmId} org=${orgId} plays=${taggedPlays.length} excluded=${excluded} messages_sent=${taggedPlays.length}`);
+    return res.status(200).json({ ok: true, filmId, status: "analyzing", playCount: taggedPlays.length, excludedCount: excluded });
 
   } catch (err) {
     console.error("[film/submit]", err);

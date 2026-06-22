@@ -83,6 +83,8 @@ export default async function handler(req, res) {
         rest:              trim(it.Rest)         || null,
         instructions:      trim(it.Instructions) || null,
         video_url:         trim(it.VideoURL)     || null,
+        // Preserve circuit/superset grouping from mobile or templates
+        group_id:          trim(it.groupId || it.GroupId || it.group_id) || null,
         evidence_required: null,
       }));
 

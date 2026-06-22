@@ -69,34 +69,40 @@ export default async function handler(req, res) {
 
   const rosterByJersey = new Map((roster ?? []).map(p => [p.jersey_number, p]));
 
-  // Auto-confirm: confidence ≥ threshold + exactly one roster player with that jersey
-  const autoConfirmed = [];
-  for (const track of all) {
-    if (track.jersey_confirmed) continue;
-    if (
-      track.jersey_number != null &&
-      (track.jersey_confidence ?? 0) >= AUTO_CONFIRM_THRESHOLD &&
-      rosterByJersey.has(track.jersey_number)
-    ) {
-      const player = rosterByJersey.get(track.jersey_number);
-      // Write the confirmation to DB
-      await supabase
-        .from("player_tracks")
-        .update({
-          roster_id:        player.id,
-          jersey_number:    player.jersey_number,
-          jersey_confirmed: true,
-          confirmed_by:     "auto",
-        })
-        .eq("film_id", filmId)
-        .eq("rekognition_track_id", track.rekognition_track_id)
-        .eq("org_id", orgId);
+  // Auto-confirm: confidence ≥ threshold + home track + exactly one roster player with that jersey
+  // Must be team="home" — opponent tracks must never be auto-confirmed against our roster
+  // (duplicate jersey numbers across teams would cause false positives otherwise)
+  const candidates = all.filter(track =>
+    !track.jersey_confirmed &&
+    track.team === "home" &&
+    track.jersey_number != null &&
+    (track.jersey_confidence ?? 0) >= AUTO_CONFIRM_THRESHOLD &&
+    rosterByJersey.has(track.jersey_number)
+  );
 
+  await Promise.all(candidates.map(async (track) => {
+    const player = rosterByJersey.get(track.jersey_number);
+    const { error } = await supabase
+      .from("player_tracks")
+      .update({
+        roster_id:        player.id,
+        jersey_number:    player.jersey_number,
+        jersey_confirmed: true,
+        confirmed_by:     "auto",
+      })
+      .eq("film_id", filmId)
+      .eq("rekognition_track_id", track.rekognition_track_id)
+      .eq("org_id", orgId);
+
+    if (!error) {
       track.jersey_confirmed = true;
       track.roster_id        = player.id;
-      autoConfirmed.push(track.rekognition_track_id);
     }
-  }
+  }));
+
+  const autoConfirmed = candidates
+    .filter(t => t.jersey_confirmed)
+    .map(t => t.rekognition_track_id);
 
   const unconfirmed = all
     .filter(t => !t.jersey_confirmed)

@@ -1237,7 +1237,7 @@ function PlayerMetricsRow({ tracks = [], roster, highlightJersey, onHighlight })
 }
 
 // ── Jersey Confirm Panel ──────────────────────────────────────────────────────
-function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
+function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown, jerseyScanning }) {
   const [tracks,        setTracks]        = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(null);
@@ -1259,6 +1259,13 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
   }, [filmId, onAllConfirmed, onCountKnown]);
 
   useEffect(() => { load(); }, [load]);
+
+  // When jersey scan completes (jerseyScanning flips from true → false), reload the list
+  const prevScanning = useRef(false);
+  useEffect(() => {
+    if (prevScanning.current && !jerseyScanning) load();
+    prevScanning.current = jerseyScanning ?? false;
+  }, [jerseyScanning, load]);
 
   async function confirm(trackId) {
     const track    = tracks.find(t => t.rekognition_track_id === trackId);
@@ -2943,7 +2950,9 @@ export default function FilmDetailPage() {
   const [selPlay,      setSelPlay]      = useState(null);
   const [videoTime,    setVideoTime]    = useState(0);
   const [hlJersey,     setHlJersey]     = useState(null);
-  const [unconfCount,  setUnconfCount]  = useState(0);
+  const [unconfCount,    setUnconfCount]    = useState(0);
+  const [jerseyScanning, setJerseyScanning] = useState(false);
+  const [jerseyScanned,  setJerseyScanned]  = useState(false);
   const [copied,       setCopied]       = useState(false);
   const [analytics,    setAnalytics]    = useState(null);
   const [isMobile,     setIsMobile]     = useState(false);
@@ -3027,6 +3036,28 @@ export default function FilmDetailPage() {
     fetchAnalytics();
   }, [fetchPlays, fetchAnalytics]);
 
+  const runJerseyScan = useCallback(async () => {
+    if (jerseyScanning || jerseyScanned) return;
+    setJerseyScanning(true);
+    try {
+      const r = await fetch("/api/film/jersey-scan", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setJerseyScanned(true);
+        // Re-fetch unconfirmed to reflect newly filled jersey numbers
+        // JerseyConfirmPanel will reload via its own load() call on next render
+        if (d.updated > 0) {
+          toast.success(`Claude identified ${d.updated} jersey${d.updated !== 1 ? "s" : ""} across ${d.scanned} plays.`);
+        }
+      }
+    } catch {}
+    setJerseyScanning(false);
+  }, [id, jerseyScanning, jerseyScanned]);
+
   // Initial load
   useEffect(() => {
     if (!id) return;
@@ -3081,11 +3112,12 @@ export default function FilmDetailPage() {
         if (r.ok) {
           setFilm(d);
           if (!ACTIVE_STATUSES.includes(d.status)) {
-            // Analysis finished — do a final full refresh
+            // Analysis finished — do a final full refresh then kick off jersey scan
             clearInterval(pollRef.current); pollRef.current = null;
             fetchPlays();
             fetchAnalytics();
             if (!d.muxPlaybackId) fetchVideoUrl();
+            if (d.status === "complete") runJerseyScan();
           } else if (d.status === "analyzing") {
             // While analyzing, pull plays on every tick so results appear play by play
             fetchPlays();
@@ -3095,7 +3127,7 @@ export default function FilmDetailPage() {
     }
     if (!processing && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [film?.status, id, fetchPlays, fetchVideoUrl, fetchAnalytics]);
+  }, [film?.status, id, fetchPlays, fetchVideoUrl, fetchAnalytics, runJerseyScan]);
 
   const selTracks    = useMemo(() => Array.isArray(selPlay?.player_tracks) ? selPlay.player_tracks : [], [selPlay]);
   const isProcessing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
@@ -3660,12 +3692,41 @@ export default function FilmDetailPage() {
           {/* PLAYERS TAB */}
           {tab === "players" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+              {/* Jersey scan status banner */}
+              {jerseyScanning && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 12, padding: "12px 16px" }}>
+                  <Loader2 size={15} color={DS.brand} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: DS.brand }}>Claude is scanning jersey numbers…</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.labelText }}>Analyzing each play frame — this takes about 60 seconds</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual scan trigger — shown on complete films that haven't been scanned */}
+              {!jerseyScanning && !jerseyScanned && film?.status === "complete" && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "12px 16px" }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: DS.bodyText }}>AI Jersey Detection</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.labelText }}>Claude Vision reads jersey numbers from each play — runs once per film</p>
+                  </div>
+                  <button
+                    onClick={runJerseyScan}
+                    style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}
+                  >
+                    Scan Now
+                  </button>
+                </div>
+              )}
+
               <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: "20px 20px" }}>
                 <JerseyConfirmPanel
                   filmId={id}
                   roster={roster}
                   onAllConfirmed={handleAllConfirmed}
                   onCountKnown={setUnconfCount}
+                  jerseyScanning={jerseyScanning}
                 />
               </div>
 

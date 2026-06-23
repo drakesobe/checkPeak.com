@@ -80,6 +80,7 @@ async function tagPlay(req, res, orgId, user) {
     result, playType, down, distance, yardsGained, formation,
     startTimeSecs, endTimeSecs,
     hash, yardLine, playDirection, personnel, labels, notes,
+    newPlayNumber,
   } = req.body ?? {};
 
   if (!filmId) return res.status(400).json({ error: "filmId required" });
@@ -94,21 +95,22 @@ async function tagPlay(req, res, orgId, user) {
   if (!film || film.org_id !== orgId) return res.status(404).json({ error: "Film not found" });
 
   const update = {
-    result:           result        ?? undefined,
-    play_type:        playType      ?? undefined,
-    down:             down          ?? undefined,
-    distance:         distance      ?? undefined,
-    yards_gained:     yardsGained   ?? undefined,
-    formation:        formation     ?? undefined,
-    start_time_secs:  startTimeSecs ?? undefined,
-    end_time_secs:    endTimeSecs   ?? undefined,
-    tagged_by:        user.email    ?? "coach",
-    hash:             hash          ?? undefined,
-    yard_line:        yardLine      ?? undefined,
-    play_direction:   playDirection ?? undefined,
-    personnel:        personnel     ?? undefined,
+    result:           result           ?? undefined,
+    play_type:        playType         ?? undefined,
+    down:             down             ?? undefined,
+    distance:         distance         ?? undefined,
+    yards_gained:     yardsGained      ?? undefined,
+    formation:        formation        ?? undefined,
+    start_time_secs:  startTimeSecs    ?? undefined,
+    end_time_secs:    endTimeSecs      ?? undefined,
+    tagged_by:        user.email       ?? "coach",
+    hash:             hash             ?? undefined,
+    yard_line:        yardLine         ?? undefined,
+    play_direction:   playDirection    ?? undefined,
+    personnel:        personnel        ?? undefined,
     labels:           Array.isArray(labels) && labels.length ? labels : undefined,
     notes:            notes != null ? String(notes) : undefined,
+    play_number:      newPlayNumber    ?? undefined,
   };
 
   // Clean undefined

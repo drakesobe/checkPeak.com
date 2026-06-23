@@ -11,7 +11,7 @@ import {
   Film, UserCheck, Users, RefreshCw, Play, TrendingUp,
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
   X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
-  Trash2, ChevronRight, SkipForward, SkipBack, Bookmark,
+  Trash2, ChevronRight, ChevronUp, ChevronDown, SkipForward, SkipBack, Bookmark,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -902,7 +902,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
 }
 
 // ── Play Sidebar ──────────────────────────────────────────────────────────────
-function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
+function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const anchorRef = useRef(null);
   const [filter, setFilter] = useState("all");
@@ -965,13 +965,15 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPl
 
       {/* Play list */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
-        {visible.map(play => {
-          const sel = play.id === selectedId;
-          const dl  = downLabel(play.down, play.distance);
-          const dur = play.start_time_secs != null && play.end_time_secs != null
+        {visible.map((play, visIdx) => {
+          const sel      = play.id === selectedId;
+          const dl       = downLabel(play.down, play.distance);
+          const dur      = play.start_time_secs != null && play.end_time_secs != null
             ? `${fmtTime(play.start_time_secs)} – ${fmtTime(play.end_time_secs)}`
             : play.start_time_secs != null ? fmtTime(play.start_time_secs)
             : null;
+          const isFirst  = visIdx === 0;
+          const isLast   = visIdx === visible.length - 1;
 
           return (
             <div key={play.id} onClick={() => onSelect(play)} style={{
@@ -1033,13 +1035,30 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, playlists, onAddToPl
                     </span>
                   )}
 
-                  {/* Edit + Add-to-playlist buttons */}
-                  <div style={{ marginLeft: "auto", display: "flex", gap: 2, flexShrink: 0 }}>
+                  {/* Action buttons */}
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 1, flexShrink: 0, alignItems: "center" }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); onMove?.(play, "up"); }}
+                      disabled={isFirst}
+                      style={{ background: "none", border: "none", cursor: isFirst ? "default" : "pointer", padding: "2px 3px", borderRadius: 4, color: isFirst ? "rgba(255,255,255,0.1)" : DS.dimText, lineHeight: 1, display: "flex" }}
+                      title="Move up"
+                    ><ChevronUp size={11} /></button>
+                    <button
+                      onClick={e => { e.stopPropagation(); onMove?.(play, "down"); }}
+                      disabled={isLast}
+                      style={{ background: "none", border: "none", cursor: isLast ? "default" : "pointer", padding: "2px 3px", borderRadius: 4, color: isLast ? "rgba(255,255,255,0.1)" : DS.dimText, lineHeight: 1, display: "flex" }}
+                      title="Move down"
+                    ><ChevronDown size={11} /></button>
                     <button
                       onClick={e => { e.stopPropagation(); onEdit?.(play); }}
                       style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, fontSize: 10, color: DS.dimText, lineHeight: 1 }}
-                      title="Edit play metadata"
+                      title="Edit play"
                     >✏</button>
+                    <button
+                      onClick={e => { e.stopPropagation(); onDelete?.(play); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "#f87171", lineHeight: 1, display: "flex" }}
+                      title="Delete play"
+                    ><Trash2 size={11} /></button>
                     <button
                       ref={openMenuId === play.id ? anchorRef : null}
                       onClick={e => {
@@ -2997,6 +3016,46 @@ export default function FilmDetailPage() {
     setWhistleTime(play.end_time_secs ?? null);
   }
 
+  async function deletePlay(play) {
+    if (!window.confirm(`Delete Play #${play.play_number}? This cannot be undone.`)) return;
+    await fetch("/api/film/plays", {
+      method: "DELETE", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filmId: id, playId: play.id }),
+    });
+    fetchPlays();
+    fetchAnalytics();
+  }
+
+  async function movePlay(play, direction) {
+    const sorted = [...plays].sort((a, b) => a.play_number - b.play_number);
+    const idx    = sorted.findIndex(p => p.id === play.id);
+    const swap   = direction === "up" ? sorted[idx - 1] : sorted[idx + 1];
+    if (!swap) return;
+
+    const aNum = play.play_number;
+    const bNum = swap.play_number;
+    const tmp  = Date.now(); // temp number to avoid unique constraint conflict
+
+    await fetch("/api/film/plays", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filmId: id, playId: play.id, newPlayNumber: tmp }),
+    });
+    await fetch("/api/film/plays", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filmId: id, playId: swap.id, newPlayNumber: aNum }),
+    });
+    await fetch("/api/film/plays", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filmId: id, playId: play.id, newPlayNumber: bNum }),
+    });
+    fetchPlays();
+    fetchAnalytics();
+  }
+
   function cancelEdit() {
     setEditingPlay(null);
     setSnapTime(null);
@@ -3485,6 +3544,8 @@ export default function FilmDetailPage() {
                       selectedId={selPlay?.id}
                       onSelect={selectPlay}
                       onEdit={startEdit}
+                      onDelete={deletePlay}
+                      onMove={movePlay}
                       playlists={playlists}
                       onAddToPlaylist={addToPlaylist}
                       onCreateAndAddToPlaylist={createAndAdd}

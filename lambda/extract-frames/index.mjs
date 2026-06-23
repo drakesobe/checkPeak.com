@@ -29,6 +29,9 @@ const BUCKET = process.env.FILM_S3_BUCKET;
 
 const FFMPEG = existsSync("/opt/bin/ffmpeg") ? "/opt/bin/ffmpeg" : "ffmpeg";
 
+// Ensure ffmpeg is executable (Windows-created zips don't preserve Unix permissions)
+try { execSync(`chmod +x "${FFMPEG}"`, { stdio: "ignore" }); } catch {}
+
 export const handler = async (event) => {
   const { filmId, playId, s3Key, timestamps } = event;
 

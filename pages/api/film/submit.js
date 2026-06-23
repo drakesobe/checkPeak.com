@@ -102,36 +102,32 @@ export default async function handler(req, res) {
 
     const s3Key = film.s3_key_raw;
 
-    // Send one SQS message per play so the worker handles each independently.
-    // This enables parallel processing, accurate per-play progress tracking,
-    // and results that arrive back play-by-play instead of all at once.
-    // Worker protocol: mode="analyze_play", one play per message.
-    // Worker should: run Rekognition on the time window, write player_tracks,
-    // update progress_pct = (plays_with_tracks / total_plays * 100),
-    // then set status="complete" when all plays have tracking data.
-    await Promise.all(taggedPlays.map(play =>
-      sqs.send(new SendMessageCommand({
-        QueueUrl:    QUEUE_URL,
-        MessageBody: JSON.stringify({
-          mode:            "analyze_play",
-          film_id:         filmId,
+    // Send ONE message for the whole film with all play windows included.
+    // The ECS worker runs full-film Rekognition regardless of per-play mode,
+    // so sending N messages would trigger N full pipeline runs at $12 each.
+    // plays array gives the worker the coach-tagged timestamps to slice results.
+    await sqs.send(new SendMessageCommand({
+      QueueUrl:    QUEUE_URL,
+      MessageBody: JSON.stringify({
+        mode:      "analyze_tagged",
+        film_id:   filmId,
+        s3_key:    s3Key,
+        bucket:    BUCKET,
+        org_id:    orgId,
+        plays:     taggedPlays.map(play => ({
           play_id:         play.id,
           play_number:     play.play_number,
-          s3_key:          s3Key,
-          bucket:          BUCKET,
-          org_id:          orgId,
-          total_plays:     taggedPlays.length,
           start_time_secs: play.start_time_secs,
           end_time_secs:   play.end_time_secs ?? play.start_time_secs + 8,
           down:            play.down,
           distance:        play.distance,
           play_type:       play.play_type,
           formation:       play.formation,
-        }),
-      }))
-    ));
+        })),
+      }),
+    }));
 
-    console.log(`[film/submit] filmId=${filmId} org=${orgId} plays=${taggedPlays.length} excluded=${excluded} messages_sent=${taggedPlays.length}`);
+    console.log(`[film/submit] filmId=${filmId} org=${orgId} plays=${taggedPlays.length} excluded=${excluded} messages_sent=1`);
     return res.status(200).json({ ok: true, filmId, status: "analyzing", playCount: taggedPlays.length, excludedCount: excluded });
 
   } catch (err) {

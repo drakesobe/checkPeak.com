@@ -704,11 +704,11 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       {/* ── Row 2c: Result + Yards ── */}
       <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
         {[
-          { id: "success",  label: "✓",       title: "Success"  },
-          { id: "failure",  label: "✗",       title: "Failure"  },
-          { id: "td",       label: "TD",      title: "Touchdown" },
-          { id: "turnover", label: "TO",      title: "Turnover" },
-          { id: "penalty",  label: "PEN",     title: "Penalty"  },
+          { id: "success",  label: mob ? "SUC" : "Success",  title: "Success"   },
+          { id: "failure",  label: mob ? "FAIL" : "Failure", title: "Failure"   },
+          { id: "td",       label: "TD",                     title: "Touchdown" },
+          { id: "turnover", label: "TO",                     title: "Turnover"  },
+          { id: "penalty",  label: "PEN",                    title: "Penalty"   },
         ].map(r => {
           const active = form.result === r.id;
           const color  = r.id === "success" || r.id === "td" ? "#22c55e"
@@ -719,7 +719,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
             <button key={r.id} onClick={() => set("result", active ? "" : r.id)} title={r.title}
               style={{
                 flex: mob ? 1 : "none",
-                padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 13 : 11, fontWeight: 800,
+                padding: mob ? "8px 4px" : "6px 12px", fontSize: mob ? 12 : 11, fontWeight: 800,
                 borderRadius: 6, cursor: "pointer",
                 border: `1.5px solid ${active ? color : "rgba(255,255,255,0.12)"}`,
                 background: active ? `${color}22` : "rgba(255,255,255,0.05)",
@@ -743,7 +743,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
             <button key={g} onClick={() => set("personnel", active ? "" : g)}
               style={{
                 flex: mob ? 1 : "none",
-                padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 12 : 11, fontWeight: 800,
+                padding: mob ? "8px 4px" : "6px 12px", fontSize: mob ? 12 : 11, fontWeight: 800,
                 borderRadius: 6, cursor: "pointer",
                 border: `1.5px solid ${active ? DS.brand : "rgba(255,255,255,0.12)"}`,
                 background: active ? DS.brandBg : "rgba(255,255,255,0.05)",

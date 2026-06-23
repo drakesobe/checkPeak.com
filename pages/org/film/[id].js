@@ -2166,14 +2166,37 @@ function ShareModal({ film, playlists, onClose }) {
 
 // ── Exchange Modal ────────────────────────────────────────────────────────────
 function ExchangeModal({ film, onClose, onSent }) {
-  const [email,   setEmail]   = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState("");
-  const [sent,    setSent]    = useState(null); // { inSystem, receivingOrgName }
+  const [email,       setEmail]       = useState("");
+  const [message,     setMessage]     = useState("");
+  const [loading,     setLoading]     = useState(false);
+  const [err,         setErr]         = useState("");
+  const [sent,        setSent]        = useState(null);
+  const [library,     setLibrary]     = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => film?.id ? [film.id] : []);
+  const [showPicker,  setShowPicker]  = useState(false);
+  const [sharePlays,  setSharePlays]  = useState(false);
+  const [isMobile,    setIsMobile]    = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 600);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/film/list?limit=50", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => setLibrary(d.ok ? (d.films ?? []) : []))
+      .catch(() => setLibrary([]));
+  }, []);
 
   const filmTitle = film?.title || (film?.opponent ? `vs ${film.opponent}` : "Game Film");
   const playCount = film?.play_count ?? 0;
+
+  function toggleId(id) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
 
   async function send() {
     if (!email.includes("@")) { setErr("Enter a valid email address"); return; }
@@ -2182,108 +2205,264 @@ function ExchangeModal({ film, onClose, onSent }) {
       const r = await fetch("/api/film/exchange", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: film?.id, receivingEmail: email.trim().toLowerCase(), message: message.trim() }),
+        body: JSON.stringify({ filmIds: selectedIds, receivingEmail: email.trim().toLowerCase(), message: message.trim(), sharePlays }),
       });
       const d = await r.json();
       if (!d.ok) { setErr(d.error ?? "Failed to send request"); setLoading(false); return; }
-      setSent({ inSystem: d.inSystem, receivingOrgName: d.receivingOrgName });
+      setSent({ inSystem: d.inSystem, receivingOrgName: d.receivingOrgName, count: d.exchangeCount });
       onSent?.();
     } catch { setErr("Network error — please try again"); }
     setLoading(false);
   }
 
+  const otherFilms    = (library ?? []).filter(f => f.id !== film?.id && f.status !== "uploading");
+  const extraSelected = selectedIds.filter(id => id !== film?.id);
+  const canSend       = !!email && !loading;
+
+  // Mobile: full-screen bottom sheet; desktop: centered card
+  const overlay = isMobile
+    ? { alignItems: "flex-end", padding: 0 }
+    : { alignItems: "center", padding: 16 };
+  const card = isMobile
+    ? { borderRadius: "20px 20px 0 0", maxWidth: "100%", maxHeight: "94vh" }
+    : { borderRadius: 20, maxWidth: 488, maxHeight: "92vh" };
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: DS.cardBg, borderRadius: 20, padding: "26px 26px 22px", maxWidth: 460, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.25)" }}>
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.55)", display: "flex", justifyContent: "center", ...overlay }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{ background: DS.cardBg, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", ...card }}>
+
+        {/* Drag handle on mobile */}
+        {isMobile && (
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: DS.border, margin: "12px auto 0", flexShrink: 0 }} />
+        )}
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+        <div style={{ padding: isMobile ? "14px 20px 12px" : "20px 24px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${DS.border}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ArrowLeftRight size={18} color={DS.brand} />
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: DS.bodyText }}>Exchange Film</h2>
+            <ArrowLeftRight size={16} color={DS.brand} />
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: DS.bodyText }}>Exchange Film</h2>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 20, lineHeight: 1 }}>✕</button>
+          <button
+            onClick={onClose}
+            style={{ width: 30, height: 30, borderRadius: 15, background: DS.brandBg, border: "none", cursor: "pointer", color: DS.labelText, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          >
+            ✕
+          </button>
         </div>
 
-        {sent ? (
-          /* ── Sent confirmation ── */
-          <div style={{ textAlign: "center", padding: "16px 0 8px" }}>
-            <div style={{ width: 56, height: 56, borderRadius: 28, background: "rgba(52,199,89,0.12)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-              <CheckCircle size={28} color="#34C759" />
+        {/* Scrollable body */}
+        <div style={{ padding: isMobile ? "16px 20px" : "20px 24px", overflowY: "auto", flex: 1 }}>
+          {sent ? (
+            /* ── Sent ── */
+            <div style={{ textAlign: "center", padding: "24px 0 12px" }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 32,
+                background: "rgba(52,199,89,0.12)", border: "1.5px solid rgba(52,199,89,0.25)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                margin: "0 auto 16px",
+                boxShadow: "0 6px 24px rgba(52,199,89,0.15)",
+              }}>
+                <CheckCircle size={30} color="#34C759" />
+              </div>
+              <h3 style={{ margin: "0 0 8px", fontSize: 19, fontWeight: 800, color: DS.bodyText }}>
+                {sent.count > 1 ? `${sent.count} Films Sent` : "Request Sent"}
+              </h3>
+              <p style={{ margin: "0 0 10px", fontSize: 14, color: DS.labelText, lineHeight: 1.65 }}>
+                {sent.receivingOrgName
+                  ? <><strong style={{ color: DS.bodyText }}>{sent.receivingOrgName}</strong> is on CheckPeak and will be notified.</>
+                  : <>Email sent to <strong style={{ color: DS.bodyText }}>{email}</strong> with {sent.count > 1 ? `${sent.count} secure film links` : "a link to view your film"}.</>
+                }
+              </p>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 20, padding: "5px 14px", marginBottom: 24 }}>
+                <Clock size={11} color={DS.brand} />
+                <span style={{ fontSize: 11, color: DS.brand, fontWeight: 700 }}>Pending their response</span>
+              </div>
+              <div>
+                <button
+                  onClick={onClose}
+                  style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 11, padding: "12px 36px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
+                >
+                  Done
+                </button>
+              </div>
             </div>
-            <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 800, color: DS.bodyText }}>Request Sent</h3>
-            <p style={{ margin: "0 0 20px", fontSize: 14, color: DS.labelText, lineHeight: 1.6 }}>
-              {sent.receivingOrgName
-                ? <><strong style={{ color: DS.bodyText }}>{sent.receivingOrgName}</strong> is already on CheckPeak and will be notified.</>
-                : <>An email has been sent to <strong style={{ color: DS.bodyText }}>{email}</strong> with a link to view your film and upload theirs.</>
-              }
-            </p>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.06)", borderRadius: 20, padding: "5px 14px" }}>
-              <Clock size={12} color={DS.dimText} />
-              <span style={{ fontSize: 12, color: DS.dimText, fontWeight: 600 }}>Pending response</span>
-            </div>
-            <div style={{ marginTop: 22 }}>
-              <button onClick={onClose} style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 10, padding: "11px 32px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                Done
+          ) : (
+            /* ── Form ── */
+            <>
+              {/* You're offering */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: DS.brand, textTransform: "uppercase", letterSpacing: "0.1em" }}>You're offering</span>
+                  {selectedIds.length > 1 && (
+                    <span style={{ background: DS.brandBg, color: DS.brand, borderRadius: 10, padding: "2px 9px", fontSize: 11, fontWeight: 700, border: `1px solid ${DS.brandBorder}` }}>
+                      {selectedIds.length} films
+                    </span>
+                  )}
+                </div>
+
+                {/* Primary film */}
+                <div style={{ background: DS.brandBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${DS.brandBorder}`, marginBottom: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: DS.bodyText }}>{filmTitle}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+                    {film?.game_date && (
+                      <span style={{ fontSize: 11, color: DS.labelText }}>
+                        {new Date(film.game_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    )}
+                    {playCount > 0 && <span style={{ fontSize: 11, color: DS.brand, fontWeight: 700 }}>{playCount} plays</span>}
+                  </div>
+                </div>
+
+                {/* Extra selected films */}
+                {extraSelected.map(id => {
+                  const f = otherFilms.find(x => x.id === id);
+                  if (!f) return null;
+                  const ft = f.title || (f.opponent ? `vs ${f.opponent}` : "Game Film");
+                  return (
+                    <div key={id} style={{ display: "flex", alignItems: "center", gap: 10, background: DS.brandBg, borderRadius: 10, padding: "10px 14px", border: `1px solid ${DS.brandBorder}`, marginBottom: 6 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ft}</div>
+                        {f.game_date && <div style={{ fontSize: 11, color: DS.labelText, marginTop: 2 }}>{new Date(f.game_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>}
+                      </div>
+                      {f.play_count > 0 && <span style={{ fontSize: 11, color: DS.brand, fontWeight: 700, flexShrink: 0 }}>{f.play_count} plays</span>}
+                      <button
+                        onClick={() => toggleId(id)}
+                        style={{ width: 28, height: 28, borderRadius: 14, background: DS.border, border: "none", cursor: "pointer", color: DS.labelText, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Add more */}
+                <button
+                  onClick={() => setShowPicker(p => !p)}
+                  style={{
+                    width: "100%", padding: "9px 14px", marginTop: 2, borderRadius: 9,
+                    border: `1.5px dashed ${DS.border}`, background: "none", cursor: "pointer",
+                    color: DS.labelText, fontSize: 12, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    transition: "border-color 0.15s",
+                  }}
+                >
+                  {showPicker ? "▲ Hide library" : "＋ Add more film from library"}
+                </button>
+
+                {/* Film picker */}
+                {showPicker && (
+                  <div style={{ marginTop: 6, border: `1px solid ${DS.border}`, borderRadius: 10, overflow: "hidden", maxHeight: 230, overflowY: "auto" }}>
+                    {library === null ? (
+                      <div style={{ padding: "18px", fontSize: 12, color: DS.dimText, textAlign: "center" }}>Loading your library…</div>
+                    ) : otherFilms.length === 0 ? (
+                      <div style={{ padding: "18px", fontSize: 12, color: DS.dimText, textAlign: "center" }}>No other ready films in your library</div>
+                    ) : otherFilms.map((f, i) => {
+                      const ft      = f.title || (f.opponent ? `vs ${f.opponent}` : "Game Film");
+                      const checked = selectedIds.includes(f.id);
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => toggleId(f.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 12,
+                            padding: isMobile ? "13px 14px" : "10px 14px",
+                            cursor: "pointer", borderTop: i > 0 ? `1px solid ${DS.border}` : "none",
+                            background: checked ? DS.brandBg : "transparent", transition: "background 0.1s",
+                          }}
+                        >
+                          <div style={{
+                            width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                            border: `2px solid ${checked ? DS.brand : DS.border}`,
+                            background: checked ? DS.brand : "transparent",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            transition: "all 0.15s",
+                          }}>
+                            {checked && <span style={{ color: "#fff", fontSize: 10, fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ft}</div>
+                            <div style={{ fontSize: 11, color: DS.labelText, marginTop: 1 }}>
+                              {f.game_date && new Date(f.game_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              {f.play_count > 0 && <span style={{ marginLeft: 8, color: DS.brand, fontWeight: 700 }}>{f.play_count} plays</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Play breakdowns toggle */}
+              <div
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, border: `1px solid ${DS.border}`, marginBottom: 16, cursor: "pointer" }}
+                onClick={() => setSharePlays(p => !p)}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>Share play breakdowns</div>
+                  <div style={{ fontSize: 11, color: DS.labelText, marginTop: 2, lineHeight: 1.4 }}>
+                    {sharePlays
+                      ? "Opponent sees run/pass splits & tendencies"
+                      : "Film only — play analytics stay private"}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 48, height: 28, borderRadius: 14, border: "none", flexShrink: 0,
+                    background: sharePlays ? DS.brand : "#CBD5E1", position: "relative", transition: "background 0.2s",
+                  }}
+                >
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 11, background: "#fff",
+                    position: "absolute", top: 3, left: sharePlays ? 23 : 3,
+                    transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                  }} />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div style={{ marginBottom: 13 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                  Opposing Coach's Email
+                </label>
+                <input
+                  type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="coach@school.edu"
+                  style={{ width: "100%", boxSizing: "border-box", background: "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "12px 14px", fontSize: 14, color: DS.bodyText, outline: "none", transition: "border-color 0.15s" }}
+                  onKeyDown={e => e.key === "Enter" && canSend && send()}
+                />
+              </div>
+
+              {/* Message */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                  Message <span style={{ color: DS.dimText, fontWeight: 500, textTransform: "none" }}>(optional)</span>
+                </label>
+                <textarea
+                  value={message} onChange={e => setMessage(e.target.value)}
+                  placeholder="Hey Coach — here's our film. Looking forward to the game!"
+                  rows={3}
+                  style={{ width: "100%", boxSizing: "border-box", background: "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "11px 14px", fontSize: 13, color: DS.bodyText, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, transition: "border-color 0.15s" }}
+                />
+              </div>
+
+              {err && (
+                <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 9, padding: "9px 12px", marginBottom: 14, fontSize: 13, color: "#EF4444", display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ flexShrink: 0 }}>⚠</span>{err}
+                </div>
+              )}
+
+              <button
+                onClick={send} disabled={!canSend}
+                style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", cursor: canSend ? "pointer" : "not-allowed", background: email ? DS.brand : DS.border, color: email ? "#fff" : DS.dimText, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.75 : 1, transition: "all 0.2s", boxShadow: email ? "0 6px 20px rgba(30,58,95,0.2)" : "none" }}>
+                {loading ? "Sending…" : <><Send size={14} />{selectedIds.length > 1 ? ` Send ${selectedIds.length} Films` : " Send Exchange Request"}</>}
               </button>
-            </div>
-          </div>
-        ) : (
-          /* ── Form ── */
-          <>
-            {/* You're offering */}
-            <div style={{ background: DS.sectionBg ?? "rgba(255,255,255,0.04)", borderRadius: 12, padding: "14px 16px", marginBottom: 20, border: `1px solid ${DS.border}` }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: DS.brand, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>You're offering</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: DS.bodyText, marginBottom: 2 }}>{filmTitle}</div>
-              {film?.game_date && (
-                <div style={{ fontSize: 12, color: DS.labelText, marginBottom: 8 }}>
-                  {new Date(film.game_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                </div>
-              )}
-              {playCount > 0 && (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, background: DS.brandBg, borderRadius: 8, padding: "3px 9px" }}>
-                  <Tag size={11} color={DS.brand} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{playCount} plays tagged</span>
-                </div>
-              )}
-            </div>
-
-            {/* Opposing coach email */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
-                Opposing Coach's Email
-              </label>
-              <input
-                type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="coach@school.edu"
-                style={{ width: "100%", boxSizing: "border-box", background: DS.inputBg ?? "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "11px 14px", fontSize: 14, color: DS.bodyText, outline: "none" }}
-                onKeyDown={e => e.key === "Enter" && send()}
-              />
-            </div>
-
-            {/* Optional message */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
-                Message <span style={{ color: DS.dimText, fontWeight: 500, textTransform: "none" }}>(optional)</span>
-              </label>
-              <textarea
-                value={message} onChange={e => setMessage(e.target.value)}
-                placeholder={`Hey Coach — here's our film from last week. Looking forward to the game!`}
-                rows={3}
-                style={{ width: "100%", boxSizing: "border-box", background: DS.inputBg ?? "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "11px 14px", fontSize: 13, color: DS.bodyText, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
-              />
-            </div>
-
-            {err && <p style={{ margin: "0 0 14px", fontSize: 13, color: "#EF4444", fontWeight: 600 }}>{err}</p>}
-
-            <button
-              onClick={send} disabled={loading || !email}
-              style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", cursor: loading || !email ? "not-allowed" : "pointer", background: email ? DS.brand : "rgba(255,255,255,0.1)", color: email ? "#fff" : DS.dimText, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
-              {loading ? "Sending…" : <><Send size={14} /> Send Exchange Request</>}
-            </button>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -126,7 +126,7 @@ async function getExchange(req, res) {
 
   const { data: exchange, error } = await supabase
     .from("film_exchanges")
-    .select("id, requesting_org_id, requesting_org_name, requesting_film_id, receiving_email, receiving_org_id, received_film_id, external_url, message, status, created_at")
+    .select("id, requesting_org_id, requesting_org_name, requesting_film_id, receiving_email, receiving_org_id, received_film_id, external_url, message, status, share_plays, created_at")
     .eq("token", token)
     .single();
 
@@ -172,6 +172,7 @@ async function getExchange(req, res) {
       receivingEmail:    exchange.receiving_email,
       message:           exchange.message,
       externalUrl:       exchange.external_url ?? null,
+      sharePlays:        exchange.share_plays !== false,
       createdAt:         exchange.created_at,
     },
     film: film ? {

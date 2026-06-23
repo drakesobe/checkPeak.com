@@ -403,25 +403,386 @@ function WorkflowBanner({ plays, isMobile }) {
 }
 
 // ── Tag Bar ────────────────────────────────────────────────────────────────────
-const PLAY_TYPES = [
-  { id: "run",         label: "RUN",  key: "R" },
-  { id: "pass",        label: "PASS", key: "P" },
-  { id: "punt",        label: "PUNT", key: "U" },
-  { id: "kickoff",     label: "KICK", key: null },
-  { id: "field_goal",  label: "FG",   key: null },
-  { id: "extra_point", label: "XP",   key: null },
-];
-const FORMATIONS = ["shotgun","under_center","pistol","wildcat","i_formation","singleback"];
-const RESULTS    = ["success","failure","td","turnover","penalty"];
-const SPEEDS     = [0.5, 1, 1.5, 2];
+const SPORT_CONFIGS = {
+  football: {
+    label: "Football",
+    useDownDistance: true,
+    playTypes: [
+      { id: "run",         label: "RUN",  key: "R" },
+      { id: "pass",        label: "PASS", key: "P" },
+      { id: "punt",        label: "PUNT", key: "U" },
+      { id: "kickoff",     label: "KICK" },
+      { id: "field_goal",  label: "FG" },
+      { id: "extra_point", label: "XP" },
+    ],
+    showFormation: true, formationLabel: "Formation",
+    formations: ["shotgun","under_center","pistol","wildcat","i_formation","singleback"],
+    showHashYardLine: true, showPersonnel: true,
+    personnelOptions: ["10","11","12","21","22"],
+    showDirection: true,
+    results: [
+      { id: "success",  label: "SUC",  color: "#22c55e" },
+      { id: "failure",  label: "FAIL", color: "rgba(255,255,255,0.5)" },
+      { id: "td",       label: "TD",   color: "#22c55e" },
+      { id: "turnover", label: "TO",   color: "#ef4444" },
+      { id: "penalty",  label: "PEN",  color: "#f59e0b" },
+    ],
+    showYards: true, yardsLabel: "YDS",
+  },
+  basketball: {
+    label: "Basketball",
+    periodLabel: "Quarter", periods: ["1","2","3","4","OT"],
+    playTypes: [
+      { id: "3pt",        label: "3PT" },
+      { id: "2pt",        label: "2PT" },
+      { id: "layup",      label: "LAYUP" },
+      { id: "dunk",       label: "DUNK" },
+      { id: "free_throw", label: "FT" },
+      { id: "turnover",   label: "TO" },
+      { id: "steal",      label: "STL" },
+      { id: "block",      label: "BLK" },
+    ],
+    showFormation: true, formationLabel: "Zone",
+    formations: ["paint","mid_range","three_point","transition","post","perimeter"],
+    showHashYardLine: false, showPersonnel: false, showDirection: true,
+    results: [
+      { id: "made",    label: "MADE",  color: "#22c55e" },
+      { id: "missed",  label: "MISS",  color: "#ef4444" },
+      { id: "blocked", label: "BLKD",  color: "#f59e0b" },
+      { id: "foul",    label: "FOUL",  color: "#f59e0b" },
+      { id: "and_one", label: "+1",    color: "#22c55e" },
+    ],
+    showYards: false,
+  },
+  soccer: {
+    label: "Soccer",
+    periodLabel: "Half", periods: ["1st","2nd","ET1","ET2","PKS"],
+    playTypes: [
+      { id: "shot",      label: "SHOT" },
+      { id: "corner",    label: "CRN" },
+      { id: "free_kick", label: "FK" },
+      { id: "penalty",   label: "PEN" },
+      { id: "header",    label: "HEAD" },
+      { id: "cross",     label: "CROSS" },
+      { id: "through",   label: "THRU" },
+    ],
+    showFormation: true, formationLabel: "Zone",
+    formations: ["attack_third","mid_third","defensive_third","right_flank","left_flank","central"],
+    showHashYardLine: false, showPersonnel: false, showDirection: true,
+    results: [
+      { id: "goal",    label: "GOAL",  color: "#22c55e" },
+      { id: "save",    label: "SAVE",  color: "#3b82f6" },
+      { id: "miss",    label: "MISS",  color: "#ef4444" },
+      { id: "foul",    label: "FOUL",  color: "#f59e0b" },
+      { id: "offside", label: "OFF",   color: "#f59e0b" },
+      { id: "blocked", label: "BLKD",  color: "#64748b" },
+    ],
+    showYards: false,
+  },
+  baseball: {
+    label: "Baseball",
+    periodLabel: "Inning", periods: ["1","2","3","4","5","6","7","8","9"],
+    showDistanceInput: true, distanceLabel: "Outs", distancePlaceholder: "0",
+    playTypes: [
+      { id: "fastball",  label: "FB" },
+      { id: "curveball", label: "CB" },
+      { id: "slider",    label: "SL" },
+      { id: "changeup",  label: "CH" },
+      { id: "cutter",    label: "CUT" },
+      { id: "sinker",    label: "SNK" },
+      { id: "splitter",  label: "SPL" },
+    ],
+    showFormation: false, showHashYardLine: false, showPersonnel: false, showDirection: false,
+    results: [
+      { id: "hit",       label: "HIT",  color: "#22c55e" },
+      { id: "out",       label: "OUT",  color: "#ef4444" },
+      { id: "walk",      label: "WALK", color: "#3b82f6" },
+      { id: "strikeout", label: "K",    color: "#ef4444" },
+      { id: "homerun",   label: "HR",   color: "#f59e0b" },
+      { id: "error",     label: "ERR",  color: "#f59e0b" },
+    ],
+    showYards: false,
+  },
+  lacrosse: {
+    label: "Lacrosse",
+    periodLabel: "Period", periods: ["1","2","3","4","OT"],
+    playTypes: [
+      { id: "shot",         label: "SHOT" },
+      { id: "clear",        label: "CLEAR" },
+      { id: "ride",         label: "RIDE" },
+      { id: "face_off",     label: "F/O" },
+      { id: "ground_ball",  label: "GB" },
+      { id: "man_up",       label: "MAN+" },
+    ],
+    showFormation: true, formationLabel: "Zone",
+    formations: ["attack","midfield","defense","crease","alley"],
+    showHashYardLine: false, showPersonnel: false, showDirection: true,
+    results: [
+      { id: "goal",     label: "GOAL",  color: "#22c55e" },
+      { id: "save",     label: "SAVE",  color: "#3b82f6" },
+      { id: "turnover", label: "TO",    color: "#ef4444" },
+      { id: "penalty",  label: "PEN",   color: "#f59e0b" },
+      { id: "success",  label: "SUC",   color: "#22c55e" },
+    ],
+    showYards: false,
+  },
+  softball: {
+    label: "Softball",
+    periodLabel: "Inning", periods: ["1","2","3","4","5","6","7"],
+    showDistanceInput: true, distanceLabel: "Outs", distancePlaceholder: "0",
+    playTypes: [
+      { id: "fastpitch", label: "FP" },
+      { id: "changeup",  label: "CH" },
+      { id: "drop",      label: "DROP" },
+      { id: "rise",      label: "RISE" },
+      { id: "curve",     label: "CRV" },
+      { id: "screw",     label: "SCR" },
+    ],
+    showFormation: false, showHashYardLine: false, showPersonnel: false, showDirection: false,
+    results: [
+      { id: "hit",       label: "HIT",  color: "#22c55e" },
+      { id: "out",       label: "OUT",  color: "#ef4444" },
+      { id: "walk",      label: "WALK", color: "#3b82f6" },
+      { id: "strikeout", label: "K",    color: "#ef4444" },
+      { id: "homerun",   label: "HR",   color: "#f59e0b" },
+    ],
+    showYards: false,
+  },
+  volleyball: {
+    label: "Volleyball",
+    periodLabel: "Set", periods: ["1","2","3","4","5"],
+    playTypes: [
+      { id: "serve",    label: "SERVE" },
+      { id: "spike",    label: "SPIKE" },
+      { id: "block",    label: "BLOCK" },
+      { id: "dig",      label: "DIG" },
+      { id: "set_play", label: "SET" },
+      { id: "tip",      label: "TIP" },
+    ],
+    showFormation: true, formationLabel: "Rotation",
+    formations: ["S1","S2","S3","S4","S5","S6"],
+    showHashYardLine: false, showPersonnel: false, showDirection: true,
+    results: [
+      { id: "point", label: "POINT", color: "#22c55e" },
+      { id: "error", label: "ERROR", color: "#ef4444" },
+      { id: "out",   label: "OUT",   color: "#ef4444" },
+      { id: "rally", label: "RALLY", color: "#64748b" },
+    ],
+    showYards: false,
+  },
+  track: {
+    label: "Track & Field",
+    periodLabel: "Heat", periods: ["Prelim","Semi","Final"],
+    playTypes: [
+      { id: "sprint",   label: "SPRINT" },
+      { id: "middle",   label: "MID" },
+      { id: "distance", label: "DIST" },
+      { id: "hurdles",  label: "HRDS" },
+      { id: "relay",    label: "RELAY" },
+      { id: "jump",     label: "JUMP" },
+      { id: "throw",    label: "THROW" },
+    ],
+    showFormation: false, showHashYardLine: false, showPersonnel: false, showDirection: false,
+    results: [
+      { id: "pr",          label: "PR",   color: "#f59e0b" },
+      { id: "season_best", label: "SB",   color: "#22c55e" },
+      { id: "qualify",     label: "QUAL", color: "#3b82f6" },
+      { id: "dnf",         label: "DNF",  color: "#ef4444" },
+      { id: "win",         label: "WIN",  color: "#22c55e" },
+    ],
+    showYards: true, yardsLabel: "MARK",
+  },
+  wrestling: {
+    label: "Wrestling",
+    periodLabel: "Period", periods: ["1","2","3","OT"],
+    playTypes: [
+      { id: "takedown",  label: "TKDN" },
+      { id: "escape",    label: "ESC" },
+      { id: "reversal",  label: "REV" },
+      { id: "near_fall", label: "NF" },
+      { id: "pin",       label: "PIN" },
+      { id: "stalling",  label: "STALL" },
+    ],
+    showFormation: true, formationLabel: "Situation",
+    formations: ["neutral","top","bottom"],
+    showHashYardLine: false, showPersonnel: false, showDirection: false,
+    results: [
+      { id: "scored",   label: "SCORED",  color: "#22c55e" },
+      { id: "stopped",  label: "STOPPED", color: "#ef4444" },
+      { id: "penalty",  label: "PEN",     color: "#f59e0b" },
+      { id: "decision", label: "DEC",     color: "#64748b" },
+    ],
+    showYards: true, yardsLabel: "PTS",
+  },
+  other: {
+    label: "Other",
+    periodLabel: "Period", periods: ["1","2","3","4","OT"],
+    playTypes: [
+      { id: "offense",  label: "OFF" },
+      { id: "defense",  label: "DEF" },
+      { id: "special",  label: "SPEC" },
+      { id: "set_play", label: "SET" },
+    ],
+    showFormation: false, showHashYardLine: false, showPersonnel: false, showDirection: true,
+    results: [
+      { id: "success", label: "SUCCESS", color: "#22c55e" },
+      { id: "failure", label: "FAIL",    color: "#ef4444" },
+      { id: "penalty", label: "PEN",     color: "#f59e0b" },
+    ],
+    showYards: true, yardsLabel: "PTS",
+  },
+};
 
-function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onClear, plays, onSaved, onSkip, onUndo, videoRef, speed, onSetSpeed, editingPlay, onCancelEdit }) {
+const SPEEDS = [0.5, 1, 1.5, 2];
+
+function Combobox({ value, onChange, options, placeholder, mob, inputStyle }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState(value || "");
+  useEffect(() => { setQuery(value || ""); }, [value]);
+  const filtered = query
+    ? options.filter(o => o.toLowerCase().includes(query.toLowerCase()))
+    : options;
+  const commit = (val) => {
+    const v = String(val).trim();
+    onChange(v);
+    setQuery(v);
+    setOpen(false);
+  };
+  return (
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <input value={query} placeholder={placeholder}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); commit(query); }
+          if (e.key === "Escape") setOpen(false);
+        }}
+        style={{ width: "100%", boxSizing: "border-box", ...(inputStyle || {}) }}
+      />
+      {open && (filtered.length > 0 || (query.trim() && !options.find(o => o.toLowerCase() === query.toLowerCase()))) && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#1a2235", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, zIndex: 300, maxHeight: 180, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+          {filtered.map(o => (
+            <div key={o} onMouseDown={() => commit(o)}
+              style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#e2e8f0", borderBottom: "1px solid rgba(255,255,255,0.04)", userSelect: "none" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {cap(o)}
+            </div>
+          ))}
+          {query.trim() && !options.find(o => o.toLowerCase() === query.trim().toLowerCase()) && (
+            <div onMouseDown={() => commit(query)}
+              style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#4FABFF", fontWeight: 700, userSelect: "none" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(79,171,255,0.08)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              + Add "{query.trim()}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onClear, plays, onSaved, onSkip, onUndo, videoRef, speed, onSetSpeed, editingPlay, onCancelEdit, sport: sportProp }) {
   const nextNum = plays.length + 1;
-  const [form,     setForm]     = useState({ down: "1", distance: "10", playType: "", formation: "", result: "", yardsGained: "", playDirection: "", hash: "", yardLine: "", personnel: "", labels: "", notes: "" });
+  const [activeSport, setActiveSport] = useState(() => {
+    const raw = (sportProp || "football").toLowerCase().trim();
+    return SPORT_CONFIGS[raw] ? raw : "football";
+  });
+  const cfg = SPORT_CONFIGS[activeSport] || SPORT_CONFIGS.football;
+  const isFootball = activeSport === "football";
+
+  const [form, setForm] = useState({
+    down: "", distance: "", playType: "", formation: "", result: "",
+    yardsGained: "", playDirection: "", hash: "", yardLine: "",
+    personnel: "", labels: "", notes: "",
+  });
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState("");
   const [showMore, setShowMore] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  // ── Persisted custom data (localStorage per sport) ──
+  const [customPlayTypes,  setCustomPlayTypes]  = useState([]);
+  const [customFormations, setCustomFormations] = useState([]);
+  const [presets,          setPresets]          = useState([]);
+  const [showNewType,      setShowNewType]      = useState(false);
+  const [newTypeVal,       setNewTypeVal]       = useState("");
+  const [presetInputOpen,  setPresetInputOpen]  = useState(false);
+  const [presetInputVal,   setPresetInputVal]   = useState("");
+
+  useEffect(() => {
+    try {
+      setCustomPlayTypes(JSON.parse(localStorage.getItem(`cp_types_${activeSport}`)  || "[]"));
+      setCustomFormations(JSON.parse(localStorage.getItem(`cp_fmtns_${activeSport}`) || "[]"));
+      setPresets(JSON.parse(localStorage.getItem(`cp_presets_${activeSport}`)        || "[]"));
+    } catch {}
+    setShowNewType(false); setNewTypeVal(""); setPresetInputOpen(false); setPresetInputVal("");
+  }, [activeSport]);
+
+  function addCustomType(label) {
+    const l = label.trim(); if (!l) return;
+    const id = l.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (cfg.playTypes.find(t => t.id === id) || customPlayTypes.find(t => t.id === id)) {
+      set("playType", id);
+    } else {
+      const next = [...customPlayTypes, { id, label: l.toUpperCase() }];
+      setCustomPlayTypes(next);
+      try { localStorage.setItem(`cp_types_${activeSport}`, JSON.stringify(next)); } catch {}
+      set("playType", id);
+    }
+    setShowNewType(false); setNewTypeVal("");
+  }
+
+  function removeCustomType(id) {
+    const next = customPlayTypes.filter(t => t.id !== id);
+    setCustomPlayTypes(next);
+    try { localStorage.setItem(`cp_types_${activeSport}`, JSON.stringify(next)); } catch {}
+    if (form.playType === id) set("playType", "");
+  }
+
+  function onFormationChange(val) {
+    set("formation", val);
+    if (!val) return;
+    const allOpts = [...(cfg.formations || []), ...customFormations];
+    if (!allOpts.find(o => o.toLowerCase() === val.toLowerCase())) {
+      const next = [...customFormations, val.toLowerCase()];
+      setCustomFormations(next);
+      try { localStorage.setItem(`cp_fmtns_${activeSport}`, JSON.stringify(next)); } catch {}
+    }
+  }
+
+  function savePreset(name) {
+    const n = name.trim(); if (!n) return;
+    const snap = { ...form };
+    // Presets capture play context, not game situation
+    delete snap.down; delete snap.distance; delete snap.yardsGained; delete snap.labels; delete snap.notes;
+    const next = [{ name: n, form: snap }, ...presets].slice(0, 8);
+    setPresets(next);
+    try { localStorage.setItem(`cp_presets_${activeSport}`, JSON.stringify(next)); } catch {}
+    setPresetInputOpen(false); setPresetInputVal("");
+  }
+
+  function applyPreset(preset) {
+    formHistoryRef.current.push({ ...form });
+    setForm(p => ({ ...p, ...preset.form }));
+  }
+
+  function deletePreset(i) {
+    const next = presets.filter((_, idx) => idx !== i);
+    setPresets(next);
+    try { localStorage.setItem(`cp_presets_${activeSport}`, JSON.stringify(next)); } catch {}
+  }
+
+  const formHasData = Object.entries(form).some(([k, v]) =>
+    !["down","distance","labels","notes"].includes(k) && v && v !== ""
+  );
+
+  // Reset sport-specific fields when sport changes
+  useEffect(() => {
+    setForm(p => ({ ...p, playType: "", formation: "", result: "", personnel: "", hash: "", yardLine: "", playDirection: "" }));
+  }, [activeSport]);
 
   // Populate form when entering edit mode
   useEffect(() => {
@@ -441,8 +802,9 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       labels:        (editingPlay.labels ?? []).join(", "),
       notes:         editingPlay.notes ?? "",
     });
-    setShowMore(true); // open details so coach can see all fields
+    setShowMore(true);
   }, [editingPlay?.id]);
+
   const formHistoryRef = useRef([]);
   const set = (k, v) => {
     setForm(p => {
@@ -474,29 +836,29 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       if (e.key === "Enter")              { e.preventDefault(); actionsRef.current.savePlay?.(); }
       if (e.key === "n" || e.key === "N") { e.preventDefault(); a.onSkip?.(); }
       if (e.key === "z" || e.key === "Z") { e.preventDefault(); a.undoFormField?.(); }
-      if (e.key === "r" || e.key === "R") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "run"  ? "" : "run"  })); }
-      if (e.key === "p" || e.key === "P") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "pass" ? "" : "pass" })); }
-      if (e.key === "u" || e.key === "U") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "punt" ? "" : "punt" })); }
-      if (e.key === "g" || e.key === "G") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "success" ? "" : "success" })); }
-      if (e.key === "f" || e.key === "F") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "failure" ? "" : "failure" })); }
-      if (e.key === "1") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "1" ? "" : "1" })); }
-      if (e.key === "2") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "2" ? "" : "2" })); }
-      if (e.key === "3") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "3" ? "" : "3" })); }
-      if (e.key === "4") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "4" ? "" : "4" })); }
       if (e.key === "[") { e.preventDefault(); if (a.videoRef?.current) a.videoRef.current.currentTime = Math.max(0, a.videoRef.current.currentTime - 5); }
       if (e.key === "]") { e.preventDefault(); if (a.videoRef?.current) a.videoRef.current.currentTime += 5; }
+      if (activeSport === "football") {
+        if (e.key === "r" || e.key === "R") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "run"  ? "" : "run"  })); }
+        if (e.key === "p" || e.key === "P") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "pass" ? "" : "pass" })); }
+        if (e.key === "u" || e.key === "U") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "punt" ? "" : "punt" })); }
+        if (e.key === "g" || e.key === "G") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "success" ? "" : "success" })); }
+        if (e.key === "f" || e.key === "F") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "failure" ? "" : "failure" })); }
+        if (e.key === "1") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "1" ? "" : "1" })); }
+        if (e.key === "2") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "2" ? "" : "2" })); }
+        if (e.key === "3") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "3" ? "" : "3" })); }
+        if (e.key === "4") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "4" ? "" : "4" })); }
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [activeSport]);
 
   function advanceDown(f) {
     const yards = Number(f.yardsGained), dist = Number(f.distance), down = Number(f.down);
-    // Auto-advance yard_line based on yards gained (ball moves down the field)
     const newYL = f.yardLine && !isNaN(yards)
       ? String(Math.min(99, Math.max(1, Number(f.yardLine) + yards)))
       : f.yardLine;
-    // Reset: play-specific fields. Keep: personnel, hash, yardLine (auto-advanced), formation
     const keep = { personnel: f.personnel, hash: f.hash, yardLine: newYL, formation: f.formation };
     if (!isNaN(yards) && !isNaN(dist) && yards >= dist) {
       setForm(p => ({ ...p, ...keep, down: "1", distance: "10", yardsGained: "", result: "", playType: "", playDirection: "", labels: "" }));
@@ -508,9 +870,13 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
     }
   }
 
+  function advancePeriod(f) {
+    setForm(p => ({ ...p, playType: "", result: "", yardsGained: "", playDirection: "", labels: "" }));
+  }
+
   async function savePlay() {
     const isEdit = !!editingPlay;
-    if (!isEdit && snapTime == null) { setError("Mark the snap first — press S"); return; }
+    if (!isEdit && snapTime == null) { setError("Mark the start first — press S"); return; }
     setSaving(true); setError("");
     try {
       const body = {
@@ -541,7 +907,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       if (isEdit) {
         onCancelEdit?.();
       } else {
-        advanceDown({ ...form });
+        if (isFootball) advanceDown({ ...form }); else advancePeriod({ ...form });
         if (videoRef?.current) {
           videoRef.current.currentTime = (whistleTime ?? snapTime) + 8;
           videoRef.current.play?.().catch(() => {});
@@ -560,16 +926,10 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
   const endSet   = whistleTime != null;
   const mob      = isMobile;
 
-  // Solid dark background required for selects — transparent breaks option readability across browsers
   const selStyle = {
-    border: "1px solid rgba(255,255,255,0.18)",
-    borderRadius: 7,
-    padding: mob ? "8px 10px" : "6px 10px",
-    fontSize: mob ? 14 : 12,
-    color: "#e2e8f0",
-    background: "#1e293b",
-    outline: "none",
-    cursor: "pointer",
+    border: "1px solid rgba(255,255,255,0.18)", borderRadius: 7,
+    padding: mob ? "8px 10px" : "6px 10px", fontSize: mob ? 14 : 12,
+    color: "#e2e8f0", background: "#1e293b", outline: "none", cursor: "pointer",
   };
   const optStyle = { background: "#1e293b", color: "#e2e8f0" };
 
@@ -583,32 +943,33 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
   });
 
   const typeActive = (id) => form.playType === id;
-  const downActive = (n)  => form.down === String(n);
 
   return (
     <div style={{ background: "#0d1117", borderRadius: 12, padding: mob ? "10px 12px" : "12px 16px", display: "flex", flexDirection: "column", gap: mob ? 8 : 10, width: "100%", boxSizing: "border-box" }}>
 
-      {/* ── Edit Mode Banner ── */}
-      {editingPlay && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 7, padding: "7px 12px" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa" }}>✏ Editing Play #{editingPlay.play_number}</span>
-          <button onClick={() => { onCancelEdit?.(); onClear?.(); }}
-            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 2px", fontWeight: 700 }}>
-            ✕ Cancel
-          </button>
+      {/* ── Row 0: Sport badge + Timing on one line ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 6 : 8 }}>
+        {/* Sport badge — styled select, not a full row */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <select value={activeSport} onChange={e => setActiveSport(e.target.value)}
+            style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.11)", borderRadius: 20, paddingLeft: 10, paddingRight: 20, paddingTop: mob ? 5 : 4, paddingBottom: mob ? 5 : 4, fontSize: mob ? 11 : 10, color: "rgba(255,255,255,0.45)", fontWeight: 700, cursor: "pointer", outline: "none", letterSpacing: "0.01em" }}>
+            {Object.entries(SPORT_CONFIGS).map(([k, v]) => (
+              <option key={k} value={k} style={optStyle}>{v.label}</option>
+            ))}
+          </select>
+          <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: 7, color: "rgba(255,255,255,0.25)", pointerEvents: "none", lineHeight: 1 }}>▾</span>
         </div>
-      )}
 
-      {/* ── Row 1: Snap / End ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Snap button */}
         <button onClick={onMarkSnap} style={markBtn(snapSet, { bg:"#1d4ed8", bd:"#3b82f6" })}>
           <span style={{ fontSize: 9, fontWeight: 900, background: snapSet ? "#60a5fa" : "rgba(255,255,255,0.18)", borderRadius: 3, padding: "1px 5px", color: "#0d1117", flexShrink: 0 }}>S</span>
-          <span>{snapSet ? fmtTime(snapTime) : "Snap"}</span>
+          <span>{snapSet ? fmtTime(snapTime) : (isFootball ? "Snap" : "Start")}</span>
           {snapSet && <CheckCircle2 size={12} style={{ marginLeft: "auto", opacity: 0.8 }} />}
         </button>
 
-        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 18, flexShrink: 0, lineHeight: 1 }}>→</span>
+        <span style={{ color: "rgba(255,255,255,0.18)", fontSize: 15, flexShrink: 0, lineHeight: 1 }}>→</span>
 
+        {/* Whistle button */}
         <button onClick={onMarkWhistle} style={markBtn(endSet, { bg:"#15803d", bd:"#22c55e" })}>
           <span style={{ fontSize: 9, fontWeight: 900, background: endSet ? "#4ade80" : "rgba(255,255,255,0.18)", borderRadius: 3, padding: "1px 5px", color: "#0d1117", flexShrink: 0 }}>W</span>
           <span>{endSet ? fmtTime(whistleTime) : "End"}</span>
@@ -616,283 +977,304 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
         </button>
 
         {clipSecs && (
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 700, background: "rgba(255,255,255,0.06)", borderRadius: 5, padding: "4px 9px", flexShrink: 0 }}>
-            {clipSecs}s
-          </span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 700, flexShrink: 0 }}>{clipSecs}s</span>
         )}
       </div>
 
-      {/* ── Row 2a: Play Type buttons ── */}
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${PLAY_TYPES.length}, 1fr)`, gap: 4, width: "100%" }}>
-        {PLAY_TYPES.map(t => (
-          <button key={t.id}
-            onClick={() => set("playType", typeActive(t.id) ? "" : t.id)}
-            title={t.key ? `Key: ${t.key}` : undefined}
-            style={{
-              padding: mob ? "9px 4px" : "7px 11px",
-              fontSize: mob ? 11 : 11, fontWeight: 800, letterSpacing: "0.05em",
-              borderRadius: 7, cursor: "pointer",
+      {/* ── Quick Presets bar (hidden when empty + form clear) ── */}
+      {(presets.length > 0 || formHasData) && !editingPlay && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {presets.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 5, overflowX: "auto", paddingBottom: 1 }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>Quick</span>
+              {presets.map((p, i) => (
+                <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+                  <button onClick={() => applyPreset(p)}
+                    style={{ paddingLeft: 10, paddingRight: 22, paddingTop: mob ? 5 : 4, paddingBottom: mob ? 5 : 4, borderRadius: 20, border: "1px solid rgba(79,171,255,0.28)", background: "rgba(79,171,255,0.07)", color: "#4FABFF", fontSize: mob ? 11 : 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
+                    {p.name}
+                  </button>
+                  <button onClick={() => deletePreset(i)}
+                    style={{ position: "absolute", top: "50%", right: 7, transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "rgba(79,171,255,0.3)", fontSize: 8, fontWeight: 900, padding: 0, lineHeight: 1 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {presetInputOpen ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input autoFocus value={presetInputVal} onChange={e => setPresetInputVal(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); savePreset(presetInputVal); } if (e.key === "Escape") { setPresetInputOpen(false); setPresetInputVal(""); } }}
+                placeholder="Name this preset…"
+                style={{ flex: 1, padding: mob ? "7px 11px" : "5px 10px", borderRadius: 7, border: "1.5px solid rgba(79,171,255,0.4)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none" }} />
+              <button onClick={() => savePreset(presetInputVal)}
+                style={{ padding: mob ? "7px 14px" : "5px 12px", borderRadius: 7, border: "none", background: "#4FABFF", color: "#0d1117", fontSize: mob ? 12 : 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Save</button>
+              <button onClick={() => { setPresetInputOpen(false); setPresetInputVal(""); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", fontSize: 14, padding: "0 2px", lineHeight: 1 }}>✕</button>
+            </div>
+          ) : formHasData && presets.length < 8 && (
+            <button onClick={() => setPresetInputOpen(true)}
+              style={{ alignSelf: "flex-start", background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.18)", fontSize: mob ? 11 : 10, fontWeight: 700, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12, lineHeight: 1 }}>⊕</span> Save as preset
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Edit mode banner ── */}
+      {editingPlay && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 7, padding: "7px 12px" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa" }}>✏ Editing Play #{editingPlay.play_number}</span>
+          <button onClick={() => { onCancelEdit?.(); onClear?.(); }}
+            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 2px", fontWeight: 700 }}>✕ Cancel</button>
+        </div>
+      )}
+
+      {/* ── Play types — WHAT happened ── */}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", width: "100%" }}>
+        {cfg.playTypes.map(t => (
+          <button key={t.id} onClick={() => set("playType", typeActive(t.id) ? "" : t.id)} title={t.key ? `Key: ${t.key}` : undefined}
+            style={{ flex: "1 1 auto", padding: mob ? "9px 4px" : "8px 6px", fontSize: mob ? 11 : 10, fontWeight: 800, letterSpacing: "0.04em", borderRadius: 7, cursor: "pointer",
               border: `1.5px solid ${typeActive(t.id) ? typeColor(t.id) : "rgba(255,255,255,0.12)"}`,
               background: typeActive(t.id) ? typeColor(t.id) : "rgba(255,255,255,0.06)",
-              color: typeActive(t.id) ? "#fff" : "rgba(255,255,255,0.5)",
-            }}>
+              color: typeActive(t.id) ? "#fff" : "rgba(255,255,255,0.5)" }}>
             {t.label}
           </button>
         ))}
-      </div>
-
-      {/* ── Row 2b (mobile) / Row 2 cont (desktop): Down + Distance + Direction ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 8 }}>
-        {/* Down buttons */}
-        {[1,2,3,4].map(n => (
-          <button key={n}
-            onClick={() => set("down", downActive(n) ? "" : String(n))}
-            title={`Key: ${n}`}
-            style={{
-              flex: mob ? 1 : "none",
-              width:  mob ? undefined : 32, height: mob ? 36 : 32,
-              fontSize: mob ? 15 : 13, fontWeight: 800, borderRadius: 7, cursor: "pointer",
-              border: `1.5px solid ${downActive(n) ? "#94a3b8" : "rgba(255,255,255,0.12)"}`,
-              background: downActive(n) ? "#334155" : "rgba(255,255,255,0.06)",
-              color: downActive(n) ? "#fff" : "rgba(255,255,255,0.5)",
-            }}>
-            {n}
-          </button>
-        ))}
-
-        <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>&</span>
-
-        <input
-          type="number" value={form.distance}
-          onChange={e => set("distance", e.target.value)}
-          placeholder="10"
-          style={{
-            width: mob ? 42 : 44, padding: mob ? "8px 4px" : "6px 6px",
-            borderRadius: 7, border: "1.5px solid rgba(255,255,255,0.14)",
-            background: "#1e293b", color: "#e2e8f0",
-            fontSize: mob ? 14 : 13, fontWeight: 700, textAlign: "center", outline: "none",
-          }}
-        />
-
-        <div style={{ flex: 1 }} />
-
-        {/* Play Direction */}
-        {[
-          { id:"left",   icon:"←", label:"L" },
-          { id:"middle", icon:"↑", label:"M" },
-          { id:"right",  icon:"→", label:"R" },
-        ].map(d => {
-          const active = form.playDirection === d.id;
-          return (
-            <button key={d.id}
-              onClick={() => set("playDirection", active ? "" : d.id)}
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                width: mob ? 36 : 32, height: mob ? 36 : 32,
-                fontSize: mob ? 14 : 11, fontWeight: 800, borderRadius: 7, cursor: "pointer",
-                border: `1.5px solid ${active ? "#64748b" : "rgba(255,255,255,0.1)"}`,
-                background: active ? "#334155" : "rgba(255,255,255,0.05)",
-                color: active ? "#e2e8f0" : "rgba(255,255,255,0.4)",
-                gap: 1, lineHeight: 1,
-              }}>
-              <span style={{ fontSize: mob ? 12 : 9 }}>{d.icon}</span>
-              <span style={{ fontSize: mob ? 9 : 7, letterSpacing: "0.04em" }}>{d.label}</span>
+        {customPlayTypes.map(t => (
+          <div key={t.id} style={{ position: "relative", flex: "1 1 auto" }}>
+            <button onClick={() => set("playType", typeActive(t.id) ? "" : t.id)}
+              style={{ width: "100%", padding: mob ? "9px 18px 9px 4px" : "8px 16px 8px 6px", fontSize: mob ? 11 : 10, fontWeight: 800, letterSpacing: "0.04em", borderRadius: 7, cursor: "pointer",
+                border: `1.5px solid ${typeActive(t.id) ? "#4FABFF" : "rgba(79,171,255,0.22)"}`,
+                background: typeActive(t.id) ? "rgba(79,171,255,0.18)" : "rgba(79,171,255,0.06)",
+                color: typeActive(t.id) ? "#4FABFF" : "rgba(79,171,255,0.6)" }}>
+              {t.label}
             </button>
-          );
-        })}
+            <button onClick={() => removeCustomType(t.id)}
+              style={{ position: "absolute", top: "50%", right: 4, transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "rgba(79,171,255,0.28)", fontSize: 8, fontWeight: 900, padding: 0, lineHeight: 1 }}>✕</button>
+          </div>
+        ))}
+        {showNewType ? (
+          <input autoFocus value={newTypeVal} onChange={e => setNewTypeVal(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCustomType(newTypeVal); } if (e.key === "Escape") { setShowNewType(false); setNewTypeVal(""); } }}
+            onBlur={() => setTimeout(() => { setShowNewType(false); setNewTypeVal(""); }, 160)}
+            placeholder="Type & Enter…"
+            style={{ flex: "1 1 80px", padding: mob ? "8px 8px" : "6px 8px", borderRadius: 7, border: "1.5px solid rgba(79,171,255,0.4)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 12 : 11, outline: "none", minWidth: 0 }} />
+        ) : (
+          <button onClick={() => setShowNewType(true)} title="Add custom play type"
+            style={{ padding: mob ? "9px 12px" : "8px 10px", borderRadius: 7, border: "1.5px dashed rgba(255,255,255,0.13)", background: "transparent", color: "rgba(255,255,255,0.2)", fontSize: mob ? 15 : 14, fontWeight: 700, cursor: "pointer", flexShrink: 0, lineHeight: 1 }}>+</button>
+        )}
       </div>
 
-      {/* ── Row 2c: Result + Yards ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
-        {[
-          { id: "success",  label: mob ? "SUC" : "Success",  title: "Success"   },
-          { id: "failure",  label: mob ? "FAIL" : "Failure", title: "Failure"   },
-          { id: "td",       label: "TD",                     title: "Touchdown" },
-          { id: "turnover", label: "TO",                     title: "Turnover"  },
-          { id: "penalty",  label: "PEN",                    title: "Penalty"   },
-        ].map(r => {
+      {/* ── Result — HOW it went ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 4 : 5, flexWrap: mob ? "wrap" : "nowrap" }}>
+        {cfg.results.map(r => {
           const active = form.result === r.id;
-          const color  = r.id === "success" || r.id === "td" ? "#22c55e"
-                       : r.id === "turnover" ? "#ef4444"
-                       : r.id === "penalty"  ? "#f59e0b"
-                       : "rgba(255,255,255,0.5)";
           return (
-            <button key={r.id} onClick={() => set("result", active ? "" : r.id)} title={r.title}
-              style={{
-                flex: mob ? 1 : "none",
-                padding: mob ? "8px 4px" : "6px 12px", fontSize: mob ? 12 : 11, fontWeight: 800,
-                borderRadius: 6, cursor: "pointer",
-                border: `1.5px solid ${active ? color : "rgba(255,255,255,0.12)"}`,
-                background: active ? `${color}22` : "rgba(255,255,255,0.05)",
-                color: active ? color : "rgba(255,255,255,0.45)",
-              }}>
+            <button key={r.id} onClick={() => set("result", active ? "" : r.id)}
+              style={{ flex: mob ? "1 1 auto" : "none", padding: mob ? "8px 4px" : "7px 10px", fontSize: mob ? 11 : 10, fontWeight: 800, borderRadius: 6, cursor: "pointer",
+                border: `1.5px solid ${active ? r.color : "rgba(255,255,255,0.11)"}`,
+                background: active ? `${r.color}22` : "rgba(255,255,255,0.05)",
+                color: active ? r.color : "rgba(255,255,255,0.4)" }}>
               {r.label}
             </button>
           );
         })}
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, marginLeft: 2 }}>YDS</span>
-        <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)}
-          placeholder="–"
-          style={{ width: mob ? 48 : 44, padding: mob ? "8px 6px" : "6px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+        {cfg.showYards && (
+          <>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, marginLeft: 2 }}>{cfg.yardsLabel || "YDS"}</span>
+            <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)} placeholder="–"
+              style={{ width: mob ? 48 : 44, padding: mob ? "8px 6px" : "7px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+          </>
+        )}
       </div>
 
-      {/* ── Row 2d: Personnel ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Personnel</span>
-        {["10","11","12","21","22"].map(g => {
-          const active = form.personnel === g;
-          return (
-            <button key={g} onClick={() => set("personnel", active ? "" : g)}
-              style={{
-                flex: mob ? 1 : "none",
-                padding: mob ? "8px 4px" : "6px 12px", fontSize: mob ? 12 : 11, fontWeight: 800,
-                borderRadius: 6, cursor: "pointer",
-                border: `1.5px solid ${active ? DS.brand : "rgba(255,255,255,0.12)"}`,
-                background: active ? DS.brandBg : "rgba(255,255,255,0.05)",
-                color: active ? DS.brand : "rgba(255,255,255,0.45)",
-              }}>
-              {g}
-            </button>
-          );
-        })}
+      {/* ── Situation — WHEN + context (down/period + formation on one row) ── */}
+      <div style={{ display: "flex", flexDirection: mob ? "column" : "row", gap: mob ? 6 : 6, alignItems: mob ? "stretch" : "center" }}>
+        {/* Down buttons (football) or period chips (other) */}
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 4 : 5, flexShrink: 0 }}>
+          {isFootball ? (
+            <>
+              {[1,2,3,4].map(n => (
+                <button key={n} onClick={() => set("down", form.down === String(n) ? "" : String(n))} title={`Key: ${n}`}
+                  style={{ width: mob ? undefined : 30, flex: mob ? 1 : "none", height: mob ? 36 : 30, fontSize: mob ? 14 : 13, fontWeight: 800, borderRadius: 7, cursor: "pointer",
+                    border: `1.5px solid ${form.down === String(n) ? "#94a3b8" : "rgba(255,255,255,0.11)"}`,
+                    background: form.down === String(n) ? "#334155" : "rgba(255,255,255,0.05)",
+                    color: form.down === String(n) ? "#fff" : "rgba(255,255,255,0.45)" }}>
+                  {n}
+                </button>
+              ))}
+              <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>&</span>
+              <input type="number" value={form.distance} onChange={e => set("distance", e.target.value)} placeholder="10"
+                style={{ width: mob ? 44 : 42, padding: mob ? "8px 6px" : "5px 6px", borderRadius: 7, border: "1.5px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 12, fontWeight: 700, textAlign: "center", outline: "none", flexShrink: 0 }} />
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>{cfg.periodLabel}</span>
+              {(cfg.periods || []).map(p => {
+                const active = form.down === String(p);
+                return (
+                  <button key={p} onClick={() => set("down", active ? "" : String(p))}
+                    style={{ padding: mob ? "7px 8px" : "5px 9px", fontSize: mob ? 11 : 10, fontWeight: 800, borderRadius: 6, cursor: "pointer", flexShrink: 0,
+                      border: `1.5px solid ${active ? "#94a3b8" : "rgba(255,255,255,0.11)"}`,
+                      background: active ? "#334155" : "rgba(255,255,255,0.05)",
+                      color: active ? "#fff" : "rgba(255,255,255,0.45)" }}>
+                    {p}
+                  </button>
+                );
+              })}
+              {cfg.showDistanceInput && (
+                <>
+                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>{cfg.distanceLabel}</span>
+                  <input type="number" value={form.distance} onChange={e => set("distance", e.target.value)} placeholder={cfg.distancePlaceholder || "–"}
+                    style={{ width: 36, padding: mob ? "7px 4px" : "5px 4px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 12 : 11, fontWeight: 700, textAlign: "center", outline: "none", flexShrink: 0 }} />
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Formation / Zone / Situation — promoted out of Details */}
+        {cfg.showFormation && (
+          <Combobox
+            value={form.formation}
+            onChange={onFormationChange}
+            options={[...(cfg.formations || []), ...customFormations]}
+            placeholder={cfg.formationLabel || "Formation"}
+            mob={mob}
+            inputStyle={{ border: "1px solid rgba(255,255,255,0.13)", borderRadius: 7, padding: mob ? "9px 10px" : "5px 10px", fontSize: mob ? 12 : 11, color: form.formation ? "#e2e8f0" : "rgba(255,255,255,0.3)", background: "#1e293b", outline: "none", width: "100%" }}
+          />
+        )}
       </div>
 
-      {/* ── Row 3: Save · Skip · Speed · Undo ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+      {/* ── Personnel (football only) ── */}
+      {isFootball && (
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 5 }}>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Pers.</span>
+          {(cfg.personnelOptions || []).map(g => {
+            const active = form.personnel === g;
+            return (
+              <button key={g} onClick={() => set("personnel", active ? "" : g)}
+                style={{ flex: mob ? 1 : "none", padding: mob ? "8px 4px" : "6px 11px", fontSize: mob ? 12 : 11, fontWeight: 800, borderRadius: 6, cursor: "pointer",
+                  border: `1.5px solid ${active ? "#4FABFF" : "rgba(255,255,255,0.11)"}`,
+                  background: active ? "rgba(79,171,255,0.14)" : "rgba(255,255,255,0.04)",
+                  color: active ? "#4FABFF" : "rgba(255,255,255,0.4)" }}>
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Save / Skip / Speed / Undo ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <button onClick={savePlay} disabled={saving || (!editingPlay && !snapSet)}
-          style={{
-            flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-            padding: mob ? "10px 10px" : "10px 20px",
-            borderRadius: 9, border: "none", fontWeight: 800, fontSize: mob ? 13 : 13,
-            background: (editingPlay || snapSet) ? (editingPlay ? "#1e40af" : DS.brand) : "rgba(255,255,255,0.06)",
-            color: (editingPlay || snapSet) ? "#fff" : "rgba(255,255,255,0.2)",
-            cursor: saving || (!editingPlay && !snapSet) ? "not-allowed" : "pointer",
-            minWidth: 0,
-          }}>
-          {saving
-            ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-            : <CheckCircle2 size={13} style={{ flexShrink: 0 }} />}
+          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: mob ? "11px 10px" : "10px 20px", borderRadius: 9, border: "none", fontWeight: 800, fontSize: mob ? 13 : 13,
+            background: (editingPlay || snapSet) ? (editingPlay ? "#1e40af" : DS.brand) : "rgba(255,255,255,0.05)",
+            color: (editingPlay || snapSet) ? "#fff" : "rgba(255,255,255,0.18)",
+            cursor: saving || (!editingPlay && !snapSet) ? "not-allowed" : "pointer", minWidth: 0 }}>
+          {saving ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} /> : <CheckCircle2 size={13} style={{ flexShrink: 0 }} />}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {saving ? "Saving…" : editingPlay ? `Update #${editingPlay.play_number}` : `Save #${nextNum}`}
           </span>
         </button>
-
         {!editingPlay && (
-          <button onClick={onSkip} style={{
-            padding: mob ? "10px 10px" : "10px 14px",
-            borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)",
-            fontSize: mob ? 12 : 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-          }}>
+          <button onClick={onSkip} style={{ padding: mob ? "11px 10px" : "10px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.38)", fontSize: mob ? 12 : 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
             Skip
           </button>
         )}
-
-        {/* Speed buttons — always visible, compact on mobile */}
         <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
           {SPEEDS.map(s => (
-            <button key={s}
-              onClick={() => { onSetSpeed?.(s); if (videoRef?.current) videoRef.current.playbackRate = s; }}
-              style={{
-                padding: mob ? "7px 7px" : "5px 8px",
-                borderRadius: 6, border: "none", cursor: "pointer",
-                fontSize: mob ? 11 : 10, fontWeight: 800,
-                background: speed === s ? "#4FABFF" : "rgba(255,255,255,0.08)",
-                color:      speed === s ? "#0d1117" : "rgba(255,255,255,0.5)",
-              }}>
+            <button key={s} onClick={() => { onSetSpeed?.(s); if (videoRef?.current) videoRef.current.playbackRate = s; }}
+              style={{ padding: mob ? "7px 7px" : "5px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: mob ? 11 : 10, fontWeight: 800,
+                background: speed === s ? "#4FABFF" : "rgba(255,255,255,0.07)",
+                color: speed === s ? "#0d1117" : "rgba(255,255,255,0.45)" }}>
               {s}x
             </button>
           ))}
         </div>
-
         <button onClick={undoFormField} title="Undo last field (Z)"
-          style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "rgba(255,255,255,0.4)",
-            fontSize: mob ? 12 : 11, fontWeight: 700, padding: "4px 4px",
-            display: "flex", alignItems: "center", gap: 2, flexShrink: 0,
-          }}>
-          ↩
-        </button>
+          style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.35)", fontSize: mob ? 14 : 13, padding: "4px", display: "flex", alignItems: "center", flexShrink: 0 }}>↩</button>
       </div>
 
-      {/* ── Row 4: Details expansion (Formation / Result / Yards) ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 2, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <button onClick={() => setShowMore(m => !m)}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.35)", fontSize: 11, fontWeight: 700, padding: "2px 0", display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 9 }}>{showMore ? "▾" : "▸"}</span> {showMore ? "Hide" : "Details"}
-        </button>
+      {/* ── Details ▸ — hash, yard line, direction, tags, notes ── */}
+      <div style={{ paddingTop: 2, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => setShowMore(m => !m)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 700, padding: "2px 0", display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 9 }}>{showMore ? "▾" : "▸"}</span> {showMore ? "Hide details" : "Details"}
+          </button>
+          {/* Keyboard hints — desktop only, collapsed */}
+          {!mob && !showMore && (
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              {(isFootball
+                ? [["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"]]
+                : [["S","start"],["W","end"],["↵","save"],["N","skip"],["Z","undo"],["[","−5s"],["]","+5s"]]
+              ).map(([k,l]) => (
+                <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.18)" }}>
+                  <span style={{ background: "rgba(255,255,255,0.09)", borderRadius: 3, padding: "1px 4px", fontWeight: 800, marginRight: 2 }}>{k}</span>{l}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
         {showMore && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", paddingTop: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 10 }}>
 
-            {/* Row A2: Hash + Yard line (always one row — 5 buttons + YD input) */}
-            <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>HASH</span>
-              {[
-                { id:"left_wide",  short:"LW" },
-                { id:"left_hash",  short:"LH" },
-                { id:"middle",     short:"MID" },
-                { id:"right_hash", short:"RH" },
-                { id:"right_wide", short:"RW" },
-              ].map(h => {
-                const active = form.hash === h.id;
-                return (
-                  <button key={h.id} onClick={() => set("hash", active ? "" : h.id)}
-                    style={{
-                      flex: mob ? 1 : "none",
-                      padding: mob ? "7px 2px" : "5px 8px", fontSize: mob ? 11 : 10, fontWeight: 800,
-                      borderRadius: 6, cursor: "pointer",
-                      border: `1.5px solid ${active ? "#94a3b8" : "rgba(255,255,255,0.1)"}`,
-                      background: active ? "#334155" : "rgba(255,255,255,0.04)",
-                      color: active ? "#e2e8f0" : "rgba(255,255,255,0.4)",
-                    }}>
-                    {h.short}
-                  </button>
-                );
-              })}
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>YD</span>
-              <input type="number" value={form.yardLine} onChange={e => set("yardLine", e.target.value)}
-                placeholder="–"
-                style={{ width: mob ? 44 : 42, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 12, fontWeight: 700, textAlign: "center", outline: "none" }}
-              />
-            </div>
+            {/* Football: Hash + Yard line */}
+            {isFootball && (
+              <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 5 }}>
+                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Hash</span>
+                {[{ id:"left_wide", short:"LW" },{ id:"left_hash", short:"LH" },{ id:"middle", short:"MID" },{ id:"right_hash", short:"RH" },{ id:"right_wide", short:"RW" }].map(h => {
+                  const active = form.hash === h.id;
+                  return (
+                    <button key={h.id} onClick={() => set("hash", active ? "" : h.id)}
+                      style={{ flex: mob ? 1 : "none", padding: mob ? "7px 2px" : "5px 8px", fontSize: mob ? 11 : 10, fontWeight: 800, borderRadius: 6, cursor: "pointer",
+                        border: `1.5px solid ${active ? "#94a3b8" : "rgba(255,255,255,0.09)"}`,
+                        background: active ? "#334155" : "rgba(255,255,255,0.03)",
+                        color: active ? "#e2e8f0" : "rgba(255,255,255,0.35)" }}>
+                      {h.short}
+                    </button>
+                  );
+                })}
+                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>YD</span>
+                <input type="number" value={form.yardLine} onChange={e => set("yardLine", e.target.value)} placeholder="–"
+                  style={{ width: mob ? 44 : 42, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+              </div>
+            )}
 
-            {/* Row B: Formation */}
-            <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 6, flexWrap: "wrap" }}>
-              <select value={form.formation} onChange={e => set("formation", e.target.value)} style={selStyle}>
-                <option value="" style={optStyle}>Formation</option>
-                {FORMATIONS.map(f => <option key={f} value={f} style={optStyle}>{cap(f)}</option>)}
-              </select>
-            </div>
+            {/* Direction */}
+            {(isFootball || cfg.showDirection) && (
+              <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 5 }}>
+                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Dir</span>
+                {[{ id:"left", icon:"←", label:"Left" },{ id:"middle", icon:"↑", label:"Middle" },{ id:"right", icon:"→", label:"Right" }].map(d => {
+                  const active = form.playDirection === d.id;
+                  return (
+                    <button key={d.id} onClick={() => set("playDirection", active ? "" : d.id)} title={d.label}
+                      style={{ display:"flex", alignItems:"center", justifyContent:"center", width: mob ? 40 : 36, height: mob ? 36 : 30, fontSize: mob ? 15 : 13, fontWeight: 800, borderRadius: 7, cursor: "pointer",
+                        border: `1.5px solid ${active ? "#64748b" : "rgba(255,255,255,0.09)"}`,
+                        background: active ? "#334155" : "rgba(255,255,255,0.03)",
+                        color: active ? "#e2e8f0" : "rgba(255,255,255,0.35)" }}>
+                      {d.icon}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            {/* Row C: Custom labels */}
+            {/* Custom labels */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>TAGS</span>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Tags</span>
               <input type="text" value={form.labels} onChange={e => set("labels", e.target.value)}
-                placeholder="red_zone, 3rd_down, blitz… (comma-separated)"
-                style={{ flex: 1, padding: mob ? "9px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none" }} />
+                placeholder="red_zone, key_play… (comma-separated)"
+                style={{ flex: 1, padding: mob ? "9px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none" }} />
             </div>
 
-            {/* Row D: Coach notes */}
+            {/* Coach notes */}
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, paddingTop: 8 }}>NOTE</span>
-              <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
-                placeholder="Coach note for this play…"
-                rows={2}
-                style={{ flex: 1, padding: mob ? "8px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none", resize: "none", fontFamily: "inherit" }} />
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, paddingTop: 8 }}>Note</span>
+              <textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Coach note for this play…" rows={2}
+                style={{ flex: 1, padding: mob ? "8px 12px" : "5px 10px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 13 : 11, outline: "none", resize: "none", fontFamily: "inherit" }} />
             </div>
-          </div>
-        )}
-
-        {/* Keyboard hints — desktop only, when details are collapsed */}
-        {!mob && !showMore && (
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            {[["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"],["G","success"],["F","fail"]].map(([k,l]) => (
-              <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>
-                <span style={{ background: "rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 4px", fontWeight: 800, marginRight: 2 }}>{k}</span>{l}
-              </span>
-            ))}
           </div>
         )}
       </div>
@@ -3863,6 +4245,7 @@ export default function FilmDetailPage() {
                         onSetSpeed={setSpeed}
                         editingPlay={editingPlay}
                         onCancelEdit={cancelEdit}
+                        sport={film?.sport}
                       />
                     </div>
 

@@ -465,6 +465,8 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       if (e.key === "r" || e.key === "R") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "run"  ? "" : "run"  })); }
       if (e.key === "p" || e.key === "P") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "pass" ? "" : "pass" })); }
       if (e.key === "u" || e.key === "U") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "punt" ? "" : "punt" })); }
+      if (e.key === "g" || e.key === "G") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "success" ? "" : "success" })); }
+      if (e.key === "f" || e.key === "F") { e.preventDefault(); setForm(p => ({ ...p, result: p.result === "failure" ? "" : "failure" })); }
       if (e.key === "1") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "1" ? "" : "1" })); }
       if (e.key === "2") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "2" ? "" : "2" })); }
       if (e.key === "3") { e.preventDefault(); setForm(p => ({ ...p, down: p.down === "3" ? "" : "3" })); }
@@ -687,6 +689,39 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
         })}
       </div>
 
+      {/* ── Row 2c: Result + Yards ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
+        {[
+          { id: "success",  label: "✓",       title: "Success"  },
+          { id: "failure",  label: "✗",       title: "Failure"  },
+          { id: "td",       label: "TD",      title: "Touchdown" },
+          { id: "turnover", label: "TO",      title: "Turnover" },
+          { id: "penalty",  label: "PEN",     title: "Penalty"  },
+        ].map(r => {
+          const active = form.result === r.id;
+          const color  = r.id === "success" || r.id === "td" ? "#22c55e"
+                       : r.id === "turnover" ? "#ef4444"
+                       : r.id === "penalty"  ? "#f59e0b"
+                       : "rgba(255,255,255,0.5)";
+          return (
+            <button key={r.id} onClick={() => set("result", active ? "" : r.id)} title={r.title}
+              style={{
+                flex: mob ? 1 : "none",
+                padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 13 : 11, fontWeight: 800,
+                borderRadius: 6, cursor: "pointer",
+                border: `1.5px solid ${active ? color : "rgba(255,255,255,0.12)"}`,
+                background: active ? `${color}22` : "rgba(255,255,255,0.05)",
+                color: active ? color : "rgba(255,255,255,0.45)",
+              }}>
+              {r.label}
+            </button>
+          );
+        })}
+        <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)}
+          placeholder="Yds"
+          style={{ width: mob ? 52 : 48, padding: mob ? "8px 6px" : "5px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+      </div>
+
       {/* ── Row 3: Save · Skip · Speed · Undo ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
         <button onClick={savePlay} disabled={saving || (!editingPlay && !snapSet)}
@@ -809,19 +844,12 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
               />
             </div>
 
-            {/* Row B: Formation + Result + Yards */}
+            {/* Row B: Formation */}
             <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 6, flexWrap: "wrap" }}>
               <select value={form.formation} onChange={e => set("formation", e.target.value)} style={selStyle}>
                 <option value="" style={optStyle}>Formation</option>
                 {FORMATIONS.map(f => <option key={f} value={f} style={optStyle}>{cap(f)}</option>)}
               </select>
-              <select value={form.result} onChange={e => set("result", e.target.value)} style={selStyle}>
-                <option value="" style={optStyle}>Result</option>
-                {RESULTS.map(r => <option key={r} value={r} style={optStyle}>{cap(r)}</option>)}
-              </select>
-              <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)}
-                placeholder="Yards ±"
-                style={{ width: mob ? 80 : 68, padding: mob ? "10px 10px" : "6px 8px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, outline: "none" }} />
             </div>
 
             {/* Row C: Custom labels */}
@@ -846,7 +874,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
         {/* Keyboard hints — desktop only, when details are collapsed */}
         {!mob && !showMore && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            {[["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"]].map(([k,l]) => (
+            {[["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"],["G","success"],["F","fail"]].map(([k,l]) => (
               <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>
                 <span style={{ background: "rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 4px", fontWeight: 800, marginRight: 2 }}>{k}</span>{l}
               </span>

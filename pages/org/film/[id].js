@@ -738,7 +738,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
 
       {/* ── Row 2d: Personnel ── */}
       <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>PERS</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>Personnel</span>
         {["10","11","12","21","22"].map(g => {
           const active = form.personnel === g;
           return (
@@ -3446,6 +3446,14 @@ export default function FilmDetailPage() {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
               {exchanges.map(ex => {
                 const isAccepted = ex.status === "accepted";
+                const extPlatform = (() => {
+                  if (!ex.external_url) return null;
+                  const u = ex.external_url.toLowerCase();
+                  if (u.includes("hudl.com"))   return "HUDL";
+                  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
+                  if (u.includes("vimeo.com"))  return "Vimeo";
+                  return "External";
+                })();
                 return (
                   <div key={ex.id} style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
@@ -3455,12 +3463,18 @@ export default function FilmDetailPage() {
                     border: `1px solid ${isAccepted ? "rgba(52,199,89,0.25)" : DS.border}`,
                   }}>
                     <ArrowLeftRight size={10} />
-                    {isAccepted ? "Exchange Accepted" : "Exchange Pending"}
+                    {isAccepted ? "Accepted" : "Pending"}
                     {" · "}{ex.receiving_email}
                     {isAccepted && ex.received_film_id && (
                       <a href={`/org/film/${ex.received_film_id}`}
                         style={{ color: "#34C759", textDecoration: "none", fontWeight: 800, marginLeft: 2 }}>
                         View →
+                      </a>
+                    )}
+                    {isAccepted && ex.external_url && !ex.received_film_id && (
+                      <a href={ex.external_url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#34C759", textDecoration: "none", fontWeight: 800, marginLeft: 2 }}>
+                        {extPlatform ? `View on ${extPlatform} →` : "View Link →"}
                       </a>
                     )}
                   </div>

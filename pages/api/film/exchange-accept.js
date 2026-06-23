@@ -2,11 +2,13 @@
 // Public endpoint — token IS the auth.
 //
 // GET  ?token=                              → load exchange + film preview for landing page
-// POST { token, action:"presign", email, programName, contentType }
-//                                          → presign S3 upload for non-user recipient
-// POST { token, action:"complete", s3Key, email, programName, title }
-//                                          → mark exchange accepted, notify requesting coach
-// POST { token, action:"link", filmId }    → existing CheckPeak user links their film (auth cookie)
+// POST { token, action:"presign", … }      → presign S3 upload for non-user recipient
+// POST { token, action:"complete", … }     → mark exchange accepted (file upload path)
+// POST { token, action:"link-url", … }     → mark exchange accepted (external URL path)
+// POST { token, action:"link", filmId }    → existing CheckPeak user links film (cookie auth)
+//
+// SQL — run once in Supabase before deploying:
+//   ALTER TABLE film_exchanges ADD COLUMN IF NOT EXISTS external_url text;
 
 import crypto          from "crypto";
 import nodemailer      from "nodemailer";
@@ -47,12 +49,27 @@ function getBaseUrl() {
   return "http://localhost:3000";
 }
 
-async function notifyRequestingCoach({ toEmail, fromProgramName, filmTitle, receivedFilmId, exchangeToken }) {
+function detectPlatformName(url) {
+  if (!url) return "External";
+  const u = url.toLowerCase();
+  if (u.includes("hudl.com"))                               return "HUDL";
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
+  if (u.includes("vimeo.com"))                              return "Vimeo";
+  if (u.includes("drive.google.com"))                       return "Google Drive";
+  if (u.includes("dropbox.com"))                            return "Dropbox";
+  if (u.includes("box.com"))                                return "Box";
+  return "External Link";
+}
+
+async function notifyRequestingCoach({ toEmail, fromProgramName, filmTitle, receivedFilmId, exchangeToken, externalUrl }) {
   const smtp = getSmtp();
   if (!smtp.user || !smtp.pass) return;
 
-  const baseUrl  = getBaseUrl();
-  const filmUrl  = `${baseUrl}/film-exchange/${exchangeToken}`;
+  const baseUrl    = getBaseUrl();
+  const isExternal = !!externalUrl;
+  const platform   = isExternal ? detectPlatformName(externalUrl) : null;
+  const filmUrl    = isExternal ? externalUrl : `${baseUrl}/film-exchange/${exchangeToken}`;
+  const ctaLabel   = isExternal ? `View on ${platform} →` : "View Their Film →";
 
   const html = `
     <div style="font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #0a0c12; padding: 40px 24px; max-width: 560px; margin: 0 auto;">
@@ -61,11 +78,23 @@ async function notifyRequestingCoach({ toEmail, fromProgramName, filmTitle, rece
       </div>
       <div style="background: #13151f; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); padding: 24px; margin-bottom: 24px;">
         <div style="font-size: 11px; font-weight: 800; color: #34C759; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">✓ Exchange Accepted</div>
-        <h2 style="margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #f0f2f6;">${fromProgramName} accepted your film exchange</h2>
-        <p style="margin: 0; font-size: 14px; color: #9ba8b4;">Their film for <strong style="color: #f0f2f6;">${filmTitle}</strong> is now available.</p>
+        <h2 style="margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #f0f2f6;">
+          ${fromProgramName} responded to your film exchange
+        </h2>
+        <p style="margin: 0; font-size: 14px; color: #9ba8b4;">
+          ${isExternal
+            ? `They shared their film via <strong style="color: #f0f2f6;">${platform}</strong>.`
+            : `Their film for <strong style="color: #f0f2f6;">${filmTitle}</strong> is now available.`
+          }
+        </p>
       </div>
+      ${isExternal ? `
+      <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+        <div style="font-size: 11px; font-weight: 700; color: #9ba8b4; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Shared Link</div>
+        <div style="font-size: 13px; color: #4FABFF; word-break: break-all; font-family: monospace;">${externalUrl}</div>
+      </div>` : ""}
       <a href="${filmUrl}" style="display: block; background: #4FABFF; color: #0a0c12; text-decoration: none; text-align: center; font-size: 15px; font-weight: 800; padding: 16px 24px; border-radius: 12px; margin-bottom: 20px;">
-        View Their Film →
+        ${ctaLabel}
       </a>
       <p style="margin: 0; font-size: 12px; color: #5a6a7d; text-align: center;">Powered by CheckPeak</p>
     </div>
@@ -79,8 +108,12 @@ async function notifyRequestingCoach({ toEmail, fromProgramName, filmTitle, rece
   await transporter.sendMail({
     from:    `CheckPeak Film <${smtp.from}>`,
     to:      toEmail,
-    subject: `${fromProgramName} accepted your film exchange`,
-    text:    `${fromProgramName} uploaded their film and accepted your exchange. View it here: ${filmUrl}`,
+    subject: isExternal
+      ? `${fromProgramName} shared their film via ${platform}`
+      : `${fromProgramName} accepted your film exchange`,
+    text:    isExternal
+      ? `${fromProgramName} shared their film via ${platform}: ${externalUrl}`
+      : `${fromProgramName} uploaded their film. View it here: ${filmUrl}`,
     html,
   }).catch(e => console.error("[exchange-accept] notify email failed:", e));
 }
@@ -93,7 +126,7 @@ async function getExchange(req, res) {
 
   const { data: exchange, error } = await supabase
     .from("film_exchanges")
-    .select("id, requesting_org_id, requesting_org_name, requesting_film_id, receiving_email, receiving_org_id, received_film_id, message, status, created_at")
+    .select("id, requesting_org_id, requesting_org_name, requesting_film_id, receiving_email, receiving_org_id, received_film_id, external_url, message, status, created_at")
     .eq("token", token)
     .single();
 
@@ -119,7 +152,7 @@ async function getExchange(req, res) {
   const passes     = plays?.filter(p => p.play_type === "pass").length ?? 0;
   const tds        = plays?.filter(p => p.result === "td").length ?? 0;
 
-  // Load received film if already accepted
+  // Load received film if already accepted via upload
   let receivedFilm = null;
   if (exchange.received_film_id) {
     const { data: rf } = await supabase
@@ -138,6 +171,7 @@ async function getExchange(req, res) {
       requestingOrgName: exchange.requesting_org_name,
       receivingEmail:    exchange.receiving_email,
       message:           exchange.message,
+      externalUrl:       exchange.external_url ?? null,
       createdAt:         exchange.created_at,
     },
     film: film ? {
@@ -166,23 +200,18 @@ async function presignUpload(req, res) {
     .single();
 
   if (!exchange) return res.status(404).json({ error: "Exchange not found" });
-  if (exchange.status === "accepted") return res.status(409).json({ error: "Exchange already accepted" });
+  if (exchange.status === "accepted") return res.status(409).json({ error: "Exchange already completed" });
 
-  // Generate a unique film id and S3 key for the upload
   const uploadId = crypto.randomUUID();
   const s3Key    = `exchange/${uploadId}.mp4`;
 
-  const command   = new PutObjectCommand({
-    Bucket:      BUCKET,
-    Key:         s3Key,
-    ContentType: contentType,
-  });
+  const command   = new PutObjectCommand({ Bucket: BUCKET, Key: s3Key, ContentType: contentType });
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 7200 });
 
   return res.status(200).json({ ok: true, uploadUrl, s3Key, uploadId });
 }
 
-// ── POST: complete exchange after upload ──────────────────────────────────────
+// ── POST: complete exchange after file upload ─────────────────────────────────
 
 async function completeExchange(req, res) {
   const { token, s3Key, email, programName, title } = req.body;
@@ -199,7 +228,6 @@ async function completeExchange(req, res) {
   if (!exchange) return res.status(404).json({ error: "Exchange not found" });
   if (exchange.status === "accepted") return res.status(409).json({ error: "Already accepted" });
 
-  // Get requesting film title for the notification email
   const { data: reqFilm } = await supabase
     .from("game_films")
     .select("title, opponent")
@@ -208,33 +236,29 @@ async function completeExchange(req, res) {
 
   const reqFilmTitle = reqFilm?.title || (reqFilm?.opponent ? `vs ${reqFilm.opponent}` : "their game film");
 
-  // Create a ghost film record for the uploaded video
   const { data: newFilm, error: filmErr } = await supabase
     .from("game_films")
     .insert({
-      org_id:       null,                    // no org yet — linked via exchange
-      title:        title?.trim() || (programName ? `${programName} Film` : "Exchange Film"),
-      status:       "uploading",
-      s3_key_raw:   s3Key,
+      org_id:     null,
+      title:      title?.trim() || (programName ? `${programName} Film` : "Exchange Film"),
+      status:     "uploading",
+      s3_key_raw: s3Key,
     })
     .select("id")
     .single();
 
   if (filmErr) throw filmErr;
 
-  // Mark exchange accepted
   await supabase
     .from("film_exchanges")
     .update({
-      status:          "accepted",
+      status:           "accepted",
       received_film_id: newFilm.id,
       receiving_email:  cleanEmail || undefined,
       accepted_at:      new Date().toISOString(),
     })
     .eq("id", exchange.id);
 
-  // Kick off Mux processing for the uploaded video
-  // (reuse the same webhook-based pipeline — s3_key_raw triggers it)
   try {
     await fetch(`${getBaseUrl()}/api/film/process`, {
       method:  "POST",
@@ -245,7 +269,6 @@ async function completeExchange(req, res) {
     console.warn("[exchange-accept] process trigger failed (non-fatal):", e);
   }
 
-  // Notify requesting coach
   const { data: reqOrg } = await supabase
     .from("organizations")
     .select("email, name")
@@ -254,24 +277,82 @@ async function completeExchange(req, res) {
 
   if (reqOrg?.email) {
     await notifyRequestingCoach({
-      toEmail:        reqOrg.email,
+      toEmail:         reqOrg.email,
       fromProgramName: programName || cleanEmail || "Your opponent",
-      filmTitle:      reqFilmTitle,
-      receivedFilmId: newFilm.id,
-      exchangeToken:  exchange.token,
+      filmTitle:       reqFilmTitle,
+      receivedFilmId:  newFilm.id,
+      exchangeToken:   exchange.token,
     });
   }
 
   return res.status(200).json({ ok: true, filmId: newFilm.id });
 }
 
-// ── POST: existing user links their film ──────────────────────────────────────
+// ── POST: accept via external link (HUDL, YouTube, Vimeo, etc.) ──────────────
+
+async function linkExternalUrl(req, res) {
+  const { token, externalUrl, email, programName } = req.body;
+  if (!token)       return res.status(400).json({ error: "token required" });
+  if (!externalUrl) return res.status(400).json({ error: "externalUrl required" });
+
+  try { new URL(externalUrl.trim()); }
+  catch { return res.status(400).json({ error: "Invalid URL — paste a full shareable link (e.g. https://…)" }); }
+
+  const { data: exchange } = await supabase
+    .from("film_exchanges")
+    .select("id, requesting_org_id, requesting_film_id, status, token")
+    .eq("token", token)
+    .single();
+
+  if (!exchange)                       return res.status(404).json({ error: "Exchange not found" });
+  if (exchange.status === "accepted")  return res.status(409).json({ error: "Exchange already completed" });
+
+  const cleanEmail = String(email || "").trim().toLowerCase();
+
+  await supabase
+    .from("film_exchanges")
+    .update({
+      status:          "accepted",
+      external_url:    externalUrl.trim(),
+      receiving_email: cleanEmail || undefined,
+      accepted_at:     new Date().toISOString(),
+    })
+    .eq("id", exchange.id);
+
+  const { data: reqFilm } = await supabase
+    .from("game_films")
+    .select("title, opponent")
+    .eq("id", exchange.requesting_film_id)
+    .single();
+
+  const reqFilmTitle = reqFilm?.title || (reqFilm?.opponent ? `vs ${reqFilm.opponent}` : "game film");
+
+  const { data: reqOrg } = await supabase
+    .from("organizations")
+    .select("email")
+    .eq("token", exchange.requesting_org_id)
+    .maybeSingle();
+
+  if (reqOrg?.email) {
+    await notifyRequestingCoach({
+      toEmail:         reqOrg.email,
+      fromProgramName: programName || cleanEmail || "Your opponent",
+      filmTitle:       reqFilmTitle,
+      receivedFilmId:  null,
+      exchangeToken:   exchange.token,
+      externalUrl:     externalUrl.trim(),
+    });
+  }
+
+  return res.status(200).json({ ok: true });
+}
+
+// ── POST: existing CheckPeak user links their film ───────────────────────────
 
 async function linkFilm(req, res) {
   const { token, filmId } = req.body;
   if (!token || !filmId) return res.status(400).json({ error: "token and filmId required" });
 
-  // Auth via cookie
   const user  = readUserCookie(req);
   if (!user)  return res.status(401).json({ error: "Sign in to link your film" });
   const orgId = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
@@ -281,9 +362,9 @@ async function linkFilm(req, res) {
     supabase.from("game_films").select("id, org_id, title, opponent").eq("id", filmId).single(),
   ]);
 
-  if (!exchange)            return res.status(404).json({ error: "Exchange not found" });
-  if (exchange.status === "accepted") return res.status(409).json({ error: "Already accepted" });
-  if (!film || film.org_id !== orgId) return res.status(403).json({ error: "Film not found in your library" });
+  if (!exchange)                          return res.status(404).json({ error: "Exchange not found" });
+  if (exchange.status === "accepted")     return res.status(409).json({ error: "Already accepted" });
+  if (!film || film.org_id !== orgId)     return res.status(403).json({ error: "Film not found in your library" });
 
   await supabase
     .from("film_exchanges")
@@ -295,7 +376,6 @@ async function linkFilm(req, res) {
     })
     .eq("id", exchange.id);
 
-  // Notify requesting coach
   const { data: reqOrg } = await supabase
     .from("organizations")
     .select("email")
@@ -334,10 +414,11 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const { action } = req.body ?? {};
-      if (action === "presign")  return await presignUpload(req, res);
-      if (action === "complete") return await completeExchange(req, res);
-      if (action === "link")     return await linkFilm(req, res);
-      return res.status(400).json({ error: "action required: presign | complete | link" });
+      if (action === "presign")   return await presignUpload(req, res);
+      if (action === "complete")  return await completeExchange(req, res);
+      if (action === "link-url")  return await linkExternalUrl(req, res);
+      if (action === "link")      return await linkFilm(req, res);
+      return res.status(400).json({ error: "action required: presign | complete | link-url | link" });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

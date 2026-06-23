@@ -151,7 +151,7 @@ async function getExchanges(req, res, orgId) {
 
   const { data: exchanges, error } = await supabase
     .from("film_exchanges")
-    .select("id, receiving_email, receiving_org_id, received_film_id, message, status, created_at, accepted_at")
+    .select("id, receiving_email, receiving_org_id, received_film_id, external_url, message, status, created_at, accepted_at")
     .eq("requesting_film_id", filmId)
     .eq("requesting_org_id", orgId)
     .order("created_at", { ascending: false });

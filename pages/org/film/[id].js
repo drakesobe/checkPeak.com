@@ -722,6 +722,27 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
           style={{ width: mob ? 52 : 48, padding: mob ? "8px 6px" : "5px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
       </div>
 
+      {/* ── Row 2d: Personnel ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>PERS</span>
+        {["10","11","12","21","22"].map(g => {
+          const active = form.personnel === g;
+          return (
+            <button key={g} onClick={() => set("personnel", active ? "" : g)}
+              style={{
+                flex: mob ? 1 : "none",
+                padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 12 : 11, fontWeight: 800,
+                borderRadius: 6, cursor: "pointer",
+                border: `1.5px solid ${active ? DS.brand : "rgba(255,255,255,0.12)"}`,
+                background: active ? DS.brandBg : "rgba(255,255,255,0.05)",
+                color: active ? DS.brand : "rgba(255,255,255,0.45)",
+              }}>
+              {g}
+            </button>
+          );
+        })}
+      </div>
+
       {/* ── Row 3: Save · Skip · Speed · Undo ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
         <button onClick={savePlay} disabled={saving || (!editingPlay && !snapSet)}
@@ -790,27 +811,6 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
 
         {showMore && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", paddingTop: 4 }}>
-
-            {/* Row A1: Personnel (always one row — 5 buttons fit easily) */}
-            <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>
-              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>PERS</span>
-              {["10","11","12","21","22"].map(g => {
-                const active = form.personnel === g;
-                return (
-                  <button key={g} onClick={() => set("personnel", active ? "" : g)}
-                    style={{
-                      flex: mob ? 1 : "none",
-                      padding: mob ? "7px 4px" : "5px 10px", fontSize: mob ? 12 : 11, fontWeight: 800,
-                      borderRadius: 6, cursor: "pointer",
-                      border: `1.5px solid ${active ? DS.brand : "rgba(255,255,255,0.12)"}`,
-                      background: active ? DS.brandBg : "rgba(255,255,255,0.05)",
-                      color: active ? DS.brand : "rgba(255,255,255,0.45)",
-                    }}>
-                    {g}
-                  </button>
-                );
-              })}
-            </div>
 
             {/* Row A2: Hash + Yard line (always one row — 5 buttons + YD input) */}
             <div style={{ display: "flex", alignItems: "center", gap: mob ? 5 : 6 }}>

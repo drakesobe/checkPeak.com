@@ -347,43 +347,11 @@ function PlayTimeline({ plays, duration, currentTime, snapTime, onSeek }) {
 }
 
 // ── Workflow Banner ───────────────────────────────────────────────────────────
-function WorkflowBanner({ plays, isAnalyzing, hasAnalysis, canSubmit, submitting, onSubmit, onStartTagging, isMobile }) {
+function WorkflowBanner({ plays, isMobile }) {
   const playCount = plays.length;
 
-  // ── Mobile: single-line strips ────────────────────────────────────────────
   if (isMobile) {
-    if (hasAnalysis) {
-      return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
-          <CheckCircle2 size={14} color={DS.safe} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: DS.safe }}>Analysis complete — {playCount} plays</span>
-        </div>
-      );
-    }
-    if (isAnalyzing) {
-      return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
-          <Loader2 size={14} color="#2563eb" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#1e40af" }}>Analyzing {playCount} plays…</span>
-        </div>
-      );
-    }
-    if (canSubmit) {
-      return (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: DS.bodyText, flex: 1 }}>{playCount} play{playCount !== 1 ? "s" : ""} tagged</span>
-          <button onClick={onSubmit} disabled={submitting} style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            background: DS.brand, border: "none", borderRadius: 7, padding: "7px 14px",
-            color: "#fff", fontSize: 12, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer", flexShrink: 0,
-          }}>
-            {submitting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Sparkles size={12} />}
-            {submitting ? "…" : "Analyze"}
-          </button>
-        </div>
-      );
-    }
-    // Step 1: no plays yet — just a tiny hint bar
+    if (playCount > 0) return null;
     return (
       <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10 }}>
         <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
@@ -393,60 +361,30 @@ function WorkflowBanner({ plays, isAnalyzing, hasAnalysis, canSubmit, submitting
     );
   }
 
-  // ── Desktop: full 3-step card ─────────────────────────────────────────────
-  const step = isAnalyzing ? 3 : hasAnalysis ? 4 : playCount > 0 ? 2 : 1;
+  if (playCount > 0) return null;
 
   const steps = [
     { n: 1, label: "Upload",    done: true },
-    { n: 2, label: `Tag Plays${playCount > 0 ? ` (${playCount})` : ""}`, done: playCount > 0 || isAnalyzing || hasAnalysis },
-    { n: 3, label: "Analyze",   done: hasAnalysis },
+    { n: 2, label: "Tag Plays", done: false },
   ];
-
-  if (hasAnalysis) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
-        <CheckCircle2 size={18} color={DS.safe} style={{ flexShrink: 0 }} />
-        <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.safe }}>Analysis Complete</p>
-          <p style={{ margin: 0, fontSize: 12, color: DS.safe, opacity: 0.8 }}>{playCount} plays with AI player tracking data</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isAnalyzing) {
-    return (
-      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <Loader2 size={16} color="#2563eb" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
-            AI analyzing {playCount} plays — player tracking in progress
-          </p>
-        </div>
-        <p style={{ margin: 0, fontSize: 12, color: "#3b82f6" }}>
-          Rekognition is tracking every player on every play. This takes a few minutes. You&apos;ll see data appear here when it&apos;s ready.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: canSubmit ? 14 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 12 }}>
         {steps.map((s, i) => (
           <div key={s.n} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : "none" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{
                 width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
-                background: s.done ? DS.brand : step === s.n ? DS.brandBg : DS.pageBg,
-                border: `2px solid ${s.done ? DS.brand : step === s.n ? DS.brand : DS.border}`,
+                background: s.done ? DS.brand : DS.pageBg,
+                border: `2px solid ${s.done ? DS.brand : DS.brand}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
                 {s.done
                   ? <CheckCircle2 size={12} color="#fff" strokeWidth={3} />
-                  : <span style={{ fontSize: 10, fontWeight: 800, color: step === s.n ? DS.brand : DS.dimText }}>{s.n}</span>}
+                  : <span style={{ fontSize: 10, fontWeight: 800, color: DS.brand }}>{s.n}</span>}
               </div>
-              <span style={{ fontSize: 12, fontWeight: step === s.n ? 700 : 500, color: s.done ? DS.brand : step === s.n ? DS.bodyText : DS.dimText, whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 12, fontWeight: s.done ? 500 : 700, color: s.done ? DS.brand : DS.bodyText, whiteSpace: "nowrap" }}>
                 {s.label}
               </span>
             </div>
@@ -456,36 +394,9 @@ function WorkflowBanner({ plays, isAnalyzing, hasAnalysis, canSubmit, submitting
           </div>
         ))}
       </div>
-
-      {playCount === 0 && (
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${DS.border}` }}>
-          <p style={{ margin: "0 0 2px", fontSize: 12, fontWeight: 600, color: DS.bodyText }}>Tag plays below the video to get started</p>
-          <p style={{ margin: 0, fontSize: 11, color: DS.labelText }}>Press <strong>S</strong> to mark snap · <strong>W</strong> to mark end · <strong>↵</strong> to save</p>
-        </div>
-      )}
-
-      {canSubmit && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 14, borderTop: `1px solid ${DS.border}` }}>
-          <div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: DS.bodyText }}>
-              {playCount} play{playCount !== 1 ? "s" : ""} tagged — ready for AI analysis
-            </p>
-            <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
-              Submit to run player tracking, formation detection, and EPA on every play.
-            </p>
-          </div>
-          <button onClick={onSubmit} disabled={submitting} style={{
-            display: "inline-flex", alignItems: "center", gap: 7, flexShrink: 0,
-            background: DS.brand, border: "none", borderRadius: 9, padding: "10px 20px",
-            color: "#fff", fontSize: 13, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer",
-            opacity: submitting ? 0.7 : 1,
-          }}>
-            {submitting
-              ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>
-              : <><Sparkles size={14} /> Submit for Analysis</>}
-          </button>
-        </div>
-      )}
+      <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
+        Press <strong>S</strong> to mark snap · <strong>W</strong> to mark end · <strong>↵</strong> to save
+      </p>
     </div>
   );
 }
@@ -1237,7 +1148,7 @@ function PlayerMetricsRow({ tracks = [], roster, highlightJersey, onHighlight })
 }
 
 // ── Jersey Confirm Panel ──────────────────────────────────────────────────────
-function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown, jerseyScanning }) {
+function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown }) {
   const [tracks,        setTracks]        = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(null);
@@ -1259,13 +1170,6 @@ function JerseyConfirmPanel({ filmId, roster, onAllConfirmed, onCountKnown, jers
   }, [filmId, onAllConfirmed, onCountKnown]);
 
   useEffect(() => { load(); }, [load]);
-
-  // When jersey scan completes (jerseyScanning flips from true → false), reload the list
-  const prevScanning = useRef(false);
-  useEffect(() => {
-    if (prevScanning.current && !jerseyScanning) load();
-    prevScanning.current = jerseyScanning ?? false;
-  }, [jerseyScanning, load]);
 
   async function confirm(trackId) {
     const track    = tracks.find(t => t.rekognition_track_id === trackId);
@@ -2860,71 +2764,13 @@ function PStep({ done, active, n, label }) {
 function PConn({ active }) {
   return <div style={{ width: 20, height: 2, margin: "0 4px", flexShrink: 0, background: active ? DS.safeBorder : DS.border, borderRadius: 1 }} />;
 }
-function PipelineStatusBar({ film, plays, hasAnalysis, isAnalyzing, submitting, canSubmit, onSubmit, analyzedCount }) {
-  const uploading = film?.status === "uploading" || film?.status === "transcoding";
-  const failed    = film?.status === "failed";
-  if (uploading) {
-    return (
-      <div style={{ background: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}`, padding: "9px 20px" }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
-          <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>Processing video — you can tag plays once it's ready.</span>
-        </div>
-      </div>
-    );
-  }
-  const s1 = true;
-  const s2 = plays.length > 0;
-  const s3 = isAnalyzing || hasAnalysis || film?.status === "complete";
-  const s4 = hasAnalysis;
-  if (s4 && !failed) return null;
+function PipelineStatusBar({ film, plays }) {
+  if (film?.status !== "uploading") return null;
   return (
-    <div style={{ background: s3 ? "rgba(0,135,62,0.04)" : DS.brandBg, borderBottom: `1px solid ${s3 ? DS.safeBorder : DS.brandBorder}`, padding: "12px 20px" }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 0, flexWrap: "wrap", rowGap: 8 }}>
-          <PStep done={s1} active={false} n="1" label="Film Uploaded" />
-          <PConn active={s1} />
-          <PStep done={s2} active={s1 && !s2} n="2" label={s2 ? `${plays.length} Play${plays.length !== 1 ? "s" : ""} Tagged` : "Tag Plays"} />
-          <PConn active={s2} />
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <PStep done={s3} active={s2 && !s3} n="3" label={isAnalyzing ? "Submitted for AI" : "Submit for AI"} />
-            {s2 && !s3 && !failed && (
-              <button
-                onClick={onSubmit}
-                disabled={submitting || !canSubmit}
-                style={{
-                  background: DS.brand, color: "#fff", border: "none",
-                  borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700,
-                  cursor: (submitting || !canSubmit) ? "not-allowed" : "pointer",
-                  opacity: (submitting || !canSubmit) ? 0.7 : 1,
-                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-                }}>
-                {submitting
-                  ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>
-                  : <><Sparkles size={12} /> Submit for AI Analysis</>}
-              </button>
-            )}
-          </div>
-          <PConn active={s3} />
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <PStep done={s4} active={isAnalyzing} n="4" label={isAnalyzing ? "AI Analyzing…" : "AI Analysis"} />
-            {isAnalyzing && (
-              <>
-                <Loader2 size={12} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
-                {analyzedCount > 0
-                  ? <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{analyzedCount}/{plays.length} plays</span>
-                  : (film?.progressPct ?? 0) > 0
-                    ? <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{film.progressPct}%</span>
-                    : null}
-              </>
-            )}
-          </div>
-        </div>
-        {failed && (
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: DS.warn }}>
-            Analysis failed. Use Retry from the Films list, or re-tag plays and resubmit.
-          </p>
-        )}
+    <div style={{ background: DS.brandBg, borderBottom: `1px solid ${DS.brandBorder}`, padding: "9px 20px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+        <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite" }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>Uploading video — you can tag plays once it&apos;s ready.</span>
       </div>
     </div>
   );
@@ -2945,14 +2791,12 @@ export default function FilmDetailPage() {
   const [whistleTime,  setWhistleTime]  = useState(null);
   const [filmDuration, setFilmDuration] = useState(null);
   const [speed,        setSpeed]        = useState(1);
-  const [submitting,   setSubmitting]   = useState(false);
+
   const [tab,          setTab]          = useState("plays");
   const [selPlay,      setSelPlay]      = useState(null);
   const [videoTime,    setVideoTime]    = useState(0);
   const [hlJersey,     setHlJersey]     = useState(null);
   const [unconfCount,    setUnconfCount]    = useState(0);
-  const [jerseyScanning, setJerseyScanning] = useState(false);
-  const [jerseyScanned,  setJerseyScanned]  = useState(false);
   const [copied,       setCopied]       = useState(false);
   const [analytics,    setAnalytics]    = useState(null);
   const [isMobile,     setIsMobile]     = useState(false);
@@ -3036,27 +2880,6 @@ export default function FilmDetailPage() {
     fetchAnalytics();
   }, [fetchPlays, fetchAnalytics]);
 
-  const runJerseyScan = useCallback(async () => {
-    if (jerseyScanning || jerseyScanned) return;
-    setJerseyScanning(true);
-    try {
-      const r = await fetch("/api/film/jersey-scan", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: id }),
-      });
-      const d = await r.json();
-      if (r.ok) {
-        setJerseyScanned(true);
-        // Re-fetch unconfirmed to reflect newly filled jersey numbers
-        // JerseyConfirmPanel will reload via its own load() call on next render
-        if (d.updated > 0) {
-          toast.success(`Claude identified ${d.updated} jersey${d.updated !== 1 ? "s" : ""} across ${d.scanned} plays.`);
-        }
-      }
-    } catch {}
-    setJerseyScanning(false);
-  }, [id, jerseyScanning, jerseyScanned]);
 
   // Initial load
   useEffect(() => {
@@ -3074,67 +2897,31 @@ export default function FilmDetailPage() {
     });
   }, [id, fetchFilm, fetchPlays, fetchAnalytics, fetchVideoUrl]);
 
-  async function handleSubmit() {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const r = await fetch("/api/film/submit", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: id }),
-      });
-      const d = await r.json();
-      if (r.ok) {
-        setFilm(prev => ({ ...prev, status: "analyzing", progressPct: 0 }));
-        setSnapTime(null); setWhistleTime(null);
-        fetchAnalytics();
-        const excluded = d.excludedCount ?? 0;
-        if (excluded > 0) {
-          toast(`${d.playCount} play${d.playCount !== 1 ? "s" : ""} sent for AI analysis. ${excluded} skipped — no snap timestamp. Press S while watching to mark them.`, { duration: 7000, icon: "⚠️" });
-        } else {
-          toast.success(`${d.playCount} play${d.playCount !== 1 ? "s" : ""} submitted for AI analysis!`);
-        }
-      } else {
-        setPageError(d.error ?? "Submit failed");
-      }
-    } catch { setPageError("Network error — please try again"); }
-    setSubmitting(false);
-  }
-
-  // Polling while processing (including analyzing = submitted for AI)
-  const ACTIVE_STATUSES = ["uploading", "transcoding", "analyzing", "tagging"];
+  // Poll while uploading to catch the transition to ready
   useEffect(() => {
-    const processing = film && ACTIVE_STATUSES.includes(film.status);
-    if (processing && !pollRef.current) {
+    const uploading = film?.status === "uploading";
+    if (uploading && !pollRef.current) {
       pollRef.current = setInterval(async () => {
         const r = await fetch(`/api/film/status?filmId=${id}`, { credentials: "include" });
         const d = await r.json();
         if (r.ok) {
           setFilm(d);
-          if (!ACTIVE_STATUSES.includes(d.status)) {
-            // Analysis finished — do a final full refresh then kick off jersey scan
+          if (d.status !== "uploading") {
             clearInterval(pollRef.current); pollRef.current = null;
             fetchPlays();
             fetchAnalytics();
             if (!d.muxPlaybackId) fetchVideoUrl();
-            if (d.status === "complete") runJerseyScan();
-          } else if (d.status === "analyzing") {
-            // While analyzing, pull plays on every tick so results appear play by play
-            fetchPlays();
           }
         }
       }, 5000);
     }
-    if (!processing && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (!uploading && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [film?.status, id, fetchPlays, fetchVideoUrl, fetchAnalytics, runJerseyScan]);
+  }, [film?.status, id, fetchPlays, fetchVideoUrl, fetchAnalytics]);
 
   const selTracks    = useMemo(() => Array.isArray(selPlay?.player_tracks) ? selPlay.player_tracks : [], [selPlay]);
-  const isProcessing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
-  const isAnalyzing  = film?.status === "analyzing";
+  const isProcessing = film?.status === "uploading";
   const hasAnalysis  = plays.some(p => Array.isArray(p.player_tracks) && p.player_tracks.length > 0);
-  const canSubmit    = plays.length > 0 && !isAnalyzing && !hasAnalysis;
-  const analyzedCount = useMemo(() => plays.filter(p => (p.player_tracks ?? []).length > 0).length, [plays]);
 
   async function undoLastPlay() {
     if (!plays.length) return;
@@ -3373,13 +3160,11 @@ export default function FilmDetailPage() {
             {!isMobile && film && (
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,
-                background: hasAnalysis ? DS.safeBg : isAnalyzing ? DS.brandBg : plays.length > 0 ? "#FFF7ED" : DS.brandBg,
-                color:      hasAnalysis ? DS.safe   : isAnalyzing ? DS.brand   : plays.length > 0 ? DS.caution : DS.brand,
+                background: plays.length > 0 ? DS.safeBg : DS.brandBg,
+                color:      plays.length > 0 ? DS.safe   : DS.brand,
               }}>
-                {hasAnalysis      ? "Analysis Complete"
-                : isAnalyzing    ? "AI Analyzing…"
-                : plays.length > 0 ? "Ready to Submit"
-                : isProcessing   ? `${cap(film.status)}…`
+                {isProcessing    ? "Uploading…"
+                : plays.length > 0 ? `${plays.length} Play${plays.length !== 1 ? "s" : ""}`
                 : "Tag Plays"}
               </span>
             )}
@@ -3415,16 +3200,7 @@ export default function FilmDetailPage() {
         )}
 
         {/* ── Pipeline status ── */}
-        <PipelineStatusBar
-          film={film}
-          plays={plays}
-          hasAnalysis={hasAnalysis}
-          isAnalyzing={isAnalyzing}
-          submitting={submitting}
-          canSubmit={canSubmit}
-          onSubmit={handleSubmit}
-          analyzedCount={analyzedCount}
-        />
+        <PipelineStatusBar film={film} plays={plays} />
 
         {/* ── Game metadata bar ── */}
         {film && !isProcessing && (film.game_date || film.sport || film.home_team || film.away_team) && (
@@ -3488,16 +3264,7 @@ export default function FilmDetailPage() {
           {tab === "plays" && (
             <>
               {/* ── Workflow progress ── */}
-              <WorkflowBanner
-                plays={plays}
-                isAnalyzing={isAnalyzing}
-                hasAnalysis={hasAnalysis}
-                canSubmit={canSubmit}
-                submitting={submitting}
-                onSubmit={handleSubmit}
-                onStartTagging={null}
-                isMobile={isMobile}
-              />
+              <WorkflowBanner plays={plays} isMobile={isMobile} />
 
               {/* Page-level error (replaces alert()) */}
               {pageError && (
@@ -3621,12 +3388,6 @@ export default function FilmDetailPage() {
                       />
                     </div>
 
-                    {!isFullscreen && isAnalyzing && selPlay && selTracks.length === 0 && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 10 }}>
-                        <Loader2 size={13} color={DS.brand} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: DS.brand }}>Analyzing Play #{selPlay.play_number}… results will appear here</span>
-                      </div>
-                    )}
 
                     {!isFullscreen && selTracks.some(t => t.snap_x != null) && (
                       <div>
@@ -3696,40 +3457,12 @@ export default function FilmDetailPage() {
           {tab === "players" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-              {/* Jersey scan status banner */}
-              {jerseyScanning && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 12, padding: "12px 16px" }}>
-                  <Loader2 size={15} color={DS.brand} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: DS.brand }}>Claude is scanning jersey numbers…</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.labelText }}>Analyzing each play frame — this takes about 60 seconds</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Manual scan trigger — shown on complete films that haven't been scanned */}
-              {!jerseyScanning && !jerseyScanned && film?.status === "complete" && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "12px 16px" }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: DS.bodyText }}>AI Jersey Detection</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.labelText }}>Claude Vision reads jersey numbers from each play — runs once per film</p>
-                  </div>
-                  <button
-                    onClick={runJerseyScan}
-                    style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 12, cursor: "pointer", flexShrink: 0 }}
-                  >
-                    Scan Now
-                  </button>
-                </div>
-              )}
-
               <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, padding: "20px 20px" }}>
                 <JerseyConfirmPanel
                   filmId={id}
                   roster={roster}
                   onAllConfirmed={handleAllConfirmed}
                   onCountKnown={setUnconfCount}
-                  jerseyScanning={jerseyScanning}
                 />
               </div>
 

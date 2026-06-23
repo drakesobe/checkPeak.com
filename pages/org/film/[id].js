@@ -12,6 +12,7 @@ import {
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
   X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
   Trash2, ChevronRight, ChevronUp, ChevronDown, SkipForward, SkipBack, Bookmark,
+  ArrowLeftRight, Send, Clock, CheckCircle,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -2163,6 +2164,131 @@ function ShareModal({ film, playlists, onClose }) {
   );
 }
 
+// ── Exchange Modal ────────────────────────────────────────────────────────────
+function ExchangeModal({ film, onClose, onSent }) {
+  const [email,   setEmail]   = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState("");
+  const [sent,    setSent]    = useState(null); // { inSystem, receivingOrgName }
+
+  const filmTitle = film?.title || (film?.opponent ? `vs ${film.opponent}` : "Game Film");
+  const playCount = film?.play_count ?? 0;
+
+  async function send() {
+    if (!email.includes("@")) { setErr("Enter a valid email address"); return; }
+    setLoading(true); setErr("");
+    try {
+      const r = await fetch("/api/film/exchange", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: film?.id, receivingEmail: email.trim().toLowerCase(), message: message.trim() }),
+      });
+      const d = await r.json();
+      if (!d.ok) { setErr(d.error ?? "Failed to send request"); setLoading(false); return; }
+      setSent({ inSystem: d.inSystem, receivingOrgName: d.receivingOrgName });
+      onSent?.();
+    } catch { setErr("Network error — please try again"); }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: DS.cardBg, borderRadius: 20, padding: "26px 26px 22px", maxWidth: 460, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.25)" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ArrowLeftRight size={18} color={DS.brand} />
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: DS.bodyText }}>Exchange Film</h2>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 20, lineHeight: 1 }}>✕</button>
+        </div>
+
+        {sent ? (
+          /* ── Sent confirmation ── */
+          <div style={{ textAlign: "center", padding: "16px 0 8px" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 28, background: "rgba(52,199,89,0.12)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <CheckCircle size={28} color="#34C759" />
+            </div>
+            <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 800, color: DS.bodyText }}>Request Sent</h3>
+            <p style={{ margin: "0 0 20px", fontSize: 14, color: DS.labelText, lineHeight: 1.6 }}>
+              {sent.receivingOrgName
+                ? <><strong style={{ color: DS.bodyText }}>{sent.receivingOrgName}</strong> is already on CheckPeak and will be notified.</>
+                : <>An email has been sent to <strong style={{ color: DS.bodyText }}>{email}</strong> with a link to view your film and upload theirs.</>
+              }
+            </p>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.06)", borderRadius: 20, padding: "5px 14px" }}>
+              <Clock size={12} color={DS.dimText} />
+              <span style={{ fontSize: 12, color: DS.dimText, fontWeight: 600 }}>Pending response</span>
+            </div>
+            <div style={{ marginTop: 22 }}>
+              <button onClick={onClose} style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 10, padding: "11px 32px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── Form ── */
+          <>
+            {/* You're offering */}
+            <div style={{ background: DS.sectionBg ?? "rgba(255,255,255,0.04)", borderRadius: 12, padding: "14px 16px", marginBottom: 20, border: `1px solid ${DS.border}` }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: DS.brand, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>You're offering</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: DS.bodyText, marginBottom: 2 }}>{filmTitle}</div>
+              {film?.game_date && (
+                <div style={{ fontSize: 12, color: DS.labelText, marginBottom: 8 }}>
+                  {new Date(film.game_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                </div>
+              )}
+              {playCount > 0 && (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, background: DS.brandBg, borderRadius: 8, padding: "3px 9px" }}>
+                  <Tag size={11} color={DS.brand} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>{playCount} plays tagged</span>
+                </div>
+              )}
+            </div>
+
+            {/* Opposing coach email */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                Opposing Coach's Email
+              </label>
+              <input
+                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="coach@school.edu"
+                style={{ width: "100%", boxSizing: "border-box", background: DS.inputBg ?? "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "11px 14px", fontSize: 14, color: DS.bodyText, outline: "none" }}
+                onKeyDown={e => e.key === "Enter" && send()}
+              />
+            </div>
+
+            {/* Optional message */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                Message <span style={{ color: DS.dimText, fontWeight: 500, textTransform: "none" }}>(optional)</span>
+              </label>
+              <textarea
+                value={message} onChange={e => setMessage(e.target.value)}
+                placeholder={`Hey Coach — here's our film from last week. Looking forward to the game!`}
+                rows={3}
+                style={{ width: "100%", boxSizing: "border-box", background: DS.inputBg ?? "#f8fafc", border: `1.5px solid ${DS.border}`, borderRadius: 10, padding: "11px 14px", fontSize: 13, color: DS.bodyText, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+              />
+            </div>
+
+            {err && <p style={{ margin: "0 0 14px", fontSize: 13, color: "#EF4444", fontWeight: 600 }}>{err}</p>}
+
+            <button
+              onClick={send} disabled={loading || !email}
+              style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", cursor: loading || !email ? "not-allowed" : "pointer", background: email ? DS.brand : "rgba(255,255,255,0.1)", color: email ? "#fff" : DS.dimText, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Sending…" : <><Send size={14} /> Send Exchange Request</>}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Tendency Report ───────────────────────────────────────────────────────────
 function TendencyReport({ plays, analytics }) {
   const data = useMemo(() => {
@@ -2867,6 +2993,8 @@ export default function FilmDetailPage() {
   const [addMenuPlay,  setAddMenuPlay]  = useState(null);   // play that has the menu open
   const [drawMode,     setDrawMode]     = useState(false);
   const [showShare,    setShowShare]    = useState(false);
+  const [showExchange, setShowExchange] = useState(false);
+  const [exchanges,    setExchanges]    = useState([]);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [showOverlay,   setShowOverlay]   = useState(true);
   const [teleStrokes,   setTeleStrokes]   = useState([]);
@@ -2934,6 +3062,15 @@ export default function FilmDetailPage() {
     } catch {}
   }, [id]);
 
+  const fetchExchanges = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch(`/api/film/exchange?filmId=${id}`, { credentials: "include" });
+      const d = await r.json();
+      if (d.ok) setExchanges(d.exchanges ?? []);
+    } catch {}
+  }, [id]);
+
   const handleAllConfirmed = useCallback(() => {
     setUnconfCount(0);
     fetchPlays();
@@ -2949,6 +3086,7 @@ export default function FilmDetailPage() {
       fetchPlays(),
       fetchAnalytics(),
       fetchPlaylists(),
+      fetchExchanges(),
       fetch("/api/film/roster", { credentials: "include" }).then(r => r.json()).then(d => setRoster(d.players ?? [])),
     ]).then(([filmData]) => {
       setLoading(false);
@@ -3291,12 +3429,59 @@ export default function FilmDetailPage() {
               }}>
               <Share2 size={13} />{!isMobile && " Share"}
             </button>
+
+            {/* Exchange film */}
+            <button onClick={() => setShowExchange(true)}
+              style={{
+                background: "none", border: `1.5px solid ${DS.border}`, color: DS.labelText,
+                borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px", fontSize: 12, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+              }}>
+              <ArrowLeftRight size={13} />{!isMobile && " Exchange"}
+            </button>
           </div>
+
+          {/* Exchange status pills — show when there are any exchanges */}
+          {exchanges.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+              {exchanges.map(ex => {
+                const isAccepted = ex.status === "accepted";
+                return (
+                  <div key={ex.id} style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                    background: isAccepted ? "rgba(52,199,89,0.1)" : "rgba(255,255,255,0.05)",
+                    color: isAccepted ? "#34C759" : DS.dimText,
+                    border: `1px solid ${isAccepted ? "rgba(52,199,89,0.25)" : DS.border}`,
+                  }}>
+                    <ArrowLeftRight size={10} />
+                    {isAccepted ? "Exchange Accepted" : "Exchange Pending"}
+                    {" · "}{ex.receiving_email}
+                    {isAccepted && ex.received_film_id && (
+                      <a href={`/org/film/${ex.received_film_id}`}
+                        style={{ color: "#34C759", textDecoration: "none", fontWeight: 800, marginLeft: 2 }}>
+                        View →
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Share modal */}
         {showShare && (
           <ShareModal film={film} playlists={playlists} onClose={() => setShowShare(false)} />
+        )}
+
+        {/* Exchange modal */}
+        {showExchange && (
+          <ExchangeModal
+            film={film}
+            onClose={() => setShowExchange(false)}
+            onSent={() => { fetchExchanges(); }}
+          />
         )}
 
         {/* ── Pipeline status ── */}

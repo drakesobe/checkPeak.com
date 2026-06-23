@@ -81,11 +81,12 @@ export default async function handler(req, res) {
       .eq("id", filmId);
 
     // 3. Generate presigned PUT URL
+    // Do NOT include Metadata here — SDK v3 signs x-amz-meta-* as required headers,
+    // forcing the browser XHR to send them too. filmId/orgId are already in the DB.
     const command    = new PutObjectCommand({
       Bucket:      BUCKET,
       Key:         s3Key,
       ContentType: "video/mp4",
-      Metadata:    { filmId, orgId },
     });
     const uploadUrl  = await getSignedUrl(s3, command, { expiresIn: EXPIRES_SEC });
 

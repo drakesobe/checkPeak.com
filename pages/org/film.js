@@ -510,42 +510,48 @@ function UploadModal({ onClose, onUploadStarted }) {
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState("");
   const fileRef = useRef(null);
+  // Store presign result so retries reuse the same film record instead of creating duplicates
+  const presignRef = useRef(null);
 
   async function handleSubmit(e) {
-    e.preventDefault(); setErr("");
+    e.preventDefault(); setErr(""); setProgress(0);
     if (!file) { setErr("Select a video file."); return; }
     if (!form.title.trim()) { setErr("Game title is required."); return; }
     try {
-      setPhase("presigning");
-      const r = await fetch("/api/film/presign", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: form.title.trim(), sport: form.sport, gameDate: form.gameDate || null, opponent: form.opponent.trim() || null }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setErr(d.error || "Failed to get upload URL."); setPhase("error"); return; }
+      // Only presign once per modal open — reuse on retry to prevent duplicate DB records
+      if (!presignRef.current) {
+        setPhase("presigning");
+        const r = await fetch("/api/film/presign", {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: form.title.trim(), sport: form.sport, gameDate: form.gameDate || null, opponent: form.opponent.trim() || null }),
+        });
+        const d = await r.json();
+        if (!r.ok) { setErr(d.error || "Failed to get upload URL."); setPhase("error"); return; }
+        presignRef.current = d;
+      }
+
+      const { filmId, uploadUrl } = presignRef.current;
 
       setPhase("uploading");
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("PUT", d.uploadUrl);
+        xhr.open("PUT", uploadUrl);
         xhr.setRequestHeader("Content-Type", "video/mp4");
         xhr.upload.onprogress = ev => { if (ev.lengthComputable) setProgress(Math.round(ev.loaded / ev.total * 100)); };
-        xhr.onload  = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Upload failed"));
+        xhr.onload  = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`S3 upload rejected (${xhr.status}) — check bucket CORS policy allows PUT from this domain`));
+        xhr.onerror = () => reject(new Error("Upload blocked by browser — S3 bucket needs CORS configured for this domain"));
         xhr.send(file);
       });
 
-      // Tell the server the upload is complete - this sends the SQS message
-      // that wakes the ECS worker to start transcoding + AI analysis.
       await fetch("/api/film/process", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: d.filmId }),
+        body: JSON.stringify({ filmId }),
       });
 
       setPhase("done");
-      onUploadStarted(d.filmId);
+      onUploadStarted(filmId);
       setTimeout(onClose, 1400);
     } catch (e2) { setErr(e2.message || "Upload failed."); setPhase("error"); }
   }
@@ -668,7 +674,10 @@ function FilmCard({ film, onClick, onDelete, onRetry, onSubmit }) {
     setRetrying(false);
   }
 
-  const isProcessing = uiState === "uploading" || uiState === "analyzing";
+  // "uploading" is a browser-side state — by the time the film appears in the list
+  // the upload is either done or failed, so allow delete. Only block delete during
+  // server-side analysis (ECS worker is actively writing player_tracks).
+  const isProcessing = uiState === "analyzing";
 
   return (
     <div

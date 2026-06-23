@@ -425,6 +425,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
   // Populate form when entering edit mode
   useEffect(() => {
     if (!editingPlay) return;
+    formHistoryRef.current = [];
     setForm({
       down:          String(editingPlay.down ?? ""),
       distance:      String(editingPlay.distance ?? ""),
@@ -441,9 +442,19 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
     });
     setShowMore(true); // open details so coach can see all fields
   }, [editingPlay?.id]);
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const formHistoryRef = useRef([]);
+  const set = (k, v) => {
+    setForm(p => {
+      formHistoryRef.current.push(p);
+      return { ...p, [k]: v };
+    });
+  };
+  function undoFormField() {
+    const prev = formHistoryRef.current.pop();
+    if (prev) setForm(prev);
+  }
   const actionsRef = useRef({});
-  actionsRef.current = { onMarkSnap, onMarkWhistle, onSkip, onUndo, videoRef };
+  actionsRef.current = { onMarkSnap, onMarkWhistle, onSkip, videoRef, undoFormField };
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 700);
@@ -461,7 +472,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       if (e.key === "w" || e.key === "W") { e.preventDefault(); a.onMarkWhistle?.(); }
       if (e.key === "Enter")              { e.preventDefault(); actionsRef.current.savePlay?.(); }
       if (e.key === "n" || e.key === "N") { e.preventDefault(); a.onSkip?.(); }
-      if (e.key === "z" || e.key === "Z") { e.preventDefault(); a.onUndo?.(); }
+      if (e.key === "z" || e.key === "Z") { e.preventDefault(); a.undoFormField?.(); }
       if (e.key === "r" || e.key === "R") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "run"  ? "" : "run"  })); }
       if (e.key === "p" || e.key === "P") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "pass" ? "" : "pass" })); }
       if (e.key === "u" || e.key === "U") { e.preventDefault(); setForm(p => ({ ...p, playType: p.playType === "punt" ? "" : "punt" })); }
@@ -535,6 +546,7 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
           videoRef.current.play?.().catch(() => {});
         }
       }
+      formHistoryRef.current = [];
       onSaved?.(); onClear?.();
     } catch { setError("Network error"); }
     setSaving(false);
@@ -791,10 +803,10 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
           ))}
         </div>
 
-        <button onClick={onUndo} disabled={plays.length === 0}
+        <button onClick={undoFormField} title="Undo last field (Z)"
           style={{
-            background: "none", border: "none", cursor: plays.length > 0 ? "pointer" : "not-allowed",
-            color: plays.length > 0 ? "#f87171" : "rgba(255,255,255,0.2)",
+            background: "none", border: "none", cursor: "pointer",
+            color: "rgba(255,255,255,0.4)",
             fontSize: mob ? 12 : 11, fontWeight: 700, padding: "4px 4px",
             display: "flex", alignItems: "center", gap: 2, flexShrink: 0,
           }}>

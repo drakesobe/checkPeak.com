@@ -729,9 +729,10 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
             </button>
           );
         })}
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, marginLeft: 2 }}>YDS</span>
         <input type="number" value={form.yardsGained} onChange={e => set("yardsGained", e.target.value)}
-          placeholder="Yds"
-          style={{ width: mob ? 52 : 48, padding: mob ? "8px 6px" : "5px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+          placeholder="–"
+          style={{ width: mob ? 48 : 44, padding: mob ? "8px 6px" : "6px 6px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.14)", background: "#1e293b", color: "#e2e8f0", fontSize: mob ? 14 : 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
       </div>
 
       {/* ── Row 2d: Personnel ── */}

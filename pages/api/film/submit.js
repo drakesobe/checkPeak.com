@@ -56,6 +56,9 @@ export default async function handler(req, res) {
     if (film.status === "analyzing") {
       return res.status(200).json({ ok: true, alreadySubmitted: true, status: "analyzing" });
     }
+    if (film.status === "complete") {
+      return res.status(400).json({ error: "This film already has analysis data. To re-analyze, contact support — re-submitting reruns the full Rekognition pipeline." });
+    }
     if (film.status === "uploading") {
       return res.status(400).json({ error: "Film is still uploading — wait for it to finish" });
     }

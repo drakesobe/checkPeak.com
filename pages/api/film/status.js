@@ -43,6 +43,22 @@ export default async function handler(req, res) {
     if (error || !film) return res.status(404).json({ error: "Film not found" });
     if (film.org_id !== orgId) return res.status(403).json({ error: "Not authorized" });
 
+    // Reconcile: ECS worker sometimes writes player_tracks but dies before updating status.
+    // If the DB still shows "analyzing" but tracks exist, auto-heal to "complete".
+    let status = film.status;
+    if (status === "analyzing") {
+      const { count } = await supabase
+        .from("player_tracks")
+        .select("id", { count: "exact", head: true })
+        .eq("film_id", filmId)
+        .eq("org_id", orgId);
+
+      if (count > 0) {
+        status = "complete";
+        await supabase.from("game_films").update({ status: "complete" }).eq("id", filmId);
+      }
+    }
+
     return res.status(200).json({
       ok:           true,
       title:        film.title        ?? "",
@@ -51,7 +67,7 @@ export default async function handler(req, res) {
       opponent:     film.opponent     ?? null,
       home_team:    film.home_team    ?? null,
       away_team:    film.away_team    ?? null,
-      status:       film.status,
+      status,
       progressPct:  film.progress_pct  ?? 0,
       play_count:   film.play_count    ?? 0,
       durationSecs:   film.duration_secs   ?? 0,

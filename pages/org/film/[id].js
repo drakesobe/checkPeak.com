@@ -3133,7 +3133,7 @@ export default function FilmDetailPage() {
   const isProcessing = film && ["uploading","transcoding","analyzing","tagging"].includes(film.status);
   const isAnalyzing  = film?.status === "analyzing";
   const hasAnalysis  = plays.some(p => Array.isArray(p.player_tracks) && p.player_tracks.length > 0);
-  const canSubmit    = plays.length > 0 && !isAnalyzing;
+  const canSubmit    = plays.length > 0 && !isAnalyzing && !hasAnalysis;
   const analyzedCount = useMemo(() => plays.filter(p => (p.player_tracks ?? []).length > 0).length, [plays]);
 
   async function undoLastPlay() {
@@ -3355,21 +3355,22 @@ export default function FilmDetailPage() {
       <div style={{ minHeight: "100vh", background: DS.pageBg, fontFamily: "system-ui, sans-serif" }}>
 
         {/* ── Sticky header ── */}
-        <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, padding: "13px 20px", position: "sticky", top: 0, zIndex: 100 }}>
-          <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: 14 }}>
-            <button onClick={() => router.push("/org/film")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: DS.labelText, fontSize: 13, padding: 0, flexShrink: 0 }}>
-              <ArrowLeft size={15} /> Films
+        <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, padding: isMobile ? "10px 12px" : "13px 20px", position: "sticky", top: 0, zIndex: 100 }}>
+          <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: isMobile ? 8 : 14 }}>
+            <button onClick={() => router.push("/org/film")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: DS.labelText, fontSize: 13, padding: 0, flexShrink: 0 }}>
+              <ArrowLeft size={15} />{!isMobile && " Films"}
             </button>
 
-            <div style={{ width: 1, height: 18, background: DS.border, flexShrink: 0 }} />
+            {!isMobile && <div style={{ width: 1, height: 18, background: DS.border, flexShrink: 0 }} />}
 
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: DS.bodyText, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? 14 : 16, fontWeight: 800, color: DS.bodyText, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {film?.title || "Loading…"}
             </h1>
 
-            {film?.opponent && <span style={{ fontSize: 12, color: DS.labelText, flexShrink: 0 }}>vs {film.opponent}</span>}
+            {/* Opponent + status badge: desktop only — shown in metadata bar + workflow banner on mobile */}
+            {!isMobile && film?.opponent && <span style={{ fontSize: 12, color: DS.labelText, flexShrink: 0 }}>vs {film.opponent}</span>}
 
-            {film && (
+            {!isMobile && film && (
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,
                 background: hasAnalysis ? DS.safeBg : isAnalyzing ? DS.brandBg : plays.length > 0 ? "#FFF7ED" : DS.brandBg,
@@ -3383,8 +3384,8 @@ export default function FilmDetailPage() {
               </span>
             )}
 
-
-            {selPlay?.clip_url && (
+            {/* Share clip: desktop only (mobile can long-press video or use share sheet) */}
+            {!isMobile && selPlay?.clip_url && (
               <button onClick={shareClip} style={{
                 background: copied ? DS.safeBg : DS.pageBg,
                 border: `1px solid ${copied ? DS.safeBorder : DS.border}`,
@@ -3396,14 +3397,14 @@ export default function FilmDetailPage() {
               </button>
             )}
 
-            {/* Share film / cut-up link */}
+            {/* Share film / cut-up link — icon-only on mobile */}
             <button onClick={() => setShowShare(true)}
               style={{
                 background: DS.brand, color: "#fff", border: "none",
-                borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px", fontSize: 12, fontWeight: 700,
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
               }}>
-              <Share2 size={13} /> Share
+              <Share2 size={13} />{!isMobile && " Share"}
             </button>
           </div>
         </div>
@@ -3427,8 +3428,8 @@ export default function FilmDetailPage() {
 
         {/* ── Game metadata bar ── */}
         {film && !isProcessing && (film.game_date || film.sport || film.home_team || film.away_team) && (
-          <div style={{ background: DS.pageBg, borderBottom: `1px solid ${DS.border}`, padding: "8px 20px" }}>
-            <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ background: DS.pageBg, borderBottom: `1px solid ${DS.border}`, padding: isMobile ? "7px 12px" : "8px 20px" }}>
+            <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: isMobile ? 10 : 16, alignItems: "center", flexWrap: "wrap" }}>
               {film.sport && (
                 <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.brand, background: DS.brandBg, borderRadius: 5, padding: "2px 8px" }}>
                   {film.sport}
@@ -3454,23 +3455,24 @@ export default function FilmDetailPage() {
         )}
 
         {/* ── Tab bar ── */}
-        <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, padding: "0 20px" }}>
-          <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: 0 }}>
+        <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, padding: isMobile ? "0 8px" : "0 20px", overflowX: isMobile ? "auto" : "visible" }}>
+          <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: 0, whiteSpace: "nowrap" }}>
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)} style={{
                 background: "none", border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "13px 18px",
-                fontSize: 13, fontWeight: tab === t.key ? 700 : 500,
+                display: "inline-flex", alignItems: "center", gap: isMobile ? 4 : 6,
+                padding: isMobile ? "10px 10px" : "13px 18px",
+                fontSize: isMobile ? 11 : 13, fontWeight: tab === t.key ? 700 : 500,
                 color: tab === t.key ? DS.brand : DS.labelText,
                 borderBottom: `2px solid ${tab === t.key ? DS.brand : "transparent"}`,
-                marginBottom: -1, transition: "all 0.12s",
+                marginBottom: -1, transition: "all 0.12s", flexShrink: 0,
               }}>
-                <t.Icon size={13} /> {t.label}
+                <t.Icon size={isMobile ? 12 : 13} /> {t.label}
                 {t.badge != null && (
                   <span style={{
-                    minWidth: 18, height: 18, borderRadius: 99, padding: "0 5px",
+                    minWidth: 16, height: 16, borderRadius: 99, padding: "0 4px",
                     background: t.badgeColor ?? DS.brand, color: "#fff",
-                    fontSize: 10, fontWeight: 800, lineHeight: "18px", textAlign: "center",
+                    fontSize: 9, fontWeight: 800, lineHeight: "16px", textAlign: "center",
                     flexShrink: 0,
                   }}>{t.badge}</span>
                 )}
@@ -3480,7 +3482,7 @@ export default function FilmDetailPage() {
         </div>
 
         {/* ── Content ── */}
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 10px" : "20px 16px" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 8px" : "20px 16px" }}>
 
           {/* PLAYS TAB */}
           {tab === "plays" && (
@@ -3508,17 +3510,18 @@ export default function FilmDetailPage() {
               {/* Unconfirmed banner */}
               {unconfCount > 0 && (
                 <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  display: "flex", alignItems: isMobile ? "flex-start" : "center",
+                  justifyContent: "space-between", flexWrap: "wrap", gap: 8,
                   background: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`,
                   borderRadius: 10, padding: "11px 16px", marginBottom: 16,
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Lock size={13} color={DS.caution} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: DS.caution }}>
-                      {unconfCount} player{unconfCount !== 1 ? "s" : ""} unconfirmed - analytics may be incomplete.
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                    <Lock size={13} color={DS.caution} style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: isMobile ? 12 : 13, fontWeight: 600, color: DS.caution }}>
+                      {unconfCount} player{unconfCount !== 1 ? "s" : ""} unconfirmed — analytics may be incomplete.
                     </span>
                   </div>
-                  <button onClick={() => setTab("players")} style={{ background: DS.caution, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={() => setTab("players")} style={{ background: DS.caution, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
                     Confirm Now
                   </button>
                 </div>

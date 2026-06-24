@@ -636,23 +636,61 @@ const SPORT_CONFIGS = {
 const SPEEDS = [0.5, 1, 1.5, 2];
 
 function Combobox({ value, onChange, options, placeholder, mob, inputStyle }) {
-  const [open, setOpen]   = useState(false);
+  const [open,  setOpen]  = useState(false);
   const [query, setQuery] = useState(value || "");
+  const [rect,  setRect]  = useState(null);
+  const inputRef          = useRef(null);
+
   useEffect(() => { setQuery(value || ""); }, [value]);
+
+  useEffect(() => {
+    if (open && inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+  }, [open]);
+
   const filtered = query
     ? options.filter(o => o.toLowerCase().includes(query.toLowerCase()))
     : options;
+
   const commit = (val) => {
     const v = String(val).trim();
     onChange(v);
     setQuery(v);
     setOpen(false);
   };
+
+  const showDrop = open && rect && (filtered.length > 0 || (query.trim() && !options.find(o => o.toLowerCase() === query.toLowerCase())));
+
+  const dropEl = showDrop ? (
+    <div style={{
+      position: "fixed", top: rect.bottom + 4, left: rect.left, width: rect.width,
+      background: "#1a2235", border: "1px solid rgba(255,255,255,0.15)",
+      borderRadius: 8, zIndex: 9999, maxHeight: 180, overflowY: "auto",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+    }}>
+      {filtered.map(o => (
+        <div key={o} onMouseDown={() => commit(o)}
+          style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#e2e8f0", borderBottom: "1px solid rgba(255,255,255,0.04)", userSelect: "none" }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          {cap(o)}
+        </div>
+      ))}
+      {query.trim() && !options.find(o => o.toLowerCase() === query.trim().toLowerCase()) && (
+        <div onMouseDown={() => commit(query)}
+          style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#4FABFF", fontWeight: 700, userSelect: "none" }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(79,171,255,0.08)"}
+          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          + Add "{query.trim()}"
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-      <input value={query} placeholder={placeholder}
+      <input ref={inputRef} value={query} placeholder={placeholder}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { setOpen(true); if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); }}
         onBlur={() => setTimeout(() => setOpen(false), 160)}
         onKeyDown={e => {
           if (e.key === "Enter") { e.preventDefault(); commit(query); }
@@ -660,26 +698,7 @@ function Combobox({ value, onChange, options, placeholder, mob, inputStyle }) {
         }}
         style={{ width: "100%", boxSizing: "border-box", ...(inputStyle || {}) }}
       />
-      {open && (filtered.length > 0 || (query.trim() && !options.find(o => o.toLowerCase() === query.toLowerCase()))) && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#1a2235", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, zIndex: 300, maxHeight: 180, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-          {filtered.map(o => (
-            <div key={o} onMouseDown={() => commit(o)}
-              style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#e2e8f0", borderBottom: "1px solid rgba(255,255,255,0.04)", userSelect: "none" }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              {cap(o)}
-            </div>
-          ))}
-          {query.trim() && !options.find(o => o.toLowerCase() === query.trim().toLowerCase()) && (
-            <div onMouseDown={() => commit(query)}
-              style={{ padding: mob ? "10px 14px" : "8px 12px", cursor: "pointer", fontSize: mob ? 13 : 12, color: "#4FABFF", fontWeight: 700, userSelect: "none" }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(79,171,255,0.08)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              + Add "{query.trim()}"
-            </div>
-          )}
-        </div>
-      )}
+      {dropEl && typeof document !== "undefined" && createPortal(dropEl, document.fullscreenElement ?? document.body)}
     </div>
   );
 }
@@ -3553,8 +3572,10 @@ export default function FilmDetailPage() {
   const [cutup,        setCutup]        = useState(null);   // { name, plays:[], index:0 }
   const [addMenuPlay,  setAddMenuPlay]  = useState(null);   // play that has the menu open
   const [drawMode,     setDrawMode]     = useState(false);
-  const [showShare,    setShowShare]    = useState(false);
-  const [showExchange, setShowExchange] = useState(false);
+  const [showShare,      setShowShare]      = useState(false);
+  const [showExchange,   setShowExchange]   = useState(false);
+  const [isPublished,    setIsPublished]    = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [exchanges,    setExchanges]    = useState([]);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [showOverlay,   setShowOverlay]   = useState(true);
@@ -3579,9 +3600,31 @@ export default function FilmDetailPage() {
     if (!id) return;
     const r = await fetch(`/api/film/status?filmId=${id}`, { credentials: "include" });
     const d = await r.json();
-    if (r.ok) setFilm(d);
+    if (r.ok) { setFilm(d); setIsPublished(!!d.is_published); }
     return d;
   }, [id]);
+
+  async function handlePublishToggle() {
+    if (publishLoading || !id) return;
+    const willPublish = !isPublished;
+    setIsPublished(willPublish); // optimistic
+    setPublishLoading(true);
+    try {
+      const r = await fetch("/api/film/publish", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      setIsPublished(d.published);
+      toast.success(d.published ? "Film shared with team ✓" : "Removed from team feed");
+    } catch (e) {
+      setIsPublished(!willPublish); // revert
+      toast.error(e.message || "Could not update");
+    }
+    setPublishLoading(false);
+  }
 
   const fetchVideoUrl = useCallback(async () => {
     if (!id) return;
@@ -3981,14 +4024,39 @@ export default function FilmDetailPage() {
               </button>
             )}
 
-            {/* Share film / cut-up link — icon-only on mobile */}
+            {/* Share with Team — publish to athlete feed */}
+            {plays.length > 0 && (
+              <button
+                onClick={handlePublishToggle}
+                disabled={publishLoading}
+                title={isPublished ? "Shared with team — click to unshare" : "Share with your team"}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                  background: isPublished ? DS.safeBg : DS.cardBg,
+                  color: isPublished ? DS.safe : DS.labelText,
+                  border: `1.5px solid ${isPublished ? DS.safeBorder : DS.border}`,
+                  borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
+                  fontSize: 12, fontWeight: 700, cursor: publishLoading ? "not-allowed" : "pointer",
+                  opacity: publishLoading ? 0.7 : 1, transition: "all 0.15s",
+                }}
+              >
+                {publishLoading
+                  ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                  : isPublished
+                    ? <><span style={{ width: 7, height: 7, borderRadius: "50%", background: DS.safe, display: "inline-block" }} />{!isMobile && " Shared"}</>
+                    : <><Users size={13} />{!isMobile && " Share with Team"}</>
+                }
+              </button>
+            )}
+
+            {/* Share film link / cut-up — icon-only on mobile */}
             <button onClick={() => setShowShare(true)}
               style={{
                 background: DS.brand, color: "#fff", border: "none",
                 borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px", fontSize: 12, fontWeight: 700,
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
               }}>
-              <Share2 size={13} />{!isMobile && " Share"}
+              <Share2 size={13} />{!isMobile && " Share Link"}
             </button>
 
             {/* Exchange film */}
@@ -4084,7 +4152,7 @@ export default function FilmDetailPage() {
                 </span>
               )}
               {film.play_count > 0 && (
-                <span style={{ fontSize: 12, color: DS.dimText }}>{film.play_count} plays analyzed</span>
+                <span style={{ fontSize: 12, color: DS.dimText }}>{film.play_count} play{film.play_count !== 1 ? "s" : ""} tagged</span>
               )}
             </div>
           </div>

@@ -633,14 +633,30 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete }) {
-  const uiState = filmUIState(film);
-  const cfg = STATE_CFG[uiState] ?? STATE_CFG["has-plays"];
-  const playCount = film.play_count ?? 0;
+function FilmCard({ film, onClick, onDelete, onPublish }) {
+  const uiState      = filmUIState(film);
+  const isProcessing = uiState === "uploading";
+  const isFailed     = uiState === "failed";
+  const isTagged     = uiState === "has-plays";
+  const needsTag     = uiState === "needs-tagging";
+  const canView      = isTagged || needsTag;
+  const playCount    = film.play_count ?? 0;
+  const thumb        = film.mux_playback_id && canView
+    ? `https://image.mux.com/${film.mux_playback_id}/thumbnail.jpg?time=5&width=320&fit_mode=preserve`
+    : null;
 
   const [hovered,    setHovered]    = useState(false);
   const [deleting,   setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  async function handlePublish(e) {
+    e.stopPropagation();
+    if (publishing) return;
+    setPublishing(true);
+    await onPublish?.(film);
+    setPublishing(false);
+  }
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -654,47 +670,91 @@ function FilmCard({ film, onClick, onDelete }) {
     setDeleting(false); setConfirmDel(false);
   }
 
-  const isProcessing = uiState === "uploading";
-
   return (
     <div
-      onClick={onClick}
+      onClick={canView ? onClick : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setConfirmDel(false); }}
       style={{
-        background: DS.cardBg,
-        border: `1px solid ${hovered ? DS.brandBorder : DS.border}`,
-        borderRadius: 14, cursor: "pointer",
-        transition: "all 0.15s",
-        transform: hovered ? "translateY(-1px)" : "none",
-        boxShadow: hovered ? "0 4px 24px rgba(30,58,95,0.09)" : "none",
-        overflow: "hidden",
         display: "flex",
+        background: DS.cardBg,
+        border: `1px solid ${hovered && canView ? DS.brandBorder : DS.border}`,
+        borderRadius: 14,
+        overflow: "hidden",
+        cursor: canView ? "pointer" : "default",
+        transition: "all 0.15s",
+        transform: hovered && canView ? "translateY(-1px)" : "none",
+        boxShadow: hovered && canView ? "0 6px 28px rgba(30,58,95,0.1)" : "none",
       }}
     >
-      {/* Left accent bar */}
-      <div style={{ width: 4, flexShrink: 0, background: cfg.accent, opacity: isProcessing ? 0.5 : 1 }} />
+      {/* ── Thumbnail ─────────────────────────────────────────────────────────── */}
+      <div style={{
+        width: 156, flexShrink: 0, minHeight: 96,
+        background: "#0c1628",
+        position: "relative", overflow: "hidden",
+      }}>
+        {thumb ? (
+          <img
+            src={thumb} alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+        ) : (
+          <div style={{ width: "100%", height: "100%", minHeight: 96, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isProcessing
+              ? <Loader2 size={22} color="rgba(255,255,255,0.2)" style={{ animation: "spin 1s linear infinite" }} />
+              : isFailed
+                ? <AlertCircle size={22} color="rgba(200,16,46,0.4)" />
+                : <Film size={22} color="rgba(255,255,255,0.12)" />
+            }
+          </div>
+        )}
 
-      {/* Card body */}
-      <div style={{ flex: 1, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+        {/* Shared badge overlay */}
+        {film.is_published && (
+          <div style={{
+            position: "absolute", top: 8, left: 8,
+            background: "rgba(0,135,62,0.9)",
+            borderRadius: 5, padding: "3px 8px",
+            display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", flexShrink: 0 }} />
+            <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", letterSpacing: "0.07em" }}>SHARED</span>
+          </div>
+        )}
 
-        {/* Icon */}
-        <div style={{
-          width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-          background: uiState === "needs-tagging" ? "#FFF7ED" : DS.brandBg,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {uiState === "needs-tagging" && <Tag          size={20} color={DS.caution} />}
-          {uiState === "failed"        && <AlertCircle  size={20} color={DS.warn} />}
-          {(uiState === "uploading" || uiState === "has-plays") && <Film size={20} color={DS.brand} />}
-        </div>
+        {/* Play count badge */}
+        {playCount > 0 && (
+          <div style={{
+            position: "absolute", bottom: 7, right: 7,
+            background: "rgba(0,0,0,0.62)", backdropFilter: "blur(4px)",
+            borderRadius: 5, padding: "2px 8px",
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{playCount} plays</span>
+          </div>
+        )}
 
-        {/* Info */}
+        {/* Upload progress bar pinned to bottom */}
+        {isProcessing && (
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "rgba(255,255,255,0.08)" }}>
+            <div style={{
+              height: "100%", background: DS.brand,
+              width: `${Math.max(film.progress_pct ?? 0, 6)}%`,
+              transition: "width 0.5s ease",
+              animation: (film.progress_pct ?? 0) === 0 ? "pulse 1.5s ease-in-out infinite" : "none",
+            }} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Content ───────────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, padding: "14px 18px", display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+
+        {/* Info block */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {film.title}
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 5, flexWrap: "wrap" }}>
             {film.sport && (
               <span style={{ fontSize: 10, fontWeight: 700, textTransform: "capitalize", color: DS.brand, background: DS.brandBg, borderRadius: 4, padding: "1px 6px" }}>
                 {film.sport}
@@ -705,72 +765,92 @@ function FilmCard({ film, onClick, onDelete }) {
             {fmtDuration(film.duration_secs) && <span style={{ fontSize: 11, color: DS.dimText }}>{fmtDuration(film.duration_secs)}</span>}
           </div>
 
-          {/* Progress bar for processing states */}
+          {/* State hints */}
           {isProcessing && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <span style={{ fontSize: 10, color: DS.labelText }}>
-                  Uploading to cloud…
-                </span>
-                {(film.progress_pct ?? 0) > 0 && (
-                  <span style={{ fontSize: 10, fontWeight: 700, color: cfg.accent }}>{film.progress_pct}%</span>
-                )}
-              </div>
-              <div style={{ height: 3, background: DS.border, borderRadius: 99, overflow: "hidden" }}>
-                <div style={{
-                  height: "100%", background: cfg.accent, borderRadius: 99,
-                  width: `${Math.max(film.progress_pct ?? 0, 4)}%`,
-                  transition: "width 0.5s ease",
-                  animation: (film.progress_pct ?? 0) === 0 ? "pulse 1.5s ease-in-out infinite" : "none",
-                }} />
-              </div>
-            </div>
+            <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.brand, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+              <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} />
+              {(film.progress_pct ?? 0) > 0 ? `Uploading… ${film.progress_pct}%` : "Processing…"}
+            </p>
+          )}
+          {needsTag && (
+            <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.caution, fontWeight: 600 }}>
+              No plays tagged yet — open to start tagging
+            </p>
+          )}
+          {isFailed && (
+            <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.warn, fontWeight: 600 }}>
+              Upload failed — delete and try again
+            </p>
           )}
         </div>
 
-        {/* Right side — state-specific CTA */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
 
-          {/* Play count chip */}
-          {uiState === "has-plays" && playCount > 0 && (
-            <div style={{ textAlign: "center" }}>
-              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: DS.brand, lineHeight: 1 }}>{playCount}</p>
-              <p style={{ margin: 0, fontSize: 9, color: DS.dimText, fontWeight: 600, letterSpacing: "0.04em" }}>PLAYS</p>
+          {/* Share with Team / Shared — only for tagged films */}
+          {isTagged && (
+            film.is_published ? (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                title="Shared with team — click to unshare"
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`,
+                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
+                  opacity: publishing ? 0.6 : 1, transition: "opacity 0.15s",
+                }}
+              >
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: DS.safe, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: DS.safe }}>
+                  {publishing ? "…" : "Shared"}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                title="Share with your team"
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`,
+                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
+                  opacity: publishing ? 0.6 : 1, transition: "opacity 0.15s",
+                }}
+              >
+                {publishing
+                  ? <Loader2 size={12} color={DS.safe} style={{ animation: "spin 1s linear infinite" }} />
+                  : <Zap size={12} color={DS.safe} />
+                }
+                <span style={{ fontSize: 12, fontWeight: 700, color: DS.safe }}>
+                  {publishing ? "Sharing…" : "Share with Team"}
+                </span>
+              </button>
+            )
+          )}
+
+          {/* View Film / Tag Plays CTA */}
+          {canView && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: needsTag ? "#FFF7ED" : DS.brandBg,
+              border: `1px solid ${needsTag ? "#FED7AA" : DS.brandBorder}`,
+              borderRadius: 9, padding: "8px 14px",
+            }}>
+              {needsTag ? <Tag size={13} color={DS.caution} /> : <Film size={13} color={DS.brand} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: needsTag ? DS.caution : DS.brand }}>
+                {needsTag ? "Tag Plays" : "View Film"}
+              </span>
+              <ArrowRight size={13} color={needsTag ? DS.caution : DS.brand} />
             </div>
           )}
 
-          {/* State CTA */}
-          {uiState === "needs-tagging" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FFF7ED", border: `1px solid #FED7AA`, borderRadius: 9, padding: "8px 14px" }}>
-              <Tag size={13} color={DS.caution} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: DS.caution }}>Tag Plays</span>
-              <ArrowRight size={13} color={DS.caution} />
-            </div>
-          )}
-
-          {uiState === "has-plays" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 9, padding: "8px 14px" }}>
-              <Film size={13} color={DS.brand} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: DS.brand }}>View Film</span>
-              <ArrowRight size={13} color={DS.brand} />
-            </div>
-          )}
-
-          {uiState === "uploading" && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: DS.brandBg, color: DS.brand, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700 }}>
-              <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-              Uploading…
-            </span>
-          )}
-
-          {uiState === "failed" && (
-            <span style={{ fontSize: 11, color: DS.warn, fontWeight: 600 }}>Upload failed</span>
-          )}
-
-          {/* Delete */}
+          {/* Delete on hover */}
           {hovered && !isProcessing && (
-            <button onClick={handleDelete} disabled={deleting}
-              title={confirmDel ? "Click again to confirm" : "Delete"}
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              title={confirmDel ? "Click again to confirm" : "Delete film"}
               style={{
                 background: confirmDel ? DS.warnBg : "none",
                 border: confirmDel ? `1px solid #C8102E44` : "none",
@@ -778,13 +858,12 @@ function FilmCard({ film, onClick, onDelete }) {
                 cursor: deleting ? "not-allowed" : "pointer",
                 color: DS.warn, display: "flex", alignItems: "center", gap: 4,
                 fontSize: 11, fontWeight: 700,
-              }}>
+              }}
+            >
               {deleting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={12} />}
               {confirmDel && !deleting && "Confirm?"}
             </button>
           )}
-
-          <ChevronRight size={15} color={DS.dimText} style={{ opacity: 0.5 }} />
         </div>
       </div>
     </div>
@@ -794,27 +873,36 @@ function FilmCard({ film, onClick, onDelete }) {
 // ── Stats header ──────────────────────────────────────────────────────────────
 function StatsHeader({ films }) {
   if (!films.length) return null;
-  const needsTagging = films.filter(f => filmUIState(f) === "needs-tagging").length;
-  const hasPlays     = films.filter(f => filmUIState(f) === "has-plays").length;
   const totalPlays   = films.reduce((s, f) => s + (f.play_count ?? 0), 0);
+  const sharedCount  = films.filter(f => filmUIState(f) === "has-plays" && f.is_published).length;
+  const readyCount   = films.filter(f => filmUIState(f) === "has-plays" && !f.is_published).length;
+  const needsTagging = films.filter(f => filmUIState(f) === "needs-tagging").length;
 
   const stats = [
-    { label: "Total Films",   value: films.length,  Icon: Film,  color: DS.brand   },
-    { label: "Plays Tagged",  value: totalPlays,    Icon: Play,  color: DS.brand   },
-    { label: "Needs Tagging", value: needsTagging,  Icon: Tag,   color: DS.caution },
-    { label: "Films Ready",   value: hasPlays,      Icon: Film,  color: DS.safe    },
+    { label: "Total Films",      value: films.length, Icon: Film,  color: DS.brand,   bg: DS.brandBg   },
+    { label: "Plays Tagged",     value: totalPlays,   Icon: Play,  color: DS.brand,   bg: DS.brandBg   },
+    { label: "Shared with Team", value: sharedCount,  Icon: Users, color: DS.safe,    bg: DS.safeBg    },
+    { label: "Ready to Share",   value: readyCount,   Icon: Zap,   color: DS.caution, bg: DS.cautionBg },
   ];
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
       {stats.map(s => (
-        <div key={s.label} style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 9, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div key={s.label} style={{
+          background: DS.cardBg, border: `1px solid ${DS.border}`,
+          borderRadius: 12, padding: "14px 16px",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 9,
+            background: s.bg,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
             <s.Icon size={16} color={s.color} />
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: DS.bodyText }}>{s.value}</p>
-            <p style={{ margin: 0, fontSize: 10, color: DS.dimText }}>{s.label}</p>
+            <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: s.value > 0 ? DS.bodyText : DS.dimText, lineHeight: 1 }}>{s.value}</p>
+            <p style={{ margin: "3px 0 0", fontSize: 10, color: DS.dimText, fontWeight: 500 }}>{s.label}</p>
           </div>
         </div>
       ))}
@@ -886,6 +974,27 @@ export default function FilmPage() {
     pollSetRef.current.delete(filmId);
   }
 
+  async function handlePublish(film) {
+    const willPublish = !film.is_published;
+    // Optimistic update
+    setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: willPublish } : f));
+    try {
+      const r = await fetch("/api/film/publish", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: film.id }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Publish failed");
+      setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: d.published } : f));
+      toast.success(d.published ? "Film shared with team ✓" : "Film removed from team feed");
+    } catch (e) {
+      // Revert
+      setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: film.is_published } : f));
+      toast.error(e.message || "Could not update publish status");
+    }
+  }
+
   const role        = String(user?.role || user?.Role || "").toLowerCase();
   const isOrgSide   = role.includes("org") || role.includes("coach") || role.includes("trainer") || role === "admin" || role === "organization";
   const primarySport = films.find(f => f.sport)?.sport ?? "football";
@@ -909,7 +1018,8 @@ export default function FilmPage() {
 
   const inProgress   = filteredFilms.filter(f => f.status === "uploading");
   const needsTagging = filteredFilms.filter(f => filmUIState(f) === "needs-tagging");
-  const hasPlays     = filteredFilms.filter(f => filmUIState(f) === "has-plays");
+  const sharedFilms  = filteredFilms.filter(f => filmUIState(f) === "has-plays" && f.is_published);
+  const readyFilms   = filteredFilms.filter(f => filmUIState(f) === "has-plays" && !f.is_published);
   const failed       = filteredFilms.filter(f => f.status === "failed");
 
   return (
@@ -933,7 +1043,7 @@ export default function FilmPage() {
                 <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: DS.bodyText }}>Film Intelligence</h1>
               </div>
               <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
-                Upload game film - AI tracks every player, tags every play, and surfaces what wins games.
+                Upload game film, tag plays, and share with your team — all in one place.
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -983,7 +1093,7 @@ export default function FilmPage() {
             <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 16, padding: 52, textAlign: "center" }}>
               <Video size={44} color={DS.dimText} style={{ marginBottom: 18, opacity: 0.3 }} />
               <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700, color: DS.bodyText }}>No films yet</h3>
-              <p style={{ margin: "0 0 22px", fontSize: 13, color: DS.labelText }}>Upload your first game film to start getting AI-powered play analytics.</p>
+              <p style={{ margin: "0 0 22px", fontSize: 13, color: DS.labelText }}>Upload your first game film to start tagging plays and sharing film with your team.</p>
               <button onClick={() => setShowUpload(true)} style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 8, padding: "11px 22px", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <Upload size={15} /> Upload Film
               </button>
@@ -996,7 +1106,42 @@ export default function FilmPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-              {/* Needs Tagging — most urgent, show first */}
+              {/* Shared with Team — athletes can see these */}
+              {sharedFilms.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: DS.safe, flexShrink: 0 }} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.safe }}>
+                      Shared with Team — {sharedFilms.length} film{sharedFilms.length !== 1 ? "s" : ""}
+                    </h2>
+                    <span style={{ fontSize: 11, color: DS.dimText, fontWeight: 500 }}>· visible in athlete feed</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {sharedFilms.map(f => (
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Ready to Share — tagged but not yet shared */}
+              {readyFilms.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <Zap size={13} color={DS.brand} />
+                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.brand }}>
+                      Ready to Share — {readyFilms.length} film{readyFilms.length !== 1 ? "s" : ""}
+                    </h2>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {readyFilms.map(f => (
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Needs Tagging */}
               {needsTagging.length > 0 && (
                 <section>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -1007,24 +1152,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {needsTagging.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Has plays — ready to submit for analysis */}
-              {hasPlays.length > 0 && (
-                <section>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <Sparkles size={13} color={DS.brand} />
-                    <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: DS.brand }}>
-                      Films Ready — {hasPlays.length} film{hasPlays.length !== 1 ? "s" : ""}
-                    </h2>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {hasPlays.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
                     ))}
                   </div>
                 </section>
@@ -1041,7 +1169,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {inProgress.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
                     ))}
                   </div>
                 </section>
@@ -1056,7 +1184,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {failed.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
                     ))}
                   </div>
                 </section>

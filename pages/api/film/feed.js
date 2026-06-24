@@ -56,9 +56,8 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
-  const userId = String(user.email || user.id || orgId).trim().toLowerCase();
-  console.log("[film/feed] orgId:", orgId, "user keys:", Object.keys(user));
+  const orgId  = String(user.orgToken || user.org_token || user.Token || user.orgId || user.org_id || user.OrgId || "").trim();
+  const userId = String(user.email || user.Email || user.id || orgId).trim().toLowerCase();
   const sort   = req.query.sort === "trending" ? "trending" : "recent";
   const limit  = Math.min(Number(req.query.limit  || 20), 50);
   const offset = Math.max(Number(req.query.offset || 0),   0);

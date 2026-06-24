@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const userId = String(user.email || user.id || user.orgToken || "").trim().toLowerCase();
+  const userId = String(user.email || user.Email || user.id || user.athlete_token || "").trim().toLowerCase();
   const playId = String(req.body?.playId || "").trim();
 
   if (!playId) return res.status(400).json({ error: "playId required" });

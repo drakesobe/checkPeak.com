@@ -24,8 +24,8 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const userId   = String(user.email || user.id || user.orgToken || "").trim().toLowerCase();
-  const userName = String(user.name  || user.email || "").trim() || "Athlete";
+  const userId   = String(user.email || user.Email || user.id || user.athlete_token || "").trim().toLowerCase();
+  const userName = String(user.name  || user.Name || user.email || user.Email || "").trim() || "Athlete";
 
   try {
     if (req.method === "GET") {

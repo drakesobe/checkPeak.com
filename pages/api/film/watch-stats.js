@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
+  const orgId  = String(user.orgToken || user.org_token || user.Token || user.orgId || user.org_id || user.OrgId || "").trim();
   const filmId = String(req.query.filmId ?? "").trim();
   if (!filmId) return res.status(400).json({ error: "filmId required" });
 

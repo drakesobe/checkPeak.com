@@ -58,6 +58,7 @@ export default async function handler(req, res) {
 
   const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
   const userId = String(user.email || user.id || orgId).trim().toLowerCase();
+  console.log("[film/feed] orgId:", orgId, "user keys:", Object.keys(user));
   const sort   = req.query.sort === "trending" ? "trending" : "recent";
   const limit  = Math.min(Number(req.query.limit  || 20), 50);
   const offset = Math.max(Number(req.query.offset || 0),   0);
@@ -72,7 +73,9 @@ export default async function handler(req, res) {
       Date.now() - (isTrending ? 30 : 365) * 24 * 3_600_000
     ).toISOString();
 
-    const { data: rows, error } = await supabase
+    // Try with coach_annotation first; fall back without it if the column doesn't exist yet.
+    let rows, queryError;
+    ({ data: rows, error: queryError } = await supabase
       .from("game_plays")
       .select(`
         id, play_number, play_type, formation, result,
@@ -85,41 +88,69 @@ export default async function handler(req, res) {
       .not("start_time_secs", "is", null)
       .gte("created_at", cutoffDate)
       .order("created_at", { ascending: false })
-      .range(fetchOffset, fetchOffset + fetchLimit - 1);
+      .range(fetchOffset, fetchOffset + fetchLimit - 1));
 
-    if (error) throw error;
+    if (queryError) {
+      // Column doesn't exist yet — retry without coach_annotation
+      if (queryError.code === "42703" || queryError.message?.includes("coach_annotation")) {
+        ({ data: rows, error: queryError } = await supabase
+          .from("game_plays")
+          .select(`
+            id, play_number, play_type, formation, result,
+            down, distance, yards_gained, personnel, notes, labels,
+            start_time_secs, end_time_secs, created_at,
+            game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
+          `)
+          .eq("game_films.org_id", orgId)
+          .not("game_films.mux_playback_id", "is", null)
+          .not("start_time_secs", "is", null)
+          .gte("created_at", cutoffDate)
+          .order("created_at", { ascending: false })
+          .range(fetchOffset, fetchOffset + fetchLimit - 1));
+      }
+      if (queryError) throw queryError;
+    }
+
     if (!rows?.length) return res.status(200).json({ ok: true, plays: [] });
 
     const playIds = rows.map(r => r.id);
 
-    // Fetch engagement data + current user's likes in parallel
-    const [{ data: likes }, { data: comments }, { data: userLikes }] = await Promise.all([
-      supabase.from("play_likes").select("play_id").in("play_id", playIds),
-      supabase.from("play_comments").select("play_id").in("play_id", playIds),
-      supabase.from("play_likes").select("play_id").eq("user_id", userId).in("play_id", playIds),
-    ]);
+    // Fetch engagement data — tables may not exist yet; default to empty if they error.
+    let likes = [], comments = [], userLikes = [];
+    try {
+      const results = await Promise.all([
+        supabase.from("play_likes").select("play_id").in("play_id", playIds),
+        supabase.from("play_comments").select("play_id").in("play_id", playIds),
+        supabase.from("play_likes").select("play_id").eq("user_id", userId).in("play_id", playIds),
+      ]);
+      likes     = results[0].data ?? [];
+      comments  = results[1].data ?? [];
+      userLikes = results[2].data ?? [];
+    } catch (engErr) {
+      console.warn("[film/feed] engagement tables not ready:", engErr?.message);
+    }
 
     const likeMap    = {};
     const commentMap = {};
-    const likedSet   = new Set((userLikes ?? []).map(l => l.play_id));
+    const likedSet   = new Set(userLikes.map(l => l.play_id));
 
-    for (const l of (likes    ?? [])) likeMap[l.play_id]    = (likeMap[l.play_id]    || 0) + 1;
-    for (const c of (comments ?? [])) commentMap[c.play_id] = (commentMap[c.play_id] || 0) + 1;
+    for (const l of likes)    likeMap[l.play_id]    = (likeMap[l.play_id]    || 0) + 1;
+    for (const c of comments) commentMap[c.play_id] = (commentMap[c.play_id] || 0) + 1;
 
     let plays = rows.map(r => ({
-      id:              r.id,
-      play_number:     r.play_number,
-      play_type:       r.play_type    || null,
-      formation:       r.formation    || null,
-      result:          r.result       || null,
-      down:            r.down         ?? null,
-      distance:        r.distance     ?? null,
-      yards_gained:    r.yards_gained ?? null,
-      personnel:       r.personnel    || null,
-      notes:           r.notes        || null,
-      labels:          r.labels       || [],
-      start_time_secs: r.start_time_secs,
-      end_time_secs:   r.end_time_secs ?? null,
+      id:               r.id,
+      play_number:      r.play_number,
+      play_type:        r.play_type    || null,
+      formation:        r.formation    || null,
+      result:           r.result       || null,
+      down:             r.down         ?? null,
+      distance:         r.distance     ?? null,
+      yards_gained:     r.yards_gained ?? null,
+      personnel:        r.personnel    || null,
+      notes:            r.notes        || null,
+      labels:           r.labels       || [],
+      start_time_secs:  r.start_time_secs,
+      end_time_secs:    r.end_time_secs ?? null,
       created_at:       r.created_at,
       coach_annotation: r.coach_annotation ?? null,
       mux_playback_id:  r.game_films.mux_playback_id,

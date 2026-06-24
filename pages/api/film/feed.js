@@ -77,11 +77,10 @@ export default async function handler(req, res) {
       .select(`
         id, play_number, play_type, formation, result,
         down, distance, yards_gained, personnel, notes, labels,
-        start_time_secs, end_time_secs, created_at,
-        game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id)
+        start_time_secs, end_time_secs, created_at, coach_annotation,
+        game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
       `)
       .eq("game_films.org_id", orgId)
-      .eq("game_films.is_published", true)
       .not("game_films.mux_playback_id", "is", null)
       .not("start_time_secs", "is", null)
       .gte("created_at", cutoffDate)
@@ -121,15 +120,17 @@ export default async function handler(req, res) {
       labels:          r.labels       || [],
       start_time_secs: r.start_time_secs,
       end_time_secs:   r.end_time_secs ?? null,
-      created_at:      r.created_at,
-      mux_playback_id: r.game_films.mux_playback_id,
-      film_title:      r.game_films.title       || null,
-      opponent:        r.game_films.opponent    || null,
-      game_date:       r.game_films.game_date   || null,
-      sport:           r.game_films.sport       || null,
-      like_count:      likeMap[r.id]    || 0,
-      comment_count:   commentMap[r.id] || 0,
-      is_liked:        likedSet.has(r.id),
+      created_at:       r.created_at,
+      coach_annotation: r.coach_annotation ?? null,
+      mux_playback_id:  r.game_films.mux_playback_id,
+      film_id:          r.game_films.id,
+      film_title:       r.game_films.title       || null,
+      opponent:         r.game_films.opponent    || null,
+      game_date:        r.game_films.game_date   || null,
+      sport:            r.game_films.sport       || null,
+      like_count:       likeMap[r.id]    || 0,
+      comment_count:    commentMap[r.id] || 0,
+      is_liked:         likedSet.has(r.id),
     }));
 
     if (isTrending) {

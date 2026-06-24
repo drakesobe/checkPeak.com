@@ -633,7 +633,7 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete, onPublish }) {
+function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
   const uiState      = filmUIState(film);
   const isProcessing = uiState === "uploading";
   const isFailed     = uiState === "failed";
@@ -649,6 +649,7 @@ function FilmCard({ film, onClick, onDelete, onPublish }) {
   const [deleting,   setDeleting]   = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [btnHover,   setBtnHover]   = useState(null); // "share" | "view" | null
 
   async function handlePublish(e) {
     e.stopPropagation();
@@ -672,19 +673,16 @@ function FilmCard({ film, onClick, onDelete, onPublish }) {
 
   return (
     <div
-      onClick={canView ? onClick : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setConfirmDel(false); }}
       style={{
         display: "flex",
         background: DS.cardBg,
-        border: `1px solid ${hovered && canView ? DS.brandBorder : DS.border}`,
+        border: `1px solid ${hovered ? DS.border : DS.border}`,
         borderRadius: 14,
         overflow: "hidden",
-        cursor: canView ? "pointer" : "default",
-        transition: "all 0.15s",
-        transform: hovered && canView ? "translateY(-1px)" : "none",
-        boxShadow: hovered && canView ? "0 6px 28px rgba(30,58,95,0.1)" : "none",
+        transition: "box-shadow 0.15s",
+        boxShadow: hovered ? "0 2px 12px rgba(0,0,0,0.06)" : "none",
       }}
     >
       {/* ── Thumbnail ─────────────────────────────────────────────────────────── */}
@@ -782,71 +780,25 @@ function FilmCard({ film, onClick, onDelete, onPublish }) {
               Upload failed — delete and try again
             </p>
           )}
+
+          {/* Watch receipt — only for published films */}
+          {film.is_published && watchCount !== null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, background: watchCount > 0 ? DS.safeBg : DS.pageBg, border: `1px solid ${watchCount > 0 ? DS.safeBorder : DS.border}`, borderRadius: 20, padding: "2px 10px" }}>
+                <Users size={10} color={watchCount > 0 ? DS.safe : DS.dimText} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: watchCount > 0 ? DS.safe : DS.dimText }}>
+                  {watchCount > 0 ? `${watchCount} athlete${watchCount !== 1 ? "s" : ""} watched` : "No views yet"}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
 
-          {/* Share with Team / Shared — only for tagged films */}
-          {isTagged && (
-            film.is_published ? (
-              <button
-                onClick={handlePublish}
-                disabled={publishing}
-                title="Shared with team — click to unshare"
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`,
-                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
-                  opacity: publishing ? 0.6 : 1, transition: "opacity 0.15s",
-                }}
-              >
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: DS.safe, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 800, color: DS.safe }}>
-                  {publishing ? "…" : "Shared"}
-                </span>
-              </button>
-            ) : (
-              <button
-                onClick={handlePublish}
-                disabled={publishing}
-                title="Share with your team"
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`,
-                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
-                  opacity: publishing ? 0.6 : 1, transition: "opacity 0.15s",
-                }}
-              >
-                {publishing
-                  ? <Loader2 size={12} color={DS.safe} style={{ animation: "spin 1s linear infinite" }} />
-                  : <Zap size={12} color={DS.safe} />
-                }
-                <span style={{ fontSize: 12, fontWeight: 700, color: DS.safe }}>
-                  {publishing ? "Sharing…" : "Share with Team"}
-                </span>
-              </button>
-            )
-          )}
-
-          {/* View Film / Tag Plays CTA */}
-          {canView && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: needsTag ? "#FFF7ED" : DS.brandBg,
-              border: `1px solid ${needsTag ? "#FED7AA" : DS.brandBorder}`,
-              borderRadius: 9, padding: "8px 14px",
-            }}>
-              {needsTag ? <Tag size={13} color={DS.caution} /> : <Film size={13} color={DS.brand} />}
-              <span style={{ fontSize: 12, fontWeight: 700, color: needsTag ? DS.caution : DS.brand }}>
-                {needsTag ? "Tag Plays" : "View Film"}
-              </span>
-              <ArrowRight size={13} color={needsTag ? DS.caution : DS.brand} />
-            </div>
-          )}
-
-          {/* Delete on hover */}
-          {hovered && !isProcessing && (
+          {/* Delete — always rendered to avoid layout shift; invisible until hover */}
+          {!isProcessing && (
             <button
               onClick={handleDelete}
               disabled={deleting}
@@ -858,12 +810,86 @@ function FilmCard({ film, onClick, onDelete, onPublish }) {
                 cursor: deleting ? "not-allowed" : "pointer",
                 color: DS.warn, display: "flex", alignItems: "center", gap: 4,
                 fontSize: 11, fontWeight: 700,
+                opacity: (hovered || confirmDel) ? 1 : 0,
+                transition: "opacity 0.15s",
+                pointerEvents: (hovered || confirmDel) ? "auto" : "none",
               }}
             >
               {deleting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={12} />}
               {confirmDel && !deleting && "Confirm?"}
             </button>
           )}
+
+          {/* Share with Team — show button only when unshared; quiet unshare link when shared */}
+          {isTagged && (
+            film.is_published ? (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                onMouseEnter={e => { e.currentTarget.style.textDecorationLine = "underline"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                onMouseLeave={e => { e.currentTarget.style.textDecorationLine = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 11, color: DS.dimText, padding: "4px 2px",
+                  opacity: publishing ? 0.5 : 1,
+                  textDecorationLine: "none", transition: "transform 0.12s ease",
+                }}
+              >
+                {publishing ? "…" : "Remove from feed"}
+              </button>
+            ) : (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                onMouseEnter={() => setBtnHover("share")}
+                onMouseLeave={() => setBtnHover(null)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: DS.pageBg, border: `1px solid ${DS.border}`,
+                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
+                  opacity: publishing ? 0.6 : 1,
+                  transition: "transform 0.12s, box-shadow 0.12s, opacity 0.15s",
+                  transform: btnHover === "share" ? "translateY(-1px)" : "none",
+                  boxShadow: btnHover === "share" ? "0 4px 14px rgba(0,0,0,0.1)" : "none",
+                }}
+              >
+                {publishing
+                  ? <Loader2 size={12} color={DS.labelText} style={{ animation: "spin 1s linear infinite" }} />
+                  : <Users size={12} color={DS.labelText} />
+                }
+                <span style={{ fontSize: 12, fontWeight: 700, color: DS.labelText }}>
+                  {publishing ? "Sharing…" : "Share with Team"}
+                </span>
+              </button>
+            )
+          )}
+
+          {/* View Film / Tag Plays CTA */}
+          {canView && (
+            <button
+              onClick={onClick}
+              onMouseEnter={() => setBtnHover("view")}
+              onMouseLeave={() => setBtnHover(null)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: needsTag ? "#FFF7ED" : DS.brandBg,
+                border: `1px solid ${needsTag ? "#FED7AA" : DS.brandBorder}`,
+                borderRadius: 9, padding: "8px 14px", cursor: "pointer",
+                transition: "transform 0.12s, box-shadow 0.12s",
+                transform: btnHover === "view" ? "translateY(-1px)" : "none",
+                boxShadow: btnHover === "view"
+                  ? `0 4px 14px ${needsTag ? "rgba(245,158,11,0.18)" : "rgba(30,58,95,0.15)"}`
+                  : "none",
+              }}
+            >
+              {needsTag ? <Tag size={13} color={DS.caution} /> : <Film size={13} color={DS.brand} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: needsTag ? DS.caution : DS.brand }}>
+                {needsTag ? "Tag Plays" : "View Film"}
+              </span>
+              <ArrowRight size={13} color={needsTag ? DS.caution : DS.brand} />
+            </button>
+          )}
+
         </div>
       </div>
     </div>
@@ -921,6 +947,7 @@ export default function FilmPage() {
   const [showRoster,  setShowRoster]  = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
+  const [watchStats,  setWatchStats]  = useState({}); // { [filmId]: watched_count }
   const pollingRef = useRef({});
   const pollSetRef = useRef(new Set());
 
@@ -933,6 +960,20 @@ export default function FilmPage() {
       if (d.films) {
         setFilms(d.films);
         d.films.filter(f => ACTIVE_STATUSES.includes(f.status)).forEach(f => startPolling(f.id));
+        // Fetch watch counts for all published films
+        const published = d.films.filter(f => f.is_published);
+        if (published.length) {
+          const results = await Promise.allSettled(
+            published.map(f => fetch(`/api/film/watch-stats?filmId=${f.id}`, { credentials: "include" }).then(r => r.json()))
+          );
+          const stats = {};
+          results.forEach((res, i) => {
+            if (res.status === "fulfilled" && res.value.ok) {
+              stats[published[i].id] = res.value.watched_count ?? 0;
+            }
+          });
+          setWatchStats(stats);
+        }
       }
     } catch {}
     setLoading(false);
@@ -1118,7 +1159,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {sharedFilms.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} watchCount={watchStats[f.id] ?? null} />
                     ))}
                   </div>
                 </section>

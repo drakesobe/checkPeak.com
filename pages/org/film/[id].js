@@ -12,7 +12,7 @@ import {
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
   X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
   Trash2, ChevronRight, ChevronUp, ChevronDown, SkipForward, SkipBack, Bookmark,
-  ArrowLeftRight, Send, Clock, CheckCircle,
+  ArrowLeftRight, Send, Clock, CheckCircle, Pencil,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -940,6 +940,19 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
 
   actionsRef.current.savePlay = savePlay;
 
+  function copyPrevPlay() {
+    const prev = plays[plays.length - 1];
+    if (!prev) return;
+    setForm(f => ({
+      ...f,
+      formation: prev.formation || f.formation,
+      personnel: prev.personnel || f.personnel,
+      hash:      prev.hash      || f.hash,
+      down:      prev.down      ? String(prev.down)     : f.down,
+      distance:  prev.distance  ? String(prev.distance) : f.distance,
+    }));
+  }
+
   const clipSecs = snapTime != null && whistleTime != null ? (whistleTime - snapTime).toFixed(1) : null;
   const snapSet  = snapTime != null;
   const endSet   = whistleTime != null;
@@ -998,7 +1011,35 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
         {clipSecs && (
           <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 700, flexShrink: 0 }}>{clipSecs}s</span>
         )}
+
+        {/* Copy prev play — fills formation/personnel/down from last tagged play */}
+        {plays.length > 0 && !editingPlay && (
+          <button onClick={copyPrevPlay} title="Copy formation, personnel, down from last play"
+            style={{ marginLeft: "auto", flexShrink: 0, background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: mob ? "5px 9px" : "4px 8px", cursor: "pointer", color: "rgba(255,255,255,0.35)", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+            ↺ Copy prev
+          </button>
+        )}
       </div>
+
+      {/* ── Keyboard hints strip — always visible on desktop ── */}
+      {!mob && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 6 }}>
+          {(isFootball
+            ? [["S","snap"],["W","end"],["R","run"],["P","pass"],["G","good"],["F","fail"],["1–4","down"],["↵","save"],["N","skip"],["[ ]","±5s"]]
+            : [["S","start"],["W","end"],["↵","save"],["N","skip"],["Z","undo"],["[ ]","±5s"]]
+          ).map(([k, l]) => (
+            <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ background: "rgba(255,255,255,0.1)", borderRadius: 3, padding: "1px 5px", fontWeight: 800, fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>{k}</span>
+              {l}
+            </span>
+          ))}
+          {plays.length > 0 && (
+            <span style={{ marginLeft: "auto", fontSize: 9, color: "rgba(255,255,255,0.18)", fontWeight: 700 }}>
+              #{plays.length + 1} next
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Quick Presets bar (hidden when empty + form clear) ── */}
       {(presets.length > 0 || formHasData) && !editingPlay && (
@@ -1221,19 +1262,6 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
             style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 700, padding: "2px 0", display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ fontSize: 9 }}>{showMore ? "▾" : "▸"}</span> {showMore ? "Hide details" : "Details"}
           </button>
-          {/* Keyboard hints — desktop only, collapsed */}
-          {!mob && !showMore && (
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-              {(isFootball
-                ? [["S","snap"],["W","end"],["R","run"],["P","pass"],["1–4","dn"],["↵","save"],["N","skip"],["Z","undo"]]
-                : [["S","start"],["W","end"],["↵","save"],["N","skip"],["Z","undo"],["[","−5s"],["]","+5s"]]
-              ).map(([k,l]) => (
-                <span key={k} style={{ fontSize: 9, color: "rgba(255,255,255,0.18)" }}>
-                  <span style={{ background: "rgba(255,255,255,0.09)", borderRadius: 3, padding: "1px 4px", fontWeight: 800, marginRight: 2 }}>{k}</span>{l}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         {showMore && (
@@ -1303,8 +1331,220 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
   );
 }
 
+// ── Annotation Modal ──────────────────────────────────────────────────────────
+// Coach draws arrows/circles on a play thumbnail, saves as JSON to game_plays.
+// Strokes use normalized coords [0-1] so they render correctly on any screen size.
+function AnnotationModal({ play, onSave, onClose }) {
+  const canvasRef   = useRef(null);
+  const [tool,      setTool]      = useState("arrow");   // arrow | circle | line | text
+  const [color,     setColor]     = useState("#FF3B30");
+  const [strokes,   setStrokes]   = useState(() => play.coach_annotation?.strokes ?? []);
+  const [noteText,  setNoteText]  = useState(() => play.coach_annotation?.noteText ?? "");
+  const [drawing,   setDrawing]   = useState(false);
+  const [current,   setCurrent]   = useState(null);      // in-progress stroke
+  const [saving,    setSaving]    = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+
+  const thumb = play.mux_playback_id
+    ? `https://image.mux.com/${play.mux_playback_id}/thumbnail.jpg?time=${Math.floor(play.start_time_secs ?? 0)}&width=800&fit_mode=preserve`
+    : null;
+
+  // Redraw canvas whenever strokes or current stroke changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const allStrokes = current ? [...strokes, current] : strokes;
+    for (const s of allStrokes) {
+      ctx.strokeStyle = s.color;
+      ctx.fillStyle   = s.color;
+      ctx.lineWidth   = s.tool === "line" ? 4 : 2.5;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      const pts = s.points.map(([x, y]) => [x * W, y * H]);
+      if (!pts.length) continue;
+
+      if (s.tool === "arrow" && pts.length >= 2) {
+        const [x1,y1] = pts[0], [x2,y2] = pts[pts.length-1];
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+        // arrowhead
+        const angle = Math.atan2(y2-y1, x2-x1);
+        const headLen = 14;
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI/6), y2 - headLen * Math.sin(angle - Math.PI/6));
+        ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI/6), y2 - headLen * Math.sin(angle + Math.PI/6));
+        ctx.closePath(); ctx.fill();
+
+      } else if (s.tool === "circle" && pts.length >= 2) {
+        const [x1,y1] = pts[0], [x2,y2] = pts[pts.length-1];
+        const rx = Math.abs(x2-x1)/2, ry = Math.abs(y2-y1)/2;
+        const cx = (x1+x2)/2, cy = (y1+y2)/2;
+        ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(rx,4), Math.max(ry,4), 0, 0, 2*Math.PI);
+        ctx.stroke();
+
+      } else if (s.tool === "line") {
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        for (const [px,py] of pts.slice(1)) ctx.lineTo(px, py);
+        ctx.stroke();
+
+      } else if (s.tool === "text" && s.text) {
+        ctx.font = `bold ${Math.round(H * 0.04)}px system-ui`;
+        ctx.fillText(s.text, pts[0][0], pts[0][1]);
+      }
+    }
+  }, [strokes, current]);
+
+  function getPos(e) {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return [(clientX - rect.left) / rect.width, (clientY - rect.top) / rect.height];
+  }
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    const pt = getPos(e);
+    if (tool === "text") {
+      const text = window.prompt("Enter coaching note:");
+      if (text?.trim()) setStrokes(prev => [...prev, { tool: "text", color, text: text.trim(), points: [pt] }]);
+      return;
+    }
+    setDrawing(true);
+    setCurrent({ tool, color, points: [pt] });
+  }
+
+  function onPointerMove(e) {
+    if (!drawing || !current) return;
+    e.preventDefault();
+    const pt = getPos(e);
+    setCurrent(prev => ({ ...prev, points: tool === "line" ? [...prev.points, pt] : [prev.points[0], pt] }));
+  }
+
+  function onPointerUp(e) {
+    if (!drawing || !current) return;
+    setDrawing(false);
+    if (current.points.length >= 1) setStrokes(prev => [...prev, current]);
+    setCurrent(null);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const annotation = (strokes.length > 0 || noteText.trim())
+      ? { strokes, noteText: noteText.trim() }
+      : null;
+    try {
+      const r = await fetch("/api/plays/annotate", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playId: play.id, annotation }),
+      });
+      const d = await r.json();
+      if (r.ok) { onSave?.(play.id, d.annotation); onClose(); }
+      else toast.error(d.error ?? "Save failed");
+    } catch { toast.error("Network error"); }
+    setSaving(false);
+  }
+
+  const TOOLS = [
+    { id: "arrow",  label: "→ Arrow"  },
+    { id: "circle", label: "○ Circle" },
+    { id: "line",   label: "✏ Draw"   },
+    { id: "text",   label: "T Text"   },
+  ];
+  const COLORS = ["#FF3B30","#FF9500","#FFCC00","#34C759","#007AFF","#FFFFFF"];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "#0d1117", borderRadius: 16, overflow: "hidden", width: "min(860px, 96vw)", maxHeight: "96vh", display: "flex", flexDirection: "column" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#e2e8f0" }}>Annotate Play #{play.play_number}</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>Draw on this frame — athletes will see it in their feed</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Toolbar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
+          {TOOLS.map(t => (
+            <button key={t.id} onClick={() => setTool(t.id)}
+              style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${tool === t.id ? "#4FABFF" : "rgba(255,255,255,0.12)"}`, background: tool === t.id ? "rgba(79,171,255,0.15)" : "rgba(255,255,255,0.04)", color: tool === t.id ? "#4FABFF" : "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {t.label}
+            </button>
+          ))}
+          <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", marginLeft: 4 }} />
+          {COLORS.map(c => (
+            <button key={c} onClick={() => setColor(c)}
+              style={{ width: 22, height: 22, borderRadius: "50%", background: c, border: `2.5px solid ${color === c ? "#fff" : "transparent"}`, cursor: "pointer", flexShrink: 0 }} />
+          ))}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button onClick={() => setStrokes(prev => prev.slice(0, -1))} disabled={!strokes.length}
+              style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: strokes.length ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.15)", fontSize: 11, fontWeight: 700, cursor: strokes.length ? "pointer" : "default" }}>
+              ↩ Undo
+            </button>
+            <button onClick={() => setStrokes([])} disabled={!strokes.length}
+              style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid rgba(255,87,87,0.3)", background: strokes.length ? "rgba(255,87,87,0.08)" : "none", color: strokes.length ? "#f87171" : "rgba(255,255,255,0.15)", fontSize: 11, fontWeight: 700, cursor: strokes.length ? "pointer" : "default" }}>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* Canvas */}
+        <div style={{ position: "relative", flex: 1, minHeight: 0, background: "#000", userSelect: "none" }}>
+          {thumb && (
+            <img
+              src={thumb} alt=""
+              onLoad={() => setImgLoaded(true)}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+            />
+          )}
+          <canvas
+            ref={canvasRef}
+            width={800} height={450}
+            onMouseDown={onPointerDown}
+            onMouseMove={onPointerMove}
+            onMouseUp={onPointerUp}
+            onMouseLeave={onPointerUp}
+            onTouchStart={onPointerDown}
+            onTouchMove={onPointerMove}
+            onTouchEnd={onPointerUp}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", cursor: tool === "text" ? "text" : "crosshair" }}
+          />
+        </div>
+
+        {/* Note + save */}
+        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", gap: 10, alignItems: "center" }}>
+          <input
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            placeholder="Add a coaching note for athletes (optional)…"
+            style={{ flex: 1, padding: "9px 13px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.13)", background: "#1e293b", color: "#e2e8f0", fontSize: 13, outline: "none" }}
+          />
+          {play.coach_annotation && (
+            <button onClick={() => { setStrokes([]); setNoteText(""); handleSave(); }}
+              style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid rgba(255,87,87,0.3)", background: "none", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+              Remove
+            </button>
+          )}
+          <button onClick={handleSave} disabled={saving}
+            style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: "#4FABFF", color: "#0d1117", fontSize: 13, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", flexShrink: 0 }}>
+            {saving ? "Saving…" : "Save Annotation"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Play Sidebar ──────────────────────────────────────────────────────────────
-function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
+function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, onAnnotate, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const anchorRef = useRef(null);
   const [filter, setFilter] = useState("all");
@@ -1451,6 +1691,11 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, pl
                       style={{ background: "none", border: "none", cursor: isLast ? "default" : "pointer", padding: "2px 3px", borderRadius: 4, color: isLast ? "rgba(255,255,255,0.1)" : DS.dimText, lineHeight: 1, display: "flex" }}
                       title="Move down"
                     ><ChevronDown size={11} /></button>
+                    <button
+                      onClick={e => { e.stopPropagation(); onAnnotate?.(play); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, color: play.coach_annotation ? "#4FABFF" : DS.dimText, lineHeight: 1, display: "flex", alignItems: "center" }}
+                      title={play.coach_annotation ? "Edit coaching annotation" : "Add coaching annotation"}
+                    ><Pencil size={11} /></button>
                     <button
                       onClick={e => { e.stopPropagation(); onEdit?.(play); }}
                       style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, fontSize: 10, color: DS.dimText, lineHeight: 1 }}
@@ -3576,6 +3821,9 @@ export default function FilmDetailPage() {
   const [showExchange,   setShowExchange]   = useState(false);
   const [isPublished,    setIsPublished]    = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [watchStats,     setWatchStats]     = useState(null); // { watched_count, watchers }
+  const [showWatchers,   setShowWatchers]   = useState(false);
+  const [annotatingPlay, setAnnotatingPlay] = useState(null);
   const [exchanges,    setExchanges]    = useState([]);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [showOverlay,   setShowOverlay]   = useState(true);
@@ -3600,7 +3848,16 @@ export default function FilmDetailPage() {
     if (!id) return;
     const r = await fetch(`/api/film/status?filmId=${id}`, { credentials: "include" });
     const d = await r.json();
-    if (r.ok) { setFilm(d); setIsPublished(!!d.is_published); }
+    if (r.ok) {
+      setFilm(d);
+      setIsPublished(!!d.is_published);
+      if (d.is_published) {
+        fetch(`/api/film/watch-stats?filmId=${id}`, { credentials: "include" })
+          .then(r => r.json())
+          .then(ws => { if (ws.ok) setWatchStats(ws); })
+          .catch(() => {});
+      }
+    }
     return d;
   }, [id]);
 
@@ -4011,6 +4268,24 @@ export default function FilmDetailPage() {
               </span>
             )}
 
+            {/* Watch receipt — visible when film is shared */}
+            {!isMobile && isPublished && watchStats !== null && (
+              <button
+                onClick={() => setShowWatchers(w => !w)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                  background: watchStats.watched_count > 0 ? DS.safeBg : DS.pageBg,
+                  border: `1px solid ${watchStats.watched_count > 0 ? DS.safeBorder : DS.border}`,
+                  borderRadius: 20, padding: "3px 10px", cursor: "pointer",
+                }}
+              >
+                <Users size={11} color={watchStats.watched_count > 0 ? DS.safe : DS.dimText} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: watchStats.watched_count > 0 ? DS.safe : DS.dimText }}>
+                  {watchStats.watched_count > 0 ? `${watchStats.watched_count} watched` : "No views"}
+                </span>
+              </button>
+            )}
+
             {/* Share clip: desktop only (mobile can long-press video or use share sheet) */}
             {!isMobile && selPlay?.clip_url && (
               <button onClick={shareClip} style={{
@@ -4026,27 +4301,40 @@ export default function FilmDetailPage() {
 
             {/* Share with Team — publish to athlete feed */}
             {plays.length > 0 && (
-              <button
-                onClick={handlePublishToggle}
-                disabled={publishLoading}
-                title={isPublished ? "Shared with team — click to unshare" : "Share with your team"}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-                  background: isPublished ? DS.safeBg : DS.cardBg,
-                  color: isPublished ? DS.safe : DS.labelText,
-                  border: `1.5px solid ${isPublished ? DS.safeBorder : DS.border}`,
-                  borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
-                  fontSize: 12, fontWeight: 700, cursor: publishLoading ? "not-allowed" : "pointer",
-                  opacity: publishLoading ? 0.7 : 1, transition: "all 0.15s",
-                }}
-              >
-                {publishLoading
-                  ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                  : isPublished
-                    ? <><span style={{ width: 7, height: 7, borderRadius: "50%", background: DS.safe, display: "inline-block" }} />{!isMobile && " Shared"}</>
+              isPublished ? (
+                <button
+                  onClick={handlePublishToggle}
+                  disabled={publishLoading}
+                  onMouseEnter={e => { e.currentTarget.style.textDecorationLine = "underline"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.textDecorationLine = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer", flexShrink: 0,
+                    fontSize: 11, color: DS.dimText, padding: "4px 2px",
+                    opacity: publishLoading ? 0.5 : 1,
+                    textDecorationLine: "none", transition: "transform 0.12s ease",
+                  }}
+                >
+                  {publishLoading ? "…" : "Remove from feed"}
+                </button>
+              ) : (
+                <button
+                  onClick={handlePublishToggle}
+                  disabled={publishLoading}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                    background: DS.cardBg, color: DS.labelText,
+                    border: `1.5px solid ${DS.border}`,
+                    borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
+                    fontSize: 12, fontWeight: 700, cursor: publishLoading ? "not-allowed" : "pointer",
+                    opacity: publishLoading ? 0.7 : 1, transition: "opacity 0.15s",
+                  }}
+                >
+                  {publishLoading
+                    ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
                     : <><Users size={13} />{!isMobile && " Share with Team"}</>
-                }
-              </button>
+                  }
+                </button>
+              )
             )}
 
             {/* Share film link / cut-up — icon-only on mobile */}
@@ -4069,6 +4357,28 @@ export default function FilmDetailPage() {
               <ArrowLeftRight size={13} />{!isMobile && " Exchange"}
             </button>
           </div>
+
+          {/* Watchers panel */}
+          {showWatchers && watchStats?.watchers?.length > 0 && (
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {watchStats.watchers.map((w, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
+                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, color: DS.safe,
+                }}>
+                  <Users size={9} />
+                  {w.athlete_name}
+                  <span style={{ fontSize: 10, color: DS.dimText, fontWeight: 400 }}>
+                    · {new Date(w.last_watched_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {showWatchers && watchStats?.watched_count === 0 && (
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: DS.dimText }}>No athletes have watched this film yet.</p>
+          )}
 
           {/* Exchange status pills — show when there are any exchanges */}
           {exchanges.length > 0 && (
@@ -4375,6 +4685,7 @@ export default function FilmDetailPage() {
                       onEdit={startEdit}
                       onDelete={deletePlay}
                       onMove={movePlay}
+                      onAnnotate={p => setAnnotatingPlay(p)}
                       playlists={playlists}
                       onAddToPlaylist={addToPlaylist}
                       onCreateAndAddToPlaylist={createAndAdd}
@@ -4484,6 +4795,18 @@ export default function FilmDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Annotation Modal */}
+      {annotatingPlay && (
+        <AnnotationModal
+          play={annotatingPlay}
+          onSave={(playId, newAnnotation) => {
+            setPlays(prev => prev.map(p => p.id === playId ? { ...p, coach_annotation: newAnnotation } : p));
+            if (selPlay?.id === playId) setSelPlay(prev => ({ ...prev, coach_annotation: newAnnotation }));
+          }}
+          onClose={() => setAnnotatingPlay(null)}
+        />
+      )}
     </>
   );
 }

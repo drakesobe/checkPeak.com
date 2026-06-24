@@ -233,6 +233,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             <DropLink href="/org/workouts-calendar" icon="⬡" onClick={onClose}>Workouts Calendar</DropLink>
             <DropLink href="/org/review-queue"      icon="✦" onClick={onClose}>Review Queue</DropLink>
             <DropLink href="/org/film"              icon="◈" onClick={onClose} badge="Beta">Film Intelligence</DropLink>
+            <DropLink href="/org/plays"             icon="▦" onClick={onClose}>Play Library</DropLink>
             <DropLink href="/org/nutrition"         icon="◎" onClick={onClose}>Nutrition</DropLink>
             <DropLink href="/org/prescriptions"     icon="✦" onClick={onClose}>Nutrition Plans</DropLink>
           </div>
@@ -419,6 +420,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 <MLink href="/org/workouts-calendar" icon="⬡">Workouts Calendar</MLink>
                 <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
                 <MLink href="/org/film"              icon="◈" badge="Beta">Film Intelligence</MLink>
+                <MLink href="/org/plays"             icon="▦">Play Library</MLink>
                 <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>
                 <MLink href="/org/prescriptions"     icon="✦">Nutrition Plans</MLink>
 

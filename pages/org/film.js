@@ -792,17 +792,37 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus
             </p>
           )}
 
-          {/* Watch receipt — only for published films */}
-          {film.is_published && watchCount !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 4, background: watchCount > 0 ? DS.safeBg : DS.pageBg, border: `1px solid ${watchCount > 0 ? DS.safeBorder : DS.border}`, borderRadius: 20, padding: "2px 10px" }}>
-                <Users size={10} color={watchCount > 0 ? DS.safe : DS.dimText} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: watchCount > 0 ? DS.safe : DS.dimText }}>
-                  {watchCount > 0 ? `${watchCount} watched` : "No views yet"}
-                </span>
+          {/* Watch receipt + due date — only for published films */}
+          {film.is_published && (watchCount !== null || film.watch_due_date) && (() => {
+            const dueFmt = film.watch_due_date ? (() => {
+              const due   = new Date(film.watch_due_date + "T00:00:00");
+              const today = new Date(); today.setHours(0,0,0,0);
+              const diff  = Math.round((due - today) / 86400000);
+              if (diff < 0)   return { label: "Overdue",      color: "#C8102E" };
+              if (diff === 0)  return { label: "Due today",    color: DS.warn   };
+              if (diff === 1)  return { label: "Due tomorrow", color: DS.warn   };
+              if (diff <= 6)   return { label: `Due ${due.toLocaleDateString("en-US", { weekday: "short" })}`, color: DS.warn };
+              return { label: `Due ${due.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`, color: DS.dimText };
+            })() : null;
+
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                {watchCount !== null && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, background: watchCount > 0 ? DS.safeBg : DS.pageBg, border: `1px solid ${watchCount > 0 ? DS.safeBorder : DS.border}`, borderRadius: 20, padding: "2px 10px" }}>
+                    <Users size={10} color={watchCount > 0 ? DS.safe : DS.dimText} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: watchCount > 0 ? DS.safe : DS.dimText }}>
+                      {watchCount > 0 ? `${watchCount} watched` : "No views yet"}
+                    </span>
+                  </div>
+                )}
+                {dueFmt && film.viewing_type === "cara" && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: dueFmt.color }}>
+                    · {dueFmt.label}
+                  </span>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Actions */}

@@ -117,16 +117,18 @@ export default async function handler(req, res) {
     const playIds = rows.map(r => r.id);
 
     // Fetch engagement data — tables may not exist yet; default to empty if they error.
-    let likes = [], comments = [], userLikes = [];
+    let likes = [], comments = [], userLikes = [], userSaves = [];
     try {
       const results = await Promise.all([
         supabase.from("play_likes").select("play_id").in("play_id", playIds),
         supabase.from("play_comments").select("play_id").in("play_id", playIds),
         supabase.from("play_likes").select("play_id").eq("user_id", userId).in("play_id", playIds),
+        supabase.from("play_saves").select("play_id").eq("user_id", userId).in("play_id", playIds),
       ]);
-      likes     = results[0].data ?? [];
-      comments  = results[1].data ?? [];
-      userLikes = results[2].data ?? [];
+      likes      = results[0].data ?? [];
+      comments   = results[1].data ?? [];
+      userLikes  = results[2].data ?? [];
+      userSaves  = results[3].data ?? [];
     } catch (engErr) {
       console.warn("[film/feed] engagement tables not ready:", engErr?.message);
     }
@@ -134,6 +136,7 @@ export default async function handler(req, res) {
     const likeMap    = {};
     const commentMap = {};
     const likedSet   = new Set(userLikes.map(l => l.play_id));
+    const savedSet   = new Set(userSaves.map(s => s.play_id));
 
     for (const l of likes)    likeMap[l.play_id]    = (likeMap[l.play_id]    || 0) + 1;
     for (const c of comments) commentMap[c.play_id] = (commentMap[c.play_id] || 0) + 1;
@@ -163,6 +166,7 @@ export default async function handler(req, res) {
       like_count:       likeMap[r.id]    || 0,
       comment_count:    commentMap[r.id] || 0,
       is_liked:         likedSet.has(r.id),
+      is_saved:         savedSet.has(r.id),
     }));
 
     if (isTrending) {

@@ -7,6 +7,12 @@ import { supabaseAdmin as db } from "@/lib/supabase";
 function asString(v) { return String(v ?? "").trim(); }
 
 function getSessionUser(req) {
+  // _authUser query param (React Native — cookie header unreliable on iOS/Android)
+  const authUserRaw = req.query?._authUser;
+  if (authUserRaw) {
+    try { return JSON.parse(decodeURIComponent(String(authUserRaw))); } catch {}
+  }
+  // Cookie fallback (web browser)
   try {
     const cookieHeader = req.headers.cookie || "";
     const cookies = {};
@@ -34,7 +40,11 @@ export default async function handler(req, res) {
   if (!orgToken) {
     const session = getSessionUser(req);
     if (!session) return res.status(401).json({ error: "Not authenticated" });
-    orgToken = asString(session.Token || session.token || session.OrgToken || session.orgToken || "");
+    orgToken = asString(
+      session.Token || session.token ||
+      session.OrgToken || session.orgToken ||
+      session.org_token || ""
+    );
   }
 
   if (!orgToken) {

@@ -114,6 +114,7 @@ export default async function handler(req, res) {
         name:          athlete.name  || "",
         Name:          athlete.name  || "",
         athlete_token: athlete.athlete_token,
+        AthleteToken:  athlete.athlete_token,   // requireAthlete checks PascalCase
         org_token:     athlete.org_token || "",
         org_id,
         org_name,

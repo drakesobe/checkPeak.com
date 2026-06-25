@@ -1,6 +1,7 @@
 // pages/api/film/play-comments.js
-// GET    ?playId=   — list comments for a play
+// GET    ?playId=        — list comments for a play
 // POST   { playId, body } — add a comment
+// PATCH  { commentId, pin: true|false } — pin/unpin (coach only)
 // DELETE { commentId }   — delete own comment
 
 import { createClient } from "@supabase/supabase-js";
@@ -34,8 +35,9 @@ export default async function handler(req, res) {
 
       const { data: comments, error } = await supabase
         .from("play_comments")
-        .select("id, user_id, user_name, body, created_at")
+        .select("id, user_id, user_name, body, created_at, is_pinned")
         .eq("play_id", playId)
+        .order("is_pinned", { ascending: false })
         .order("created_at", { ascending: true });
 
       if (error) throw error;
@@ -61,6 +63,20 @@ export default async function handler(req, res) {
 
       if (error) throw error;
       return res.status(200).json({ ok: true, comment: data });
+    }
+
+    if (req.method === "PATCH") {
+      const { commentId, pin } = req.body ?? {};
+      if (!commentId) return res.status(400).json({ error: "commentId required" });
+      if (typeof pin !== "boolean") return res.status(400).json({ error: "pin (boolean) required" });
+
+      const { error } = await supabase
+        .from("play_comments")
+        .update({ is_pinned: pin })
+        .eq("id", commentId);
+
+      if (error) throw error;
+      return res.status(200).json({ ok: true, is_pinned: pin });
     }
 
     if (req.method === "DELETE") {

@@ -45,6 +45,18 @@ const TEAM_COLORS = {
   away:    { fill: "#9B1C1C", text: "#fff", route: "#FCA5A5" },
   default: { fill: "#374151", text: "#fff", route: "#D1D5DB" },
 };
+function formatDueDate(dueDateStr) {
+  if (!dueDateStr) return null;
+  const due   = new Date(dueDateStr + "T00:00:00");
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff  = Math.round((due - today) / 86400000);
+  if (diff < 0)  return { label: "Overdue",      overdue: true,  soon: false };
+  if (diff === 0) return { label: "Due today",    overdue: false, soon: true  };
+  if (diff === 1) return { label: "Due tomorrow", overdue: false, soon: true  };
+  if (diff <= 6)  return { label: `Due ${due.toLocaleDateString("en-US", { weekday: "short" })}`, overdue: false, soon: true };
+  return { label: `Due ${due.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`, overdue: false, soon: false };
+}
+
 function teamColors(team) {
   return TEAM_COLORS[team] ?? TEAM_COLORS.default;
 }
@@ -1544,6 +1556,116 @@ function AnnotationModal({ play, onSave, onClose }) {
 }
 
 // ── Play Sidebar ──────────────────────────────────────────────────────────────
+function PlayCommentSection({ playId }) {
+  const [comments, setComments] = useState([]);
+  const [input,    setInput]    = useState("");
+  const [posting,  setPosting]  = useState(false);
+
+  useEffect(() => {
+    if (!playId) return;
+    fetch(`/api/film/play-comments?playId=${playId}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (d.ok) setComments(d.comments ?? []); })
+      .catch(() => {});
+  }, [playId]);
+
+  async function post() {
+    if (!input.trim() || posting) return;
+    setPosting(true);
+    try {
+      const r = await fetch("/api/film/play-comments", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playId, body: input.trim() }),
+      });
+      const d = await r.json();
+      if (d.ok) { setComments(prev => [...prev, d.comment]); setInput(""); }
+    } catch {}
+    setPosting(false);
+  }
+
+  async function togglePin(c) {
+    const pinned = !c.is_pinned;
+    setComments(prev =>
+      [...prev.map(x => x.id === c.id ? { ...x, is_pinned: pinned } : x)]
+        .sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0))
+    );
+    fetch("/api/film/play-comments", {
+      method: "PATCH", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commentId: c.id, pin: pinned }),
+    }).catch(() => {});
+  }
+
+  const pinned   = comments.filter(c => c.is_pinned);
+  const unpinned = comments.filter(c => !c.is_pinned);
+
+  return (
+    <div onClick={e => e.stopPropagation()} style={{ padding: "8px 0 2px", borderTop: `1px solid ${DS.brandBorder}`, marginTop: 6 }}>
+      {/* Pinned notes callout */}
+      {pinned.map(c => (
+        <div key={c.id} style={{
+          display: "flex", gap: 8, alignItems: "flex-start",
+          background: DS.brandBg, border: `1px solid ${DS.brandBorder}`,
+          borderRadius: 8, padding: "7px 9px", marginBottom: 6,
+        }}>
+          <Bookmark size={10} fill={DS.brand} color={DS.brand} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: DS.brand }}>{c.user_name}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.bodyText, lineHeight: 1.4 }}>{c.body}</p>
+          </div>
+          <button onClick={() => togglePin(c)} title="Unpin"
+            style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, padding: "0 2px", fontSize: 14, lineHeight: 1 }}>×</button>
+        </div>
+      ))}
+
+      {/* Thread */}
+      {unpinned.map(c => (
+        <div key={c.id} style={{ display: "flex", gap: 7, alignItems: "flex-start", padding: "5px 0" }}>
+          <div style={{ width: 20, height: 20, borderRadius: "50%", background: DS.pageBg, border: `1px solid ${DS.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 8, fontWeight: 800, color: DS.labelText }}>{(c.user_name || "?")[0].toUpperCase()}</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: DS.labelText }}>{c.user_name} </span>
+            <span style={{ fontSize: 11, color: DS.bodyText, lineHeight: 1.4 }}>{c.body}</span>
+          </div>
+          <button onClick={() => togglePin(c)} title="Pin as note"
+            style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: DS.dimText, flexShrink: 0, display: "flex", alignItems: "center" }}>
+            <Bookmark size={10} />
+          </button>
+        </div>
+      ))}
+
+      {comments.length === 0 && (
+        <p style={{ fontSize: 10, color: DS.dimText, margin: "2px 0 6px", textAlign: "center" }}>No notes yet</p>
+      )}
+
+      {/* Input */}
+      <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && !e.shiftKey && post()}
+          placeholder="Add a note…"
+          style={{
+            flex: 1, padding: "5px 8px", borderRadius: 7, fontSize: 11,
+            border: `1px solid ${DS.border}`, background: DS.pageBg,
+            color: DS.bodyText, outline: "none",
+          }}
+        />
+        <button onClick={post} disabled={!input.trim() || posting}
+          style={{
+            background: DS.brand, border: "none", borderRadius: 7,
+            padding: "5px 9px", cursor: "pointer", color: "#fff",
+            fontSize: 11, fontWeight: 700, opacity: !input.trim() || posting ? 0.5 : 1,
+          }}>
+          {posting ? "…" : "Post"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, onAnnotate, playlists, onAddToPlaylist, onCreateAndAddToPlaylist }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const anchorRef = useRef(null);
@@ -1775,6 +1897,9 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, on
                     "{play.notes}"
                   </p>
                 )}
+
+                {/* Comments — expanded when play is selected */}
+                {sel && <PlayCommentSection playId={play.id} />}
               </div>
             </div>
           );
@@ -3820,8 +3945,11 @@ export default function FilmDetailPage() {
   const [showShare,      setShowShare]      = useState(false);
   const [showExchange,   setShowExchange]   = useState(false);
   const [isPublished,      setIsPublished]      = useState(false);
-  const [viewingType,      setViewingType]      = useState("vara"); // "cara" | "vara"
-  const [showTypePicker,   setShowTypePicker]   = useState(false);  // intercept before first publish
+  const [viewingType,      setViewingType]      = useState("vara");
+  const [showTypePicker,   setShowTypePicker]   = useState(false);
+  const [dueDateStep,      setDueDateStep]      = useState(false);  // second step after picking CARA
+  const [draftDueDate,     setDraftDueDate]     = useState("");     // "YYYY-MM-DD"
+  const [watchDueDate,     setWatchDueDate]     = useState(null);   // persisted due date
   const [publishLoading,   setPublishLoading]   = useState(false);
   const [watchStats,       setWatchStats]       = useState(null); // { watched_count, watchers }
   const [showWatchers,     setShowWatchers]     = useState(false);
@@ -3856,6 +3984,7 @@ export default function FilmDetailPage() {
       setFilm(d);
       setIsPublished(!!d.is_published);
       setViewingType(d.viewing_type ?? "vara");
+      setWatchDueDate(d.watch_due_date ?? null);
       if (d.is_published) {
         fetch(`/api/film/watch-stats?filmId=${id}`, { credentials: "include" })
           .then(r => r.json())
@@ -3872,22 +4001,25 @@ export default function FilmDetailPage() {
   }, [id]);
 
   // Called after coach picks CARA or VARA in the picker
-  async function handlePublish(type) {
+  async function handlePublish(type, dueDate) {
     if (publishLoading || !id) return;
     setShowTypePicker(false);
+    setDueDateStep(false);
     setIsPublished(true);
     setViewingType(type);
+    if (dueDate !== undefined) setWatchDueDate(dueDate || null);
     setPublishLoading(true);
     try {
       const r = await fetch("/api/film/publish", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: id, action: "publish", viewingType: type }),
+        body: JSON.stringify({ filmId: id, action: "publish", viewingType: type, watchDueDate: dueDate ?? null }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Failed");
       setViewingType(d.viewing_type ?? type);
-      toast.success(type === "cara" ? "Shared as Required Viewing (CARA) ✓" : "Shared as Voluntary Study (VARA) ✓");
+      setWatchDueDate(d.watch_due_date ?? null);
+      toast.success(type === "cara" ? "Shared as Required Viewing ✓" : "Shared as Voluntary Study ✓");
     } catch (e) {
       setIsPublished(false);
       toast.error(e.message || "Could not share film");
@@ -3931,6 +4063,25 @@ export default function FilmDetailPage() {
     } catch (e) {
       setViewingType(prev);
       toast.error(e.message || "Could not update");
+    }
+  }
+
+  async function handleSetDueDate(dateStr) {
+    const prev = watchDueDate;
+    setWatchDueDate(dateStr || null);
+    try {
+      const r = await fetch("/api/film/publish", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id, action: "setDueDate", watchDueDate: dateStr || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      setWatchDueDate(d.watch_due_date ?? null);
+      toast.success(dateStr ? "Deadline updated" : "Deadline removed");
+    } catch (e) {
+      setWatchDueDate(prev);
+      toast.error(e.message || "Could not update deadline");
     }
   }
 
@@ -4344,137 +4495,228 @@ export default function FilmDetailPage() {
             {/* Share with Team — unified pill + dropdown */}
             {plays.length > 0 && (
               <div style={{ position: "relative", flexShrink: 0 }}>
-                {isPublished ? (
-                  /* ── Published: status pill → opens management dropdown ── */
-                  <button
-                    onClick={() => setShowTypePicker(p => !p)}
-                    disabled={publishLoading}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 7,
-                      background: viewingType === "cara" ? "rgba(255,59,48,0.08)" : DS.safeBg,
-                      border: `1.5px solid ${viewingType === "cara" ? "rgba(255,59,48,0.3)" : DS.safeBorder}`,
-                      borderRadius: 20, padding: "5px 13px 5px 10px",
-                      cursor: "pointer", opacity: publishLoading ? 0.6 : 1,
-                    }}
-                  >
-                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: viewingType === "cara" ? "#FF3B30" : DS.safe, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: viewingType === "cara" ? "#FF3B30" : DS.safe }}>
-                      {viewingType === "cara" ? "Required" : "Voluntary"}
-                    </span>
-                    {watchStats !== null && (
-                      <span style={{ fontSize: 11, color: DS.dimText }}>
-                        · {watchStats.watched_count > 0 ? `${watchStats.watched_count} watched` : "No views"}
+                {(() => {
+                  const dueFmt = formatDueDate(watchDueDate);
+                  return isPublished ? (
+                    <button
+                      onClick={() => { setShowTypePicker(p => !p); setDueDateStep(false); }}
+                      disabled={publishLoading}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 7,
+                        background: viewingType === "cara"
+                          ? (dueFmt?.overdue ? "rgba(200,16,46,0.1)" : "rgba(255,59,48,0.08)")
+                          : DS.safeBg,
+                        border: `1.5px solid ${viewingType === "cara"
+                          ? (dueFmt?.overdue ? "rgba(200,16,46,0.35)" : "rgba(255,59,48,0.3)")
+                          : DS.safeBorder}`,
+                        borderRadius: 20, padding: "5px 13px 5px 10px",
+                        cursor: "pointer", opacity: publishLoading ? 0.6 : 1,
+                      }}
+                    >
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                        background: viewingType === "cara"
+                          ? (dueFmt?.overdue ? "#C8102E" : "#FF3B30")
+                          : DS.safe }} />
+                      <span style={{ fontSize: 12, fontWeight: 700,
+                        color: viewingType === "cara"
+                          ? (dueFmt?.overdue ? "#C8102E" : "#FF3B30")
+                          : DS.safe }}>
+                        {viewingType === "cara" ? "Required" : "Voluntary"}
                       </span>
-                    )}
-                    <ChevronDown size={11} color={DS.dimText} style={{ marginLeft: 1 }} />
-                  </button>
-                ) : (
-                  /* ── Unshared: Share with Team → opens picker dropdown ── */
-                  <button
-                    onClick={() => setShowTypePicker(p => !p)}
-                    disabled={publishLoading}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      background: DS.cardBg, color: DS.labelText,
-                      border: `1.5px solid ${DS.border}`,
-                      borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
-                      fontSize: 12, fontWeight: 700,
-                      cursor: publishLoading ? "not-allowed" : "pointer",
-                      opacity: publishLoading ? 0.7 : 1,
-                    }}
-                  >
-                    {publishLoading
-                      ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                      : <><Users size={13} />{!isMobile && " Share with Team"}</>
-                    }
-                  </button>
-                )}
+                      {dueFmt ? (
+                        <span style={{ fontSize: 11, fontWeight: 600,
+                          color: dueFmt.overdue ? "#C8102E" : dueFmt.soon ? DS.warn : DS.dimText }}>
+                          · {dueFmt.label}
+                        </span>
+                      ) : watchStats !== null ? (
+                        <span style={{ fontSize: 11, color: DS.dimText }}>
+                          · {watchStats.watched_count > 0 ? `${watchStats.watched_count} watched` : "No views"}
+                        </span>
+                      ) : null}
+                      <ChevronDown size={11} color={DS.dimText} style={{ marginLeft: 1 }} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setShowTypePicker(p => !p); setDueDateStep(false); }}
+                      disabled={publishLoading}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        background: DS.cardBg, color: DS.labelText,
+                        border: `1.5px solid ${DS.border}`,
+                        borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
+                        fontSize: 12, fontWeight: 700,
+                        cursor: publishLoading ? "not-allowed" : "pointer",
+                        opacity: publishLoading ? 0.7 : 1,
+                      }}
+                    >
+                      {publishLoading
+                        ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                        : <><Users size={13} />{!isMobile && " Share with Team"}</>
+                      }
+                    </button>
+                  );
+                })()}
 
                 {/* Dropdown panel */}
                 {showTypePicker && (
                   <>
-                    {/* Backdrop to close on outside click */}
-                    <div onClick={() => setShowTypePicker(false)} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
+                    <div onClick={() => { setShowTypePicker(false); setDueDateStep(false); }} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
                     <div style={{
                       position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 200,
                       background: DS.cardBg, border: `1px solid ${DS.border}`,
                       borderRadius: 14, padding: "8px 6px",
-                      boxShadow: "0 8px 32px rgba(0,0,0,0.13)", minWidth: 230,
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.13)", minWidth: 248,
                     }}>
-                      {!isPublished && (
-                        <p style={{ margin: "2px 10px 10px", fontSize: 11, fontWeight: 600, color: DS.dimText }}>
-                          How should athletes view this?
-                        </p>
-                      )}
-                      {isPublished && (
-                        <p style={{ margin: "2px 10px 10px", fontSize: 10, fontWeight: 700, color: DS.dimText, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          Viewing type
-                        </p>
-                      )}
-                      {/* Season compliance warning — shown when picking CARA outside the playing season */}
-                      {seasonStatus && !seasonStatus.isCara && seasonStatus.phase !== "unconfigured" && (() => {
-                        const isDeadPeriod = seasonStatus.phase === "dead-period";
-                        return (
-                          <div style={{
-                            margin: "0 4px 8px",
-                            padding: "9px 11px",
-                            borderRadius: 10,
-                            background: isDeadPeriod ? "rgba(200,16,46,0.07)" : "rgba(234,179,8,0.09)",
-                            border: `1px solid ${isDeadPeriod ? "rgba(200,16,46,0.25)" : "rgba(234,179,8,0.3)"}`,
-                          }}>
-                            <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: isDeadPeriod ? "#C8102E" : DS.warn }}>
-                              {isDeadPeriod ? "Dead Period" : seasonStatus.label || "Off-Season"}
-                            </p>
-                            <p style={{ margin: "3px 0 0", fontSize: 10, color: DS.dimText, lineHeight: 1.5 }}>
-                              {isDeadPeriod
-                                ? "Required Viewing is not permitted during a dead period. Use Voluntary Study instead."
-                                : "You're outside the declared playing season. Required Viewing outside the season may not be NCAA-compliant."}
-                            </p>
-                          </div>
-                        );
-                      })()}
-
-                      {[
-                        { key: "cara", label: "Required Viewing", sub: "Counts toward 20hr/week limit", dot: "#FF3B30" },
-                        { key: "vara", label: "Voluntary Study",  sub: "Athlete-initiated, not countable", dot: DS.safe },
-                      ].map(({ key, label, sub, dot }) => {
-                        const isActive = isPublished && viewingType === key;
-                        return (
-                          <button key={key}
-                            onClick={() => {
-                              if (isPublished) { handleSetViewingType(key); setShowTypePicker(false); }
-                              else { handlePublish(key); setShowTypePicker(false); }
-                            }}
-                            style={{
-                              width: "100%", display: "flex", alignItems: "center", gap: 10,
-                              padding: "9px 10px", borderRadius: 10, border: "none",
-                              background: isActive ? DS.pageBg : "transparent",
-                              cursor: "pointer", textAlign: "left",
-                            }}
-                          >
-                            <div style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
-                            <div style={{ flex: 1 }}>
-                              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{label}</p>
-                              <p style={{ margin: "1px 0 0", fontSize: 10, color: DS.dimText }}>{sub}</p>
-                            </div>
-                            {isActive && <Check size={13} color={DS.brand} />}
-                          </button>
-                        );
-                      })}
-
-                      {isPublished && (
+                      {dueDateStep ? (
+                        /* ── Step 2: set deadline for new CARA share ── */
                         <>
-                          <div style={{ height: 1, background: DS.border, margin: "8px 6px" }} />
-                          <button
-                            onClick={() => { handleUnpublish(); setShowTypePicker(false); }}
-                            style={{
-                              width: "100%", padding: "8px 10px", borderRadius: 10, border: "none",
-                              background: "transparent", cursor: "pointer", textAlign: "left",
-                              fontSize: 12, fontWeight: 600, color: DS.warn,
-                            }}
-                          >
-                            Remove from team feed
+                          <button onClick={() => setDueDateStep(false)} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 12, padding: "4px 10px 8px", width: "100%" }}>
+                            <ChevronDown size={12} style={{ transform: "rotate(90deg)" }} /> Back
                           </button>
+                          <p style={{ margin: "0 10px 10px", fontSize: 13, fontWeight: 700, color: DS.bodyText }}>When must athletes finish watching?</p>
+                          <div style={{ padding: "0 6px 6px" }}>
+                            <input
+                              type="date"
+                              value={draftDueDate}
+                              min={new Date().toISOString().split("T")[0]}
+                              onChange={e => setDraftDueDate(e.target.value)}
+                              style={{
+                                width: "100%", padding: "8px 10px", borderRadius: 9,
+                                border: `1.5px solid ${DS.border}`, fontSize: 13,
+                                background: DS.pageBg, color: DS.bodyText,
+                                boxSizing: "border-box", outline: "none",
+                              }}
+                            />
+                            <button
+                              onClick={() => handlePublish("cara", draftDueDate || null)}
+                              style={{
+                                marginTop: 8, width: "100%", padding: "9px", borderRadius: 9,
+                                border: "none", background: "#FF3B30", color: "#fff",
+                                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                              }}
+                            >
+                              Share as Required Viewing
+                            </button>
+                            <button
+                              onClick={() => handlePublish("cara", null)}
+                              style={{ marginTop: 6, width: "100%", padding: "7px", borderRadius: 9, border: "none", background: "transparent", color: DS.dimText, fontSize: 12, cursor: "pointer" }}
+                            >
+                              Share without a deadline
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        /* ── Step 1: pick type ── */
+                        <>
+                          {!isPublished && (
+                            <p style={{ margin: "2px 10px 10px", fontSize: 11, fontWeight: 600, color: DS.dimText }}>
+                              How should athletes view this?
+                            </p>
+                          )}
+                          {isPublished && (
+                            <p style={{ margin: "2px 10px 10px", fontSize: 10, fontWeight: 700, color: DS.dimText, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              Viewing type
+                            </p>
+                          )}
+
+                          {/* Season compliance warning */}
+                          {seasonStatus && !seasonStatus.isCara && seasonStatus.phase !== "unconfigured" && (() => {
+                            const isDeadPeriod = seasonStatus.phase === "dead-period";
+                            return (
+                              <div style={{
+                                margin: "0 4px 8px", padding: "9px 11px", borderRadius: 10,
+                                background: isDeadPeriod ? "rgba(200,16,46,0.07)" : "rgba(234,179,8,0.09)",
+                                border: `1px solid ${isDeadPeriod ? "rgba(200,16,46,0.25)" : "rgba(234,179,8,0.3)"}`,
+                              }}>
+                                <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: isDeadPeriod ? "#C8102E" : DS.warn }}>
+                                  {isDeadPeriod ? "Dead Period" : seasonStatus.label || "Off-Season"}
+                                </p>
+                                <p style={{ margin: "3px 0 0", fontSize: 10, color: DS.dimText, lineHeight: 1.5 }}>
+                                  {isDeadPeriod
+                                    ? "Required Viewing is not permitted during a dead period. Use Voluntary Study instead."
+                                    : "You're outside the declared playing season. Required Viewing outside the season may not be NCAA-compliant."}
+                                </p>
+                              </div>
+                            );
+                          })()}
+
+                          {[
+                            { key: "cara", label: "Required Viewing", sub: "Counts toward 20hr/week limit", dot: "#FF3B30" },
+                            { key: "vara", label: "Voluntary Study",  sub: "Athlete-initiated, not countable", dot: DS.safe },
+                          ].map(({ key, label, sub, dot }) => {
+                            const isActive = isPublished && viewingType === key;
+                            return (
+                              <button key={key}
+                                onClick={() => {
+                                  if (isPublished) { handleSetViewingType(key); setShowTypePicker(false); }
+                                  else if (key === "cara") {
+                                    // two-step: go to deadline picker
+                                    const d = new Date(); d.setDate(d.getDate() + 7);
+                                    setDraftDueDate(d.toISOString().split("T")[0]);
+                                    setDueDateStep(true);
+                                  } else {
+                                    handlePublish("vara", null);
+                                  }
+                                }}
+                                style={{
+                                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                                  padding: "9px 10px", borderRadius: 10, border: "none",
+                                  background: isActive ? DS.pageBg : "transparent",
+                                  cursor: "pointer", textAlign: "left",
+                                }}
+                              >
+                                <div style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{label}</p>
+                                  <p style={{ margin: "1px 0 0", fontSize: 10, color: DS.dimText }}>{sub}</p>
+                                </div>
+                                {isActive && <Check size={13} color={DS.brand} />}
+                                {key === "cara" && !isPublished && <ChevronDown size={11} color={DS.dimText} style={{ transform: "rotate(-90deg)" }} />}
+                              </button>
+                            );
+                          })}
+
+                          {/* Due date editor — for already-published CARA films */}
+                          {isPublished && viewingType === "cara" && (
+                            <>
+                              <div style={{ height: 1, background: DS.border, margin: "6px 6px" }} />
+                              <div style={{ padding: "6px 10px 4px" }}>
+                                <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 700, color: DS.dimText, textTransform: "uppercase", letterSpacing: "0.06em" }}>Viewing deadline</p>
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <input
+                                    type="date"
+                                    defaultValue={watchDueDate ?? ""}
+                                    min={new Date().toISOString().split("T")[0]}
+                                    onBlur={e => { if (e.target.value !== (watchDueDate ?? "")) handleSetDueDate(e.target.value); }}
+                                    style={{
+                                      flex: 1, padding: "6px 8px", borderRadius: 8,
+                                      border: `1px solid ${DS.border}`, fontSize: 12,
+                                      background: DS.pageBg, color: DS.bodyText, outline: "none",
+                                    }}
+                                  />
+                                  {watchDueDate && (
+                                    <button onClick={() => handleSetDueDate(null)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 18, lineHeight: 1, padding: "0 2px" }}>×</button>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {isPublished && (
+                            <>
+                              <div style={{ height: 1, background: DS.border, margin: "8px 6px" }} />
+                              <button
+                                onClick={() => { handleUnpublish(); setShowTypePicker(false); }}
+                                style={{
+                                  width: "100%", padding: "8px 10px", borderRadius: 10, border: "none",
+                                  background: "transparent", cursor: "pointer", textAlign: "left",
+                                  fontSize: 12, fontWeight: 600, color: DS.warn,
+                                }}
+                              >
+                                Remove from team feed
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -4946,7 +5188,9 @@ export default function FilmDetailPage() {
               </div>
             );
 
-            const watchedPct = total > 0 ? Math.round((watched.length / total) * 100) : 0;
+            const watchedPct  = total > 0 ? Math.round((watched.length / total) * 100) : 0;
+            const dueFmt      = formatDueDate(watchDueDate);
+            const isPastDue   = isCara && dueFmt?.overdue;
 
             return (
               <div style={{ display: "flex", flexDirection: "column" }}>
@@ -4956,13 +5200,16 @@ export default function FilmDetailPage() {
                     <span style={{ fontSize: 22, fontWeight: 800, color: DS.bodyText }}>
                       {watched.length}<span style={{ fontSize: 14, fontWeight: 600, color: DS.dimText }}>/{total}</span>
                     </span>
-                    <span style={{ fontSize: 11, color: DS.dimText }}>athletes watched</span>
+                    <span style={{ fontSize: 11, fontWeight: 600,
+                      color: isPastDue ? "#C8102E" : dueFmt?.soon ? DS.warn : DS.dimText }}>
+                      {dueFmt ? dueFmt.label : "athletes watched"}
+                    </span>
                   </div>
                   <div style={{ height: 8, borderRadius: 6, background: DS.pageBg, overflow: "hidden" }}>
                     <div style={{
                       height: "100%", borderRadius: 6,
                       width: `${watchedPct}%`,
-                      background: watchedPct === 100 ? DS.safe : isCara ? DS.brand : DS.safe,
+                      background: watchedPct === 100 ? DS.safe : isPastDue ? "#C8102E" : isCara ? DS.brand : DS.safe,
                       transition: "width 0.6s ease",
                     }} />
                   </div>
@@ -4976,23 +5223,28 @@ export default function FilmDetailPage() {
                   )}
                 </div>
 
-                {/* Hasn't watched — CARA only */}
+                {/* Hasn't watched / Past due — CARA only */}
                 {isCara && notWatched.length > 0 && (
                   <>
                     <div style={{ padding: "12px 4px 6px", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, color: DS.warn, textTransform: "uppercase", letterSpacing: "0.06em" }}>Hasn't Watched</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em",
+                        color: isPastDue ? "#C8102E" : DS.warn }}>
+                        {isPastDue ? "Past Due" : "Hasn't Watched"}
+                      </span>
                       <span style={{ fontSize: 10, color: DS.dimText }}>· {notWatched.length}</span>
                     </div>
                     {notWatched.map((a, i) => (
                       <div key={a.id ?? i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${DS.border}` }}>
-                        <Avatar initial={(a.name || "?")[0].toUpperCase()} color={DS.warn} />
+                        <Avatar initial={(a.name || "?")[0].toUpperCase()} color={isPastDue ? "#C8102E" : DS.warn} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{a.name || "Athlete"}</p>
-                          <p style={{ margin: 0, fontSize: 11, color: DS.dimText, marginTop: 1 }}>Hasn't opened yet</p>
+                          <p style={{ margin: 0, fontSize: 11, color: isPastDue ? "#C8102E" : DS.dimText, marginTop: 1 }}>
+                            {isPastDue ? "Missed the deadline" : "Hasn't opened yet"}
+                          </p>
                         </div>
                         <button
                           onClick={() => router.push(`/org/messaging?to=${encodeURIComponent(a.email)}`)}
-                          style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, color: DS.labelText, cursor: "pointer", flexShrink: 0 }}
+                          style={{ background: "none", border: `1px solid ${isPastDue ? "rgba(200,16,46,0.3)" : DS.border}`, borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, color: isPastDue ? "#C8102E" : DS.labelText, cursor: "pointer", flexShrink: 0 }}
                         >Remind</button>
                       </div>
                     ))}

@@ -1,9 +1,11 @@
 // pages/api/film/feed.js
-// GET ?sort=recent|trending&limit=20&offset=0
+// GET ?sort=recent|trending&limit=20&offset=0&filmId=uuid
 //
 // Returns enriched play clips for the social feed.
-// All tagged plays with a Mux playback ID surface automatically — no curation step.
-// Trending score = (likes×3 + comments×2) / (age_hours+2)^1.5  (Hacker News–style decay)
+// When filmId is provided, returns only plays from that film (ignoring sort/pagination).
+// Trending score = (likes×3 + comments×2) / (age_hours+2)^1.5 (Hacker News–style decay)
+// Pinned comments are pre-fetched and included per play so the mobile client
+// doesn't need a second round-trip to show coach notes.
 //
 // ── SQL migrations — run once in Supabase SQL editor ─────────────────────────
 //
@@ -19,6 +21,7 @@
 //   user_id    text NOT NULL,
 //   user_name  text,
 //   body       text NOT NULL,
+//   is_pinned  boolean NOT NULL DEFAULT false,
 //   created_at timestamptz DEFAULT now()
 // );
 // CREATE INDEX IF NOT EXISTS idx_play_likes_play    ON play_likes(play_id);
@@ -47,6 +50,20 @@ function trendingScore(likeCount, commentCount, createdAt) {
   return (likeCount * 3 + commentCount * 2) / Math.pow(ageHours + 2, 1.5);
 }
 
+const PLAY_SELECT = `
+  id, play_number, play_type, formation, result,
+  down, distance, yards_gained, personnel, notes, labels,
+  start_time_secs, end_time_secs, created_at, coach_annotation,
+  game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
+`;
+
+const PLAY_SELECT_NO_ANNOTATION = `
+  id, play_number, play_type, formation, result,
+  down, distance, yards_gained, personnel, notes, labels,
+  start_time_secs, end_time_secs, created_at,
+  game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
+`;
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -58,49 +75,71 @@ export default async function handler(req, res) {
 
   const orgId  = String(user.orgToken || user.org_token || user.Token || user.orgId || user.org_id || user.OrgId || "").trim();
   const userId = String(user.email || user.Email || user.id || orgId).trim().toLowerCase();
+  const filmId = String(req.query.filmId || "").trim();
   const sort   = req.query.sort === "trending" ? "trending" : "recent";
-  const limit  = Math.min(Number(req.query.limit  || 20), 50);
+  const limit  = Math.min(Number(req.query.limit  || 20), 100);
   const offset = Math.max(Number(req.query.offset || 0),   0);
 
   try {
-    // Trending fetches a wider window (up to 200 recent plays) then re-ranks in JS.
-    // Recent just paginates chronologically.
-    const isTrending  = sort === "trending";
-    const fetchLimit  = isTrending ? 200 : limit;
-    const fetchOffset = isTrending ? 0   : offset;
-    const cutoffDate  = new Date(
-      Date.now() - (isTrending ? 30 : 365) * 24 * 3_600_000
-    ).toISOString();
-
-    // Try with coach_annotation first; fall back without it if the column doesn't exist yet.
     let rows, queryError;
-    ({ data: rows, error: queryError } = await supabase
-      .from("game_plays")
-      .select(`
-        id, play_number, play_type, formation, result,
-        down, distance, yards_gained, personnel, notes, labels,
-        start_time_secs, end_time_secs, created_at, coach_annotation,
-        game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
-      `)
-      .eq("game_films.org_id", orgId)
-      .not("game_films.mux_playback_id", "is", null)
-      .not("start_time_secs", "is", null)
-      .gte("created_at", cutoffDate)
-      .order("game_date", { foreignTable: "game_films", ascending: false })
-      .order("play_number", { ascending: true })
-      .range(fetchOffset, fetchOffset + fetchLimit - 1));
 
-    if (queryError) {
-      // Column doesn't exist yet — retry without coach_annotation
-      if (queryError.code === "42703" || queryError.message?.includes("coach_annotation")) {
+    if (filmId) {
+      // ── Film-scoped: all plays from a specific film, ordered by play number ──
+      ({ data: rows, error: queryError } = await supabase
+        .from("game_plays")
+        .select(PLAY_SELECT)
+        .eq("game_films.id", filmId)
+        .eq("game_films.org_id", orgId)
+        .not("game_films.mux_playback_id", "is", null)
+        .not("start_time_secs", "is", null)
+        .order("play_number", { ascending: true }));
+
+      if (queryError?.code === "42703" || queryError?.message?.includes("coach_annotation")) {
         ({ data: rows, error: queryError } = await supabase
           .from("game_plays")
-          .select(`
-            id, play_number, play_type, formation, result,
-            down, distance, yards_gained, personnel, notes, labels,
-            start_time_secs, end_time_secs, created_at,
-            game_films!inner(mux_playback_id, title, opponent, game_date, sport, org_id, id)
-          `)
+          .select(PLAY_SELECT_NO_ANNOTATION)
+          .eq("game_films.id", filmId)
+          .eq("game_films.org_id", orgId)
+          .not("game_films.mux_playback_id", "is", null)
+          .not("start_time_secs", "is", null)
+          .order("play_number", { ascending: true }));
+      }
+    } else {
+      // ── Standard feed: recent or trending ──────────────────────────────────
+      // Trending: fetch 50 recent plays (down from 200) then re-rank in JS.
+      // Recent: paginate chronologically.
+      // Note: for a proper SQL-side trending sort, create a Postgres view:
+      //   CREATE MATERIALIZED VIEW trending_plays AS
+      //   SELECT p.id,
+      //     (COUNT(DISTINCT l.user_id)*3 + COUNT(DISTINCT c.id)*2) /
+      //     POWER(EXTRACT(EPOCH FROM (NOW()-p.created_at))/3600+2, 1.5) AS score
+      //   FROM game_plays p
+      //   LEFT JOIN play_likes l ON l.play_id = p.id
+      //   LEFT JOIN play_comments c ON c.play_id = p.id
+      //   GROUP BY p.id;
+      // Then refresh on a cron and ORDER BY score DESC here instead.
+      const isTrending  = sort === "trending";
+      const fetchLimit  = isTrending ? 50 : limit;   // was 200 — reduced to 50
+      const fetchOffset = isTrending ? 0  : offset;
+      const cutoffDate  = new Date(
+        Date.now() - (isTrending ? 30 : 365) * 24 * 3_600_000
+      ).toISOString();
+
+      ({ data: rows, error: queryError } = await supabase
+        .from("game_plays")
+        .select(PLAY_SELECT)
+        .eq("game_films.org_id", orgId)
+        .not("game_films.mux_playback_id", "is", null)
+        .not("start_time_secs", "is", null)
+        .gte("created_at", cutoffDate)
+        .order("game_date", { foreignTable: "game_films", ascending: false })
+        .order("play_number", { ascending: true })
+        .range(fetchOffset, fetchOffset + fetchLimit - 1));
+
+      if (queryError?.code === "42703" || queryError?.message?.includes("coach_annotation")) {
+        ({ data: rows, error: queryError } = await supabase
+          .from("game_plays")
+          .select(PLAY_SELECT_NO_ANNOTATION)
           .eq("game_films.org_id", orgId)
           .not("game_films.mux_playback_id", "is", null)
           .not("start_time_secs", "is", null)
@@ -109,37 +148,50 @@ export default async function handler(req, res) {
           .order("play_number", { ascending: true })
           .range(fetchOffset, fetchOffset + fetchLimit - 1));
       }
-      if (queryError) throw queryError;
     }
 
+    if (queryError) throw queryError;
     if (!rows?.length) return res.status(200).json({ ok: true, plays: [] });
 
     const playIds = rows.map(r => r.id);
 
-    // Fetch engagement data — tables may not exist yet; default to empty if they error.
-    let likes = [], comments = [], userLikes = [], userSaves = [];
+    // ── Engagement + pinned comments (parallel) ──────────────────────────────
+    let likes = [], comments = [], userLikes = [], userSaves = [], pinnedComments = [];
     try {
       const results = await Promise.all([
         supabase.from("play_likes").select("play_id").in("play_id", playIds),
         supabase.from("play_comments").select("play_id").in("play_id", playIds),
         supabase.from("play_likes").select("play_id").eq("user_id", userId).in("play_id", playIds),
         supabase.from("play_saves").select("play_id").eq("user_id", userId).in("play_id", playIds),
+        // Pinned comments: first pinned comment per play (coach notes surfaced in feed)
+        supabase
+          .from("play_comments")
+          .select("play_id, body, user_name")
+          .in("play_id", playIds)
+          .eq("is_pinned", true)
+          .order("created_at", { ascending: true }),
       ]);
-      likes      = results[0].data ?? [];
-      comments   = results[1].data ?? [];
-      userLikes  = results[2].data ?? [];
-      userSaves  = results[3].data ?? [];
+      likes           = results[0].data ?? [];
+      comments        = results[1].data ?? [];
+      userLikes       = results[2].data ?? [];
+      userSaves       = results[3].data ?? [];
+      pinnedComments  = results[4].data ?? [];
     } catch (engErr) {
       console.warn("[film/feed] engagement tables not ready:", engErr?.message);
     }
 
-    const likeMap    = {};
-    const commentMap = {};
-    const likedSet   = new Set(userLikes.map(l => l.play_id));
-    const savedSet   = new Set(userSaves.map(s => s.play_id));
+    const likeMap      = {};
+    const commentMap   = {};
+    const pinnedMap    = {};
+    const likedSet     = new Set(userLikes.map(l => l.play_id));
+    const savedSet     = new Set(userSaves.map(s => s.play_id));
 
     for (const l of likes)    likeMap[l.play_id]    = (likeMap[l.play_id]    || 0) + 1;
     for (const c of comments) commentMap[c.play_id] = (commentMap[c.play_id] || 0) + 1;
+    // Keep only the first pinned comment per play
+    for (const p of pinnedComments) {
+      if (!pinnedMap[p.play_id]) pinnedMap[p.play_id] = { body: p.body, user_name: p.user_name };
+    }
 
     let plays = rows.map(r => ({
       id:               r.id,
@@ -157,6 +209,7 @@ export default async function handler(req, res) {
       end_time_secs:    r.end_time_secs ?? null,
       created_at:       r.created_at,
       coach_annotation: r.coach_annotation ?? null,
+      pinned_comment:   pinnedMap[r.id]    ?? null,
       mux_playback_id:  r.game_films.mux_playback_id,
       film_id:          r.game_films.id,
       film_title:       r.game_films.title       || null,
@@ -169,7 +222,8 @@ export default async function handler(req, res) {
       is_saved:         savedSet.has(r.id),
     }));
 
-    if (isTrending) {
+    // Re-rank for trending (JS side — see SQL view comment above for the proper fix)
+    if (!filmId && sort === "trending") {
       plays.sort((a, b) =>
         trendingScore(b.like_count, b.comment_count, b.created_at) -
         trendingScore(a.like_count, a.comment_count, a.created_at)

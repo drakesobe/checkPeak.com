@@ -1,13 +1,18 @@
 // pages/api/film/publish.js
-// POST { filmId, action, viewingType? }
-//   action: "publish"   — publish with viewingType ("cara"|"vara", default "vara")
-//   action: "unpublish" — remove from feed
-//   action: "setType"   — change viewingType on already-published film
+// POST { filmId, action, viewingType?, watchDueDate? }
+//   action: "publish"    — publish with viewingType ("cara"|"vara", default "vara")
+//   action: "unpublish"  — remove from feed
+//   action: "setType"    — change viewingType on already-published film
+//   action: "setDueDate" — update watch_due_date only
+//
+// When action="publish" and viewingType="cara", Expo push notifications are sent
+// to all org athletes who have a push_token stored (non-blocking, fire-and-forget).
 //
 // ── SQL migrations — run once in Supabase SQL editor ─────────────────────────
 // ALTER TABLE game_films ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false;
 // ALTER TABLE game_films ADD COLUMN IF NOT EXISTS viewing_type text DEFAULT 'vara'
 //   CHECK (viewing_type IN ('cara', 'vara'));
+// ALTER TABLE game_films ADD COLUMN IF NOT EXISTS watch_due_date date;
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from "@supabase/supabase-js";
@@ -24,6 +29,45 @@ function parseUser(req) {
   return readUserCookie(req);
 }
 
+// ── Fire-and-forget: send Expo push to all org athletes ──────────────────────
+async function sendRequiredFilmPush(orgId, filmId, filmTitle, opponent) {
+  try {
+    const { data: athletes } = await supabase
+      .from("athletes")
+      .select("push_token")
+      .eq("org_id", orgId)
+      .not("push_token", "is", null);
+
+    const tokens = (athletes ?? [])
+      .map(a => a.push_token)
+      .filter(t => t && (t.startsWith("ExponentPushToken[") || t.startsWith("ExpoPushToken[")));
+
+    if (!tokens.length) return;
+
+    const opponentStr = opponent ? ` vs ${opponent}` : "";
+    const body        = `Coach posted required viewing: ${filmTitle || "New film"}${opponentStr}. Watch before it's due.`;
+
+    const BATCH = 100;
+    for (let i = 0; i < tokens.length; i += BATCH) {
+      const messages = tokens.slice(i, i + BATCH).map(to => ({
+        to,
+        title:    "Required Film Assigned",
+        body,
+        sound:    "default",
+        priority: "high",
+        data:     { type: "required_film", filmId, filmTitle: filmTitle || "" },
+      }));
+      await fetch("https://exp.host/--/api/v2/push/send", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body:    JSON.stringify(messages),
+      });
+    }
+  } catch (err) {
+    console.error("[film/publish] push send error:", err?.message);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -37,7 +81,6 @@ export default async function handler(req, res) {
   const filmId      = String(req.body?.filmId      || "").trim();
   const action      = String(req.body?.action      || "toggle").trim();
   const viewingType = ["cara", "vara"].includes(req.body?.viewingType) ? req.body.viewingType : "vara";
-  // watchDueDate: "YYYY-MM-DD" string or null to clear
   const rawDue      = req.body?.watchDueDate;
   const watchDueDate = rawDue ? String(rawDue).trim() || null : (rawDue === null ? null : undefined);
 
@@ -47,19 +90,21 @@ export default async function handler(req, res) {
   try {
     const { data: film, error: fetchErr } = await supabase
       .from("game_films")
-      .select("id, is_published, viewing_type, status, mux_playback_id")
+      .select("id, is_published, viewing_type, status, mux_playback_id, title, opponent")
       .eq("id", filmId)
       .eq("org_id", orgId)
       .single();
 
     if (fetchErr || !film) return res.status(404).json({ error: "Film not found" });
 
-    let updates = {};
+    let updates        = {};
+    let shouldPushCara = false;
 
     if (action === "publish") {
       if (film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
       updates = { is_published: true, viewing_type: viewingType };
       if (watchDueDate !== undefined) updates.watch_due_date = watchDueDate;
+      shouldPushCara = !film.is_published && viewingType === "cara";
     } else if (action === "unpublish") {
       updates = { is_published: false, watch_due_date: null };
     } else if (action === "setType") {
@@ -71,7 +116,10 @@ export default async function handler(req, res) {
       // legacy toggle
       if (!film.is_published && film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
       updates = { is_published: !film.is_published };
-      if (!film.is_published) updates.viewing_type = viewingType;
+      if (!film.is_published) {
+        updates.viewing_type = viewingType;
+        shouldPushCara = viewingType === "cara";
+      }
     }
 
     const { error: updateErr } = await supabase
@@ -81,6 +129,11 @@ export default async function handler(req, res) {
       .eq("org_id", orgId);
 
     if (updateErr) throw updateErr;
+
+    // Fire-and-forget — don't block the response
+    if (shouldPushCara) {
+      sendRequiredFilmPush(orgId, filmId, film.title, film.opponent);
+    }
 
     return res.status(200).json({
       ok:             true,

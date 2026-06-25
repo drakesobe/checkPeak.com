@@ -1,15 +1,15 @@
 // pages/api/film/watch.js
-// POST { filmId } — athlete marks a film as watched (upsert).
+// POST { filmId, playId? } — athlete marks a film/play as watched (upsert).
 // Called from mobile feed when a play from that film is viewed.
 // Returns { ok, watched_at }
 //
-// ── SQL migration — run once in Supabase SQL editor ──────────────────────────
+// ── SQL migrations — run once in Supabase SQL editor ─────────────────────────
 //
 // CREATE TABLE IF NOT EXISTS film_watches (
-//   id              uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-//   film_id         uuid REFERENCES game_films(id) ON DELETE CASCADE,
-//   athlete_id      text NOT NULL,
-//   athlete_name    text,
+//   id               uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+//   film_id          uuid REFERENCES game_films(id) ON DELETE CASCADE,
+//   athlete_id       text NOT NULL,
+//   athlete_name     text,
 //   first_watched_at timestamptz DEFAULT now(),
 //   last_watched_at  timestamptz DEFAULT now(),
 //   UNIQUE(film_id, athlete_id)
@@ -17,6 +17,18 @@
 // CREATE INDEX IF NOT EXISTS idx_film_watches_film    ON film_watches(film_id);
 // CREATE INDEX IF NOT EXISTS idx_film_watches_athlete ON film_watches(athlete_id);
 // GRANT ALL ON public.film_watches TO service_role;
+//
+// CREATE TABLE IF NOT EXISTS play_watches (
+//   id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+//   play_id     uuid REFERENCES game_plays(id) ON DELETE CASCADE,
+//   film_id     uuid REFERENCES game_films(id) ON DELETE CASCADE,
+//   athlete_id  text NOT NULL,
+//   watched_at  timestamptz DEFAULT now(),
+//   UNIQUE(play_id, athlete_id)
+// );
+// CREATE INDEX IF NOT EXISTS idx_play_watches_film    ON play_watches(film_id);
+// CREATE INDEX IF NOT EXISTS idx_play_watches_athlete ON play_watches(athlete_id);
+// GRANT ALL ON public.play_watches TO service_role;
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -43,9 +55,10 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const athleteId   = String(user.email || user.id || "").trim().toLowerCase();
-  const athleteName = String(user.name || user.full_name || user.email || "").trim();
+  const athleteId   = String(user.email || user.Email || user.id || user.athlete_token || "").trim().toLowerCase();
+  const athleteName = String(user.name || user.Name || user.full_name || user.email || user.Email || "").trim();
   const filmId      = String(req.body?.filmId || "").trim();
+  const playId      = String(req.body?.playId || "").trim();
 
   if (!filmId || !athleteId) return res.status(400).json({ error: "filmId required" });
 
@@ -61,6 +74,7 @@ export default async function handler(req, res) {
 
     const now = new Date().toISOString();
 
+    // Upsert film-level watch
     const { data, error } = await supabase
       .from("film_watches")
       .upsert(
@@ -71,6 +85,16 @@ export default async function handler(req, res) {
       .single();
 
     if (error) throw error;
+
+    // Upsert play-level watch if playId provided
+    if (playId) {
+      await supabase
+        .from("play_watches")
+        .upsert(
+          { play_id: playId, film_id: filmId, athlete_id: athleteId, watched_at: now },
+          { onConflict: "play_id,athlete_id", ignoreDuplicates: true }
+        );
+    }
 
     return res.status(200).json({ ok: true, watched_at: data?.last_watched_at ?? now });
   } catch (err) {

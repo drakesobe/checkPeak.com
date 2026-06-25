@@ -86,7 +86,8 @@ export default async function handler(req, res) {
       .not("game_films.mux_playback_id", "is", null)
       .not("start_time_secs", "is", null)
       .gte("created_at", cutoffDate)
-      .order("created_at", { ascending: false })
+      .order("game_date", { foreignTable: "game_films", ascending: false })
+      .order("play_number", { ascending: true })
       .range(fetchOffset, fetchOffset + fetchLimit - 1));
 
     if (queryError) {
@@ -104,7 +105,8 @@ export default async function handler(req, res) {
           .not("game_films.mux_playback_id", "is", null)
           .not("start_time_secs", "is", null)
           .gte("created_at", cutoffDate)
-          .order("created_at", { ascending: false })
+          .order("game_date", { foreignTable: "game_films", ascending: false })
+          .order("play_number", { ascending: true })
           .range(fetchOffset, fetchOffset + fetchLimit - 1));
       }
       if (queryError) throw queryError;

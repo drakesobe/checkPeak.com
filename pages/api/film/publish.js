@@ -1,9 +1,13 @@
 // pages/api/film/publish.js
-// POST { filmId } — toggle is_published on a game_film.
-// Only the org that owns the film can publish/unpublish it.
+// POST { filmId, action, viewingType? }
+//   action: "publish"   — publish with viewingType ("cara"|"vara", default "vara")
+//   action: "unpublish" — remove from feed
+//   action: "setType"   — change viewingType on already-published film
 //
-// ── SQL migration — run once in Supabase SQL editor ──────────────────────────
+// ── SQL migrations — run once in Supabase SQL editor ─────────────────────────
 // ALTER TABLE game_films ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false;
+// ALTER TABLE game_films ADD COLUMN IF NOT EXISTS viewing_type text DEFAULT 'vara'
+//   CHECK (viewing_type IN ('cara', 'vara'));
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from "@supabase/supabase-js";
@@ -29,38 +33,53 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
-  const filmId = String(req.body?.filmId || "").trim();
+  const orgId       = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
+  const filmId      = String(req.body?.filmId      || "").trim();
+  const action      = String(req.body?.action      || "toggle").trim(); // publish | unpublish | setType | toggle
+  const viewingType = ["cara", "vara"].includes(req.body?.viewingType) ? req.body.viewingType : "vara";
 
   if (!orgId)  return res.status(400).json({ error: "Missing org identity" });
   if (!filmId) return res.status(400).json({ error: "filmId required" });
 
   try {
-    // Fetch current state — also verifies the film belongs to this org
     const { data: film, error: fetchErr } = await supabase
       .from("game_films")
-      .select("id, is_published, status, mux_playback_id")
+      .select("id, is_published, viewing_type, status, mux_playback_id")
       .eq("id", filmId)
       .eq("org_id", orgId)
       .single();
 
     if (fetchErr || !film) return res.status(404).json({ error: "Film not found" });
 
-    if (film.status !== "ready") {
-      return res.status(400).json({ error: "Film must finish processing before going live" });
-    }
+    let updates = {};
 
-    const nextPublished = !film.is_published;
+    if (action === "publish") {
+      if (film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
+      updates = { is_published: true, viewing_type: viewingType };
+    } else if (action === "unpublish") {
+      updates = { is_published: false };
+    } else if (action === "setType") {
+      updates = { viewing_type: viewingType };
+    } else {
+      // legacy toggle behaviour
+      if (!film.is_published && film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
+      updates = { is_published: !film.is_published };
+      if (!film.is_published) updates.viewing_type = viewingType;
+    }
 
     const { error: updateErr } = await supabase
       .from("game_films")
-      .update({ is_published: nextPublished })
+      .update(updates)
       .eq("id", filmId)
       .eq("org_id", orgId);
 
     if (updateErr) throw updateErr;
 
-    return res.status(200).json({ ok: true, published: nextPublished });
+    return res.status(200).json({
+      ok:           true,
+      published:    updates.is_published ?? film.is_published,
+      viewing_type: updates.viewing_type ?? film.viewing_type ?? "vara",
+    });
   } catch (err) {
     console.error("[film/publish]", err);
     return res.status(500).json({ error: "Server error", details: err?.message });

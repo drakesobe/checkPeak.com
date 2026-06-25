@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   try {
     const { data: films, error, count } = await supabase
       .from("game_films")
-      .select("id, title, sport, game_date, opponent, status, progress_pct, play_count, duration_secs, mux_playback_id, is_published, created_at", { count: "exact" })
+      .select("id, title, sport, game_date, opponent, status, progress_pct, play_count, duration_secs, mux_playback_id, is_published, viewing_type, created_at", { count: "exact" })
       .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);

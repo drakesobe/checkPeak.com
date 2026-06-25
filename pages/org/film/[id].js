@@ -12,7 +12,7 @@ import {
   Shield, Share2, Volume2, VolumeX, Activity, Zap, Lock,
   X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
   Trash2, ChevronRight, ChevronUp, ChevronDown, SkipForward, SkipBack, Bookmark,
-  ArrowLeftRight, Send, Clock, CheckCircle, Pencil,
+  ArrowLeftRight, Send, Clock, CheckCircle, Pencil, Check,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -3819,11 +3819,15 @@ export default function FilmDetailPage() {
   const [drawMode,     setDrawMode]     = useState(false);
   const [showShare,      setShowShare]      = useState(false);
   const [showExchange,   setShowExchange]   = useState(false);
-  const [isPublished,    setIsPublished]    = useState(false);
-  const [publishLoading, setPublishLoading] = useState(false);
-  const [watchStats,     setWatchStats]     = useState(null); // { watched_count, watchers }
-  const [showWatchers,   setShowWatchers]   = useState(false);
-  const [annotatingPlay, setAnnotatingPlay] = useState(null);
+  const [isPublished,      setIsPublished]      = useState(false);
+  const [viewingType,      setViewingType]      = useState("vara"); // "cara" | "vara"
+  const [showTypePicker,   setShowTypePicker]   = useState(false);  // intercept before first publish
+  const [publishLoading,   setPublishLoading]   = useState(false);
+  const [watchStats,       setWatchStats]       = useState(null); // { watched_count, watchers }
+  const [showWatchers,     setShowWatchers]     = useState(false);
+  const [annotatingPlay,   setAnnotatingPlay]   = useState(null);
+  const [teamAthletes,   setTeamAthletes]   = useState([]);
+  const [seasonStatus,   setSeasonStatus]   = useState(null); // { phase, label, isCara, note, period }
   const [exchanges,    setExchanges]    = useState([]);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [showOverlay,   setShowOverlay]   = useState(true);
@@ -3851,36 +3855,83 @@ export default function FilmDetailPage() {
     if (r.ok) {
       setFilm(d);
       setIsPublished(!!d.is_published);
+      setViewingType(d.viewing_type ?? "vara");
       if (d.is_published) {
         fetch(`/api/film/watch-stats?filmId=${id}`, { credentials: "include" })
           .then(r => r.json())
           .then(ws => { if (ws.ok) setWatchStats(ws); })
           .catch(() => {});
       }
+      // Always fetch team athletes so Views tab can show who hasn't watched
+      fetch("/api/org/getAthletes", { credentials: "include" })
+        .then(r => r.json())
+        .then(d => { if (d.ok) setTeamAthletes(d.athletes ?? []); })
+        .catch(() => {});
     }
     return d;
   }, [id]);
 
-  async function handlePublishToggle() {
+  // Called after coach picks CARA or VARA in the picker
+  async function handlePublish(type) {
     if (publishLoading || !id) return;
-    const willPublish = !isPublished;
-    setIsPublished(willPublish); // optimistic
+    setShowTypePicker(false);
+    setIsPublished(true);
+    setViewingType(type);
     setPublishLoading(true);
     try {
       const r = await fetch("/api/film/publish", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: id }),
+        body: JSON.stringify({ filmId: id, action: "publish", viewingType: type }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Failed");
-      setIsPublished(d.published);
-      toast.success(d.published ? "Film shared with team ✓" : "Removed from team feed");
+      setViewingType(d.viewing_type ?? type);
+      toast.success(type === "cara" ? "Shared as Required Viewing (CARA) ✓" : "Shared as Voluntary Study (VARA) ✓");
     } catch (e) {
-      setIsPublished(!willPublish); // revert
+      setIsPublished(false);
+      toast.error(e.message || "Could not share film");
+    }
+    setPublishLoading(false);
+  }
+
+  async function handleUnpublish() {
+    if (publishLoading || !id) return;
+    setIsPublished(false);
+    setPublishLoading(true);
+    try {
+      const r = await fetch("/api/film/publish", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id, action: "unpublish" }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      toast.success("Removed from team feed");
+    } catch (e) {
+      setIsPublished(true);
       toast.error(e.message || "Could not update");
     }
     setPublishLoading(false);
+  }
+
+  async function handleSetViewingType(type) {
+    if (publishLoading || !id) return;
+    const prev = viewingType;
+    setViewingType(type);
+    try {
+      const r = await fetch("/api/film/publish", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filmId: id, action: "setType", viewingType: type }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      toast.success(type === "cara" ? "Switched to Required Viewing (CARA)" : "Switched to Voluntary Study (VARA)");
+    } catch (e) {
+      setViewingType(prev);
+      toast.error(e.message || "Could not update");
+    }
   }
 
   const fetchVideoUrl = useCallback(async () => {
@@ -3938,6 +3989,14 @@ export default function FilmDetailPage() {
     fetchAnalytics();
   }, [fetchPlays, fetchAnalytics]);
 
+
+  // Fetch season status once (for CARA compliance warnings)
+  useEffect(() => {
+    fetch("/api/org/season-status", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (d.ok) setSeasonStatus(d); })
+      .catch(() => {});
+  }, []);
 
   // Initial load
   useEffect(() => {
@@ -4189,6 +4248,7 @@ export default function FilmDetailPage() {
     { key: "analytics", label: "Analytics", Icon: BarChart2, badge: null },
     { key: "drives",    label: "Drives",    Icon: Activity,  badge: analytics?.drives?.length > 0 ? analytics.drives.length : null },
     { key: "cutups",    label: "Cut-ups",   Icon: ListVideo, badge: playlists.length > 0 ? playlists.length : null },
+    { key: "views",     label: "Views",     Icon: Users,     badge: watchStats?.watched_count > 0 ? watchStats.watched_count : null },
   ];
 
   return (
@@ -4268,24 +4328,6 @@ export default function FilmDetailPage() {
               </span>
             )}
 
-            {/* Watch receipt — visible when film is shared */}
-            {!isMobile && isPublished && watchStats !== null && (
-              <button
-                onClick={() => setShowWatchers(w => !w)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-                  background: watchStats.watched_count > 0 ? DS.safeBg : DS.pageBg,
-                  border: `1px solid ${watchStats.watched_count > 0 ? DS.safeBorder : DS.border}`,
-                  borderRadius: 20, padding: "3px 10px", cursor: "pointer",
-                }}
-              >
-                <Users size={11} color={watchStats.watched_count > 0 ? DS.safe : DS.dimText} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: watchStats.watched_count > 0 ? DS.safe : DS.dimText }}>
-                  {watchStats.watched_count > 0 ? `${watchStats.watched_count} watched` : "No views"}
-                </span>
-              </button>
-            )}
-
             {/* Share clip: desktop only (mobile can long-press video or use share sheet) */}
             {!isMobile && selPlay?.clip_url && (
               <button onClick={shareClip} style={{
@@ -4299,42 +4341,146 @@ export default function FilmDetailPage() {
               </button>
             )}
 
-            {/* Share with Team — publish to athlete feed */}
+            {/* Share with Team — unified pill + dropdown */}
             {plays.length > 0 && (
-              isPublished ? (
-                <button
-                  onClick={handlePublishToggle}
-                  disabled={publishLoading}
-                  onMouseEnter={e => { e.currentTarget.style.textDecorationLine = "underline"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.textDecorationLine = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
-                  style={{
-                    background: "none", border: "none", cursor: "pointer", flexShrink: 0,
-                    fontSize: 11, color: DS.dimText, padding: "4px 2px",
-                    opacity: publishLoading ? 0.5 : 1,
-                    textDecorationLine: "none", transition: "transform 0.12s ease",
-                  }}
-                >
-                  {publishLoading ? "…" : "Remove from feed"}
-                </button>
-              ) : (
-                <button
-                  onClick={handlePublishToggle}
-                  disabled={publishLoading}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-                    background: DS.cardBg, color: DS.labelText,
-                    border: `1.5px solid ${DS.border}`,
-                    borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
-                    fontSize: 12, fontWeight: 700, cursor: publishLoading ? "not-allowed" : "pointer",
-                    opacity: publishLoading ? 0.7 : 1, transition: "opacity 0.15s",
-                  }}
-                >
-                  {publishLoading
-                    ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-                    : <><Users size={13} />{!isMobile && " Share with Team"}</>
-                  }
-                </button>
-              )
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                {isPublished ? (
+                  /* ── Published: status pill → opens management dropdown ── */
+                  <button
+                    onClick={() => setShowTypePicker(p => !p)}
+                    disabled={publishLoading}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      background: viewingType === "cara" ? "rgba(255,59,48,0.08)" : DS.safeBg,
+                      border: `1.5px solid ${viewingType === "cara" ? "rgba(255,59,48,0.3)" : DS.safeBorder}`,
+                      borderRadius: 20, padding: "5px 13px 5px 10px",
+                      cursor: "pointer", opacity: publishLoading ? 0.6 : 1,
+                    }}
+                  >
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: viewingType === "cara" ? "#FF3B30" : DS.safe, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: viewingType === "cara" ? "#FF3B30" : DS.safe }}>
+                      {viewingType === "cara" ? "Required" : "Voluntary"}
+                    </span>
+                    {watchStats !== null && (
+                      <span style={{ fontSize: 11, color: DS.dimText }}>
+                        · {watchStats.watched_count > 0 ? `${watchStats.watched_count} watched` : "No views"}
+                      </span>
+                    )}
+                    <ChevronDown size={11} color={DS.dimText} style={{ marginLeft: 1 }} />
+                  </button>
+                ) : (
+                  /* ── Unshared: Share with Team → opens picker dropdown ── */
+                  <button
+                    onClick={() => setShowTypePicker(p => !p)}
+                    disabled={publishLoading}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      background: DS.cardBg, color: DS.labelText,
+                      border: `1.5px solid ${DS.border}`,
+                      borderRadius: 8, padding: isMobile ? "7px 10px" : "7px 14px",
+                      fontSize: 12, fontWeight: 700,
+                      cursor: publishLoading ? "not-allowed" : "pointer",
+                      opacity: publishLoading ? 0.7 : 1,
+                    }}
+                  >
+                    {publishLoading
+                      ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                      : <><Users size={13} />{!isMobile && " Share with Team"}</>
+                    }
+                  </button>
+                )}
+
+                {/* Dropdown panel */}
+                {showTypePicker && (
+                  <>
+                    {/* Backdrop to close on outside click */}
+                    <div onClick={() => setShowTypePicker(false)} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
+                    <div style={{
+                      position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 200,
+                      background: DS.cardBg, border: `1px solid ${DS.border}`,
+                      borderRadius: 14, padding: "8px 6px",
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.13)", minWidth: 230,
+                    }}>
+                      {!isPublished && (
+                        <p style={{ margin: "2px 10px 10px", fontSize: 11, fontWeight: 600, color: DS.dimText }}>
+                          How should athletes view this?
+                        </p>
+                      )}
+                      {isPublished && (
+                        <p style={{ margin: "2px 10px 10px", fontSize: 10, fontWeight: 700, color: DS.dimText, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          Viewing type
+                        </p>
+                      )}
+                      {/* Season compliance warning — shown when picking CARA outside the playing season */}
+                      {seasonStatus && !seasonStatus.isCara && seasonStatus.phase !== "unconfigured" && (() => {
+                        const isDeadPeriod = seasonStatus.phase === "dead-period";
+                        return (
+                          <div style={{
+                            margin: "0 4px 8px",
+                            padding: "9px 11px",
+                            borderRadius: 10,
+                            background: isDeadPeriod ? "rgba(200,16,46,0.07)" : "rgba(234,179,8,0.09)",
+                            border: `1px solid ${isDeadPeriod ? "rgba(200,16,46,0.25)" : "rgba(234,179,8,0.3)"}`,
+                          }}>
+                            <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: isDeadPeriod ? "#C8102E" : DS.warn }}>
+                              {isDeadPeriod ? "Dead Period" : seasonStatus.label || "Off-Season"}
+                            </p>
+                            <p style={{ margin: "3px 0 0", fontSize: 10, color: DS.dimText, lineHeight: 1.5 }}>
+                              {isDeadPeriod
+                                ? "Required Viewing is not permitted during a dead period. Use Voluntary Study instead."
+                                : "You're outside the declared playing season. Required Viewing outside the season may not be NCAA-compliant."}
+                            </p>
+                          </div>
+                        );
+                      })()}
+
+                      {[
+                        { key: "cara", label: "Required Viewing", sub: "Counts toward 20hr/week limit", dot: "#FF3B30" },
+                        { key: "vara", label: "Voluntary Study",  sub: "Athlete-initiated, not countable", dot: DS.safe },
+                      ].map(({ key, label, sub, dot }) => {
+                        const isActive = isPublished && viewingType === key;
+                        return (
+                          <button key={key}
+                            onClick={() => {
+                              if (isPublished) { handleSetViewingType(key); setShowTypePicker(false); }
+                              else { handlePublish(key); setShowTypePicker(false); }
+                            }}
+                            style={{
+                              width: "100%", display: "flex", alignItems: "center", gap: 10,
+                              padding: "9px 10px", borderRadius: 10, border: "none",
+                              background: isActive ? DS.pageBg : "transparent",
+                              cursor: "pointer", textAlign: "left",
+                            }}
+                          >
+                            <div style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{label}</p>
+                              <p style={{ margin: "1px 0 0", fontSize: 10, color: DS.dimText }}>{sub}</p>
+                            </div>
+                            {isActive && <Check size={13} color={DS.brand} />}
+                          </button>
+                        );
+                      })}
+
+                      {isPublished && (
+                        <>
+                          <div style={{ height: 1, background: DS.border, margin: "8px 6px" }} />
+                          <button
+                            onClick={() => { handleUnpublish(); setShowTypePicker(false); }}
+                            style={{
+                              width: "100%", padding: "8px 10px", borderRadius: 10, border: "none",
+                              background: "transparent", cursor: "pointer", textAlign: "left",
+                              fontSize: 12, fontWeight: 600, color: DS.warn,
+                            }}
+                          >
+                            Remove from team feed
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Share film link / cut-up — icon-only on mobile */}
@@ -4358,27 +4504,6 @@ export default function FilmDetailPage() {
             </button>
           </div>
 
-          {/* Watchers panel */}
-          {showWatchers && watchStats?.watchers?.length > 0 && (
-            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {watchStats.watchers.map((w, i) => (
-                <div key={i} style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
-                  background: DS.safeBg, border: `1px solid ${DS.safeBorder}`, color: DS.safe,
-                }}>
-                  <Users size={9} />
-                  {w.athlete_name}
-                  <span style={{ fontSize: 10, color: DS.dimText, fontWeight: 400 }}>
-                    · {new Date(w.last_watched_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {showWatchers && watchStats?.watched_count === 0 && (
-            <p style={{ margin: "8px 0 0", fontSize: 12, color: DS.dimText }}>No athletes have watched this film yet.</p>
-          )}
 
           {/* Exchange status pills — show when there are any exchanges */}
           {exchanges.length > 0 && (
@@ -4793,6 +4918,132 @@ export default function FilmDetailPage() {
               onCreateCrossGame={createCrossGamePlaylist}
             />
           )}
+
+          {tab === "views" && (() => {
+            if (!isPublished) return (
+              <div style={{ textAlign: "center", padding: "48px 24px" }}>
+                <Users size={32} color={DS.dimText} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: DS.bodyText }}>Film not shared yet</p>
+                <p style={{ margin: 0, fontSize: 13, color: DS.dimText }}>Share with team to start tracking who has watched.</p>
+              </div>
+            );
+            if (watchStats === null) return (
+              <div style={{ textAlign: "center", padding: 48 }}>
+                <div style={{ width: 20, height: 20, border: `2px solid ${DS.brand}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto" }} />
+              </div>
+            );
+
+            const isCara         = viewingType === "cara";
+            const watchedIds     = new Set((watchStats.watchers ?? []).map(w => (w.athlete_id || "").toLowerCase()));
+            const activeAthletes = teamAthletes.filter(a => a.status !== "inactive");
+            const notWatched     = activeAthletes.filter(a => !watchedIds.has((a.email || "").toLowerCase()));
+            const watched        = watchStats.watchers ?? [];
+            const total          = activeAthletes.length;
+
+            const Avatar = ({ initial, color }) => (
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: color + "22", border: `1px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color }}>{initial}</span>
+              </div>
+            );
+
+            const watchedPct = total > 0 ? Math.round((watched.length / total) * 100) : 0;
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {/* Hero progress bar */}
+                <div style={{ padding: "14px 4px 16px", borderBottom: `1px solid ${DS.border}`, marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: DS.bodyText }}>
+                      {watched.length}<span style={{ fontSize: 14, fontWeight: 600, color: DS.dimText }}>/{total}</span>
+                    </span>
+                    <span style={{ fontSize: 11, color: DS.dimText }}>athletes watched</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 6, background: DS.pageBg, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 6,
+                      width: `${watchedPct}%`,
+                      background: watchedPct === 100 ? DS.safe : isCara ? DS.brand : DS.safe,
+                      transition: "width 0.6s ease",
+                    }} />
+                  </div>
+                  {!isCara && (
+                    <p style={{ margin: "8px 0 0", fontSize: 11, color: DS.dimText, display: "flex", alignItems: "center", gap: 5 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={DS.dimText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                      </svg>
+                      Voluntary Study — athletes view at their own pace
+                    </p>
+                  )}
+                </div>
+
+                {/* Hasn't watched — CARA only */}
+                {isCara && notWatched.length > 0 && (
+                  <>
+                    <div style={{ padding: "12px 4px 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: DS.warn, textTransform: "uppercase", letterSpacing: "0.06em" }}>Hasn't Watched</span>
+                      <span style={{ fontSize: 10, color: DS.dimText }}>· {notWatched.length}</span>
+                    </div>
+                    {notWatched.map((a, i) => (
+                      <div key={a.id ?? i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${DS.border}` }}>
+                        <Avatar initial={(a.name || "?")[0].toUpperCase()} color={DS.warn} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{a.name || "Athlete"}</p>
+                          <p style={{ margin: 0, fontSize: 11, color: DS.dimText, marginTop: 1 }}>Hasn't opened yet</p>
+                        </div>
+                        <button
+                          onClick={() => router.push(`/org/messaging?to=${encodeURIComponent(a.email)}`)}
+                          style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 600, color: DS.labelText, cursor: "pointer", flexShrink: 0 }}
+                        >Remind</button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Watched */}
+                {watched.length > 0 && (
+                  <>
+                    <div style={{ padding: isCara ? "14px 4px 6px" : "12px 4px 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: DS.safe, textTransform: "uppercase", letterSpacing: "0.06em" }}>Watched</span>
+                      <span style={{ fontSize: 10, color: DS.dimText }}>· {watched.length}</span>
+                    </div>
+                    {watched.map((w, i) => {
+                      const pct    = w.total_plays > 0 ? Math.round((w.plays_watched / w.total_plays) * 100) : 0;
+                      const allDone = w.total_plays > 0 && w.plays_watched >= w.total_plays;
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${DS.border}` }}>
+                          <Avatar initial={(w.athlete_name || "?")[0].toUpperCase()} color={DS.brand} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{w.athlete_name || "Athlete"}</p>
+                            <p style={{ margin: 0, fontSize: 11, color: DS.dimText, marginTop: 1 }}>
+                              {new Date(w.last_watched_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                            </p>
+                            {w.total_plays > 0 && (
+                              <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 7 }}>
+                                <div style={{ flex: 1, height: 3, borderRadius: 2, background: DS.pageBg, overflow: "hidden" }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", borderRadius: 2, background: allDone ? DS.safe : DS.brand }} />
+                                </div>
+                                <span style={{ fontSize: 10, fontWeight: 800, color: allDone ? DS.safe : DS.labelText, flexShrink: 0 }}>
+                                  {w.plays_watched}/{w.total_plays} plays
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: allDone ? DS.safe : DS.brand, flexShrink: 0 }} />
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+
+                {watched.length === 0 && notWatched.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "40px 24px" }}>
+                    <Users size={28} color={DS.dimText} style={{ opacity: 0.3, marginBottom: 10 }} />
+                    <p style={{ margin: 0, fontSize: 13, color: DS.dimText }}>No athletes on your roster yet.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

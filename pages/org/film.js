@@ -9,7 +9,7 @@ import {
   Film, Upload, Users, Plus, Trash2, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Video, Zap, Activity,
   Play, TrendingUp, Clock, Volume2, FileText, Search, Tag,
-  ArrowRight, Sparkles,
+  ArrowRight, Sparkles, ChevronDown, Check,
 } from "lucide-react";
 
 const DS = {
@@ -633,7 +633,7 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
+function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus }) {
   const uiState      = filmUIState(film);
   const isProcessing = uiState === "uploading";
   const isFailed     = uiState === "failed";
@@ -645,18 +645,25 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
     ? `https://image.mux.com/${film.mux_playback_id}/thumbnail.jpg?time=5&width=320&fit_mode=preserve`
     : null;
 
-  const [hovered,    setHovered]    = useState(false);
-  const [deleting,   setDeleting]   = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [btnHover,   setBtnHover]   = useState(null); // "share" | "view" | null
+  const [hovered,      setHovered]      = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+  const [confirmDel,   setConfirmDel]   = useState(false);
+  const [publishing,   setPublishing]   = useState(false);
+  const [btnHover,     setBtnHover]     = useState(null); // "share" | "view" | null
+  const [showPicker,   setShowPicker]   = useState(false);
 
-  async function handlePublish(e) {
-    e.stopPropagation();
+  async function handlePublish(e, type) {
+    e?.stopPropagation();
     if (publishing) return;
+    setShowPicker(false);
     setPublishing(true);
-    await onPublish?.(film);
+    await onPublish?.(film, type);
     setPublishing(false);
+  }
+
+  async function handleSetType(e, type) {
+    e?.stopPropagation();
+    await onPublish?.(film, type, "setType");
   }
 
   async function handleDelete(e) {
@@ -680,9 +687,9 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
         background: DS.cardBg,
         border: `1px solid ${hovered ? DS.border : DS.border}`,
         borderRadius: 14,
-        overflow: "hidden",
         transition: "box-shadow 0.15s",
         boxShadow: hovered ? "0 2px 12px rgba(0,0,0,0.06)" : "none",
+        position: "relative", // needed so card stacks above backdrop
       }}
     >
       {/* ── Thumbnail ─────────────────────────────────────────────────────────── */}
@@ -690,6 +697,7 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
         width: 156, flexShrink: 0, minHeight: 96,
         background: "#0c1628",
         position: "relative", overflow: "hidden",
+        borderTopLeftRadius: 14, borderBottomLeftRadius: 14,
       }}>
         {thumb ? (
           <img
@@ -707,16 +715,19 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
           </div>
         )}
 
-        {/* Shared badge overlay */}
+        {/* Shared badge overlay — shows type */}
         {film.is_published && (
           <div style={{
             position: "absolute", top: 8, left: 8,
-            background: "rgba(0,135,62,0.9)",
+            background: film.viewing_type === "cara" ? "rgba(200,16,46,0.88)" : "rgba(0,135,62,0.88)",
+            backdropFilter: "blur(4px)",
             borderRadius: 5, padding: "3px 8px",
-            display: "flex", alignItems: "center", gap: 5,
+            display: "flex", alignItems: "center", gap: 4,
           }}>
             <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", flexShrink: 0 }} />
-            <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", letterSpacing: "0.07em" }}>SHARED</span>
+            <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", letterSpacing: "0.07em" }}>
+              {film.viewing_type === "cara" ? "REQUIRED" : "VOLUNTARY"}
+            </span>
           </div>
         )}
 
@@ -783,11 +794,11 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
 
           {/* Watch receipt — only for published films */}
           {film.is_published && watchCount !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 4, background: watchCount > 0 ? DS.safeBg : DS.pageBg, border: `1px solid ${watchCount > 0 ? DS.safeBorder : DS.border}`, borderRadius: 20, padding: "2px 10px" }}>
                 <Users size={10} color={watchCount > 0 ? DS.safe : DS.dimText} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: watchCount > 0 ? DS.safe : DS.dimText }}>
-                  {watchCount > 0 ? `${watchCount} athlete${watchCount !== 1 ? "s" : ""} watched` : "No views yet"}
+                  {watchCount > 0 ? `${watchCount} watched` : "No views yet"}
                 </span>
               </div>
             </div>
@@ -820,48 +831,123 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount }) {
             </button>
           )}
 
-          {/* Share with Team — show button only when unshared; quiet unshare link when shared */}
+          {/* Share with Team — unified pill + dropdown (same pattern as film detail header) */}
           {isTagged && (
-            film.is_published ? (
-              <button
-                onClick={handlePublish}
-                disabled={publishing}
-                onMouseEnter={e => { e.currentTarget.style.textDecorationLine = "underline"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                onMouseLeave={e => { e.currentTarget.style.textDecorationLine = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  fontSize: 11, color: DS.dimText, padding: "4px 2px",
-                  opacity: publishing ? 0.5 : 1,
-                  textDecorationLine: "none", transition: "transform 0.12s ease",
-                }}
-              >
-                {publishing ? "…" : "Remove from feed"}
-              </button>
-            ) : (
-              <button
-                onClick={handlePublish}
-                disabled={publishing}
-                onMouseEnter={() => setBtnHover("share")}
-                onMouseLeave={() => setBtnHover(null)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: DS.pageBg, border: `1px solid ${DS.border}`,
-                  borderRadius: 9, padding: "8px 14px", cursor: "pointer",
-                  opacity: publishing ? 0.6 : 1,
-                  transition: "transform 0.12s, box-shadow 0.12s, opacity 0.15s",
-                  transform: btnHover === "share" ? "translateY(-1px)" : "none",
-                  boxShadow: btnHover === "share" ? "0 4px 14px rgba(0,0,0,0.1)" : "none",
-                }}
-              >
-                {publishing
-                  ? <Loader2 size={12} color={DS.labelText} style={{ animation: "spin 1s linear infinite" }} />
-                  : <Users size={12} color={DS.labelText} />
-                }
-                <span style={{ fontSize: 12, fontWeight: 700, color: DS.labelText }}>
-                  {publishing ? "Sharing…" : "Share with Team"}
-                </span>
-              </button>
-            )
+            <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+              {film.is_published ? (
+                <button
+                  onClick={() => setShowPicker(p => !p)}
+                  disabled={publishing}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    background: film.viewing_type === "cara" ? "rgba(255,59,48,0.08)" : DS.safeBg,
+                    border: `1.5px solid ${film.viewing_type === "cara" ? "rgba(255,59,48,0.3)" : DS.safeBorder}`,
+                    borderRadius: 20, padding: "5px 12px 5px 9px", cursor: "pointer",
+                    opacity: publishing ? 0.6 : 1,
+                  }}
+                >
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: film.viewing_type === "cara" ? "#FF3B30" : DS.safe, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: film.viewing_type === "cara" ? "#FF3B30" : DS.safe }}>
+                    {film.viewing_type === "cara" ? "Required" : "Voluntary"}
+                  </span>
+                  <ChevronDown size={10} color={DS.dimText} />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowPicker(p => !p)}
+                  disabled={publishing}
+                  onMouseEnter={() => setBtnHover("share")}
+                  onMouseLeave={() => setBtnHover(null)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    background: DS.pageBg, border: `1px solid ${DS.border}`,
+                    borderRadius: 9, padding: "7px 13px", cursor: "pointer",
+                    opacity: publishing ? 0.6 : 1,
+                    transition: "transform 0.12s, box-shadow 0.12s",
+                    transform: btnHover === "share" ? "translateY(-1px)" : "none",
+                    boxShadow: btnHover === "share" ? "0 4px 14px rgba(0,0,0,0.1)" : "none",
+                  }}
+                >
+                  {publishing ? <Loader2 size={12} color={DS.labelText} style={{ animation: "spin 1s linear infinite" }} /> : <Users size={12} color={DS.labelText} />}
+                  <span style={{ fontSize: 12, fontWeight: 700, color: DS.labelText }}>{publishing ? "Sharing…" : "Share with Team"}</span>
+                </button>
+              )}
+
+              {showPicker && (
+                <>
+                  <div onClick={() => setShowPicker(false)} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 200,
+                    background: DS.cardBg, border: `1px solid ${DS.border}`,
+                    borderRadius: 12, padding: "8px 6px",
+                    boxShadow: "0 8px 28px rgba(0,0,0,0.12)", minWidth: 210,
+                  }}>
+                    {!film.is_published && (
+                      <p style={{ margin: "2px 10px 8px", fontSize: 11, fontWeight: 600, color: DS.dimText }}>
+                        How should athletes view this?
+                      </p>
+                    )}
+                    {film.is_published && (
+                      <p style={{ margin: "2px 10px 8px", fontSize: 10, fontWeight: 700, color: DS.dimText, textTransform: "uppercase", letterSpacing: "0.06em" }}>Viewing type</p>
+                    )}
+                    {/* Season compliance warning */}
+                    {seasonStatus && !seasonStatus.isCara && seasonStatus.phase !== "unconfigured" && (() => {
+                      const isDeadPeriod = seasonStatus.phase === "dead-period";
+                      return (
+                        <div style={{
+                          margin: "0 4px 8px", padding: "8px 10px", borderRadius: 8,
+                          background: isDeadPeriod ? "rgba(200,16,46,0.07)" : "rgba(234,179,8,0.09)",
+                          border: `1px solid ${isDeadPeriod ? "rgba(200,16,46,0.25)" : "rgba(234,179,8,0.3)"}`,
+                        }}>
+                          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: isDeadPeriod ? "#C8102E" : DS.warn }}>
+                            {isDeadPeriod ? "Dead Period" : seasonStatus.label || "Off-Season"}
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 10, color: DS.dimText, lineHeight: 1.5 }}>
+                            {isDeadPeriod
+                              ? "Required Viewing is not permitted during a dead period."
+                              : "You're outside the playing season — Required Viewing may not be NCAA-compliant."}
+                          </p>
+                        </div>
+                      );
+                    })()}
+
+                    {[
+                      { key: "cara", label: "Required Viewing", sub: "Counts toward 20hr/week limit", dot: "#FF3B30" },
+                      { key: "vara", label: "Voluntary Study",  sub: "Athlete-initiated, not countable", dot: DS.safe },
+                    ].map(({ key, label, sub, dot }) => {
+                      const isActive = film.is_published && film.viewing_type === key;
+                      return (
+                        <button key={key}
+                          onClick={e => { e.stopPropagation(); film.is_published ? handleSetType(e, key) : handlePublish(e, key); setShowPicker(false); }}
+                          style={{
+                            width: "100%", display: "flex", alignItems: "center", gap: 9,
+                            padding: "8px 10px", borderRadius: 8, border: "none",
+                            background: isActive ? DS.pageBg : "transparent",
+                            cursor: "pointer", textAlign: "left",
+                          }}
+                        >
+                          <div style={{ width: 7, height: 7, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                          <div style={{ flex: 1 }}>
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: DS.bodyText }}>{label}</p>
+                            <p style={{ margin: "1px 0 0", fontSize: 10, color: DS.dimText }}>{sub}</p>
+                          </div>
+                          {isActive && <Check size={12} color={DS.brand} />}
+                        </button>
+                      );
+                    })}
+                    {film.is_published && (
+                      <>
+                        <div style={{ height: 1, background: DS.border, margin: "6px 4px" }} />
+                        <button
+                          onClick={e => { e.stopPropagation(); handlePublish(e, null); setShowPicker(false); }}
+                          style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "none", background: "transparent", cursor: "pointer", textAlign: "left", fontSize: 12, fontWeight: 600, color: DS.warn }}
+                        >Remove from team feed</button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {/* View Film / Tag Plays CTA */}
@@ -947,7 +1033,8 @@ export default function FilmPage() {
   const [showRoster,  setShowRoster]  = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
-  const [watchStats,  setWatchStats]  = useState({}); // { [filmId]: watched_count }
+  const [watchStats,    setWatchStats]    = useState({}); // { [filmId]: watched_count }
+  const [seasonStatus,  setSeasonStatus]  = useState(null);
   const pollingRef = useRef({});
   const pollSetRef = useRef(new Set());
 
@@ -1000,6 +1087,10 @@ export default function FilmPage() {
 
   useEffect(() => {
     fetchFilms();
+    fetch("/api/org/season-status", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (d.ok) setSeasonStatus(d); })
+      .catch(() => {});
     return () => { Object.values(pollingRef.current).forEach(clearInterval); };
   }, [fetchFilms]);
 
@@ -1015,23 +1106,38 @@ export default function FilmPage() {
     pollSetRef.current.delete(filmId);
   }
 
-  async function handlePublish(film) {
-    const willPublish = !film.is_published;
+  async function handlePublish(film, viewingType, action) {
+    let resolvedAction = action;
+    let willPublish    = film.is_published;
+
+    if (!resolvedAction) {
+      resolvedAction = film.is_published ? "unpublish" : "publish";
+    }
+    if (resolvedAction === "publish")   willPublish = true;
+    if (resolvedAction === "unpublish") willPublish = false;
+
     // Optimistic update
-    setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: willPublish } : f));
+    setFilms(prev => prev.map(f => f.id === film.id
+      ? { ...f, is_published: willPublish, ...(viewingType ? { viewing_type: viewingType } : {}) }
+      : f
+    ));
     try {
       const r = await fetch("/api/film/publish", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filmId: film.id }),
+        body: JSON.stringify({ filmId: film.id, action: resolvedAction, viewingType }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Publish failed");
-      setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: d.published } : f));
-      toast.success(d.published ? "Film shared with team ✓" : "Film removed from team feed");
+      setFilms(prev => prev.map(f => f.id === film.id
+        ? { ...f, is_published: d.published, viewing_type: d.viewing_type ?? f.viewing_type }
+        : f
+      ));
+      if (resolvedAction === "setType") toast.success(`Changed to ${d.viewing_type?.toUpperCase() ?? ""}`);
+      else toast.success(d.published ? "Film shared with team ✓" : "Film removed from team feed");
     } catch (e) {
       // Revert
-      setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: film.is_published } : f));
+      setFilms(prev => prev.map(f => f.id === film.id ? { ...f, is_published: film.is_published, viewing_type: film.viewing_type } : f));
       toast.error(e.message || "Could not update publish status");
     }
   }
@@ -1159,7 +1265,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {sharedFilms.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} watchCount={watchStats[f.id] ?? null} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} watchCount={watchStats[f.id] ?? null} seasonStatus={seasonStatus} />
                     ))}
                   </div>
                 </section>

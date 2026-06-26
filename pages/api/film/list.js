@@ -43,7 +43,22 @@ export default async function handler(req, res) {
 
     if (error) throw error;
 
-    return res.status(200).json({ ok: true, films: films ?? [], total: count ?? 0 });
+    // For CARA films, fetch how many athletes have started watching (non-blocking)
+    let watcherCounts = {};
+    const caraIds = (films ?? []).filter(f => f.is_published && f.viewing_type === "cara").map(f => f.id);
+    if (caraIds.length > 0) {
+      const { data: fw } = await supabase
+        .from("film_watches")
+        .select("film_id")
+        .in("film_id", caraIds);
+      for (const row of (fw ?? [])) {
+        watcherCounts[row.film_id] = (watcherCounts[row.film_id] || 0) + 1;
+      }
+    }
+
+    const enriched = (films ?? []).map(f => ({ ...f, watcher_count: watcherCounts[f.id] ?? 0 }));
+
+    return res.status(200).json({ ok: true, films: enriched, total: count ?? 0 });
   } catch (err) {
     console.error("[film/list]", err);
     return res.status(500).json({ error: "Failed to fetch films", details: err?.message });

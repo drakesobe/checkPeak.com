@@ -57,6 +57,7 @@ export default async function handler(req, res) {
           user_id:   userId,
           user_name: userName,
           body:      commentBody.trim(),
+          is_pinned: req.body.pinned === true,
         })
         .select()
         .single();

@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, ArrowRight, LogOut, AlertTriangle, Clock, CreditCard } from "lucide-react";
+import { Lock, ArrowRight, LogOut, AlertTriangle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
 
 const ACCENT = "#1E3A5F";
 const CAUTION = "#E87722";
@@ -21,12 +21,19 @@ function deriveState(billing) {
   if (s.includes("unpaid") || s.includes("suspend"))    return "suspended";
   if (s.includes("cancel"))                             return "canceled";
   if (s === "active")                                   return "active";
+  if (s === "free" || s === "starter" || s.includes("starter")) return "starter_plan";
   if (s.includes("trial"))                              return "trial_ended";
   if (billing?.sandboxEnds)                             return "sandbox_expired";
   return "not_started";
 }
 
 const STATE_CONFIG = {
+  starter_plan: {
+    icon: CheckCircle2, accent: "#00873E",
+    title: "Starter plan — access issue",
+    body:  "Your account is on the Starter plan and should have access. Try logging out and back in. If this persists, contact support.",
+    cta:   "Go to account",
+  },
   not_started: {
     icon: Lock, accent: ACCENT,
     title: "Subscription required",

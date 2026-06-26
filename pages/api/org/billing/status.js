@@ -40,8 +40,8 @@ function lower(v) {
 function computeIsPaidOk({ status, sandboxEnds, trialEnds, currentPeriodEnd }) {
   const s = lower(status);
 
-  // Free tier is always OK (no Stripe subscription needed)
-  if (s === "free") return true;
+  // Free / Starter tier — no Stripe subscription needed
+  if (s === "free" || s === "starter" || s.includes("starter")) return true;
 
   // Explicit locked states always block
   if (s.includes("past") || s.includes("due")) return false;

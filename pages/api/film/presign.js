@@ -51,8 +51,10 @@ export default async function handler(req, res) {
   const orgId = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
   if (!orgId) return res.status(400).json({ error: "Missing org identity on session" });
 
-  const { title, sport = "football", gameDate, opponent } = req.body ?? {};
+  const VALID_FILM_TYPES = ["game", "practice", "7v7", "scrimmage", "tournament"];
+  const { title, sport = "football", gameDate, opponent, filmType = "game" } = req.body ?? {};
   if (!title?.trim()) return res.status(400).json({ error: "title is required" });
+  const safeFilmType = VALID_FILM_TYPES.includes(filmType) ? filmType : "game";
 
   try {
     // 1. Insert film record (status=uploading)
@@ -65,6 +67,7 @@ export default async function handler(req, res) {
         game_date:  gameDate ?? null,
         opponent:   opponent?.trim() ?? null,
         status:     "uploading",
+        film_type:  safeFilmType,
       })
       .select("id")
       .single();

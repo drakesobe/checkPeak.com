@@ -2,12 +2,20 @@
 // Manages cut-up playlists for a film.
 //
 // GET  ?filmId=   → list playlists with plays
-// POST { action: "create",      filmId, name }        → new playlist
-// POST { action: "add_play",    listId, playId }       → add play to list
-// POST { action: "remove_play", itemId }               → remove item from list
-// POST { action: "delete",      listId }               → delete playlist
-// POST { action: "rename",      listId, name }         → rename playlist
-// POST { action: "reorder",     listId, orderedIds }   → reorder items
+// POST { action: "create",      filmId, name }                       → new playlist
+// POST { action: "add_play",    listId, playId }                     → add play to list
+// POST { action: "remove_play", itemId }                             → remove item from list
+// POST { action: "delete",      listId }                             → delete playlist
+// POST { action: "rename",      listId, name }                       → rename playlist
+// POST { action: "reorder",     listId, orderedIds }                 → reorder items
+// POST { action: "publish",     listId, viewingType, watchDueDate? } → publish as CARA/VARA
+// POST { action: "unpublish",   listId }                             → remove from required
+//
+// SQL migrations (run once):
+//   alter table game_play_lists add column if not exists is_published boolean default false;
+//   alter table game_play_lists add column if not exists viewing_type text default 'vara';
+//   alter table game_play_lists add column if not exists watch_due_date date;
+//   alter table game_play_lists add column if not exists updated_at timestamptz default now();
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";
@@ -43,6 +51,7 @@ export default async function handler(req, res) {
         .from("game_play_lists")
         .select(`
           id, name, description, created_by, created_at, film_id,
+          is_published, viewing_type, watch_due_date,
           game_play_list_items (
             id, position, note,
             game_plays (
@@ -182,6 +191,62 @@ export default async function handler(req, res) {
         supabase.from("game_play_list_items").update({ position: idx + 1 }).eq("id", id).eq("list_id", listId)
       ));
       return res.status(200).json({ ok: true });
+    }
+
+    // ── PUBLISH CUT-UP AS REQUIRED VIEWING ──────────────────────────────────
+    if (action === "publish") {
+      if (!listId) return res.status(400).json({ error: "listId required" });
+      const vt = ["cara", "vara"].includes(req.body?.viewingType) ? req.body.viewingType : "vara";
+      const rawDue = req.body?.watchDueDate;
+      const dueDate = rawDue ? String(rawDue).trim() || null : null;
+
+      const { data: list } = await supabase.from("game_play_lists").select("id, org_id, name, is_published").eq("id", listId).single();
+      if (!list || list.org_id !== orgId) return res.status(404).json({ error: "Playlist not found" });
+
+      // Verify playlist has plays
+      const { count: itemCount } = await supabase.from("game_play_list_items").select("*", { count: "exact", head: true }).eq("list_id", listId);
+      if (!itemCount) return res.status(400).json({ error: "Add plays to the playlist before publishing" });
+
+      const { error: upErr } = await supabase
+        .from("game_play_lists")
+        .update({ is_published: true, viewing_type: vt, watch_due_date: dueDate, updated_at: new Date().toISOString() })
+        .eq("id", listId);
+      if (upErr) throw upErr;
+
+      // Fire push for CARA
+      if (vt === "cara" && !list.is_published) {
+        (async () => {
+          try {
+            const { data: athletes } = await supabase.from("athletes").select("push_token").eq("org_id", orgId).not("push_token", "is", null);
+            const tokens = (athletes ?? []).map(a => a.push_token).filter(t => t?.startsWith("Expo") || t?.startsWith("Exponent"));
+            if (!tokens.length) return;
+            const messages = tokens.map(to => ({
+              to,
+              title: "Cut-up Required",
+              body: `Coach assigned a required cut-up: ${list.name}`,
+              sound: "default", priority: "high",
+              data: { type: "required_cutup", listId },
+            }));
+            await fetch("https://exp.host/--/api/v2/push/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify(messages),
+            });
+          } catch {}
+        })();
+      }
+
+      return res.status(200).json({ ok: true, is_published: true, viewing_type: vt, watch_due_date: dueDate });
+    }
+
+    // ── UNPUBLISH ─────────────────────────────────────────────────────────────
+    if (action === "unpublish") {
+      if (!listId) return res.status(400).json({ error: "listId required" });
+      const { data: list } = await supabase.from("game_play_lists").select("id, org_id").eq("id", listId).single();
+      if (!list || list.org_id !== orgId) return res.status(404).json({ error: "Playlist not found" });
+
+      await supabase.from("game_play_lists").update({ is_published: false, watch_due_date: null, updated_at: new Date().toISOString() }).eq("id", listId);
+      return res.status(200).json({ ok: true, is_published: false });
     }
 
     return res.status(400).json({ error: "Unknown action" });

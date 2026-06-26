@@ -29,18 +29,38 @@ function parseUser(req) {
   return readUserCookie(req);
 }
 
-// ── Fire-and-forget: send Expo push to all org athletes ──────────────────────
-async function sendRequiredFilmPush(orgId, filmId, filmTitle, opponent) {
+// ── Fire-and-forget: send Expo push to targeted org athletes ─────────────────
+// publishGroupIds: null/undefined = all athletes; array = only those in groups
+async function sendRequiredFilmPush(orgId, filmId, filmTitle, opponent, publishGroupIds) {
   try {
-    const { data: athletes } = await supabase
+    let targetEmails = null;
+
+    if (publishGroupIds?.length) {
+      const { data: groups } = await supabase
+        .from("org_groups")
+        .select("athlete_emails")
+        .eq("org_id", orgId)
+        .in("id", publishGroupIds);
+
+      targetEmails = new Set(
+        (groups ?? []).flatMap(g => g.athlete_emails ?? []).map(e => String(e).toLowerCase())
+      );
+    }
+
+    const query = supabase
       .from("athletes")
-      .select("push_token")
+      .select("push_token, email")
       .eq("org_id", orgId)
       .not("push_token", "is", null);
 
+    const { data: athletes } = await query;
+
     const tokens = (athletes ?? [])
-      .map(a => a.push_token)
-      .filter(t => t && (t.startsWith("ExponentPushToken[") || t.startsWith("ExpoPushToken[")));
+      .filter(a => {
+        if (targetEmails && !targetEmails.has(String(a.email || "").toLowerCase())) return false;
+        return a.push_token && (a.push_token.startsWith("ExponentPushToken[") || a.push_token.startsWith("ExpoPushToken["));
+      })
+      .map(a => a.push_token);
 
     if (!tokens.length) return;
 
@@ -77,12 +97,15 @@ export default async function handler(req, res) {
   const user = parseUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const orgId       = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
-  const filmId      = String(req.body?.filmId      || "").trim();
-  const action      = String(req.body?.action      || "toggle").trim();
-  const viewingType = ["cara", "vara"].includes(req.body?.viewingType) ? req.body.viewingType : "vara";
-  const rawDue      = req.body?.watchDueDate;
-  const watchDueDate = rawDue ? String(rawDue).trim() || null : (rawDue === null ? null : undefined);
+  const orgId          = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
+  const filmId         = String(req.body?.filmId      || "").trim();
+  const action         = String(req.body?.action      || "toggle").trim();
+  const viewingType    = ["cara", "vara"].includes(req.body?.viewingType) ? req.body.viewingType : "vara";
+  const rawDue         = req.body?.watchDueDate;
+  const watchDueDate   = rawDue ? String(rawDue).trim() || null : (rawDue === null ? null : undefined);
+  // publishGroupIds: null = all athletes; non-empty array = targeted groups only
+  const rawGroups       = req.body?.publishGroupIds;
+  const publishGroupIds = Array.isArray(rawGroups) && rawGroups.length > 0 ? rawGroups.filter(g => typeof g === "string") : null;
 
   if (!orgId)  return res.status(400).json({ error: "Missing org identity" });
   if (!filmId) return res.status(400).json({ error: "filmId required" });
@@ -102,7 +125,7 @@ export default async function handler(req, res) {
 
     if (action === "publish") {
       if (film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
-      updates = { is_published: true, viewing_type: viewingType };
+      updates = { is_published: true, viewing_type: viewingType, publish_group_ids: publishGroupIds };
       if (watchDueDate !== undefined) updates.watch_due_date = watchDueDate;
       shouldPushCara = !film.is_published && viewingType === "cara";
     } else if (action === "unpublish") {
@@ -132,7 +155,7 @@ export default async function handler(req, res) {
 
     // Fire-and-forget — don't block the response
     if (shouldPushCara) {
-      sendRequiredFilmPush(orgId, filmId, film.title, film.opponent);
+      sendRequiredFilmPush(orgId, filmId, film.title, film.opponent, publishGroupIds);
     }
 
     return res.status(200).json({

@@ -2364,13 +2364,144 @@ function AddToPlaylistMenu({ play, playlists, onAdd, onCreateAndAdd, onClose, an
   return createPortal(menu, document.body);
 }
 
+// ── Angle Manager ──────────────────────────────────────────────────────────────
+function AngleManager({ primaryFilmId, angles, onRefresh, onClose }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editOffset, setEditOffset] = useState("0");
+  const [busy, setBusy] = useState(false);
+
+  async function searchFilms(q) {
+    if (!q.trim()) { setSearchResults([]); return; }
+    setSearching(true);
+    try {
+      const r = await fetch(`/api/film/list?search=${encodeURIComponent(q)}&limit=10`, { credentials: "include" });
+      const d = await r.json();
+      setSearchResults((d.films ?? []).filter(f => f.id !== primaryFilmId));
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function addAngle(angleFilm) {
+    setBusy(true);
+    await fetch("/api/film/angles", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add", primaryFilmId, angleFilmId: angleFilm.id, label: "Angle " + (angles.length + 2), timeOffsetSecs: 0 }),
+    });
+    setSearchQuery(""); setSearchResults([]);
+    await onRefresh();
+    setBusy(false);
+  }
+
+  async function saveEdit(id) {
+    setBusy(true);
+    await fetch("/api/film/angles", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update", id, label: editLabel, timeOffsetSecs: parseFloat(editOffset) || 0 }),
+    });
+    setEditId(null);
+    await onRefresh();
+    setBusy(false);
+  }
+
+  async function removeAngle(id) {
+    if (!confirm("Remove this angle?")) return;
+    setBusy(true);
+    await fetch("/api/film/angles", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", id }),
+    });
+    await onRefresh();
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: 16, marginBottom: 12, fontSize: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <p style={{ margin: 0, fontWeight: 700, color: DS.bodyText, fontSize: 13 }}>Manage Camera Angles</p>
+        <span style={{ fontSize: 11, color: DS.dimText }}>Link another film as a secondary angle for split-screen comparison</span>
+      </div>
+
+      {/* Existing angles */}
+      {angles.map(a => (
+        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 10px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
+          <span style={{ flex: 1, fontWeight: 600, color: DS.bodyText }}>
+            {editId === a.id ? (
+              <input value={editLabel} onChange={e => setEditLabel(e.target.value)}
+                style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: DS.bodyText, width: 120 }} />
+            ) : (a.label)}
+          </span>
+          <span style={{ color: DS.dimText, fontSize: 11 }}>{a.game_films?.title ?? "—"}</span>
+          {editId === a.id ? (
+            <>
+              <span style={{ color: DS.dimText, fontSize: 11 }}>offset:</span>
+              <input type="number" step="0.1" value={editOffset} onChange={e => setEditOffset(e.target.value)}
+                style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "4px 6px", fontSize: 11, color: DS.bodyText, width: 60 }} />
+              <span style={{ color: DS.dimText, fontSize: 11 }}>s</span>
+              <button onClick={() => saveEdit(a.id)} disabled={busy}
+                style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+              <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText }}>✕</button>
+            </>
+          ) : (
+            <>
+              <span style={{ color: DS.dimText, fontSize: 11 }}>{a.time_offset_secs !== 0 ? `${a.time_offset_secs > 0 ? "+" : ""}${a.time_offset_secs}s` : "in sync"}</span>
+              <button onClick={() => { setEditId(a.id); setEditLabel(a.label); setEditOffset(String(a.time_offset_secs ?? 0)); }}
+                style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: DS.dimText }}>Edit</button>
+              <button onClick={() => removeAngle(a.id)} disabled={busy}
+                style={{ background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", color: DS.warn, fontSize: 11 }}>Remove</button>
+            </>
+          )}
+        </div>
+      ))}
+
+      {/* Search to add */}
+      <div style={{ marginTop: 10 }}>
+        <input
+          value={searchQuery}
+          onChange={e => { setSearchQuery(e.target.value); searchFilms(e.target.value); }}
+          placeholder="Search films to add as angle…"
+          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${DS.border}`, background: DS.pageBg, color: DS.bodyText, fontSize: 12, outline: "none", boxSizing: "border-box" }}
+        />
+        {searching && <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.dimText }}>Searching…</p>}
+        {searchResults.length > 0 && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+            {searchResults.map(f => (
+              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
+                <span style={{ flex: 1, fontSize: 12, color: DS.bodyText }}>{f.title || "Untitled"}</span>
+                {f.opponent && <span style={{ fontSize: 11, color: DS.dimText }}>vs {f.opponent}</span>}
+                {f.game_date && <span style={{ fontSize: 11, color: DS.dimText }}>{f.game_date}</span>}
+                <button onClick={() => addAngle(f)} disabled={busy}
+                  style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  Add
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Playlists Tab ─────────────────────────────────────────────────────────────
-function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, filmId, fetchPlaylists, onCreateCrossGame }) {
-  const [openId,      setOpenId]      = useState(null);
-  const [renaming,    setRenaming]    = useState(null);
-  const [newCGName,   setNewCGName]   = useState("");
-  const [showNewCG,   setShowNewCG]   = useState(false);
-  const [busyCG,      setBusyCG]      = useState(false);
+function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, onPublish, onUnpublish, filmId, fetchPlaylists, onCreateCrossGame }) {
+  const [openId,        setOpenId]        = useState(null);
+  const [renaming,      setRenaming]      = useState(null);
+  const [newCGName,     setNewCGName]     = useState("");
+  const [showNewCG,     setShowNewCG]     = useState(false);
+  const [busyCG,        setBusyCG]        = useState(false);
+  const [publishingId,  setPublishingId]  = useState(null);
+  const [showDuePicker, setShowDuePicker] = useState(null); // listId
+  const [dueDate,       setDueDate]       = useState(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().split("T")[0]; });
 
   async function createCrossGame() {
     const name = newCGName.trim(); if (!name) return;
@@ -2409,6 +2540,21 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, fil
     await fetchPlaylists();
     setRenaming(null);
     setBusy(false);
+  }
+
+  async function handlePublishCutup(listId) {
+    setPublishingId(listId);
+    await onPublish(listId, "cara", dueDate);
+    setShowDuePicker(null);
+    await fetchPlaylists();
+    setPublishingId(null);
+  }
+
+  async function handleUnpublishCutup(listId) {
+    setPublishingId(listId);
+    await onUnpublish(listId);
+    await fetchPlaylists();
+    setPublishingId(null);
   }
 
   const filmPlaylists = playlists.filter(l => l.film_id);
@@ -2495,7 +2641,7 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, fil
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={() => onPlay(list)} disabled={!(list.items ?? []).length}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
@@ -2505,6 +2651,30 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, fil
               }}>
               <Play size={12} /> Play All
             </button>
+
+            {/* Publish as Required Viewing */}
+            {list.is_published ? (
+              <button onClick={() => handleUnpublishCutup(list.id)} disabled={publishingId === list.id}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "rgba(255,59,48,0.08)", border: "1.5px solid rgba(255,59,48,0.3)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#FF3B30" }}>
+                {publishingId === list.id ? "…" : "● Required"}
+              </button>
+            ) : showDuePicker === list.id ? (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]}
+                  style={{ padding: "6px 8px", borderRadius: 8, border: `1px solid ${DS.border}`, fontSize: 12, background: DS.pageBg, color: DS.bodyText, outline: "none" }} />
+                <button onClick={() => handlePublishCutup(list.id)} disabled={publishingId === list.id}
+                  style={{ background: "#C8102E", color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  {publishingId === list.id ? "…" : "Assign"}
+                </button>
+                <button onClick={() => setShowDuePicker(null)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 16 }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowDuePicker(list.id)} disabled={!(list.items ?? []).length}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "rgba(200,16,46,0.06)", border: `1px solid rgba(200,16,46,0.25)`, borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#C8102E", opacity: (list.items ?? []).length ? 1 : 0.4 }}>
+                Assign as Required
+              </button>
+            )}
+
             <button onClick={() => setOpenId(list.id)}
               style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: DS.labelText, display: "flex", alignItems: "center", gap: 4 }}>
               <ChevronRight size={13} /> View
@@ -3962,6 +4132,9 @@ export default function FilmDetailPage() {
   const [teleStrokes,   setTeleStrokes]   = useState([]);
   const [teleTool,      setTeleTool]      = useState("arrow");
   const [teleColor,     setTeleColor]     = useState("#FF3B30");
+  const [angles,        setAngles]        = useState([]);        // secondary camera angles
+  const [activeAngle,   setActiveAngle]   = useState(null);      // null = primary film
+  const [showAngleMgr,  setShowAngleMgr]  = useState(false);
   const filmLeftRef   = useRef(null);
   const hideTimer     = useRef(null);
 
@@ -3975,6 +4148,15 @@ export default function FilmDetailPage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  const fetchAngles = useCallback(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch(`/api/film/angles?filmId=${id}`, { credentials: "include" });
+      const d = await r.json();
+      if (r.ok) setAngles(d.angles ?? []);
+    } catch {}
+  }, [id]);
 
   const fetchFilm = useCallback(async () => {
     if (!id) return;
@@ -4158,13 +4340,14 @@ export default function FilmDetailPage() {
       fetchAnalytics(),
       fetchPlaylists(),
       fetchExchanges(),
+      fetchAngles(),
       fetch("/api/film/roster", { credentials: "include" }).then(r => r.json()).then(d => setRoster(d.players ?? [])),
     ]).then(([filmData]) => {
       setLoading(false);
       // Fetch S3 presigned URL if Mux isn't available
       if (!filmData?.muxPlaybackId) fetchVideoUrl();
     });
-  }, [id, fetchFilm, fetchPlays, fetchAnalytics, fetchVideoUrl]);
+  }, [id, fetchFilm, fetchPlays, fetchAnalytics, fetchVideoUrl, fetchAngles]);
 
   // Poll while uploading to catch the transition to ready
   useEffect(() => {
@@ -4314,6 +4497,14 @@ export default function FilmDetailPage() {
 
   async function renamePlaylist(listId, name) {
     await playlistAction({ action: "rename", listId, name });
+  }
+
+  async function publishPlaylist(listId, viewingType, watchDueDate) {
+    await playlistAction({ action: "publish", listId, viewingType, watchDueDate });
+  }
+
+  async function unpublishPlaylist(listId) {
+    await playlistAction({ action: "unpublish", listId });
   }
 
   // ── Cut-up playback ───────────────────────────────────────────────────────
@@ -4907,12 +5098,62 @@ export default function FilmDetailPage() {
                     style={{ display: "flex", flexDirection: "column", gap: isMobile ? 8 : 14, minWidth: 0, overflow: "hidden", position: "relative" }}
                     onMouseMove={handleFSMouseMove}
                   >
+                    {/* Angle switcher bar */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: angles.length > 0 || showAngleMgr ? 8 : 0 }}>
+                      {angles.length > 0 && (
+                        <>
+                          <button
+                            onClick={() => setActiveAngle(null)}
+                            style={{
+                              padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                              background: activeAngle === null ? DS.brand : DS.pageBg,
+                              color: activeAngle === null ? "#fff" : DS.dimText,
+                              border: `1.5px solid ${activeAngle === null ? DS.brand : DS.border}`,
+                            }}>
+                            📹 Primary
+                          </button>
+                          {angles.map(a => (
+                            <button key={a.id}
+                              onClick={() => setActiveAngle(a)}
+                              style={{
+                                padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                background: activeAngle?.id === a.id ? "#7C3AED" : DS.pageBg,
+                                color: activeAngle?.id === a.id ? "#fff" : DS.dimText,
+                                border: `1.5px solid ${activeAngle?.id === a.id ? "#7C3AED" : DS.border}`,
+                              }}>
+                              🎥 {a.label}
+                              {a.time_offset_secs !== 0 && (
+                                <span style={{ marginLeft: 4, fontWeight: 500, opacity: 0.7 }}>
+                                  ({a.time_offset_secs > 0 ? "+" : ""}{a.time_offset_secs}s)
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      <button
+                        onClick={() => setShowAngleMgr(s => !s)}
+                        style={{ padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer", background: showAngleMgr ? DS.brand : DS.pageBg, color: showAngleMgr ? "#fff" : DS.dimText, border: `1px dashed ${DS.border}` }}>
+                        {showAngleMgr ? "✕ Close Angles" : "🎥 Manage Angles"}
+                      </button>
+                    </div>
+
+                    {/* Angle manager panel */}
+                    {showAngleMgr && (
+                      <AngleManager
+                        primaryFilmId={id}
+                        angles={angles}
+                        onRefresh={fetchAngles}
+                        onClose={() => setShowAngleMgr(false)}
+                      />
+                    )}
+
                     {/* Video wrapper */}
                     <div style={{ position: "relative" }}>
                       <VideoPlayer
-                        playbackId={film?.muxPlaybackId}
-                        s3Url={filmVideoUrl}
-                        clipUrl={selPlay?.clip_url}
+                        playbackId={activeAngle ? activeAngle.game_films?.mux_playback_id : film?.muxPlaybackId}
+                        s3Url={activeAngle ? null : filmVideoUrl}
+                        clipUrl={activeAngle ? null : selPlay?.clip_url}
                         playNumber={selPlay?.play_number}
                         onTimeUpdate={t => {
                           setVideoTime(t);
@@ -5156,6 +5397,8 @@ export default function FilmDetailPage() {
               onDelete={deletePlaylist}
               onRemovePlay={removePlayFromList}
               onRename={renamePlaylist}
+              onPublish={publishPlaylist}
+              onUnpublish={unpublishPlaylist}
               fetchPlaylists={fetchPlaylists}
               onCreateCrossGame={createCrossGamePlaylist}
             />

@@ -6,10 +6,10 @@ import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { Toaster, toast } from "react-hot-toast";
 import {
-  Film, Upload, Users, Plus, Trash2, RefreshCw, ChevronRight,
+  Film, Upload, Users, Users2, Plus, Trash2, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Video, Zap, Activity,
   Play, TrendingUp, Clock, Volume2, FileText, Search, Tag,
-  ArrowRight, Sparkles, ChevronDown, Check,
+  ArrowRight, Sparkles, ChevronDown, Check, Shield,
 } from "lucide-react";
 
 const DS = {
@@ -58,6 +58,15 @@ function fmtDuration(secs) {
   const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+const FILM_TYPES = [
+  { key: "game",       label: "Game",       color: "#1E3A5F", bg: "#EEF3F9" },
+  { key: "practice",   label: "Practice",   color: "#7C3AED", bg: "#F5F3FF" },
+  { key: "7v7",        label: "7v7",        color: "#D97706", bg: "#FFFBEB" },
+  { key: "scrimmage",  label: "Scrimmage",  color: "#0891B2", bg: "#ECFEFF" },
+  { key: "tournament", label: "Tournament", color: "#C8102E", bg: "#FFF0F0" },
+];
+const FILM_TYPE_MAP = Object.fromEntries(FILM_TYPES.map(t => [t.key, t]));
 
 const inputStyle = { width: "100%", boxSizing: "border-box", border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: DS.bodyText, outline: "none", background: DS.pageBg };
 const labelStyle = { display: "block", fontSize: 11, fontWeight: 700, color: DS.labelText, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 };
@@ -495,9 +504,203 @@ function RosterPanel({ onClose, defaultSport = "football" }) {
   );
 }
 
+// ── Groups modal (position group management) ───────────────────────────────────
+function GroupsModal({ onClose }) {
+  const [groups,        setGroups]        = useState([]);
+  const [athletes,      setAthletes]      = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [creating,      setCreating]      = useState(false);
+  const [newName,       setNewName]       = useState("");
+  const [activeGroup,   setActiveGroup]   = useState(null); // group being edited
+  const [saving,        setSaving]        = useState(false);
+  const [deleting,      setDeleting]      = useState(null);
+
+  async function fetchGroups() {
+    const r = await fetch("/api/org/groups", { credentials: "include" });
+    const d = await r.json();
+    setGroups(d.groups ?? []);
+  }
+
+  async function fetchAthletes() {
+    const r = await fetch("/api/org/getAthletes", { credentials: "include" });
+    const d = await r.json();
+    setAthletes((d.athletes ?? d.data ?? []).map(a => ({
+      id: a.id,
+      name: a.name || a.Name || "Unknown",
+      email: (a.email || a.Email || "").toLowerCase(),
+    })));
+  }
+
+  useEffect(() => {
+    Promise.all([fetchGroups(), fetchAthletes()]).finally(() => setLoading(false));
+  }, []);
+
+  async function createGroup() {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      const r = await fetch("/api/org/groups", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), athleteEmails: [] }),
+      });
+      const d = await r.json();
+      if (d.ok) { setNewName(""); setCreating(false); setGroups(prev => [...prev, d.group]); toast.success("Group created"); }
+    } catch {}
+    setSaving(false);
+  }
+
+  async function deleteGroup(id) {
+    setDeleting(id);
+    try {
+      await fetch(`/api/org/groups?id=${id}`, { method: "DELETE", credentials: "include" });
+      setGroups(prev => prev.filter(g => g.id !== id));
+      if (activeGroup?.id === id) setActiveGroup(null);
+      toast.success("Group deleted");
+    } catch { toast.error("Delete failed"); }
+    setDeleting(null);
+  }
+
+  async function toggleAthleteInGroup(email) {
+    if (!activeGroup) return;
+    const current = activeGroup.athlete_emails ?? [];
+    const next = current.includes(email)
+      ? current.filter(e => e !== email)
+      : [...current, email];
+
+    setSaving(true);
+    try {
+      const r = await fetch("/api/org/groups", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeGroup.id, athleteEmails: next }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setActiveGroup(d.group);
+        setGroups(prev => prev.map(g => g.id === d.group.id ? d.group : g));
+      }
+    } catch {}
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: DS.cardBg, borderRadius: 16, padding: 0, width: "100%", maxWidth: 560, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px 16px", borderBottom: `1px solid ${DS.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: "#F3E8FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Shield size={15} color="#7C3AED" />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: DS.bodyText }}>Position Groups</h2>
+              <p style={{ margin: 0, fontSize: 11, color: DS.dimText }}>Target specific groups when publishing film</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* Groups list */}
+          <div style={{ width: 200, borderRight: `1px solid ${DS.border}`, padding: 12, overflowY: "auto" }}>
+            {loading ? (
+              <div style={{ textAlign: "center", padding: 24, color: DS.dimText }}><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /></div>
+            ) : (
+              <>
+                {groups.map(g => (
+                  <div
+                    key={g.id}
+                    onClick={() => setActiveGroup(g)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                      background: activeGroup?.id === g.id ? "#F3E8FF" : "transparent",
+                      border: `1px solid ${activeGroup?.id === g.id ? "#C4B5FD" : "transparent"}`,
+                      marginBottom: 4, transition: "all 0.12s",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</p>
+                      <p style={{ margin: 0, fontSize: 10, color: DS.dimText }}>{(g.athlete_emails ?? []).length} athletes</p>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); deleteGroup(g.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, padding: 2, opacity: deleting === g.id ? 0.4 : 1 }}>
+                      {deleting === g.id ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={11} />}
+                    </button>
+                  </div>
+                ))}
+                {groups.length === 0 && !creating && (
+                  <p style={{ fontSize: 12, color: DS.dimText, textAlign: "center", padding: "12px 4px" }}>No groups yet.</p>
+                )}
+                {creating ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                    <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Group name…" autoFocus style={inputStyle} onKeyDown={e => { if (e.key === "Enter") createGroup(); if (e.key === "Escape") { setCreating(false); setNewName(""); }}} />
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button onClick={createGroup} disabled={!newName.trim() || saving} style={{ flex: 1, background: "#7C3AED", color: "#fff", border: "none", borderRadius: 6, padding: "6px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Create</button>
+                      <button onClick={() => { setCreating(false); setNewName(""); }} style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer", color: DS.labelText }}>×</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setCreating(true)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, border: `1px dashed ${DS.border}`, background: "transparent", cursor: "pointer", color: DS.labelText, fontSize: 12, fontWeight: 600, marginTop: 8 }}>
+                    <Plus size={12} /> New Group
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Athletes panel */}
+          <div style={{ flex: 1, padding: 16, overflowY: "auto" }}>
+            {!activeGroup ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
+                <Shield size={28} color={DS.dimText} style={{ opacity: 0.3 }} />
+                <p style={{ fontSize: 13, color: DS.dimText, textAlign: "center" }}>Select a group to manage its athletes</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: DS.bodyText }}>{activeGroup.name}</h3>
+                  <span style={{ fontSize: 11, color: DS.dimText }}>{(activeGroup.athlete_emails ?? []).length} / {athletes.length} athletes</span>
+                </div>
+                {athletes.length === 0 ? (
+                  <p style={{ fontSize: 12, color: DS.dimText, textAlign: "center" }}>No athletes in org roster yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {athletes.map(a => {
+                      const inGroup = (activeGroup.athlete_emails ?? []).includes(a.email);
+                      return (
+                        <div
+                          key={a.id || a.email}
+                          onClick={() => toggleAthleteInGroup(a.email)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                            background: inGroup ? "#F3E8FF" : DS.pageBg,
+                            border: `1px solid ${inGroup ? "#C4B5FD" : DS.border}`,
+                            transition: "all 0.1s",
+                          }}
+                        >
+                          <div style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${inGroup ? "#7C3AED" : DS.border}`, background: inGroup ? "#7C3AED" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {inGroup && <Check size={10} color="#fff" />}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                          <span style={{ fontSize: 10, color: DS.dimText }}>{a.email}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Upload modal ──────────────────────────────────────────────────────────────
 function UploadModal({ onClose, onUploadStarted }) {
-  const [form, setForm] = useState({ title: "", gameDate: "", opponent: "", sport: "football" });
+  const [form, setForm] = useState({ title: "", gameDate: "", opponent: "", sport: "football", filmType: "game" });
   const [file, setFile] = useState(null);
   const [phase, setPhase] = useState("idle"); // idle | presigning | uploading | done | error
   const [progress, setProgress] = useState(0);
@@ -517,7 +720,7 @@ function UploadModal({ onClose, onUploadStarted }) {
         const r = await fetch("/api/film/presign", {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: form.title.trim(), sport: form.sport, gameDate: form.gameDate || null, opponent: form.opponent.trim() || null }),
+          body: JSON.stringify({ title: form.title.trim(), sport: form.sport, gameDate: form.gameDate || null, opponent: form.opponent.trim() || null, filmType: form.filmType }),
         });
         const d = await r.json();
         if (!r.ok) { setErr(d.error || "Failed to get upload URL."); setPhase("error"); return; }
@@ -582,6 +785,25 @@ function UploadModal({ onClose, onUploadStarted }) {
               <div>
                 <label style={labelStyle}>Game Date</label>
                 <input type="date" value={form.gameDate} onChange={e => setForm(f => ({ ...f, gameDate: e.target.value }))} style={inputStyle} disabled={busy} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Film Type</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {FILM_TYPES.map(t => {
+                  const active = form.filmType === t.key;
+                  return (
+                    <button key={t.key} type="button" disabled={busy} onClick={() => setForm(f => ({ ...f, filmType: t.key }))} style={{
+                      flex: "1 1 auto", padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${active ? t.color : DS.border}`,
+                      background: active ? t.bg : DS.pageBg, cursor: busy ? "not-allowed" : "pointer",
+                      fontSize: 12, fontWeight: active ? 800 : 500, color: active ? t.color : DS.labelText,
+                      transition: "all 0.12s",
+                    }}>
+                      {t.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -769,6 +991,15 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus
                 {film.sport}
               </span>
             )}
+            {(() => {
+              const ft = FILM_TYPE_MAP[film.film_type];
+              if (!ft) return null;
+              return (
+                <span style={{ fontSize: 10, fontWeight: 700, color: ft.color, background: ft.bg, borderRadius: 4, padding: "1px 6px", border: `1px solid ${ft.color}22` }}>
+                  {ft.label}
+                </span>
+              );
+            })()}
             {film.opponent && <span style={{ fontSize: 12, color: DS.labelText }}>vs {film.opponent}</span>}
             {film.game_date && <span style={{ fontSize: 12, color: DS.dimText }}>{fmtDate(film.game_date)}</span>}
             {fmtDuration(film.duration_secs) && <span style={{ fontSize: 11, color: DS.dimText }}>{fmtDuration(film.duration_secs)}</span>}
@@ -1047,12 +1278,14 @@ export default function FilmPage() {
   const router   = useRouter();
   const { user } = useAuthContext();
 
-  const [films,       setFilms]       = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [showUpload,  setShowUpload]  = useState(false);
-  const [showRoster,  setShowRoster]  = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sportFilter, setSportFilter] = useState("all");
+  const [films,          setFilms]          = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [showUpload,     setShowUpload]     = useState(false);
+  const [showRoster,     setShowRoster]     = useState(false);
+  const [showGroups,     setShowGroups]     = useState(false);
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [sportFilter,    setSportFilter]    = useState("all");
+  const [filmTypeFilter, setFilmTypeFilter] = useState("all");
   const [watchStats,    setWatchStats]    = useState({}); // { [filmId]: watched_count }
   const [seasonStatus,  setSeasonStatus]  = useState(null);
   const pollingRef = useRef({});
@@ -1168,8 +1401,10 @@ export default function FilmPage() {
 
   const allSports = [...new Set(films.map(f => f.sport).filter(Boolean))].sort();
 
+  const filmTypesInUse = [...new Set(films.map(f => f.film_type).filter(Boolean))];
   const filteredFilms = films.filter(f => {
     if (sportFilter !== "all" && f.sport !== sportFilter) return false;
+    if (filmTypeFilter !== "all" && f.film_type !== filmTypeFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       if (!f.title?.toLowerCase().includes(q) && !f.opponent?.toLowerCase().includes(q)) return false;
@@ -1214,6 +1449,9 @@ export default function FilmPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button onClick={() => setShowGroups(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
+                <Shield size={14} /> Groups
+              </button>
               <button onClick={() => setShowRoster(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
                 <Users size={14} /> Roster
               </button>
@@ -1228,27 +1466,50 @@ export default function FilmPage() {
 
           {/* Search + filter row */}
           {!loading && films.length > 0 && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
-              <div style={{ flex: 1, position: "relative" }}>
-                <Search size={13} color={DS.dimText} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-                <input
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search films or opponents…"
-                  style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px 9px 32px", fontSize: 13, color: DS.bodyText, background: DS.cardBg, outline: "none" }}
-                />
+            <>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                <div style={{ flex: 1, position: "relative" }}>
+                  <Search size={13} color={DS.dimText} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                  <input
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Search films or opponents…"
+                    style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px 9px 32px", fontSize: 13, color: DS.bodyText, background: DS.cardBg, outline: "none" }}
+                  />
+                </div>
+                {allSports.length > 1 && (
+                  <select
+                    value={sportFilter}
+                    onChange={e => setSportFilter(e.target.value)}
+                    style={{ border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: DS.bodyText, background: DS.cardBg, outline: "none", cursor: "pointer" }}
+                  >
+                    <option value="all">All Sports</option>
+                    {allSports.map(s => <option key={s} value={s} style={{ textTransform: "capitalize" }}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  </select>
+                )}
               </div>
-              {allSports.length > 1 && (
-                <select
-                  value={sportFilter}
-                  onChange={e => setSportFilter(e.target.value)}
-                  style={{ border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: DS.bodyText, background: DS.cardBg, outline: "none", cursor: "pointer" }}
-                >
-                  <option value="all">All Sports</option>
-                  {allSports.map(s => <option key={s} value={s} style={{ textTransform: "capitalize" }}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                </select>
+
+              {/* Film type filter pills — only show when >1 type exists */}
+              {filmTypesInUse.length > 1 && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
+                  {[{ key: "all", label: "All Types", color: DS.labelText, bg: DS.cardBg }, ...FILM_TYPES.filter(t => filmTypesInUse.includes(t.key))].map(t => {
+                    const active = filmTypeFilter === t.key;
+                    return (
+                      <button key={t.key} onClick={() => setFilmTypeFilter(t.key)} style={{
+                        padding: "5px 12px", borderRadius: 20,
+                        border: `1.5px solid ${active ? (t.color === DS.labelText ? DS.border : t.color) : DS.border}`,
+                        background: active ? (t.bg || DS.cardBg) : DS.cardBg,
+                        fontSize: 12, fontWeight: active ? 700 : 500,
+                        color: active ? (t.color === DS.labelText ? DS.bodyText : t.color) : DS.labelText,
+                        cursor: "pointer", transition: "all 0.12s",
+                      }}>
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </div>
+            </>
           )}
 
           {loading ? (
@@ -1370,6 +1631,7 @@ export default function FilmPage() {
         </div>
       </div>
 
+      {showGroups && <GroupsModal onClose={() => setShowGroups(false)} />}
       {showRoster && <RosterPanel onClose={() => setShowRoster(false)} defaultSport={primarySport} />}
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploadStarted={handleUploadStarted} />}
     </>

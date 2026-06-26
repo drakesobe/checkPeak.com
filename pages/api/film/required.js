@@ -1,9 +1,10 @@
 // pages/api/film/required.js
-// GET ?_authUser=... — returns published CARA films for the athlete's org
-// with this athlete's per-film play-watch count.
+// GET ?_authUser=... — returns published CARA films AND CARA playlists (cut-ups)
+// for the athlete's org, with this athlete's per-film play-watch count.
 //
 // Response: { ok, films: [{ id, title, opponent, game_date, mux_playback_id,
-//   play_count, watched_count, watch_due_date }] }
+//   play_count, watched_count, watch_due_date, type: "film"|"cutup",
+//   list_id?: string }] }
 
 import { createClient } from "@supabase/supabase-js";
 import { readUserCookie } from "@/lib/requireUser";
@@ -34,9 +35,9 @@ export default async function handler(req, res) {
   if (!orgId || !athleteId) return res.status(400).json({ error: "Missing org or athlete identity" });
 
   try {
-    const { data: films, error: filmErr } = await supabase
+    const { data: allFilms, error: filmErr } = await supabase
       .from("game_films")
-      .select("id, title, opponent, game_date, mux_playback_id, play_count, watch_due_date")
+      .select("id, title, opponent, game_date, mux_playback_id, play_count, watch_due_date, publish_group_ids")
       .eq("org_id", orgId)
       .eq("is_published", true)
       .eq("viewing_type", "cara")
@@ -44,7 +45,31 @@ export default async function handler(req, res) {
       .order("created_at", { ascending: false });
 
     if (filmErr) throw filmErr;
-    if (!films?.length) return res.status(200).json({ ok: true, films: [] });
+    if (!allFilms?.length) return res.status(200).json({ ok: true, films: [] });
+
+    // Resolve group targeting: find which groups this athlete belongs to
+    let athleteGroupIds = new Set();
+    const groupedFilmIds = allFilms.filter(f => f.publish_group_ids?.length).map(f => f.publish_group_ids).flat();
+    if (groupedFilmIds.length > 0) {
+      const { data: groups } = await supabase
+        .from("org_groups")
+        .select("id, athlete_emails")
+        .eq("org_id", orgId);
+
+      for (const g of groups ?? []) {
+        if ((g.athlete_emails ?? []).map(e => String(e).toLowerCase()).includes(athleteId)) {
+          athleteGroupIds.add(g.id);
+        }
+      }
+    }
+
+    // Filter: show film if no group targeting OR athlete is in at least one targeted group
+    const films = allFilms.filter(f => {
+      if (!f.publish_group_ids?.length) return true;
+      return f.publish_group_ids.some(gid => athleteGroupIds.has(gid));
+    });
+
+    if (!films.length) return res.status(200).json({ ok: true, films: [] });
 
     const filmIds = films.map(f => f.id);
 
@@ -60,16 +85,60 @@ export default async function handler(req, res) {
       watchedByFilm[w.film_id] = (watchedByFilm[w.film_id] || 0) + 1;
     }
 
-    const result = films.map(f => ({
-      id:             f.id,
-      title:          f.title          ?? "Untitled Film",
-      opponent:       f.opponent       ?? null,
-      game_date:      f.game_date      ?? null,
+    const filmResults = films.map(f => ({
+      id:              f.id,
+      type:            "film",
+      title:           f.title           ?? "Untitled Film",
+      opponent:        f.opponent        ?? null,
+      game_date:       f.game_date       ?? null,
       mux_playback_id: f.mux_playback_id ?? null,
-      play_count:     f.play_count     ?? 0,
-      watched_count:  watchedByFilm[f.id] ?? 0,
-      watch_due_date: f.watch_due_date ?? null,
+      play_count:      f.play_count      ?? 0,
+      watched_count:   watchedByFilm[f.id] ?? 0,
+      watch_due_date:  f.watch_due_date  ?? null,
     }));
+
+    // Fetch published CARA playlists (cut-ups) for this org
+    let cutupResults = [];
+    try {
+      const { data: cutups } = await supabase
+        .from("game_play_lists")
+        .select(`
+          id, name, watch_due_date, created_at,
+          game_play_list_items ( id, game_plays ( id, film_id, start_time_secs, end_time_secs, game_films ( mux_playback_id ) ) )
+        `)
+        .eq("org_id", orgId)
+        .eq("is_published", true)
+        .eq("viewing_type", "cara")
+        .order("watch_due_date", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+
+      for (const c of cutups ?? []) {
+        const items = (c.game_play_list_items ?? []).sort((a, b) => a.position - b.position);
+        const playCount = items.length;
+        const firstPlay = items[0]?.game_plays;
+        const muxId = firstPlay?.game_films?.mux_playback_id ?? null;
+
+        cutupResults.push({
+          id:              c.id,
+          type:            "cutup",
+          list_id:         c.id,
+          title:           c.name ?? "Cut-up",
+          opponent:        null,
+          game_date:       null,
+          mux_playback_id: muxId,
+          play_count:      playCount,
+          watched_count:   0,
+          watch_due_date:  c.watch_due_date ?? null,
+        });
+      }
+    } catch {}
+
+    const result = [...filmResults, ...cutupResults].sort((a, b) => {
+      if (a.watch_due_date && b.watch_due_date) return new Date(a.watch_due_date) - new Date(b.watch_due_date);
+      if (a.watch_due_date) return -1;
+      if (b.watch_due_date) return 1;
+      return 0;
+    });
 
     return res.status(200).json({ ok: true, films: result });
   } catch (err) {

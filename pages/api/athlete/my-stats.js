@@ -94,7 +94,7 @@ export default async function handler(req, res) {
     const firstSteps    = tracks.map(t => t.first_step_ms).filter(v => v != null);
 
     const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
-    const max = arr => arr.length ? Math.max(...arr) : null;
+    const max = arr => arr.length ? arr.reduce((m, v) => v > m ? v : m, -Infinity) : null;
 
     const avgSpeed       = avg(speeds);
     const peakSpeed      = max(peakSpeeds);

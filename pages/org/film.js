@@ -1293,9 +1293,12 @@ export default function FilmPage() {
 
   const ACTIVE_STATUSES = ["uploading"];
 
-  const fetchFilms = useCallback(async () => {
+  const fetchFilms = useCallback(async (opts = {}) => {
     try {
-      const r = await fetch("/api/film/list", { credentials: "include" });
+      const params = new URLSearchParams({ limit: "100" });
+      if (opts.filmType && opts.filmType !== "all") params.set("filmType", opts.filmType);
+      if (opts.search?.trim()) params.set("search", opts.search.trim());
+      const r = await fetch(`/api/film/list?${params}`, { credentials: "include" });
       const d = await r.json();
       if (d.films) {
         setFilms(d.films);
@@ -1401,14 +1404,10 @@ export default function FilmPage() {
 
   const allSports = [...new Set(films.map(f => f.sport).filter(Boolean))].sort();
 
+  // Type filter — server-side; locally we only keep sport filter (no pagination needed there)
   const filmTypesInUse = [...new Set(films.map(f => f.film_type).filter(Boolean))];
   const filteredFilms = films.filter(f => {
     if (sportFilter !== "all" && f.sport !== sportFilter) return false;
-    if (filmTypeFilter !== "all" && f.film_type !== filmTypeFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      if (!f.title?.toLowerCase().includes(q) && !f.opponent?.toLowerCase().includes(q)) return false;
-    }
     return true;
   });
 
@@ -1472,7 +1471,14 @@ export default function FilmPage() {
                   <Search size={13} color={DS.dimText} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
                   <input
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => {
+                      const q = e.target.value;
+                      setSearchQuery(q);
+                      clearTimeout(window.__filmSearchTimer);
+                      window.__filmSearchTimer = setTimeout(() => {
+                        fetchFilms({ search: q, filmType: filmTypeFilter });
+                      }, 280);
+                    }}
                     placeholder="Search films or opponents…"
                     style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 12px 9px 32px", fontSize: 13, color: DS.bodyText, background: DS.cardBg, outline: "none" }}
                   />
@@ -1495,7 +1501,10 @@ export default function FilmPage() {
                   {[{ key: "all", label: "All Types", color: DS.labelText, bg: DS.cardBg }, ...FILM_TYPES.filter(t => filmTypesInUse.includes(t.key))].map(t => {
                     const active = filmTypeFilter === t.key;
                     return (
-                      <button key={t.key} onClick={() => setFilmTypeFilter(t.key)} style={{
+                      <button key={t.key} onClick={() => {
+                        setFilmTypeFilter(t.key);
+                        fetchFilms({ filmType: t.key, search: searchQuery });
+                      }} style={{
                         padding: "5px 12px", borderRadius: 20,
                         border: `1.5px solid ${active ? (t.color === DS.labelText ? DS.border : t.color) : DS.border}`,
                         background: active ? (t.bg || DS.cardBg) : DS.cardBg,

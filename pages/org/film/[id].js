@@ -13,6 +13,7 @@ import {
   X, Tag, Sparkles, Brain, ArrowRight, ListVideo, Plus,
   Trash2, ChevronRight, ChevronUp, ChevronDown, SkipForward, SkipBack, Bookmark,
   ArrowLeftRight, Send, Clock, CheckCircle, Pencil, Check,
+  Video, Layers, SwitchCamera,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
 
@@ -1094,9 +1095,13 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       {/* ── Edit mode banner ── */}
       {editingPlay && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 7, padding: "7px 12px" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa" }}>✏ Editing Play #{editingPlay.play_number}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#60a5fa", display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <Pencil size={11} color="#60a5fa" /> Editing Play #{editingPlay.play_number}
+          </span>
           <button onClick={() => { onCancelEdit?.(); onClear?.(); }}
-            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 2px", fontWeight: 700 }}>✕ Cancel</button>
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 2px", fontWeight: 700 }}>
+            <X size={11} /> Cancel
+          </button>
         </div>
       )}
 
@@ -1464,7 +1469,7 @@ function AnnotationModal({ play, onSave, onClose }) {
   const TOOLS = [
     { id: "arrow",  label: "→ Arrow"  },
     { id: "circle", label: "○ Circle" },
-    { id: "line",   label: "✏ Draw"   },
+    { id: "line",   label: "/ Draw"   },
     { id: "text",   label: "T Text"   },
   ];
   const COLORS = ["#FF3B30","#FF9500","#FFCC00","#34C759","#007AFF","#FFFFFF"];
@@ -1480,7 +1485,7 @@ function AnnotationModal({ play, onSave, onClose }) {
             <span style={{ fontSize: 14, fontWeight: 800, color: "#e2e8f0" }}>Annotate Play #{play.play_number}</span>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>Draw on this frame — athletes will see it in their feed</span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={16} /></button>
         </div>
 
         {/* Toolbar */}
@@ -1820,9 +1825,9 @@ function PlaySidebar({ plays, selectedId, onSelect, onEdit, onDelete, onMove, on
                     ><Pencil size={11} /></button>
                     <button
                       onClick={e => { e.stopPropagation(); onEdit?.(play); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, fontSize: 10, color: DS.dimText, lineHeight: 1 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4, color: DS.dimText, lineHeight: 1, display: "flex", alignItems: "center" }}
                       title="Edit play"
-                    >✏</button>
+                    ><Pencil size={11} /></button>
                     <button
                       onClick={e => { e.stopPropagation(); onDelete?.(play); }}
                       style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "#f87171", lineHeight: 1, display: "flex" }}
@@ -2425,67 +2430,104 @@ function AngleManager({ primaryFilmId, angles, onRefresh, onClose }) {
   }
 
   return (
-    <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: 16, marginBottom: 12, fontSize: 13 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <p style={{ margin: 0, fontWeight: 700, color: DS.bodyText, fontSize: 13 }}>Manage Camera Angles</p>
-        <span style={{ fontSize: 11, color: DS.dimText }}>Link another film as a secondary angle for split-screen comparison</span>
+    <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+        <SwitchCamera size={15} color={DS.brand} style={{ marginTop: 1, flexShrink: 0 }} />
+        <div>
+          <p style={{ margin: 0, fontWeight: 700, color: DS.bodyText, fontSize: 13 }}>Camera Angles</p>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: DS.dimText }}>
+            Link another film as a secondary angle. Use the time offset to align playback — positive means the angle film starts later than the primary.
+          </p>
+        </div>
       </div>
 
-      {/* Existing angles */}
+      {/* Existing angles list */}
+      {angles.length === 0 && (
+        <div style={{ padding: "12px 14px", background: DS.pageBg, borderRadius: 8, border: `1px dashed ${DS.border}`, marginBottom: 12 }}>
+          <p style={{ margin: 0, fontSize: 12, color: DS.dimText, textAlign: "center" }}>No angles linked yet. Search for a film below to add one.</p>
+        </div>
+      )}
       {angles.map(a => (
-        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 10px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
-          <span style={{ flex: 1, fontWeight: 600, color: DS.bodyText }}>
-            {editId === a.id ? (
-              <input value={editLabel} onChange={e => setEditLabel(e.target.value)}
-                style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: DS.bodyText, width: 120 }} />
-            ) : (a.label)}
-          </span>
-          <span style={{ color: DS.dimText, fontSize: 11 }}>{a.game_films?.title ?? "—"}</span>
+        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "9px 12px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
+          <Video size={12} color={DS.dimText} style={{ flexShrink: 0 }} />
+
           {editId === a.id ? (
-            <>
-              <span style={{ color: DS.dimText, fontSize: 11 }}>offset:</span>
+            <input value={editLabel} onChange={e => setEditLabel(e.target.value)}
+              style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: DS.bodyText, width: 120 }} />
+          ) : (
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 12, color: DS.bodyText }}>{a.label}</span>
+          )}
+
+          <span style={{ fontSize: 11, color: DS.dimText, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {a.game_films?.title ?? "—"}
+          </span>
+
+          {editId === a.id ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: DS.dimText }}>offset</span>
               <input type="number" step="0.1" value={editOffset} onChange={e => setEditOffset(e.target.value)}
                 style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 6, padding: "4px 6px", fontSize: 11, color: DS.bodyText, width: 60 }} />
-              <span style={{ color: DS.dimText, fontSize: 11 }}>s</span>
+              <span style={{ fontSize: 11, color: DS.dimText }}>s</span>
               <button onClick={() => saveEdit(a.id)} disabled={busy}
-                style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
-              <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText }}>✕</button>
-            </>
+                style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+              <button onClick={() => setEditId(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, display: "flex", alignItems: "center" }}>
+                <X size={13} />
+              </button>
+            </div>
           ) : (
-            <>
-              <span style={{ color: DS.dimText, fontSize: 11 }}>{a.time_offset_secs !== 0 ? `${a.time_offset_secs > 0 ? "+" : ""}${a.time_offset_secs}s` : "in sync"}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: DS.dimText }}>
+                {a.time_offset_secs !== 0 ? `${a.time_offset_secs > 0 ? "+" : ""}${a.time_offset_secs}s` : "in sync"}
+              </span>
               <button onClick={() => { setEditId(a.id); setEditLabel(a.label); setEditOffset(String(a.time_offset_secs ?? 0)); }}
-                style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: DS.dimText }}>Edit</button>
+                style={{ background: "none", border: `1px solid ${DS.border}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: DS.dimText }}>
+                Edit
+              </button>
               <button onClick={() => removeAngle(a.id)} disabled={busy}
-                style={{ background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", color: DS.warn, fontSize: 11 }}>Remove</button>
-            </>
+                style={{ background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", color: DS.warn, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                <Trash2 size={11} />
+              </button>
+            </div>
           )}
         </div>
       ))}
 
-      {/* Search to add */}
-      <div style={{ marginTop: 10 }}>
-        <input
-          value={searchQuery}
-          onChange={e => { setSearchQuery(e.target.value); searchFilms(e.target.value); }}
-          placeholder="Search films to add as angle…"
-          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${DS.border}`, background: DS.pageBg, color: DS.bodyText, fontSize: 12, outline: "none", boxSizing: "border-box" }}
-        />
-        {searching && <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.dimText }}>Searching…</p>}
+      {/* Search to link a new film */}
+      <div style={{ marginTop: angles.length > 0 ? 12 : 0 }}>
+        <div style={{ position: "relative" }}>
+          <input
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); searchFilms(e.target.value); }}
+            placeholder="Search films by title or opponent…"
+            style={{ width: "100%", padding: "8px 12px 8px 32px", borderRadius: 8, border: `1px solid ${DS.border}`, background: DS.pageBg, color: DS.bodyText, fontSize: 12, outline: "none", boxSizing: "border-box" }}
+          />
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", display: "flex", pointerEvents: "none" }}>
+            <Film size={12} color={DS.dimText} />
+          </span>
+        </div>
+        {searching && (
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.dimText }}>Searching…</p>
+        )}
         {searchResults.length > 0 && (
           <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
             {searchResults.map(f => (
-              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
-                <span style={{ flex: 1, fontSize: 12, color: DS.bodyText }}>{f.title || "Untitled"}</span>
+              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: DS.pageBg, borderRadius: 8, border: `1px solid ${DS.border}` }}>
+                <Video size={12} color={DS.dimText} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12, color: DS.bodyText, fontWeight: 600 }}>{f.title || "Untitled"}</span>
                 {f.opponent && <span style={{ fontSize: 11, color: DS.dimText }}>vs {f.opponent}</span>}
                 {f.game_date && <span style={{ fontSize: 11, color: DS.dimText }}>{f.game_date}</span>}
                 <button onClick={() => addAngle(f)} disabled={busy}
-                  style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
                   Add
                 </button>
               </div>
             ))}
           </div>
+        )}
+        {!searching && searchQuery.trim() && searchResults.length === 0 && (
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.dimText }}>No films found. Try a different title.</p>
         )}
       </div>
     </div>
@@ -2593,7 +2635,7 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, onP
             style={{ background: DS.brand, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
             {busyCG ? "…" : "Create"}
           </button>
-          <button onClick={() => setShowNewCG(false)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 18 }}>✕</button>
+          <button onClick={() => setShowNewCG(false)} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, display: "flex", alignItems: "center" }}><X size={15} /></button>
         </div>
       ) : (
         <button onClick={() => setShowNewCG(true)}
@@ -2680,8 +2722,8 @@ function PlaylistsTab({ playlists, onPlay, onDelete, onRemovePlay, onRename, onP
               <ChevronRight size={13} /> View
             </button>
             <button onClick={() => { setRenaming(list.id); setRenameVal(list.name); }}
-              style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", color: DS.dimText }}>
-              ✏
+              style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", color: DS.dimText, display: "flex", alignItems: "center" }}>
+              <Pencil size={13} />
             </button>
             <button onClick={() => handleDelete(list.id)} disabled={busy}
               style={{ background: DS.warnBg, border: `1px solid ${DS.warn}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", color: DS.warn }}>
@@ -2802,8 +2844,8 @@ function CutupOverlay({ cutup, onNext, onPrev, onStop, isMobile }) {
           <SkipForward size={16} />
         </button>
         <button onClick={onStop}
-          style={{ background: "rgba(220,38,38,0.8)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
-          ✕ Exit
+          style={{ background: "rgba(220,38,38,0.8)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <X size={12} /> Exit
         </button>
       </div>
     </div>
@@ -2813,7 +2855,7 @@ function CutupOverlay({ cutup, onNext, onPrev, onStop, isMobile }) {
 // ── Telestration — canvas only, no toolbar ────────────────────────────────────
 const TELE_TOOLS  = [
   { id: "arrow", label: "Arrow",  icon: "↗" },
-  { id: "pen",   label: "Pen",    icon: "✏" },
+  { id: "pen",   label: "Pen",    icon: "~" },
   { id: "rect",  label: "Rect",   icon: "□" },
   { id: "circle",label: "Circle", icon: "○" },
   { id: "line",  label: "Line",   icon: "—" },
@@ -2972,8 +3014,8 @@ function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesC
             ↩ Undo
           </button>
           <button onClick={()=>onStrokesChange([])} disabled={!strokes.length}
-            style={{...btn({padding:"4px 9px",fontSize:11,fontWeight:700,opacity:strokes.length?1:0.35})}}>
-            ✕ Clear
+            style={{...btn({padding:"4px 9px",fontSize:11,fontWeight:700,opacity:strokes.length?1:0.35,display:"inline-flex",alignItems:"center",gap:4})}}>
+            <X size={10} /> Clear
           </button>
         </div>
       )}
@@ -2981,8 +3023,11 @@ function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesC
       {/* Main controls row — always same layout, never moves */}
       <div style={{ display:"flex", alignItems:"center", padding:"8px 12px", gap:8 }}>
         {/* Play — always far left */}
-        <button onClick={togglePlay} style={{...btn({width:36,height:36,fontSize:18})}}>
-          {playing ? "⏸" : "▶"}
+        <button onClick={togglePlay} style={{...btn({width:36,height:36,display:"inline-flex",alignItems:"center",justifyContent:"center"})}}>
+          {playing
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+          }
         </button>
 
         <div style={{flex:1}} />
@@ -2992,11 +3037,19 @@ function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesC
           style={{...btn({padding:"6px 14px",fontSize:12,fontWeight:700,
             background: drawMode ? "#1E3A5F" : "rgba(255,255,255,0.08)",
           })}}>
-          {drawMode ? "✓ Done" : "✏ Draw"}
+          {drawMode
+            ? <><Check size={12} style={{ marginRight: 4 }} /> Done</>
+            : <><Pencil size={12} style={{ marginRight: 4 }} /> Draw</>
+          }
         </button>
 
         {/* Maximize — always far right */}
-        <button onClick={onFullscreenToggle} style={{...btn({width:36,height:36,fontSize:16})}}>⛶</button>
+        <button onClick={onFullscreenToggle} style={{...btn({width:36,height:36,display:"inline-flex",alignItems:"center",justifyContent:"center"})}}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -3044,7 +3097,7 @@ function ShareModal({ film, playlists, onClose }) {
             <Share2 size={18} color={DS.brand} />
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: DS.bodyText }}>Share Film</h2>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, fontSize: 20, lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: DS.dimText, display: "flex", alignItems: "center" }}><X size={16} /></button>
         </div>
 
         {/* Type selector */}
@@ -3516,7 +3569,9 @@ function TendencyReport({ plays, analytics }) {
   function Insight({ text }) {
     return (
       <div style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>
-        <p style={{ margin: 0, fontSize: 11, color: DS.brand, fontWeight: 600, lineHeight: 1.5 }}>💡 {text}</p>
+        <p style={{ margin: 0, fontSize: 11, color: DS.brand, fontWeight: 600, lineHeight: 1.5, display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <Sparkles size={11} style={{ flexShrink: 0, marginTop: 1 }} /> {text}
+        </p>
       </div>
     );
   }
@@ -5099,42 +5154,69 @@ export default function FilmDetailPage() {
                     onMouseMove={handleFSMouseMove}
                   >
                     {/* Angle switcher bar */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: angles.length > 0 || showAngleMgr ? 8 : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       {angles.length > 0 && (
                         <>
+                          {/* Primary angle */}
                           <button
-                            onClick={() => setActiveAngle(null)}
+                            onClick={() => {
+                              setActiveAngle(null);
+                              if (videoRef.current) videoRef.current.currentTime = videoTime;
+                            }}
                             style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
                               padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
                               background: activeAngle === null ? DS.brand : DS.pageBg,
-                              color: activeAngle === null ? "#fff" : DS.dimText,
-                              border: `1.5px solid ${activeAngle === null ? DS.brand : DS.border}`,
+                              color:      activeAngle === null ? "#fff" : DS.dimText,
+                              border:    `1.5px solid ${activeAngle === null ? DS.brand : DS.border}`,
                             }}>
-                            📹 Primary
+                            <Video size={12} /> Primary
                           </button>
+
+                          {/* Secondary angle pills */}
                           {angles.map(a => (
                             <button key={a.id}
-                              onClick={() => setActiveAngle(a)}
+                              onClick={() => {
+                                setActiveAngle(a);
+                                // Seek angle video to equivalent time accounting for offset
+                                requestAnimationFrame(() => {
+                                  if (videoRef.current) {
+                                    const target = Math.max(0, videoTime + (a.time_offset_secs ?? 0));
+                                    videoRef.current.currentTime = target;
+                                  }
+                                });
+                              }}
                               style={{
+                                display: "inline-flex", alignItems: "center", gap: 6,
                                 padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
                                 background: activeAngle?.id === a.id ? "#7C3AED" : DS.pageBg,
-                                color: activeAngle?.id === a.id ? "#fff" : DS.dimText,
-                                border: `1.5px solid ${activeAngle?.id === a.id ? "#7C3AED" : DS.border}`,
+                                color:      activeAngle?.id === a.id ? "#fff" : DS.dimText,
+                                border:    `1.5px solid ${activeAngle?.id === a.id ? "#7C3AED" : DS.border}`,
                               }}>
-                              🎥 {a.label}
+                              <SwitchCamera size={12} />
+                              {a.label}
                               {a.time_offset_secs !== 0 && (
-                                <span style={{ marginLeft: 4, fontWeight: 500, opacity: 0.7 }}>
-                                  ({a.time_offset_secs > 0 ? "+" : ""}{a.time_offset_secs}s)
+                                <span style={{ fontWeight: 500, opacity: 0.65, fontSize: 11 }}>
+                                  {a.time_offset_secs > 0 ? "+" : ""}{a.time_offset_secs}s
                                 </span>
                               )}
                             </button>
                           ))}
                         </>
                       )}
+
+                      {/* Manage angles toggle */}
                       <button
                         onClick={() => setShowAngleMgr(s => !s)}
-                        style={{ padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer", background: showAngleMgr ? DS.brand : DS.pageBg, color: showAngleMgr ? "#fff" : DS.dimText, border: `1px dashed ${DS.border}` }}>
-                        {showAngleMgr ? "✕ Close Angles" : "🎥 Manage Angles"}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: showAngleMgr ? DS.brand : DS.pageBg,
+                          color:      showAngleMgr ? "#fff" : DS.dimText,
+                          border:    `1px dashed ${DS.border}`,
+                        }}>
+                        <Layers size={11} />
+                        {showAngleMgr ? "Close Angles" : "Manage Angles"}
                       </button>
                     </div>
 

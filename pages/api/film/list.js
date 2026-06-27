@@ -30,16 +30,25 @@ export default async function handler(req, res) {
   const orgId = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
   if (!orgId) return res.status(400).json({ error: "Missing org identity" });
 
-  const limit  = Math.min(Number(req.query.limit  ?? 20), 100);
-  const offset = Number(req.query.offset ?? 0);
+  const limit    = Math.min(Number(req.query.limit  ?? 20), 100);
+  const offset   = Number(req.query.offset ?? 0);
+  const search   = String(req.query.search   ?? "").trim();
+  const filmType = String(req.query.filmType ?? "").trim();
+
+  const VALID_FILM_TYPES = ["game", "practice", "7v7", "scrimmage", "tournament"];
 
   try {
-    const { data: films, error, count } = await supabase
+    let query = supabase
       .from("game_films")
       .select("id, title, sport, film_type, game_date, opponent, status, progress_pct, play_count, duration_secs, mux_playback_id, is_published, viewing_type, watch_due_date, created_at", { count: "exact" })
       .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (search)   query = query.or(`title.ilike.%${search}%,opponent.ilike.%${search}%`);
+    if (filmType && VALID_FILM_TYPES.includes(filmType)) query = query.eq("film_type", filmType);
+
+    const { data: films, error, count } = await query;
 
     if (error) throw error;
 

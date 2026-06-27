@@ -1,26 +1,76 @@
 // pages/reel/[token].js
 // Public highlight reel viewer. No login required.
 // Accessible at /reel/<share_token>
-"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import MuxPlayer from "@mux/mux-player-react";
 
-const DARK = "#05080F";
-const CARD = "#0C1220";
+const DARK   = "#05080F";
+const CARD   = "#0C1220";
 const BORDER = "#1E2A3A";
-const AMBER = "#F59E0B";
-const DIM = "#6B7A8D";
-const WHITE = "#F0F4FF";
-const MUTED = "#9BA8B4";
+const AMBER  = "#F59E0B";
+const DIM    = "#6B7A8D";
+const WHITE  = "#F0F4FF";
+const MUTED  = "#9BA8B4";
 
+// ── SVG Icons ─────────────────────────────────────────────────────────────────
+function IconFilm({ size = 18, color = DIM }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="2" />
+      <line x1="7"  y1="2"  x2="7"  y2="22" />
+      <line x1="17" y1="2"  x2="17" y2="22" />
+      <line x1="2"  y1="12" x2="22" y2="12" />
+      <line x1="2"  y1="7"  x2="7"  y2="7"  />
+      <line x1="17" y1="7"  x2="22" y2="7"  />
+      <line x1="2"  y1="17" x2="7"  y2="17" />
+      <line x1="17" y1="17" x2="22" y2="17" />
+    </svg>
+  );
+}
+
+function IconPlay({ size = 10, color = "#000" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <polygon points="5,3 19,12 5,21" />
+    </svg>
+  );
+}
+
+function IconChevronLeft({ size = 16, color = WHITE }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
+function IconChevronRight({ size = 16, color = WHITE }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+function IconBolt({ size = 18, color = "#000" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(iso) {
   if (!iso) return null;
   try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
   catch { return null; }
 }
 
+// ── PlayCard ──────────────────────────────────────────────────────────────────
 function PlayCard({ play, index, isActive, onClick }) {
   return (
     <button
@@ -35,14 +85,20 @@ function PlayCard({ play, index, isActive, onClick }) {
     >
       {/* Thumbnail */}
       <div style={{ width: 88, height: 54, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#111827", position: "relative" }}>
-        <img src={play.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        {play.thumb ? (
+          <img src={play.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <IconFilm size={20} color={DIM} />
+          </div>
+        )}
         {isActive && (
           <div style={{
             position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.35)",
+            background: "rgba(0,0,0,0.4)",
           }}>
-            <div style={{ width: 22, height: 22, borderRadius: "50%", background: AMBER, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ width: 0, height: 0, borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: "8px solid #000", marginLeft: 2 }} />
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: AMBER, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <IconPlay size={10} color="#000" />
             </div>
           </div>
         )}
@@ -50,7 +106,7 @@ function PlayCard({ play, index, isActive, onClick }) {
 
       {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 3 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: AMBER, background: "rgba(245,158,11,0.12)", borderRadius: 4, padding: "1px 6px" }}>
             #{index + 1}
           </span>
@@ -72,53 +128,55 @@ function PlayCard({ play, index, isActive, onClick }) {
   );
 }
 
-function MuxPlayer({ play }) {
-  const videoRef = useRef(null);
+// ── Mux video player with clip enforcement ────────────────────────────────────
+// Uses @mux/mux-player-react so HLS works in all browsers (Chrome, Firefox, Safari).
+function ClipPlayer({ play }) {
+  const playerRef = useRef(null);
+  const startRef  = useRef(play?.start_time_secs ?? 0);
+  const endRef    = useRef(play?.end_time_secs ?? null);
 
   useEffect(() => {
-    if (!videoRef.current || !play) return;
-    const start = play.start_time_secs ?? 0;
-    const v = videoRef.current;
-    v.currentTime = start;
-    v.play().catch(() => {});
-
-    function handleTimeUpdate() {
-      if (play.end_time_secs && v.currentTime >= play.end_time_secs) {
-        v.pause();
-        v.currentTime = start;
-      }
-    }
-    v.addEventListener("timeupdate", handleTimeUpdate);
-    return () => v.removeEventListener("timeupdate", handleTimeUpdate);
+    if (!play) return;
+    startRef.current = play.start_time_secs ?? 0;
+    endRef.current   = play.end_time_secs ?? null;
   }, [play?.id]);
 
   if (!play) return null;
 
   return (
     <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#000", borderRadius: 12, overflow: "hidden" }}>
-      <video
-        ref={videoRef}
-        key={play.id}
-        src={`https://stream.mux.com/${play.mux_playback_id}.m3u8`}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-        controls
-        playsInline
-        autoPlay
-        poster={play.thumb}
-      />
+      <div style={{ position: "absolute", inset: 0 }}>
+        <MuxPlayer
+          ref={playerRef}
+          key={play.id}
+          playbackId={play.mux_playback_id}
+          streamType="on-demand"
+          startTime={play.start_time_secs ?? 0}
+          style={{ width: "100%", height: "100%" }}
+          accentColor={AMBER}
+          onTimeUpdate={e => {
+            const end = endRef.current;
+            if (end != null && e.target.currentTime >= end) {
+              e.target.pause();
+              e.target.currentTime = startRef.current;
+            }
+          }}
+        />
+      </div>
     </div>
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function ReelPage() {
   const router = useRouter();
   const { token } = router.query;
 
-  const [loading,    setLoading]    = useState(true);
-  const [reel,       setReel]       = useState(null);
-  const [plays,      setPlays]      = useState([]);
-  const [activeIdx,  setActiveIdx]  = useState(0);
-  const [notFound,   setNotFound]   = useState(false);
+  const [loading,   setLoading]   = useState(true);
+  const [reel,      setReel]      = useState(null);
+  const [plays,     setPlays]     = useState([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [notFound,  setNotFound]  = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -138,11 +196,11 @@ export default function ReelPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: DARK, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } } * { box-sizing: border-box; } body { margin: 0; }`}</style>
         <div style={{ textAlign: "center" }}>
-          <div style={{ width: 40, height: 40, border: `3px solid ${BORDER}`, borderTopColor: AMBER, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
-          <p style={{ color: DIM, fontSize: 14, margin: 0 }}>Loading reel…</p>
+          <div style={{ width: 36, height: 36, border: `3px solid ${BORDER}`, borderTopColor: AMBER, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+          <p style={{ color: DIM, fontSize: 13, margin: 0 }}>Loading reel…</p>
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -150,84 +208,132 @@ export default function ReelPage() {
   if (notFound || !reel) {
     return (
       <div style={{ minHeight: "100vh", background: DARK, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{`* { box-sizing: border-box; } body { margin: 0; }`}</style>
         <div style={{ textAlign: "center", padding: 24 }}>
-          <p style={{ fontSize: 48, margin: "0 0 16px" }}>🎬</p>
-          <h1 style={{ color: WHITE, fontSize: 24, fontWeight: 800, margin: "0 0 8px" }}>Reel not found</h1>
-          <p style={{ color: DIM, fontSize: 14 }}>This link may have expired or been removed.</p>
+          <div style={{ width: 64, height: 64, borderRadius: 16, background: "#111827", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <IconFilm size={28} color={DIM} />
+          </div>
+          <h1 style={{ color: WHITE, fontSize: 22, fontWeight: 800, margin: "0 0 8px" }}>Reel not found</h1>
+          <p style={{ color: DIM, fontSize: 14, margin: 0 }}>This link may have expired or been removed by the athlete.</p>
         </div>
       </div>
     );
   }
 
+  const hasList = plays.length > 1;
+
   return (
     <>
       <Head>
         <title>{reel.title} — CheckPeak Highlight Reel</title>
-        <meta name="description" content={`Watch this highlight reel powered by CheckPeak — ${plays.length} plays`} />
+        <meta name="description" content={`Watch this highlight reel on CheckPeak — ${plays.length} plays`} />
         <meta property="og:title" content={reel.title} />
         <meta property="og:description" content={`${plays.length} highlight plays`} />
         {activePlay?.thumb && <meta property="og:image" content={activePlay.thumb} />}
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
       <style>{`
         * { box-sizing: border-box; }
-        body { margin: 0; background: ${DARK}; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; background: ${DARK}; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: ${WHITE}; }
+        button { font-family: inherit; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        mux-player { display: block; }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: DARK }}>
 
-        {/* Header */}
-        <div style={{ background: "rgba(5,8,15,0.95)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${BORDER}`, padding: "16px 24px", display: "flex", alignItems: "center", gap: 14, position: "sticky", top: 0, zIndex: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 9, background: AMBER, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ fontSize: 18 }}>⚡</span>
+        {/* Sticky header */}
+        <div style={{
+          background: "rgba(5,8,15,0.92)", backdropFilter: "blur(14px)",
+          borderBottom: `1px solid ${BORDER}`, padding: "14px 24px",
+          display: "flex", alignItems: "center", gap: 14,
+          position: "sticky", top: 0, zIndex: 20,
+        }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: AMBER, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <IconBolt size={16} color="#000" />
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: AMBER, textTransform: "uppercase", letterSpacing: "0.1em" }}>CheckPeak · Highlight Reel</p>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: WHITE }}>{reel.title}</h1>
+            <p style={{ margin: 0, fontSize: 9, fontWeight: 800, color: AMBER, textTransform: "uppercase", letterSpacing: "0.12em" }}>CheckPeak · Highlight Reel</p>
+            <h1 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: WHITE, lineHeight: 1.25 }}>{reel.title}</h1>
           </div>
           <div style={{ flex: 1 }} />
           <div style={{ textAlign: "right" }}>
-            <p style={{ margin: 0, fontSize: 20, fontWeight: 900, color: WHITE }}>{plays.length}</p>
-            <p style={{ margin: 0, fontSize: 10, color: DIM, fontWeight: 600 }}>PLAYS</p>
+            <p style={{ margin: 0, fontSize: 22, fontWeight: 900, color: WHITE, lineHeight: 1 }}>{plays.length}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 9, color: DIM, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>plays</p>
           </div>
         </div>
 
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px", display: "grid", gridTemplateColumns: plays.length > 1 ? "1fr 340px" : "1fr", gap: 20, alignItems: "start" }}>
+        {/* Main content grid */}
+        <div style={{
+          maxWidth: 1120, margin: "0 auto", padding: "28px 20px 48px",
+          display: "grid",
+          gridTemplateColumns: hasList ? "1fr 340px" : "min(680px,100%)",
+          justifyContent: hasList ? undefined : "center",
+          gap: 24, alignItems: "start",
+        }}>
 
-          {/* Player column */}
+          {/* Player + info column */}
           <div>
-            <MuxPlayer play={activePlay} />
+            <ClipPlayer play={activePlay} />
 
             {activePlay && (
-              <div style={{ marginTop: 14, padding: "14px 18px", background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: AMBER }}>Play #{activeIdx + 1}</span>
-                  {activePlay.play_type && <span style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase" }}>{activePlay.play_type}</span>}
-                  {activePlay.result && <span style={{ fontSize: 11, color: DIM }}>{activePlay.result}</span>}
-                  {activePlay.formation && <span style={{ fontSize: 11, color: DIM }}>· {activePlay.formation}</span>}
+              <div style={{ marginTop: 14, padding: "16px 20px", background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14 }}>
+                {/* Meta tags row */}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: AMBER, background: "rgba(245,158,11,0.1)", borderRadius: 5, padding: "2px 8px" }}>
+                    Play #{activeIdx + 1}
+                  </span>
+                  {activePlay.play_type && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      {activePlay.play_type}
+                    </span>
+                  )}
+                  {activePlay.result && (
+                    <span style={{ fontSize: 11, color: DIM }}>{activePlay.result}</span>
+                  )}
+                  {activePlay.formation && (
+                    <span style={{ fontSize: 11, color: DIM }}>· {activePlay.formation}</span>
+                  )}
                 </div>
-                <p style={{ margin: "6px 0 0", fontSize: 14, fontWeight: 700, color: WHITE }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: WHITE }}>
                   {activePlay.film_title || (activePlay.opponent ? `vs ${activePlay.opponent}` : "Film")}
                 </p>
-                {activePlay.game_date && <p style={{ margin: "2px 0 0", fontSize: 12, color: DIM }}>{fmtDate(activePlay.game_date)}</p>}
+                {activePlay.game_date && (
+                  <p style={{ margin: "3px 0 0", fontSize: 12, color: DIM }}>{fmtDate(activePlay.game_date)}</p>
+                )}
 
-                {/* Navigation */}
+                {/* Prev / Next navigation */}
                 {plays.length > 1 && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                     <button
                       onClick={() => setActiveIdx(i => Math.max(0, i - 1))}
                       disabled={activeIdx === 0}
-                      style={{ flex: 1, padding: "9px 14px", borderRadius: 8, border: `1px solid ${BORDER}`, background: "transparent", color: activeIdx === 0 ? DIM : WHITE, fontSize: 13, fontWeight: 700, cursor: activeIdx === 0 ? "not-allowed" : "pointer" }}
+                      style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        padding: "10px 14px", borderRadius: 10,
+                        border: `1px solid ${BORDER}`, background: "transparent",
+                        color: activeIdx === 0 ? DIM : WHITE, fontSize: 13, fontWeight: 700,
+                        cursor: activeIdx === 0 ? "not-allowed" : "pointer", opacity: activeIdx === 0 ? 0.45 : 1,
+                      }}
                     >
-                      ← Prev
+                      <IconChevronLeft size={14} color={activeIdx === 0 ? DIM : WHITE} />
+                      Previous
                     </button>
                     <button
                       onClick={() => setActiveIdx(i => Math.min(plays.length - 1, i + 1))}
                       disabled={activeIdx === plays.length - 1}
-                      style={{ flex: 1, padding: "9px 14px", borderRadius: 8, border: "none", background: AMBER, color: "#000", fontSize: 13, fontWeight: 800, cursor: activeIdx === plays.length - 1 ? "not-allowed" : "pointer", opacity: activeIdx === plays.length - 1 ? 0.4 : 1 }}
+                      style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        padding: "10px 14px", borderRadius: 10,
+                        border: "none", background: AMBER,
+                        color: "#000", fontSize: 13, fontWeight: 800,
+                        cursor: activeIdx === plays.length - 1 ? "not-allowed" : "pointer",
+                        opacity: activeIdx === plays.length - 1 ? 0.4 : 1,
+                      }}
                     >
-                      Next →
+                      Next
+                      <IconChevronRight size={14} color="#000" />
                     </button>
                   </div>
                 )}
@@ -235,10 +341,10 @@ export default function ReelPage() {
             )}
           </div>
 
-          {/* Playlist column — only when multiple plays */}
-          {plays.length > 1 && (
+          {/* Playlist sidebar — only when more than one play */}
+          {hasList && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: DIM, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 800, color: DIM, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 All Plays · {plays.length}
               </p>
               {plays.map((p, i) => (
@@ -255,10 +361,12 @@ export default function ReelPage() {
         </div>
 
         {/* Footer */}
-        <div style={{ textAlign: "center", padding: "24px 16px 40px", borderTop: `1px solid ${BORDER}`, marginTop: 20 }}>
+        <div style={{ textAlign: "center", padding: "20px 16px 36px", borderTop: `1px solid ${BORDER}` }}>
           <p style={{ margin: 0, fontSize: 12, color: DIM }}>
             Powered by{" "}
-            <a href="https://checkpeak.com" style={{ color: AMBER, textDecoration: "none", fontWeight: 700 }}>CheckPeak</a>
+            <a href="https://checkpeak.com" style={{ color: AMBER, textDecoration: "none", fontWeight: 700 }}>
+              CheckPeak
+            </a>
             {" "}· The next generation of sports film
           </p>
         </div>

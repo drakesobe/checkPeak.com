@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, orderBy, onSnapshot, // orderBy kept for feed query
   addDoc, updateDoc, doc, getDoc, getDocs, setDoc,
   serverTimestamp, arrayUnion,
 } from "firebase/firestore";
@@ -19,9 +19,10 @@ import {
   ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject,
 } from "firebase/storage";
 import {
-  Send, ImagePlus, X, LayoutDashboard, Pin, Clock,
+  Send, ImagePlus, X, Pin, Clock,
   ArrowLeft, Paperclip, Camera, MessageSquare, Rss,
-  Plus, Trophy,
+  Plus, Trophy, TrendingUp, Flame, Zap, Crown, Leaf,
+  Check, Radio, Users,
 } from "lucide-react";
 import { useAuthContext } from "@/hooks/useAuth";
 import { db, storage } from "@/lib/firebase";
@@ -119,14 +120,14 @@ function avatarColor(str) {
 }
 
 function scopeLabelFeed(post) {
-  if (post.scope === "org") return "📣 Everyone";
+  if (post.scope === "org") return "Everyone";
   const sports = Array.isArray(post.sports) ? post.sports : [];
-  if (!sports.length) return "🏅 Team";
+  if (!sports.length) return "Team";
   if (sports.length === 1) {
     const s = SPORT_MAP[sports[0]];
-    return `${s?.emoji || "🏅"} ${s?.label || sports[0]}`;
+    return s?.label || sports[0];
   }
-  return `🗂 ${sports.map(k => SPORT_MAP[k]?.label || k).join(", ")}`;
+  return sports.map(k => SPORT_MAP[k]?.label || k).join(", ");
 }
 
 function getConvName(conv, myId) {
@@ -148,13 +149,13 @@ function normalizeRole(raw) {
   return "staff";
 }
 
-function streakEmoji(n) {
-  if (n === 0)  return "💤";
-  if (n < 3)   return "🌱";
-  if (n < 7)   return "🔥";
-  if (n < 14)  return "⚡";
-  if (n < 30)  return "💪";
-  return "👑";
+function StreakIcon({ n }) {
+  if (n === 0)  return null;
+  if (n < 3)   return <Leaf  size={11} style={{ color: "#0D9A55" }} />;
+  if (n < 7)   return <Flame size={11} style={{ color: "#FF7B35" }} />;
+  if (n < 14)  return <Zap   size={11} style={{ color: DS.rankAccent }} />;
+  if (n < 30)  return <Flame size={11} style={{ color: "#C8102E" }} />;
+  return <Crown size={11} style={{ color: "#F5C842" }} />;
 }
 
 function useIsMobile(bp = 768) {
@@ -204,7 +205,10 @@ function FeedPostCard({ post }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: DS.bodyText, marginBottom: 2 }}>{post.authorName || "Coach"}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: DS.brand }}>{scopeLabelFeed(post)}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: DS.brand, display: "inline-flex", alignItems: "center", gap: 3 }}>
+              {post.scope === "org" ? <Radio size={10} /> : <Users size={10} />}
+              {scopeLabelFeed(post)}
+            </span>
             <span style={{ fontSize: 11, color: DS.dimText }}>·</span>
             <span style={{ fontSize: 11, color: DS.dimText, display: "flex", alignItems: "center", gap: 3 }}>
               <Clock size={12} />{fmtTimeAgo(post.createdAt)}
@@ -269,9 +273,9 @@ function FeedComposePanel({ onClose, myId, myName, myRole, mySport, orgId }) {
   };
 
   const scopes = [
-    { key: "org",        label: "📣 Everyone" },
-    { key: "team",       label: "🏅 One sport" },
-    { key: "multi-team", label: "🗂 Multi-sport" },
+    { key: "org",        label: "Everyone",   Icon: Radio },
+    { key: "team",       label: "One sport",  Icon: Users },
+    { key: "multi-team", label: "Multi-sport", Icon: Rss  },
   ];
 
   return (
@@ -300,8 +304,8 @@ function FeedComposePanel({ onClose, myId, myName, myRole, mySport, orgId }) {
                 {scopes.map(s => (
                   <button key={s.key} type="button"
                     onClick={() => { setScope(s.key); if (s.key === "org") setSelectedSports([]); else if (s.key === "team" && mySport) setSelectedSports([mySport]); }}
-                    style={{ padding: "8px 4px", borderRadius: 7, border: "none", background: scope === s.key ? DS.cardBg : "transparent", boxShadow: scope === s.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none", color: scope === s.key ? DS.brand : DS.labelText, fontWeight: scope === s.key ? 700 : 500, fontSize: 12, cursor: "pointer", textAlign: "center" }}>
-                    {s.label}
+                    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px 6px", borderRadius: 7, border: "none", background: scope === s.key ? DS.cardBg : "transparent", boxShadow: scope === s.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none", color: scope === s.key ? DS.brand : DS.labelText, fontWeight: scope === s.key ? 700 : 500, fontSize: 12, cursor: "pointer", textAlign: "center" }}>
+                    <s.Icon size={12} />{s.label}
                   </button>
                 ))}
               </div>
@@ -317,7 +321,7 @@ function FeedComposePanel({ onClose, myId, myName, myRole, mySport, orgId }) {
                     return (
                       <button key={s.key} type="button" onClick={() => toggleSport(s.key)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 20, background: active ? DS.brandBg : DS.cardBg, border: `1px solid ${active ? DS.brandBorder : DS.border}`, color: active ? DS.brand : DS.labelText, fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer" }}>
-                        <span>{s.emoji}</span>{s.label}{active && <span style={{ fontSize: 10, color: DS.brand }}>✓</span>}
+                        {s.label}{active && <Check size={10} />}
                       </button>
                     );
                   })}
@@ -457,7 +461,9 @@ function MessageBubble({ msg, isMe, showAvatar, isGroup, myId, convId }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: isMe ? "flex-end" : "flex-start" }}>
             <div onClick={() => canView && setViewing(true)}
               style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 16, background: isMe ? DS.brand : DS.pageBg, border: isMe ? "none" : `1px solid ${DS.brandBorder}`, cursor: canView ? "pointer" : "default", opacity: (!isMe && hasReplayed) ? 0.4 : 1 }}>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: isMe ? "rgba(255,255,255,0.15)" : DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📸</div>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: isMe ? "rgba(255,255,255,0.15)" : DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Camera size={16} style={{ color: isMe ? "#fff" : DS.brand }} />
+              </div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: isMe ? "#fff" : DS.bodyText }}>{isMe ? "Peek sent" : "Peek"}</div>
                 <div style={{ fontSize: 11, color: isMe ? "rgba(255,255,255,0.6)" : DS.dimText }}>
@@ -547,7 +553,7 @@ function ConversationView({ convId, myId, myName, onBack, isMobile }) {
       const path = `snaps/${convId}/${Date.now()}_${myId}.jpg`;
       const { url, storagePath } = await uploadFile(file, path, pct => setUploadPct(pct));
       await addDoc(collection(db, "conversations", convId, "messages"), { senderId: myId, senderName: myName, type: "peek", text: null, imageUrl: url, fileName: null, fileUrl: null, fileSize: null, storagePath, snapOpenedBy: [], snapReplayedBy: [], createdAt: serverTimestamp() });
-      await updateConv("📸 Peek");
+      await updateConv("Photo");
     } catch (err) { console.error("[sendSnap]", err); }
     finally { setUploading(false); setUploadPct(0); }
   };
@@ -861,13 +867,16 @@ export default function OrgMessagingPage() {
   }, [myId]);
 
   // ── Leaderboard listener ──────────────────────────────────────────────────
+  // NOTE: `where + orderBy` on different fields requires a composite Firestore index.
+  // We sort client-side instead to avoid that requirement.
   useEffect(() => {
     if (!orgId) return;
     setLbLoading(true);
-    const q = query(collection(db, "streaks"), where("orgId", "==", orgId), orderBy("current", "desc"));
+    const q = query(collection(db, "streaks"), where("orgId", "==", orgId));
     const unsub = onSnapshot(q, snap => {
       const list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.current || 0) - (a.current || 0));
       setLeaderboard(list);
       setLbLoading(false);
     }, err => { console.error("[leaderboard]", err); setLbLoading(false); });
@@ -987,12 +996,12 @@ export default function OrgMessagingPage() {
               )}
               {activeSports.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-                  {[{ key: "all", label: "All", emoji: "📋" }, { key: "org", label: "Everyone", emoji: "📣" }, ...activeSports].map(s => {
+                  {[{ key: "all", label: "All" }, { key: "org", label: "Everyone" }, ...activeSports].map(s => {
                     const active = sportFilter === s.key;
                     return (
                       <button key={s.key} type="button" onClick={() => setSportFilter(s.key)}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 20, background: active ? DS.brand : DS.cardBg, border: `1px solid ${active ? DS.brand : DS.border}`, color: active ? "#fff" : DS.labelText, fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer" }}>
-                        <span>{s.emoji}</span>{s.label}
+                        style={{ padding: "5px 12px", borderRadius: 20, background: active ? DS.brand : DS.cardBg, border: `1px solid ${active ? DS.brand : DS.border}`, color: active ? "#fff" : DS.labelText, fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer" }}>
+                        {s.label}
                       </button>
                     );
                   })}
@@ -1006,7 +1015,7 @@ export default function OrgMessagingPage() {
               )}
               {!feedLoading && filteredPosts.length === 0 && !feedErr && (
                 <div style={{ textAlign: "center", padding: "60px 20px", background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12 }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Rss size={40} style={{ color: DS.dimText }} /></div>
                   <p style={{ fontSize: 16, fontWeight: 700, color: DS.bodyText, marginBottom: 6 }}>No posts yet</p>
                   <p style={{ fontSize: 14, color: DS.dimText, marginBottom: 24, lineHeight: 1.6 }}>
                     {isStaff ? "Post an update and your athletes will see it in the app immediately." : "Your coaches haven't posted anything yet."}
@@ -1100,12 +1109,14 @@ export default function OrgMessagingPage() {
               {leaderboard.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
                   {[
-                    { label: "Athletes tracked", value: leaderboard.length, emoji: "👥" },
-                    { label: "Avg streak", value: `${Math.round(leaderboard.reduce((a, e) => a + (e.current || 0), 0) / leaderboard.length)}d`, emoji: "📈" },
-                    { label: "Top streak", value: `${leaderboard[0]?.current || 0}d`, emoji: "🔥" },
+                    { label: "Athletes", value: leaderboard.length, Icon: Users, color: DS.brand },
+                    { label: "Avg streak", value: `${Math.round(leaderboard.reduce((a, e) => a + (e.current || 0), 0) / leaderboard.length)}d`, Icon: TrendingUp, color: "#0D9A55" },
+                    { label: "Top streak", value: `${leaderboard[0]?.current || 0}d`, Icon: Flame, color: DS.rankAccent },
                   ].map(stat => (
                     <div key={stat.label} style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, padding: "14px 16px", textAlign: "center" }}>
-                      <div style={{ fontSize: 24, marginBottom: 4 }}>{stat.emoji}</div>
+                      <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+                        <stat.Icon size={20} style={{ color: stat.color }} />
+                      </div>
                       <div style={{ fontSize: 22, fontWeight: 900, color: DS.bodyText }}>{stat.value}</div>
                       <div style={{ fontSize: 11, color: DS.dimText, marginTop: 2, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>{stat.label}</div>
                     </div>
@@ -1115,12 +1126,12 @@ export default function OrgMessagingPage() {
 
               {/* Sport filter */}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-                {[{ key: "all", label: "All Teams", emoji: "🏆" }, ...ALL_SPORTS].map(s => {
+                {[{ key: "all", label: "All Teams" }, ...ALL_SPORTS].map(s => {
                   const active = lbSport === s.key;
                   return (
                     <button key={s.key} type="button" onClick={() => setLbSport(s.key)}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 20, background: active ? DS.rankAccent : DS.cardBg, border: `1px solid ${active ? DS.rankAccent : DS.border}`, color: active ? "#fff" : DS.labelText, fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer" }}>
-                      <span>{s.emoji}</span>{s.label}
+                      style={{ padding: "5px 12px", borderRadius: 20, background: active ? DS.rankAccent : DS.cardBg, border: `1px solid ${active ? DS.rankAccent : DS.border}`, color: active ? "#fff" : DS.labelText, fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer" }}>
+                      {s.label}
                     </button>
                   );
                 })}
@@ -1133,7 +1144,7 @@ export default function OrgMessagingPage() {
                 </div>
               ) : filteredLb.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 20px", background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12 }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>🏆</div>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Trophy size={40} style={{ color: DS.rankAccent }} /></div>
                   <p style={{ fontSize: 15, fontWeight: 700, color: DS.bodyText, marginBottom: 6 }}>No streaks yet</p>
                   <p style={{ fontSize: 13, color: DS.dimText, lineHeight: 1.6 }}>Athletes appear here once they complete all tasks for a day.</p>
                 </div>
@@ -1151,13 +1162,13 @@ export default function OrgMessagingPage() {
                       const color = avatarColor(entry.id || entry.userId);
                       const sport = ALL_SPORTS.find(s => s.key === entry.sport);
                       const pct   = entry.current / maxStreak;
-                      const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
+                      const medalColor = rank === 1 ? "#F5C842" : rank === 2 ? "#A8B8C8" : "#C47A45";
                       return (
                         <div key={entry.id || entry.userId}
                           style={{ display: "grid", gridTemplateColumns: "52px 1fr 110px 90px", padding: "12px 16px", borderBottom: i < filteredLb.slice(0,25).length - 1 ? `1px solid ${DS.border}` : "none", alignItems: "center", background: rank <= 3 ? DS.brandBg : "transparent" }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {medal
-                              ? <span style={{ fontSize: 20 }}>{medal}</span>
+                            {rank <= 3
+                              ? <span style={{ width: 28, height: 28, borderRadius: "50%", border: `2px solid ${medalColor}`, background: medalColor + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: medalColor }}>{rank}</span>
                               : <span style={{ fontSize: 13, fontWeight: 800, color: DS.dimText, width: 28, height: 28, borderRadius: "50%", background: DS.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>{rank}</span>
                             }
                           </div>
@@ -1172,10 +1183,11 @@ export default function OrgMessagingPage() {
                               </div>
                             </div>
                           </div>
-                          <div style={{ fontSize: 12, color: DS.dimText, fontWeight: 500 }}>{sport ? `${sport.emoji} ${sport.label}` : entry.sport}</div>
-                          <div style={{ textAlign: "right" }}>
-                            <span style={{ fontSize: 18, fontWeight: 900, color: DS.bodyText }}>{entry.current}</span>
-                            <span style={{ fontSize: 11, color: DS.dimText, marginLeft: 3 }}>d {streakEmoji(entry.current)}</span>
+                          <div style={{ fontSize: 12, color: DS.dimText, fontWeight: 500 }}>{sport ? sport.label : entry.sport}</div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
+                            <span style={{ fontSize: 18, fontWeight: 900, color: entry.current >= 7 ? DS.rankAccent : DS.bodyText }}>{entry.current}</span>
+                            <span style={{ fontSize: 11, color: DS.dimText }}>d</span>
+                            <StreakIcon n={entry.current} />
                           </div>
                         </div>
                       );

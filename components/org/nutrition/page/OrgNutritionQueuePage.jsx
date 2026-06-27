@@ -1261,12 +1261,12 @@ export default function OrgNutritionQueuePage() {
                   {isMobile ? `Focus (${actionCount})` : <>Focus Mode <span style={{ opacity:0.6, fontSize:11 }}>→</span></>}
                 </button>
               )}
-              <button onClick={() => router.push("/org/workouts-calendar")}
-                style={{ padding:isMobile?"6px 10px":"6px 12px", background:"transparent", border:"1px solid #C0D0E0", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:600, fontSize:isMobile?11:12, letterSpacing:"0.06em", textTransform:"uppercase", color:"#5A6A7D", transition:"all 0.12s" }}
+              <a href="/org/prescriptions"
+                style={{ padding:"6px 12px", background:"transparent", border:"1px solid #C0D0E0", borderRadius:3, cursor:"pointer", fontFamily:"var(--font-display)", fontWeight:600, fontSize:isMobile?11:12, letterSpacing:"0.06em", textTransform:"uppercase", color:"#5A6A7D", textDecoration:"none", transition:"all 0.12s", display:"inline-flex", alignItems:"center", gap:5 }}
                 onMouseEnter={e => { e.currentTarget.style.color="#1E3A5F"; e.currentTarget.style.borderColor="#1E3A5F"; }}
                 onMouseLeave={e => { e.currentTarget.style.color="#5A6A7D"; e.currentTarget.style.borderColor="#C0D0E0"; }}>
-                {isMobile ? "◀" : "← Workouts"}
-              </button>
+                {isMobile ? "← Plans" : "← Nutrition Plans"}
+              </a>
             </div>
           </div>
         </div>

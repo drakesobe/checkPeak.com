@@ -436,6 +436,17 @@ export default function OrgPrescriptionsPage() {
 
             <button
               type="button"
+              onClick={() => router.push("/org/nutrition")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
+              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
+            >
+              Scan Queue
+            </button>
+
+            <button
+              type="button"
               onClick={() => router.push("/org/workouts-calendar")}
               className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
               style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}

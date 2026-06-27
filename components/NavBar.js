@@ -1,4 +1,4 @@
-// components/NavBar.jsx
+// components/NavBar.js
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -26,6 +26,7 @@ function avatarColor(str) {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// ─── Top nav tabs ─────────────────────────────────────────────────────────────
 const ALL_TABS = [
   { name: "Scan",       href: "/nutrition-label-scanner" },
   { name: "Search",     href: "/search"                  },
@@ -70,125 +71,250 @@ function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) 
   );
 }
 
-// ─── Dropdown primitives ──────────────────────────────────────────────────────
+// ─── Inline SVG icon set ──────────────────────────────────────────────────────
+// All 16×16 display, 24×24 viewBox, Lucide-compatible stroke style.
 
-function DropSection({ label, color }) {
+function IcoFilm({ size = 14, color = "currentColor" }) {
   return (
-    <div style={{
-      padding: "10px 16px 4px", fontSize: 9, fontWeight: 800,
-      letterSpacing: "0.16em", textTransform: "uppercase",
-      color: color ?? "rgba(255,255,255,0.25)",
-    }}>
-      {label}
-    </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="2.5" />
+      <path d="M7 2v20M17 2v20M2 12h20M2 7h5M17 7h5M2 17h5M17 17h5" />
+    </svg>
   );
 }
 
-function DropLink({ href, children, icon, onClick, badge, noMargin, external }) {
-  const [hovered, setHovered] = useState(false);
+function IcoPlays({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <polygon points="10,8 16,12 10,16" fill={color} stroke="none" />
+    </svg>
+  );
+}
+
+function IcoCal({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  );
+}
+
+function IcoClipboard({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="M9 14l2 2 4-4" />
+    </svg>
+  );
+}
+
+function IcoUsers({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function IcoMessage({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function IcoNutrition({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-5 8-13V4l-8-2-8 2v5c0 8 8 13 8 13z" />
+    </svg>
+  );
+}
+
+function IcoTrainer({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" />
+      <polyline points="17 11 19 13 23 9" />
+    </svg>
+  );
+}
+
+function IcoStudio({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  );
+}
+
+function IcoGlobe({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+function IcoDash({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function IcoSun({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  );
+}
+
+function IcoJournal({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" />
+    </svg>
+  );
+}
+
+function IcoScan({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+      <line x1="7" y1="12" x2="17" y2="12" />
+    </svg>
+  );
+}
+
+function IcoStore({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3h18l-1.5 9H4.5L3 3z" />
+      <path d="M4.5 12v7a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7" />
+      <path d="M9 21v-5h6v5" />
+    </svg>
+  );
+}
+
+function IcoLibrary({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
+function IcoHelp({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+// ─── Card grid primitives ─────────────────────────────────────────────────────
+
+function NavCard({ href, icon, label, desc, onClick, badge, accent = "#4FABFF", external }) {
+  const [hov, setHov] = useState(false);
   return (
     <Link
       href={href}
       onClick={onClick}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
       style={{
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "9px 16px", fontSize: 13, fontWeight: 500,
-        color: hovered ? "#fff" : "rgba(255,255,255,0.65)",
-        background: hovered ? "rgba(255,255,255,0.06)" : "transparent",
-        borderRadius: 8, textDecoration: "none",
+        display: "flex", alignItems: "flex-start", gap: 10,
+        padding: "10px 11px", borderRadius: 10,
+        background: hov ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.025)",
+        border: `1px solid ${hov ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}`,
+        textDecoration: "none", cursor: "pointer",
         transition: "all 0.12s ease",
-        margin: noMargin ? "0" : "0 6px",
-        cursor: "pointer",
       }}
     >
-      {icon && <span style={{ fontSize: 15, flexShrink: 0, opacity: 0.7 }}>{icon}</span>}
-      <span style={{ flex: 1 }}>{children}</span>
-      {badge && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#4FABFF", background: "rgba(79,171,255,0.12)", border: "1px solid rgba(79,171,255,0.25)", borderRadius: 20, padding: "1px 7px", letterSpacing: "0.04em" }}>
-          {badge}
-        </span>
-      )}
-      {external && (
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.3, flexShrink: 0 }}>
-          <path d="M1 9L9 1M9 1H3M9 1v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
+      <div style={{
+        width: 28, height: 28, borderRadius: 7, flexShrink: 0, marginTop: 1,
+        background: accent + "1A",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {icon}
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{
+          fontSize: 12, fontWeight: 700, lineHeight: 1.2, marginBottom: 2,
+          color: hov ? "#fff" : "rgba(255,255,255,0.82)",
+          display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap",
+        }}>
+          {label}
+          {badge && (
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.04em", flexShrink: 0, color: "#4FABFF", background: "rgba(79,171,255,0.15)", border: "1px solid rgba(79,171,255,0.3)", borderRadius: 20, padding: "1px 5px" }}>
+              {badge}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.3)", lineHeight: 1.35 }}>{desc}</div>
+      </div>
     </Link>
   );
 }
 
+// Two-column grid wrapper
+function NavGrid({ children, cols = 2 }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 5, padding: "6px 12px" }}>
+      {children}
+    </div>
+  );
+}
+
+// Tiny uppercase section label
+function SectionLabel({ children, color }) {
+  return (
+    <div style={{ padding: "10px 14px 3px", fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: color ?? "rgba(255,255,255,0.2)" }}>
+      {children}
+    </div>
+  );
+}
+
 function DropDivider() {
-  return <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />;
-}
-
-// ─── Studio card - org commercial section ────────────────────────────────────
-// Two links only: Studio Dashboard + View Public Profile (when slug available).
-// No redundant links pointing at the same page.
-
-function StudioCard({ onClose, trainerSlug }) {
-  if (!trainerSlug) {
-    return (
-      <div style={{ margin: "4px 8px 8px" }}>
-        <DropSection label="Studio" color="#4FABFF" />
-        <DropLink href="/commercial/dashboard" icon="◈" onClick={onClose}>
-          Studio Dashboard
-        </DropLink>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{
-      margin: "4px 8px",
-      borderRadius: 12,
-      background: "rgba(70,118,155,0.09)",
-      border: "1px solid rgba(70,118,155,0.22)",
-      overflow: "hidden",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 5px" }}>
-        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4FABFF" }}>Studio</span>
-        <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(79,171,255,0.5)", letterSpacing: "0.06em" }}>Commercial</span>
-      </div>
-      <DropLink href="/commercial/dashboard"     icon="◈" onClick={onClose} noMargin>Studio Dashboard</DropLink>
-      <DropLink href={`/trainer/${trainerSlug}`} icon="◎" onClick={onClose} noMargin external>View Public Profile</DropLink>
-      <div style={{ height: 6 }} />
-    </div>
-  );
-}
-
-// ─── Discover card - athlete marketplace section ──────────────────────────────
-
-function DiscoverCard({ onClose }) {
-  return (
-    <div style={{
-      margin: "4px 8px",
-      borderRadius: 12,
-      background: "rgba(218,54,51,0.07)",
-      border: "1px solid rgba(218,54,51,0.18)",
-      overflow: "hidden",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 5px" }}>
-        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF7B72" }}>Discover</span>
-        <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,123,114,0.5)", letterSpacing: "0.06em" }}>Marketplace</span>
-      </div>
-      <DropLink href="/trainers"                icon="⬡" onClick={onClose} noMargin>Marketplace</DropLink>
-      <DropLink href="/athlete/libraries"       icon="✦" onClick={onClose} noMargin>My Libraries</DropLink>
-      <div style={{ height: 6 }} />
-    </div>
-  );
+  return <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />;
 }
 
 // ─── Profile dropdown ─────────────────────────────────────────────────────────
+// Three distinct user contexts:
+//   1. Org / University (isOrg)    — coaching tools + team management
+//   2. Commercial trainer (isTrainer + trainerSlug)  — Studio is primary
+//   3. Athlete / SmartStack (isAthlete)              — personal + discover
 
-function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, trainerSlug }) {
+function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug }) {
   const name     = user?.Name || user?.name || "Profile";
   const email    = user?.Email || user?.email || "";
   const color    = avatarColor(name);
   const initials = getInitials(name);
+
+  const isTrainer  = role === "trainer";
+  const isOrgAdmin = role === "organization" || role === "admin";
 
   return (
     <motion.div
@@ -198,26 +324,26 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
       transition={{ duration: 0.16, ease: "easeOut" }}
       style={{
         position: "absolute", right: 0, marginTop: 8,
-        width: 300, borderRadius: 16,
-        background: "#111827",
-        border: "1px solid rgba(255,255,255,0.1)",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3)",
+        width: 360, borderRadius: 16,
+        background: "#0E1420",
+        border: "1px solid rgba(255,255,255,0.09)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.3)",
         overflow: "hidden", zIndex: 200,
       }}
       role="menu"
     >
-      {/* User identity hero */}
-      <div style={{ padding: "16px 16px 14px", background: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+      {/* ── Identity hero ── */}
+      <div style={{ padding: "16px 16px 14px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: color + "22", border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <span style={{ fontSize: 16, fontWeight: 900, color, letterSpacing: -0.5 }}>{initials}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.32)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#46769B", flexShrink: 0 }} />
-              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 {roleLabel}{orgName ? ` · ${orgName}` : ""}
               </span>
             </div>
@@ -225,80 +351,188 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         </div>
       </div>
 
-      {/* ── Org links ── */}
+      {/* ════════════════════════════════════════════════
+          CONTEXT A — University / Organization coaches
+          Coaching tools grid + Team management grid
+         ════════════════════════════════════════════════ */}
       {isOrgSide && (
         <>
-          <div style={{ padding: "6px 0" }}>
-            <DropSection label="Workspace" />
-            <DropLink href="/org/workouts-calendar" icon="⬡" onClick={onClose}>Workouts Calendar</DropLink>
-            <DropLink href="/org/review-queue"      icon="✦" onClick={onClose}>Review Queue</DropLink>
-            <DropLink href="/org/film"              icon="◈" onClick={onClose} badge="Beta">Film Intelligence</DropLink>
-            <DropLink href="/org/plays"             icon="▦" onClick={onClose}>Play Library</DropLink>
-            <DropLink href="/org/nutrition"         icon="◎" onClick={onClose}>Nutrition</DropLink>
-            <DropLink href="/org/prescriptions"     icon="✦" onClick={onClose}>Nutrition Plans</DropLink>
-          </div>
+          <SectionLabel>Coaching</SectionLabel>
+          <NavGrid>
+            <NavCard
+              href="/org/film" onClick={onClose} badge="Beta"
+              icon={<IcoFilm size={13} color="#4FABFF" />}
+              label="Film" desc="Review, tag & analyze"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/org/plays" onClick={onClose}
+              icon={<IcoPlays size={13} color="#4FABFF" />}
+              label="Play Library" desc="Playbook & diagrams"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/org/workouts-calendar" onClick={onClose}
+              icon={<IcoCal size={13} color="#4FABFF" />}
+              label="Schedule" desc="Workouts & calendar"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/org/review-queue" onClick={onClose}
+              icon={<IcoClipboard size={13} color="#4FABFF" />}
+              label="Review Queue" desc="Pending submissions"
+              accent="#4FABFF"
+            />
+          </NavGrid>
 
           <DropDivider />
 
-          <div style={{ padding: "0 0 4px" }}>
-            <DropSection label="Team" />
-            <DropLink href="/org/messaging" icon="⬡" onClick={onClose}>Messaging</DropLink>
-            {(isAdmin || role === "organization") && (
-              <>
-                <DropLink href="/org/athletes" icon="✦" onClick={onClose}>Athletes</DropLink>
-                <DropLink href="/org/trainers" icon="◎" onClick={onClose}>Trainers</DropLink>
-              </>
+          <SectionLabel>Team</SectionLabel>
+          <NavGrid>
+            <NavCard
+              href="/org/messaging" onClick={onClose}
+              icon={<IcoMessage size={13} color="#7C6EF5" />}
+              label="Messaging" desc="Team communication"
+              accent="#7C6EF5"
+            />
+            <NavCard
+              href="/org/prescriptions" onClick={onClose}
+              icon={<IcoNutrition size={13} color="#7C6EF5" />}
+              label="Nutrition" desc="Plans & scan queue"
+              accent="#7C6EF5"
+            />
+            {isOrgAdmin && (
+              <NavCard
+                href="/org/athletes" onClick={onClose}
+                icon={<IcoUsers size={13} color="#7C6EF5" />}
+                label="Athletes" desc="Roster & progress"
+                accent="#7C6EF5"
+              />
             )}
-          </div>
+            {isAdmin && (
+              <NavCard
+                href="/org/trainers" onClick={onClose}
+                icon={<IcoTrainer size={13} color="#7C6EF5" />}
+                label="Trainers" desc="Staff management"
+                accent="#7C6EF5"
+              />
+            )}
+          </NavGrid>
 
+          {/* ── Studio — commercial trainer section ──
+              Only surfaces when a commercial profile exists.
+              Trainers (role=trainer) get this as a primary feature;
+              org admins may also have it as a secondary presence. */}
+          {trainerSlug ? (
+            <>
+              <DropDivider />
+              <SectionLabel color="#46769B">Studio</SectionLabel>
+              <NavGrid>
+                <NavCard
+                  href="/commercial/dashboard" onClick={onClose}
+                  icon={<IcoStudio size={13} color="#46769B" />}
+                  label="Dashboard" desc="Programs & clients"
+                  accent="#46769B"
+                />
+                <NavCard
+                  href={`/trainer/${trainerSlug}`} onClick={onClose} external
+                  icon={<IcoGlobe size={13} color="#46769B" />}
+                  label="Public Profile" desc="Your trainer page"
+                  accent="#46769B"
+                />
+              </NavGrid>
+            </>
+          ) : (
+            <>
+              <DropDivider />
+              <div style={{ padding: "6px 12px 2px" }}>
+                <NavCard
+                  href="/commercial/dashboard" onClick={onClose}
+                  icon={<IcoStudio size={13} color="#46769B" />}
+                  label="Studio" desc="Set up your commercial profile"
+                  accent="#46769B"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Help Center */}
           <DropDivider />
-
-          {/* Studio card - 2 links only */}
-          <StudioCard onClose={onClose} trainerSlug={trainerSlug} />
+          <div style={{ padding: "6px 12px 10px" }}>
+            <Link
+              href="/org/help" onClick={onClose}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10, background: "rgba(79,171,255,0.06)", border: "1px solid rgba(79,171,255,0.14)", textDecoration: "none", transition: "background 0.14s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(79,171,255,0.11)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(79,171,255,0.06)"; }}
+            >
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(79,171,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <IcoHelp size={14} color="#4FABFF" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 1 }}>Help Center</div>
+                <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
+              </div>
+            </Link>
+          </div>
         </>
       )}
 
-      {/* ── Athlete links ── */}
+      {/* ════════════════════════════════════════════════
+          CONTEXT B — Athlete / SmartStack users
+          Personal tools + Discover marketplace
+         ════════════════════════════════════════════════ */}
       {isAthlete && (
         <>
-          <div style={{ padding: "6px 0" }}>
-            <DropSection label="My Account" />
-            <DropLink href="/dashboard"       icon="⬡" onClick={onClose}>Athlete Dashboard</DropLink>
-            <DropLink href="/athlete/today"   icon="✦" onClick={onClose}>Today</DropLink>
-            <DropLink href="/athlete/journal" icon="◎" onClick={onClose}>Journal</DropLink>
-            <DropLink href="/scans"           icon="◈" onClick={onClose}>My Scans</DropLink>
-          </div>
+          <SectionLabel>My Space</SectionLabel>
+          <NavGrid>
+            <NavCard
+              href="/dashboard" onClick={onClose}
+              icon={<IcoDash size={13} color="#4FABFF" />}
+              label="Dashboard" desc="Your overview"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/athlete/today" onClick={onClose}
+              icon={<IcoSun size={13} color="#4FABFF" />}
+              label="Today" desc="Daily schedule"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/athlete/journal" onClick={onClose}
+              icon={<IcoJournal size={13} color="#4FABFF" />}
+              label="Journal" desc="Notes & reflections"
+              accent="#4FABFF"
+            />
+            <NavCard
+              href="/scans" onClick={onClose}
+              icon={<IcoScan size={13} color="#4FABFF" />}
+              label="My Scans" desc="Nutrition history"
+              accent="#4FABFF"
+            />
+          </NavGrid>
 
           <DropDivider />
 
-          {/* Discover card */}
-          <DiscoverCard onClose={onClose} />
+          <SectionLabel color="#FF7B35">Discover</SectionLabel>
+          <NavGrid>
+            <NavCard
+              href="/trainers" onClick={onClose}
+              icon={<IcoStore size={13} color="#FF7B35" />}
+              label="Marketplace" desc="Find trainers & programs"
+              accent="#FF7B35"
+            />
+            <NavCard
+              href="/athlete/libraries" onClick={onClose}
+              icon={<IcoLibrary size={13} color="#FF7B35" />}
+              label="My Libraries" desc="Purchased content"
+              accent="#FF7B35"
+            />
+          </NavGrid>
+          <div style={{ height: 8 }} />
         </>
       )}
 
-      <DropDivider />
-
-      {/* Help Center - org only */}
-      {isOrgSide && (
-        <>
-          <Link
-            href="/org/help"
-            onClick={onClose}
-            style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", margin: "4px 6px", borderRadius: 10, background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.18)", textDecoration: "none", cursor: "pointer", transition: "background 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(79,171,255,0.13)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(79,171,255,0.07)"; }}
-          >
-            <div style={{ fontSize: 20, flexShrink: 0 }}>🎬</div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 1 }}>Help Center</div>
-              <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
-            </div>
-          </Link>
-          <div style={{ height: 6 }} />
-        </>
-      )}
-
-      {/* Account + Sign out */}
+      {/* ── Footer: Account + Sign out ── */}
       <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", gap: 8 }}>
         <Link
           href="/account" onClick={onClose}
@@ -308,7 +542,8 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         >
           Account
         </Link>
-        <button type="button" onClick={onLogout}
+        <button
+          type="button" onClick={onLogout}
           style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.25)", color: "#FF6B6B", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.12s" }}
           onMouseEnter={e => { e.currentTarget.style.background = "rgba(217,43,58,0.2)"; }}
           onMouseLeave={e => { e.currentTarget.style.background = "rgba(217,43,58,0.1)"; }}
@@ -321,6 +556,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 }
 
 // ─── Mobile menu ──────────────────────────────────────────────────────────────
+// Uses the same NavCard components but single-column for narrow screens.
 
 function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug }) {
   const name     = user?.Name || user?.name || "Profile";
@@ -328,33 +564,13 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
   const color    = avatarColor(name);
   const initials = getInitials(name);
 
-  const MLink = ({ href, children, icon, external, badge }) => {
-    const active = isActive(href);
-    return (
-      <Link href={href} onClick={onClose}
-        target={external ? "_blank" : undefined}
-        rel={external ? "noopener noreferrer" : undefined}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, fontSize: 14, fontWeight: active ? 700 : 500, color: active ? "#fff" : "rgba(255,255,255,0.6)", background: active ? "rgba(255,255,255,0.08)" : "transparent", textDecoration: "none", transition: "all 0.12s" }}
-      >
-        {icon && <span style={{ fontSize: 16, opacity: 0.6 }}>{icon}</span>}
-        <span style={{ flex: 1 }}>{children}</span>
-        {badge && (
-          <span style={{ fontSize: 9, fontWeight: 700, color: "#4FABFF", background: "rgba(79,171,255,0.12)", border: "1px solid rgba(79,171,255,0.25)", borderRadius: 20, padding: "1px 6px", letterSpacing: "0.05em" }}>
-            {badge}
-          </span>
-        )}
-        {external && (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.25 }}>
-            <path d="M1 9L9 1M9 1H3M9 1v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </Link>
-    );
-  };
+  const isOrgAdmin = role === "organization" || role === "admin";
+  const isTrainer  = role === "trainer";
 
-  const SectionHeader = ({ label, color: c }) => (
-    <div style={{ padding: "8px 14px 2px", fontSize: 9, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: c ?? "rgba(255,255,255,0.25)" }}>
-      {label}
+  // Thin wrapper so NavCard fills full width in 1-col mobile layout
+  const MCard = (props) => (
+    <div style={{ padding: "0 0 4px" }}>
+      <NavCard {...props} />
     </div>
   );
 
@@ -364,7 +580,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
       animate={{ opacity: 1, height: "auto" }}
       exit={{    opacity: 0, height: 0    }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      style={{ background: "#111827", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
+      style={{ background: "#0E1420", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
     >
       <div style={{
         padding: "12px",
@@ -374,9 +590,17 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
         WebkitOverflowScrolling: "touch",
       }}>
 
-        {/* Public nav */}
-        <div style={{ marginBottom: 8 }}>
-          {MOBILE_TABS.map(tab => <MLink key={tab.href} href={tab.href}>{tab.name}</MLink>)}
+        {/* Public nav links */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+          {MOBILE_TABS.map(tab => {
+            const active = isActive(tab.href);
+            return (
+              <Link key={tab.href} href={tab.href} onClick={onClose}
+                style={{ display: "flex", alignItems: "center", padding: "10px 12px", borderRadius: 10, fontSize: 14, fontWeight: active ? 700 : 500, color: active ? "#fff" : "rgba(255,255,255,0.55)", background: active ? "rgba(255,255,255,0.08)" : "transparent", textDecoration: "none" }}>
+                {tab.name}
+              </Link>
+            );
+          })}
         </div>
 
         <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
@@ -394,15 +618,15 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
           </div>
         ) : (
           <>
-            {/* User identity card */}
-            <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 8 }}>
+            {/* Identity card */}
+            <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 44, height: 44, borderRadius: "50%", background: color + "22", border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <span style={{ fontSize: 16, fontWeight: 900, color }}>{initials}</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.32)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#46769B" }} />
                     <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
@@ -413,83 +637,65 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
               </div>
             </div>
 
-            {/* ── Org mobile nav ── */}
+            {/* ── Org mobile ── */}
             {isOrgSide && (
               <>
-                <SectionHeader label="Workspace" />
-                <MLink href="/org/workouts-calendar" icon="⬡">Workouts Calendar</MLink>
-                <MLink href="/org/review-queue"      icon="✦">Review Queue</MLink>
-                <MLink href="/org/film"              icon="◈" badge="Beta">Film Intelligence</MLink>
-                <MLink href="/org/plays"             icon="▦">Play Library</MLink>
-                <MLink href="/org/nutrition"         icon="◎">Nutrition</MLink>
-                <MLink href="/org/prescriptions"     icon="✦">Nutrition Plans</MLink>
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>Coaching</div>
+                <MCard href="/org/film"              icon={<IcoFilm size={13} color="#4FABFF" />} label="Film"          desc="Review, tag & analyze"  accent="#4FABFF" onClick={onClose} badge="Beta" />
+                <MCard href="/org/plays"             icon={<IcoPlays size={13} color="#4FABFF" />} label="Play Library" desc="Playbook & diagrams"     accent="#4FABFF" onClick={onClose} />
+                <MCard href="/org/workouts-calendar" icon={<IcoCal size={13} color="#4FABFF" />}  label="Schedule"     desc="Workouts & calendar"    accent="#4FABFF" onClick={onClose} />
+                <MCard href="/org/review-queue"      icon={<IcoClipboard size={13} color="#4FABFF" />} label="Review Queue" desc="Pending submissions" accent="#4FABFF" onClick={onClose} />
 
-                <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
+                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
 
-                <SectionHeader label="Team" />
-                <MLink href="/org/messaging" icon="⬡">Messaging</MLink>
-                {(isAdmin || role === "organization") && (
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>Team</div>
+                <MCard href="/org/messaging" icon={<IcoMessage size={13} color="#7C6EF5" />}  label="Messaging" desc="Team communication" accent="#7C6EF5" onClick={onClose} />
+                <MCard href="/org/prescriptions" icon={<IcoNutrition size={13} color="#7C6EF5" />} label="Nutrition" desc="Plans & scan queue" accent="#7C6EF5" onClick={onClose} />
+                {isOrgAdmin && <MCard href="/org/athletes" icon={<IcoUsers size={13} color="#7C6EF5" />} label="Athletes" desc="Roster & progress" accent="#7C6EF5" onClick={onClose} />}
+                {isAdmin    && <MCard href="/org/trainers" icon={<IcoTrainer size={13} color="#7C6EF5" />} label="Trainers" desc="Staff management" accent="#7C6EF5" onClick={onClose} />}
+
+                {(trainerSlug || true) && (
                   <>
-                    <MLink href="/org/athletes" icon="✦">Athletes</MLink>
-                    <MLink href="/org/trainers" icon="◎">Trainers</MLink>
+                    <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
+                    <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "#46769B", padding: "4px 2px 6px" }}>Studio</div>
+                    <MCard href="/commercial/dashboard" icon={<IcoStudio size={13} color="#46769B" />} label="Dashboard" desc="Programs & clients" accent="#46769B" onClick={onClose} />
+                    {trainerSlug && <MCard href={`/trainer/${trainerSlug}`} icon={<IcoGlobe size={13} color="#46769B" />} label="Public Profile" desc="Your trainer page" accent="#46769B" onClick={onClose} external />}
                   </>
                 )}
 
-                <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
-
-                {/* Studio card - 2 links only */}
-                <div style={{ margin: "4px 0 8px", borderRadius: 12, background: "rgba(70,118,155,0.09)", border: "1px solid rgba(70,118,155,0.22)", overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 4px" }}>
-                    <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4FABFF" }}>Studio</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(79,171,255,0.5)" }}>Commercial</span>
+                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
+                <Link href="/org/help" onClick={onClose}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.18)", textDecoration: "none", marginBottom: 12 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(79,171,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <IcoHelp size={14} color="#4FABFF" />
                   </div>
-                  <MLink href="/commercial/dashboard" icon="◈">Studio Dashboard</MLink>
-                  {trainerSlug && (
-                    <MLink href={`/trainer/${trainerSlug}`} icon="↗" external>View Public Profile</MLink>
-                  )}
-                  <div style={{ height: 6 }} />
-                </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Help Center</div>
+                    <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
+                  </div>
+                </Link>
               </>
             )}
 
-            {/* ── Athlete mobile nav ── */}
+            {/* ── Athlete mobile ── */}
             {isAthlete && (
               <>
-                <SectionHeader label="My Account" />
-                <MLink href="/dashboard"       icon="⬡">Athlete Dashboard</MLink>
-                <MLink href="/athlete/today"   icon="◎">Today</MLink>
-                <MLink href="/athlete/journal" icon="◈">Journal</MLink>
-                <MLink href="/scans"           icon="◈">My Scans</MLink>
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>My Space</div>
+                <MCard href="/dashboard"       icon={<IcoDash size={13} color="#4FABFF" />}    label="Dashboard"  desc="Your overview"       accent="#4FABFF" onClick={onClose} />
+                <MCard href="/athlete/today"   icon={<IcoSun size={13} color="#4FABFF" />}     label="Today"      desc="Daily schedule"      accent="#4FABFF" onClick={onClose} />
+                <MCard href="/athlete/journal" icon={<IcoJournal size={13} color="#4FABFF" />} label="Journal"    desc="Notes & reflections" accent="#4FABFF" onClick={onClose} />
+                <MCard href="/scans"           icon={<IcoScan size={13} color="#4FABFF" />}    label="My Scans"   desc="Nutrition history"   accent="#4FABFF" onClick={onClose} />
 
-                <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
+                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
 
-                {/* Discover card - mobile */}
-                <div style={{ margin: "4px 0 8px", borderRadius: 12, background: "rgba(218,54,51,0.07)", border: "1px solid rgba(218,54,51,0.18)", overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px 4px" }}>
-                    <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF7B72" }}>Discover</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,123,114,0.5)" }}>Marketplace</span>
-                  </div>
-                  <MLink href="/trainers"          icon="⬡">Marketplace</MLink>
-                  <MLink href="/athlete/libraries" icon="✦">My Libraries</MLink>
-                  <div style={{ height: 6 }} />
-                </div>
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF7B35", padding: "4px 2px 6px" }}>Discover</div>
+                <MCard href="/trainers"          icon={<IcoStore size={13} color="#FF7B35" />}   label="Marketplace"  desc="Find trainers & programs" accent="#FF7B35" onClick={onClose} />
+                <MCard href="/athlete/libraries" icon={<IcoLibrary size={13} color="#FF7B35" />} label="My Libraries" desc="Purchased content"        accent="#FF7B35" onClick={onClose} />
+                <div style={{ height: 8 }} />
               </>
             )}
 
             <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
-
-            {/* Help Center - org mobile */}
-            {isOrgSide && (
-              <Link href="/org/help" onClick={onClose}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.18)", textDecoration: "none", marginBottom: 8 }}
-              >
-                <span style={{ fontSize: 20 }}>🎬</span>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Help Center</div>
-                  <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
-                </div>
-              </Link>
-            )}
 
             {/* Account + Sign out */}
             <div style={{ display: "flex", gap: 8 }}>
@@ -575,7 +781,6 @@ export default function NavBar() {
     String(user?.OrgName || user?.OrganizationName || user?.organizationName || user?.OrganizationDisplay || user?.organizationDisplay || "").trim()
   ), [user]);
 
-  // Fetch trainer slug for "View Public Profile" link
   useEffect(() => {
     if (!isOrgSide || !user) return;
     fetch("/api/commercial/trainer", { credentials: "include" })
@@ -595,10 +800,6 @@ export default function NavBar() {
     setDefaultAuthTab(tab);
     setLoginModalOpen(true);
   }, []);
-
-  const onRequestOpen = useCallback((detail = {}) => {
-    openAuthModal(detail?.tab === "signup" ? "signup" : "login");
-  }, [openAuthModal]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -639,7 +840,7 @@ export default function NavBar() {
     finally { setProfileOpen(false); setMenuOpen(false); router.push("/login"); }
   }, [logout, router]);
 
-  const sharedRoleProps    = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, trainerSlug };
+  const sharedRoleProps    = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, trainerSlug };
   const navItemSharedProps = { isActive, stackIconBroken, onStackIconError: handleStackIconError };
 
   const profileButtonLabel = useMemo(() => {
@@ -754,6 +955,7 @@ export default function NavBar() {
               <MobileMenu
                 user={user}
                 {...sharedRoleProps}
+                isActive={isActive}
                 loggedIn={loggedIn}
                 onClose={() => setMenuOpen(false)}
                 onLogout={logoutAndClose}
@@ -768,7 +970,7 @@ export default function NavBar() {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         defaultTab={defaultAuthTab}
-        onRequestOpen={onRequestOpen}
+        onRequestOpen={(detail = {}) => openAuthModal(detail?.tab === "signup" ? "signup" : "login")}
       />
     </>
   );

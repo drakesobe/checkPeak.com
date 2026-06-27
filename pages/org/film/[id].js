@@ -2962,7 +2962,7 @@ function Telestration({ active, strokes, onStrokesChange, tool, color }) {
 }
 
 // ── Video Control Bar — one strip, always at the bottom, never moves ──────────
-function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesChange, tool, onToolChange, color, onColorChange, onFullscreenToggle }) {
+function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesChange, tool, onToolChange, color, onColorChange, onFullscreenToggle, hideDrawToggle }) {
   const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
@@ -3032,16 +3032,18 @@ function VideoControlBar({ videoRef, drawMode, onDrawToggle, strokes, onStrokesC
 
         <div style={{flex:1}} />
 
-        {/* Draw / Done — always same spot, second from right */}
-        <button onClick={onDrawToggle}
-          style={{...btn({padding:"6px 14px",fontSize:12,fontWeight:700,
-            background: drawMode ? "#1E3A5F" : "rgba(255,255,255,0.08)",
-          })}}>
-          {drawMode
-            ? <><Check size={12} style={{ marginRight: 4 }} /> Done</>
-            : <><Pencil size={12} style={{ marginRight: 4 }} /> Draw</>
-          }
-        </button>
+        {/* Draw / Done — hidden in fullscreen; replaced by floating FAB */}
+        {!hideDrawToggle && (
+          <button onClick={onDrawToggle}
+            style={{...btn({padding:"6px 14px",fontSize:12,fontWeight:700,
+              background: drawMode ? "#1E3A5F" : "rgba(255,255,255,0.08)",
+            })}}>
+            {drawMode
+              ? <><Check size={12} style={{ marginRight: 4 }} /> Done</>
+              : <><Pencil size={12} style={{ marginRight: 4 }} /> Draw</>
+            }
+          </button>
+        )}
 
         {/* Maximize — always far right */}
         <button onClick={onFullscreenToggle} style={{...btn({width:36,height:36,display:"inline-flex",alignItems:"center",justifyContent:"center"})}}>
@@ -5232,6 +5234,31 @@ export default function FilmDetailPage() {
 
                     {/* Video wrapper */}
                     <div style={{ position: "relative" }}>
+
+                      {/* Persistent draw toggle — always visible in fullscreen */}
+                      {isFullscreen && (
+                        <button
+                          onClick={() => setDrawMode(d => !d)}
+                          title={drawMode ? "Exit draw mode" : "Draw on frame"}
+                          style={{
+                            position: "absolute", top: 12, right: 12, zIndex: 70,
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "7px 12px", borderRadius: 20,
+                            background: drawMode ? "rgba(37,99,235,0.85)" : "rgba(0,0,0,0.55)",
+                            border: `1.5px solid ${drawMode ? "rgba(96,165,250,0.6)" : "rgba(255,255,255,0.18)"}`,
+                            backdropFilter: "blur(10px)",
+                            color: drawMode ? "#93c5fd" : "rgba(255,255,255,0.8)",
+                            cursor: "pointer", fontSize: 12, fontWeight: 700,
+                            transition: "all 0.15s ease",
+                            boxShadow: drawMode ? "0 0 0 2px rgba(96,165,250,0.25)" : "0 2px 8px rgba(0,0,0,0.4)",
+                          }}>
+                          {drawMode
+                            ? <><Check size={12} /> Done</>
+                            : <><Pencil size={12} /> Draw</>
+                          }
+                        </button>
+                      )}
+
                       <VideoPlayer
                         playbackId={activeAngle ? activeAngle.game_films?.mux_playback_id : film?.muxPlaybackId}
                         s3Url={activeAngle ? null : filmVideoUrl}
@@ -5279,6 +5306,7 @@ export default function FilmDetailPage() {
                         color={teleColor}
                         onColorChange={setTeleColor}
                         onFullscreenToggle={toggleFullscreen}
+                        hideDrawToggle={isFullscreen}
                       />
                     </div>
 

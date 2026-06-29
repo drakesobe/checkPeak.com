@@ -32,11 +32,12 @@ const ALL_TABS = [
   { name: "Search",     href: "/search"                  },
   { name: "Info",       href: "/info"                    },
   { name: "NCAA Rules", href: "/compliance/ncaa"         },
+  { name: "Pricing",    href: "/pricing"                 },
   { name: "The Arena",  href: "/trainers", icon: "arena" },
   { name: "SmartStack", href: "/smartstack-compare", icon: "mountain" },
 ];
 
-const DESKTOP_LEFT_TABS  = ALL_TABS.filter(t => ["Scan", "Search", "Info", "NCAA Rules"].includes(t.name));
+const DESKTOP_LEFT_TABS  = ALL_TABS.filter(t => ["Scan", "Search", "Info", "NCAA Rules", "Pricing"].includes(t.name));
 const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => ["The Arena", "SmartStack"].includes(t.name));
 const MOBILE_TABS        = ALL_TABS;
 

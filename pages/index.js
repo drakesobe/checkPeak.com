@@ -137,7 +137,7 @@ function PilotButton({ source, size = "md" }) {
   return (
     <button
       type="button"
-      onClick={() => { track("cta_pilot_request", { source }); openAuthModal(); }}
+      onClick={() => { track("cta_pilot_request", { source }); window.location.href = "/book"; }}
       style={{
         display:       "inline-flex",
         alignItems:    "center",
@@ -179,13 +179,16 @@ const ARENA_STYLE = `
   .hero-dual-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
 `;
 
-// Browse The Arena - navigates to the public marketplace
-function BrowseButton({ source, size = "md" }) {
+// Get Started — low-friction signup for individual coaches & trainers
+function GetStartedButton({ source, size = "md" }) {
   const lg = size === "lg";
   return (
-    <a
-      href="/trainers"
-      onClick={() => track("cta_browse_arena", { source })}
+    <button
+      type="button"
+      onClick={() => {
+        track("cta_get_started", { source });
+        openAuthModal({ tab: "signup" });
+      }}
       style={{
         display: "inline-flex", alignItems: "center",
         gap: lg ? "0.85rem" : "0.65rem",
@@ -194,28 +197,25 @@ function BrowseButton({ source, size = "md" }) {
         fontFamily: "'Barlow Condensed', sans-serif",
         fontSize: lg ? "1.05rem" : "0.92rem", fontWeight: 900,
         letterSpacing: "0.12em", textTransform: "uppercase",
-        textDecoration: "none", transition: "filter 0.2s",
+        border: "none", transition: "filter 0.2s", cursor: "pointer",
       }}
       onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.15)"; }}
       onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
     >
-      BROWSE THE ARENA
+      GET STARTED
       <svg width={lg ? 18 : 15} height={lg ? 18 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
       </svg>
-    </a>
+    </button>
   );
 }
 
-// For Organizations - scrolls down to the org section
+// For Athletic Programs / ADs — higher-touch walkthrough booking
 function OrgButton({ source }) {
   return (
-    <button
-      type="button"
-      onClick={() => {
-        track("cta_for_orgs", { source });
-        document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" });
-      }}
+    <a
+      href="/book"
+      onClick={() => track("cta_for_orgs", { source })}
       style={{
         display: "inline-flex", alignItems: "center", gap: "0.65rem",
         padding: "1.1rem 2.5rem",
@@ -224,16 +224,17 @@ function OrgButton({ source }) {
         fontSize: "1.05rem", fontWeight: 900,
         letterSpacing: "0.12em", textTransform: "uppercase",
         border: "1px solid rgba(255,255,255,0.22)",
+        textDecoration: "none",
         transition: "border-color 0.2s",
       }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; }}
     >
-      FOR UNIVERSITIES
+      BOOK A WALKTHROUGH
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
       </svg>
-    </button>
+    </a>
   );
 }
 
@@ -498,24 +499,23 @@ function Hero() {
           Film. Nutrition. Accountability.
         </motion.p>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.76 }}>
-          <div className="hero-dual-cta" style={{ marginBottom: "0.9rem", alignItems: "flex-end" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.60)" }}>
-                Coach or trainer
-              </span>
-              <BrowseButton source="hero" size="lg" />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.60)" }}>
-                Athletic program
-              </span>
-              <OrgButton source="hero" />
-            </div>
-          </div>
-          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)" }}>
-            Free to browse · No account required
-          </p>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.76 }}
+          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1.1rem" }}
+        >
+          <OrgButton source="hero" />
+          <button
+            type="button"
+            onClick={() => { track("cta_login_hero"); openAuthModal({ tab: "login" }); }}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 0,
+              fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem",
+              color: "rgba(255,255,255,0.45)", transition: "color 0.18s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.8)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
+          >
+            Already have an account? <span style={{ textDecoration: "underline" }}>Log in</span>
+          </button>
         </motion.div>
       </motion.div>
 

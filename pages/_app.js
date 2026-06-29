@@ -30,6 +30,9 @@ function isDoNotTrackEnabled() {
 
 const MARKETING_ROUTES = [
   "/",
+  "/pricing",
+  "/book",
+  "/contact",
   "/info",
   "/smartstack-compare",
   "/compliance/ncaa",

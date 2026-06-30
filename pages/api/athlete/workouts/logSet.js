@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const {
     workoutItemId, exerciseTitle, date, setNumber,
     targetReps, targetWeight, actualReps, actualWeight,
-    effort, difficulty, groupId, timestamp,
+    effort, difficulty, groupId, timestamp, notes,
   } = req.body || {};
 
   if (!exerciseTitle) return res.status(400).json({ error: "exerciseTitle is required" });
@@ -44,6 +44,7 @@ export default async function handler(req, res) {
         difficulty:     difficultyValue != null ? Number(difficultyValue) : 0,
         group_id:       groupId ? String(groupId) : null,
         timestamp:      Number(timestamp) || Date.now(),
+        notes:          String(notes || "").trim() || null,
       })
       .select("id")
       .single();

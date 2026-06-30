@@ -52,6 +52,26 @@ export default async function handler(req, res) {
         .eq("film_id", film.id)
         .order("play_number", { ascending: true });
 
+      // Attach pinned coach comments to each play
+      const playIds = (plays ?? []).map(p => p.id);
+      let pinnedByPlay = {};
+      if (playIds.length > 0) {
+        const { data: pinned } = await supabase
+          .from("play_comments")
+          .select("id, play_id, user_name, body, created_at")
+          .in("play_id", playIds)
+          .eq("is_pinned", true)
+          .order("created_at", { ascending: true });
+        for (const c of (pinned ?? [])) {
+          if (!pinnedByPlay[c.play_id]) pinnedByPlay[c.play_id] = [];
+          pinnedByPlay[c.play_id].push(c);
+        }
+      }
+      const enrichedPlays = (plays ?? []).map(p => ({
+        ...p,
+        pinnedComments: pinnedByPlay[p.id] ?? [],
+      }));
+
       // Get S3 presigned URL if no Mux
       let videoUrl = null;
       if (!film.mux_playback_id && film.s3_key) {
@@ -63,7 +83,7 @@ export default async function handler(req, res) {
         } catch {}
       }
 
-      return res.status(200).json({ ok: true, type: "film", film, plays: plays ?? [], videoUrl, title: share.title ?? film.title });
+      return res.status(200).json({ ok: true, type: "film", film, plays: enrichedPlays, videoUrl, title: share.title ?? film.title });
     }
 
     if (share.share_type === "cutup") {
@@ -85,9 +105,26 @@ export default async function handler(req, res) {
       if (!list) return res.status(404).json({ error: "Playlist not found" });
 
       // Build sorted plays
-      const items = (list.game_play_list_items ?? [])
+      const rawItems = (list.game_play_list_items ?? [])
         .sort((a, b) => a.position - b.position)
         .map(i => ({ ...i.game_plays, _itemId: i.id, _position: i.position }));
+
+      // Attach pinned coach comments to each play in the cut-up
+      const cutupPlayIds = rawItems.map(p => p.id).filter(Boolean);
+      let cutupPinnedByPlay = {};
+      if (cutupPlayIds.length > 0) {
+        const { data: cutupPinned } = await supabase
+          .from("play_comments")
+          .select("id, play_id, user_name, body, created_at")
+          .in("play_id", cutupPlayIds)
+          .eq("is_pinned", true)
+          .order("created_at", { ascending: true });
+        for (const c of (cutupPinned ?? [])) {
+          if (!cutupPinnedByPlay[c.play_id]) cutupPinnedByPlay[c.play_id] = [];
+          cutupPinnedByPlay[c.play_id].push(c);
+        }
+      }
+      const items = rawItems.map(p => ({ ...p, pinnedComments: cutupPinnedByPlay[p.id] ?? [] }));
 
       // Get the film for video URL (use first play's film)
       const filmId = list.film_id ?? items[0]?.film_id;

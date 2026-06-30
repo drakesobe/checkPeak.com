@@ -6,7 +6,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import {
   Play, SkipBack, SkipForward, ListVideo, Film,
-  ChevronDown, ChevronUp, Clock,
+  ChevronDown, ChevronUp, Clock, Pin,
 } from "lucide-react";
 
 const DS = {
@@ -214,6 +214,29 @@ export default function FilmSharePage() {
           </div>
         )}
 
+        {/* Pinned coach comments for current play */}
+        {currentPlay?.pinnedComments?.length > 0 && (
+          <div style={{ background: DS.cardBg, border: `1px solid rgba(79,171,255,0.2)`, borderLeft: `3px solid ${DS.brand}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 14px", borderBottom: "1px solid rgba(79,171,255,0.1)", background: "rgba(79,171,255,0.06)" }}>
+              <Pin size={10} color={DS.brand} />
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: DS.brand }}>
+                Coach {currentPlay.pinnedComments.length === 1 ? "Note" : "Notes"}
+              </span>
+            </div>
+            {currentPlay.pinnedComments.map((c, i) => (
+              <div key={c.id} style={{ padding: "12px 16px", borderTop: i > 0 ? `1px solid ${DS.border}` : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(79,171,255,0.15)", border: "1px solid rgba(79,171,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 9, fontWeight: 900, color: DS.brand }}>{String(c.user_name || "C")[0].toUpperCase()}</span>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: DS.labelText }}>{c.user_name || "Coach"}</span>
+                </div>
+                <p style={{ margin: 0, fontSize: 14, color: DS.bodyText, lineHeight: 1.6 }}>{c.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Play list panel */}
         {plays.length > 0 && (
           <div style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 12, overflow: "hidden" }}>
@@ -256,6 +279,14 @@ export default function FilmSharePage() {
                           <p style={{ margin: "1px 0 0", fontSize: 11, color: DS.dimText, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {play.notes}
                           </p>
+                        )}
+                        {play.pinnedComments?.length > 0 && (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 3, background: "rgba(79,171,255,0.1)", borderRadius: 4, padding: "2px 6px" }}>
+                            <Pin size={8} color={DS.brand} />
+                            <span style={{ fontSize: 9, fontWeight: 700, color: DS.brand }}>
+                              {play.pinnedComments.length} coach {play.pinnedComments.length === 1 ? "note" : "notes"}
+                            </span>
+                          </div>
                         )}
                       </div>
                       {play.yards_gained != null && (

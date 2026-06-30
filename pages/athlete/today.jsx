@@ -134,7 +134,7 @@ function buildDayRoute({
           instructions: String(item.Instructions || item.instructions || item.Notes || "").trim(),
           videoUrl,
           evidenceRequired: evRaw !== "" && evRaw !== "none" && evRaw !== "false" && evRaw !== "voluntary_activity_vara",
-          groupId: item.groupId || null,
+          groupId: item.groupId || item.GroupId || null,
           item,
         };
       });
@@ -1037,6 +1037,7 @@ export default function AthleteToday() {
         onQuickComplete={(sub) => quickComplete(sub.item)}
         onLogSet={saveSetLog}
         getExerciseSessions={getExerciseSessions}
+        onAcknowledgeRejection={({ workoutItemId }) => acknowledgeCompletion({ workoutItemId })}
       />
 
       {/* ── MODALS ── */}

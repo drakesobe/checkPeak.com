@@ -15,11 +15,17 @@ export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (req.method !== "DELETE") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = readUserCookie(req);
+  // Support _authUser in query (React Native) or body, then fall back to cookie
+  let user = null;
+  const qRaw = req.query?._authUser;
+  const bRaw = req.body?._authUser;
+  try { if (qRaw) user = JSON.parse(String(qRaw)); } catch {}
+  try { if (!user && bRaw) user = JSON.parse(String(bRaw)); } catch {}
+  if (!user) user = readUserCookie(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
   const orgId  = String(user.orgToken || user.Token || user.orgId || user.OrgId || "").trim();
-  const filmId = String(req.query.filmId ?? "").trim();
+  const filmId = String(req.query.filmId ?? req.body?.filmId ?? "").trim();
   if (!filmId) return res.status(400).json({ error: "filmId required" });
 
   try {

@@ -26,48 +26,11 @@ function avatarColor(str) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-// ─── Top nav tabs ─────────────────────────────────────────────────────────────
-// Public tabs are intentionally minimal — product features live in the profile
-// dropdown for logged-in users.
-const ALL_TABS = [
-  { name: "The Arena", href: "/trainers", icon: "arena" },
-  { name: "Pricing",   href: "/pricing"                 },
+// Public mobile links (logged-out state)
+const MOBILE_PUBLIC = [
+  { name: "The Arena", href: "/trainers" },
+  { name: "Pricing",   href: "/pricing"  },
 ];
-
-const DESKTOP_LEFT_TABS  = ALL_TABS.filter(t => ["The Arena"].includes(t.name));
-const DESKTOP_RIGHT_TABS = ALL_TABS.filter(t => ["Pricing"].includes(t.name));
-const MOBILE_TABS        = ALL_TABS;
-
-const MountainIconFallback = (
-  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-    <path d="M3 18l6-8 3 4 3-4 6 8H3z" fill="currentColor" />
-  </svg>
-);
-
-function NavItem({ tab, isActive, stackIconBroken, onStackIconError, onClick }) {
-  const active        = isActive(tab.href);
-  const isMountainTab = tab.icon === "mountain";
-  const isArenaTab    = tab.icon === "arena";
-  return (
-    <Link
-      href={tab.href}
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cx(
-        "relative inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
-        isArenaTab
-          ? "text-gray-900 hover:text-[#46769B] font-black"
-          : active ? "text-[#46769B] bg-blue-50" : "text-gray-700 hover:text-[#46769B] hover:bg-gray-50"
-      )}
-    >
-      {isMountainTab && (!stackIconBroken
-        ? <img src="/mountain.svg" alt="" className="h-4 w-4" onError={onStackIconError} draggable={false} />
-        : MountainIconFallback
-      )}
-      <span>{tab.name}</span>
-    </Link>
-  );
-}
 
 // ─── Inline SVG icon set ──────────────────────────────────────────────────────
 // All 16×16 display, 24×24 viewBox, Lucide-compatible stroke style.
@@ -239,10 +202,11 @@ function IcoHelp({ size = 14, color = "currentColor" }) {
   );
 }
 
-// ─── Card grid primitives ─────────────────────────────────────────────────────
+// ─── Dropdown nav primitives ──────────────────────────────────────────────────
 
-function NavCard({ href, icon, label, desc, onClick, badge, accent = "#4FABFF", external }) {
+function NavLink({ href, label, badge, onClick, external, isActiveFn }) {
   const [hov, setHov] = useState(false);
+  const active = isActiveFn?.(href) ?? false;
   return (
     <Link
       href={href}
@@ -252,75 +216,48 @@ function NavCard({ href, icon, label, desc, onClick, badge, accent = "#4FABFF", 
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        display: "flex", alignItems: "flex-start", gap: 10,
-        padding: "10px 11px", borderRadius: 10,
-        background: hov ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.025)",
-        border: `1px solid ${hov ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}`,
-        textDecoration: "none", cursor: "pointer",
-        transition: "all 0.12s ease",
+        display: "flex", alignItems: "center",
+        padding: "9px 20px 9px 18px",
+        borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}`,
+        fontSize: 14, fontWeight: active ? 700 : 500,
+        color: active ? "#fff" : hov ? "#fff" : "rgba(255,255,255,0.62)",
+        textDecoration: "none",
+        transition: "color 0.12s, border-color 0.12s",
+        letterSpacing: "0.01em",
       }}
     >
-      <div style={{
-        width: 28, height: 28, borderRadius: 7, flexShrink: 0, marginTop: 1,
-        background: accent + "1A",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        {icon}
-      </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 700, lineHeight: 1.2, marginBottom: 2,
-          color: hov ? "#fff" : "rgba(255,255,255,0.9)",
-          display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap",
-        }}>
-          {label}
-          {badge && (
-            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", flexShrink: 0, color: "#4FABFF", background: "rgba(79,171,255,0.15)", border: "1px solid rgba(79,171,255,0.3)", borderRadius: 20, padding: "1px 5px" }}>
-              {badge}
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", lineHeight: 1.35 }}>{desc}</div>
-      </div>
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge && (
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4FABFF" }}>
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }
 
-// Two-column grid wrapper
-function NavGrid({ children, cols = 2 }) {
+function NavSection({ children, color = "rgba(255,255,255,0.28)" }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 5, padding: "6px 12px" }}>
+    <div style={{ padding: "14px 20px 4px", fontSize: 10, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color }}>
       {children}
     </div>
   );
 }
 
-function SectionLabel({ children, color }) {
-  return (
-    <div style={{ padding: "10px 14px 4px", fontSize: 11, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: color ?? "rgba(255,255,255,0.45)" }}>
-      {children}
-    </div>
-  );
-}
-
-function DropDivider() {
-  return <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />;
+function NavDivider() {
+  return <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />;
 }
 
 // ─── Profile dropdown ─────────────────────────────────────────────────────────
-// Three distinct user contexts:
-//   1. Org / University (isOrg)    — coaching tools + team management
-//   2. Commercial trainer (isTrainer + trainerSlug)  — Studio is primary
-//   3. Athlete / SmartStack (isAthlete)              — personal + discover
 
-function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug }) {
+function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug, isActiveFn }) {
   const name     = user?.Name || user?.name || "Profile";
   const email    = user?.Email || user?.email || "";
   const color    = avatarColor(name);
   const initials = getInitials(name);
-
-  const isTrainer  = role === "trainer";
   const isOrgAdmin = role === "organization" || role === "admin";
+
+  const nl = (props) => <NavLink {...props} onClick={onClose} isActiveFn={isActiveFn} />;
 
   return (
     <motion.div
@@ -330,28 +267,28 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
       transition={{ duration: 0.16, ease: "easeOut" }}
       style={{
         position: "absolute", right: 0, marginTop: 8,
-        width: 360, borderRadius: 16,
+        width: 280, borderRadius: 14,
         maxHeight: "calc(100vh - 90px)",
         display: "flex", flexDirection: "column",
-        background: "#0E1420",
-        border: "1px solid rgba(255,255,255,0.09)",
-        boxShadow: "0 24px 64px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.3)",
+        background: "#0D1119",
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.65), 0 4px 16px rgba(0,0,0,0.35)",
         overflow: "hidden", zIndex: 200,
       }}
       role="menu"
     >
-      {/* ── Identity hero — pinned top ── */}
-      <div style={{ padding: "16px 16px 14px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
+      {/* ── Identity — pinned top ── */}
+      <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: color + "22", border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ fontSize: 16, fontWeight: 900, color, letterSpacing: -0.5 }}>{initials}</span>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#46769B", flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.58)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.42)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#4FABFF", flexShrink: 0 }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 {roleLabel}{orgName ? ` · ${orgName}` : ""}
               </span>
             </div>
@@ -359,225 +296,86 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         </div>
       </div>
 
-      {/* ── Scrollable body ── */}
-      <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none", msOverflowStyle: "none" }}>
+      {/* ── Scrollable nav body ── */}
+      <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none" }}>
 
-      {/* ════════════════════════════════════════════════
-          CONTEXT A — University / Organization coaches
-          Coaching tools grid + Team management grid
-         ════════════════════════════════════════════════ */}
-      {isOrgSide && (
-        <>
-          <SectionLabel>Coaching</SectionLabel>
-          <NavGrid>
-            <NavCard
-              href="/org/film" onClick={onClose} badge="Beta"
-              icon={<IcoFilm size={13} color="#4FABFF" />}
-              label="Film" desc="Review, tag & analyze"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/org/plays" onClick={onClose}
-              icon={<IcoPlays size={13} color="#4FABFF" />}
-              label="Play Library" desc="Playbook & diagrams"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/org/workouts-calendar" onClick={onClose}
-              icon={<IcoCal size={13} color="#4FABFF" />}
-              label="Schedule" desc="Workouts & calendar"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/org/review-queue" onClick={onClose}
-              icon={<IcoClipboard size={13} color="#4FABFF" />}
-              label="Review Queue" desc="Pending submissions"
-              accent="#4FABFF"
-            />
-          </NavGrid>
+        {/* Org / Coach context */}
+        {isOrgSide && (
+          <>
+            <NavSection>Coaching</NavSection>
+            {nl({ href: "/org/film",              label: "Film",         badge: "Beta" })}
+            {nl({ href: "/org/plays",             label: "Play Library"               })}
+            {nl({ href: "/org/workouts-calendar", label: "Schedule"                   })}
+            {nl({ href: "/org/review-queue",      label: "Review Queue"               })}
 
-          <DropDivider />
+            <NavDivider />
 
-          <SectionLabel>Team</SectionLabel>
-          <NavGrid>
-            <NavCard
-              href="/org/messaging" onClick={onClose}
-              icon={<IcoMessage size={13} color="#7C6EF5" />}
-              label="Messaging" desc="Team communication"
-              accent="#7C6EF5"
-            />
-            <NavCard
-              href="/org/prescriptions" onClick={onClose}
-              icon={<IcoNutrition size={13} color="#7C6EF5" />}
-              label="Nutrition" desc="Plans & scan queue"
-              accent="#7C6EF5"
-            />
-            {isOrgAdmin && (
-              <NavCard
-                href="/org/athletes" onClick={onClose}
-                icon={<IcoUsers size={13} color="#7C6EF5" />}
-                label="Athletes" desc="Roster & progress"
-                accent="#7C6EF5"
-              />
+            <NavSection>Team</NavSection>
+            {nl({ href: "/org/messaging",     label: "Messaging" })}
+            {nl({ href: "/org/prescriptions", label: "Nutrition"  })}
+            {isOrgAdmin && nl({ href: "/org/athletes", label: "Athletes" })}
+            {isAdmin    && nl({ href: "/org/trainers", label: "Trainers" })}
+
+            <NavDivider />
+
+            <NavSection>Tools</NavSection>
+            {nl({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
+            {nl({ href: "/search",                  label: "Search"        })}
+            {nl({ href: "/smartstack-compare",      label: "SmartStack"    })}
+            {nl({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
+            {nl({ href: "/info",                    label: "Info"          })}
+
+            {trainerSlug && (
+              <>
+                <NavDivider />
+                <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
+                {nl({ href: "/commercial/dashboard",   label: "Dashboard"      })}
+                {nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
+              </>
             )}
-            {isAdmin && (
-              <NavCard
-                href="/org/trainers" onClick={onClose}
-                icon={<IcoTrainer size={13} color="#7C6EF5" />}
-                label="Trainers" desc="Staff management"
-                accent="#7C6EF5"
-              />
-            )}
-          </NavGrid>
 
-          <DropDivider />
+            <NavDivider />
+            {nl({ href: "/org/help", label: "Help Center" })}
+            <div style={{ height: 10 }} />
+          </>
+        )}
 
-          <SectionLabel>Tools</SectionLabel>
-          <NavGrid>
-            <NavCard
-              href="/nutrition-label-scanner" onClick={onClose}
-              icon={<IcoScan size={13} color="#D4900A" />}
-              label="Label Scanner" desc="Scan supplements & products"
-              accent="#D4900A"
-            />
-            <NavCard
-              href="/search" onClick={onClose}
-              icon={<IcoSearch size={13} color="#D4900A" />}
-              label="Search" desc="Find products & stacks"
-              accent="#D4900A"
-            />
-          </NavGrid>
+        {/* Athlete context */}
+        {isAthlete && (
+          <>
+            <NavSection>My Space</NavSection>
+            {nl({ href: "/dashboard",       label: "Dashboard" })}
+            {nl({ href: "/athlete/today",   label: "Today"     })}
+            {nl({ href: "/athlete/journal", label: "Journal"   })}
+            {nl({ href: "/scans",           label: "My Scans"  })}
 
-          {/* ── Studio — commercial trainer section ──
-              Only surfaces when a commercial profile exists.
-              Trainers (role=trainer) get this as a primary feature;
-              org admins may also have it as a secondary presence. */}
-          {trainerSlug ? (
-            <>
-              <DropDivider />
-              <SectionLabel color="#46769B">Studio</SectionLabel>
-              <NavGrid>
-                <NavCard
-                  href="/commercial/dashboard" onClick={onClose}
-                  icon={<IcoStudio size={13} color="#46769B" />}
-                  label="Dashboard" desc="Programs & clients"
-                  accent="#46769B"
-                />
-                <NavCard
-                  href={`/trainer/${trainerSlug}`} onClick={onClose} external
-                  icon={<IcoGlobe size={13} color="#46769B" />}
-                  label="Public Profile" desc="Your trainer page"
-                  accent="#46769B"
-                />
-              </NavGrid>
-            </>
-          ) : (
-            <>
-              <DropDivider />
-              <div style={{ padding: "6px 12px 2px" }}>
-                <NavCard
-                  href="/commercial/dashboard" onClick={onClose}
-                  icon={<IcoStudio size={13} color="#46769B" />}
-                  label="Studio" desc="Set up your commercial profile"
-                  accent="#46769B"
-                />
-              </div>
-            </>
-          )}
+            <NavDivider />
 
-          {/* Help Center */}
-          <DropDivider />
-          <div style={{ padding: "6px 12px 10px" }}>
-            <Link
-              href="/org/help" onClick={onClose}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10, background: "rgba(79,171,255,0.06)", border: "1px solid rgba(79,171,255,0.14)", textDecoration: "none", transition: "background 0.14s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(79,171,255,0.11)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "rgba(79,171,255,0.06)"; }}
-            >
-              <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(79,171,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <IcoHelp size={14} color="#4FABFF" />
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 1 }}>Help Center</div>
-                <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
-              </div>
-            </Link>
-          </div>
-        </>
-      )}
+            <NavSection color="rgba(255,123,53,0.85)">Discover</NavSection>
+            {nl({ href: "/trainers",           label: "Marketplace"  })}
+            {nl({ href: "/smartstack-compare", label: "SmartStack"   })}
+            {nl({ href: "/athlete/libraries",  label: "My Libraries" })}
+            <div style={{ height: 10 }} />
+          </>
+        )}
 
-      {/* ════════════════════════════════════════════════
-          CONTEXT B — Athlete / SmartStack users
-          Personal tools + Discover marketplace
-         ════════════════════════════════════════════════ */}
-      {isAthlete && (
-        <>
-          <SectionLabel>My Space</SectionLabel>
-          <NavGrid>
-            <NavCard
-              href="/dashboard" onClick={onClose}
-              icon={<IcoDash size={13} color="#4FABFF" />}
-              label="Dashboard" desc="Your overview"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/athlete/today" onClick={onClose}
-              icon={<IcoSun size={13} color="#4FABFF" />}
-              label="Today" desc="Daily schedule"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/athlete/journal" onClick={onClose}
-              icon={<IcoJournal size={13} color="#4FABFF" />}
-              label="Journal" desc="Notes & reflections"
-              accent="#4FABFF"
-            />
-            <NavCard
-              href="/scans" onClick={onClose}
-              icon={<IcoScan size={13} color="#4FABFF" />}
-              label="My Scans" desc="Nutrition history"
-              accent="#4FABFF"
-            />
-          </NavGrid>
+      </div>
 
-          <DropDivider />
-
-          <SectionLabel color="#FF7B35">Discover</SectionLabel>
-          <NavGrid>
-            <NavCard
-              href="/trainers" onClick={onClose}
-              icon={<IcoStore size={13} color="#FF7B35" />}
-              label="Marketplace" desc="Find trainers & programs"
-              accent="#FF7B35"
-            />
-            <NavCard
-              href="/athlete/libraries" onClick={onClose}
-              icon={<IcoLibrary size={13} color="#FF7B35" />}
-              label="My Libraries" desc="Purchased content"
-              accent="#FF7B35"
-            />
-          </NavGrid>
-          <div style={{ height: 8 }} />
-        </>
-      )}
-
-      </div>{/* end scrollable body */}
-
-      {/* ── Footer: Account + Sign out — pinned bottom ── */}
-      <div style={{ padding: "10px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", gap: 8, flexShrink: 0 }}>
+      {/* ── Footer — pinned bottom ── */}
+      <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", gap: 8, flexShrink: 0 }}>
         <Link
           href="/account" onClick={onClose}
-          style={{ flex: 1, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.85)", fontSize: 14, fontWeight: 600, textDecoration: "none", textAlign: "center", cursor: "pointer", transition: "all 0.12s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.11)"; e.currentTarget.style.color = "#fff"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "rgba(255,255,255,0.85)"; }}
+          style={{ flex: 1, padding: "9px 12px", borderRadius: 7, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center", transition: "all 0.12s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
         >
           Account
         </Link>
         <button
           type="button" onClick={onLogout}
-          style={{ flex: 1, padding: "10px 12px", borderRadius: 8, background: "rgba(217,43,58,0.12)", border: "1px solid rgba(217,43,58,0.28)", color: "#FF7A7A", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.12s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(217,43,58,0.22)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(217,43,58,0.12)"; }}
+          style={{ flex: 1, padding: "9px 12px", borderRadius: 7, background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.22)", color: "#FF7A7A", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.12s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(217,43,58,0.2)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(217,43,58,0.1)"; }}
         >
           Sign out
         </button>
@@ -587,22 +385,50 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 }
 
 // ─── Mobile menu ──────────────────────────────────────────────────────────────
-// Uses the same NavCard components but single-column for narrow screens.
 
 function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug }) {
   const name     = user?.Name || user?.name || "Profile";
   const email    = user?.Email || user?.email || "";
   const color    = avatarColor(name);
   const initials = getInitials(name);
-
   const isOrgAdmin = role === "organization" || role === "admin";
-  const isTrainer  = role === "trainer";
 
-  // Thin wrapper so NavCard fills full width in 1-col mobile layout
-  const MCard = (props) => (
-    <div style={{ padding: "0 0 4px" }}>
-      <NavCard {...props} />
+  const ml = ({ href, label, badge, external }) => {
+    const active = isActive(href);
+    return (
+      <Link
+        key={href}
+        href={href}
+        onClick={onClose}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noopener noreferrer" : undefined}
+        style={{
+          display: "flex", alignItems: "center",
+          padding: "12px 20px 12px 18px",
+          borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}`,
+          fontSize: 16, fontWeight: active ? 700 : 500,
+          color: active ? "#fff" : "rgba(255,255,255,0.65)",
+          textDecoration: "none",
+        }}
+      >
+        <span style={{ flex: 1 }}>{label}</span>
+        {badge && (
+          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4FABFF" }}>
+            {badge}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
+  const mSection = (label, color = "rgba(255,255,255,0.28)") => (
+    <div style={{ padding: "16px 20px 4px", fontSize: 10, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color }}>
+      {label}
     </div>
+  );
+
+  const mDivider = () => (
+    <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
   );
 
   return (
@@ -611,145 +437,111 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
       animate={{ opacity: 1, height: "auto" }}
       exit={{    opacity: 0, height: 0    }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      style={{ background: "#0E1420", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
+      style={{ background: "#0D1119", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
     >
       <div style={{
-        padding: "12px",
         paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
         maxHeight: "calc(100dvh - 64px)",
         overflowY: "auto",
         WebkitOverflowScrolling: "touch",
       }}>
 
-        {/* Public nav links */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
-          {MOBILE_TABS.map(tab => {
-            const active = isActive(tab.href);
-            return (
-              <Link key={tab.href} href={tab.href} onClick={onClose}
-                style={{ display: "flex", alignItems: "center", padding: "10px 12px", borderRadius: 10, fontSize: 14, fontWeight: active ? 700 : 500, color: active ? "#fff" : "rgba(255,255,255,0.55)", background: active ? "rgba(255,255,255,0.08)" : "transparent", textDecoration: "none" }}>
-                {tab.name}
-              </Link>
-            );
-          })}
-        </div>
-
-        <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
-
         {!loggedIn ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
-            {/* Primary CTA */}
-            <Link href="/book" onClick={onClose}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "13px", borderRadius: 10, background: "#46769B", color: "#fff", fontSize: 14, fontWeight: 700, textDecoration: "none" }}>
-              Book a Walkthrough
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-              </svg>
-            </Link>
-            <button type="button" onClick={() => { openAuthModal("login"); onClose(); }}
-              style={{ padding: "13px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-              Log in
-            </button>
-            <button type="button" onClick={() => { openAuthModal("signup"); onClose(); }}
-              style={{ padding: "13px", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.45)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-              Sign up
-            </button>
-          </div>
+          <>
+            {MOBILE_PUBLIC.map(tab => {
+              const active = isActive(tab.href);
+              return (
+                <Link key={tab.href} href={tab.href} onClick={onClose}
+                  style={{ display: "flex", alignItems: "center", padding: "14px 20px", fontSize: 16, fontWeight: active ? 700 : 500, color: active ? "#fff" : "rgba(255,255,255,0.6)", textDecoration: "none", borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}` }}>
+                  {tab.name}
+                </Link>
+              );
+            })}
+            {mDivider()}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 16px" }}>
+              <Link href="/book" onClick={onClose}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px", background: "#46769B", color: "#fff", fontSize: 13, fontWeight: 800, textDecoration: "none", letterSpacing: "0.07em" }}>
+                BOOK A WALKTHROUGH
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                </svg>
+              </Link>
+              <button type="button" onClick={() => { openAuthModal("login"); onClose(); }}
+                style={{ padding: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.05em" }}>
+                LOG IN
+              </button>
+            </div>
+          </>
         ) : (
           <>
-            {/* Identity card */}
-            <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 12 }}>
+            <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: color + "22", border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <span style={{ fontSize: 16, fontWeight: 900, color }}>{initials}</span>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.32)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#46769B" }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                      {roleLabel}{orgName ? ` · ${orgName}` : ""}
-                    </span>
-                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
                 </div>
               </div>
             </div>
 
-            {/* ── Org mobile ── */}
             {isOrgSide && (
               <>
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>Coaching</div>
-                <MCard href="/org/film"              icon={<IcoFilm size={13} color="#4FABFF" />} label="Film"          desc="Review, tag & analyze"  accent="#4FABFF" onClick={onClose} badge="Beta" />
-                <MCard href="/org/plays"             icon={<IcoPlays size={13} color="#4FABFF" />} label="Play Library" desc="Playbook & diagrams"     accent="#4FABFF" onClick={onClose} />
-                <MCard href="/org/workouts-calendar" icon={<IcoCal size={13} color="#4FABFF" />}  label="Schedule"     desc="Workouts & calendar"    accent="#4FABFF" onClick={onClose} />
-                <MCard href="/org/review-queue"      icon={<IcoClipboard size={13} color="#4FABFF" />} label="Review Queue" desc="Pending submissions" accent="#4FABFF" onClick={onClose} />
-
-                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
-
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>Team</div>
-                <MCard href="/org/messaging" icon={<IcoMessage size={13} color="#7C6EF5" />}  label="Messaging" desc="Team communication" accent="#7C6EF5" onClick={onClose} />
-                <MCard href="/org/prescriptions" icon={<IcoNutrition size={13} color="#7C6EF5" />} label="Nutrition" desc="Plans & scan queue" accent="#7C6EF5" onClick={onClose} />
-                {isOrgAdmin && <MCard href="/org/athletes" icon={<IcoUsers size={13} color="#7C6EF5" />} label="Athletes" desc="Roster & progress" accent="#7C6EF5" onClick={onClose} />}
-                {isAdmin    && <MCard href="/org/trainers" icon={<IcoTrainer size={13} color="#7C6EF5" />} label="Trainers" desc="Staff management" accent="#7C6EF5" onClick={onClose} />}
-
-                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
-
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>Tools</div>
-                <MCard href="/nutrition-label-scanner" icon={<IcoScan size={13} color="#D4900A" />} label="Label Scanner" desc="Scan supplements & products" accent="#D4900A" onClick={onClose} />
-                <MCard href="/search" icon={<IcoSearch size={13} color="#D4900A" />} label="Search" desc="Find products & stacks" accent="#D4900A" onClick={onClose} />
-
-                {(trainerSlug || true) && (
+                {mSection("Coaching")}
+                {ml({ href: "/org/film",              label: "Film",         badge: "Beta" })}
+                {ml({ href: "/org/plays",             label: "Play Library"               })}
+                {ml({ href: "/org/workouts-calendar", label: "Schedule"                   })}
+                {ml({ href: "/org/review-queue",      label: "Review Queue"               })}
+                {mDivider()}
+                {mSection("Team")}
+                {ml({ href: "/org/messaging",     label: "Messaging" })}
+                {ml({ href: "/org/prescriptions", label: "Nutrition"  })}
+                {isOrgAdmin && ml({ href: "/org/athletes", label: "Athletes" })}
+                {isAdmin    && ml({ href: "/org/trainers", label: "Trainers" })}
+                {mDivider()}
+                {mSection("Tools")}
+                {ml({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
+                {ml({ href: "/search",                  label: "Search"        })}
+                {ml({ href: "/smartstack-compare",      label: "SmartStack"    })}
+                {ml({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
+                {ml({ href: "/info",                    label: "Info"          })}
+                {trainerSlug && (
                   <>
-                    <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
-                    <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "#46769B", padding: "4px 2px 6px" }}>Studio</div>
-                    <MCard href="/commercial/dashboard" icon={<IcoStudio size={13} color="#46769B" />} label="Dashboard" desc="Programs & clients" accent="#46769B" onClick={onClose} />
-                    {trainerSlug && <MCard href={`/trainer/${trainerSlug}`} icon={<IcoGlobe size={13} color="#46769B" />} label="Public Profile" desc="Your trainer page" accent="#46769B" onClick={onClose} external />}
+                    {mDivider()}
+                    {mSection("Studio", "rgba(70,118,155,0.9)")}
+                    {ml({ href: "/commercial/dashboard",   label: "Dashboard"      })}
+                    {ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
                   </>
                 )}
-
-                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
-                <Link href="/org/help" onClick={onClose}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.18)", textDecoration: "none", marginBottom: 12 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(79,171,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <IcoHelp size={14} color="#4FABFF" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Help Center</div>
-                    <div style={{ fontSize: 11, color: "#4FABFF", fontWeight: 500 }}>7 tutorial videos · ~26 min</div>
-                  </div>
-                </Link>
+                {mDivider()}
+                {ml({ href: "/org/help", label: "Help Center" })}
               </>
             )}
 
-            {/* ── Athlete mobile ── */}
             {isAthlete && (
               <>
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", padding: "4px 2px 6px" }}>My Space</div>
-                <MCard href="/dashboard"       icon={<IcoDash size={13} color="#4FABFF" />}    label="Dashboard"  desc="Your overview"       accent="#4FABFF" onClick={onClose} />
-                <MCard href="/athlete/today"   icon={<IcoSun size={13} color="#4FABFF" />}     label="Today"      desc="Daily schedule"      accent="#4FABFF" onClick={onClose} />
-                <MCard href="/athlete/journal" icon={<IcoJournal size={13} color="#4FABFF" />} label="Journal"    desc="Notes & reflections" accent="#4FABFF" onClick={onClose} />
-                <MCard href="/scans"           icon={<IcoScan size={13} color="#4FABFF" />}    label="My Scans"   desc="Nutrition history"   accent="#4FABFF" onClick={onClose} />
-
-                <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 0 8px" }} />
-
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF7B35", padding: "4px 2px 6px" }}>Discover</div>
-                <MCard href="/trainers"          icon={<IcoStore size={13} color="#FF7B35" />}   label="Marketplace"  desc="Find trainers & programs" accent="#FF7B35" onClick={onClose} />
-                <MCard href="/athlete/libraries" icon={<IcoLibrary size={13} color="#FF7B35" />} label="My Libraries" desc="Purchased content"        accent="#FF7B35" onClick={onClose} />
-                <div style={{ height: 8 }} />
+                {mSection("My Space")}
+                {ml({ href: "/dashboard",       label: "Dashboard" })}
+                {ml({ href: "/athlete/today",   label: "Today"     })}
+                {ml({ href: "/athlete/journal", label: "Journal"   })}
+                {ml({ href: "/scans",           label: "My Scans"  })}
+                {mDivider()}
+                {mSection("Discover", "rgba(255,123,53,0.85)")}
+                {ml({ href: "/trainers",           label: "Marketplace"  })}
+                {ml({ href: "/smartstack-compare", label: "SmartStack"   })}
+                {ml({ href: "/athlete/libraries",  label: "My Libraries" })}
               </>
             )}
 
-            <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />
-
-            {/* Account + Sign out */}
-            <div style={{ display: "flex", gap: 8 }}>
+            {mDivider()}
+            <div style={{ display: "flex", gap: 8, padding: "10px 16px 12px" }}>
               <Link href="/account" onClick={onClose}
-                style={{ flex: 1, padding: "11px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
+                style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
                 Account
               </Link>
               <button type="button" onClick={onLogout}
-                style={{ flex: 1, padding: "11px", borderRadius: 10, background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.25)", color: "#FF6B6B", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                style={{ flex: 1, padding: "11px", background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.22)", color: "#FF7A7A", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 Sign out
               </button>
             </div>
@@ -772,7 +564,6 @@ export default function NavBar() {
   const [profileOpen,     setProfileOpen]     = useState(false);
   const [loginModalOpen,  setLoginModalOpen]  = useState(false);
   const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
-  const [stackIconBroken, setStackIconBroken] = useState(false);
   const [trainerSlug,     setTrainerSlug]     = useState("");
   const [scrolled,        setScrolled]        = useState(false);
 
@@ -892,15 +683,12 @@ export default function NavBar() {
     setProfileOpen(p => !p);
   }, [loggedIn, openAuthModal]);
 
-  const handleStackIconError = useCallback(() => setStackIconBroken(true), []);
-
   const logoutAndClose = useCallback(async () => {
     try { await logout?.(); } catch {}
     finally { setProfileOpen(false); setMenuOpen(false); router.push("/login"); }
   }, [logout, router]);
 
-  const sharedRoleProps    = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, trainerSlug };
-  const navItemSharedProps = { isActive, stackIconBroken, onStackIconError: handleStackIconError };
+  const sharedRoleProps = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, trainerSlug };
 
   const profileButtonLabel = useMemo(() => {
     if (!loggedIn) return "Login";
@@ -962,15 +750,15 @@ export default function NavBar() {
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 clamp(1rem, 4vw, 2rem)" }}>
           <div style={{ height: "clamp(56px, 5vw, 68px)", display: "flex", alignItems: "center", position: "relative" }}>
 
-            {/* ── Logo — centered ── */}
+            {/* ── Logo — centered, sport-brand convention ── */}
             <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", zIndex: 1 }}>
               <Link href="/" aria-label="CheckPeak Home" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}>
                 <span className="block md:hidden"><Logo size="medium" /></span>
-                <span className="hidden md:block"><Logo size="large" /></span>
+                <span className="hidden md:block"><Logo size="medium" /></span>
               </Link>
             </div>
 
-            {/* ── Left spacer — pushes right content to the edge ── */}
+            {/* ── Left spacer ── */}
             <div style={{ flex: 1 }} />
 
             {/* ── Desktop right side ── */}
@@ -1024,28 +812,30 @@ export default function NavBar() {
                     aria-haspopup={loggedIn ? "true" : undefined}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 8,
-                      padding: "7px 14px", borderRadius: 22,
-                      border: `1px solid ${C.btnBorder}`,
-                      background: C.btnBg, color: C.btnText,
-                      fontSize: 13, fontWeight: 600,
-                      cursor: "pointer", transition: "all 0.15s ease",
+                      padding: "6px 4px",
+                      border: "none", background: "none",
+                      color: C.btnText,
+                      fontSize: 12, fontWeight: 800, letterSpacing: "0.06em",
+                      cursor: "pointer", transition: "opacity 0.15s ease",
                     }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = "0.7"; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
                   >
                     {loggedIn && (
                       <div style={{
-                        width: 24, height: 24, borderRadius: "50%",
+                        width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
                         background: avatarColor(user?.Name || user?.name || "") + "22",
-                        border: `1px solid ${avatarColor(user?.Name || user?.name || "")}55`,
+                        border: `1.5px solid ${avatarColor(user?.Name || user?.name || "")}88`,
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 10, fontWeight: 800, flexShrink: 0,
+                        fontSize: 10, fontWeight: 800,
                         color: avatarColor(user?.Name || user?.name || ""),
                       }}>
                         {getInitials(user?.Name || user?.name || "")}
                       </div>
                     )}
                     {profileButtonLabel}
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: C.chevron === "rgba(255,255,255,0.5)" ? 0.5 : 0.4, transform: profileOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-                      <path d="M2 3.5L5 6.5L8 3.5" stroke={C.btnText} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.45, transform: profileOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+                      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
 
@@ -1056,6 +846,7 @@ export default function NavBar() {
                         {...sharedRoleProps}
                         onClose={() => setProfileOpen(false)}
                         onLogout={logoutAndClose}
+                        isActiveFn={isActive}
                       />
                     )}
                   </AnimatePresence>

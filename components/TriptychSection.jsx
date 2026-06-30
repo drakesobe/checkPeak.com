@@ -124,7 +124,7 @@ const STYLE = `
       font-size: clamp(3.5rem, 14vw, 6rem);
     }
     .cp-panel-right .cp-stamp {
-      font-size: clamp(1.4rem, 5.5vw, 2.5rem);
+      font-size: clamp(2.2rem, 9vw, 4rem);
       top:  0.9rem;
       left: 0.9rem;
     }
@@ -140,23 +140,23 @@ const STYLE = `
   .cp-info-label {
     display: inline-block;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 0.62rem;
+    font-size: 0.72rem;
     font-weight: 900;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: #fff;
     background: #4FABFF;
-    padding: 0.2rem 0.55rem;
+    padding: 0.22rem 0.6rem;
     margin-bottom: 0.65rem;
   }
 
   .cp-info-tagline {
     font-family: 'Barlow', sans-serif;
-    font-size: clamp(0.75rem, 1.1vw, 0.88rem);
+    font-size: clamp(0.9rem, 1.2vw, 1rem);
     font-weight: 600;
-    color: rgba(255,255,255,0.82);
+    color: rgba(255,255,255,0.88);
     margin-bottom: 1.1rem;
-    line-height: 1.5;
+    line-height: 1.55;
     max-width: 24ch;
   }
 
@@ -164,17 +164,18 @@ const STYLE = `
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.7rem 1.5rem;
+    padding: 0.8rem 1.6rem;
     background: #ffffff;
     color: #080E1A;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     font-weight: 900;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     border: none;
     cursor: pointer;
     transition: background 0.2s, color 0.2s;
+    text-decoration: none;
   }
   .cp-cta:hover {
     background: #4FABFF;
@@ -187,13 +188,13 @@ const STYLE = `
     right:  clamp(1.5rem,  3.5vw, 2.75rem);
     z-index: 10;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 0.6rem;
+    font-size: 0.78rem;
     font-weight: 900;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.42);
+    color: rgba(255,255,255,0.68);
     text-align: right;
-    line-height: 1.8;
+    line-height: 2;
   }
 
   @media (max-width: 767px) {
@@ -279,20 +280,17 @@ export default function TriptychSection() {
             <p className="cp-stamp" aria-hidden="true">CHECK<br />PEAK</p>
 
             <div className="cp-info">
-              <span className="cp-info-label">Athlete Platform</span>
+              <span className="cp-info-label">Coaching Platform</span>
               <p className="cp-info-tagline">
                 From the offseason<br />to the opening whistle.
               </p>
-              <button
-                type="button"
+              <a
+                href="/book"
                 className="cp-cta"
-                onClick={() => {
-                  track("triptych_cta", { source: "panel_1" });
-                  openAuthModal({ tab: "signup", role: "organization" });
-                }}
+                onClick={() => track("triptych_cta", { source: "panel_1" })}
               >
-                Start your pilot <ArrowRight size={13} />
-              </button>
+                Book a Walkthrough <ArrowRight size={13} />
+              </a>
             </div>
           </Panel>
 
@@ -318,8 +316,9 @@ export default function TriptychSection() {
             <p className="cp-stamp" aria-hidden="true">CHECK<br />PEAK</p>
 
             <p className="cp-panel-label">
+              Film &amp; cut-ups<br />
               Workout check-ins<br />
-              Nutrition targets<br />
+              Nutrition plans<br />
               Supplement screening
             </p>
           </Panel>

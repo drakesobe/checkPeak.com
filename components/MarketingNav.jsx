@@ -24,14 +24,19 @@ function track(action, params = {}) {
 }
 
 const LEFT_TABS = [
-  { name: "The Arena", href: "/trainers", accent: ACCENT },
-  { name: "Pricing",   href: "/pricing",  accent: null   },
+  { name: "The Arena",  href: "/trainers"           },
+  { name: "SmartStack", href: "/smartstack-compare" },
+  { name: "Info",       href: "/info"               },
+  { name: "NCAA Rules", href: "/compliance/ncaa"    },
 ];
 
 const MOBILE_TABS = [
-  { name: "The Arena", href: "/trainers" },
-  { name: "Pricing",   href: "/pricing"  },
-  { name: "Contact",   href: "/contact"  },
+  { name: "The Arena",  href: "/trainers"           },
+  { name: "SmartStack", href: "/smartstack-compare" },
+  { name: "Info",       href: "/info"               },
+  { name: "NCAA Rules", href: "/compliance/ncaa"    },
+  { name: "Pricing",    href: "/pricing"            },
+  { name: "Contact",    href: "/contact"            },
 ];
 
 function NavLink({ href, children, activeHref }) {
@@ -170,7 +175,7 @@ export default function MarketingNav() {
         borderBottom:         scrolled ? "1px solid rgba(255,255,255,0.07)" : "1px solid transparent",
       }}>
 
-        {/* ── Desktop left: The Arena · Pricing ── */}
+        {/* ── Desktop left: The Arena · SmartStack · Info · NCAA Rules ── */}
         <div className="mkt-left" style={{ display: "none", alignItems: "center", gap: "clamp(1rem, 2.5vw, 2rem)", flex: 1 }}>
           {LEFT_TABS.map(t => (
             <NavLink key={t.href} href={t.href}>{t.name}</NavLink>
@@ -191,6 +196,11 @@ export default function MarketingNav() {
 
         {/* ── Desktop right: Log in · Book a Walkthrough ── */}
         <div className="mkt-right" style={{ display: "none", alignItems: "center", gap: "clamp(0.75rem, 1.5vw, 1.25rem)", flex: 1, justifyContent: "flex-end" }}>
+
+          {/* Pricing — right side, conversion-oriented */}
+          {!user && (
+            <NavLink href="/pricing">Pricing</NavLink>
+          )}
 
           {user ? (
             <button

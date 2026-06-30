@@ -27,6 +27,7 @@ import {
 } from "@/lib/athlete-today/utils";
 
 import { ChevronLeft, RefreshCw, Check, Calendar, Plus } from "lucide-react";
+import { Toaster, toast } from "react-hot-toast";
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function localDateStr(d = new Date()) {
@@ -638,7 +639,11 @@ export default function AthleteToday() {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completion: nutritionCompletion }),
-      }).catch(() => {});
+      }).then(r => {
+        if (!r.ok) toast.error("Nutrition sync failed — progress saved locally", { id: "nut-sync", duration: 4000 });
+      }).catch(() => {
+        toast.error("Nutrition sync failed — progress saved locally", { id: "nut-sync", duration: 4000 });
+      });
     }, 1000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nutritionCompletion]);
@@ -901,6 +906,7 @@ export default function AthleteToday() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: "100dvh", background: "#0A0A0A" }}>
+      <Toaster position="bottom-center" toastOptions={{ style: { background: "#1A1A1A", color: "#fff", fontSize: 13, fontWeight: 600, border: "1px solid #2A2A2A" }, error: { iconTheme: { primary: "#EF4444", secondary: "#1A1A1A" } } }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes nowPulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
 
       {/* ── HEADER ── */}

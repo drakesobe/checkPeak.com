@@ -89,20 +89,19 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
           setOptimisticStatusById((prev) => ({ ...prev, [id]: nextStatus }));
         }
 
-        setTimeout(() => {
-          setOptimisticStatusById((prev) => {
-            if (!prev?.[id]) return prev;
-            const { [id]: _, ...rest } = prev;
-            return rest;
-          });
-        }, 2500);
-
         await reload(selectedDate);
         closeModal();
       } catch (e) {
         setErr?.(e?.message || "Failed to submit");
       } finally {
         setSubmittingId("");
+        // Clear optimistic only after reload has resolved — avoids the race where
+        // the timer fires before fresh server data arrives and the item flickers back
+        setOptimisticStatusById((prev) => {
+          if (!prev?.[id]) return prev;
+          const { [id]: _, ...rest } = prev;
+          return rest;
+        });
       }
     },
     [selectedFile, coachNote, postCompletion, reload, selectedDate, closeModal, setErr]
@@ -140,19 +139,16 @@ export function useWorkoutCompletion({ selectedDate, reload, setErr }) {
           setOptimisticStatusById((prev) => ({ ...prev, [id]: nextStatus }));
         }
 
-        setTimeout(() => {
-          setOptimisticStatusById((prev) => {
-            if (!prev?.[id]) return prev;
-            const { [id]: _, ...rest } = prev;
-            return rest;
-          });
-        }, 2000);
-
         await reload(selectedDate);
       } catch (e) {
         setErr?.(e?.message || "Failed to submit");
       } finally {
         setSubmittingId("");
+        setOptimisticStatusById((prev) => {
+          if (!prev?.[id]) return prev;
+          const { [id]: _, ...rest } = prev;
+          return rest;
+        });
       }
     },
     [postCompletion, reload, selectedDate, setErr]

@@ -269,9 +269,13 @@ function FormationDiagram({ tracks = [], roster = [], currentTime = 0, onPlayerC
 
 // ── Video Player ──────────────────────────────────────────────────────────────
 // Priority: Mux (full film, seekable) → S3 presigned URL (full film fallback) → clip_url (individual play clip)
-function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, onDurationChange, videoRef }) {
+function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, onDurationChange, videoRef, onS3Error }) {
   const fullFilmSrc = s3Url || null;
   const hasVideo = playbackId || fullFilmSrc || clipUrl;
+  const [s3Expired, setS3Expired] = useState(false);
+
+  // Reset expired state whenever a fresh URL is provided
+  useEffect(() => { setS3Expired(false); }, [s3Url]);
 
   if (!hasVideo) {
     return (
@@ -305,6 +309,25 @@ function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, onD
   }
 
   const src = fullFilmSrc || clipUrl;
+  const isS3 = src === fullFilmSrc && !!fullFilmSrc;
+
+  if (isS3 && s3Expired) {
+    return (
+      <div className="video-wrap" style={{
+        background: "#0a0c12", borderRadius: 10, aspectRatio: "16/9",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14,
+      }}>
+        <RefreshCw size={32} color="rgba(255,255,255,0.2)" />
+        <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>Video link expired</p>
+        <button
+          onClick={() => { setS3Expired(false); onS3Error?.(); }}
+          style={{ padding: "8px 20px", background: "#4FABFF", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+          Refresh video
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="video-wrap" style={{ position: "relative", background: "#000", borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
       <video
@@ -315,6 +338,12 @@ function VideoPlayer({ playbackId, s3Url, clipUrl, playNumber, onTimeUpdate, onD
         preload="metadata"
         onTimeUpdate={e => onTimeUpdate?.(e.target.currentTime)}
         onLoadedMetadata={e => onDurationChange?.(e.target.duration)}
+        onError={() => {
+          if (isS3) {
+            setS3Expired(true);
+            onS3Error?.();
+          }
+        }}
       />
     </div>
   );
@@ -5286,6 +5315,10 @@ export default function FilmDetailPage() {
                         }}
                         onDurationChange={setFilmDuration}
                         videoRef={videoRef}
+                        onS3Error={() => {
+                          toast.error("Video link expired — fetching a fresh one…", { id: "s3-expire", duration: 5000 });
+                          fetchVideoUrl();
+                        }}
                       />
                       <CutupOverlay
                         cutup={cutup}

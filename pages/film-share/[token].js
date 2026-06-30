@@ -6,7 +6,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import {
   Play, SkipBack, SkipForward, ListVideo, Film,
-  ChevronDown, ChevronUp, Clock, Pin,
+  ChevronDown, ChevronUp, Clock, Pin, RefreshCw,
 } from "lucide-react";
 
 const DS = {
@@ -36,10 +36,11 @@ export default function FilmSharePage() {
   const { token }   = router.query;
   const videoRef    = useRef(null);
 
-  const [data,   setData]   = useState(null);
-  const [error,  setError]  = useState("");
-  const [cutup,  setCutup]  = useState(null); // { plays, index }
-  const [selIdx, setSelIdx] = useState(0);
+  const [data,       setData]       = useState(null);
+  const [error,      setError]      = useState("");
+  const [cutup,      setCutup]      = useState(null); // { plays, index }
+  const [selIdx,     setSelIdx]     = useState(0);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -48,6 +49,7 @@ export default function FilmSharePage() {
       .then(d => {
         if (!d.ok) { setError(d.error ?? "Link not found"); return; }
         setData(d);
+        setVideoError(false);
         if (d.type === "cutup" && d.playlist?.items?.length) {
           setCutup({ plays: d.playlist.items, index: 0 });
         }
@@ -168,14 +170,31 @@ export default function FilmSharePage() {
               allow="autoplay; fullscreen"
               allowFullScreen
             />
-          ) : videoUrl ? (
+          ) : videoUrl && !videoError ? (
             <video
               ref={videoRef}
               src={videoUrl}
               controls
               style={{ width: "100%", height: "100%" }}
               onTimeUpdate={handleTimeUpdate}
+              onError={() => setVideoError(true)}
             />
+          ) : videoError ? (
+            <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
+              <RefreshCw size={36} color={DS.dimText} style={{ opacity: 0.5 }} />
+              <p style={{ color: DS.labelText, fontSize: 14, margin: 0 }}>Video link expired</p>
+              <button
+                onClick={() => {
+                  setVideoError(false);
+                  fetch(`/api/film/share?token=${token}`)
+                    .then(r => r.json())
+                    .then(d => { if (d.ok) setData(d); })
+                    .catch(() => {});
+                }}
+                style={{ padding: "9px 22px", background: DS.brand, border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>
+                Reload video
+              </button>
+            </div>
           ) : (
             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
               <Film size={48} color={DS.dimText} style={{ opacity: 0.3 }} />

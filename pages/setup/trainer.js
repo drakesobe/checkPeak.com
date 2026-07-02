@@ -1,6 +1,7 @@
 // pages/setup/trainer.js
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import { Lock, Sparkles } from "lucide-react";
 
 /**
  * ✅ IMPORTANT:
@@ -279,7 +280,7 @@ export default function TrainerSetupPage({
 
               <div className="pt-2">
                 <p className="text-[11px] text-gray-600">
-                  🔒 This is a secure, one-time setup link.
+                  <Lock size={11} style={{ display:"inline", verticalAlign:"middle", marginRight:4 }} /> This is a secure, one-time setup link.
                 </p>
               </div>
             </div>
@@ -311,7 +312,7 @@ export default function TrainerSetupPage({
 
           {ok ? (
             <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
-              <p className="text-sm font-semibold text-emerald-900">🎉 You’re all set!</p>
+              <p className="text-sm font-semibold text-emerald-900 flex items-center gap-1.5"><Sparkles size={15} /> You’re all set!</p>
               <p className="text-sm text-emerald-800">{ok}</p>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">

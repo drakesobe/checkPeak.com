@@ -11,6 +11,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 import { useBillingGate }   from "@/hooks/org/useBillingGate";
 import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
 import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
+import { Clapperboard } from "lucide-react";
 
 // ── Video data ────────────────────────────────────────────────────────────────
 
@@ -599,7 +600,7 @@ export default function HelpPage() {
             /* Coming soon */
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
               <div style={{ textAlign: "center", maxWidth: 380 }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+                <div style={{ marginBottom: 16 }}><Clapperboard size={48} color="rgba(255,255,255,0.35)" /></div>
                 <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: accent, marginBottom: 10 }}>
                   Episode {active?.episode} · Coming soon
                 </div>

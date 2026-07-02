@@ -217,7 +217,7 @@ export default function ResetPasswordPage() {
             {/* Success */}
             {!pageError && success && (
               <div className="mt-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-800">
-                <p className="font-semibold">Password updated ✅</p>
+                <p className="font-semibold">Password updated</p>
                 <p className="mt-1 text-sm">You can now log in with your new password.</p>
 
                 <div className="mt-4 flex flex-col sm:flex-row gap-2">
@@ -313,7 +313,7 @@ export default function ResetPasswordPage() {
                     <p className="mt-2 text-xs text-red-600">Passwords don’t match yet.</p>
                   )}
                   {pw2.length > 0 && pw1 === pw2 && pw1.length >= 8 && (
-                    <p className="mt-2 text-xs text-emerald-700">Passwords match ✅</p>
+                    <p className="mt-2 text-xs text-emerald-700">Passwords match</p>
                   )}
                 </div>
 

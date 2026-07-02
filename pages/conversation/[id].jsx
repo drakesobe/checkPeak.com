@@ -9,6 +9,7 @@ import {
   addDoc, serverTimestamp, updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { IconChat } from "@/components/Icons";
 
 const CP = {
   black:   "#060810",
@@ -244,7 +245,7 @@ export default function ConversationPage() {
             </div>
           ) : messages.length === 0 ? (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
-              <div style={{ fontSize: 40 }}>💬</div>
+              <IconChat size={40} color="rgba(255,255,255,0.25)" />
               <div style={{ fontSize: 15, fontWeight: 700, color: CP.ghost }}>No messages yet</div>
               <div style={{ fontSize: 13, color: CP.dim }}>Say something to get the conversation started.</div>
             </div>

@@ -45,6 +45,25 @@ export default async function handler(req, res) {
   const orgLine      = senderOrg ? ` · ${senderOrg}` : "";
   const subject      = `Recruiting inquiry from ${senderName}${orgLine}`;
 
+  // Store the message in DB for the athlete's inbox (fire-and-forget)
+  db.from("recruit_messages").insert({
+    athlete_token: profile.athlete_token,
+    share_token:   token,
+    sender_name:   senderName,
+    sender_email:  senderEmail,
+    sender_org:    senderOrg || null,
+    message,
+  }).then(() => {}).catch(() => {});
+
+  // Send push notification to athlete (fire-and-forget)
+  const { sendNotification } = await import("@/lib/sendNotification");
+  sendNotification([profile.athlete_token], {
+    title: `Recruiting inquiry from ${senderName}`,
+    body: senderOrg ? `${senderOrg} · ${message.slice(0, 80)}` : message.slice(0, 100),
+    data: { type: "recruiter_message", screen: "recruit-inbox" },
+    type: "new_message",
+  });
+
   try {
     await resend.emails.send({
       from:    FROM,

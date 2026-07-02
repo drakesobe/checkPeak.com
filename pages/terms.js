@@ -1,6 +1,7 @@
 // pages/terms.js
 import Head from "next/head";
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /* Static data                                                                 */
@@ -372,12 +373,7 @@ export default function TermsPage() {
                     border:     "1px solid rgba(91,158,201,0.22)",
                   }}
                 >
-                  <span
-                    className="text-lg leading-none shrink-0 mt-0.5"
-                    aria-hidden="true"
-                  >
-                    ⚠️
-                  </span>
+                  <AlertTriangle size={18} color="#92400e" strokeWidth={1.8} className="shrink-0 mt-0.5" />
                   <p className="text-xs text-slate-700 leading-relaxed">
                     <strong>Athletes:</strong> CheckPeak is an informational tool only.
                     Our scan results are not a guarantee that a supplement is free of

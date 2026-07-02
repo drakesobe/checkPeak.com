@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
+import { Lock } from "lucide-react";
 
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
 const C = {
@@ -169,7 +170,7 @@ export default function ParentPortal() {
   if (error || !data) return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center",
       justifyContent: "center", flexDirection: "column", gap: 16, padding: 24, fontFamily: C.font }}>
-      <div style={{ fontSize: 40 }}>🔒</div>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}><Lock size={40} color="rgba(255,255,255,0.35)" strokeWidth={1.3} /></div>
       <h1 style={{ color: C.white, fontFamily: C.cond, fontSize: 24, fontWeight: 900, textAlign: "center" }}>
         Profile not found
       </h1>

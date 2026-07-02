@@ -5,7 +5,8 @@
 import Head from "next/head";
 import { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Film, Mail, Zap, Dumbbell, TrendingUp, ChevronRight, ExternalLink, X, Check, Send, Shield, Play } from "lucide-react";
+import { Film, Mail, Zap, Dumbbell, TrendingUp, ChevronRight, ExternalLink, X, Check, Send, Shield, Play, Lock, Trophy } from "lucide-react";
+import { sendNotification } from "@/lib/sendNotification";
 
 const C = {
   bg:      "#08090B",
@@ -326,7 +327,7 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
   if (!data) return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ textAlign: "center", padding: 32 }}>
-        <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
+        <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}><Lock size={40} color="rgba(255,255,255,0.35)" strokeWidth={1.3} /></div>
         <div style={{ fontSize: 20, fontWeight: 800, color: C.white, marginBottom: 8 }}>Profile not available</div>
         <div style={{ fontSize: 13, color: C.muted }}>This profile is private or no longer exists.</div>
       </div>
@@ -439,7 +440,7 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {achievements.map((a, i) => (
                 <div key={i} style={{ padding: "5px 14px", background: i === 0 ? "rgba(255,215,0,0.07)" : C.faint, border: `1px solid ${i === 0 ? "rgba(255,215,0,0.22)" : C.line}`, borderRadius: 20, fontSize: 12, fontWeight: 700, color: i === 0 ? "#FFD700" : C.dim, display: "flex", alignItems: "center", gap: 6 }}>
-                  {i === 0 && <span style={{ fontSize: 11 }}>🏆</span>}
+                  {i === 0 && <Trophy size={11} color="#FFD700" strokeWidth={1.8} />}
                   {a}
                 </div>
               ))}
@@ -686,10 +687,16 @@ export async function getServerSideProps({ params, req, res }) {
     .from("athlete_reels").select("share_token, title, play_ids")
     .eq("athlete_id", profile.athlete_token).eq("is_public", true).maybeSingle();
 
-  // 7. View logging (fire-and-forget — don't block the response)
+  // 7. View logging + push notification (fire-and-forget — don't block the response)
   const newViewCount = (profile.view_count || 0) + 1;
   db.from("athlete_profiles").update({ view_count: newViewCount }).eq("share_token", token).then(() => {}).catch(() => {});
   db.from("profile_views").insert({ share_token: token }).then(() => {}).catch(() => {});
+  sendNotification([profile.athlete_token], {
+    title: "Profile viewed",
+    body: `Your recruiting profile just got a view. ${newViewCount} total.`,
+    data: { type: "profile_view", screen: "recruiting-profile" },
+    type: "profile_view",
+  });
 
   // 8. Build absolute OG image URL (needed for social crawlers)
   const host = process.env.NEXT_PUBLIC_SITE_URL

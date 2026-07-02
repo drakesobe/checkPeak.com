@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import Head from "next/head";
+import { Lightbulb } from "lucide-react";
 
 // ─── Design tokens - light org theme ─────────────────────────────────────────
 const DS = {
@@ -459,7 +460,7 @@ export default function CommercialOnboard() {
 
                 {/* Tip */}
                 <div style={{ padding: "11px 14px", background: DS.brandBg, border: `1px solid ${DS.brandBorder}`, borderRadius: 7, fontSize: 12, color: "#0044AA", marginTop: 6, marginBottom: 20 }}>
-                  💡 Typical pricing: Basic $19–29 · Premium $39–59 · Ultra $79–149/mo
+                  <Lightbulb size={13} strokeWidth={1.6} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} /> Typical pricing: Basic $19–29 · Premium $39–59 · Ultra $79–149/mo
                 </div>
 
                 {error && (

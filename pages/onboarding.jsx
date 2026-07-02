@@ -6,6 +6,12 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import { motion, AnimatePresence } from "framer-motion";
+import { Target } from "lucide-react";
+import {
+  IconSportFootball, IconSportBasketball, IconSportBaseball,
+  IconSportSoccer, IconSportTrack, IconSportWrestling,
+  IconSportSwimming, IconSportVolleyball, IconSportOther,
+} from "@/components/Icons";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuthContext } from "@/hooks/useAuth";
@@ -27,17 +33,30 @@ const C = {
 };
 
 /* ── Data ──────────────────────────────────────────────────────────────────── */
+const SPORT_ICON_COMPONENTS = {
+  Football:   IconSportFootball,
+  Basketball: IconSportBasketball,
+  Baseball:   IconSportBaseball,
+  Soccer:     IconSportSoccer,
+  Track:      IconSportTrack,
+  Wrestling:  IconSportWrestling,
+  Swimming:   IconSportSwimming,
+  Volleyball: IconSportVolleyball,
+  Softball:   IconSportBaseball,
+  Other:      IconSportOther,
+};
+
 const SPORTS = [
-  { key: "Football",    icon: "🏈", label: "Football"   },
-  { key: "Basketball",  icon: "🏀", label: "Basketball" },
-  { key: "Baseball",    icon: "⚾", label: "Baseball"   },
-  { key: "Soccer",      icon: "⚽", label: "Soccer"     },
-  { key: "Track",       icon: "🏃", label: "Track"      },
-  { key: "Wrestling",   icon: "🤼", label: "Wrestling"  },
-  { key: "Swimming",    icon: "🏊", label: "Swimming"   },
-  { key: "Volleyball",  icon: "🏐", label: "Volleyball" },
-  { key: "Softball",    icon: "🥎", label: "Softball"   },
-  { key: "Other",       icon: "🏋️", label: "Other"      },
+  { key: "Football",   label: "Football"   },
+  { key: "Basketball", label: "Basketball" },
+  { key: "Baseball",   label: "Baseball"   },
+  { key: "Soccer",     label: "Soccer"     },
+  { key: "Track",      label: "Track"      },
+  { key: "Wrestling",  label: "Wrestling"  },
+  { key: "Swimming",   label: "Swimming"   },
+  { key: "Volleyball", label: "Volleyball" },
+  { key: "Softball",   label: "Softball"   },
+  { key: "Other",      label: "Other"      },
 ];
 
 const POSITIONS_BY_SPORT = {
@@ -110,6 +129,8 @@ function ProgressDots({ step, total }) {
 
 function SportTile({ sport, selected, onClick }) {
   const active = selected === sport.key;
+  const Icon = SPORT_ICON_COMPONENTS[sport.key];
+  const iconColor = active ? C.accent : C.dim;
   return (
     <button type="button" onClick={() => onClick(sport.key)}
       style={{
@@ -118,7 +139,9 @@ function SportTile({ sport, selected, onClick }) {
         cursor: "pointer", textAlign: "center", transition: "all 0.18s",
         boxShadow: active ? `0 0 0 1px ${C.accent}30` : "none",
       }}>
-      <div style={{ fontSize: 20, marginBottom: 3 }}>{sport.icon}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+        {Icon && <Icon size={20} color={iconColor} strokeWidth={1.5} />}
+      </div>
       <div style={{ fontFamily: C.cond, fontSize: 9, fontWeight: 900,
         letterSpacing: "0.04em", color: active ? C.white : C.dim,
         textTransform: "uppercase", wordBreak: "break-word", lineHeight: 1.2 }}>{sport.label}</div>
@@ -385,8 +408,8 @@ function Step3Recruiting({ level, onFinish, onSkipToProfile }) {
           pointerEvents: "none" }} />
         <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: `rgba(34,197,94,0.15)`,
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
-            🎯
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Target size={22} color="rgba(34,197,94,0.9)" strokeWidth={1.5} />
           </div>
           <div>
             <p style={{ fontFamily: C.cond, fontSize: 14, fontWeight: 900, color: C.white, marginBottom: 4 }}>

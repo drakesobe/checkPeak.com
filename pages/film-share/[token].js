@@ -6,7 +6,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import {
   Play, SkipBack, SkipForward, ListVideo, Film,
-  ChevronDown, ChevronUp, Clock, Pin, RefreshCw,
+  ChevronDown, ChevronUp, Clock, Pin, RefreshCw, Lock,
 } from "lucide-react";
 
 const DS = {
@@ -88,7 +88,7 @@ export default function FilmSharePage() {
     return (
       <div style={{ minHeight: "100vh", background: DS.pageBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 48, margin: "0 0 12px" }}>🔒</p>
+          <div style={{ display: "flex", justifyContent: "center", margin: "0 0 12px" }}><Lock size={48} color="rgba(255,255,255,0.35)" strokeWidth={1.2} /></div>
           <h2 style={{ color: DS.bodyText, fontWeight: 800, marginBottom: 8 }}>Link not found</h2>
           <p style={{ color: DS.labelText }}>{error}</p>
         </div>

@@ -11,7 +11,7 @@ import {
   TrendingUp, TrendingDown, Minus,
   Flame, Award, BarChart2,
   GitMerge, X, Check, ChevronRight,
-  Video, Play,
+  Video, Play, Trophy,
 } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -211,7 +211,7 @@ function BaselinesSection({ baselines, exercises, onEdit }) {
           <div style={{ display: "flex", alignItems: "baseline", gap: 1 }}>
             <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 900, color: beatBaseline ? C.green : C.accent, letterSpacing: "-0.01em" }}>{loggedPR}</span>
             <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: C.muted }}>{lift.unit}</span>
-            {beatBaseline && <span style={{ fontSize: 10, marginLeft: 1 }}>🏆</span>}
+            {beatBaseline && <Trophy size={11} color="#00C851" strokeWidth={1.8} style={{ marginLeft: 1 }} />}
           </div>
         </div>
       )}
@@ -836,7 +836,7 @@ function PRShareModal({ exercise, onClose }) {
   const [copied, setCopied] = useState(false);
   const weight  = exercise?.prWeight ?? 0;
   const title   = exercise?.title    ?? "Lift";
-  const text    = `🏆 New PR on ${title}: ${weight} lb. Putting in the work every day. #CheckPeak #StrengthAndConditioning`;
+  const text    = `New PR on ${title}: ${weight} lb. Putting in the work every day. #CheckPeak #StrengthAndConditioning`;
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -871,7 +871,7 @@ function PRShareModal({ exercise, onClose }) {
 
           {/* Trophy moment */}
           <div style={{ textAlign: "center", marginBottom: 24 }}>
-            <div style={{ fontSize: 56, lineHeight: 1, marginBottom: 12 }}>🏆</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><Trophy size={56} color="#00C851" strokeWidth={1.2} /></div>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: C.green, marginBottom: 6 }}>New Personal Record</div>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 42, fontWeight: 900, color: C.white, letterSpacing: "-1px", lineHeight: 1 }}>{weight} <span style={{ fontSize: 20, color: C.dim }}>lb</span></div>
             <div style={{ fontFamily: "'Barlow',sans-serif", fontSize: 14, color: C.muted, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</div>
@@ -904,12 +904,14 @@ function PRShareModal({ exercise, onClose }) {
 function InsightStrip({ insight, exercise }) {
   const [shareOpen, setShareOpen] = useState(false);
   if (!insight) return null;
-  const cfgMap = { pr:{bg:"rgba(0,200,81,0.07)",border:"rgba(0,200,81,0.2)",accent:C.green,icon:"🏆"}, up:{bg:"rgba(79,171,255,0.07)",border:"rgba(79,171,255,0.2)",accent:C.accent,icon:"↑"}, down:{bg:"rgba(255,107,43,0.07)",border:"rgba(255,107,43,0.2)",accent:C.orange,icon:"↓"}, warn:{bg:"rgba(245,158,11,0.07)",border:"rgba(245,158,11,0.2)",accent:C.amber,icon:"·"}, neutral:{bg:C.faint,border:C.line2,accent:C.dim,icon:"·"} };
+  const cfgMap = { pr:{bg:"rgba(0,200,81,0.07)",border:"rgba(0,200,81,0.2)",accent:C.green,icon:null}, up:{bg:"rgba(79,171,255,0.07)",border:"rgba(79,171,255,0.2)",accent:C.accent,icon:"↑"}, down:{bg:"rgba(255,107,43,0.07)",border:"rgba(255,107,43,0.2)",accent:C.orange,icon:"↓"}, warn:{bg:"rgba(245,158,11,0.07)",border:"rgba(245,158,11,0.2)",accent:C.amber,icon:"·"}, neutral:{bg:C.faint,border:C.line2,accent:C.dim,icon:"·"} };
   const cfg = cfgMap[insight.type]||cfgMap.neutral;
   return (
     <>
       <motion.div key={insight.text} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{duration:0.35}} style={{margin:"16px 20px 0",padding:"12px 16px",background:cfg.bg,border:`1px solid ${cfg.border}`,borderLeft:`3px solid ${cfg.accent}`,borderRadius:10,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:16,flexShrink:0,lineHeight:1}}>{cfg.icon}</span>
+        <span style={{flexShrink:0,lineHeight:1,display:"flex",alignItems:"center"}}>
+          {insight.type === "pr" ? <Trophy size={16} color={C.green} strokeWidth={1.6} /> : <span style={{fontSize:16}}>{cfg.icon}</span>}
+        </span>
         <p style={{fontFamily:"'Barlow',sans-serif",fontSize:13,fontWeight:600,color:C.white,lineHeight:1.55,margin:0,flex:1}}>{insight.text}</p>
         {insight.type === "pr" && (
           <button

@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import GridCard from "@/components/smartstack-cards/GridCard";
+import { AlertTriangle, Check, Zap, Dumbbell, Plus, Activity, Leaf, Coffee, Flame, Package } from "lucide-react";
 
 /* ════════════════════════════════════════════════════════════════════════════
    BRAND TOKENS
@@ -178,13 +179,13 @@ const TIER = {
    STATIC DATA (unchanged)
 ════════════════════════════════════════════════════════════════════════════ */
 const CAT_CONFIG = [
-  { slug:"pre-workout",   label:"Pre-Workout",    emoji:"⚡", cats:["Pre-Workout"],           desc:"Energy + focus before training" },
-  { slug:"protein",       label:"Protein",         emoji:"💪", cats:["Protein Powder"],        desc:"Muscle repair & growth" },
-  { slug:"vitamins",      label:"Vitamins",        emoji:"💊", cats:["Vitamins","Vitamin A","Vitamin B","Vitamin C","Vitamin D"], desc:"Daily health support" },
-  { slug:"creatine",      label:"Creatine",        emoji:"🔬", cats:["Creatine"],              desc:"Strength & power output" },
-  { slug:"bcaas",         label:"BCAAs",           emoji:"🌿", cats:["BCAAs"],                 desc:"Recovery & endurance" },
-  { slug:"energy-drinks", label:"Energy Drinks",   emoji:"☕", cats:["Energy Drinks"],         desc:"Ready-to-drink caffeine" },
-  { slug:"energy-gel",    label:"Energy Gel",      emoji:"🍯", cats:["Energy Gel"],            desc:"Fast-acting carb boost" },
+  { slug:"pre-workout",   label:"Pre-Workout",    icon:<Zap      size={20} />, cats:["Pre-Workout"],           desc:"Energy + focus before training" },
+  { slug:"protein",       label:"Protein",        icon:<Dumbbell size={20} />, cats:["Protein Powder"],        desc:"Muscle repair & growth" },
+  { slug:"vitamins",      label:"Vitamins",       icon:<Plus     size={20} />, cats:["Vitamins","Vitamin A","Vitamin B","Vitamin C","Vitamin D"], desc:"Daily health support" },
+  { slug:"creatine",      label:"Creatine",       icon:<Activity size={20} />, cats:["Creatine"],              desc:"Strength & power output" },
+  { slug:"bcaas",         label:"BCAAs",          icon:<Leaf     size={20} />, cats:["BCAAs"],                 desc:"Recovery & endurance" },
+  { slug:"energy-drinks", label:"Energy Drinks",  icon:<Coffee   size={20} />, cats:["Energy Drinks"],         desc:"Ready-to-drink caffeine" },
+  { slug:"energy-gel",    label:"Energy Gel",     icon:<Flame    size={20} />, cats:["Energy Gel"],            desc:"Fast-acting carb boost" },
 ];
 
 const BRAND_CONFIG = [
@@ -342,7 +343,7 @@ function CategorySelector({ onSelect }) {
             onMouseEnter={e => { e.currentTarget.style.background=C.accentBg; }}
             onMouseLeave={e => { e.currentTarget.style.background=C.surface; }}
           >
-            <span style={{ fontSize:22, display:"block", marginBottom:2 }}>{cat.emoji}</span>
+            <span style={{ display:"flex", justifyContent:"flex-start", marginBottom:2, color:C.accent }}>{cat.icon}</span>
             <span style={{ fontFamily:F.cond, fontSize:14, fontWeight:900, letterSpacing:"0.04em", textTransform:"uppercase", color:C.ink, display:"block" }}>
               {cat.label}
             </span>
@@ -436,7 +437,7 @@ function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
         display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
       }}>
         <span style={{ fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", color:C.accent }}>
-          🔥 Most Popular · {catLabel}
+          <Flame size={11} style={{ display:"inline-block", verticalAlign:"middle", marginRight:4 }} /> Most Popular · {catLabel}
         </span>
         {tm && (
           <span style={{ fontFamily:F.cond, fontSize:10, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", padding:"2px 8px", background:tm.bg, color:tm.text, border:`1px solid ${tm.border}` }}>
@@ -454,7 +455,7 @@ function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
         <div style={{ width:100, height:100, background:C.raised, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden", border:`1px solid ${C.border}` }}>
           {stack.imageUrl
             ? <img src={stack.imageUrl} alt={stack.name} style={{ width:"100%", height:"100%", objectFit:"contain", padding:8 }} loading="eager" />
-            : <span style={{ fontSize:36, opacity:.2 }}>💊</span>
+            : <Package size={36} color={C.secondary} style={{ opacity:.2 }} />
           }
         </div>
 
@@ -483,8 +484,8 @@ function BestSellerStrip({ stack, stats, catLabel, fetchedAt }) {
               </span>
             )}
             {bought && (
-              <span style={{ fontFamily:F.body, fontSize:13, color:C.body }}>
-                🔥 {bought}+ last month
+              <span style={{ fontFamily:F.body, fontSize:13, color:C.body, display:"inline-flex", alignItems:"center", gap:4 }}>
+                <Flame size={13} />{bought}+ last month
               </span>
             )}
           </div>
@@ -611,7 +612,7 @@ function PreloadedCompare({ stacks, stats, catLabel, fetchedAt }) {
               },
               {
                 label:"Popularity",
-                render: s => { const b=formatK(s?.boughtLastMonth); return b?`🔥 ${b}+ last month`:"-"; },
+                render: s => { const b=formatK(s?.boughtLastMonth); return b?<span style={{ display:"inline-flex", alignItems:"center", gap:4 }}><Flame size={13} />{b}+ last month</span>:"-"; },
                 bestOf: ss => { const ns=ss.map(v=>Number(v?.boughtLastMonth)||0).filter(n=>n>0); return ns.length?Math.max(...ns):null; },
                 isBest: (s,b) => Number(s?.boughtLastMonth) === b,
               },
@@ -726,7 +727,9 @@ function ManualCompareTable({ stacks, stats, onRemove }) {
     return (
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
         <div style={{ display:"flex", alignItems:"center", gap:5, padding:"3px 10px", background:hasBanned?C.redBg:C.greenBg, border:`1px solid ${hasBanned?C.redBdr:C.greenBdr}` }}>
-          <span style={{ fontSize:11 }}>{hasBanned ? "⚠️" : "✅"}</span>
+          {hasBanned
+            ? <AlertTriangle size={11} color={C.red} strokeWidth={2} />
+            : <Check size={11} color={C.green} strokeWidth={2.5} />}
           <span style={{ fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.06em", textTransform:"uppercase", color:hasBanned?C.red:C.green }}>
             {hasBanned ? `${banned.length} flagged` : "Clear"}
           </span>
@@ -926,7 +929,7 @@ function RecentlyViewedStrip({ items }) {
               <div style={{ height:88, background:C.raised, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }}>
                 {item.imageUrl
                   ? <img src={item.imageUrl} alt={item.name} style={{ width:"100%", height:"100%", objectFit:"contain", padding:8 }} loading="lazy" />
-                  : <span style={{ fontSize:28, opacity:.15 }}>💊</span>
+                  : <Package size={28} color={C.secondary} style={{ opacity:.15 }} />
                 }
               </div>
               <div style={{ padding:"8px 10px 0", flex:1 }}>
@@ -1606,7 +1609,7 @@ export default function SmartStackComparePage() {
                       <button key={c.slug} type="button" onClick={() => handleSelectCat(c.slug)}
                         style={{ flexShrink:0, padding:"5px 13px", background:active?C.accent:C.surface, border:`1px solid ${active?C.accent:C.border}`, color:active?"#fff":C.secondary, fontFamily:F.cond, fontSize:11, fontWeight:900, letterSpacing:"0.08em", textTransform:"uppercase", cursor:"pointer", transition:"all 0.12s", whiteSpace:"nowrap" }}
                       >
-                        {c.emoji} {c.label}
+                        <span style={{ display:"inline-flex", alignItems:"center", gap:4 }}>{c.icon} {c.label}</span>
                       </button>
                     );
                   })}

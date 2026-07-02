@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import MuxPlayer from "@mux/mux-player-react";
-import { CheckCircle, Upload, Film, ArrowRight, Link2, ExternalLink } from "lucide-react";
+import { CheckCircle, Upload, Film, ArrowRight, Link2, ExternalLink, Clapperboard } from "lucide-react";
 
 const DS = {
   bg:      "#080a10",
@@ -234,7 +234,7 @@ export default function FilmExchangePage() {
   if (error) return (
     <div style={{ minHeight: "100vh", background: DS.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ textAlign: "center", maxWidth: 360 }}>
-        <div style={{ fontSize: 52, marginBottom: 16 }}>🎬</div>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><Clapperboard size={52} color="rgba(255,255,255,0.35)" strokeWidth={1.2} /></div>
         <h2 style={{ margin: "0 0 10px", color: DS.body, fontWeight: 800, fontSize: 20 }}>Exchange not found</h2>
         <p style={{ margin: "0 0 28px", color: DS.label, lineHeight: 1.65, fontSize: 14 }}>{error}</p>
         <a href="/" style={{ fontSize: 13, fontWeight: 700, color: DS.brand, textDecoration: "none" }}>← Back to CheckPeak</a>
@@ -438,12 +438,12 @@ export default function FilmExchangePage() {
               <div style={{ background: DS.card, borderRadius: 14, border: `1px solid ${DS.border}`, padding: "16px 20px", maxWidth: 400, margin: "0 auto 28px", textAlign: "left" }}>
                 <div style={{ fontSize: 10, fontWeight: 800, color: DS.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>What happens next</div>
                 {[
-                  ["📧", `${orgName} receives an email notification`],
-                  ["🎬", "They review your film in their film room"],
-                  ["🏈", "Both programs have each other's game film"],
-                ].map(([icon, text], i) => (
+                  { icon: <Film size={18} color={DS.brand} strokeWidth={1.5} />, text: `${orgName} receives an email notification` },
+                  { icon: <Clapperboard size={18} color={DS.brand} strokeWidth={1.5} />, text: "They review your film in their film room" },
+                  { icon: <Film size={18} color={DS.green} strokeWidth={1.5} />, text: "Both programs have each other's game film" },
+                ].map(({ icon, text }, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, ...(i > 0 ? { marginTop: 11, paddingTop: 11, borderTop: `1px solid ${DS.border}` } : {}) }}>
-                    <span style={{ fontSize: 18, lineHeight: "1.35", flexShrink: 0 }}>{icon}</span>
+                    <span style={{ lineHeight: "1.35", flexShrink: 0 }}>{icon}</span>
                     <span style={{ fontSize: 13, color: DS.label, lineHeight: 1.55 }}>{text}</span>
                   </div>
                 ))}
@@ -540,7 +540,7 @@ export default function FilmExchangePage() {
                     <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleFileSelect} />
                     {file ? (
                       <>
-                        <div style={{ fontSize: 40, marginBottom: 10 }}>🎬</div>
+                        <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><Clapperboard size={40} color={DS.brand} strokeWidth={1.3} /></div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: DS.green }}>{file.name}</div>
                         <div style={{ fontSize: 12, color: DS.dim, marginTop: 5 }}>
                           {(file.size / 1024 / 1024).toFixed(1)} MB · {isMobile ? "Tap" : "Click"} to change

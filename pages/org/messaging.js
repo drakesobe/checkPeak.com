@@ -52,16 +52,16 @@ const DS = {
 
 // ── Static data ───────────────────────────────────────────────────────────────
 const ALL_SPORTS = [
-  { key: "soccer",     label: "Soccer",        emoji: "⚽" },
-  { key: "basketball", label: "Basketball",    emoji: "🏀" },
-  { key: "xc",         label: "Cross Country", emoji: "🏃" },
-  { key: "football",   label: "Football",      emoji: "🏈" },
-  { key: "track",      label: "Track",         emoji: "🏃" },
-  { key: "swim",       label: "Swimming",      emoji: "🏊" },
-  { key: "tennis",     label: "Tennis",        emoji: "🎾" },
-  { key: "hockey",     label: "Hockey",        emoji: "🏒" },
-  { key: "baseball",   label: "Baseball",      emoji: "⚾" },
-  { key: "softball",   label: "Softball",      emoji: "🥎" },
+  { key: "soccer",     label: "Soccer"        },
+  { key: "basketball", label: "Basketball"    },
+  { key: "xc",         label: "Cross Country" },
+  { key: "football",   label: "Football"      },
+  { key: "track",      label: "Track"         },
+  { key: "swim",       label: "Swimming"      },
+  { key: "tennis",     label: "Tennis"        },
+  { key: "hockey",     label: "Hockey"        },
+  { key: "baseball",   label: "Baseball"      },
+  { key: "softball",   label: "Softball"      },
 ];
 const SPORT_MAP = Object.fromEntries(ALL_SPORTS.map(s => [s.key, s]));
 const SNAP_DURATION   = 7;

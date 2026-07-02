@@ -7,6 +7,7 @@ import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import Head from "next/head";
 import Link from "next/link";
+import { Zap, Dumbbell, Activity, Heart, Leaf, Laptop } from "lucide-react";
 
 const D = {
   bg:        "#070808",
@@ -29,12 +30,12 @@ const TIER_COLOR = {
 };
 
 const SPECIALTY_CONFIG = {
-  "Strength & Conditioning Coach": { icon: "⚡" },
-  "Personal Trainer":              { icon: "🏋️" },
-  "Physical Therapist":            { icon: "🩺" },
-  "Massage Therapist":             { icon: "💆" },
-  "Sports Nutritionist":           { icon: "🥗" },
-  "Online Coach":                  { icon: "💻" },
+  "Strength & Conditioning Coach": { icon: <Zap      size={13} strokeWidth={1.6} /> },
+  "Personal Trainer":              { icon: <Dumbbell size={13} strokeWidth={1.6} /> },
+  "Physical Therapist":            { icon: <Activity size={13} strokeWidth={1.6} /> },
+  "Massage Therapist":             { icon: <Heart    size={13} strokeWidth={1.6} /> },
+  "Sports Nutritionist":           { icon: <Leaf     size={13} strokeWidth={1.6} /> },
+  "Online Coach":                  { icon: <Laptop   size={13} strokeWidth={1.6} /> },
 };
 
 const GLOBAL_CSS = `
@@ -97,7 +98,7 @@ function LibraryRow({ subscription, index }) {
   const specialty   = trainer.specialty ?? "";
   const tier        = sub.tier ?? "Basic";
   const tierColor   = TIER_COLOR[tier] ?? D.red;
-  const icon        = SPECIALTY_CONFIG[specialty]?.icon ?? "💪";
+  const icon        = SPECIALTY_CONFIG[specialty]?.icon ?? <Dumbbell size={13} strokeWidth={1.6} />;
   const parts       = splitName(trainerName);
 
   // Completion data from enriched subscription
@@ -131,7 +132,7 @@ function LibraryRow({ subscription, index }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Specialty row */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 13 }}>{icon}</span>
+              <span style={{ display: "flex", alignItems: "center" }}>{icon}</span>
               <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint }}>
                 {specialty || "Coach"}
               </span>

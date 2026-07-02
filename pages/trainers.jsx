@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
+import { Zap, Dumbbell, Activity, Heart, Leaf, Laptop } from "lucide-react";
 
 const D = {
   bg:        "#070808",
@@ -28,12 +29,12 @@ const TIER_COLORS = {
 };
 
 const SPECIALTIES = {
-  "Strength & Conditioning Coach": { icon: "⚡", short: "S&C"       },
-  "Personal Trainer":              { icon: "🏋️", short: "Personal"   },
-  "Physical Therapist":            { icon: "🩺", short: "PT / Rehab" },
-  "Massage Therapist":             { icon: "💆", short: "Recovery"    },
-  "Sports Nutritionist":           { icon: "🥗", short: "Nutrition"   },
-  "Online Coach":                  { icon: "💻", short: "Online"      },
+  "Strength & Conditioning Coach": { icon: <Zap      size={11} strokeWidth={1.6} />, short: "S&C"       },
+  "Personal Trainer":              { icon: <Dumbbell size={11} strokeWidth={1.6} />, short: "Personal"   },
+  "Physical Therapist":            { icon: <Activity size={11} strokeWidth={1.6} />, short: "PT / Rehab" },
+  "Massage Therapist":             { icon: <Heart    size={11} strokeWidth={1.6} />, short: "Recovery"   },
+  "Sports Nutritionist":           { icon: <Leaf     size={11} strokeWidth={1.6} />, short: "Nutrition"  },
+  "Online Coach":                  { icon: <Laptop   size={11} strokeWidth={1.6} />, short: "Online"     },
 };
 
 const GOAL_PRESETS = {
@@ -97,7 +98,7 @@ function lowestTier(f) {
 function TrainerCard({ trainer, idx }) {
   const f      = trainer.fields ?? {};
   const parts  = splitName(f.name ?? "");
-  const spec   = SPECIALTIES[f.specialty] ?? { icon: "💪", short: f.specialty ?? "" };
+  const spec   = SPECIALTIES[f.specialty] ?? { icon: <Dumbbell size={11} strokeWidth={1.6} />, short: f.specialty ?? "" };
   const lowest = lowestTier(f);
   const tiers  = ["Basic", "Premium", "Ultra"].filter(t => tierAvailable(f, t));
   const initials = (f.name ?? "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
@@ -143,7 +144,7 @@ function TrainerCard({ trainer, idx }) {
             position: "absolute", bottom: 10, left: 14,
             display: "flex", alignItems: "center", gap: 5,
           }}>
-            <span style={{ fontSize: 11 }}>{spec.icon}</span>
+            <span style={{ display: "flex", alignItems: "center" }}>{spec.icon}</span>
             <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
               {spec.short}
             </span>

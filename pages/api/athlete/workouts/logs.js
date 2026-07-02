@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   try {
     let query = db
       .from("set_logs")
-      .select("id, workout_item_id, exercise_title, date, set_number, target_reps, target_weight, actual_reps, actual_weight, difficulty, group_id, timestamp, reps_completed, weight_used, rpe_actual, logged_at, notes")
+      .select("id, workout_item_id, exercise_title, date, set_number, target_reps, target_weight, actual_reps, actual_weight, difficulty, group_id, timestamp, reps_completed, weight_used, rpe_actual, logged_at, notes, video_url")
       .eq("athlete_token", athleteToken)
       .order("timestamp", { ascending: false })
       .limit(Number(limit) || 500);
@@ -49,6 +49,7 @@ export default async function handler(req, res) {
       groupId:       r.group_id        || "",
       timestamp:     r.timestamp       || (r.logged_at ? new Date(r.logged_at).getTime() : 0),
       notes:         r.notes           || "",
+      videoUrl:      r.video_url       || null,
     }));
 
     return res.status(200).json({ ok: true, logs, total: logs.length });

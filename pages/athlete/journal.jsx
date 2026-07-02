@@ -11,9 +11,11 @@ import {
   TrendingUp, TrendingDown, Minus,
   Flame, Award, BarChart2,
   GitMerge, X, Check, ChevronRight,
+  Video, Play,
 } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getMetricKey, getBenchmarkBadge } from "@/lib/benchmarks";
 
 // ─── Brand tokens - matches pages/index.js exactly ───────────────────────────
 const C = {
@@ -57,6 +59,17 @@ const BASELINE_KEYWORDS = {
   broadJump:     ["broad"],
 };
 
+// ─── Video helpers ────────────────────────────────────────────────────────────
+
+// Derive a Cloudinary poster thumbnail from a video URL.
+// Cloudinary generates JPEG thumbnails at the same public_id when you request .jpg.
+function cloudinaryVideoThumb(url) {
+  if (!url || !url.includes("cloudinary.com")) return null;
+  return url
+    .replace("/video/upload/", "/video/upload/so_0,w_640,h_360,c_fill,q_80,f_jpg/")
+    .replace(/\.(mp4|mov|webm|avi|mkv)$/i, ".jpg");
+}
+
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 function fmtDate(str) {
   if (!str) return "";
@@ -88,6 +101,19 @@ function groupByExercise(logs) {
     const sessions = groupIntoSessions(exLogs);
     const weights  = exLogs.map(l => Number(l.actualWeight)).filter(w => w > 0);
     const prWeight = weights.length ? Math.max(...weights) : 0;
+
+    // Track the specific set row that IS the PR (most recent if tied) to attach video
+    let prSetId = null, prVideoUrl = null;
+    if (prWeight > 0) {
+      const prSet = exLogs.reduce((best, l) => {
+        const w = Number(l.actualWeight) || 0;
+        if (w === prWeight && (!best || (l.timestamp || 0) > (best.timestamp || 0))) return l;
+        return best;
+      }, null);
+      prSetId   = prSet?.id       || null;
+      prVideoUrl = prSet?.videoUrl || null;
+    }
+
     const lastDate = sessions[0]?.date || "";
     const sw       = sessions.map(s => s.maxWeight).filter(w => w > 0).reverse();
     let trend = "flat", pctChange = 0;
@@ -99,7 +125,7 @@ function groupByExercise(logs) {
       if (late < early-2) trend = "down";
     }
     if (sw.length >= 2) pctChange = Math.round(((sw[sw.length-1]-sw[0])/sw[0])*100);
-    return { title, sessions, prWeight, lastDate, trend, pctChange, totalSets: exLogs.length };
+    return { title, sessions, prWeight, lastDate, trend, pctChange, totalSets: exLogs.length, prSetId, prVideoUrl };
   }).sort((a,b) => b.lastDate.localeCompare(a.lastDate));
 }
 
@@ -500,20 +526,280 @@ function HeroStats({ totalDays, bestPR, streak }) {
   );
 }
 
+// ─── PR Video Components ──────────────────────────────────────────────────────
+
+function VideoUploadSheet({ exerciseTitle, prWeight, prSetId, onClose, onUploaded }) {
+  const [state,    setState]   = useState("idle"); // idle | uploading | done | error
+  const [progress, setProgress]= useState(0);
+  const [errMsg,   setErrMsg]  = useState("");
+  const fileRef = useRef(null);
+
+  const onBackdrop = (e) => { if (e.target === e.currentTarget) onClose(); };
+
+  const handleFile = (file) => {
+    if (!file || !prSetId) return;
+    if (file.size > 200 * 1024 * 1024) { setErrMsg("File must be under 200 MB"); setState("error"); return; }
+    if (!file.type.startsWith("video/")) { setErrMsg("Please select a video file"); setState("error"); return; }
+
+    setState("uploading"); setProgress(0); setErrMsg("");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("setLogId", prSetId);
+
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+    });
+    xhr.onload = () => {
+      try {
+        const d = JSON.parse(xhr.responseText);
+        if (!d.ok) throw new Error(d.error || "Upload failed");
+        setState("done");
+        setTimeout(() => onUploaded(d.url), 800);
+      } catch (e2) { setErrMsg(e2.message); setState("error"); }
+    };
+    xhr.onerror = () => { setErrMsg("Network error — try again"); setState("error"); };
+    xhr.open("POST", "/api/athlete/pr-video");
+    xhr.withCredentials = true;
+    xhr.send(formData);
+  };
+
+  const BC = { fontFamily: "'Barlow Condensed', sans-serif" };
+
+  return (
+    <div onClick={onBackdrop} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", backdropFilter: "blur(4px)", zIndex: 100, display: "flex", alignItems: "flex-end" }}>
+      <div style={{ width: "100%", background: C.bg, borderTop: `3px solid ${C.accent}`, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: "env(safe-area-inset-bottom,0)" }}>
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
+          <div style={{ width: 32, height: 3.5, background: C.line2, borderRadius: 2 }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px 16px", borderBottom: `1px solid ${C.line}` }}>
+          <div>
+            <div style={{ ...BC, fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: C.accent, marginBottom: 3 }}>PR FILM</div>
+            <div style={{ ...BC, fontSize: 20, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", color: C.white, letterSpacing: "-0.02em", lineHeight: 1 }}>
+              {exerciseTitle} · {prWeight} lb
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: C.s1, border: `1px solid ${C.line}`, width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={14} color={C.dim} />
+          </button>
+        </div>
+
+        <div style={{ padding: "24px 20px 32px" }}>
+          {state === "idle" && (
+            <>
+              <input ref={fileRef} type="file" accept="video/*" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} style={{ display: "none" }} />
+              <div
+                onClick={() => fileRef.current?.click()}
+                style={{ border: `2px dashed rgba(79,171,255,0.3)`, borderRadius: 14, padding: "32px 20px", textAlign: "center", cursor: "pointer", marginBottom: 18, transition: "border-color 0.2s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(79,171,255,0.6)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(79,171,255,0.3)"; }}
+              >
+                <Video size={28} color={C.accent} style={{ display: "block", margin: "0 auto 12px" }} />
+                <div style={{ ...BC, fontSize: 15, fontWeight: 900, textTransform: "uppercase", color: C.dim, letterSpacing: "0.04em", marginBottom: 6 }}>Select from camera roll</div>
+                <div style={{ fontSize: 11, color: C.muted }}>MP4 · MOV · Max 200 MB</div>
+              </div>
+              <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.65, margin: "0 0 20px" }}>
+                Coaches viewing your recruiting profile see this clip alongside your PR weight. Technique and depth visible on film say more than the number alone.
+              </p>
+              <button onClick={() => fileRef.current?.click()} style={{ width: "100%", padding: "15px", background: C.accent, border: "none", borderRadius: 12, ...BC, fontWeight: 900, fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase", color: C.bg, cursor: "pointer" }}>
+                Choose Video
+              </button>
+            </>
+          )}
+
+          {state === "uploading" && (
+            <div style={{ padding: "12px 0 8px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <span style={{ ...BC, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", color: C.muted, textTransform: "uppercase" }}>Uploading</span>
+                <span style={{ ...BC, fontSize: 16, fontWeight: 900, fontStyle: "italic", color: C.accent }}>{progress}%</span>
+              </div>
+              <div style={{ height: 6, background: C.line2, borderRadius: 3, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ height: "100%", width: `${progress}%`, background: C.accent, borderRadius: 3, transition: "width 0.3s" }} />
+              </div>
+              <p style={{ fontSize: 12, color: C.muted, textAlign: "center", margin: 0 }}>Don&apos;t close this screen while uploading</p>
+            </div>
+          )}
+
+          {state === "done" && (
+            <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
+              <div style={{ width: 56, height: 56, borderRadius: "50%", background: `${C.green}18`, border: `2px solid ${C.green}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+                <Check size={24} color={C.green} />
+              </div>
+              <div style={{ ...BC, fontSize: 24, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", color: C.white, marginBottom: 8 }}>Video Saved</div>
+              <p style={{ fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.6 }}>Coaches viewing your profile can now watch you hit {prWeight} lb.</p>
+            </div>
+          )}
+
+          {state === "error" && (
+            <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
+              <p style={{ fontSize: 13, color: C.red, marginBottom: 20, lineHeight: 1.5 }}>{errMsg}</p>
+              <button onClick={() => { setState("idle"); setErrMsg(""); }} style={{ padding: "12px 24px", background: C.s1, border: `1px solid ${C.line2}`, borderRadius: 10, ...BC, fontWeight: 900, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: C.muted, cursor: "pointer" }}>
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VideoPlaySheet({ videoUrl, exerciseTitle, prWeight, prSetId, onClose, onVideoUpdated }) {
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const onBackdrop = (e) => { if (e.target === e.currentTarget && !replaceOpen) onClose(); };
+  const BC = { fontFamily: "'Barlow Condensed', sans-serif" };
+
+  return (
+    <>
+      <div onClick={onBackdrop} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", backdropFilter: "blur(8px)", zIndex: 100, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "max(env(safe-area-inset-top), 20px) 20px 16px" }}>
+          <div>
+            <div style={{ ...BC, fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", color: C.amber, textTransform: "uppercase", marginBottom: 3 }}>PR FILM</div>
+            <div style={{ ...BC, fontSize: 20, fontWeight: 900, fontStyle: "italic", color: "#fff", letterSpacing: "-0.02em", textTransform: "uppercase" }}>
+              {exerciseTitle} · {prWeight} lb
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={16} color="rgba(255,255,255,0.7)" />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 16px" }}>
+          <video
+            src={videoUrl}
+            controls
+            autoPlay
+            playsInline
+            style={{ width: "100%", maxWidth: 600, maxHeight: "68dvh", borderRadius: 12, background: "#000", display: "block" }}
+          />
+        </div>
+
+        <div style={{ padding: "16px 20px", paddingBottom: "calc(env(safe-area-inset-bottom) + 20px)", display: "flex", gap: 10 }}>
+          <button
+            onClick={() => setReplaceOpen(true)}
+            style={{ flex: 1, padding: "13px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, ...BC, fontWeight: 900, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", cursor: "pointer" }}
+          >
+            Replace
+          </button>
+          <button
+            onClick={onClose}
+            style={{ flex: 2, padding: "13px", background: C.accent, border: "none", borderRadius: 10, ...BC, fontWeight: 900, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: C.bg, cursor: "pointer" }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+
+      {replaceOpen && (
+        <VideoUploadSheet
+          exerciseTitle={exerciseTitle}
+          prWeight={prWeight}
+          prSetId={prSetId}
+          onClose={() => setReplaceOpen(false)}
+          onUploaded={(url) => { setReplaceOpen(false); onClose(); onVideoUpdated(url); }}
+        />
+      )}
+    </>
+  );
+}
+
+function PRVideoSection({ exerciseTitle, prWeight, prSetId, prVideoUrl, onVideoUpdated }) {
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [playOpen,   setPlayOpen]   = useState(false);
+  const BC = { fontFamily: "'Barlow Condensed', sans-serif" };
+
+  if (!prSetId || prWeight <= 0) return null;
+
+  const thumbUrl = cloudinaryVideoThumb(prVideoUrl);
+
+  return (
+    <>
+      {prVideoUrl ? (
+        <div style={{ marginTop: 14 }}>
+          <div
+            onClick={() => setPlayOpen(true)}
+            style={{ position: "relative", borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 280, cursor: "pointer", background: C.s2, border: `1px solid ${C.line2}`, transition: "transform 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.02)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            {thumbUrl
+              ? <img src={thumbUrl} alt={`${exerciseTitle} PR`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}><Video size={24} color={C.muted} /></div>
+            }
+            {/* Play overlay */}
+            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.28)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(79,171,255,0.92)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
+                <Play size={18} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+              </div>
+            </div>
+            {/* Weight badge */}
+            <div style={{ position: "absolute", bottom: 8, left: 8, background: "rgba(0,0,0,0.76)", backdropFilter: "blur(4px)", padding: "3px 9px", borderRadius: 6, display: "flex", alignItems: "baseline", gap: 3 }}>
+              <span style={{ ...BC, fontSize: 14, fontWeight: 900, fontStyle: "italic", color: C.amber, letterSpacing: "-0.01em" }}>{prWeight}</span>
+              <span style={{ ...BC, fontSize: 10, fontWeight: 700, color: C.muted }}>lb PR</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setUploadOpen(true)}
+          style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 13, padding: "8px 14px", background: "rgba(79,171,255,0.07)", border: "1px solid rgba(79,171,255,0.2)", borderRadius: 9, cursor: "pointer", ...BC, fontSize: 11, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: C.accent, transition: "all 0.15s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(79,171,255,0.12)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(79,171,255,0.07)"; }}
+        >
+          <Video size={12} color={C.accent} />
+          Add PR Video
+        </button>
+      )}
+
+      {uploadOpen && (
+        <VideoUploadSheet
+          exerciseTitle={exerciseTitle}
+          prWeight={prWeight}
+          prSetId={prSetId}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={(url) => { setUploadOpen(false); onVideoUpdated(url); }}
+        />
+      )}
+      {playOpen && (
+        <VideoPlaySheet
+          videoUrl={prVideoUrl}
+          exerciseTitle={exerciseTitle}
+          prWeight={prWeight}
+          prSetId={prSetId}
+          onClose={() => setPlayOpen(false)}
+          onVideoUpdated={(url) => { setPlayOpen(false); onVideoUpdated(url); }}
+        />
+      )}
+    </>
+  );
+}
+
 // ─── PR Board ─────────────────────────────────────────────────────────────────
 function PRCard({ ex, isActive, onClick }) {
-  const tc = ex.trend==="up"?C.green:ex.trend==="down"?C.orange:C.muted;
-  const TI = ex.trend==="up"?TrendingUp:ex.trend==="down"?TrendingDown:Minus;
-  const ds = ex.lastDate ? Math.floor((Date.now()-new Date(ex.lastDate+"T12:00:00"))/86400000) : null;
+  const tc    = ex.trend==="up"?C.green:ex.trend==="down"?C.orange:C.muted;
+  const TI    = ex.trend==="up"?TrendingUp:ex.trend==="down"?TrendingDown:Minus;
+  const ds    = ex.lastDate ? Math.floor((Date.now()-new Date(ex.lastDate+"T12:00:00"))/86400000) : null;
+  const badge = useMemo(()=>{
+    if (!ex.prWeight) return null;
+    const key = getMetricKey(ex.title);
+    return key ? getBenchmarkBadge(key, ex.prWeight) : null;
+  }, [ex.title, ex.prWeight]);
   return (
     <motion.button onClick={onClick} whileTap={{scale:0.97}} style={{flexShrink:0,width:164,padding:"16px 14px 14px",background:isActive?C.s2:C.s1,border:`1.5px solid ${isActive?C.accent:C.line}`,borderTop:`3px solid ${isActive?C.accent:C.line2}`,borderRadius:12,cursor:"pointer",textAlign:"left",transition:"border-color 0.2s,background 0.2s",boxShadow:isActive?`0 0 0 1px ${C.accent}20,0 8px 32px rgba(79,171,255,0.10)`:"none",position:"relative",overflow:"hidden"}}>
       {isActive && <div aria-hidden style={{position:"absolute",top:-30,right:-30,width:90,height:90,borderRadius:"50%",background:`radial-gradient(circle, ${C.accent}15 0%, transparent 70%)`,pointerEvents:"none"}}/>}
       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,letterSpacing:"0.14em",textTransform:"uppercase",color:isActive?C.accent:C.muted,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ex.title}</div>
-      <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom: badge ? 6 : 12}}>
         {ex.prWeight>0
           ?<><span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:34,fontWeight:900,fontStyle:"italic",color:C.white,letterSpacing:"-0.04em",lineHeight:1}}>{ex.prWeight}</span><span style={{fontFamily:"'Barlow',sans-serif",fontSize:11,color:C.muted,fontWeight:600}}>lb</span></>
           :<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:18,fontWeight:900,color:C.muted}}>No data</span>}
       </div>
+      {badge && (
+        <div style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 7px",borderRadius:20,background:badge.bg,border:`1px solid ${badge.border}`,marginBottom:8}}>
+          {badge.tier==="elite" && <span style={{fontSize:9}}>★</span>}
+          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:900,letterSpacing:"0.12em",color:badge.color}}>{badge.label}</span>
+        </div>
+      )}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:3}}>
           <TI size={10} color={tc}/>
@@ -545,16 +831,97 @@ function PRBoard({ exercises, selected, onSelect }) {
   );
 }
 
+// ─── PR Share Modal ───────────────────────────────────────────────────────────
+function PRShareModal({ exercise, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const weight  = exercise?.prWeight ?? 0;
+  const title   = exercise?.title    ?? "Lift";
+  const text    = `🏆 New PR on ${title}: ${weight} lb. Putting in the work every day. #CheckPeak #StrengthAndConditioning`;
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: "New PR!", text }); return; } catch {}
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      >
+        <motion.div
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "100%" }}
+          transition={{ type: "spring", stiffness: 380, damping: 42, mass: 1 }}
+          onClick={e => e.stopPropagation()}
+          style={{ width: "100%", maxWidth: 540, background: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTop: `3px solid ${C.green}`, padding: "24px 24px 40px" }}
+        >
+          {/* Handle */}
+          <div style={{ width: 36, height: 3.5, borderRadius: 2, background: "rgba(255,255,255,0.18)", margin: "0 auto 20px" }} />
+
+          {/* Trophy moment */}
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ fontSize: 56, lineHeight: 1, marginBottom: 12 }}>🏆</div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: C.green, marginBottom: 6 }}>New Personal Record</div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 42, fontWeight: 900, color: C.white, letterSpacing: "-1px", lineHeight: 1 }}>{weight} <span style={{ fontSize: 20, color: C.dim }}>lb</span></div>
+            <div style={{ fontFamily: "'Barlow',sans-serif", fontSize: 14, color: C.muted, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</div>
+          </div>
+
+          {/* Preview card */}
+          <div style={{ background: C.raised, borderRadius: 12, padding: "14px 16px", marginBottom: 20, border: `1px solid ${C.line2}` }}>
+            <div style={{ fontFamily: "'Barlow',sans-serif", fontSize: 13, color: C.ghost, lineHeight: 1.5 }}>{text}</div>
+          </div>
+
+          <button
+            onClick={handleShare}
+            style={{ width: "100%", padding: "14px", borderRadius: 12, background: C.green, border: "none", fontFamily: "'Barlow Condensed',sans-serif", fontSize: 15, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", color: C.black, cursor: "pointer", marginBottom: 10 }}
+          >
+            {copied ? "Copied to clipboard ✓" : navigator?.share ? "Share" : "Copy to clipboard"}
+          </button>
+          <button
+            onClick={onClose}
+            style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: `1px solid ${C.line2}`, fontFamily: "'Barlow',sans-serif", fontSize: 13, fontWeight: 600, color: C.dim, cursor: "pointer" }}
+          >
+            Close
+          </button>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 // ─── Insight Strip ────────────────────────────────────────────────────────────
-function InsightStrip({ insight }) {
+function InsightStrip({ insight, exercise }) {
+  const [shareOpen, setShareOpen] = useState(false);
   if (!insight) return null;
   const cfgMap = { pr:{bg:"rgba(0,200,81,0.07)",border:"rgba(0,200,81,0.2)",accent:C.green,icon:"🏆"}, up:{bg:"rgba(79,171,255,0.07)",border:"rgba(79,171,255,0.2)",accent:C.accent,icon:"↑"}, down:{bg:"rgba(255,107,43,0.07)",border:"rgba(255,107,43,0.2)",accent:C.orange,icon:"↓"}, warn:{bg:"rgba(245,158,11,0.07)",border:"rgba(245,158,11,0.2)",accent:C.amber,icon:"·"}, neutral:{bg:C.faint,border:C.line2,accent:C.dim,icon:"·"} };
   const cfg = cfgMap[insight.type]||cfgMap.neutral;
   return (
-    <motion.div key={insight.text} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{duration:0.35}} style={{margin:"16px 20px 0",padding:"12px 16px",background:cfg.bg,border:`1px solid ${cfg.border}`,borderLeft:`3px solid ${cfg.accent}`,borderRadius:10,display:"flex",alignItems:"center",gap:10}}>
-      <span style={{fontSize:16,flexShrink:0,lineHeight:1}}>{cfg.icon}</span>
-      <p style={{fontFamily:"'Barlow',sans-serif",fontSize:13,fontWeight:600,color:C.white,lineHeight:1.55,margin:0}}>{insight.text}</p>
-    </motion.div>
+    <>
+      <motion.div key={insight.text} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{duration:0.35}} style={{margin:"16px 20px 0",padding:"12px 16px",background:cfg.bg,border:`1px solid ${cfg.border}`,borderLeft:`3px solid ${cfg.accent}`,borderRadius:10,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:16,flexShrink:0,lineHeight:1}}>{cfg.icon}</span>
+        <p style={{fontFamily:"'Barlow',sans-serif",fontSize:13,fontWeight:600,color:C.white,lineHeight:1.55,margin:0,flex:1}}>{insight.text}</p>
+        {insight.type === "pr" && (
+          <button
+            onClick={() => setShareOpen(true)}
+            style={{ flexShrink:0, padding:"5px 11px", borderRadius:20, background:`${C.green}20`, border:`1px solid ${C.green}50`, fontFamily:"'Barlow',sans-serif", fontSize:11, fontWeight:800, color:C.green, cursor:"pointer", letterSpacing:"0.04em" }}
+          >
+            Share
+          </button>
+        )}
+      </motion.div>
+      {shareOpen && exercise && <PRShareModal exercise={exercise} onClose={() => setShareOpen(false)} />}
+    </>
   );
 }
 
@@ -724,6 +1091,10 @@ const saveBaselines = useCallback(async (newValues) => {
     fetchLogs();
   },[fetchLogs]);
 
+  const handleVideoUpdated = useCallback((setLogId, url) => {
+    setLogs(prev => prev.map(l => l.id === setLogId ? { ...l, videoUrl: url } : l));
+  }, []);
+
   const activeEx   = useMemo(()=>exercises.find(e=>e.title===selected),[exercises,selected]);
   const insight    = useMemo(()=>getInsight(activeEx),[activeEx]);
   const totalDays  = useMemo(()=>new Set(logs.map(l=>l.date||new Date(l.timestamp).toISOString().slice(0,10))).size,[logs]);
@@ -804,6 +1175,13 @@ const saveBaselines = useCallback(async (newValues) => {
                           <span style={{fontSize:10,color:C.muted}}>·</span>
                           <div style={{display:"flex",alignItems:"center",gap:4}}><TrendIcon size={11} color={trendColor}/><span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:900,color:trendColor,letterSpacing:"0.06em",textTransform:"uppercase"}}>{activeEx.trend==="up"?"Improving":activeEx.trend==="down"?"Declining":"Steady"}</span></div>
                         </div>
+                        <PRVideoSection
+                          exerciseTitle={activeEx.title}
+                          prWeight={activeEx.prWeight}
+                          prSetId={activeEx.prSetId}
+                          prVideoUrl={activeEx.prVideoUrl}
+                          onVideoUpdated={(url) => handleVideoUpdated(activeEx.prSetId, url)}
+                        />
                       </div>
                       <div style={{display:"flex",background:C.s2,border:`1px solid ${C.line2}`,borderRadius:8,padding:3,gap:2,flexShrink:0}}>
                         {[{k:"weight",l:"Weight"},{k:"volume",l:"Volume"}].map(({k,l})=>(
@@ -813,7 +1191,7 @@ const saveBaselines = useCallback(async (newValues) => {
                     </div>
                   </div>
 
-                  <InsightStrip insight={insight}/>
+                  <InsightStrip insight={insight} exercise={activeEx}/>
 
                   <div style={{padding:"20px 8px 0"}}>
                     <ProgressChart sessions={activeEx.sessions} metric={metric} prWeight={activeEx.prWeight}/>

@@ -183,7 +183,7 @@ function Stepper({ value, onChange, step = 1, min = 0, unit = "" }) {
 }
 
 // ─── SET LOGGER ───────────────────────────────────────────────────────────────
-function SetLogger({ sub, setNumber, value, onChange }) {
+function SetLogger({ sub, setNumber, value, onChange, pendingVideo, onPendingVideoChange }) {
   const { reps: tr, weight: tw } = parseMeta(sub?.meta || "");
   const isBodyWeight  = /body.?weight|^bw$/i.test(String(tw || ""));
   const weightUnit    = /kg/i.test(String(tw || "")) ? "kg" : "lb";
@@ -198,6 +198,7 @@ function SetLogger({ sub, setNumber, value, onChange }) {
   const [prevSession, setPrevSession] = useState(null);
   const [noteOpen,    setNoteOpen]    = useState(false);
   const autoFilledRef = useRef(false);
+  const videoInputRef = useRef(null);
 
   useEffect(() => {
     if (!sub?.title) return;
@@ -343,6 +344,38 @@ function SetLogger({ sub, setNumber, value, onChange }) {
         </div>
       </div>
 
+      {/* Record max attempt — appears when effort = Max (5) */}
+      {value.effort === 5 && (
+        <div style={{ paddingTop:14, marginTop:14, borderTop:`1px solid ${C.line2}` }}>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            capture="environment"
+            style={{ display:"none" }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (!file || !file.type.startsWith("video/")) return;
+              if (file.size > 200 * 1024 * 1024) { alert("Video must be under 200 MB"); return; }
+              onPendingVideoChange?.(file);
+              e.target.value = "";
+            }}
+          />
+          {pendingVideo ? (
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"rgba(0,200,81,0.08)", border:"1px solid rgba(0,200,81,0.25)", borderRadius:10 }}>
+              <Camera size={13} color={C.green}/>
+              <span style={{ fontSize:12, fontWeight:700, color:C.green, flex:1 }}>Video ready · attaches on log</span>
+              <button onClick={() => onPendingVideoChange?.(null)} style={{ background:"none", border:"none", cursor:"pointer", padding:0, fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.35)", fontFamily:"inherit" }}>Remove</button>
+            </div>
+          ) : (
+            <button onClick={() => videoInputRef.current?.click()} style={{ width:"100%", padding:"12px 14px", background:"rgba(239,68,68,0.06)", border:"1px dashed rgba(239,68,68,0.35)", borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", gap:8, cursor:"pointer", fontFamily:"inherit" }}>
+              <Camera size={14} color={C.red}/>
+              <span style={{ fontSize:12, fontWeight:700, color:C.red, letterSpacing:"0.02em" }}>Record your max</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Notes */}
       <div style={{ paddingTop:14, marginTop:14, borderTop:`1px solid ${C.line2}` }}>
         {!noteOpen && !value.notes ? (
@@ -382,7 +415,7 @@ function splitValueUnit(str) {
   return match ? { num: match[1], unit: match[2].trim() } : { num: str, unit: "" };
 }
 
-function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onViewHistory }) {
+function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onViewHistory, pendingVideo, onPendingVideoChange }) {
   const gid = sub?.groupId || sub?.item?.groupId || sub?.item?.GroupId;
   const gMeta = gid ? groupMeta[gid] : null;
   const accent = gMeta ? gMeta.color.accent : C.accent;
@@ -435,7 +468,7 @@ function ActiveCard({ sub, currentSet, groupMeta, setLog, onSetLogChange, onView
       </div>
 
       {setLog && onSetLogChange && (
-        <SetLogger sub={sub} setNumber={currentSet} value={setLog} onChange={onSetLogChange} />
+        <SetLogger sub={sub} setNumber={currentSet} value={setLog} onChange={onSetLogChange} pendingVideo={pendingVideo} onPendingVideoChange={onPendingVideoChange} />
       )}
 
       {sub.instructions && (
@@ -836,8 +869,9 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
   const [skippedIds, setSkippedIds] = useState(() => new Set());
   const timerRef = useRef(null);
 
-  const [setLog,       setSetLog]       = useState({ reps: 0, weight: 0, effort: 0, notes: "" });
-  const [historyEx,    setHistoryEx]    = useState(null);
+  const [setLog,            setSetLog]            = useState({ reps: 0, weight: 0, effort: 0, notes: "" });
+  const [pendingVideoFile,  setPendingVideoFile]  = useState(null);
+  const [historyEx,         setHistoryEx]         = useState(null);
   const [historyOpen,  setHistoryOpen]  = useState(false);
   const [rejectedItem, setRejectedItem] = useState(null);
 
@@ -927,6 +961,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
       effort: 0,
       notes:  "",
     });
+    setPendingVideoFile(null);
   }, [activeIdx, currentSet]); // eslint-disable-line
 
   // ── Rest timer countdown ──────────────────────────────────────────────────
@@ -959,12 +994,28 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
     const curSub = sub[activeIdx]; if (!curSub) return;
     const gid = curSub.groupId || curSub.item?.groupId || curSub.item?.GroupId;
 
-    onLogSet?.({
+    // Capture and clear pending video before navigation resets it
+    const videoFile = pendingVideoFile;
+    if (videoFile) setPendingVideoFile(null);
+
+    const logPromise = onLogSet?.({
       workoutItemId: curSub.id, exerciseTitle: curSub.title, setNumber: currentSet,
       targetReps: parseMeta(curSub.meta||"").reps, targetWeight: parseMeta(curSub.meta||"").weight,
       actualReps: setLog.reps, actualWeight: setLog.weight, effort: setLog.effort,
       notes: setLog.notes || "", groupId: gid || null,
     });
+
+    // Background video upload once the Supabase row ID resolves
+    if (videoFile && logPromise) {
+      Promise.resolve(logPromise).then(result => {
+        const sid = result?.supabaseId;
+        if (!sid) return;
+        const fd = new FormData();
+        fd.append("file", videoFile);
+        fd.append("setLogId", sid);
+        fetch("/api/athlete/pr-video", { method:"POST", credentials:"include", body:fd }).catch(()=>{});
+      }).catch(()=>{});
+    }
 
     sessionLogsRef.current = [...sessionLogsRef.current, {
       exerciseTitle: curSub.title,
@@ -1035,7 +1086,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
         setMode("resting");
       }
     }
-  },[sub,activeIdx,currentSet,setLog,optimisticStatusById,isNotAvailable,onExerciseTap,onQuickComplete,onLogSet]);
+  },[sub,activeIdx,currentSet,setLog,pendingVideoFile,optimisticStatusById,isNotAvailable,onExerciseTap,onQuickComplete,onLogSet,setPendingVideoFile]);
 
   const handleSkipRest = useCallback(()=>{ clearInterval(timerRef.current); setMode("active"); },[]);
 
@@ -1211,6 +1262,7 @@ export default function WorkoutSheet({ isOpen, onClose, workoutItem, dailyWorkou
                   <ActiveCard key={curSub.id} sub={curSub} currentSet={currentSet} groupMeta={groupMeta}
                     setLog={setLog} onSetLogChange={setSetLog}
                     onViewHistory={() => { setHistoryEx(curSub); setHistoryOpen(true); }}
+                    pendingVideo={pendingVideoFile} onPendingVideoChange={setPendingVideoFile}
                   />
                   {afterThisLabel && (
                     <div style={{ margin:"0 14px 10px",padding:"10px 14px",background:C.surface,border:`1px solid ${C.line2}`,borderRadius:10 }}>

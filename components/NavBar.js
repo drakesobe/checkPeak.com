@@ -250,7 +250,7 @@ function NavDivider() {
 
 // ─── Profile dropdown ─────────────────────────────────────────────────────────
 
-function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug, isActiveFn }) {
+function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug, isActiveFn, avatarUrl = "" }) {
   const name     = user?.Name || user?.name || "Profile";
   const email    = user?.Email || user?.email || "";
   const color    = avatarColor(name);
@@ -280,8 +280,11 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
       {/* ── Identity — pinned top ── */}
       <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+            {avatarUrl
+              ? <img src={avatarUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
+            }
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
@@ -344,10 +347,11 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
         {isAthlete && (
           <>
             <NavSection>My Space</NavSection>
-            {nl({ href: "/dashboard",       label: "Dashboard" })}
-            {nl({ href: "/athlete/today",   label: "Today"     })}
-            {nl({ href: "/athlete/journal", label: "Journal"   })}
-            {nl({ href: "/scans",           label: "My Scans"  })}
+            {nl({ href: "/dashboard",          label: "Dashboard"          })}
+            {nl({ href: "/athlete/today",      label: "Today"              })}
+            {nl({ href: "/athlete/journal",    label: "Journal"            })}
+            {nl({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
+            {nl({ href: "/scans",              label: "My Scans"           })}
 
             <NavDivider />
 
@@ -386,7 +390,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 
 // ─── Mobile menu ──────────────────────────────────────────────────────────────
 
-function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug }) {
+function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug, avatarUrl = "" }) {
   const name     = user?.Name || user?.name || "Profile";
   const email    = user?.Email || user?.email || "";
   const color    = avatarColor(name);
@@ -476,8 +480,11 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
           <>
             <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
+                  }
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
@@ -522,10 +529,11 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
             {isAthlete && (
               <>
                 {mSection("My Space")}
-                {ml({ href: "/dashboard",       label: "Dashboard" })}
-                {ml({ href: "/athlete/today",   label: "Today"     })}
-                {ml({ href: "/athlete/journal", label: "Journal"   })}
-                {ml({ href: "/scans",           label: "My Scans"  })}
+                {ml({ href: "/dashboard",          label: "Dashboard"           })}
+                {ml({ href: "/athlete/today",      label: "Today"               })}
+                {ml({ href: "/athlete/journal",    label: "Journal"             })}
+                {ml({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
+                {ml({ href: "/scans",              label: "My Scans"            })}
                 {mDivider()}
                 {mSection("Discover", "rgba(255,123,53,0.85)")}
                 {ml({ href: "/trainers",           label: "Marketplace"  })}
@@ -566,6 +574,7 @@ export default function NavBar() {
   const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
   const [trainerSlug,     setTrainerSlug]     = useState("");
   const [scrolled,        setScrolled]        = useState(false);
+  const [navAvatarUrl,    setNavAvatarUrl]    = useState("");
 
   // Pages with dark editorial backgrounds — nav switches to transparent/dark mode
   const DARK_ROUTES = ["/", "/pricing", "/book", "/contact"];
@@ -638,6 +647,12 @@ export default function NavBar() {
       .then(data => { if (data?.trainer?.fields?.slug) setTrainerSlug(data.trainer.fields.slug); })
       .catch(() => {});
   }, [isOrgSide, user]);
+
+  useEffect(() => {
+    if (!isMounted || !isAthlete) return;
+    try { setNavAvatarUrl(localStorage.getItem("checkpeak:athlete-avatar") || ""); }
+    catch {}
+  }, [isMounted, isAthlete]);
 
   const loggedIn = !!user;
 
@@ -829,8 +844,12 @@ export default function NavBar() {
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 10, fontWeight: 800,
                         color: avatarColor(user?.Name || user?.name || ""),
+                        overflow: "hidden",
                       }}>
-                        {getInitials(user?.Name || user?.name || "")}
+                        {navAvatarUrl
+                          ? <img src={navAvatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : getInitials(user?.Name || user?.name || "")
+                        }
                       </div>
                     )}
                     {profileButtonLabel}
@@ -844,6 +863,7 @@ export default function NavBar() {
                       <ProfileDropdown
                         user={user}
                         {...sharedRoleProps}
+                        avatarUrl={navAvatarUrl}
                         onClose={() => setProfileOpen(false)}
                         onLogout={logoutAndClose}
                         isActiveFn={isActive}
@@ -896,6 +916,7 @@ export default function NavBar() {
               <MobileMenu
                 user={user}
                 {...sharedRoleProps}
+                avatarUrl={navAvatarUrl}
                 isActive={isActive}
                 loggedIn={loggedIn}
                 onClose={() => setMenuOpen(false)}

@@ -4,6 +4,7 @@
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { readUserCookie }      from "@/lib/requireUser";
+import { sendNotification }    from "@/lib/sendNotification";
 
 function parseUser(req) {
   const raw = req.body?._authUser;
@@ -44,21 +45,13 @@ export default async function handler(req, res) {
 
     if (error) throw error;
 
-    // Fire-and-forget push notification to athlete
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || "https://www.checkpeak.com"}/api/notifications/send`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          athleteIds: [athleteId],
-          title:      "New message from your coach",
-          body:       String(text).slice(0, 100),
-          type:       "new_message",
-        }),
-      });
-    } catch {
-      // Non-fatal - message is saved regardless
-    }
+    // Fire-and-forget push notification to athlete (direct, no HTTP round-trip)
+    sendNotification([String(athleteId)], {
+      title: "New message from your coach",
+      body:  String(text).slice(0, 100),
+      type:  "new_message",
+      data:  { athleteId: String(athleteId) },
+    });
 
     return res.status(201).json({
       ok:      true,

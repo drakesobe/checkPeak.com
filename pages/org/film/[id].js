@@ -4168,6 +4168,285 @@ function PipelineStatusBar({ film, plays }) {
   );
 }
 
+// ── Camera Calibration Wizard ─────────────────────────────────────────────────
+// Coaches mark 4 known field points on a video thumbnail.
+// Client computes the homography matrix (pixel → yards) and saves it.
+
+const FIELD_Y = [
+  { label: "Left sideline",           y: 0     },
+  { label: "Left hash (High School)", y: 17.8  },
+  { label: "Left hash (College/NFL)", y: 20    },
+  { label: "Center of field",         y: 26.65 },
+  { label: "Right hash (College/NFL)",y: 33.33 },
+  { label: "Right hash (High School)",y: 35.53 },
+  { label: "Right sideline",          y: 53.33 },
+];
+const YARD_LINES = [0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100];
+
+const STEP_LABELS = [
+  "Click on point 1 in the video frame",
+  "Click on point 2 in the video frame",
+  "Click on point 3 in the video frame",
+  "Click on point 4 in the video frame",
+];
+
+function gaussianElimination(A, b) {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(M[row][col]) > Math.abs(M[maxRow][col])) maxRow = row;
+    }
+    [M[col], M[maxRow]] = [M[maxRow], M[col]];
+    if (Math.abs(M[col][col]) < 1e-10) return null;
+    for (let row = col + 1; row < n; row++) {
+      const f = M[row][col] / M[col][col];
+      for (let j = col; j <= n; j++) M[row][j] -= f * M[col][j];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let row = n - 1; row >= 0; row--) {
+    x[row] = M[row][n];
+    for (let col = row + 1; col < n; col++) x[row] -= M[row][col] * x[col];
+    x[row] /= M[row][row];
+  }
+  return x;
+}
+
+function computeHomography(srcPts, dstPts) {
+  // srcPts: pixel [x,y], dstPts: field yards [X,Y] — 4 pairs
+  const Ab = [];
+  const b  = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = srcPts[i];
+    const [X, Y] = dstPts[i];
+    Ab.push([x, y, 1, 0, 0, 0, -X*x, -X*y]);
+    b.push(X);
+    Ab.push([0, 0, 0, x, y, 1, -Y*x, -Y*y]);
+    b.push(Y);
+  }
+  const h = gaussianElimination(Ab, b);
+  if (!h) return null;
+  return [...h, 1]; // 9 elements, h[8]=1
+}
+
+function CalibrationWizard({ filmId, playbackId, durationSecs, onClose, onCalibrated }) {
+  const thumbTimestamp    = Math.round(Math.min(durationSecs * 0.25, 30));
+  const thumbWidth        = 720;
+  const thumbHeight       = Math.round(thumbWidth * 9 / 16); // assume 16:9
+  const thumbUrl          = `https://image.mux.com/${playbackId}/thumbnail.jpg?time=${thumbTimestamp}&width=${thumbWidth}`;
+
+  const [step,          setStep]          = useState(0); // 0-3 = placing points, 4 = confirm
+  const [srcPoints,     setSrcPoints]     = useState([]);
+  const [dstPoints,     setDstPoints]     = useState([]);
+  const [draftYardLine, setDraftYardLine] = useState(YARD_LINES[5]); // 25 yd
+  const [draftFieldY,   setDraftFieldY]   = useState(FIELD_Y[0].y);
+  const [draftPending,  setDraftPending]  = useState(null); // {px, py} waiting for landmark selection
+  const [saving,        setSaving]        = useState(false);
+  const [err,           setErr]           = useState("");
+  const imgRef = useRef(null);
+
+  function handleImgClick(e) {
+    if (step >= 4) return;
+    const rect = imgRef.current.getBoundingClientRect();
+    const px   = (e.clientX - rect.left) / rect.width  * thumbWidth;
+    const py   = (e.clientY - rect.top)  / rect.height * thumbHeight;
+    setDraftPending({ px, py });
+  }
+
+  function confirmPoint() {
+    if (!draftPending) return;
+    const newSrc = [...srcPoints, [draftPending.px, draftPending.py]];
+    const newDst = [...dstPoints, [draftYardLine, draftFieldY]];
+    setSrcPoints(newSrc);
+    setDstPoints(newDst);
+    setDraftPending(null);
+    if (newSrc.length === 4) setStep(4);
+    else setStep(newSrc.length);
+  }
+
+  async function handleSave() {
+    setSaving(true); setErr("");
+    try {
+      const matrix = computeHomography(srcPoints, dstPoints);
+      if (!matrix) throw new Error("Could not compute homography — points may be collinear. Try different landmarks.");
+      const r = await fetch("/api/film/calibrate", {
+        method:      "POST",
+        credentials: "include",
+        headers:     { "Content-Type": "application/json" },
+        body:        JSON.stringify({ filmId, homography: matrix, srcPoints, dstPoints }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || "Save failed");
+      onCalibrated();
+    } catch (e) {
+      setErr(e.message || "Failed to save calibration");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dotColors = ["#EF4444","#3B82F6","#22C55E","#F59E0B"];
+
+  return (
+    <div style={{ border: `1.5px solid ${DS.cautionBorder}`, borderRadius: 14, padding: 20, background: DS.cautionBg, marginTop: 10 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: DS.caution, marginBottom: 4 }}>Camera Calibration</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: DS.bodyText }}>Fix camera angle for accurate speed data</div>
+          <div style={{ fontSize: 12, color: DS.labelText, marginTop: 4, maxWidth: 480, lineHeight: 1.5 }}>
+            Click 4 known field landmarks in the image below, then tell us where each one is on the field.
+            This one-time step corrects for camera tilt and makes all speed/distance measurements accurate.
+          </div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: DS.dimText, fontSize: 18, lineHeight: 1 }}>✕</button>
+      </div>
+
+      {/* Progress dots */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{
+            width: 20, height: 20, borderRadius: "50%", border: `2px solid ${dotColors[i]}`,
+            background: i < srcPoints.length ? dotColors[i] : (i === srcPoints.length && !draftPending ? "transparent" : (draftPending && i === srcPoints.length ? dotColors[i]+"44" : "transparent")),
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 9, fontWeight: 900, color: i < srcPoints.length ? "#fff" : dotColors[i],
+          }}>
+            {i < srcPoints.length ? "✓" : i + 1}
+          </div>
+        ))}
+        <span style={{ fontSize: 11, color: DS.labelText, marginLeft: 4 }}>
+          {step < 4 ? (draftPending ? "Now set its field coordinates below" : STEP_LABELS[step]) : "All 4 points set — ready to calibrate"}
+        </span>
+      </div>
+
+      {/* Thumbnail with click overlay */}
+      {step < 4 && (
+        <div
+          ref={imgRef}
+          onClick={handleImgClick}
+          style={{ position: "relative", cursor: draftPending ? "default" : "crosshair", marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1.5px solid ${DS.border}` }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={thumbUrl} alt="Film frame" style={{ width: "100%", display: "block" }} />
+
+          {/* Already placed dots */}
+          {srcPoints.map(([px, py], i) => {
+            const rect = imgRef.current?.getBoundingClientRect();
+            if (!rect) return null;
+            const displayW = rect?.width || thumbWidth;
+            const displayH = rect?.height || thumbHeight;
+            const cx = (px / thumbWidth)  * displayW;
+            const cy = (py / thumbHeight) * displayH;
+            return (
+              <div key={i} style={{
+                position: "absolute", left: cx - 10, top: cy - 10,
+                width: 20, height: 20, borderRadius: "50%",
+                background: dotColors[i], border: "2px solid #fff",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 900, color: "#fff", pointerEvents: "none",
+              }}>
+                {i + 1}
+              </div>
+            );
+          })}
+
+          {/* Instruction overlay */}
+          {!draftPending && (
+            <div style={{ position: "absolute", top: 10, left: 10, background: "rgba(0,0,0,0.62)", color: "#fff", padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, backdropFilter: "blur(6px)" }}>
+              Click point {srcPoints.length + 1} of 4
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Field coordinate picker — shown after clicking a point */}
+      {draftPending && (
+        <div style={{ background: DS.cardBg, borderRadius: 10, padding: 14, border: `1px solid ${DS.border}`, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: DS.bodyText, marginBottom: 10 }}>
+            What field location did you click? (Point {srcPoints.length + 1})
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: DS.labelText, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Yard line</label>
+              <select value={draftYardLine} onChange={e => setDraftYardLine(Number(e.target.value))}
+                style={{ border: `1px solid ${DS.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: DS.bodyText, background: "#fff" }}>
+                {YARD_LINES.map(y => <option key={y} value={y}>{y === 0 ? "Goal line (0)" : y === 100 ? "Opposite goal line (100)" : y > 50 ? `${100-y} yd (opp side)` : `${y} yd`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: DS.labelText, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Field position</label>
+              <select value={draftFieldY} onChange={e => setDraftFieldY(Number(e.target.value))}
+                style={{ border: `1px solid ${DS.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: DS.bodyText, background: "#fff" }}>
+                {FIELD_Y.map(f => <option key={f.y} value={f.y}>{f.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <button onClick={confirmPoint}
+              style={{ padding: "8px 16px", borderRadius: 8, background: DS.brand, color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+              Confirm this point →
+            </button>
+            <button onClick={() => setDraftPending(null)}
+              style={{ padding: "8px 12px", borderRadius: 8, background: "none", color: DS.dimText, border: `1px solid ${DS.border}`, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation step */}
+      {step === 4 && (
+        <div>
+          <div style={{ background: DS.safeBg, borderRadius: 10, padding: 14, marginBottom: 14, border: `1px solid ${DS.safeBorder}` }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: DS.safe, marginBottom: 8 }}>✓ 4 points collected — review before saving</div>
+            <table style={{ fontSize: 12, color: DS.bodyText, borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr style={{ color: DS.labelText, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 10 }}>
+                  <th style={{ textAlign: "left", paddingBottom: 6 }}>Point</th>
+                  <th style={{ textAlign: "left", paddingBottom: 6 }}>Pixel (x, y)</th>
+                  <th style={{ textAlign: "left", paddingBottom: 6 }}>Field position</th>
+                </tr>
+              </thead>
+              <tbody>
+                {srcPoints.map(([px, py], i) => {
+                  const [X, Y] = dstPoints[i];
+                  const fieldPos = FIELD_Y.find(f => f.y === Y)?.label || `${Y} yd from left`;
+                  return (
+                    <tr key={i} style={{ borderTop: `1px solid ${DS.border}` }}>
+                      <td style={{ padding: "5px 0", fontWeight: 700, color: dotColors[i] }}>●{i+1}</td>
+                      <td style={{ padding: "5px 8px" }}>({Math.round(px)}, {Math.round(py)})</td>
+                      <td style={{ padding: "5px 0" }}>{X} yd · {fieldPos}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {err && <div style={{ color: DS.warn, fontSize: 12, fontWeight: 600, marginBottom: 10 }}>⚠ {err}</div>}
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={handleSave} disabled={saving}
+              style={{ padding: "10px 22px", borderRadius: 8, background: saving ? DS.border : DS.safe, color: saving ? DS.dimText : "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.02em" }}>
+              {saving ? "Saving..." : "Save Calibration"}
+            </button>
+            <button onClick={() => { setSrcPoints([]); setDstPoints([]); setStep(0); setDraftPending(null); }}
+              style={{ padding: "10px 16px", borderRadius: 8, background: "none", color: DS.dimText, border: `1px solid ${DS.border}`, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+              Start over
+            </button>
+            <button onClick={onClose}
+              style={{ padding: "10px 16px", borderRadius: 8, background: "none", color: DS.dimText, border: `1px solid ${DS.border}`, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FilmDetailPage() {
   const router   = useRouter();
@@ -4221,6 +4500,8 @@ export default function FilmDetailPage() {
   const [angles,        setAngles]        = useState([]);        // secondary camera angles
   const [activeAngle,   setActiveAngle]   = useState(null);      // null = primary film
   const [showAngleMgr,  setShowAngleMgr]  = useState(false);
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [isCalibrated,    setIsCalibrated]    = useState(false);
   const filmLeftRef   = useRef(null);
   const hideTimer     = useRef(null);
 
@@ -4253,6 +4534,11 @@ export default function FilmDetailPage() {
       setIsPublished(!!d.is_published);
       setViewingType(d.viewing_type ?? "vara");
       setWatchDueDate(d.watch_due_date ?? null);
+      // Check calibration status (fire-and-forget)
+      fetch(`/api/film/calibrate?filmId=${id}`, { credentials: "include" })
+        .then(r2 => r2.json())
+        .then(cal => { if (cal.ok) setIsCalibrated(!!cal.calibrated); })
+        .catch(() => {});
       if (d.is_published) {
         fetch(`/api/film/watch-stats?filmId=${id}`, { credentials: "include" })
           .then(r => r.json())
@@ -5249,6 +5535,21 @@ export default function FilmDetailPage() {
                         <Layers size={11} />
                         {showAngleMgr ? "Close Angles" : "Manage Angles"}
                       </button>
+
+                      {/* Calibrate camera button */}
+                      <button
+                        onClick={() => setShowCalibration(true)}
+                        title="Calibrate camera angle for accurate speed tracking"
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          background: isCalibrated ? DS.safeBg : DS.cautionBg,
+                          color:      isCalibrated ? DS.safe    : DS.caution,
+                          border:     `1px solid ${isCalibrated ? DS.safeBorder : DS.cautionBorder}`,
+                        }}>
+                        <Activity size={11} />
+                        {isCalibrated ? "Calibrated ✓" : "Calibrate Camera"}
+                      </button>
                     </div>
 
                     {/* Angle manager panel */}
@@ -5258,6 +5559,17 @@ export default function FilmDetailPage() {
                         angles={angles}
                         onRefresh={fetchAngles}
                         onClose={() => setShowAngleMgr(false)}
+                      />
+                    )}
+
+                    {/* Camera calibration wizard */}
+                    {showCalibration && film?.mux_playback_id && (
+                      <CalibrationWizard
+                        filmId={id}
+                        playbackId={film.mux_playback_id}
+                        durationSecs={film.duration_secs ?? 0}
+                        onClose={() => setShowCalibration(false)}
+                        onCalibrated={() => { setIsCalibrated(true); setShowCalibration(false); toast.success("Camera calibrated — speed tracking is now accurate for this film."); }}
                       />
                     )}
 

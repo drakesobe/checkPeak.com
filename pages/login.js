@@ -89,20 +89,21 @@ export default function LoginPage() {
   const { user, login } = useAuthContext();
 
   const [authRole,     setAuthRole]     = useState("athlete");
-  const [staffRole,    setStaffRole]    = useState("trainer");
   const [email,        setEmail]        = useState("");
   const [password,     setPassword]     = useState("");
   const [rememberMe,   setRememberMe]   = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error,        setError]        = useState("");
   const [loading,      setLoading]      = useState(false);
+  const [parentCode,   setParentCode]   = useState("");
 
   const [forgotOpen,    setForgotOpen]    = useState(false);
   const [forgotEmail,   setForgotEmail]   = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMsg,     setForgotMsg]     = useState("");
 
-  const isOrg = authRole === "organization";
+  const isCoach = authRole === "coach";
+  const isParent = authRole === "parent";
 
   const userRole = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").trim().toLowerCase();
@@ -148,8 +149,10 @@ export default function LoginPage() {
     const cleanEmail = String(email || "").trim();
     if (!cleanEmail.includes("@")) { setError("Please enter a valid email."); setLoading(false); return; }
     if (String(password || "").length < 6) { setError("Password must be at least 6 characters."); setLoading(false); return; }
+    // "coach" maps to the organization auth route
+    const loginRole = authRole === "coach" ? "organization" : authRole;
     try {
-      const userData = await login(cleanEmail, password, authRole === "staff" ? staffRole : authRole);
+      const userData = await login(cleanEmail, password, loginRole);
       if (rememberMe && typeof window !== "undefined") window.localStorage.setItem("user", JSON.stringify(userData));
       try { if (typeof window !== "undefined") window.localStorage.removeItem("cp_prefill_login_email"); } catch {}
       const roleLabel = String(userData?.role || userData?.Role || "").toLowerCase();
@@ -162,6 +165,18 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
+  const handleParentAccess = (e) => {
+    e.preventDefault();
+    setError("");
+    const raw   = String(parentCode || "").trim();
+    if (!raw) { setError("Please enter the access code your athlete shared with you."); return; }
+    // Accept a full URL like /recruit/TOKEN or /parent/TOKEN, or just the bare token
+    const parts = raw.replace(/\/+$/, "").split("/");
+    const tok   = parts[parts.length - 1];
+    if (!tok || tok.length < 4) { setError("Invalid code. Please paste the full link your athlete shared."); return; }
+    router.push(`/parent/${encodeURIComponent(tok)}`);
+  };
+
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     setForgotMsg(""); setForgotLoading(true);
@@ -171,7 +186,7 @@ export default function LoginPage() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: cleanEmail, role: authRole === "staff" ? staffRole : authRole }),
+        body: JSON.stringify({ email: cleanEmail, role: authRole === "coach" ? "organization" : authRole }),
       });
       const data = await res.json().catch(() => ({}));
       setForgotMsg(data?.message || "If your account exists, we've sent reset instructions.");
@@ -250,45 +265,90 @@ export default function LoginPage() {
                 <RolePill
                   label="Athlete"
                   active={authRole === "athlete"}
-                  disabled={loading || forgotLoading}
-                  onClick={() => setAuthRole("athlete")}
+                  disabled={loading}
+                  onClick={() => { setAuthRole("athlete"); setError(""); }}
                 />
                 <RolePill
-                  label="Organization"
-                  active={authRole === "organization"}
-                  disabled={loading || forgotLoading}
-                  onClick={() => setAuthRole("organization")}
+                  label="Coach / Org"
+                  active={authRole === "coach"}
+                  disabled={loading}
+                  onClick={() => { setAuthRole("coach"); setError(""); }}
                 />
                 <RolePill
-                  label="Staff"
-                  active={authRole === "staff"}
-                  disabled={loading || forgotLoading}
-                  onClick={() => setAuthRole("staff")}
+                  label="Parent?"
+                  active={authRole === "parent"}
+                  disabled={loading}
+                  onClick={() => { setAuthRole("parent"); setError(""); }}
                 />
               </div>
 
               {/* Contextual notices */}
-              {authRole === "staff" && (
+              {isCoach && (
                 <div
                   className="mt-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed"
                   style={{ background: "rgba(91,158,201,0.07)", border: "1px solid rgba(91,158,201,0.18)", color: "rgba(255,255,255,0.6)" }}
                 >
-                  Staff accounts are <strong className="text-white">invite-only</strong>. Ask your organization or head trainer to send you an invite link.
+                  For <strong className="text-white">coaches, trainers, and organization admins</strong>. All org-side roles use this single login.
                 </div>
               )}
-              {authRole === "organization" && (
+              {isParent && (
                 <div
                   className="mt-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed"
                   style={{ background: "rgba(91,158,201,0.07)", border: "1px solid rgba(91,158,201,0.18)", color: "rgba(255,255,255,0.6)" }}
                 >
-                  Organization login is for the <strong className="text-white">Organization Owner</strong>.
+                  Paste the <strong className="text-white">link your athlete shared</strong> with you to view their profile and progress.
                 </div>
               )}
             </div>
           )}
 
+          {/* ── PARENT ACCESS FORM ── */}
+          {!forgotOpen && isParent && (
+            <form onSubmit={handleParentAccess} className="space-y-4">
+              <Field label="Athlete's share link or code">
+                <input
+                  type="text"
+                  value={parentCode}
+                  onChange={(e) => setParentCode(e.target.value)}
+                  placeholder="Paste link here…"
+                  style={INPUT_STYLE}
+                  {...INPUT_FOCUS}
+                  autoComplete="off"
+                  disabled={loading}
+                />
+              </Field>
+
+              {error && (
+                <div
+                  className="rounded-xl px-3 py-2.5 text-xs font-medium"
+                  style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}
+                  role="alert"
+                >
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all"
+                style={{
+                  background:    BRAND,
+                  fontFamily:    FONT_COND,
+                  letterSpacing: "0.06em",
+                  cursor:        "pointer",
+                  boxShadow:     "0 4px 14px rgba(91,158,201,0.35)",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "#4a8ab5"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = BRAND; }}
+              >
+                View Profile →
+              </button>
+            </form>
+          )}
+
           {/* ── LOGIN FORM ── */}
-          {!forgotOpen && (
+          {!forgotOpen && !isParent && (
             <form onSubmit={handleLogin} className="space-y-4">
 
               <Field label="Email">
@@ -296,7 +356,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={isOrg ? "org@example.com" : "you@example.com"}
+                  placeholder={isCoach ? "coach@example.com" : "you@example.com"}
                   style={INPUT_STYLE}
                   {...INPUT_FOCUS}
                   required
@@ -408,7 +468,7 @@ export default function LoginPage() {
                   type="email"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder={isOrg ? "org@example.com" : "you@example.com"}
+                  placeholder={isCoach ? "coach@example.com" : "you@example.com"}
                   style={INPUT_STYLE}
                   {...INPUT_FOCUS}
                   required

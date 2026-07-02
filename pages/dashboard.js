@@ -1,7 +1,7 @@
 // pages/dashboard.js - CheckPeak Athlete Dashboard
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { useAthleteDashboardData } from "@/hooks/dashboard/useAthleteDashboardData";
@@ -456,6 +456,141 @@ function RecentScansCard({ scans = [], loading, formatDate, onOpen, onViewAll })
   );
 }
 
+function RecruitingProfileCard({ user }) {
+  const router = useRouter();
+  const [cardState, setCardState] = useState("loading"); // "loading" | "idle" | "active"
+  const [profile,   setProfile]   = useState(null);
+  const [viewStats, setViewStats] = useState(null);
+  const [copied,    setCopied]    = useState(false);
+
+  const shareUrl = useMemo(() => {
+    if (!profile?.share_token || typeof window === "undefined") return "";
+    return `${window.location.origin}/recruit/${profile.share_token}`;
+  }, [profile]);
+
+  useEffect(() => {
+    const role = String(user?.role || user?.Role || "").toLowerCase();
+    if (!role.includes("ath")) { setCardState("idle"); return; }
+    fetch("/api/athlete/profile", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.ok) { setCardState("idle"); return; }
+        setProfile(d.profile);
+        setViewStats(d.viewStats);
+        setCardState(d.profile?.is_public ? "active" : "idle");
+      })
+      .catch(() => setCardState("idle"));
+  }, [user]);
+
+  const score = useMemo(() => {
+    if (!profile) return 0;
+    let s = 0;
+    if (profile.avatar_url)                       s += 20;
+    if ((profile.bio || "").length >= 50)         s += 15;
+    if ((profile.achievements || []).length >= 1) s += 15;
+    if (profile.sport)           s += 10;
+    if (profile.position)        s += 10;
+    if (profile.school)          s += 10;
+    if (profile.graduation_year) s += 10;
+    if (profile.height)          s += 5;
+    if (profile.weight)          s += 5;
+    return s;
+  }, [profile]);
+
+  const scoreColor = s => s >= 90 ? CP.green : s >= 70 ? "#A3E635" : s >= 40 ? CP.amber : CP.red;
+
+  const copyLink = () => {
+    if (!shareUrl) return;
+    navigator.clipboard?.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    });
+  };
+
+  if (cardState === "loading") {
+    return (
+      <div style={{ background: CP.surface, border: `0.5px solid ${CP.border}`, borderTop: `2px solid ${CP.accent}`, height: 60, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.025), transparent)`, animation: "shimmer 1.6s infinite" }} />
+      </div>
+    );
+  }
+
+  if (cardState === "idle") {
+    return (
+      <div
+        onClick={() => router.push("/athlete/profile")}
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => e.key === "Enter" && router.push("/athlete/profile")}
+        style={{ background: CP.surface, border: `0.5px solid ${CP.border}`, borderTop: `2px solid ${CP.amber}`, padding: "14px 20px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}
+      >
+        <div>
+          <Eyebrow style={{ marginBottom: 3 }}>Recruiting Profile</Eyebrow>
+          <div style={{ fontFamily: CP.fontBC, fontWeight: 900, fontStyle: "italic", fontSize: 17, color: CP.ghost, textTransform: "uppercase", letterSpacing: "-0.01em", lineHeight: 1.1 }}>
+            Build your recruiter-ready profile
+          </div>
+          <div style={{ fontFamily: CP.fontB, fontSize: 11, color: CP.dim, marginTop: 3, lineHeight: 1.5 }}>
+            Add sport, PRs, and film — stand out to college coaches
+          </div>
+        </div>
+        <CtaButton size="sm" onClick={() => router.push("/athlete/profile")}>
+          Get started →
+        </CtaButton>
+      </div>
+    );
+  }
+
+  const views     = viewStats?.thisWeek  || 0;
+  const viewsLast = viewStats?.lastWeek  || 0;
+  const viewsDiff = views - viewsLast;
+
+  return (
+    <div style={{ background: CP.surface, border: `0.5px solid ${CP.border}`, borderTop: `2px solid ${CP.green}`, padding: "14px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <Eyebrow style={{ marginBottom: 0 }}>Recruiting Profile · Public</Eyebrow>
+        <CardLink onClick={() => router.push("/athlete/profile")}>Edit profile →</CardLink>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        {/* Completion bar */}
+        <div style={{ flex: "1 1 160px", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div style={{ flex: 1, height: 4, background: CP.border, borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${score}%`, background: scoreColor(score), borderRadius: 2, transition: "width 0.6s ease" }} />
+          </div>
+          <span style={{ fontFamily: CP.fontBC, fontWeight: 900, fontStyle: "italic", fontSize: 18, color: scoreColor(score), flexShrink: 0, lineHeight: 1 }}>
+            {score}%
+          </span>
+        </div>
+
+        {/* Views stat */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0 }}>
+          <span style={{ fontFamily: CP.fontBC, fontSize: 26, fontWeight: 900, fontStyle: "italic", color: views > 0 ? CP.white : CP.faint, lineHeight: 1, letterSpacing: "-0.03em" }}>
+            {views}
+          </span>
+          <div style={{ fontFamily: CP.fontB, fontSize: 10, color: CP.dim }}>
+            <div>view{views !== 1 ? "s" : ""} this week</div>
+            {viewsDiff !== 0 && (
+              <div style={{ color: viewsDiff > 0 ? CP.green : CP.red, fontWeight: 600 }}>
+                {viewsDiff > 0 ? "↑" : "↓"} {Math.abs(viewsDiff)} vs last
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Copy link */}
+        {shareUrl && (
+          <button
+            onClick={copyLink}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 13px", background: copied ? "rgba(13,154,85,0.1)" : "rgba(255,255,255,0.04)", border: `0.5px solid ${copied ? "rgba(13,154,85,0.3)" : CP.border}`, fontFamily: CP.fontBC, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: copied ? CP.green : CP.ghost, cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}
+          >
+            {copied ? "✓ Copied!" : "Copy Link"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PanelSkeleton({ height = "120px" }) {
   return (
     <div style={{ height, background: CP.surface, border: `0.5px solid ${CP.border}`, position: "relative", overflow: "hidden" }}>
@@ -486,6 +621,20 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!user)          { router.push(ROUTES.login);       return; }
     if (role === "org") router.push(ROUTES.orgDashboard);
+    // First-time athlete onboarding — localStorage is a cache; Supabase is the source of truth
+    (async () => {
+      try {
+        if (typeof window === "undefined") return;
+        if (localStorage.getItem("cp_onboarding_done")) return; // fast path: already done
+        const res  = await fetch("/api/athlete/onboarding-status", { credentials: "include" });
+        const json = await res.json().catch(() => ({}));
+        if (json.complete) {
+          localStorage.setItem("cp_onboarding_done", "1"); // cache for future visits
+        } else {
+          router.push("/onboarding");
+        }
+      } catch {}
+    })();
   }, [user, role, router]);
 
   if (!user || role !== "athlete") return null;
@@ -534,6 +683,7 @@ export default function DashboardPage() {
             {/* Row 2 col 2: Main content */}
             <main className="cp-main" style={{ display: "flex", flexDirection: "column", gap: "20px", minWidth: 0, overflow: "hidden" }}>
               <StatsGrid stats={stats} />
+              <RecruitingProfileCard user={user} />
               <div className="cp-two-a">
                 <ScanActivityCard data={sparklineData} max={maxSparkCount} loading={loading} lastScanDate={lastScanDate} formatDate={formatDate} onView={() => nav(ROUTES.scans)} />
                 <RiskAlertsCard flaggedCount={stats.flaggedScans} recentScans={scansWithFlags} onReview={() => nav(ROUTES.scans)} />

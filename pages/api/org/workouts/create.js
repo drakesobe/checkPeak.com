@@ -5,6 +5,7 @@
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { createOrgWorkout, upsertAthleteByToken } from "@/lib/supabaseOrg";
+import { sendNotification } from "@/lib/sendNotification";
 
 function toStr(v)   { return v == null ? "" : String(v); }
 function toTrimmed(v) { return toStr(v).trim(); }
@@ -124,6 +125,19 @@ export default async function handler(req, res) {
           createdItemCount: workout.itemIds.length,
         });
       }
+    }
+
+    // Notify each athlete whose workout was just assigned (fire-and-forget)
+    const notifiedTokens = [...new Set(createdDailyWorkouts.map(w => w.athleteToken).filter(Boolean))];
+    if (notifiedTokens.length) {
+      const workoutTitle = String(title || "Workout");
+      const dateLabel    = allDates.length === 1 ? allDates[0] : `${allDates.length} dates`;
+      sendNotification(notifiedTokens, {
+        title: "New Workout Assigned",
+        body:  `${workoutTitle} has been added to your schedule for ${dateLabel}.`,
+        type:  "workout_assigned",
+        data:  { date: allDates[0] || "" },
+      });
     }
 
     return res.status(200).json({

@@ -14,8 +14,8 @@ export function useWorkoutLog({ athleteToken, selectedDate }) {
     catch { return []; }
   }, [athleteToken]);
 
-  // Save one set's log entry
-  const saveSetLog = useCallback((entry) => {
+  // Save one set's log entry — returns Promise resolving to { ...record, supabaseId? }
+  const saveSetLog = useCallback(async (entry) => {
     if (typeof window === "undefined") return null;
     try {
       const record = {
@@ -28,16 +28,19 @@ export function useWorkoutLog({ athleteToken, selectedDate }) {
       const updated = [record, ...getAllLogs()].slice(0, MAX_ENTRIES);
       localStorage.setItem(lsKey(athleteToken), JSON.stringify(updated));
 
-      // Fire-and-forget sync to API (writes to Airtable Set Logs table)
-      // localStorage is the primary store - this is just the cross-device layer
-      fetch("/api/athlete/workouts/logSet", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(record),
-      }).then(r => {
-        if (!r.ok && r.status !== 404) console.warn("logSet sync failed:", r.status);
-      }).catch(() => {});
+      // Sync to API and capture Supabase UUID for video attachment
+      try {
+        const r = await fetch("/api/athlete/workouts/logSet", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(record),
+        });
+        if (r.ok) {
+          const json = await r.json();
+          if (json.id) return { ...record, supabaseId: json.id };
+        }
+      } catch {}
 
       return record;
     } catch { return null; }

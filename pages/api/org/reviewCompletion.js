@@ -4,6 +4,7 @@
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { sendNotification } from "@/lib/sendNotification";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -77,6 +78,28 @@ export default async function handler(req, res) {
         await db.from("daily_workouts").update({ status: dwStatus }).eq("id", wi.workout_id);
       }
     }
+
+    // Notify athlete of approval / rejection (fire-and-forget)
+    try {
+      const { data: comp } = await db
+        .from("workout_completions")
+        .select("athlete_token")
+        .eq("id", existing.id)
+        .maybeSingle();
+      if (comp?.athlete_token) {
+        const isApproved = nextStatus === "completed";
+        sendNotification([comp.athlete_token], {
+          title: isApproved ? "Workout Approved ✓" : "Workout Needs Revision",
+          body:  isApproved
+            ? "Your coach approved your workout completion. Keep it up!"
+            : note
+              ? `Your coach left a note: "${String(note).slice(0, 80)}"`
+              : "Your coach reviewed your workout and sent it back.",
+          type: isApproved ? "workout_approved" : "workout_rejected",
+          data: { completionId: existing.id },
+        });
+      }
+    } catch {}
 
     return res.status(200).json({ ok: true, status: nextStatus });
   } catch (err) {

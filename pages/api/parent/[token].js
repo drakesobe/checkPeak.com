@@ -2,10 +2,73 @@
 // Public read-only endpoint for the Parent Portal.
 // Access is gated by the athlete's share_token — no separate auth needed.
 // VARA-safe: never exposes whether workouts were assigned during off-season.
-// Only shows completion rate, PRs, and public profile data.
+// Only shows completion rate, streak, PRs, and public profile data.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { getMetricKey, getBenchmarkSentence } from "@/lib/benchmarks";
+
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+function calcStreak(rows) {
+  const doneSet = new Set(
+    rows
+      .filter(r => r.status === "completed" || r.status === "approved")
+      .map(r => r.date)
+  );
+  const today = new Date();
+  const todayISO = today.toISOString().split("T")[0];
+  const yest = new Date(today);
+  yest.setDate(today.getDate() - 1);
+  const yestISO = yest.toISOString().split("T")[0];
+
+  // Streak is still alive if today hasn't been logged yet but yesterday was
+  const startOffset = doneSet.has(todayISO) ? 0 : doneSet.has(yestISO) ? 1 : null;
+  if (startOffset === null) return { count: 0, startDate: null };
+
+  let count = 0;
+  for (let i = startOffset; i < 366; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const iso = d.toISOString().split("T")[0];
+    if (doneSet.has(iso)) count++;
+    else break;
+  }
+
+  const startD = new Date(today);
+  startD.setDate(today.getDate() - startOffset - count + 1);
+  return { count, startDate: startD.toISOString().split("T")[0] };
+}
+
+function calcWeek(rows) {
+  const today = new Date();
+  const todayISO = today.toISOString().split("T")[0];
+  const dow = today.getDay(); // 0 = Sun
+  const mondayOffset = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - mondayOffset);
+
+  const doneSet = new Set(
+    rows
+      .filter(r => r.status === "completed" || r.status === "approved")
+      .map(r => r.date)
+  );
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const iso = d.toISOString().split("T")[0];
+    return {
+      iso,
+      done:     doneSet.has(iso),
+      isFuture: iso > todayISO,
+      isToday:  iso === todayISO,
+    };
+  });
+
+  return { days, done: days.filter(d => d.done).length };
+}
+
+// ── handler ────────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
@@ -16,7 +79,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid access code" });
   }
 
-  // ── 1. Load athlete profile by share_token ─────────────────────────────────
+  // ── 1. athlete profile ──────────────────────────────────────────────────────
   const { data: profile, error: profileErr } = await db
     .from("athlete_profiles")
     .select("*")
@@ -29,7 +92,7 @@ export default async function handler(req, res) {
 
   const athleteToken = profile.athlete_token;
 
-  // ── 2. Load athlete base record (name, school) ────────────────────────────
+  // ── 2. athlete base record ──────────────────────────────────────────────────
   const { data: athleteRow } = await db
     .from("athletes")
     .select("name, email, school")
@@ -38,7 +101,7 @@ export default async function handler(req, res) {
 
   const athleteName = athleteRow?.name || athleteRow?.Name || "Athlete";
 
-  // ── 3. Workout completions — last 60 days (completion rate + activity heat) ─
+  // ── 3. workout completions — 60 days ───────────────────────────────────────
   const since60 = new Date(Date.now() - 60 * 86400000).toISOString().split("T")[0];
   const { data: completions } = await db
     .from("workout_completions")
@@ -49,14 +112,18 @@ export default async function handler(req, res) {
 
   const completionRows = completions || [];
 
-  // Completion rate over last 30 days
+  // 30-day completion rate
   const since30 = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const last30  = completionRows.filter(r => r.date >= since30);
-  const completed30 = last30.filter(r => r.status === "completed" || r.status === "approved").length;
-  const total30     = last30.length;
+  const last30       = completionRows.filter(r => r.date >= since30);
+  const completed30  = last30.filter(r => r.status === "completed" || r.status === "approved").length;
+  const total30      = last30.length;
   const completionRate = total30 > 0 ? Math.round((completed30 / total30) * 100) : null;
 
-  // Recent activity heat (last 60 days — date + whether completed)
+  // Streak + this week
+  const streak = calcStreak(completionRows);
+  const week   = calcWeek(completionRows);
+
+  // Activity heat — 60 days
   const activityMap = {};
   for (const r of completionRows) {
     if (!activityMap[r.date]) {
@@ -68,46 +135,64 @@ export default async function handler(req, res) {
     .slice(0, 60)
     .map(([date, done]) => ({ date, done }));
 
-  // ── 4. PRs from set_logs ──────────────────────────────────────────────────
+  // ── 4. PRs with 30-day trend ───────────────────────────────────────────────
   const { data: setLogs } = await db
     .from("set_logs")
-    .select("exercise_title, actual_weight")
+    .select("exercise_title, actual_weight, date, created_at")
     .eq("athlete_token", athleteToken)
     .gt("actual_weight", 0);
 
-  const prMap = {};
+  const prMap    = {}; // title -> { weight, date }
+  const prOldMap = {}; // title -> max weight from before 30d
+
   for (const row of setLogs || []) {
-    const title = row.exercise_title || "";
-    const w     = Number(row.actual_weight) || 0;
-    if (w > (prMap[title] || 0)) prMap[title] = w;
+    const title   = row.exercise_title || "";
+    const w       = Number(row.actual_weight) || 0;
+    const rowDate = row.date || (row.created_at ? String(row.created_at).split("T")[0] : null);
+
+    if (w > (prMap[title]?.weight || 0)) {
+      prMap[title] = { weight: w, date: rowDate };
+    }
+    if (rowDate && rowDate < since30 && w > (prOldMap[title] || 0)) {
+      prOldMap[title] = w;
+    }
   }
 
   const prs = Object.entries(prMap)
-    .filter(([, w]) => w > 0)
-    .sort(([, a], [, b]) => b - a)
+    .filter(([, v]) => v.weight > 0)
+    .sort(([, a], [, b]) => b.weight - a.weight)
     .slice(0, 8)
-    .map(([title, prWeight]) => ({
-      title,
-      prWeight,
-      benchmark: (() => { const k = getMetricKey(title); return k ? getBenchmarkSentence(k, prWeight) : null; })(),
-    }));
+    .map(([title, { weight, date }]) => {
+      const prev  = prOldMap[title] ?? null;
+      const delta = prev !== null ? weight - prev : null;
+      const k     = getMetricKey(title);
+      return {
+        title,
+        prWeight: weight,
+        prDate:   date,
+        delta,
+        benchmark: k ? getBenchmarkSentence(k, weight) : null,
+      };
+    });
 
   // ── 5. Response ────────────────────────────────────────────────────────────
   return res.status(200).json({
     athlete: {
-      name:       athleteName,
-      sport:      profile.sport        || null,
-      position:   profile.position     || null,
-      gradYear:   profile.graduation_year || null,
-      school:     profile.school || athleteRow?.school || null,
-      bio:        profile.bio          || null,
+      name:         athleteName,
+      sport:        profile.sport             || null,
+      position:     profile.position          || null,
+      gradYear:     profile.graduation_year   || null,
+      school:       profile.school || athleteRow?.school || null,
+      bio:          profile.bio               || null,
       achievements: Array.isArray(profile.achievements) ? profile.achievements : [],
     },
     stats: {
       completionRate,
-      totalWorkouts: total30,
+      totalWorkouts:     total30,
       completedWorkouts: completed30,
     },
+    streak,
+    week,
     prs,
     recentActivity,
   });

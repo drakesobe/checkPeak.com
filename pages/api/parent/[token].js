@@ -175,16 +175,26 @@ export default async function handler(req, res) {
       };
     });
 
-  // ── 5. Response ────────────────────────────────────────────────────────────
+  // ── 5. Highlights (public reel + Hudl link) ───────────────────────────────
+  const { data: reel } = await db
+    .from("athlete_reels")
+    .select("share_token, title, play_ids")
+    .eq("athlete_id", athleteToken)
+    .eq("is_public", true)
+    .maybeSingle();
+
+  // ── 6. Response ────────────────────────────────────────────────────────────
   return res.status(200).json({
     athlete: {
-      name:         athleteName,
-      sport:        profile.sport             || null,
-      position:     profile.position          || null,
-      gradYear:     profile.graduation_year   || null,
-      school:       profile.school || athleteRow?.school || null,
-      bio:          profile.bio               || null,
-      achievements: Array.isArray(profile.achievements) ? profile.achievements : [],
+      name:          athleteName,
+      avatarUrl:     profile.avatar_url       || null,
+      sport:         profile.sport            || null,
+      position:      profile.position         || null,
+      gradYear:      profile.graduation_year  || null,
+      school:        profile.school || athleteRow?.school || null,
+      bio:           profile.bio              || null,
+      achievements:  Array.isArray(profile.achievements) ? profile.achievements : [],
+      parentMessage: profile.parent_message   || null,
     },
     stats: {
       completionRate,
@@ -195,5 +205,9 @@ export default async function handler(req, res) {
     week,
     prs,
     recentActivity,
+    reel: reel
+      ? { shareToken: reel.share_token, title: reel.title, playCount: reel.play_ids?.length ?? 0 }
+      : null,
+    hudlUrl: profile.hudl_url || null,
   });
 }

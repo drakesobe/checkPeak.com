@@ -14,7 +14,7 @@ function getAthleteToken(auth) {
 const EDITABLE = [
   "sport", "position", "level", "graduation_year", "school",
   "height", "weight", "gpa", "bio",
-  "show_contact", "achievements", "hudl_url",
+  "show_contact", "achievements", "hudl_url", "parent_message",
 ];
 
 export default async function handler(req, res) {

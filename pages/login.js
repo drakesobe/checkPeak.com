@@ -275,7 +275,7 @@ export default function LoginPage() {
                   onClick={() => { setAuthRole("coach"); setError(""); }}
                 />
                 <RolePill
-                  label="Parent?"
+                  label="Parent"
                   active={authRole === "parent"}
                   disabled={loading}
                   onClick={() => { setAuthRole("parent"); setError(""); }}

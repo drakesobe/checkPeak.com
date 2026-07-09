@@ -4,6 +4,18 @@
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
+// Mobile clients (Expo RN) pass session as _authUser query/body param.
+// Inject it into req.cookies before requireOrg reads it.
+function injectMobileAuth(req) {
+  const raw = req?.query?._authUser ?? req?.body?._authUser;
+  if (!raw) return;
+  const str = String(raw);
+  req.cookies = req.cookies || {};
+  req.cookies.user = str;
+  req.headers = req.headers || {};
+  req.headers.cookie = `user=${encodeURIComponent(str)}`;
+}
+
 function asString(v) { return String(v ?? "").trim(); }
 function clampPct(n) {
   const x = Math.round(Number(n));
@@ -41,6 +53,7 @@ export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  injectMobileAuth(req);
   const auth = requireOrg(req);
   if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
 

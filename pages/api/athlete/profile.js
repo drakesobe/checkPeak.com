@@ -15,6 +15,7 @@ const EDITABLE = [
   "sport", "position", "level", "graduation_year", "school",
   "height", "weight", "gpa", "bio",
   "show_contact", "achievements", "hudl_url", "parent_message",
+  "instagram_url", "twitter_url", "maxpreps_url",
 ];
 
 export default async function handler(req, res) {

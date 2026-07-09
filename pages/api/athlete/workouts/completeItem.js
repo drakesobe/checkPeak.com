@@ -24,7 +24,9 @@ function requiresFileEvidence(raw) {
 async function parseMultipart(req) {
   const form = formidable({ multiples: false, keepExtensions: true, maxFileSize: 15 * 1024 * 1024 });
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Multipart parsing timed out after 45s — Content-Type may be missing")), 45_000);
     form.parse(req, (err, fields, files) => {
+      clearTimeout(timer);
       if (err) return reject(err);
       resolve({ fields, files });
     });
@@ -51,10 +53,20 @@ async function uploadToCloudinary({ blob, filename }) {
   fd.append("folder", folder);
   fd.append("signature", signature);
 
-  const r    = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  let r;
+  try {
+    r = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd, signal: controller.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") throw new Error("Cloudinary upload timed out after 30s");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   let json   = {};
   try { json = await r.json(); } catch {}
-  if (!r.ok) throw new Error(json?.error?.message || "Cloudinary upload failed");
+  if (!r.ok) throw new Error(json?.error?.message || `Cloudinary error ${r.status}`);
   return { url: json.secure_url || json.url, bytes: json.bytes };
 }
 
@@ -78,7 +90,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
+    console.log("[completeItem] parsing multipart");
     const { fields, files } = await parseMultipart(req);
+    console.log("[completeItem] fields:", Object.keys(fields || {}), "files:", Object.keys(files || {}));
 
     // Mobile: may send user JSON as _authUser field when cookie is mangled
     const cookieMissingOrBroken = (() => {
@@ -101,6 +115,7 @@ export default async function handler(req, res) {
     }
 
     const auth = requireAthlete(req);
+    console.log("[completeItem] auth ok:", auth.ok, auth.ok ? "" : auth.error);
     if (!auth.ok) return res.status(401).json({ error: auth.error || "Unauthorized" });
 
     const workoutItemId  = asString(fields.workoutItemId);
@@ -108,6 +123,8 @@ export default async function handler(req, res) {
     const isVARA         = evidenceRaw.toLowerCase() === "voluntary_activity_vara";
     const needsFile      = requiresFileEvidence(evidenceRaw);
     const dailyWorkoutId = asString(fields.dailyWorkoutId);
+
+    console.log("[completeItem] itemId:", workoutItemId, "evidenceRaw:", evidenceRaw, "needsFile:", needsFile);
 
     if (!workoutItemId) {
       return res.status(400).json({ error: "Missing workoutItemId", debug: { fieldsKeys: Object.keys(fields || {}) } });
@@ -127,12 +144,14 @@ export default async function handler(req, res) {
     let attachUrl = "";
 
     if (fileEntry && !isVARA) {
+      console.log("[completeItem] uploading to Cloudinary, size:", fileEntry.size, "type:", fileEntry.mimetype);
       const fs       = await import("fs");
       const buff     = fs.readFileSync(fileEntry.filepath || fileEntry.path);
       const blob     = new Blob([buff], { type: fileEntry.mimetype || "image/jpeg" });
       const filename = fileEntry.originalFilename || "proof.jpg";
       uploaded  = await uploadToCloudinary({ blob, filename });
       attachUrl = uploaded.url || "";
+      console.log("[completeItem] Cloudinary upload done, url:", attachUrl);
     }
 
     const completionStatus = isVARA ? "completed" : (uploaded || needsFile) ? "pending_review" : "completed";
@@ -157,31 +176,54 @@ export default async function handler(req, res) {
       }
     }
 
-    // Upsert completion (no attachment_url - photos go in completion_evidence)
-    const { data: completion, error: wcErr } = await db
+    // Find or create completion record — avoids relying on a non-existent unique constraint
+    const athleteDbId = auth.athlete?.id || null;
+    const { data: existingRows } = await db
       .from("workout_completions")
-      .upsert(
-        {
+      .select("id, status")
+      .eq("workout_item_id", workoutItemId)
+      .limit(1);
+    const existing = existingRows?.[0] ?? null;
+
+    let completion;
+    let wcErr;
+
+    if (existing) {
+      const { data: updated, error: upErr } = await db
+        .from("workout_completions")
+        .update({ status: completionStatus, completed_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .select("id, status")
+        .single();
+      completion = updated;
+      wcErr      = upErr;
+    } else {
+      const { data: inserted, error: inErr } = await db
+        .from("workout_completions")
+        .insert({
           workout_item_id: workoutItemId,
-          athlete_id:      auth.athlete?.id || null,
+          athlete_id:      athleteDbId,
           org_id:          orgId || null,
           status:          completionStatus,
           completed_at:    new Date().toISOString(),
-        },
-        { onConflict: "workout_item_id,athlete_id", ignoreDuplicates: false }
-      )
-      .select("id, status")
-      .single();
+        })
+        .select("id, status")
+        .single();
+      completion = inserted;
+      wcErr      = inErr;
+    }
 
     if (wcErr) return res.status(500).json({ error: "Failed to save completion.", details: wcErr.message });
+    console.log("[completeItem] completion id:", completion?.id, "status:", completion?.status);
 
     // Store evidence in completion_evidence (normalized - not on the completion row)
     if (attachUrl && completion?.id) {
+      const evidenceType = String(fileEntry?.mimetype || "").startsWith("video") ? "video" : "photo";
       await db.from("completion_evidence").insert({
         workout_completion_id: completion.id,
-        athlete_id:            auth.athlete?.id || null,
+        athlete_id:            athleteDbId,
         url:                   attachUrl,
-        evidence_type:         "photo",
+        evidence_type:         evidenceType,
       });
     }
 

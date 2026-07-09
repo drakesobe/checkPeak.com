@@ -5,8 +5,9 @@
 import Head from "next/head";
 import { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Film, Mail, Zap, Dumbbell, TrendingUp, MessageSquare, ChevronRight, ExternalLink, X, Check, Send, Shield, Play, Lock, Trophy, Eye, Bookmark } from "lucide-react";
+import { Film, Mail, Zap, Dumbbell, TrendingUp, MessageSquare, ChevronRight, ExternalLink, X, Check, Send, Shield, Play, Lock, Trophy, Eye, Bookmark, BarChart2 } from "lucide-react";
 import { sendNotification } from "@/lib/sendNotification";
+import { SPORT_STATS, aggregateStats, getFields, getComputed, getFootballGroup } from "@/lib/sportStats";
 
 const C = {
   bg:      "#08090B",
@@ -458,6 +459,159 @@ function WatchlistModal({ athleteName, athleteFirstName, token, onClose, onSucce
   );
 }
 
+// ─── Game Stats Section ───────────────────────────────────────────────────────
+
+const SPORT_LABELS_DISPLAY = {
+  football: "Football", basketball: "Basketball", baseball: "Baseball",
+  softball: "Softball", soccer: "Soccer", track: "Track & Field",
+  swimming: "Swimming", volleyball: "Volleyball", wrestling: "Wrestling",
+  lacrosse: "Lacrosse", hockey: "Hockey", tennis: "Tennis",
+};
+
+function GameStatsSection({ gameStats, seasonGoals }) {
+  if (!gameStats) return null;
+  const sportLabel = SPORT_LABELS_DISPLAY[gameStats.sport] || gameStats.sport;
+  const goals = seasonGoals || [];
+
+  if (gameStats.type === "events") {
+    return (
+      <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.24s both" }}>
+        <SectionHeader icon={BarChart2} label="Season Stats" sub={`${sportLabel} · ${gameStats.season} · ${gameStats.gameCount} ${gameStats.gameCount === 1 ? "meet" : "meets"}`} />
+        {gameStats.bestMarks.length > 0 && (
+          <>
+            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 10 }}>BEST MARKS THIS SEASON</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 16 }}>
+              {gameStats.bestMarks.map((m, i) => (
+                <div key={i} style={{ padding: "14px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: C.white, letterSpacing: "-0.02em", lineHeight: 1 }}>{m.mark}</div>
+                  <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.08em", color: C.muted, marginTop: 5 }}>{m.event.toUpperCase()}</div>
+                  {m.place && <div style={{ fontSize: 11, fontWeight: 700, color: C.accent, marginTop: 3 }}>{m.place}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {gameStats.recentGames.length > 0 && (
+          <>
+            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 8 }}>RECENT MEETS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+              {gameStats.recentGames.map((g, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.card }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {g.opponent || "Meet"}
+                  </span>
+                  {g.date && <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{new Date(g.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Standard sport stats
+  const { totals, computed: computedVals, display, labels, wins, losses, ties, gameCount, season, prevSeason, recentGames } = gameStats;
+
+  const statTiles = (display || []).map(key => {
+    const raw = computedVals?.[key] != null ? computedVals[key] : (totals?.[key] != null ? totals[key] : null);
+    if (raw == null || raw === "—") return null;
+    const numVal = typeof raw === "number" ? raw : parseFloat(raw);
+    const fmtVal = typeof raw === "string" ? raw : (!isNaN(numVal) && numVal >= 1000 ? numVal.toLocaleString() : String(raw));
+    return { key, val: fmtVal, label: (labels?.[key] || key).toUpperCase() };
+  }).filter(Boolean);
+
+  const recordParts = [
+    wins   > 0 ? `${wins}W`   : null,
+    losses > 0 ? `${losses}L` : null,
+    ties   > 0 ? `${ties}T`   : null,
+  ].filter(Boolean);
+  const record = recordParts.length ? recordParts.join(" · ") : null;
+  const cols = Math.min(statTiles.length, 4);
+
+  return (
+    <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.24s both" }}>
+      <SectionHeader icon={BarChart2} label="Season Stats" sub={`${sportLabel} · ${season}`} />
+
+      {statTiles.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
+          {statTiles.map((s, i) => (
+            <div key={s.key} style={{ padding: "16px 8px", background: i === 0 ? "#151926" : C.card, textAlign: "center" }}>
+              <div style={{ fontSize: i === 0 ? 26 : 22, fontWeight: 900, color: i === 0 ? C.white : C.dim, letterSpacing: "-0.03em", lineHeight: 1 }}>{s.val}</div>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: C.muted, marginTop: 5 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: recentGames.length > 0 ? 16 : 0 }}>
+        {record && (
+          <div style={{ padding: "4px 12px", background: "rgba(0,200,81,0.07)", border: "1px solid rgba(0,200,81,0.18)", borderRadius: 20 }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: C.green }}>{record}</span>
+          </div>
+        )}
+        <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{gameCount} {gameCount === 1 ? "game" : "games"} logged</span>
+        {prevSeason && (
+          <span style={{ fontSize: 11, color: "rgba(240,243,250,0.3)", fontWeight: 600 }}>· {prevSeason.gameCount}g in {prevSeason.season}</span>
+        )}
+      </div>
+
+      {recentGames.length > 0 && (
+        <>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 8 }}>RECENT GAMES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+            {recentGames.map((g, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.card }}>
+                {g.result && (
+                  <div style={{ width: 24, height: 24, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: g.result === "W" ? "rgba(0,200,81,0.12)" : g.result === "L" ? "rgba(239,68,68,0.1)" : C.faint }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: g.result === "W" ? C.green : g.result === "L" ? "#EF4444" : C.muted }}>{g.result}</span>
+                  </div>
+                )}
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.dim, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {g.opponent ? `vs ${g.opponent}` : "Game"}
+                </span>
+                {g.logged_by === "coach" && (
+                  <Shield size={11} color={C.green} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                )}
+                {g.team_score != null && g.opp_score != null && (
+                  <span style={{ fontSize: 12, fontWeight: 800, color: g.result === "W" ? C.white : C.muted, flexShrink: 0 }}>{g.team_score}–{g.opp_score}</span>
+                )}
+                {g.date && <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{new Date(g.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Season goals — visible to recruiters; signals athlete thinks professionally */}
+      {goals.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 10 }}>SEASON GOALS</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {goals.map(g => (
+              <div key={g.field_key}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: g.done ? C.green : C.dim }}>{g.label}</span>
+                    {g.done && <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: C.green, padding: "2px 7px", background: "rgba(0,200,81,0.1)", borderRadius: 20 }}>REACHED</span>}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>
+                    <span style={{ color: g.done ? C.green : C.white }}>{g.current}</span>
+                    <span style={{ color: "rgba(240,243,250,0.3)" }}> / {g.target}</span>
+                  </span>
+                </div>
+                <div style={{ height: 5, background: C.faint, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 3, background: g.done ? C.green : `linear-gradient(90deg,${C.accent}99,${C.accent})`, width: `${g.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function RecruitPage({ data, token, ogImageUrl }) {
@@ -478,7 +632,7 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
     </div>
   );
 
-  const { profile, athlete, strengthPRs, athleticStats, reel, heatmapDates, trainingStats, viewStats, watchlistCount } = data;
+  const { profile, athlete, strengthPRs, athleticStats, reel, heatmapDates, trainingStats, viewStats, watchlistCount, gameStats, seasonGoals } = data;
 
   const name             = athlete?.name  || "Athlete";
   const sport            = profile.sport  || null;
@@ -806,6 +960,9 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
           </div>
         )}
 
+        {/* ── SEASON STATS ── */}
+        <GameStatsSection gameStats={gameStats} seasonGoals={seasonGoals || []} />
+
         {/* ── TRAINING COMMITMENT — work ethic is a coachability signal ── */}
         {hasHeatmap && (
           <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.22s both" }}>
@@ -1030,6 +1187,141 @@ export async function getServerSideProps({ params, req, res }) {
     }
   }
 
+  // 5.5. Game-by-game season stats (current + previous season)
+  const thisYear = new Date().getFullYear();
+  let gameStats = null;
+  try {
+    const { data: rawGames } = await db
+      .from("athlete_game_logs")
+      .select("*")
+      .eq("athlete_token", profile.athlete_token)
+      .in("season_year", [thisYear, thisYear - 1])
+      .order("game_date", { ascending: false })
+      .limit(200);
+
+    if (rawGames?.length) {
+      const sport = (profile.sport || athlete?.sport || "").toLowerCase().trim();
+      const cfg = SPORT_STATS[sport];
+      if (cfg) {
+        const seasonGames = rawGames.filter(g => g.season_year === thisYear);
+        const prevGames   = rawGames.filter(g => g.season_year === thisYear - 1);
+
+        if (cfg.type === "events") {
+          const markMap = {};
+          for (const game of seasonGames) {
+            for (const e of (game.stats?.events ?? [])) {
+              if (!e.event || !e.mark) continue;
+              if (!markMap[e.event]) markMap[e.event] = { event: e.event, mark: e.mark, place: e.place || null };
+            }
+          }
+          if (seasonGames.length > 0) {
+            gameStats = {
+              type: "events",
+              sport,
+              season: thisYear,
+              gameCount: seasonGames.length,
+              bestMarks: Object.values(markMap).slice(0, 8),
+              recentGames: seasonGames.slice(0, 4).map(g => ({
+                date: g.game_date, opponent: g.opponent || null, result: g.result || null,
+                team_score: null, opp_score: null, logged_by: g.logged_by || "athlete",
+              })),
+            };
+          }
+        } else {
+          const groupKey = cfg.type === "grouped" ? getFootballGroup(profile.position) : null;
+          const roleKey  = cfg.type === "role"
+            ? (rawGames.find(g => g.role_key)?.role_key ?? Object.keys(cfg.roles)[0])
+            : null;
+          const fields   = getFields(sport, groupKey, roleKey);
+          const computed = getComputed(sport, groupKey, roleKey);
+          const displayKeys = cfg.type === "grouped" && groupKey
+            ? (cfg.groups[groupKey]?.display ?? [])
+            : cfg.type === "role" && roleKey
+            ? (cfg.roles[roleKey]?.display ?? [])
+            : (cfg.display ?? []);
+          const labelMap = {};
+          [...fields, ...computed].forEach(f => { labelMap[f.key] = f.label; });
+
+          const computeSeasonData = (games) => {
+            if (!games.length) return null;
+            const totals = aggregateStats(games, fields);
+            const computedVals = {};
+            computed.forEach(c => { try { computedVals[c.key] = c.fn(totals); } catch { computedVals[c.key] = "—"; } });
+            return { totals, computed: computedVals };
+          };
+
+          const current = computeSeasonData(seasonGames);
+          if (current) {
+            const prev   = computeSeasonData(prevGames);
+            const wins   = seasonGames.filter(g => g.result === "W").length;
+            const losses = seasonGames.filter(g => g.result === "L").length;
+            const ties   = seasonGames.filter(g => g.result === "T" || g.result === "D").length;
+            gameStats = {
+              type: "stats",
+              sport,
+              season: thisYear,
+              gameCount: seasonGames.length,
+              wins, losses, ties,
+              totals: current.totals,
+              computed: current.computed,
+              display: displayKeys,
+              labels: labelMap,
+              groupKey,
+              roleKey,
+              prevSeason: prev ? {
+                season: thisYear - 1,
+                gameCount: prevGames.length,
+                totals: prev.totals,
+                computed: prev.computed,
+              } : null,
+              recentGames: seasonGames.slice(0, 4).map(g => ({
+                date: g.game_date,
+                opponent: g.opponent || null,
+                result: g.result || null,
+                team_score: g.team_score ?? null,
+                opp_score: g.opp_score ?? null,
+                logged_by: g.logged_by || "athlete",
+              })),
+            };
+          }
+        }
+      }
+    }
+  } catch { /* game_logs table may not exist yet */ }
+
+  // 5.6. Season goals (show on recruit page to signal athlete professionalism)
+  let seasonGoals = [];
+  if (gameStats?.type === "stats" && gameStats.totals) {
+    try {
+      const sport5 = gameStats.sport;
+      const { data: rawGoals } = await db
+        .from("athlete_stat_goals")
+        .select("field_key, target")
+        .eq("athlete_token", profile.athlete_token)
+        .eq("sport", sport5)
+        .eq("season_year", thisYear);
+
+      if (rawGoals?.length) {
+        seasonGoals = rawGoals.map(g => {
+          const computedVal = gameStats.computed?.[g.field_key];
+          const current = computedVal != null && computedVal !== "—"
+            ? parseFloat(computedVal) || 0
+            : Number(gameStats.totals[g.field_key] || 0);
+          const target  = Number(g.target);
+          const pct     = target > 0 ? Math.min(Math.round(current / target * 100), 100) : 0;
+          return {
+            field_key: g.field_key,
+            label:     gameStats.labels?.[g.field_key] || g.field_key,
+            target,
+            current:   current % 1 === 0 ? current : Number(current.toFixed(1)),
+            pct,
+            done:      pct >= 100,
+          };
+        }).filter(g => g.target > 0);
+      }
+    } catch { /* table may not exist yet */ }
+  }
+
   // 6. Public reel
   const { data: reel } = await db
     .from("athlete_reels").select("share_token, title, play_ids")
@@ -1108,6 +1400,8 @@ export async function getServerSideProps({ params, req, res }) {
         strengthPRs: strengthPRs.map(pr => ({ ...pr, videoUrl: pr.videoUrl || null })),
         athleticStats:  athleticStats || null,
         reel:           reel ? { shareToken: reel.share_token, title: reel.title || null, playCount: reel.play_ids?.length ?? 0 } : null,
+        gameStats,
+        seasonGoals,
         heatmapDates,
         trainingStats: {
           sessions30d:        distinctDates30d,

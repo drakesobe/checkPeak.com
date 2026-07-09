@@ -2,10 +2,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Mail, Clipboard, Star, CheckCircle2,
-  ExternalLink, Trash2, AlertTriangle, Trophy,
+  ExternalLink, Trash2, AlertTriangle, Trophy, BarChart2,
 } from "lucide-react";
 import { formatDateTime, cleanString } from "@/lib/org/athletes/utils";
 
@@ -181,6 +182,7 @@ export default function AthleteDrawer({
   // Optional: called after a successful sport save so parent can update its list
   onSportSaved,
 }) {
+  const router = useRouter();
   const [deleteMode,  setDeleteMode]  = useState(false);
   const [deleting,    setDeleting]    = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -440,6 +442,23 @@ export default function AthleteDrawer({
                     Copy Email
                   </DrawerBtn>
                 </div>
+
+                {/* Stats — coach logs game stats for this athlete */}
+                <DrawerBtn
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      email: athlete?.email || "",
+                      name:  athlete?.name  || "",
+                      sport: sport          || "",
+                    });
+                    router.push(`/org/athlete-stats?${params.toString()}`);
+                  }}
+                  disabled={!hasEmail}
+                  variant="default"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  Game Stats
+                </DrawerBtn>
 
                 {/* Done / Star toggles */}
                 <div className="grid grid-cols-2 gap-2">

@@ -9,7 +9,7 @@ import { useAuthContext } from "@/hooks/useAuth";
 import {
   Check, Copy, Eye, EyeOff, ExternalLink, ChevronLeft, Loader2,
   Camera, X, TrendingUp, TrendingDown, Minus, Shield,
-  Link as LinkIcon, Share2,
+  Link as LinkIcon, Share2, BarChart2,
 } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
 
@@ -580,6 +580,21 @@ export default function AthleteProfile() {
                 </div>
               )}
             </div>
+
+            {/* ── SEASON STATS LINK ── */}
+            <button
+              onClick={() => router.push("/athlete/stats")}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "14px 18px", background: C.card, border: `1px solid ${C.line2}`,
+                borderRadius: 12, marginBottom: 20, cursor: "pointer", fontFamily: "inherit",
+              }}>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.white }}>Season Stats</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Game-by-game log, season totals, and performance tracking</div>
+              </div>
+              <ChevronLeft size={16} color={C.muted} style={{ transform: "rotate(180deg)", flexShrink: 0 }} />
+            </button>
 
             {/* ── AVATAR ── */}
             <AvatarUploader url={avatarUrl} name={userName} onUploaded={handleAvatarUploaded} />

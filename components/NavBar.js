@@ -316,7 +316,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             <NavSection>Team</NavSection>
             {nl({ href: "/org/messaging",     label: "Messaging" })}
             {nl({ href: "/org/prescriptions", label: "Nutrition"  })}
-            {isOrgAdmin && nl({ href: "/org/athletes", label: "Athletes" })}
+            {isOrgAdmin && nl({ href: "/org/athletes", label: "Athletes & Stats" })}
             {isAdmin    && nl({ href: "/org/trainers", label: "Trainers" })}
 
             <NavDivider />
@@ -351,6 +351,7 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             {nl({ href: "/athlete/today",      label: "Today"              })}
             {nl({ href: "/athlete/journal",    label: "Journal"            })}
             {nl({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
+            {nl({ href: "/athlete/stats",      label: "Stats"              })}
             {nl({ href: "/scans",              label: "My Scans"           })}
 
             <NavDivider />
@@ -504,7 +505,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 {mSection("Team")}
                 {ml({ href: "/org/messaging",     label: "Messaging" })}
                 {ml({ href: "/org/prescriptions", label: "Nutrition"  })}
-                {isOrgAdmin && ml({ href: "/org/athletes", label: "Athletes" })}
+                {isOrgAdmin && ml({ href: "/org/athletes", label: "Athletes & Stats" })}
                 {isAdmin    && ml({ href: "/org/trainers", label: "Trainers" })}
                 {mDivider()}
                 {mSection("Tools")}
@@ -533,6 +534,7 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 {ml({ href: "/athlete/today",      label: "Today"               })}
                 {ml({ href: "/athlete/journal",    label: "Journal"             })}
                 {ml({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
+                {ml({ href: "/athlete/stats",      label: "Stats"               })}
                 {ml({ href: "/scans",              label: "My Scans"            })}
                 {mDivider()}
                 {mSection("Discover", "rgba(255,123,53,0.85)")}

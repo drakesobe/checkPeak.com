@@ -334,10 +334,19 @@ function QRCodeSection({ shareUrl, athleteName }) {
 
 const GRAD_YEARS = Array.from({ length: 12 }, (_, i) => new Date().getFullYear() + i - 1);
 
+const RECRUITING_STATUS_OPTIONS = [
+  { key: "open",      label: "Open to Offers"  },
+  { key: "committed", label: "Committed"        },
+  { key: "signed",    label: "Signed / Verbal"  },
+];
+
 const BLANK_FORM = {
   sport: "", position: "", graduation_year: "", school: "",
-  height: "", weight: "", gpa: "", bio: "", show_contact: false,
-  achievements: [], hudl_url: "", _hasAvatar: false,
+  height: "", weight: "", gpa: "", sat_score: "", act_score: "",
+  bio: "", show_contact: false,
+  achievements: [], hudl_url: "",
+  recruiting_status: "", top_schools: ["", "", ""], family_statement: "",
+  _hasAvatar: false,
 };
 
 export default function AthleteProfile() {
@@ -382,11 +391,16 @@ export default function AthleteProfile() {
         height:          p.height          || "",
         weight:          p.weight          || "",
         gpa:             p.gpa             || "",
-        bio:             p.bio             || "",
-        show_contact:    !!p.show_contact,
-        achievements:    Array.isArray(p.achievements) ? p.achievements : [],
-        hudl_url:        p.hudl_url        || "",
-        _hasAvatar:      !!p.avatar_url,
+        bio:              p.bio              || "",
+        show_contact:     !!p.show_contact,
+        achievements:     Array.isArray(p.achievements) ? p.achievements : [],
+        hudl_url:         p.hudl_url         || "",
+        sat_score:        p.sat_score        ? String(p.sat_score) : "",
+        act_score:        p.act_score        ? String(p.act_score) : "",
+        recruiting_status: p.recruiting_status || "",
+        top_schools:      (() => { const s = Array.isArray(p.top_schools) ? p.top_schools : []; return [s[0]||"", s[1]||"", s[2]||""]; })(),
+        family_statement: p.family_statement  || "",
+        _hasAvatar:       !!p.avatar_url,
       };
       setForm(loaded);
       setSavedForm(JSON.parse(JSON.stringify(loaded)));
@@ -629,14 +643,34 @@ export default function AthleteProfile() {
               </Field>
             </div>
 
-            <Field label="GPA" hint="optional">
-              <input
-                value={form.gpa}
-                onChange={e => setForm(p => ({ ...p, gpa: e.target.value }))}
-                placeholder="3.8"
-                style={{ ...inputStyle, maxWidth: 120 }}
-              />
-            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 4 }}>
+              <Field label="GPA" hint="optional">
+                <input
+                  value={form.gpa}
+                  onChange={e => setForm(p => ({ ...p, gpa: e.target.value }))}
+                  placeholder="3.8"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="SAT Score" hint="optional">
+                <input
+                  value={form.sat_score}
+                  onChange={e => setForm(p => ({ ...p, sat_score: e.target.value }))}
+                  placeholder="1280"
+                  inputMode="numeric"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="ACT Score" hint="optional">
+                <input
+                  value={form.act_score}
+                  onChange={e => setForm(p => ({ ...p, act_score: e.target.value }))}
+                  placeholder="27"
+                  inputMode="numeric"
+                  style={inputStyle}
+                />
+              </Field>
+            </div>
 
             <Field label="Bio" hint="shown on your profile — 500 chars">
               <textarea
@@ -679,6 +713,41 @@ export default function AthleteProfile() {
               </div>
               <div style={{ fontSize: 10, color: C.muted, marginTop: 5 }}>Shown as a film link on your profile. Coaches use Hudl to evaluate athletes.</div>
             </Field>
+
+            {/* ── RECRUITING STATUS ── */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", color: C.muted, marginBottom: 16 }}>RECRUITING STATUS</div>
+
+              <Field label="Status" hint="shown on your profile">
+                <select
+                  value={form.recruiting_status}
+                  onChange={e => setForm(p => ({ ...p, recruiting_status: e.target.value }))}
+                  style={{ ...inputStyle, appearance: "none" }}>
+                  <option value="">Not set</option>
+                  {RECRUITING_STATUS_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </Field>
+
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>
+                {form.recruiting_status === "committed" || form.recruiting_status === "signed" ? "Committed To" : "Top Schools"}
+                <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "rgba(238,238,255,0.22)", marginLeft: 6 }}>up to 3</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[0, 1, 2].map(i => (
+                  <input
+                    key={i}
+                    value={form.top_schools[i]}
+                    onChange={e => {
+                      const next = [...form.top_schools];
+                      next[i] = e.target.value;
+                      setForm(p => ({ ...p, top_schools: next }));
+                    }}
+                    placeholder={`School ${i + 1}`}
+                    style={inputStyle}
+                  />
+                ))}
+              </div>
+            </div>
 
             {/* ── VISIBILITY ── */}
             <div style={{

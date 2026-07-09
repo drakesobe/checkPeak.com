@@ -16,6 +16,7 @@ const EDITABLE = [
   "height", "weight", "gpa", "bio",
   "show_contact", "achievements", "hudl_url", "parent_message",
   "instagram_url", "twitter_url", "maxpreps_url",
+  "sat_score", "act_score", "recruiting_status", "top_schools", "family_statement",
 ];
 
 export default async function handler(req, res) {
@@ -110,6 +111,12 @@ export default async function handler(req, res) {
       } else if (key === "achievements") {
         updates[key] = Array.isArray(body[key])
           ? body[key].slice(0, 10).map(a => String(a).trim().slice(0, 60)).filter(Boolean)
+          : [];
+      } else if (key === "sat_score" || key === "act_score") {
+        updates[key] = body[key] ? Math.min(Math.max(Number(body[key]), 0), 9999) : null;
+      } else if (key === "top_schools") {
+        updates[key] = Array.isArray(body[key])
+          ? body[key].slice(0, 3).map(s => String(s).trim().slice(0, 80)).filter(Boolean)
           : [];
       } else {
         updates[key] = String(body[key] ?? "").trim() || null;

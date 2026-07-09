@@ -492,7 +492,7 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
   const actScore         = profile.act_score         || null;
   const recruitingStatus = profile.recruiting_status || null;
   const topSchools       = profile.top_schools       || [];
-  const parentMessage    = profile.parent_message    || null;
+  const familyStatement  = profile.family_statement  || null;
   const bio              = profile.bio      || null;
   const achievements     = profile.achievements  || [];
   const avatarUrl        = profile.avatar_url    || null;
@@ -786,11 +786,11 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
         )}
 
         {/* ── FAMILY MESSAGE ── */}
-        {parentMessage && (
+        {familyStatement && (
           <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.18s both" }}>
             <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 14 }}>FROM THE FAMILY</div>
             <div style={{ paddingLeft: 14, borderLeft: `2px solid rgba(255,215,0,0.35)` }}>
-              <p style={{ fontSize: 15, fontWeight: 500, color: C.dim, lineHeight: 1.8, margin: "0 0 10px", fontStyle: "italic" }}>{parentMessage}</p>
+              <p style={{ fontSize: 15, fontWeight: 500, color: C.dim, lineHeight: 1.8, margin: "0 0 10px", fontStyle: "italic" }}>{familyStatement}</p>
               <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>— {name.split(" ")[1] || name.split(" ")[0]} Family</span>
             </div>
           </div>
@@ -1098,7 +1098,7 @@ export async function getServerSideProps({ params, req, res }) {
           act_score:         profile.act_score         || null,
           recruiting_status: profile.recruiting_status || null,
           top_schools:       Array.isArray(profile.top_schools) ? profile.top_schools.slice(0, 3) : null,
-          parent_message:    profile.parent_message    || null,
+          family_statement:  profile.family_statement  || null,
           view_count:        newViewCount,
         },
         athlete: {

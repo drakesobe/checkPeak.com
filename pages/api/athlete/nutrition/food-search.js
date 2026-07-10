@@ -110,7 +110,10 @@ export default async function handler(req, res) {
             measures: measures.slice(0, 6),
           };
         });
-        return res.status(200).json({ ok: true, foods });
+        // Only use USDA results if we actually got some — otherwise fall through to local
+        if (foods.length > 0) {
+          return res.status(200).json({ ok: true, foods });
+        }
       }
     } catch {
       // fall through to local list

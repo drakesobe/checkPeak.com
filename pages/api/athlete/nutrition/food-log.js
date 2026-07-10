@@ -1,26 +1,4 @@
 // pages/api/athlete/nutrition/food-log.js
-// GET    ?date=YYYY-MM-DD   — fetch all food log entries for a day
-// POST   { date, meal_id, food_name, food_id, quantity, unit, grams, calories, protein_g, carbs_g, fat_g }
-// DELETE ?id=<uuid>         — delete a log entry
-//
-// Required Supabase table:
-//   CREATE TABLE athlete_food_logs (
-//     id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-//     athlete_token text NOT NULL,
-//     log_date     date NOT NULL,
-//     meal_id      text NOT NULL,
-//     food_name    text NOT NULL,
-//     food_id      text,
-//     quantity     numeric NOT NULL DEFAULT 1,
-//     unit         text NOT NULL DEFAULT 'serving',
-//     grams        numeric NOT NULL,
-//     calories     int NOT NULL DEFAULT 0,
-//     protein_g    int NOT NULL DEFAULT 0,
-//     carbs_g      int NOT NULL DEFAULT 0,
-//     fat_g        int NOT NULL DEFAULT 0,
-//     created_at   timestamptz DEFAULT now()
-//   );
-//   CREATE INDEX ON athlete_food_logs (athlete_token, log_date);
 
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";

@@ -788,16 +788,22 @@ function aggregatePlaysToStats(plays) {
 
 // ── Film Game Log Panel ────────────────────────────────────────────────────────
 function FilmGameLogPanel({ filmId, film, plays, roster }) {
-  const [open,        setOpen]        = useState(false);
-  const [athletes,    setAthletes]    = useState(null);
-  const [loading,     setLoading]     = useState(false);
-  const [rows,        setRows]        = useState([]);   // { id, name, jersey, stats, athleteToken, athleteName }
-  const [gameInfo,    setGameInfo]    = useState(null);
-  const [saving,      setSaving]      = useState(false);
-  const [saved,       setSaved]       = useState(null); // result from API
-  const [error,       setError]       = useState(null);
+  const [open,          setOpen]          = useState(false);
+  const [athletes,      setAthletes]      = useState(null);
+  const [loading,       setLoading]       = useState(false);
+  const [rows,          setRows]          = useState([]);
+  const [gameInfo,      setGameInfo]      = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [saved,         setSaved]         = useState(null);
+  const [error,         setError]         = useState(null);
+  const [savingLink,    setSavingLink]    = useState({}); // { [rosterId]: bool }
+  const [savedLinks,    setSavedLinks]    = useState({}); // { [rosterId]: bool }
+  const [copiedInvite,  setCopiedInvite]  = useState({}); // { [rosterId]: bool }
 
-  const taggedPlays = plays.filter(p => p.players && Object.keys(p.players || {}).some(k => p.players[k]?.id));
+  const taggedPlays  = plays.filter(p => p.players && Object.keys(p.players || {}).some(k => p.players[k]?.id));
+  const skillPlays   = plays.filter(p => p.play_type === "pass" || p.play_type === "run");
+  const attributePct = skillPlays.length > 0 ? Math.round((taggedPlays.length / skillPlays.length) * 100) : 0;
+  const linkedCount  = rows.filter(r => r.athleteToken).length;
 
   async function generate() {
     setLoading(true); setError(null);
@@ -809,11 +815,26 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
         ath = d.athletes || [];
         setAthletes(ath);
       }
+
+      // Build a map from roster UUID → athlete_token (from the roster prop which now includes athlete_token)
+      const rosterLinkMap = {};
+      for (const r of roster) {
+        if (r.id && r.athlete_token) rosterLinkMap[String(r.id)] = r.athlete_token;
+      }
+
       const agg = aggregatePlaysToStats(plays);
       const matched = agg.map(row => {
+        // 1. Use persistent roster link if available
+        const persistedToken = rosterLinkMap[String(row.id)] || "";
+        if (persistedToken) {
+          const a = ath.find(a => a.AthleteToken === persistedToken);
+          return { ...row, athleteToken: persistedToken, athleteName: a?.name || row.name, rosterId: row.id };
+        }
+        // 2. Fall back to name-match
         const match = ath.find(a => a.name?.toLowerCase().trim() === row.name?.toLowerCase().trim());
-        return { ...row, athleteToken: match?.AthleteToken || "", athleteName: match?.name || "" };
+        return { ...row, athleteToken: match?.AthleteToken || "", athleteName: match?.name || "", rosterId: row.id };
       });
+
       setRows(matched);
       setGameInfo({
         game_date:  film?.game_date || new Date().toISOString().slice(0, 10),
@@ -824,6 +845,7 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
         opp_score:  "",
       });
       setSaved(null);
+      setSavedLinks({});
       setOpen(true);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -832,18 +854,50 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
   function setRowStat(id, key, val) {
     setRows(r => r.map(p => p.id === id ? { ...p, stats: { ...p.stats, [key]: Number(val) || 0 } } : p));
   }
-  function setRowToken(id, token, name) {
-    setRows(r => r.map(p => p.id === id ? { ...p, athleteToken: token, athleteName: name } : p));
+
+  async function setRowToken(rowId, rosterId, token, name) {
+    setRows(r => r.map(p => p.id === rowId ? { ...p, athleteToken: token, athleteName: name } : p));
+
+    // If a valid roster UUID and a token (or cleared), persist it immediately
+    if (!rosterId || String(rosterId).startsWith("roster-")) return;
+    setSavingLink(s => ({ ...s, [rosterId]: true }));
+    try {
+      await fetch(`/api/org/roster/${rosterId}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ athleteToken: token || null }),
+      });
+      setSavedLinks(s => ({ ...s, [rosterId]: !!token }));
+      setTimeout(() => setSavedLinks(s => ({ ...s, [rosterId]: false })), 2500);
+    } catch {}
+    setSavingLink(s => ({ ...s, [rosterId]: false }));
+  }
+
+  function copyInviteLink(rosterId, playerName) {
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const url  = `${base}/auth/signup?role=athlete&name=${encodeURIComponent(playerName)}`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopiedInvite(s => ({ ...s, [rosterId]: true }));
+    setTimeout(() => setCopiedInvite(s => ({ ...s, [rosterId]: false })), 2000);
   }
 
   async function save() {
     setSaving(true); setError(null);
     try {
+      const groupKey = `film:${filmId}`;
+      const { data: existing } = await (async () => {
+        const linkedToken = rows.find(r => r.athleteToken)?.athleteToken;
+        if (!linkedToken) return { data: null };
+        const r = await fetch(`/api/athlete/stats/games?sport=${encodeURIComponent((film?.sport || "football").toLowerCase())}&season=${new Date(gameInfo.game_date).getFullYear()}`, { credentials: "include" });
+        return r.ok ? r.json() : { data: null };
+      })();
+      const isUpdate = (existing?.games || []).some(g => g.group_key === groupKey);
+
       const playerStats = rows.map(r => ({
-        athleteToken:  r.athleteToken || "",
-        rosterName:    r.name,
-        rosterJersey:  r.jersey,
-        stats:         r.stats,
+        athleteToken: r.athleteToken || "",
+        rosterName:   r.name,
+        rosterJersey: r.jersey,
+        stats:        r.stats,
       }));
       const body = {
         filmId,
@@ -863,78 +917,127 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "Failed to save");
-      setSaved(d);
+      setSaved({ ...d, isUpdate });
     } catch (e) { setError(e.message); }
     setSaving(false);
   }
 
   const gi = (k, v) => setGameInfo(g => ({ ...g, [k]: v }));
 
-  const GI_INPUT = { padding: "6px 10px", borderRadius: 7, border: `1px solid ${DS.border}`, background: DS.pageBg, color: DS.bodyText, fontSize: 13, outline: "none", width: "100%" };
+  const GI_INPUT = {
+    padding: "7px 10px", borderRadius: 7,
+    border: `1px solid ${DS.border}`,
+    background: DS.cardBg, color: DS.bodyText,
+    fontSize: 13, outline: "none", width: "100%",
+    boxSizing: "border-box",
+  };
+
   const STAT_KEYS = [
-    { k: "att",      l: "Att" },
-    { k: "comp",     l: "Comp" },
+    { k: "att",      l: "Att"      },
+    { k: "comp",     l: "Comp"     },
     { k: "pass_yds", l: "Pass Yds" },
-    { k: "pass_td",  l: "Pass TD" },
-    { k: "int",      l: "INT" },
-    { k: "sacked",   l: "Sacked" },
+    { k: "pass_td",  l: "Pass TD"  },
+    { k: "int",      l: "INT"      },
+    { k: "sacked",   l: "Sacked"   },
     { k: "rush_att", l: "Rush Att" },
     { k: "rush_yds", l: "Rush Yds" },
-    { k: "rush_td",  l: "Rush TD" },
-    { k: "targets",  l: "Tgts" },
-    { k: "rec",      l: "Rec" },
-    { k: "rec_yds",  l: "Rec Yds" },
-    { k: "rec_td",   l: "Rec TD" },
-    { k: "fumbles",  l: "Fum" },
+    { k: "rush_td",  l: "Rush TD"  },
+    { k: "targets",  l: "Tgts"     },
+    { k: "rec",      l: "Rec"      },
+    { k: "rec_yds",  l: "Rec Yds"  },
+    { k: "rec_td",   l: "Rec TD"   },
+    { k: "fumbles",  l: "Fum"      },
   ];
+
+  const unlinkedCount = rows.filter(r => !r.athleteToken).length;
 
   return (
     <div style={{ marginTop: 20, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 14, overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ padding: "16px 20px", borderBottom: open ? `1px solid ${DS.border}` : "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+
+      {/* ── Header ── */}
+      <div style={{ padding: "16px 20px", borderBottom: open ? `1px solid ${DS.border}` : "none", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <ClipboardList size={15} color={DS.brand} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: DS.bodyText }}>Log Game Stats from Film</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: DS.bodyText }}>Log Game Stats from Film</span>
+            {saved && (
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 20, background: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safe}30` }}>
+                LOGGED
+              </span>
+            )}
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
-            {taggedPlays.length > 0
-              ? `${taggedPlays.length} of ${plays.length} plays have player attribution — generate per-player stat lines`
-              : "Tag players on plays above to enable stat generation"}
-          </p>
+
+          {skillPlays.length > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, maxWidth: 220 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: DS.labelText }}>{taggedPlays.length}/{skillPlays.length} plays attributed</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: attributePct === 100 ? DS.safe : attributePct >= 60 ? DS.brand : DS.warn }}>
+                    {attributePct}%
+                  </span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: DS.border, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${attributePct}%`,
+                    background: attributePct === 100 ? DS.safe : attributePct >= 60 ? DS.brand : DS.warn,
+                    borderRadius: 3, transition: "width 0.4s ease",
+                  }} />
+                </div>
+              </div>
+              {open && rows.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: linkedCount === rows.length ? DS.safeBg : DS.pageBg, border: `1px solid ${linkedCount === rows.length ? DS.safe + "40" : DS.border}` }}>
+                  <Shield size={10} color={linkedCount === rows.length ? DS.safe : DS.labelText} strokeWidth={2.5} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: linkedCount === rows.length ? DS.safe : DS.labelText }}>
+                    {linkedCount}/{rows.length} linked
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
+              Tag players on run/pass plays above — then generate stats here.
+            </p>
+          )}
         </div>
+
         <button
           onClick={open ? () => setOpen(false) : generate}
           disabled={loading || taggedPlays.length === 0}
           style={{
-            padding: "8px 16px", borderRadius: 8, border: "none", cursor: taggedPlays.length === 0 ? "not-allowed" : "pointer",
-            background: open ? DS.pageBg : DS.brand, color: open ? DS.bodyText : "#fff",
-            fontSize: 13, fontWeight: 700, flexShrink: 0, opacity: taggedPlays.length === 0 ? 0.45 : 1,
+            padding: "9px 18px", borderRadius: 9, cursor: taggedPlays.length === 0 ? "not-allowed" : "pointer",
+            background: open ? DS.pageBg : DS.brand,
+            color: open ? DS.bodyText : "#fff",
             border: open ? `1px solid ${DS.border}` : "none",
+            fontSize: 13, fontWeight: 700, flexShrink: 0,
+            opacity: taggedPlays.length === 0 ? 0.4 : 1,
+            transition: "background 0.15s",
           }}>
-          {loading ? "Generating…" : open ? "Close" : "Generate Stats"}
+          {loading ? "Generating…" : open ? "Close" : saved ? "View / Update" : "Generate Stats"}
         </button>
       </div>
 
       {open && (
         <div style={{ padding: "20px 20px" }}>
 
-          {/* Game info */}
-          <div style={{ marginBottom: 20 }}>
-            <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.labelText }}>Game Info</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+          {/* ── Game Info ── */}
+          <div style={{ marginBottom: 22 }}>
+            <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: DS.labelText }}>
+              Game Info
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
               {[
-                { k: "game_date", l: "Date",     type: "date" },
-                { k: "opponent",  l: "Opponent", type: "text", ph: "Team name" },
-                { k: "location",  l: "Location", type: "select", opts: ["home","away","neutral"] },
-                { k: "result",    l: "Result",   type: "select", opts: ["","win","loss","tie"] },
-                { k: "team_score",l: "Our Score", type: "number" },
-                { k: "opp_score", l: "Opp Score", type: "number" },
+                { k: "game_date",  l: "Date",       type: "date" },
+                { k: "opponent",   l: "Opponent",   type: "text",   ph: "Team name" },
+                { k: "location",   l: "Location",   type: "select", opts: ["home","away","neutral"] },
+                { k: "result",     l: "Result",     type: "select", opts: ["","W","L","T"] },
+                { k: "team_score", l: "Our Score",  type: "number" },
+                { k: "opp_score",  l: "Opp Score",  type: "number" },
               ].map(({ k, l, type, ph, opts }) => (
                 <div key={k}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: DS.labelText, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>{l}</div>
                   {type === "select"
-                    ? <select value={gameInfo[k]} onChange={e => gi(k, e.target.value)} style={{ ...GI_INPUT }}>
+                    ? <select value={gameInfo[k]} onChange={e => gi(k, e.target.value)} style={GI_INPUT}>
                         {opts.map(o => <option key={o} value={o}>{o || "—"}</option>)}
                       </select>
                     : <input type={type} value={gameInfo[k]} placeholder={ph} onChange={e => gi(k, e.target.value)} style={GI_INPUT} />
@@ -944,85 +1047,146 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
             </div>
           </div>
 
-          {/* Player rows */}
+          {/* ── Player Rows ── */}
           {rows.length > 0 ? (
             <div>
-              <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: DS.labelText }}>
-                Player Stats — {rows.length} player{rows.length !== 1 ? "s" : ""} detected
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {rows.map(row => (
-                  <div key={row.id} style={{ background: DS.pageBg, border: `1px solid ${DS.border}`, borderRadius: 10, padding: "14px 16px" }}>
-                    {/* Player identity row */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: DS.brand }}>#{row.jersey || "?"}</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: DS.labelText }}>
+                  Player Stats — {rows.length} detected
+                </p>
+                {unlinkedCount > 0 && (
+                  <span style={{ fontSize: 11, color: DS.warn }}>
+                    {unlinkedCount} unlinked · stats won't save until linked
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {rows.map(row => {
+                  const isLinked  = !!row.athleteToken;
+                  const isSavingL = savingLink[row.rosterId];
+                  const justSaved = savedLinks[row.rosterId];
+                  const nonZeroStats = STAT_KEYS.filter(({ k }) => (row.stats[k] ?? 0) !== 0);
+
+                  return (
+                    <div key={row.id} style={{
+                      background: DS.pageBg,
+                      border: `1px solid ${isLinked ? DS.safe + "35" : DS.border}`,
+                      borderRadius: 11,
+                      overflow: "hidden",
+                    }}>
+                      {/* Player header */}
+                      <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${DS.border}`, flexWrap: "wrap" }}>
+                        {/* Jersey badge */}
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: isLinked ? DS.safe + "18" : DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1px solid ${isLinked ? DS.safe + "30" : DS.border}` }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: isLinked ? DS.safe : DS.brand }}>
+                            #{row.jersey || "?"}
+                          </span>
+                        </div>
+
+                        {/* Name */}
+                        <div style={{ flex: 1, minWidth: 80 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{row.name}</div>
+                          <div style={{ fontSize: 11, color: DS.labelText, marginTop: 2 }}>
+                            {nonZeroStats.map(({ k, l }) => `${l}: ${row.stats[k]}`).slice(0, 3).join(" · ") || "no stats yet"}
+                          </div>
+                        </div>
+
+                        {/* Link status + selector */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          {isLinked ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 20, background: DS.safeBg, border: `1px solid ${DS.safe}30` }}>
+                              <Shield size={10} color={DS.safe} strokeWidth={2.5} />
+                              <span style={{ fontSize: 11, fontWeight: 700, color: DS.safe }}>
+                                {justSaved ? "Link saved!" : row.athleteName || "Linked"}
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: 11, color: DS.warn, fontWeight: 600 }}>Not linked</span>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 100 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: DS.bodyText }}>{row.name}</div>
-                        <div style={{ fontSize: 11, color: DS.labelText }}>from roster</div>
-                      </div>
-                      {/* Athlete link selector */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                        <Shield size={12} color={row.athleteToken ? DS.safe : DS.labelText} />
+
+                      {/* Athlete selector + invite */}
+                      <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: isLinked ? DS.safe + "06" : "transparent" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: DS.labelText, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>
+                          Athlete Account
+                        </div>
                         <select
                           value={row.athleteToken}
                           onChange={e => {
                             const a = athletes?.find(a => a.AthleteToken === e.target.value);
-                            setRowToken(row.id, e.target.value, a?.name || "");
+                            setRowToken(row.id, row.rosterId, e.target.value, a?.name || "");
                           }}
-                          style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${DS.border}`, background: DS.cardBg, color: row.athleteToken ? DS.bodyText : DS.labelText, fontSize: 12, cursor: "pointer", outline: "none", maxWidth: 180 }}>
-                          <option value="">— link athlete</option>
+                          style={{
+                            flex: 1, minWidth: 160, padding: "5px 9px", borderRadius: 7,
+                            border: `1px solid ${isLinked ? DS.safe + "40" : DS.border}`,
+                            background: DS.cardBg, color: row.athleteToken ? DS.bodyText : DS.labelText,
+                            fontSize: 12, cursor: "pointer", outline: "none",
+                          }}>
+                          <option value="">— select athlete account</option>
                           {(athletes || []).map(a => (
                             <option key={a.AthleteToken} value={a.AthleteToken}>{a.name}</option>
                           ))}
                         </select>
+                        {isSavingL && <span style={{ fontSize: 11, color: DS.labelText }}>Saving…</span>}
+                        {!isLinked && !isSavingL && (
+                          <button
+                            onClick={() => copyInviteLink(row.rosterId, row.name)}
+                            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 7, border: `1px solid ${DS.border}`, background: DS.cardBg, color: DS.labelText, fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                            {copiedInvite[row.rosterId] ? "Copied!" : "Copy Invite Link"}
+                          </button>
+                        )}
                       </div>
-                    </div>
 
-                    {/* Stats grid */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(76px, 1fr))", gap: 8 }}>
-                      {STAT_KEYS.filter(({ k }) => row.stats[k] !== 0 || row.stats[k] === 0).map(({ k, l }) => (
-                        row.stats[k] !== 0 ? (
-                          <div key={k}>
-                            <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText, marginBottom: 3 }}>{l}</div>
-                            <input
-                              type="number"
-                              value={row.stats[k]}
-                              onChange={e => setRowStat(row.id, k, e.target.value)}
-                              style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1px solid ${DS.border}`, background: DS.cardBg, color: DS.bodyText, fontSize: 13, fontWeight: 700, outline: "none", boxSizing: "border-box" }}
-                            />
-                          </div>
-                        ) : null
-                      ))}
+                      {/* Stats grid — editable */}
+                      {nonZeroStats.length > 0 && (
+                        <div style={{ padding: "10px 14px 12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 8 }}>
+                          {nonZeroStats.map(({ k, l }) => (
+                            <div key={k}>
+                              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: DS.labelText, marginBottom: 4 }}>{l}</div>
+                              <input
+                                type="number"
+                                value={row.stats[k]}
+                                onChange={e => setRowStat(row.id, k, e.target.value)}
+                                style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1px solid ${DS.border}`, background: DS.cardBg, color: DS.bodyText, fontSize: 13, fontWeight: 800, outline: "none", boxSizing: "border-box" }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    {!row.athleteToken && (
-                      <p style={{ margin: "10px 0 0", fontSize: 11, color: DS.warn }}>
-                        Link to an athlete account above to save this player's stats.
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
-            <div style={{ textAlign: "center", padding: "24px 0", color: DS.labelText, fontSize: 13 }}>
-              No player attributions found in tagged plays. Tag passers, receivers, and ball carriers while tagging plays.
+            <div style={{ textAlign: "center", padding: "28px 0", color: DS.labelText, fontSize: 13, background: DS.pageBg, borderRadius: 10 }}>
+              No player attributions found. Tag passers, receivers, and ball carriers in the plays above.
             </div>
           )}
 
-          {/* Save result */}
+          {/* ── Save result ── */}
           {saved && (
-            <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 9, background: DS.safeBg, border: `1px solid ${DS.safe}30` }}>
-              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: DS.safe }}>
-                Saved {saved.saved?.length} player stat line{saved.saved?.length !== 1 ? "s" : ""}
-              </p>
-              {saved.skipped?.length > 0 && (
-                <p style={{ margin: 0, fontSize: 12, color: DS.labelText }}>
-                  {saved.skipped.length} skipped (not linked to an athlete account): {saved.skipped.map(s => s.rosterName || `#${s.rosterJersey}`).join(", ")}
+            <div style={{ marginTop: 16, padding: "14px 16px", borderRadius: 10, background: DS.safeBg, border: `1px solid ${DS.safe}30` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: saved.skipped?.length ? 8 : 0 }}>
+                <Shield size={14} color={DS.safe} strokeWidth={2.5} />
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: DS.safe }}>
+                  {saved.isUpdate ? "Updated" : "Saved"} {saved.saved?.length} player stat {saved.saved?.length === 1 ? "line" : "lines"} — coach verified
                 </p>
-              )}
+              </div>
+              {saved.skipped?.length > 0 && (() => {
+                const noLink = saved.skipped.filter(s => s.reason === "no_athlete_link");
+                const noOrg  = saved.skipped.filter(s => s.reason === "athlete_not_in_org");
+                const other  = saved.skipped.filter(s => s.reason !== "no_athlete_link" && s.reason !== "athlete_not_in_org");
+                return (
+                  <div style={{ padding: "8px 10px", borderRadius: 7, background: "rgba(0,0,0,0.04)", marginTop: 4 }}>
+                    {noLink.length > 0 && <p style={{ margin: "2px 0", fontSize: 11, color: DS.labelText }}>Not linked — skipped: {noLink.map(s => s.rosterName || `#${s.rosterJersey}`).join(", ")}. Use the dropdowns above to link them.</p>}
+                    {noOrg.length  > 0 && <p style={{ margin: "2px 0", fontSize: 11, color: DS.warn }}>Not in org: {noOrg.map(s => s.rosterName).join(", ")}</p>}
+                    {other.length  > 0 && <p style={{ margin: "2px 0", fontSize: 11, color: DS.warn }}>Error: {other.map(s => `${s.rosterName} (${s.reason})`).join(", ")}</p>}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1032,17 +1196,35 @@ function FilmGameLogPanel({ filmId, film, plays, roster }) {
             </div>
           )}
 
-          {rows.length > 0 && !saved && (
-            <button
-              onClick={save}
-              disabled={saving || !gameInfo?.game_date || rows.every(r => !r.athleteToken)}
-              style={{
-                marginTop: 16, width: "100%", padding: "11px 20px", borderRadius: 9, border: "none",
-                background: DS.brand, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                opacity: (saving || rows.every(r => !r.athleteToken)) ? 0.5 : 1,
-              }}>
-              {saving ? "Saving…" : `Save to ${rows.filter(r => r.athleteToken).length} Athlete Profile${rows.filter(r => r.athleteToken).length !== 1 ? "s" : ""}`}
-            </button>
+          {/* ── Actions ── */}
+          {rows.length > 0 && (
+            <div style={{ marginTop: 16, display: "flex", gap: 10, flexDirection: "column" }}>
+              {(!saved || saved.skipped?.length > 0) && (
+                <button
+                  onClick={save}
+                  disabled={saving || !gameInfo?.game_date || rows.every(r => !r.athleteToken)}
+                  style={{
+                    width: "100%", padding: "12px 20px", borderRadius: 10, border: "none",
+                    background: DS.brand, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer",
+                    opacity: (saving || rows.every(r => !r.athleteToken)) ? 0.45 : 1,
+                    letterSpacing: "0.01em",
+                  }}>
+                  {saving
+                    ? "Saving…"
+                    : saved
+                      ? `Re-save & Fix ${rows.filter(r => r.athleteToken).length} Profiles`
+                      : `Save to ${rows.filter(r => r.athleteToken).length} Athlete Profile${rows.filter(r => r.athleteToken).length !== 1 ? "s" : ""}`
+                  }
+                </button>
+              )}
+              {saved && saved.skipped?.length === 0 && (
+                <button
+                  onClick={() => setSaved(null)}
+                  style={{ width: "100%", padding: "10px 20px", borderRadius: 10, border: `1px solid ${DS.border}`, background: DS.pageBg, color: DS.labelText, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  Re-generate & Update Stats
+                </button>
+              )}
+            </div>
           )}
 
         </div>
@@ -1482,53 +1664,68 @@ function TagBar({ filmId, snapTime, whistleTime, onMarkSnap, onMarkWhistle, onCl
       </div>
 
       {/* ── Player attribution — WHO touched the ball ── */}
-      {roster.length > 0 && (form.playType === "pass" || form.playType === "run") && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 10px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
-          <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.28)", flexShrink: 0 }}>
-            {form.playType === "pass" ? "Pass" : "Rush"}
-          </span>
-          {form.playType === "pass" && (
-            <>
-              <select
-                value={players.passer?.id || ""}
-                onChange={e => {
-                  const p = roster.find(r => r.id === Number(e.target.value));
-                  setPlayers(prev => p ? { ...prev, passer: { id: p.id, name: p.name, jersey: p.jersey_number } } : { ...prev, passer: undefined });
-                }}
-                style={{ flex: 1, minWidth: 90, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: players.passer ? "#e2e8f0" : "rgba(255,255,255,0.3)", fontSize: mob ? 12 : 11, fontWeight: 700, cursor: "pointer", outline: "none" }}>
-                <option value="">Passer…</option>
-                {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.name}{p.position ? ` (${p.position})` : ""}</option>)}
+      {roster.length > 0 && (form.playType === "pass" || form.playType === "run" || form.playType === "punt" || form.playType === "kickoff" || form.playType === "field_goal" || form.playType === "extra_point") && (() => {
+        const isKick = form.playType === "punt" || form.playType === "kickoff" || form.playType === "field_goal" || form.playType === "extra_point";
+        const isKickWithHang = form.playType === "punt" || form.playType === "kickoff";
+        const PICK_STYLE = (has) => ({ flex: 1, minWidth: 90, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: has ? "#e2e8f0" : "rgba(255,255,255,0.3)", fontSize: mob ? 12 : 11, fontWeight: 700, cursor: "pointer", outline: "none" });
+        const findPlayer = (val) => roster.find(r => String(r.id) === String(val));
+        const mkPlayer   = (p)   => ({ id: p.id, name: p.player_name, jersey: p.jersey_number });
+        const hasAny = Object.keys(players).some(k => k !== "hang_time" ? players[k]?.id : players[k] != null);
+        return (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 10px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.28)", flexShrink: 0 }}>
+              {form.playType === "pass" ? "Pass" : form.playType === "run" ? "Rush" : form.playType === "punt" ? "Punt" : form.playType === "kickoff" ? "Kick" : form.playType === "field_goal" ? "FG" : "XP"}
+            </span>
+
+            {form.playType === "pass" && (
+              <>
+                <select value={players.passer?.id || ""} onChange={e => { const p = findPlayer(e.target.value); setPlayers(prev => p ? { ...prev, passer: mkPlayer(p) } : { ...prev, passer: undefined }); }} style={PICK_STYLE(players.passer)}>
+                  <option value="">Passer…</option>
+                  {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}</option>)}
+                </select>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>→</span>
+                <select value={players.receiver?.id || ""} onChange={e => { const p = findPlayer(e.target.value); setPlayers(prev => p ? { ...prev, receiver: mkPlayer(p) } : { ...prev, receiver: undefined }); }} style={PICK_STYLE(players.receiver)}>
+                  <option value="">Receiver…</option>
+                  {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}</option>)}
+                </select>
+              </>
+            )}
+
+            {form.playType === "run" && (
+              <select value={players.carrier?.id || ""} onChange={e => { const p = findPlayer(e.target.value); setPlayers(prev => p ? { ...prev, carrier: mkPlayer(p) } : { ...prev, carrier: undefined }); }} style={{ ...PICK_STYLE(players.carrier), minWidth: 120 }}>
+                <option value="">Ball carrier…</option>
+                {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}</option>)}
               </select>
-              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>→</span>
-              <select
-                value={players.receiver?.id || ""}
-                onChange={e => {
-                  const p = roster.find(r => r.id === Number(e.target.value));
-                  setPlayers(prev => p ? { ...prev, receiver: { id: p.id, name: p.name, jersey: p.jersey_number } } : { ...prev, receiver: undefined });
-                }}
-                style={{ flex: 1, minWidth: 90, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: players.receiver ? "#e2e8f0" : "rgba(255,255,255,0.3)", fontSize: mob ? 12 : 11, fontWeight: 700, cursor: "pointer", outline: "none" }}>
-                <option value="">Receiver…</option>
-                {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.name}{p.position ? ` (${p.position})` : ""}</option>)}
+            )}
+
+            {isKick && (
+              <select value={players.kicker?.id || ""} onChange={e => { const p = findPlayer(e.target.value); setPlayers(prev => p ? { ...prev, kicker: mkPlayer(p) } : { ...prev, kicker: undefined }); }} style={{ ...PICK_STYLE(players.kicker), minWidth: 110 }}>
+                <option value="">Kicker…</option>
+                {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.player_name}{p.position ? ` (${p.position})` : ""}</option>)}
               </select>
-            </>
-          )}
-          {form.playType === "run" && (
-            <select
-              value={players.carrier?.id || ""}
-              onChange={e => {
-                const p = roster.find(r => r.id === Number(e.target.value));
-                setPlayers(prev => p ? { ...prev, carrier: { id: p.id, name: p.name, jersey: p.jersey_number } } : { ...prev, carrier: undefined });
-              }}
-              style={{ flex: 1, minWidth: 120, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: players.carrier ? "#e2e8f0" : "rgba(255,255,255,0.3)", fontSize: mob ? 12 : 11, fontWeight: 700, cursor: "pointer", outline: "none" }}>
-              <option value="">Ball carrier…</option>
-              {roster.map(p => <option key={p.id} value={p.id}>#{p.jersey_number} {p.name}{p.position ? ` (${p.position})` : ""}</option>)}
-            </select>
-          )}
-          {Object.keys(players).some(k => players[k]) && (
-            <button onClick={() => setPlayers({})} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.22)", fontSize: 10, padding: "2px 4px", flexShrink: 0, fontWeight: 700 }}>✕</button>
-          )}
-        </div>
-      )}
+            )}
+
+            {isKickWithHang && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={players.hang_time ?? ""}
+                  placeholder="Hang (s)"
+                  onChange={e => setPlayers(prev => ({ ...prev, hang_time: e.target.value !== "" ? Number(e.target.value) : undefined }))}
+                  style={{ width: mob ? 74 : 66, padding: mob ? "7px 6px" : "5px 6px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.14)", background: "#1e293b", color: players.hang_time != null ? "#e2e8f0" : "rgba(255,255,255,0.3)", fontSize: mob ? 12 : 11, fontWeight: 700, outline: "none" }}
+                />
+                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", fontWeight: 700 }}>sec</span>
+              </div>
+            )}
+
+            {(hasAny) && (
+              <button onClick={() => setPlayers({})} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.22)", fontSize: 10, padding: "2px 4px", flexShrink: 0, fontWeight: 700 }}>✕</button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Result — HOW it went ── */}
       <div style={{ display: "flex", alignItems: "center", gap: mob ? 4 : 5, flexWrap: mob ? "wrap" : "nowrap" }}>
@@ -6004,12 +6201,16 @@ export default function FilmDetailPage() {
                         const pt = typeShort(activePlay.play_type);
                         const yd = activePlay.yards_gained != null ? fmtYd(activePlay.yards_gained) : null;
                         const pl = activePlay.players || {};
-                        const passer   = pl.passer?.jersey   ? `#${pl.passer.jersey}`   : pl.passer?.name   || null;
-                        const receiver = pl.receiver?.jersey ? `#${pl.receiver.jersey}` : pl.receiver?.name || null;
-                        const carrier  = pl.carrier?.jersey  ? `#${pl.carrier.jersey}`  : pl.carrier?.name  || null;
+                        const fmt = (p) => p?.jersey ? `#${p.jersey}` : p?.name || null;
+                        const passer   = fmt(pl.passer);
+                        const receiver = fmt(pl.receiver);
+                        const carrier  = fmt(pl.carrier);
+                        const kicker   = fmt(pl.kicker);
+                        const hangTime = pl.hang_time != null ? `${pl.hang_time}s` : null;
                         let attribution = null;
                         if (passer && receiver) attribution = `${passer} → ${receiver}`;
-                        else if (carrier) attribution = carrier;
+                        else if (carrier)       attribution = carrier;
+                        else if (kicker)        attribution = kicker;
                         return (
                           <div style={{
                             position: "absolute", top: 10, left: 10, zIndex: 55,
@@ -6024,6 +6225,7 @@ export default function FilmDetailPage() {
                             {pt && <span style={{ fontSize: isMobile ? 10 : 9, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{pt}</span>}
                             {yd && <span style={{ fontSize: isMobile ? 11 : 10, fontWeight: 800, color: Number(activePlay.yards_gained) >= 0 ? "#4ade80" : "#f87171" }}>{yd}</span>}
                             {attribution && <span style={{ fontSize: isMobile ? 10 : 9, color: "rgba(255,255,255,0.45)", fontWeight: 600 }}>{attribution}</span>}
+                            {hangTime && <span style={{ fontSize: isMobile ? 10 : 9, color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>{hangTime} hang</span>}
                           </div>
                         );
                       })()}

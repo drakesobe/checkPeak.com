@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
-import { ChevronLeft, Plus, Pencil, Trash2, X, ChevronDown, Target, TrendingUp, Share2, Check } from "lucide-react";
+import { ChevronLeft, Plus, Pencil, Trash2, X, ChevronDown, Target, TrendingUp, Share2, Check, Shield, BarChart2, Trophy } from "lucide-react";
 import { Toaster, toast } from "react-hot-toast";
 import {
   SPORT_STATS, SPORT_LABELS, ALL_SPORTS,
@@ -603,6 +603,12 @@ function GameLog({ games, sport, onEdit, onDelete }) {
                   {(game.team_score != null && game.opp_score != null) && (
                     <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>{game.team_score}–{game.opp_score}</span>
                   )}
+                  {game.logged_by === "coach" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 7px", background: "rgba(0,135,62,0.1)", border: "1px solid rgba(0,135,62,0.25)", borderRadius: 4 }}>
+                      <Shield size={9} color={C.green} strokeWidth={2.5} />
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", color: C.green }}>COACH VERIFIED</span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <ShareButton gameId={game.id} />
@@ -653,6 +659,88 @@ function GameLog({ games, sport, onEdit, onDelete }) {
 
               {game.notes && (
                 <div style={{ marginTop: 8, fontSize: 11, color: C.muted, fontStyle: "italic" }}>{game.notes}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Career Arc ────────────────────────────────────────────────────────────────
+
+function CareerArc({ sport, groupKey, roleKey, currentSeason }) {
+  const [seasons, setSeasons] = useState([]);
+
+  useEffect(() => {
+    if (!sport) return;
+    const CURRENT = new Date().getFullYear();
+    const years = [CURRENT, CURRENT - 1, CURRENT - 2, CURRENT - 3];
+    Promise.all(
+      years.map(y =>
+        fetch(`/api/athlete/stats/games?sport=${sport}&season=${y}`, { credentials: "include" })
+          .then(r => r.json())
+          .then(d => ({ year: y, games: d.games || [] }))
+          .catch(() => ({ year: y, games: [] }))
+      )
+    ).then(results => {
+      const withGames = results.filter(r => r.games.length > 0);
+      if (withGames.length < 2) { setSeasons([]); return; }
+      const cfg = SPORT_STATS[sport];
+      const fields = getFields(sport, groupKey, roleKey);
+      const computed = getComputed(sport, groupKey, roleKey);
+      const cfg2 = cfg?.type === "grouped" ? cfg?.groups?.[groupKey] : cfg?.type === "role" ? cfg?.roles?.[roleKey] : cfg;
+      const displayKeys = (cfg2?.display || fields.slice(0, 3).map(f => f.key)).slice(0, 3);
+      const labelMap = {};
+      [...fields, ...computed].forEach(f => { labelMap[f.key] = f.label; });
+
+      setSeasons(withGames.map(({ year, games }) => {
+        const totals = aggregateStats(games, fields);
+        const computedVals = {};
+        computed.forEach(c => { try { computedVals[c.key] = c.fn(totals, games); } catch { computedVals[c.key] = "—"; } });
+        const wins   = games.filter(g => g.result === "W").length;
+        const losses = games.filter(g => g.result === "L").length;
+        const verified = games.filter(g => g.logged_by === "coach").length;
+        return { year, gp: games.length, wins, losses, verified, totals, computedVals, displayKeys, labelMap };
+      }));
+    });
+  }, [sport, groupKey, roleKey]);
+
+  if (seasons.length < 2) return null;
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 14, padding: "16px 18px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <BarChart2 size={14} color={C.accent} />
+        <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", color: C.muted }}>CAREER ARC</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {seasons.map((s, i) => {
+          const isCurrent = s.year === currentSeason;
+          return (
+            <div key={s.year} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, background: isCurrent ? `${C.accent}0D` : "transparent", border: isCurrent ? `1px solid ${C.accent}22` : "1px solid transparent" }}>
+              <span style={{ fontSize: 12, fontWeight: isCurrent ? 800 : 600, color: isCurrent ? C.accent : C.muted, flexShrink: 0, width: 36 }}>{s.year}</span>
+              <span style={{ fontSize: 10, color: C.muted, flexShrink: 0, width: 32 }}>{s.gp}G</span>
+              {s.wins > 0 || s.losses > 0 ? <span style={{ fontSize: 10, color: C.dim, flexShrink: 0, width: 40 }}>{s.wins}-{s.losses}</span> : <span style={{ width: 40 }} />}
+              <div style={{ flex: 1, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {s.displayKeys.map(key => {
+                  const isComp = s.computedVals[key] !== undefined;
+                  const val    = isComp ? s.computedVals[key] : s.totals[key];
+                  if (val == null || val === "—" || val === 0) return null;
+                  return (
+                    <div key={key}>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: isCurrent ? C.white : C.dim, letterSpacing: "-0.02em", lineHeight: 1 }}>{val}</div>
+                      <div style={{ fontSize: 8, fontWeight: 700, color: C.muted, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.08em" }}>{s.labelMap[key] || key}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {s.verified > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+                  <Shield size={9} color={C.green} strokeWidth={2.5} />
+                  <span style={{ fontSize: 9, fontWeight: 700, color: C.green }}>{s.verified}</span>
+                </div>
               )}
             </div>
           );
@@ -899,10 +987,22 @@ export default function StatsPage() {
         const s = (d.profile.sport || "").toLowerCase();
         setProfileSport(s);
         setProfilePosition(d.profile.position || "");
-        if (!sport) setSport(s || "football");
+        // Only apply profile default if no URL param is overriding sport
+        if (!sport && !router.query.sport) setSport(s || "football");
       })
       .catch(() => {});
   }, [authReady, isAthlete]);
+
+  // Apply URL params once when router is ready — URL params win over profile default
+  useEffect(() => {
+    if (!router.isReady) return;
+    const { sport: qs, season: qy } = router.query;
+    if (qs && typeof qs === "string") setSport(qs.toLowerCase());
+    if (qy) {
+      const y = Number(qy);
+      if (y >= 2020 && y <= CURRENT_YEAR + 1) setSeason(y);
+    }
+  }, [router.isReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load games whenever sport or season changes
   const loadGames = useCallback(async () => {
@@ -991,6 +1091,12 @@ export default function StatsPage() {
               {SPORT_LABELS[sport] || sport} · {season}
             </div>
           </div>
+          <button
+            onClick={() => router.push("/athlete/leaderboard")}
+            title="Team Leaderboard"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 10px", background: "transparent", border: `1px solid ${C.line2}`, borderRadius: 9, cursor: "pointer", color: C.muted, fontFamily: "inherit" }}>
+            <Trophy size={15} color={C.gold} />
+          </button>
           <button
             onClick={openAdd}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 14px", background: C.accent, border: "none", borderRadius: 9, fontSize: 12, fontWeight: 800, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
@@ -1106,6 +1212,7 @@ export default function StatsPage() {
 
             {games.length > 0 && (
               <>
+                <CareerArc sport={sport} groupKey={activeGroup} roleKey={activeRole} currentSeason={season} />
                 <SeasonSummary
                   games={summaryGames}
                   sport={sport}

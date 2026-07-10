@@ -468,11 +468,36 @@ const SPORT_LABELS_DISPLAY = {
   lacrosse: "Lacrosse", hockey: "Hockey", tennis: "Tennis",
 };
 
+// Compact per-game stat line — "14/22 · 187 yds · 2 TD"
+function fmtGameLine(stats, sport, groupKey, roleKey) {
+  if (!stats || typeof stats !== "object") return null;
+  const s = stats;
+  if (sport === "football") {
+    const parts = [];
+    if (s.att > 0)      parts.push(`${s.comp ?? 0}/${s.att} passing`);
+    if (s.pass_yds > 0) parts.push(`${s.pass_yds} yds`);
+    if (s.pass_td > 0)  parts.push(`${s.pass_td} TD`);
+    if (s.int > 0)      parts.push(`${s.int} INT`);
+    if (s.rush_yds > 0) parts.push(`${s.rush_yds} rush`);
+    if (s.rush_td > 0 && s.att === 0) parts.push(`${s.rush_td} TD`);
+    if (s.rec > 0)      parts.push(`${s.rec} rec`);
+    if (s.rec_yds > 0)  parts.push(`${s.rec_yds} yds`);
+    if (s.rec_td > 0)   parts.push(`${s.rec_td} TD`);
+    if (s.tackles > 0)  parts.push(`${s.tackles} tkl`);
+    if (s.sacks > 0)    parts.push(`${s.sacks} sack`);
+    return parts.slice(0, 4).join(" · ") || null;
+  }
+  // Generic: first 3 non-zero numeric fields
+  const line = Object.entries(s).filter(([, v]) => typeof v === "number" && v > 0).slice(0, 3).map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`);
+  return line.join(" · ") || null;
+}
+
 function GameStatsSection({ gameStats, seasonGoals }) {
   if (!gameStats) return null;
   const sportLabel = SPORT_LABELS_DISPLAY[gameStats.sport] || gameStats.sport;
   const goals = seasonGoals || [];
 
+  // ── Track / Swimming (events) ─────────────────────────────────────────────
   if (gameStats.type === "events") {
     return (
       <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.24s both" }}>
@@ -494,12 +519,10 @@ function GameStatsSection({ gameStats, seasonGoals }) {
         {gameStats.recentGames.length > 0 && (
           <>
             <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 8 }}>RECENT MEETS</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1, background: C.line, borderRadius: 10, overflow: "hidden" }}>
               {gameStats.recentGames.map((g, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.card }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {g.opponent || "Meet"}
-                  </span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.opponent || "Meet"}</span>
                   {g.date && <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{new Date(g.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
                 </div>
               ))}
@@ -510,8 +533,8 @@ function GameStatsSection({ gameStats, seasonGoals }) {
     );
   }
 
-  // Standard sport stats
-  const { totals, computed: computedVals, display, labels, wins, losses, ties, gameCount, season, prevSeason, recentGames } = gameStats;
+  // ── Standard sport stats ─────────────────────────────────────────────────
+  const { totals, computed: computedVals, display, labels, wins, losses, ties, gameCount, season, prevSeason, recentGames, coachVerified = 0 } = gameStats;
 
   const statTiles = (display || []).map(key => {
     const raw = computedVals?.[key] != null ? computedVals[key] : (totals?.[key] != null ? totals[key] : null);
@@ -521,66 +544,127 @@ function GameStatsSection({ gameStats, seasonGoals }) {
     return { key, val: fmtVal, label: (labels?.[key] || key).toUpperCase() };
   }).filter(Boolean);
 
-  const recordParts = [
-    wins   > 0 ? `${wins}W`   : null,
-    losses > 0 ? `${losses}L` : null,
-    ties   > 0 ? `${ties}T`   : null,
-  ].filter(Boolean);
-  const record = recordParts.length ? recordParts.join(" · ") : null;
-  const cols = Math.min(statTiles.length, 4);
+  const recordParts = [wins > 0 ? `${wins}W` : null, losses > 0 ? `${losses}L` : null, ties > 0 ? `${ties}T` : null].filter(Boolean);
+  const record = recordParts.length ? recordParts.join("-") : null;
+  const allVerified = coachVerified === gameCount && gameCount > 0;
 
   return (
     <div style={{ padding: "20px 22px", borderBottom: `1px solid ${C.line}`, animation: "fadeUp 0.35s ease 0.24s both" }}>
-      <SectionHeader icon={BarChart2} label="Season Stats" sub={`${sportLabel} · ${season}`} />
 
-      {statTiles.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
-          {statTiles.map((s, i) => (
-            <div key={s.key} style={{ padding: "16px 8px", background: i === 0 ? "#151926" : C.card, textAlign: "center" }}>
-              <div style={{ fontSize: i === 0 ? 26 : 22, fontWeight: 900, color: i === 0 ? C.white : C.dim, letterSpacing: "-0.03em", lineHeight: 1 }}>{s.val}</div>
-              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: C.muted, marginTop: 5 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: recentGames.length > 0 ? 16 : 0 }}>
-        {record && (
-          <div style={{ padding: "4px 12px", background: "rgba(0,200,81,0.07)", border: "1px solid rgba(0,200,81,0.18)", borderRadius: 20 }}>
-            <span style={{ fontSize: 12, fontWeight: 900, color: C.green }}>{record}</span>
+      {/* ── Section header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: allVerified ? 12 : 18 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <BarChart2 size={14} color={C.accent} />
+            <span style={{ fontSize: 13, fontWeight: 900, color: C.white, letterSpacing: "-0.01em" }}>Season Stats</span>
           </div>
-        )}
-        <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>{gameCount} {gameCount === 1 ? "game" : "games"} logged</span>
-        {prevSeason && (
-          <span style={{ fontSize: 11, color: "rgba(240,243,250,0.3)", fontWeight: 600 }}>· {prevSeason.gameCount}g in {prevSeason.season}</span>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>
+            {sportLabel} · {season}
+            {record && <span style={{ marginLeft: 8, color: C.dim, fontWeight: 700 }}>{record}</span>}
+            {prevSeason && <span style={{ marginLeft: 8, color: "rgba(240,243,250,0.25)", fontWeight: 500 }}>prev: {prevSeason.gameCount}g in {prevSeason.season}</span>}
+          </div>
+        </div>
+        {coachVerified > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: allVerified ? "rgba(0,200,81,0.1)" : "rgba(0,200,81,0.05)", border: `1px solid ${allVerified ? "rgba(0,200,81,0.35)" : "rgba(0,200,81,0.18)"}`, borderRadius: 6, flexShrink: 0 }}>
+            <Shield size={10} color={C.green} strokeWidth={2.5} />
+            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.12em", color: C.green }}>
+              {allVerified ? "ALL COACH VERIFIED" : `${coachVerified}/${gameCount} VERIFIED`}
+            </span>
+          </div>
         )}
       </div>
 
-      {recentGames.length > 0 && (
-        <>
-          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.13em", color: C.muted, marginBottom: 8 }}>RECENT GAMES</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 1, background: C.line, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-            {recentGames.map((g, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.card }}>
-                {g.result && (
-                  <div style={{ width: 24, height: 24, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: g.result === "W" ? "rgba(0,200,81,0.12)" : g.result === "L" ? "rgba(239,68,68,0.1)" : C.faint }}>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: g.result === "W" ? C.green : g.result === "L" ? "#EF4444" : C.muted }}>{g.result}</span>
-                  </div>
-                )}
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.dim, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {g.opponent ? `vs ${g.opponent}` : "Game"}
-                </span>
-                {g.logged_by === "coach" && (
-                  <Shield size={11} color={C.green} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-                )}
-                {g.team_score != null && g.opp_score != null && (
-                  <span style={{ fontSize: 12, fontWeight: 800, color: g.result === "W" ? C.white : C.muted, flexShrink: 0 }}>{g.team_score}–{g.opp_score}</span>
-                )}
-                {g.date && <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{new Date(g.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+      {/* ── Trust banner when all games are coach-verified ── */}
+      {allVerified && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "rgba(0,200,81,0.07)", border: "1px solid rgba(0,200,81,0.20)", borderRadius: 10, marginBottom: 16 }}>
+          <Shield size={14} color={C.green} strokeWidth={2} />
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: C.green, marginBottom: 2 }}>INDEPENDENTLY VERIFIED BY COACHING STAFF</div>
+            <div style={{ fontSize: 11, color: "rgba(240,243,250,0.55)", lineHeight: "1.4" }}>
+              Every game in this log was recorded directly by {sportLabel} coaches — not self-reported.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Broadcast stat bar ── */}
+      {statTiles.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          {/* Hero stat — first one gets full-width accent treatment */}
+          <div style={{ display: "flex", gap: 1, background: C.line, borderRadius: 12, overflow: "hidden", marginBottom: 1 }}>
+            <div style={{ flex: "0 0 auto", minWidth: 90, padding: "18px 16px", background: "linear-gradient(135deg, #0F1829 0%, #0B1120 100%)", borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <div style={{ fontSize: 36, fontWeight: 900, color: C.white, letterSpacing: "-0.04em", lineHeight: 1 }}>{statTiles[0].val}</div>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: C.accent, marginTop: 6 }}>{statTiles[0].label}</div>
+            </div>
+            {statTiles.slice(1).map((s) => (
+              <div key={s.key} style={{ flex: 1, padding: "14px 10px", background: C.card, textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: C.dim, letterSpacing: "-0.03em", lineHeight: 1 }}>{s.val}</div>
+                <div style={{ fontSize: 8, fontWeight: 900, letterSpacing: "0.1em", color: C.muted, marginTop: 5 }}>{s.label}</div>
               </div>
             ))}
           </div>
-        </>
+          {/* Divider line with games count */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, marginBottom: 2 }}>
+            <div style={{ flex: 1, height: 1, background: C.line }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(240,243,250,0.22)", letterSpacing: "0.1em", whiteSpace: "nowrap" }}>
+              SEASON TOTALS · {gameCount} {gameCount === 1 ? "GAME" : "GAMES"}
+            </span>
+            <div style={{ flex: 1, height: 1, background: C.line }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Recent games ── */}
+      {recentGames.length > 0 && (
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: C.muted, marginBottom: 8 }}>GAME LOG</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {recentGames.map((g, i) => {
+              const isWin  = g.result === "W" || g.result === "win";
+              const isLoss = g.result === "L" || g.result === "loss";
+              const gameLine = fmtGameLine(g.stats, gameStats.sport, gameStats.groupKey, gameStats.roleKey);
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", background: i % 2 === 0 ? C.card : C.surface, borderRadius: 8 }}>
+                  {/* Result pill */}
+                  <div style={{ width: 22, height: 22, borderRadius: 4, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isWin ? "rgba(0,200,81,0.15)" : isLoss ? "rgba(239,68,68,0.12)" : C.faint }}>
+                    <span style={{ fontSize: 10, fontWeight: 900, color: isWin ? C.green : isLoss ? "#EF4444" : C.muted }}>
+                      {g.result ? String(g.result).toUpperCase().slice(0, 1) : "–"}
+                    </span>
+                  </div>
+                  {/* Opponent */}
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.dim, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "0 0 auto", maxWidth: 100 }}>
+                    {g.opponent ? `vs ${g.opponent}` : "Game"}
+                  </span>
+                  {/* Per-game stat line — the money detail */}
+                  {gameLine && (
+                    <span style={{ flex: 1, fontSize: 11, fontWeight: 600, color: C.accent, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {gameLine}
+                    </span>
+                  )}
+                  {!gameLine && <span style={{ flex: 1 }} />}
+                  {/* Score */}
+                  {g.team_score != null && g.opp_score != null && (
+                    <span style={{ fontSize: 11, fontWeight: 800, color: isWin ? C.white : C.muted, flexShrink: 0 }}>
+                      {g.team_score}–{g.opp_score}
+                    </span>
+                  )}
+                  {/* Coach verified shield */}
+                  {g.logged_by === "coach" && (
+                    <div title="Coach verified" style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                      <Shield size={10} color={C.green} strokeWidth={2.5} />
+                    </div>
+                  )}
+                  {/* Date */}
+                  {g.date && (
+                    <span style={{ fontSize: 10, color: "rgba(240,243,250,0.28)", flexShrink: 0 }}>
+                      {new Date(g.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Season goals — visible to recruiters; signals athlete thinks professionally */}
@@ -1256,11 +1340,13 @@ export async function getServerSideProps({ params, req, res }) {
             const wins   = seasonGames.filter(g => g.result === "W").length;
             const losses = seasonGames.filter(g => g.result === "L").length;
             const ties   = seasonGames.filter(g => g.result === "T" || g.result === "D").length;
+            const coachVerified = seasonGames.filter(g => g.logged_by === "coach").length;
             gameStats = {
               type: "stats",
               sport,
               season: thisYear,
               gameCount: seasonGames.length,
+              coachVerified,
               wins, losses, ties,
               totals: current.totals,
               computed: current.computed,
@@ -1274,13 +1360,14 @@ export async function getServerSideProps({ params, req, res }) {
                 totals: prev.totals,
                 computed: prev.computed,
               } : null,
-              recentGames: seasonGames.slice(0, 4).map(g => ({
+              recentGames: seasonGames.slice(0, 5).map(g => ({
                 date: g.game_date,
                 opponent: g.opponent || null,
                 result: g.result || null,
                 team_score: g.team_score ?? null,
                 opp_score: g.opp_score ?? null,
                 logged_by: g.logged_by || "athlete",
+                stats: g.stats || {},
               })),
             };
           }

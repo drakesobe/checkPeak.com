@@ -30,7 +30,7 @@ export default async function handler(req, res) {
       .eq("athlete_token", athleteToken)
       .order("game_date", { ascending: false });
 
-    if (sport)  q = q.eq("sport", sport);
+    if (sport)  q = q.ilike("sport", sport.trim());
     if (season) q = q.eq("season_year", Number(season));
 
     const { data, error } = await q;

@@ -9,7 +9,7 @@ import {
   Film, Upload, Users, Users2, Plus, Trash2, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Video, Zap, Activity,
   Play, TrendingUp, Clock, Volume2, FileText, Search, Tag,
-  ArrowRight, Sparkles, ChevronDown, Check, Shield,
+  ArrowRight, Sparkles, ChevronDown, Check, Shield, Trophy,
 } from "lucide-react";
 
 const DS = {
@@ -855,7 +855,7 @@ function UploadModal({ onClose, onUploadStarted }) {
 }
 
 // ── Film card ─────────────────────────────────────────────────────────────────
-function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus }) {
+function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus, isLogged }) {
   const uiState      = filmUIState(film);
   const isProcessing = uiState === "uploading";
   const isFailed     = uiState === "failed";
@@ -1021,6 +1021,14 @@ function FilmCard({ film, onClick, onDelete, onPublish, watchCount, seasonStatus
             <p style={{ margin: "6px 0 0", fontSize: 11, color: DS.warn, fontWeight: 600 }}>
               Upload failed — delete and try again
             </p>
+          )}
+
+          {/* Stats logged badge */}
+          {isLogged && isTagged && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "3px 10px", borderRadius: 20, background: DS.safeBg, border: `1px solid ${DS.safeBorder}` }}>
+              <Trophy size={11} color={DS.safe} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: DS.safe, letterSpacing: "0.03em" }}>Stats Logged</span>
+            </div>
           )}
 
           {/* Watch receipt + due date — only for published films */}
@@ -1287,6 +1295,7 @@ export default function FilmPage() {
   const [sportFilter,    setSportFilter]    = useState("all");
   const [filmTypeFilter, setFilmTypeFilter] = useState("all");
   const [watchStats,    setWatchStats]    = useState({}); // { [filmId]: watched_count }
+  const [loggedFilms,   setLoggedFilms]   = useState(new Set()); // Set of film IDs with saved stats
   const [seasonStatus,  setSeasonStatus]  = useState(null);
   const pollingRef = useRef({});
   const pollSetRef = useRef(new Set());
@@ -1303,6 +1312,12 @@ export default function FilmPage() {
       if (d.films) {
         setFilms(d.films);
         d.films.filter(f => ACTIVE_STATUSES.includes(f.status)).forEach(f => startPolling(f.id));
+        // Fetch which films have saved stats (parallel with watch counts)
+        fetch("/api/org/logged-films", { credentials: "include" })
+          .then(r => r.json())
+          .then(d => { if (d.ok) setLoggedFilms(new Set(d.filmIds)); })
+          .catch(() => {});
+
         // Fetch watch counts for all published films
         const published = d.films.filter(f => f.is_published);
         if (published.length) {
@@ -1448,6 +1463,9 @@ export default function FilmPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button onClick={() => router.push("/org/leaderboard")} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
+                <Trophy size={14} /> Leaderboard
+              </button>
               <button onClick={() => setShowGroups(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
                 <Shield size={14} /> Groups
               </button>
@@ -1555,7 +1573,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {sharedFilms.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} watchCount={watchStats[f.id] ?? null} seasonStatus={seasonStatus} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} watchCount={watchStats[f.id] ?? null} seasonStatus={seasonStatus} isLogged={loggedFilms.has(f.id)} />
                     ))}
                   </div>
                 </section>
@@ -1572,7 +1590,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {readyFilms.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} isLogged={loggedFilms.has(f.id)} />
                     ))}
                   </div>
                 </section>
@@ -1589,7 +1607,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {needsTagging.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} isLogged={loggedFilms.has(f.id)} />
                     ))}
                   </div>
                 </section>
@@ -1606,7 +1624,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {inProgress.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} isLogged={loggedFilms.has(f.id)} />
                     ))}
                   </div>
                 </section>
@@ -1621,7 +1639,7 @@ export default function FilmPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {failed.map(f => (
-                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} />
+                      <FilmCard key={f.id} film={f} onClick={() => router.push(`/org/film/${f.id}`)} onDelete={handleFilmDeleted} onPublish={handlePublish} isLogged={loggedFilms.has(f.id)} />
                     ))}
                   </div>
                 </section>

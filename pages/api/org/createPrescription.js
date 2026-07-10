@@ -4,6 +4,7 @@
 
 import { requireOrg } from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { sendNotification } from "@/lib/sendNotification";
 
 function asString(v) { return String(v ?? "").trim(); }
 function normEmail(v) { return asString(v).toLowerCase(); }
@@ -138,6 +139,14 @@ export default async function handler(req, res) {
       .single();
 
     if (insertErr) throw insertErr;
+
+    // Notify athlete that their nutrition plan has been updated
+    sendNotification([athlete.athlete_token], {
+      title: "Nutrition Plan Updated",
+      body:  "Your coach has saved a new nutrition plan for you.",
+      type:  "nutrition_plan_updated",
+      data:  { planId: created.id },
+    });
 
     return res.status(200).json({
       ok:              true,

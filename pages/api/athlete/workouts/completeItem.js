@@ -4,6 +4,7 @@
 import formidable from "formidable";
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { sendNotificationToToken } from "@/lib/sendNotification";
 
 export const config = {
   api: { bodyParser: false },
@@ -235,6 +236,28 @@ export default async function handler(req, res) {
     if (dwId) {
       try { dailyWorkoutStatus = await recomputeDailyWorkoutStatus(dwId); } catch (e) {
         console.error("[completeItem] recompute failed:", e);
+      }
+    }
+
+    // Notify coach when workout requires their review
+    if (completionStatus === "pending_review" && orgId) {
+      try {
+        const { data: orgRow } = await db
+          .from("organizations")
+          .select("push_token")
+          .eq("id", orgId)
+          .maybeSingle();
+        if (orgRow?.push_token) {
+          const athleteName = String(auth.athlete?.name || auth.athlete?.Name || "An athlete");
+          sendNotificationToToken(orgRow.push_token, {
+            title: "Workout Submitted for Review",
+            body:  `${athleteName} submitted workout evidence — tap to review.`,
+            type:  "workout_review_submitted",
+            data:  { orgId, athleteId: athleteDbId, dwId },
+          });
+        }
+      } catch (e) {
+        console.error("[completeItem] coach notification failed:", e);
       }
     }
 

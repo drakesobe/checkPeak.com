@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const { data, error } = await supabase
         .from("roster")
-        .select("id, jersey_number, player_name, position, active")
+        .select("id, jersey_number, player_name, position, active, athlete_token")
         .eq("org_id", orgId)
         .order("jersey_number", { ascending: true });
 

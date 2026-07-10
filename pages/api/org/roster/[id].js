@@ -28,6 +28,20 @@ export default async function handler(req, res) {
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "Missing player id" });
 
+  // ── PATCH — link/unlink an athlete account to a roster entry ─────────────────
+  if (req.method === "PATCH") {
+    const { athleteToken } = req.body ?? {};
+    const { data, error } = await supabase
+      .from("roster")
+      .update({ athlete_token: athleteToken || null, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("org_id", orgId)
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true, player: data });
+  }
+
   // ── PUT ───────────────────────────────────────────────────────────────────────
   if (req.method === "PUT") {
     const { playerName, position, grade, jerseyNumber } = req.body ?? {};

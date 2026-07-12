@@ -181,9 +181,9 @@ export default async function handler(req, res) {
           .eq("athlete_id", uid)
           .select("*")
           .single();
-        if (sbErr) {
-          console.error("[reel upsert update]", sbErr);
-          return res.status(500).json({ error: sbErr.message });
+        if (sbErr || !data) {
+          console.error("[reel upsert update] uid:", uid, "sbErr:", sbErr, "data:", data);
+          return res.status(500).json({ error: sbErr?.message ?? `update returned no data for uid=${uid} reelId=${targetId}` });
         }
         reel = data;
       } else {
@@ -192,9 +192,9 @@ export default async function handler(req, res) {
           .insert({ athlete_id: uid, title: safeTitle, play_ids: playIds, play_highlights: safeHighlights, play_edits: safeEdits })
           .select("*")
           .single();
-        if (sbErr) {
-          console.error("[reel upsert insert]", sbErr);
-          return res.status(500).json({ error: sbErr.message });
+        if (sbErr || !data) {
+          console.error("[reel upsert insert] uid:", uid, "sbErr:", sbErr, "data:", data);
+          return res.status(500).json({ error: sbErr?.message ?? `insert returned no data for uid=${uid}` });
         }
         reel = data;
       }

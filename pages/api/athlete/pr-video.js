@@ -71,9 +71,11 @@ export default async function handler(req, res) {
       const videoUrl    = result.secure_url;
       const thumbnailUrl = result.eager?.[0]?.secure_url || null;
 
+      // Also stamp is_pr = true here so the row is queryable even if logSet
+      // couldn't write the column (e.g. column added after initial deploy)
       const { error: dbErr } = await db
         .from("set_logs")
-        .update({ video_url: videoUrl })
+        .update({ video_url: videoUrl, is_pr: true })
         .eq("id", setLogId)
         .eq("athlete_token", athleteToken);
 

@@ -28,28 +28,39 @@ export default async function handler(req, res) {
 
   const difficultyValue = difficulty ?? effort ?? null;
 
+  const baseRow = {
+    athlete_token:    athleteToken,
+    exercise_title:   String(exerciseTitle || "").trim(),
+    workout_item_id:  workoutItemId   ? String(workoutItemId)   : null,
+    daily_workout_id: dailyWorkoutId  ? String(dailyWorkoutId)  : null,
+    date:             date            ? String(date).slice(0, 10) : null,
+    set_number:       Number(setNumber) || 0,
+    target_reps:      String(targetReps  || ""),
+    target_weight:    String(targetWeight || ""),
+    actual_reps:      Number(actualReps)   || 0,
+    actual_weight:    Number(actualWeight) || 0,
+    difficulty:       difficultyValue != null ? Number(difficultyValue) : 0,
+    group_id:         groupId ? String(groupId) : null,
+    timestamp:        Number(timestamp) || Date.now(),
+    notes:            String(notes || "").trim() || null,
+  };
+
   try {
-    const { data, error } = await db
+    // Try with is_pr first; fall back without it if the column doesn't exist yet
+    let { data, error } = await db
       .from("set_logs")
-      .insert({
-        athlete_token:    athleteToken,
-        exercise_title:   String(exerciseTitle || "").trim(),
-        workout_item_id:  workoutItemId   ? String(workoutItemId)   : null,
-        daily_workout_id: dailyWorkoutId  ? String(dailyWorkoutId)  : null,
-        date:             date            ? String(date).slice(0, 10) : null,
-        set_number:     Number(setNumber) || 0,
-        target_reps:    String(targetReps  || ""),
-        target_weight:  String(targetWeight || ""),
-        actual_reps:    Number(actualReps)   || 0,
-        actual_weight:  Number(actualWeight) || 0,
-        difficulty:     difficultyValue != null ? Number(difficultyValue) : 0,
-        is_pr:          isPR === true || isPR === 'true',
-        group_id:       groupId ? String(groupId) : null,
-        timestamp:      Number(timestamp) || Date.now(),
-        notes:          String(notes || "").trim() || null,
-      })
+      .insert({ ...baseRow, is_pr: isPR === true || isPR === 'true' })
       .select("id")
       .single();
+
+    if (error && error.message && error.message.includes("is_pr")) {
+      // Column not yet migrated — insert without it so the id is still returned
+      ({ data, error } = await db
+        .from("set_logs")
+        .insert(baseRow)
+        .select("id")
+        .single());
+    }
 
     if (error) {
       console.error("[logSet]", error);

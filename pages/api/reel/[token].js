@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
   const { data: reel, error } = await supabase
     .from("athlete_reels")
-    .select("id, athlete_id, title, play_ids, is_public, created_at")
+    .select("id, athlete_id, title, play_ids, play_highlights, play_edits, is_public, created_at")
     .eq("share_token", token)
     .eq("is_public", true)
     .maybeSingle();
@@ -52,6 +52,8 @@ export default async function handler(req, res) {
         opponent: r.game_films.opponent || null,
         game_date: r.game_films.game_date || null,
         sport: r.game_films.sport || null,
+        highlight: (reel.play_highlights || {})[r.id] || null,
+        editData:  (reel.play_edits || {})[r.id] || null,
         thumb: `https://image.mux.com/${r.game_films.mux_playback_id}/thumbnail.jpg?time=${Math.max(0, r.start_time_secs + 1)}&width=600&fit_mode=preserve`,
         stream_url: `https://stream.mux.com/${r.game_films.mux_playback_id}.m3u8`,
       };

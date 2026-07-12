@@ -367,6 +367,8 @@ export default function AthleteProfile() {
   const [canNativeShare, setCanNativeShare] = useState(false);
   const [copied,     setCopied]     = useState(false);
   const [viewStats,  setViewStats]  = useState(null);
+  const [prVideos,   setPrVideos]   = useState([]);
+  const [playingId,  setPlayingId]  = useState(null);
 
   const shareUrl = shareToken && typeof window !== "undefined"
     ? `${window.location.origin}/recruit/${shareToken}`
@@ -379,9 +381,14 @@ export default function AthleteProfile() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/athlete/profile", { credentials: "include" });
-      const d = await r.json();
+      const [r, rv] = await Promise.all([
+        fetch("/api/athlete/profile",   { credentials: "include" }),
+        fetch("/api/athlete/pr-videos", { credentials: "include" }),
+      ]);
+      const d  = await r.json();
+      const dv = await rv.json().catch(() => ({ videos: [] }));
       if (!d.ok) { toast.error("Could not load profile"); return; }
+      setPrVideos(dv.videos ?? []);
       const p = d.profile;
       const loaded = {
         sport:           p.sport           || "",
@@ -873,6 +880,70 @@ export default function AthleteProfile() {
             {/* ── VIEW ANALYTICS ── */}
             {isPublic && viewStats && <ViewAnalytics viewStats={viewStats} />}
 
+            {/* ── PR PERFORMANCE VIDEOS ── */}
+            {prVideos.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", color: C.muted, marginBottom: 14 }}>
+                  PR PERFORMANCE VIDEOS
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {prVideos.map((v) => {
+                    const isPlaying = playingId === v.id;
+                    const label = [
+                      v.actual_reps   ? `${v.actual_reps} reps`           : null,
+                      v.actual_weight ? `${v.actual_weight} lbs`           : null,
+                    ].filter(Boolean).join(" · ");
+                    const dateStr = v.date
+                      ? new Date(v.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      : null;
+
+                    return (
+                      <div key={v.id} style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 12, overflow: "hidden" }}>
+                        {isPlaying ? (
+                          <video
+                            src={v.video_url}
+                            controls
+                            autoPlay
+                            style={{ width: "100%", maxHeight: 260, background: "#000", display: "block" }}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => setPlayingId(v.id)}
+                            style={{
+                              width: "100%", background: "rgba(251,191,36,0.04)",
+                              border: "none", borderBottom: `1px solid ${C.line2}`,
+                              cursor: "pointer", padding: "14px 16px",
+                              display: "flex", alignItems: "center", gap: 12,
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <div style={{
+                              width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+                              background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              <div style={{ width: 0, height: 0, borderStyle: "solid", borderWidth: "6px 0 6px 11px", borderColor: "transparent transparent transparent #FBBF24", marginLeft: 2 }} />
+                            </div>
+                            <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: C.white, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {v.exercise_title}
+                              </div>
+                              {(label || dateStr) && (
+                                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                                  {[label, dateStr].filter(Boolean).join("  ·  ")}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: "#FBBF24", flexShrink: 0 }}>PR</div>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* ── WHAT RECRUITERS SEE ── */}
             <div style={{ padding: "16px 18px", background: C.faint2, border: `1px solid ${C.line}`, borderRadius: 12, marginBottom: 28, marginTop: isPublic && viewStats ? 24 : 0 }}>
               <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: C.muted, marginBottom: 14 }}>
@@ -881,7 +952,7 @@ export default function AthleteProfile() {
               {[
                 { label: "Photo & physical info",             on: true },
                 { label: "Achievements & accolades",          on: form.achievements.length > 0, note: form.achievements.length === 0 ? "add achievements above" : `${form.achievements.length} listed` },
-                { label: "Strength PRs",                      on: true, note: "auto-populated from training logs" },
+                { label: "Strength PRs",                      on: true, note: prVideos.length > 0 ? `${prVideos.length} video${prVideos.length > 1 ? "s" : ""} attached` : "auto-populated from training logs" },
                 { label: "Training heatmap",                  on: true, note: "12-week consistency grid" },
                 { label: "Athletic tracking stats",           on: true, note: "from game film — if film tracking is active" },
                 { label: "Highlight reel",                    on: true, note: "if you've published one" },

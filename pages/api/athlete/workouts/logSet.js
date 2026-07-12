@@ -19,9 +19,9 @@ export default async function handler(req, res) {
   if (!athleteToken) return res.status(401).json({ error: "Missing AthleteToken" });
 
   const {
-    workoutItemId, exerciseTitle, date, setNumber,
+    workoutItemId, dailyWorkoutId, exerciseTitle, date, setNumber,
     targetReps, targetWeight, actualReps, actualWeight,
-    effort, difficulty, groupId, timestamp, notes,
+    effort, difficulty, isPR, groupId, timestamp, notes,
   } = req.body || {};
 
   if (!exerciseTitle) return res.status(400).json({ error: "exerciseTitle is required" });
@@ -32,16 +32,18 @@ export default async function handler(req, res) {
     const { data, error } = await db
       .from("set_logs")
       .insert({
-        athlete_token:  athleteToken,
-        exercise_title: String(exerciseTitle || "").trim(),
-        workout_item_id: workoutItemId ? String(workoutItemId) : null,
-        date:           date          ? String(date).slice(0, 10) : null,
+        athlete_token:    athleteToken,
+        exercise_title:   String(exerciseTitle || "").trim(),
+        workout_item_id:  workoutItemId   ? String(workoutItemId)   : null,
+        daily_workout_id: dailyWorkoutId  ? String(dailyWorkoutId)  : null,
+        date:             date            ? String(date).slice(0, 10) : null,
         set_number:     Number(setNumber) || 0,
         target_reps:    String(targetReps  || ""),
         target_weight:  String(targetWeight || ""),
         actual_reps:    Number(actualReps)   || 0,
         actual_weight:  Number(actualWeight) || 0,
         difficulty:     difficultyValue != null ? Number(difficultyValue) : 0,
+        is_pr:          isPR === true || isPR === 'true',
         group_id:       groupId ? String(groupId) : null,
         timestamp:      Number(timestamp) || Date.now(),
         notes:          String(notes || "").trim() || null,

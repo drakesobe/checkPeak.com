@@ -123,35 +123,50 @@ function PlayCard({ play, index, isActive, onClick }) {
         {play.game_date && (
           <p style={{ margin: "2px 0 0", fontSize: 11, color: DIM }}>{fmtDate(play.game_date)}</p>
         )}
+        {play.highlight && (
+          <p style={{ margin: "4px 0 0", fontSize: 11, color: AMBER, fontWeight: 700, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            "{play.highlight}"
+          </p>
+        )}
       </div>
     </button>
   );
 }
 
-// ── Mux video player with clip enforcement ────────────────────────────────────
-// Uses @mux/mux-player-react so HLS works in all browsers (Chrome, Firefox, Safari).
+// ── Mux video player with clip enforcement + athlete edits ────────────────────
 function ClipPlayer({ play }) {
   const playerRef = useRef(null);
-  const startRef  = useRef(play?.start_time_secs ?? 0);
-  const endRef    = useRef(play?.end_time_secs ?? null);
+  const ed        = play?.editData ?? null;
+  const startTime = (play?.start_time_secs ?? 0) + (ed?.startTrim ?? 0);
+  const endTime   = play?.end_time_secs != null ? play.end_time_secs - (ed?.endTrim ?? 0) : null;
+  const startRef  = useRef(startTime);
+  const endRef    = useRef(endTime);
 
   useEffect(() => {
     if (!play) return;
-    startRef.current = play.start_time_secs ?? 0;
-    endRef.current   = play.end_time_secs ?? null;
+    startRef.current = (play.start_time_secs ?? 0) + (play.editData?.startTrim ?? 0);
+    endRef.current   = play.end_time_secs != null ? play.end_time_secs - (play.editData?.endTrim ?? 0) : null;
   }, [play?.id]);
 
   if (!play) return null;
 
+  const hasCircle = ed?.circleX != null && ed?.circleY != null;
+
   return (
     <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#000", borderRadius: 12, overflow: "hidden" }}>
+      <style>{`
+        @keyframes cp-pulse {
+          0%,100% { transform: translate(-50%,-50%) scale(1);   opacity: 0.9; }
+          50%      { transform: translate(-50%,-50%) scale(1.18); opacity: 0.5; }
+        }
+      `}</style>
       <div style={{ position: "absolute", inset: 0 }}>
         <MuxPlayer
           ref={playerRef}
           key={play.id}
           playbackId={play.mux_playback_id}
           streamType="on-demand"
-          startTime={play.start_time_secs ?? 0}
+          startTime={startTime}
           style={{ width: "100%", height: "100%" }}
           accentColor={AMBER}
           onTimeUpdate={e => {
@@ -162,6 +177,23 @@ function ClipPlayer({ play }) {
             }
           }}
         />
+        {hasCircle && (
+          <div
+            style={{
+              position: "absolute",
+              left:   `${ed.circleX * 100}%`,
+              top:    `${ed.circleY * 100}%`,
+              width: 56, height: 56,
+              borderRadius: "50%",
+              border: `3px solid ${AMBER}`,
+              boxShadow: `0 0 0 2px rgba(245,158,11,0.25), 0 0 16px rgba(245,158,11,0.4)`,
+              background: "rgba(245,158,11,0.12)",
+              pointerEvents: "none",
+              animation: "cp-pulse 1.6s ease-in-out infinite",
+              transform: "translate(-50%, -50%)",
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -301,6 +333,13 @@ export default function ReelPage() {
                 </p>
                 {activePlay.game_date && (
                   <p style={{ margin: "3px 0 0", fontSize: 12, color: DIM }}>{fmtDate(activePlay.game_date)}</p>
+                )}
+
+                {activePlay.highlight && (
+                  <div style={{ marginTop: 12, padding: "9px 12px", background: "rgba(245,158,11,0.08)", borderRadius: 10, borderLeft: `3px solid ${AMBER}` }}>
+                    <p style={{ margin: "0 0 2px", fontSize: 10, fontWeight: 800, color: AMBER, textTransform: "uppercase", letterSpacing: "0.08em" }}>Athlete Note</p>
+                    <p style={{ margin: 0, fontSize: 13, color: WHITE, fontStyle: "italic" }}>"{activePlay.highlight}"</p>
+                  </div>
                 )}
 
                 {/* Prev / Next navigation */}

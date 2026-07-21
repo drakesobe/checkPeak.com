@@ -5,7 +5,7 @@
 import Head from "next/head";
 import { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Film, Mail, Zap, Dumbbell, TrendingUp, MessageSquare, ChevronRight, ExternalLink, X, Check, Send, Shield, Play, Lock, Trophy, Eye, Bookmark, BarChart2 } from "lucide-react";
+import { Film, Mail, Zap, Dumbbell, TrendingUp, MessageSquare, ChevronRight, ExternalLink, X, Check, Send, Shield, Play, Lock, Trophy, Eye, Bookmark, BarChart2, Layers } from "lucide-react";
 import { sendNotification } from "@/lib/sendNotification";
 import { SPORT_STATS, aggregateStats, getFields, getComputed, getFootballGroup } from "@/lib/sportStats";
 
@@ -740,6 +740,17 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
   const maxprepsUrl      = profile.maxpreps_url  || null;
   const hasContact       = !!athlete?.email;
   const hasSocial        = !!(instagramUrl || twitterUrl || maxprepsUrl);
+  const profileUpdatedAt = profile.updated_at || null;
+  const profileUpdatedLabel = (() => {
+    if (!profileUpdatedAt) return null;
+    const days = Math.floor((Date.now() - new Date(profileUpdatedAt).getTime()) / 86400000);
+    if (days === 0) return "Updated today";
+    if (days === 1) return "Updated yesterday";
+    if (days < 7)  return `Updated ${days} days ago`;
+    if (days < 30) return `Updated ${Math.floor(days / 7)} week${Math.floor(days / 7) === 1 ? "" : "s"} ago`;
+    if (days < 365) return `Updated ${Math.floor(days / 30)} month${Math.floor(days / 30) === 1 ? "" : "s"} ago`;
+    return "Updated over a year ago";
+  })();
 
   const isCommitted  = recruitingStatus === "committed" || recruitingStatus === "signed";
   const statusLabel  = recruitingStatus === "signed" ? "SIGNED" : recruitingStatus === "committed" ? "COMMITTED" : recruitingStatus === "open" ? "OPEN TO OFFERS" : null;
@@ -848,6 +859,11 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
             <Avatar url={avatarUrl} name={name} size={80} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 26, fontWeight: 900, color: C.white, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{name}</div>
+              {profileUpdatedLabel && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em", marginTop: 4 }}>
+                  {profileUpdatedLabel.toUpperCase()}
+                </div>
+              )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                 {position && <span style={{ fontSize: 12, fontWeight: 800, color: C.accent, padding: "3px 10px", background: "rgba(79,171,255,0.08)", border: "1px solid rgba(79,171,255,0.22)", borderRadius: 5 }}>{position}</span>}
                 {levelLabel && gradYear && <span style={{ fontSize: 12, fontWeight: 700, color: C.dim, padding: "3px 10px", background: C.faint, border: `1px solid ${C.line}`, borderRadius: 5 }}>{levelLabel} · Class of {gradYear}</span>}
@@ -946,22 +962,41 @@ export default function RecruitPage({ data, token, ogImageUrl }) {
               {reel && (
                 <a href={`/reel/${reel.shareToken}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
                   <div
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: "rgba(79,171,255,0.05)", border: "1px solid rgba(79,171,255,0.2)", borderRadius: 12, cursor: "pointer", transition: "border-color 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(79,171,255,0.42)"}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(79,171,255,0.2)"}
+                    style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(79,171,255,0.22)", cursor: "pointer", transition: "border-color 0.15s, transform 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(79,171,255,0.5)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(79,171,255,0.22)"; e.currentTarget.style.transform = "translateY(0)"; }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(79,171,255,0.12)", border: "1px solid rgba(79,171,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <Play size={14} color={C.accent} fill={C.accent} style={{ marginLeft: 2 }} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.white, marginBottom: 2 }}>{reel.title || "Highlight Reel"}</div>
-                        <div style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>{reel.playCount} {reel.playCount === 1 ? "play" : "plays"} · curated by the athlete</div>
+                    {/* Gradient header */}
+                    <div style={{ padding: "14px 18px 12px", background: "linear-gradient(135deg, rgba(79,171,255,0.12) 0%, rgba(79,171,255,0.04) 100%)", borderBottom: "1px solid rgba(79,171,255,0.12)" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <Play size={13} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: C.accent, marginBottom: 2 }}>HIGHLIGHT REEL</div>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: C.white, lineHeight: 1.2 }}>{reel.title || "My Highlight Reel"}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: C.accent, borderRadius: 20 }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: "#fff" }}>Watch</span>
+                          <ChevronRight size={12} color="#fff" />
+                        </div>
                       </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>Watch</span>
-                      <ChevronRight size={14} color={C.accent} />
+                    {/* Stats row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "10px 18px", background: C.card }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <Layers size={11} color={C.muted} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{reel.playCount} {reel.playCount === 1 ? "clip" : "clips"}</span>
+                      </div>
+                      {reel.viewCount > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <Eye size={11} color={C.muted} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>{reel.viewCount} {reel.viewCount === 1 ? "view" : "views"}</span>
+                        </div>
+                      )}
+                      <span style={{ fontSize: 12, color: C.muted }}>curated by athlete</span>
                     </div>
                   </div>
                 </a>
@@ -1409,10 +1444,15 @@ export async function getServerSideProps({ params, req, res }) {
     } catch { /* table may not exist yet */ }
   }
 
-  // 6. Public reel
-  const { data: reel } = await db
-    .from("athlete_reels").select("share_token, title, play_ids")
-    .eq("athlete_id", profile.athlete_token).eq("is_public", true).maybeSingle();
+  // 6. Public reel — athlete_id in athlete_reels may be stored as email OR athlete_token
+  //    depending on which auth path the athlete used. Check both.
+  const reelLookupIds = [profile.athlete_token];
+  if (athlete?.email) reelLookupIds.push(athlete.email.toLowerCase().trim());
+  const { data: reelRows } = await db
+    .from("athlete_reels").select("share_token, title, play_ids, view_count, updated_at")
+    .in("athlete_id", reelLookupIds).eq("is_public", true)
+    .order("updated_at", { ascending: false }).limit(1);
+  const reel = reelRows?.[0] || null;
 
   // 7. View stats + watchlist count (query BEFORE logging this view so we don't count ourselves)
   const weekAgo  = new Date(Date.now() - 7  * 86400000).toISOString();
@@ -1479,6 +1519,7 @@ export async function getServerSideProps({ params, req, res }) {
           top_schools:       Array.isArray(profile.top_schools) ? profile.top_schools.slice(0, 3) : null,
           family_statement:  profile.family_statement  || null,
           view_count:        newViewCount,
+          updated_at:        profile.updated_at        || null,
         },
         athlete: {
           name:  athlete?.name  || "Athlete",
@@ -1486,7 +1527,7 @@ export async function getServerSideProps({ params, req, res }) {
         },
         strengthPRs: strengthPRs.map(pr => ({ ...pr, videoUrl: pr.videoUrl || null })),
         athleticStats:  athleticStats || null,
-        reel:           reel ? { shareToken: reel.share_token, title: reel.title || null, playCount: reel.play_ids?.length ?? 0 } : null,
+        reel:           reel ? { shareToken: reel.share_token, title: reel.title || null, playCount: reel.play_ids?.length ?? 0, viewCount: reel.view_count || 0 } : null,
         gameStats,
         seasonGoals,
         heatmapDates,

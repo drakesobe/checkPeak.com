@@ -29,62 +29,78 @@ function parseUser(req) {
   return readUserCookie(req);
 }
 
-// ── Fire-and-forget: send Expo push to targeted org athletes ─────────────────
-// publishGroupIds: null/undefined = all athletes; array = only those in groups
+// ── Shared helper: resolve athlete push tokens for an org ────────────────────
+async function resolveOrgTokens(supabase, orgId, publishGroupIds) {
+  let targetEmails = null;
+
+  if (publishGroupIds?.length) {
+    const { data: groups } = await supabase
+      .from("org_groups")
+      .select("athlete_emails")
+      .eq("org_id", orgId)
+      .in("id", publishGroupIds);
+
+    targetEmails = new Set(
+      (groups ?? []).flatMap(g => g.athlete_emails ?? []).map(e => String(e).toLowerCase())
+    );
+  }
+
+  const { data: athletes } = await supabase
+    .from("athletes")
+    .select("push_token, email")
+    .eq("org_id", orgId)
+    .not("push_token", "is", null);
+
+  return (athletes ?? [])
+    .filter(a => {
+      if (targetEmails && !targetEmails.has(String(a.email || "").toLowerCase())) return false;
+      return a.push_token && (a.push_token.startsWith("ExponentPushToken[") || a.push_token.startsWith("ExpoPushToken["));
+    })
+    .map(a => a.push_token);
+}
+
+async function sendExpoPush(tokens, messages_fn) {
+  if (!tokens.length) return;
+  const BATCH = 100;
+  for (let i = 0; i < tokens.length; i += BATCH) {
+    const messages = tokens.slice(i, i + BATCH).map(to => ({ to, sound: "default", priority: "high", ...messages_fn(to) }));
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(messages),
+    });
+  }
+}
+
+// ── CARA push: required film assigned ────────────────────────────────────────
 async function sendRequiredFilmPush(orgId, filmId, filmTitle, opponent, publishGroupIds) {
   try {
-    let targetEmails = null;
-
-    if (publishGroupIds?.length) {
-      const { data: groups } = await supabase
-        .from("org_groups")
-        .select("athlete_emails")
-        .eq("org_id", orgId)
-        .in("id", publishGroupIds);
-
-      targetEmails = new Set(
-        (groups ?? []).flatMap(g => g.athlete_emails ?? []).map(e => String(e).toLowerCase())
-      );
-    }
-
-    const query = supabase
-      .from("athletes")
-      .select("push_token, email")
-      .eq("org_id", orgId)
-      .not("push_token", "is", null);
-
-    const { data: athletes } = await query;
-
-    const tokens = (athletes ?? [])
-      .filter(a => {
-        if (targetEmails && !targetEmails.has(String(a.email || "").toLowerCase())) return false;
-        return a.push_token && (a.push_token.startsWith("ExponentPushToken[") || a.push_token.startsWith("ExpoPushToken["));
-      })
-      .map(a => a.push_token);
-
-    if (!tokens.length) return;
-
+    const tokens = await resolveOrgTokens(supabase, orgId, publishGroupIds);
     const opponentStr = opponent ? ` vs ${opponent}` : "";
-    const body        = `Coach posted required viewing: ${filmTitle || "New film"}${opponentStr}. Watch before it's due.`;
-
-    const BATCH = 100;
-    for (let i = 0; i < tokens.length; i += BATCH) {
-      const messages = tokens.slice(i, i + BATCH).map(to => ({
-        to,
-        title:    "Required Film Assigned",
-        body,
-        sound:    "default",
-        priority: "high",
-        data:     { type: "required_film", filmId, filmTitle: filmTitle || "" },
-      }));
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body:    JSON.stringify(messages),
-      });
-    }
+    const body = `Coach posted required viewing: ${filmTitle || "New film"}${opponentStr}. Watch before it's due.`;
+    await sendExpoPush(tokens, () => ({
+      title: "Required Film Assigned",
+      body,
+      data: { type: "required_film", filmId, filmTitle: filmTitle || "" },
+    }));
   } catch (err) {
-    console.error("[film/publish] push send error:", err?.message);
+    console.error("[film/publish] cara push error:", err?.message);
+  }
+}
+
+// ── VARA push: voluntary film available ───────────────────────────────────────
+async function sendVoluntaryFilmPush(orgId, filmId, filmTitle, opponent, publishGroupIds) {
+  try {
+    const tokens = await resolveOrgTokens(supabase, orgId, publishGroupIds);
+    const opponentStr = opponent ? ` vs ${opponent}` : "";
+    const name = filmTitle ? `"${filmTitle}${opponentStr}"` : `New film${opponentStr}`;
+    await sendExpoPush(tokens, () => ({
+      title: "New Film Available",
+      body: `${name} is ready to watch. Check it out when you get a chance.`,
+      data: { type: "voluntary_film", filmId, filmTitle: filmTitle || "" },
+    }));
+  } catch (err) {
+    console.error("[film/publish] vara push error:", err?.message);
   }
 }
 
@@ -122,12 +138,14 @@ export default async function handler(req, res) {
 
     let updates        = {};
     let shouldPushCara = false;
+    let shouldPushVara = false;
 
     if (action === "publish") {
       if (film.status !== "ready") return res.status(400).json({ error: "Film must finish processing before going live" });
       updates = { is_published: true, viewing_type: viewingType, publish_group_ids: publishGroupIds };
       if (watchDueDate !== undefined) updates.watch_due_date = watchDueDate;
       shouldPushCara = !film.is_published && viewingType === "cara";
+      shouldPushVara = !film.is_published && viewingType === "vara";
     } else if (action === "unpublish") {
       updates = { is_published: false, watch_due_date: null };
     } else if (action === "setType") {
@@ -142,6 +160,7 @@ export default async function handler(req, res) {
       if (!film.is_published) {
         updates.viewing_type = viewingType;
         shouldPushCara = viewingType === "cara";
+        shouldPushVara = viewingType === "vara";
       }
     }
 
@@ -156,6 +175,9 @@ export default async function handler(req, res) {
     // Fire-and-forget — don't block the response
     if (shouldPushCara) {
       sendRequiredFilmPush(orgId, filmId, film.title, film.opponent, publishGroupIds);
+    }
+    if (shouldPushVara) {
+      sendVoluntaryFilmPush(orgId, filmId, film.title, film.opponent, publishGroupIds);
     }
 
     return res.status(200).json({

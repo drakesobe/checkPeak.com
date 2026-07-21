@@ -1481,6 +1481,43 @@ export default function FilmPage() {
           {/* Stats header */}
           {!loading && <StatsHeader films={films} />}
 
+          {/* Compliance strip — most recent shared film */}
+          {!loading && (() => {
+            const recentCara = films.filter(f => f.is_published && f.viewing_type === "cara" && filmUIState(f) === "has-plays")[0];
+            const recentVara = films.filter(f => f.is_published && f.viewing_type === "vara" && filmUIState(f) === "has-plays")[0];
+            const target = recentCara || recentVara;
+            if (!target || watchStats[target.id] == null) return null;
+            const watched   = watchStats[target.id];
+            const isRequired = target.viewing_type === "cara";
+            const age = target.game_date
+              ? Math.floor((Date.now() - new Date(target.game_date + "T12:00:00").getTime()) / 86400000)
+              : null;
+            const ageLabel = age != null ? (age === 0 ? "today" : age === 1 ? "yesterday" : `${age}d ago`) : null;
+            return (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 12,
+                background: DS.cardBg, border: `1px solid ${DS.border}`,
+                borderRadius: 10, padding: "12px 16px", marginBottom: 16,
+              }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                  background: isRequired ? "#FF3B30" : DS.safe,
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {isRequired ? "Required" : "Voluntary"} · <span style={{ fontWeight: 500 }}>{target.title}</span>
+                    {ageLabel && <span style={{ color: DS.dimText, fontWeight: 400 }}> · {ageLabel}</span>}
+                  </p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <TrendingUp size={12} color={DS.labelText} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: DS.bodyText }}>{watched}</span>
+                  <span style={{ fontSize: 11, color: DS.dimText }}>{watched === 1 ? "athlete watched" : "athletes watched"}</span>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Search + filter row */}
           {!loading && films.length > 0 && (
             <>

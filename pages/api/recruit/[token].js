@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   const since365 = Date.now() - 365 * 24 * 60 * 60 * 1000;
   const { data: logs } = await db
     .from("set_logs")
-    .select("exercise_title, actual_weight, actual_reps, target_weight, video_url")
+    .select("exercise_title, actual_weight, actual_reps, target_weight, video_url, date")
     .eq("athlete_token", profile.athlete_token)
     .gt("actual_weight", 0)
     .gt("actual_reps", 0)
@@ -62,11 +62,39 @@ export default async function handler(req, res) {
     const unitRaw = String(log.target_weight || "");
     const unit    = /kg/i.test(unitRaw) ? "kg" : "lb";
     if (!prMap[title] || w > prMap[title].maxWeight) {
-      prMap[title] = { exercise: title, maxWeight: w, unit, maxReps: r, videoUrl: log.video_url || null };
+      prMap[title] = { exercise: title, maxWeight: w, unit, maxReps: r, videoUrl: log.video_url || null, prDate: log.date || null };
+    }
+  }
+
+  // Overlay the most recent recorded PR video onto each exercise.
+  // The max-weight row often has no video; the is_pr-flagged row does.
+  const { data: prVideoRows } = await db
+    .from("set_logs")
+    .select("exercise_title, video_url, timestamp, actual_weight, actual_reps")
+    .eq("athlete_token", profile.athlete_token)
+    .eq("is_pr", true)
+    .not("video_url", "is", null)
+    .order("timestamp", { ascending: false })
+    .limit(200);
+
+  const prVideoByExercise = {};
+  for (const row of (prVideoRows ?? [])) {
+    const title = (row.exercise_title || "").trim();
+    if (!prVideoByExercise[title]) {
+      prVideoByExercise[title] = {
+        videoUrl:   row.video_url,
+        prWeight:   Number(row.actual_weight) || 0,
+        prReps:     Number(row.actual_reps)   || 0,
+      };
     }
   }
 
   const strengthPRs = Object.values(prMap)
+    .map(pr => ({
+      ...pr,
+      // Prefer a recorded PR video over whatever was on the max-weight row
+      videoUrl: (prVideoByExercise[pr.exercise]?.videoUrl) || pr.videoUrl || null,
+    }))
     .sort((a, b) => b.maxWeight - a.maxWeight)
     .slice(0, 8);
 

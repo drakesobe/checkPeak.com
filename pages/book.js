@@ -54,6 +54,7 @@ const WHAT_TO_EXPECT = [
 export default function BookPage() {
   const [form, setForm] = useState({
     name: "", email: "", organization: "", role: "", athletes: "", message: "",
+    website: "", // honeypot — hidden from real users, bots fill it
   });
   const [status, setStatus]   = useState("idle"); // idle | submitting | success | error
   const [focused, setFocused] = useState(null);
@@ -177,6 +178,13 @@ export default function BookPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+
+                {/* Honeypot — invisible to real users, bots fill it and get silently rejected */}
+                <div style={{ position: "absolute", left: "-9999px", width: 1, height: 1, overflow: "hidden" }} aria-hidden="true">
+                  <label htmlFor="website">Website</label>
+                  <input id="website" type="text" name="website" tabIndex={-1} autoComplete="off"
+                    value={form.website} onChange={set("website")} />
+                </div>
 
                 {/* Row 1: Name + Email */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>

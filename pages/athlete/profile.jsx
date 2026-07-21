@@ -367,8 +367,9 @@ export default function AthleteProfile() {
   const [canNativeShare, setCanNativeShare] = useState(false);
   const [copied,     setCopied]     = useState(false);
   const [viewStats,  setViewStats]  = useState(null);
-  const [prVideos,   setPrVideos]   = useState([]);
-  const [playingId,  setPlayingId]  = useState(null);
+  const [prVideos,        setPrVideos]        = useState([]);
+  const [playingId,       setPlayingId]       = useState(null);
+  const [expandedExercise, setExpandedExercise] = useState(null);
 
   const shareUrl = shareToken && typeof window !== "undefined"
     ? `${window.location.origin}/recruit/${shareToken}`
@@ -881,68 +882,119 @@ export default function AthleteProfile() {
             {isPublic && viewStats && <ViewAnalytics viewStats={viewStats} />}
 
             {/* ── PR PERFORMANCE VIDEOS ── */}
-            {prVideos.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", color: C.muted, marginBottom: 14 }}>
-                  PR PERFORMANCE VIDEOS
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {prVideos.map((v) => {
-                    const isPlaying = playingId === v.id;
-                    const label = [
-                      v.actual_reps   ? `${v.actual_reps} reps`           : null,
-                      v.actual_weight ? `${v.actual_weight} lbs`           : null,
-                    ].filter(Boolean).join(" · ");
-                    const dateStr = v.date
-                      ? new Date(v.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                      : null;
+            {(() => {
+              // Group by exercise, API already returns newest-first
+              const groups = [];
+              const seen = {};
+              prVideos.forEach(v => {
+                const key = v.exercise_title;
+                if (!seen[key]) { seen[key] = []; groups.push({ key, videos: seen[key] }); }
+                seen[key].push(v);
+              });
+              if (!groups.length) return null;
 
-                    return (
-                      <div key={v.id} style={{ background: C.card, border: `1px solid ${C.line2}`, borderRadius: 12, overflow: "hidden" }}>
-                        {isPlaying ? (
-                          <video
-                            src={v.video_url}
-                            controls
-                            autoPlay
-                            style={{ width: "100%", maxHeight: 260, background: "#000", display: "block" }}
-                          />
-                        ) : (
-                          <button
-                            onClick={() => setPlayingId(v.id)}
-                            style={{
-                              width: "100%", background: "rgba(251,191,36,0.04)",
-                              border: "none", borderBottom: `1px solid ${C.line2}`,
-                              cursor: "pointer", padding: "14px 16px",
-                              display: "flex", alignItems: "center", gap: 12,
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            <div style={{
-                              width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                              background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>
-                              <div style={{ width: 0, height: 0, borderStyle: "solid", borderWidth: "6px 0 6px 11px", borderColor: "transparent transparent transparent #FBBF24", marginLeft: 2 }} />
+              const fmtLabel = (v) => [
+                v.actual_weight ? `${v.actual_weight} lbs` : null,
+                v.actual_reps   ? `${v.actual_reps} reps`  : null,
+              ].filter(Boolean).join(" · ");
+
+              const fmtDate = (v) => v.date
+                ? new Date(v.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : null;
+
+              const PlayBtn = ({ v }) => {
+                const isPlaying = playingId === v.id;
+                return (
+                  <div>
+                    {isPlaying ? (
+                      <video src={v.video_url} controls autoPlay
+                        style={{ width: "100%", height: 220, objectFit: "contain", background: "#000", display: "block" }}
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setPlayingId(v.id)}
+                        style={{
+                          width: "100%", background: "none", border: "none",
+                          cursor: "pointer", padding: "12px 16px",
+                          display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit",
+                        }}
+                      >
+                        <div style={{
+                          width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+                          background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          <div style={{ width: 0, height: 0, borderStyle: "solid", borderWidth: "5px 0 5px 10px", borderColor: "transparent transparent transparent #FBBF24", marginLeft: 2 }} />
+                        </div>
+                        <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.white }}>{fmtLabel(v) || "—"}</div>
+                          {fmtDate(v) && <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{fmtDate(v)}</div>}
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.16em", color: C.muted, marginBottom: 14 }}>
+                    PR PERFORMANCE VIDEOS
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {groups.map(({ key, videos }) => {
+                      const latest = videos[0];
+                      const older  = videos.slice(1);
+                      const isExpanded = expandedExercise === key;
+                      return (
+                        <div key={key} style={{ background: C.card, border: `1px solid rgba(251,191,36,0.2)`, borderRadius: 12, overflow: "hidden" }}>
+                          {/* Exercise title + PR count */}
+                          <div style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "10px 16px", borderBottom: `1px solid ${C.line2}`,
+                            background: "rgba(251,191,36,0.04)",
+                          }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: C.white, letterSpacing: "-0.2px" }}>{key}</div>
+                            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.12em", color: "#FBBF24" }}>
+                              {videos.length} PR{videos.length > 1 ? "s" : ""}
                             </div>
-                            <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: C.white, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {v.exercise_title}
-                              </div>
-                              {(label || dateStr) && (
-                                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                                  {[label, dateStr].filter(Boolean).join("  ·  ")}
+                          </div>
+
+                          {/* Latest video */}
+                          <PlayBtn v={latest} />
+
+                          {/* Older PRs — expandable */}
+                          {older.length > 0 && (
+                            <>
+                              <button
+                                onClick={() => setExpandedExercise(isExpanded ? null : key)}
+                                style={{
+                                  width: "100%", background: "none",
+                                  border: "none", borderTop: `1px solid ${C.line2}`,
+                                  cursor: "pointer", padding: "9px 16px",
+                                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                                  fontFamily: "inherit",
+                                }}
+                              >
+                                <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>
+                                  {isExpanded ? "Hide" : `${older.length} previous PR${older.length > 1 ? "s" : ""}`}
+                                </span>
+                                <span style={{ fontSize: 11, color: C.muted }}>{isExpanded ? "▲" : "▼"}</span>
+                              </button>
+                              {isExpanded && older.map(v => (
+                                <div key={v.id} style={{ borderTop: `1px solid ${C.line2}` }}>
+                                  <PlayBtn v={v} />
                                 </div>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: "#FBBF24", flexShrink: 0 }}>PR</div>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ── WHAT RECRUITERS SEE ── */}
             <div style={{ padding: "16px 18px", background: C.faint2, border: `1px solid ${C.line}`, borderRadius: 12, marginBottom: 28, marginTop: isPublic && viewStats ? 24 : 0 }}>
@@ -952,7 +1004,7 @@ export default function AthleteProfile() {
               {[
                 { label: "Photo & physical info",             on: true },
                 { label: "Achievements & accolades",          on: form.achievements.length > 0, note: form.achievements.length === 0 ? "add achievements above" : `${form.achievements.length} listed` },
-                { label: "Strength PRs",                      on: true, note: prVideos.length > 0 ? `${prVideos.length} video${prVideos.length > 1 ? "s" : ""} attached` : "auto-populated from training logs" },
+                { label: "Strength PRs",                      on: true, note: (() => { const ex = [...new Set(prVideos.map(v => v.exercise_title))]; return ex.length > 0 ? `${ex.length} exercise${ex.length > 1 ? "s" : ""}, ${prVideos.length} video${prVideos.length > 1 ? "s" : ""}` : "auto-populated from training logs"; })() },
                 { label: "Training heatmap",                  on: true, note: "12-week consistency grid" },
                 { label: "Athletic tracking stats",           on: true, note: "from game film — if film tracking is active" },
                 { label: "Highlight reel",                    on: true, note: "if you've published one" },

@@ -134,13 +134,17 @@ function PlayCard({ play, index, isActive, onClick }) {
 }
 
 // ── Mux video player with clip enforcement + athlete edits ────────────────────
-function ClipPlayer({ play }) {
-  const playerRef = useRef(null);
-  const ed        = play?.editData ?? null;
-  const startTime = (play?.start_time_secs ?? 0) + (ed?.startTrim ?? 0);
-  const endTime   = play?.end_time_secs != null ? play.end_time_secs - (ed?.endTrim ?? 0) : null;
-  const startRef  = useRef(startTime);
-  const endRef    = useRef(endTime);
+function ClipPlayer({ play, autoPlay = false, onEnded }) {
+  const playerRef  = useRef(null);
+  const onEndedRef = useRef(onEnded);
+  const ed         = play?.editData ?? null;
+  const startTime  = (play?.start_time_secs ?? 0) + (ed?.startTrim ?? 0);
+  const startRef   = useRef(startTime);
+  const endRef     = useRef(
+    play?.end_time_secs != null ? play.end_time_secs - (ed?.endTrim ?? 0) : null
+  );
+
+  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
   useEffect(() => {
     if (!play) return;
@@ -148,8 +152,22 @@ function ClipPlayer({ play }) {
     endRef.current   = play.end_time_secs != null ? play.end_time_secs - (play.editData?.endTrim ?? 0) : null;
   }, [play?.id]);
 
-  if (!play) return null;
+  // Native timeupdate — enforces end boundary and signals reel to advance
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const enforce = () => {
+      const end = endRef.current;
+      if (end != null && player.currentTime >= end) {
+        player.pause();
+        onEndedRef.current?.();
+      }
+    };
+    player.addEventListener("timeupdate", enforce);
+    return () => player.removeEventListener("timeupdate", enforce);
+  }, []);
 
+  if (!play) return null;
   const hasCircle = ed?.circleX != null && ed?.circleY != null;
 
   return (
@@ -167,15 +185,9 @@ function ClipPlayer({ play }) {
           playbackId={play.mux_playback_id}
           streamType="on-demand"
           startTime={startTime}
+          autoPlay={autoPlay}
           style={{ width: "100%", height: "100%" }}
           accentColor={AMBER}
-          onTimeUpdate={e => {
-            const end = endRef.current;
-            if (end != null && e.target.currentTime >= end) {
-              e.target.pause();
-              e.target.currentTime = startRef.current;
-            }
-          }}
         />
         {hasCircle && (
           <div
@@ -208,6 +220,7 @@ export default function ReelPage() {
   const [reel,      setReel]      = useState(null);
   const [plays,     setPlays]     = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [autoPlay,  setAutoPlay]  = useState(false);
   const [notFound,  setNotFound]  = useState(false);
 
   useEffect(() => {
@@ -224,6 +237,15 @@ export default function ReelPage() {
   }, [token]);
 
   const activePlay = plays[activeIdx] ?? null;
+
+  // Advance to next clip when the current one ends; loop back to start after last.
+  function handleClipEnd() {
+    setActiveIdx(i => {
+      const next = i + 1;
+      return next < plays.length ? next : 0;
+    });
+    setAutoPlay(true);
+  }
 
   if (loading) {
     return (
@@ -307,7 +329,7 @@ export default function ReelPage() {
 
           {/* Player + info column */}
           <div>
-            <ClipPlayer play={activePlay} />
+            <ClipPlayer play={activePlay} autoPlay={autoPlay} onEnded={handleClipEnd} />
 
             {activePlay && (
               <div style={{ marginTop: 14, padding: "16px 20px", background: CARD, border: `1px solid ${BORDER}`, borderRadius: 14 }}>
@@ -346,7 +368,7 @@ export default function ReelPage() {
                 {plays.length > 1 && (
                   <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                     <button
-                      onClick={() => setActiveIdx(i => Math.max(0, i - 1))}
+                      onClick={() => { setActiveIdx(i => Math.max(0, i - 1)); setAutoPlay(false); }}
                       disabled={activeIdx === 0}
                       style={{
                         flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
@@ -360,7 +382,7 @@ export default function ReelPage() {
                       Previous
                     </button>
                     <button
-                      onClick={() => setActiveIdx(i => Math.min(plays.length - 1, i + 1))}
+                      onClick={() => { setActiveIdx(i => Math.min(plays.length - 1, i + 1)); setAutoPlay(false); }}
                       disabled={activeIdx === plays.length - 1}
                       style={{
                         flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
@@ -392,7 +414,7 @@ export default function ReelPage() {
                   play={p}
                   index={i}
                   isActive={i === activeIdx}
-                  onClick={setActiveIdx}
+                  onClick={idx => { setActiveIdx(idx); setAutoPlay(false); }}
                 />
               ))}
             </div>

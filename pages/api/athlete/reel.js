@@ -179,27 +179,27 @@ export default async function handler(req, res) {
           .update({ title: safeTitle, play_ids: playIds, play_highlights: safeHighlights, play_edits: safeEdits, updated_at: new Date().toISOString() })
           .eq("id", targetId)
           .eq("athlete_id", uid)
-          .select("*")
+          .select("id")
           .single();
         if (sbErr || !data) {
           console.error("[reel upsert update] uid:", uid, "sbErr:", sbErr, "data:", data);
           return res.status(500).json({ error: sbErr?.message ?? `update returned no data for uid=${uid} reelId=${targetId}` });
         }
-        reel = data;
+        reel = { id: data.id };
       } else {
         const { data, error: sbErr } = await supabase
           .from("athlete_reels")
           .insert({ athlete_id: uid, title: safeTitle, play_ids: playIds, play_highlights: safeHighlights, play_edits: safeEdits })
-          .select("*")
+          .select("id")
           .single();
         if (sbErr || !data) {
           console.error("[reel upsert insert] uid:", uid, "sbErr:", sbErr, "data:", data);
           return res.status(500).json({ error: sbErr?.message ?? `insert returned no data for uid=${uid}` });
         }
-        reel = data;
+        reel = { id: data.id };
       }
 
-      return res.status(200).json({ ok: true, reel, ...(await hydrateReel(reel)) });
+      return res.status(200).json({ ok: true, reel });
     }
 
     if (action === "share") {

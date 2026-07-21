@@ -4,17 +4,51 @@
 import { Resend } from "resend";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { ratelimiter } from "@/lib/ratelimiter";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM   = `CheckPeak <noreply@${process.env.RESEND_FROM_DOMAIN ?? "checkpeak.com"}>`;
 const TO     = "Matthew@checkpeak.com";
 
+// Returns true if a string looks like a bot-generated random token
+// (all alphanumeric, no spaces, mixed case, length 10+)
+function looksRandom(str) {
+  if (!str || str.length < 10) return false;
+  const s = String(str).trim();
+  if (!/^[A-Za-z0-9]+$/.test(s)) return false; // must be pure alnum with no spaces
+  const hasUpper = /[A-Z]/.test(s);
+  const hasLower = /[a-z]/.test(s);
+  const hasDigit = /[0-9]/.test(s);
+  return hasUpper && hasLower && hasDigit; // mixed case + digits = likely random token
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { name, email, organization, role, athletes, message } = req.body || {};
+  // Rate limit: 2 requests per 5 seconds per IP
+  if (!ratelimiter(req, res, "walkthrough-request")) return;
+
+  const { name, email, organization, role, athletes, message, website } = req.body || {};
+
+  // Honeypot: hidden field that real browsers leave blank; bots fill it
+  if (website) {
+    console.log("[walkthrough-request] honeypot triggered");
+    return res.status(200).json({ success: true }); // silent accept — don't reveal the check
+  }
+
   if (!name || !email || !organization || !role) {
     return res.status(400).json({ error: "Missing required fields." });
+  }
+
+  if (!email.includes("@") || !email.includes(".")) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+
+  // Bot detection: if name, org, AND message all look like random tokens, reject silently
+  const botScore = [name, organization, role, message].filter(looksRandom).length;
+  if (botScore >= 3) {
+    console.log("[walkthrough-request] bot detected — random fields:", { name, organization, role });
+    return res.status(200).json({ success: true }); // silent accept
   }
 
   try {

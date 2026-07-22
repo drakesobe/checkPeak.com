@@ -437,14 +437,16 @@ CREATE TABLE IF NOT EXISTS videos (
   source_type   TEXT DEFAULT 'upload',
   embed_url     TEXT DEFAULT '',
   mux_upload_id TEXT DEFAULT '',
-  mux_asset_id  TEXT DEFAULT '',
-  playback_id   TEXT DEFAULT '',
-  tier          TEXT NOT NULL DEFAULT 'Basic',
-  tags          JSONB DEFAULT '{}',
-  status        TEXT DEFAULT 'pending',
-  published     BOOLEAN DEFAULT false,
-  price         NUMERIC(10,2),
-  created_at    TIMESTAMPTZ DEFAULT now()
+  mux_asset_id    TEXT DEFAULT '',
+  mux_playback_id TEXT DEFAULT '',
+  tier            TEXT NOT NULL DEFAULT 'Basic',
+  tags            JSONB DEFAULT '{}',
+  status          TEXT DEFAULT 'pending',
+  published       BOOLEAN DEFAULT false,
+  price           NUMERIC(10,2),
+  duration        INTEGER,
+  aspect_ratio    TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS videos_trainer_id_idx    ON videos(trainer_id);
 CREATE INDEX IF NOT EXISTS videos_mux_upload_id_idx ON videos(mux_upload_id);
@@ -505,11 +507,28 @@ CREATE TABLE IF NOT EXISTS commercial_workouts (
   description TEXT DEFAULT '',
   tier        TEXT DEFAULT 'Basic',
   published   BOOLEAN DEFAULT false,
+  price       NUMERIC(10,2),
+  duration    INTEGER,
   tags        JSONB DEFAULT '{}',
   exercises   JSONB DEFAULT '[]',
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS commercial_workouts_trainer_id_idx ON commercial_workouts(trainer_id);
+
+CREATE TABLE IF NOT EXISTS commercial_nutrition_plans (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trainer_id   UUID REFERENCES trainers(id) ON DELETE CASCADE,
+  title        TEXT NOT NULL,
+  description  TEXT DEFAULT '',
+  tier         TEXT NOT NULL DEFAULT 'Basic',
+  phase        TEXT DEFAULT 'Maintain',
+  plan_json    JSONB DEFAULT '{}',
+  prescription TEXT DEFAULT '',
+  published    BOOLEAN DEFAULT false,
+  updated_at   TIMESTAMPTZ DEFAULT now(),
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS commercial_nutrition_plans_trainer_id_idx ON commercial_nutrition_plans(trainer_id);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
@@ -544,4 +563,5 @@ ALTER TABLE videos               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE video_completions    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE commercial_workouts  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commercial_workouts          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commercial_nutrition_plans  ENABLE ROW LEVEL SECURITY;

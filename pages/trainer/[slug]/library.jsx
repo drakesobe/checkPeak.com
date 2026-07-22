@@ -77,8 +77,10 @@ const CSS = `
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 // Access = tier rank is high enough OR this specific item has been purchased.
+// "One-Time" tier items are purchase-only — no subscription tier unlocks them.
 function canAccess(clientTier, contentTier, itemId, purchasedIds = []) {
   if (itemId && purchasedIds.includes(itemId)) return true;
+  if (contentTier === "One-Time") return false;
   return (TIER[clientTier]?.rank ?? 0) >= (TIER[contentTier]?.rank ?? 1);
 }
 
@@ -106,6 +108,13 @@ function tagsByCategory(raw) {
   return Object.entries(obj)
     .map(([cat, val]) => ({ cat, tags: Array.isArray(val) ? val.filter(Boolean) : val ? [String(val)] : [] }))
     .filter(e => e.tags.length > 0);
+}
+
+// exercises field comes back as a JS array (Supabase JSONB) or a JSON string
+// (legacy data). Handle both so JSON.parse on an already-parsed array doesn't silently return [].
+function parseExercises(raw) {
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw || "[]"); } catch { return []; }
 }
 
 function fmtDuration(secs) {
@@ -223,14 +232,16 @@ function videoThumb(f = {}, w = 480, h = 270) {
 
 // ─── Workout card ─────────────────────────────────────────────────────────────
 
+const ONE_TIME_CFG = { color: "#DA3633", bg: "rgba(218,54,51,0.12)" };
+
 function WorkoutCard({ workout, clientTier, purchasedIds, onOpen, onBuy }) {
   const f          = workout.fields ?? {};
   const accessible = canAccess(clientTier, f.tier, workout.id, purchasedIds);
   const price      = Number(f.price) > 0 ? Number(f.price) : null;
-  const tierCfg    = TIER[f.tier];
+  const isOneTime  = f.tier === "One-Time";
+  const tierCfg    = isOneTime ? ONE_TIME_CFG : TIER[f.tier];
 
-  let exercises = [];
-  try { exercises = JSON.parse(f.exercises || "[]"); } catch {}
+  const exercises     = parseExercises(f.exercises);
   const exerciseCount = exercises.filter(ex => String(ex.ExerciseName || "").trim()).length;
   const groups        = [...new Set(exercises.map(ex => ex.groupId).filter(Boolean))];
   const hasGroups     = groups.length > 0;
@@ -258,7 +269,7 @@ function WorkoutCard({ workout, clientTier, purchasedIds, onOpen, onBuy }) {
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
           {tierCfg && (
             <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: tierCfg.color, background: tierCfg.bg, padding: "3px 8px" }}>
-              {f.tier}
+              {isOneTime ? "One-Time Purchase" : f.tier}
             </span>
           )}
           <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "3px 8px" }}>
@@ -286,7 +297,7 @@ function WorkoutCard({ workout, clientTier, purchasedIds, onOpen, onBuy }) {
         ) : (
           <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: D.faint, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            {TIER_NEXT[clientTier] ?? "Basic"} plan required
+            {isOneTime ? "Purchase to access" : `${TIER_NEXT[clientTier] ?? "Basic"} plan required`}
           </div>
         )}
       </div>
@@ -341,8 +352,7 @@ function WorkoutViewer({ workout, clientTier, onClose }) {
   const [addedToToday,  setAddedToToday]  = useState(false);
   const [addError,      setAddError]      = useState("");
 
-  let exercises = [];
-  try { exercises = JSON.parse(f.exercises || "[]"); } catch {}
+  const exercises  = parseExercises(f.exercises);
   const meaningful = exercises.filter(ex => String(ex.ExerciseName || "").trim());
 
   useEffect(() => {

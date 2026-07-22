@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, ArrowRight, LogOut, AlertTriangle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
+import { Lock, ArrowRight, LogOut, AlertTriangle, Clock, CreditCard, CheckCircle2, RefreshCw } from "lucide-react";
 
 const ACCENT = "#1E3A5F";
 const CAUTION = "#E87722";
@@ -23,6 +23,7 @@ function deriveState(billing) {
   if (s === "active")                                   return "active";
   if (s === "free" || s === "starter" || s.includes("starter")) return "starter_plan";
   if (s.includes("trial"))                              return "trial_ended";
+  if (s.includes("session_expired") || s === "session_expired") return "session_expired";
   if (billing?.sandboxEnds)                             return "sandbox_expired";
   return "not_started";
 }
@@ -69,6 +70,12 @@ const STATE_CONFIG = {
     title: "Subscription canceled",
     body:  "Your subscription was canceled. Start a new subscription to reactivate.",
     cta:   "Reactivate",
+  },
+  session_expired: {
+    icon: RefreshCw, accent: "#6B7A8D",
+    title: "Session expired",
+    body:  "You've been away for a while and your session timed out. Sign in again to pick up where you left off.",
+    cta:   "Sign in again",
   },
 };
 
@@ -136,31 +143,60 @@ export default function BillingGateScreen({ role, billing, error, onLogout, onGo
           ) : null}
 
           <div className="flex flex-col gap-2">
-            {canManageBilling ? (
-              <button type="button" onClick={onGoAccount}
-                className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-wide transition"
-                style={{ backgroundColor: cfg.accent, color: "#fff", border: "none", cursor: "pointer" }}
-                onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
-                onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
-                {cfg.cta}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+            {state === "session_expired" ? (
+              <>
+                <button type="button" onClick={onLogout}
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-wide transition"
+                  style={{ backgroundColor: cfg.accent, color: "#fff", border: "none", cursor: "pointer" }}
+                  onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+                  Sign in again
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={onGoAccount}
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold transition"
+                  style={{ backgroundColor: "#fff", border: "1px solid #E8ECF0", color: "#2D3748", cursor: "pointer" }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#F7F9FC"; }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#fff"; }}>
+                  Go to account
+                </button>
+              </>
+            ) : canManageBilling ? (
+              <>
+                <button type="button" onClick={onGoAccount}
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-wide transition"
+                  style={{ backgroundColor: cfg.accent, color: "#fff", border: "none", cursor: "pointer" }}
+                  onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}>
+                  {cfg.cta}
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={onLogout}
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold transition"
+                  style={{ backgroundColor: "#fff", border: "1px solid #E8ECF0", color: "#2D3748", cursor: "pointer" }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#F7F9FC"; }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#fff"; }}>
+                  <LogOut className="w-3.5 h-3.5" />
+                  Log out
+                </button>
+              </>
             ) : (
-              <div className="text-xs p-3 rounded-sm"
-                style={{ backgroundColor: "#F7F9FC", border: "1px solid #E8ECF0", color: "#6B7A8D" }}>
-                Ask your Org Owner or Admin to update billing in{" "}
-                <span className="font-bold">Account → Billing</span>.
-              </div>
+              <>
+                <div className="text-xs p-3 rounded-sm"
+                  style={{ backgroundColor: "#F7F9FC", border: "1px solid #E8ECF0", color: "#6B7A8D" }}>
+                  Ask your Org Owner or Admin to update billing in{" "}
+                  <span className="font-bold">Account → Billing</span>.
+                </div>
+                <button type="button" onClick={onLogout}
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold transition"
+                  style={{ backgroundColor: "#fff", border: "1px solid #E8ECF0", color: "#2D3748", cursor: "pointer" }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#F7F9FC"; }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#fff"; }}>
+                  <LogOut className="w-3.5 h-3.5" />
+                  Log out
+                </button>
+              </>
             )}
-
-            <button type="button" onClick={onLogout}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold transition"
-              style={{ backgroundColor: "#fff", border: "1px solid #E8ECF0", color: "#2D3748", cursor: "pointer" }}
-              onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#F7F9FC"; }}
-              onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#fff"; }}>
-              <LogOut className="w-3.5 h-3.5" />
-              Log out
-            </button>
           </div>
         </div>
       </div>

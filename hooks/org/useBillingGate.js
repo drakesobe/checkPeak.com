@@ -10,9 +10,10 @@ export function useBillingGate({ user, role, isOrgSide }) {
   // They see a warning banner instead of a hard gate screen.
   const isAdminBypass = canInitTrial;
 
-  const [billingLoading, setBillingLoading] = useState(true);
-  const [billingErr,     setBillingErr]     = useState("");
-  const [billing,        setBilling]        = useState(null);
+  const [billingLoading,  setBillingLoading]  = useState(true);
+  const [billingErr,      setBillingErr]      = useState("");
+  const [billing,         setBilling]         = useState(null);
+  const [sessionExpired,  setSessionExpired]  = useState(false);
 
   const ensuredTrialRef = useRef(false);
 
@@ -24,6 +25,7 @@ export function useBillingGate({ user, role, isOrgSide }) {
 
       setBillingLoading(true);
       setBillingErr("");
+      setSessionExpired(false);
 
       try {
         if (canInitTrial && !ensuredTrialRef.current) {
@@ -38,6 +40,19 @@ export function useBillingGate({ user, role, isOrgSide }) {
           method: "GET",
           credentials: "include",
         });
+
+        // 401 = session expired, not a billing problem.
+        // Surface a distinct "session expired" state so the gate can show
+        // Sign in again / Go to account instead of a billing error.
+        if (res.status === 401) {
+          if (mounted) {
+            setSessionExpired(true);
+            setBilling({ statusRaw: "session_expired" });
+            setBillingLoading(false);
+          }
+          return;
+        }
+
         const json = await safeJson(res);
         if (!res.ok) throw new Error(json?.error || "Failed to load billing status.");
 
@@ -55,8 +70,8 @@ export function useBillingGate({ user, role, isOrgSide }) {
 
   return useMemo(() => {
     const rawIsPaidOk = Boolean(billing?.isPaidOk);
-    // Admins/org bypass the hard gate - they can always enter to fix billing
-    const isPaidOk    = isAdminBypass || rawIsPaidOk;
+    // Session expired overrides admin bypass — everyone needs to re-auth.
+    const isPaidOk    = sessionExpired ? false : (isAdminBypass || rawIsPaidOk);
     return {
       billingLoading,
       billingErr,
@@ -64,6 +79,7 @@ export function useBillingGate({ user, role, isOrgSide }) {
       isPaidOk,
       rawIsPaidOk,    // true only when subscription is actually valid
       isAdminBypass,  // consumers can show a "fix billing" banner instead of gating
+      sessionExpired,
     };
-  }, [billingLoading, billingErr, billing, isAdminBypass]);
+  }, [billingLoading, billingErr, billing, isAdminBypass, sessionExpired]);
 }

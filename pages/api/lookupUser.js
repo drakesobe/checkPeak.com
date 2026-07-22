@@ -63,7 +63,7 @@ function toSessionUser(user) {
 function setUserCookie(res, sessionUser) {
   const value  = encodeURIComponent(JSON.stringify(sessionUser));
   const isProd = process.env.NODE_ENV === "production";
-  const parts  = [`user=${value}`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=604800"];
+  const parts  = [`user=${value}`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=2592000"]; // 30 days
   if (isProd) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }

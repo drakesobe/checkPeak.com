@@ -6,7 +6,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Plus, Trash2, Link2, Unlink, ChevronDown } from "lucide-react";
+import { X, Plus, Trash2, Link2, Unlink } from "lucide-react";
 import { DS } from "@/components/org/dashboard/DashboardUI";
 import TemplatePicker from "@/components/org/workoutsCalendar/TemplatePicker";
 
@@ -285,7 +285,8 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
       setPrice(editWorkout.fields?.price != null ? String(editWorkout.fields.price) : "");
       setDuration(editWorkout.fields?.duration != null ? String(editWorkout.fields.duration) : "");
       try {
-        const raw = JSON.parse(editWorkout.fields?.exercises || "[]");
+        const rawEx = editWorkout.fields?.exercises;
+        const raw   = Array.isArray(rawEx) ? rawEx : JSON.parse(rawEx || "[]");
         setExercises(Array.isArray(raw) && raw.length
           ? raw.map((ex, i) => ({
               Order:        Number(ex.Order ?? i + 1),
@@ -394,6 +395,7 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   async function save() {
     setError("");
     if (!title.trim()) return setError("Title is required.");
+    if (tier === "One-Time" && !hasPrice) return setError("A price is required for One-Time workouts.");
 
     const meaningful = exercises.filter(ex => String(ex.ExerciseName || "").trim());
 
@@ -440,10 +442,13 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
   }
 
   const TIER_STYLE = {
-    Basic:   { color: DS.safe,    bg: DS.safeBg,    border: DS.safeBorder    },
-    Premium: { color: DS.caution, bg: DS.cautionBg, border: DS.cautionBorder },
-    Ultra:   { color: DS.brand,   bg: DS.brandBg,   border: DS.brandBorder   },
+    Basic:      { color: DS.safe,    bg: DS.safeBg,    border: DS.safeBorder    },
+    Premium:    { color: DS.caution, bg: DS.cautionBg, border: DS.cautionBorder },
+    Ultra:      { color: DS.brand,   bg: DS.brandBg,   border: DS.brandBorder   },
+    "One-Time": { color: DS.banned,  bg: DS.bannedBg,  border: DS.bannedBorder  },
   };
+
+  const isOneTime = tier === "One-Time";
 
   const meaningfulCount = exercises.filter(ex => String(ex.ExerciseName || "").trim()).length;
 
@@ -547,44 +552,56 @@ export default function WorkoutBuilder({ open, onClose, editWorkout, onSaved }) 
 
             {/* Tier */}
             <div>
-              <span style={lbl}>Access tier</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["Basic", "Premium", "Ultra"].map(t => {
+              <span style={lbl}>Access</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {["Basic", "Premium", "Ultra", "One-Time"].map(t => {
                   const isActive = tier === t;
                   const ts = TIER_STYLE[t];
                   return (
-                    <button key={t} type="button" onClick={() => setTier(t)}
-                      style={{ flex: 1, padding: "9px 12px", border: `1px solid ${isActive ? ts.color + "55" : DS.border}`, background: isActive ? ts.bg : DS.cardBg, color: isActive ? ts.color : DS.labelText, fontSize: 12, fontWeight: isActive ? 800 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
+                    <button key={t} type="button" onClick={() => { setTier(t); if (t !== "One-Time") return; }}
+                      style={{ flex: 1, minWidth: 80, padding: "9px 12px", border: `1px solid ${isActive ? ts.color + "55" : DS.border}`, background: isActive ? ts.bg : DS.cardBg, color: isActive ? ts.color : DS.labelText, fontSize: 12, fontWeight: isActive ? 800 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
                       {t}
                     </button>
                   );
                 })}
               </div>
               <p style={{ fontSize: 11, color: DS.dimText, marginTop: 5 }}>
-                Clients on this tier and above can access this workout.
+                {isOneTime
+                  ? "Clients can only access this workout by purchasing it outright — no subscription tier includes it."
+                  : "Clients on this tier and above can access this workout."}
               </p>
             </div>
 
-            {/* One-time price */}
+            {/* Price — required for One-Time, optional add-on for subscription tiers */}
             <div>
-              <span style={lbl}>One-time price <span style={{ textTransform: "none", fontWeight: 400, letterSpacing: 0 }}>(optional)</span></span>
+              <span style={lbl}>
+                {isOneTime ? "Purchase price" : "One-time price"}
+                {!isOneTime && <span style={{ textTransform: "none", fontWeight: 400, letterSpacing: 0 }}> (optional)</span>}
+              </span>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: DS.labelText }}>$</span>
                 <input
                   type="number" min="0"
                   value={price}
                   onChange={e => setPrice(e.target.value)}
-                  placeholder="0"
-                  style={{ ...inp, width: 120 }}
+                  placeholder={isOneTime ? "e.g. 29" : "0"}
+                  style={{ ...inp, width: 120, borderColor: isOneTime && !hasPrice ? DS.banned : undefined }}
                   onFocus={focusStyle} onBlur={blurStyle}
                 />
                 <span style={{ fontSize: 11, color: DS.dimText }}>one-time</span>
               </div>
-              <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
-                {hasPrice
-                  ? "Clients can buy this workout outright - no subscription needed. Subscribers on the tier (and above) still get it included."
-                  : "Leave empty to keep this workout subscription-only. Add a price to also sell it as a one-time purchase."}
-              </p>
+              {isOneTime && !hasPrice && (
+                <p style={{ fontSize: 11, color: DS.banned, marginTop: 5, fontWeight: 700 }}>
+                  Price is required for One-Time workouts.
+                </p>
+              )}
+              {!isOneTime && (
+                <p style={{ fontSize: 11, color: hasPrice ? DS.brand : DS.dimText, marginTop: 5, lineHeight: 1.5 }}>
+                  {hasPrice
+                    ? "Subscribers on this tier still get it included. Anyone else can buy it outright."
+                    : "Leave empty to keep this workout subscription-only."}
+                </p>
+              )}
             </div>
 
             <div style={{ height: 1, background: DS.border }} />

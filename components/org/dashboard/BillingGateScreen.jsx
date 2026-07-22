@@ -1,7 +1,7 @@
 // components/org/dashboard/BillingGateScreen.jsx
 "use client";
 
-import { ArrowRight, LogOut, Lock, AlertTriangle, CreditCard, Clock } from "lucide-react";
+import { ArrowRight, LogOut, Lock, AlertTriangle, CreditCard, Clock, RefreshCw } from "lucide-react";
 import { DS, Button } from "@/components/org/dashboard/DashboardUI";
 import { fmtDate } from "./format";
 
@@ -12,6 +12,7 @@ function deriveState(billing) {
   if (s.includes("cancel"))                             return "canceled";
   if (s === "active")                                   return "active";
   if (s.includes("trial"))                              return "trial_ended";
+  if (s.includes("session_expired") || s === "session_expired") return "session_expired";
   // No status at all - check if sandbox data exists
   if (billing?.sandboxEnds)                             return "sandbox_expired";
   return "not_started";
@@ -71,6 +72,15 @@ const STATE_CONFIG = {
     title:    "Subscription canceled",
     body:     "Your subscription was canceled. Start a new subscription to reactivate.",
     ctaLabel: "Reactivate",
+  },
+  session_expired: {
+    icon:     RefreshCw,
+    iconBg:   DS.pageBg,
+    iconColor: DS.dimText,
+    accent:   DS.labelText,
+    title:    "Session expired",
+    body:     "You've been away for a while and your session timed out. Sign in again to pick up where you left off.",
+    ctaLabel: "Sign in again",
   },
 };
 
@@ -134,20 +144,36 @@ export default function BillingGateScreen({ role, billing, error, onLogout, onGo
           ) : null}
 
           <div className="flex flex-col gap-2">
-            {canManage ? (
-              <Button onClick={onGoAccount} className="w-full justify-center">
-                {cfg.ctaLabel} <ArrowRight className="w-3.5 h-3.5" />
-              </Button>
+            {state === "session_expired" ? (
+              <>
+                <Button onClick={onLogout} className="w-full justify-center">
+                  Sign in again <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="secondary" onClick={onGoAccount} className="w-full justify-center">
+                  Go to account
+                </Button>
+              </>
+            ) : canManage ? (
+              <>
+                <Button onClick={onGoAccount} className="w-full justify-center">
+                  {cfg.ctaLabel} <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="secondary" onClick={onLogout} className="w-full justify-center">
+                  <LogOut className="w-3.5 h-3.5" /> Log out
+                </Button>
+              </>
             ) : (
-              <div className="text-xs p-3"
-                style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
-                Ask your Org Owner or Admin to update billing in{" "}
-                <strong>Account → Billing</strong>.
-              </div>
+              <>
+                <div className="text-xs p-3"
+                  style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
+                  Ask your Org Owner or Admin to update billing in{" "}
+                  <strong>Account → Billing</strong>.
+                </div>
+                <Button variant="secondary" onClick={onLogout} className="w-full justify-center">
+                  <LogOut className="w-3.5 h-3.5" /> Log out
+                </Button>
+              </>
             )}
-            <Button variant="secondary" onClick={onLogout} className="w-full justify-center">
-              <LogOut className="w-3.5 h-3.5" /> Log out
-            </Button>
           </div>
         </div>
       </div>

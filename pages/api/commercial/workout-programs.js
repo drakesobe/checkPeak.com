@@ -43,8 +43,10 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     const { title, description, exercises, tier, tags, price, duration } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "Title required" });
-    if (!["Basic", "Premium", "Ultra"].includes(tier))
+    if (!["Basic", "Premium", "Ultra", "One-Time"].includes(tier))
       return res.status(400).json({ error: "Invalid tier" });
+    if (tier === "One-Time" && !normalizePrice(price))
+      return res.status(400).json({ error: "A price is required for One-Time workouts" });
 
     const fields = {
       trainerId,

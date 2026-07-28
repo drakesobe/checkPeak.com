@@ -779,9 +779,12 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
                   <button type="button"
                     onClick={() => { setEditingTierId(c.id); setConfirmRemoveId(null); }}
                     title="Click to change tier"
-                    className="px-2 py-0.5 rounded-sm text-[10px] font-black transition shrink-0"
-                    style={{ backgroundColor: ts.bg, color: ts.color }}>
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-black border transition shrink-0"
+                    style={{ backgroundColor: ts.bg, color: ts.color, border: `1px solid ${ts.border}` }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = ts.color + "30"; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = ts.bg; }}>
                     {cf.tier}
+                    <svg width="7" height="5" viewBox="0 0 7 5" fill="currentColor" style={{ opacity: 0.6, flexShrink: 0 }}><path d="M0 0l3.5 5L7 0z"/></svg>
                   </button>
                 )}
 

@@ -2291,7 +2291,7 @@ function PromoVideo() {
 // ---------------------------------------------------------------------------
 export default function HomePage() {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
-  const ogDesc  = "When athletes leave campus, you still know. Off-campus accountability for college programs.";
+  const ogDesc  = "Programmatic athlete accountability. Film, nutrition, workouts, attendance, and check-ins — all in one platform.";
 
   return (
     <>

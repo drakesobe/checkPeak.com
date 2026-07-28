@@ -10,6 +10,7 @@ import {
   getPurchasesByEmailAndTrainer,
   getVideosByTrainer,
   getWorkoutsByTrainer,
+  getNutritionPlansByTrainer,
 } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
@@ -36,12 +37,13 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "No access" });
   }
 
-  // Fetch all published videos and workouts in parallel.
+  // Fetch all published videos, workouts, and nutrition plans in parallel.
   // The client page handles locked/accessible display via tier + purchasedIds.
-  const [videos, workouts] = await Promise.all([
+  const [videos, workouts, nutritionPlans] = await Promise.all([
     getVideosByTrainer(trainer.id, { publishedOnly: true }),
     getWorkoutsByTrainer(trainer.id, { publishedOnly: true }),
+    getNutritionPlansByTrainer(trainer.id, { publishedOnly: true }),
   ]);
 
-  return res.status(200).json({ tier, purchasedIds, videos, workouts });
+  return res.status(200).json({ tier, purchasedIds, videos, workouts, nutritionPlans });
 }

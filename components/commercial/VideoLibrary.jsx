@@ -214,6 +214,11 @@ function videoThumb(f = {}, w = 480, h = 270) {
 
 // ─── Workout card ─────────────────────────────────────────────────────────────
 
+function parseExercises(raw) {
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw || "[]"); } catch { return []; }
+}
+
 function WorkoutCard({ workout, onTogglePublish, onDelete, onEdit }) {
   const f         = workout.fields ?? {};
   const tier      = f.tier ?? "Basic";
@@ -221,8 +226,7 @@ function WorkoutCard({ workout, onTogglePublish, onDelete, onEdit }) {
   const price     = Number(f.price) > 0 ? Number(f.price) : null;
   const [publishing, setPublishing] = useState(false);
 
-  let exercises = [];
-  try { exercises = JSON.parse(f.exercises || "[]"); } catch {}
+  const exercises = parseExercises(f.exercises);
 
   const exerciseCount = exercises.filter(ex => String(ex.ExerciseName || "").trim()).length;
   const groups        = [...new Set(exercises.map(ex => ex.groupId).filter(Boolean))];

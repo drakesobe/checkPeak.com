@@ -160,7 +160,19 @@ function PlanEditor({ plan, onSave, onClose, saving }) {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Tier">
-              <Select value={tier} onChange={setTier} options={TIERS} />
+              <div className="flex gap-1.5">
+                {TIERS.map(t => {
+                  const ts = TIER_STYLE[t];
+                  const on = tier === t;
+                  return (
+                    <button key={t} type="button" onClick={() => setTier(t)}
+                      className="flex-1 px-2 py-1.5 rounded-sm text-[11px] font-black border transition"
+                      style={{ backgroundColor: on ? ts.bg : "transparent", borderColor: on ? ts.color + "55" : DS.border, color: on ? ts.color : DS.labelText }}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
             <Field label="Phase">
               <Select value={phase} onChange={setPhase} options={PHASES} />

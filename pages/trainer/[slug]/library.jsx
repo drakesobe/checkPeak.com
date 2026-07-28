@@ -613,22 +613,26 @@ export default function ClientLibrary() {
   const { slug }         = router.query;
   const { user, authReady } = useAuthContext();
 
-  const [trainer,    setTrainer]    = useState(null);
-  const [videos,     setVideos]     = useState([]);
-  const [workouts,   setWorkouts]   = useState([]);
-  const [clientTier, setClientTier] = useState(null);
-  const [purchasedIds, setPurchasedIds] = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [libraryTab, setLibraryTab] = useState("videos");
+  const [trainer,        setTrainer]        = useState(null);
+  const [videos,         setVideos]         = useState([]);
+  const [workouts,       setWorkouts]       = useState([]);
+  const [nutritionPlans, setNutritionPlans] = useState([]);
+  const [clientTier,     setClientTier]     = useState(null);
+  const [purchasedIds,   setPurchasedIds]   = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [libraryTab,     setLibraryTab]     = useState("videos");
 
   // Video state
-  const [playingId,      setPlayingId]      = useState(null);
+  const [playingId,    setPlayingId]    = useState(null);
   const [videoSearch,  setVideoSearch]  = useState("");
   const [completedIds, setCompletedIds] = useState(new Set());
 
   // Workout state
   const [openWorkoutId, setOpenWorkoutId] = useState(null);
   const [workoutSearch, setWorkoutSearch] = useState("");
+
+  // Nutrition state
+  const [openPlanId, setOpenPlanId] = useState(null);
 
   useEffect(() => {
     if (!authReady) return;
@@ -646,6 +650,7 @@ export default function ClientLibrary() {
       setTrainer(trainerData.trainer);
       setVideos(accessData.videos ?? []);
       setWorkouts(accessData.workouts ?? []);
+      setNutritionPlans(accessData.nutritionPlans ?? []);
       setClientTier(accessData.tier);
       setPurchasedIds(accessData.purchasedIds ?? []);
       setCompletedIds(new Set(completionData.completedVideoIds ?? []));
@@ -715,7 +720,12 @@ export default function ClientLibrary() {
     if (!q) return true;
     return String(w.fields?.title || "").toLowerCase().includes(q);
   });
-  const openWorkout        = openWorkoutId ? workouts.find(w => w.id === openWorkoutId) : null;
+  const openWorkout = openWorkoutId ? workouts.find(w => w.id === openWorkoutId) : null;
+
+  // Nutrition derived — tier-based access only (no one-time purchase for plans)
+  const tierRank        = TIER[clientTier]?.rank ?? 0;
+  const accessiblePlans = nutritionPlans.filter(p => (TIER[p.fields?.tier]?.rank ?? 1) <= tierRank);
+  const lockedPlans     = nutritionPlans.filter(p => (TIER[p.fields?.tier]?.rank ?? 1) > tierRank);
 
   return (
     <>
@@ -751,7 +761,7 @@ export default function ClientLibrary() {
               <div>
                 <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(2rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.025em", textTransform: "uppercase", color: D.text, marginBottom: 6 }}>{tf.name}</h1>
                 <p style={{ fontSize: 12, color: D.faint }}>
-                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""} · {clientTier ? `${clientTier} plan` : "one-time access"}
+                  {accessibleVideos.length} video{accessibleVideos.length !== 1 ? "s" : ""} · {accessibleWorkouts.length} workout{accessibleWorkouts.length !== 1 ? "s" : ""}{accessiblePlans.length > 0 ? ` · ${accessiblePlans.length} nutrition plan${accessiblePlans.length !== 1 ? "s" : ""}` : ""} · {clientTier ? `${clientTier} plan` : "one-time access"}
                 </p>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -772,8 +782,9 @@ export default function ClientLibrary() {
             {/* Tab toggle */}
             <div style={{ display: "flex", gap: 2 }}>
               {[
-                { key: "videos",   label: `Videos (${accessibleVideos.length})`    },
-                { key: "workouts", label: `Workouts (${accessibleWorkouts.length})` },
+                { key: "videos",    label: `Videos (${accessibleVideos.length})`     },
+                { key: "workouts",  label: `Workouts (${accessibleWorkouts.length})`  },
+                ...(nutritionPlans.length > 0 ? [{ key: "nutrition", label: `Nutrition (${accessiblePlans.length})` }] : []),
               ].map(({ key, label }) => (
                 <button key={key} className="filter-btn" onClick={() => setLibraryTab(key)}
                   style={{ padding: "8px 18px", background: libraryTab === key ? (tierCfg?.bg ?? D.whisper) : "transparent", border: `0.5px solid ${libraryTab === key ? (tierCfg?.color ?? D.red) + "55" : D.border}`, color: libraryTab === key ? (tierCfg?.color ?? D.text) : D.faint, fontSize: 11, fontWeight: libraryTab === key ? 800 : 600, letterSpacing: "0.06em", fontFamily: "inherit", borderRadius: 2 }}>
@@ -883,8 +894,87 @@ export default function ClientLibrary() {
             </>
           )}
 
+          {/* ── NUTRITION ── */}
+          {libraryTab === "nutrition" && (
+            <>
+              {nutritionPlans.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "80px 0" }}>
+                  <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.6rem, 4vw, 2.5rem)", lineHeight: 0.9, letterSpacing: "-0.02em", textTransform: "uppercase", color: D.text, marginBottom: 12 }}>No Plans Yet.</h3>
+                  <p style={{ fontSize: 13, color: D.faint }}>Your coach hasn't published any nutrition plans yet. Check back soon.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: "slideUp 0.45s ease 0.1s both" }}>
+                  {accessiblePlans.map(plan => {
+                    const pf     = plan.fields ?? {};
+                    const daily  = pf.planJson?.daily ?? {};
+                    const planTierCfg = TIER[pf.tier];
+                    const macros = [
+                      daily.calories && `${daily.calories} kcal`,
+                      daily.protein  && `${daily.protein}g P`,
+                      daily.carbs    && `${daily.carbs}g C`,
+                      daily.fat      && `${daily.fat}g F`,
+                    ].filter(Boolean).join("  ·  ");
+                    const isOpen = openPlanId === plan.id;
+                    return (
+                      <div key={plan.id} style={{ background: D.bgCard, border: `0.5px solid ${isOpen ? (planTierCfg?.color ?? D.red) + "44" : D.border}`, borderLeft: `3px solid ${planTierCfg?.color ?? D.red}`, borderRadius: 3, overflow: "hidden" }}>
+                        <button type="button" onClick={() => setOpenPlanId(isOpen ? null : plan.id)}
+                          style={{ width: "100%", padding: "16px 18px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: D.text, letterSpacing: "-0.01em" }}>{pf.title}</span>
+                              {planTierCfg && <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: planTierCfg.color, background: planTierCfg.bg, padding: "3px 8px" }}>{pf.tier}</span>}
+                              {pf.phase && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.faint, background: D.whisper, padding: "3px 8px" }}>{pf.phase}</span>}
+                            </div>
+                            {pf.description && <p style={{ fontSize: 12, color: D.faint, marginBottom: macros ? 6 : 0 }}>{pf.description}</p>}
+                            {macros && <p style={{ fontSize: 11, color: D.dim, fontVariantNumeric: "tabular-nums", letterSpacing: "0.02em" }}>{macros}</p>}
+                          </div>
+                          <div style={{ color: D.faint, flexShrink: 0, marginTop: 2, fontSize: 18, lineHeight: 1, fontWeight: 300 }}>{isOpen ? "−" : "+"}</div>
+                        </button>
+                        {isOpen && (
+                          <div style={{ borderTop: `0.5px solid ${D.border}`, padding: "16px 18px" }}>
+                            {pf.prescription ? (
+                              <>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                                  <p style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: D.faint }}>Full Plan</p>
+                                  <button type="button"
+                                    onClick={() => navigator.clipboard?.writeText(pf.prescription)}
+                                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: planTierCfg?.color ?? D.red, background: "none", border: `0.5px solid ${planTierCfg?.color ?? D.red}40`, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", borderRadius: 2 }}>
+                                    Copy
+                                  </button>
+                                </div>
+                                <pre style={{ fontSize: 12, color: D.dim, lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: "inherit", margin: 0 }}>{pf.prescription}</pre>
+                              </>
+                            ) : (
+                              <p style={{ fontSize: 12, color: D.faint, fontStyle: "italic" }}>Your coach hasn't added a full plan text yet.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {lockedPlans.map(plan => {
+                    const pf = plan.fields ?? {};
+                    const planTierCfg = TIER[pf.tier];
+                    const needsTier   = pf.tier ?? "Basic";
+                    return (
+                      <div key={plan.id} style={{ background: D.bgCard, border: `0.5px solid ${D.border}`, borderLeft: `3px solid ${planTierCfg?.color ?? D.border}`, borderRadius: 3, opacity: 0.45, padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: D.faint, letterSpacing: "-0.01em", marginBottom: 4 }}>{pf.title}</p>
+                          {planTierCfg && <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: planTierCfg.color, background: planTierCfg.bg, padding: "3px 8px" }}>{pf.tier}</span>}
+                        </div>
+                        <a href={`/trainer/${slug}`} style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: planTierCfg?.color ?? D.red, textDecoration: "none", background: `${planTierCfg?.color ?? D.red}14`, border: `0.5px solid ${planTierCfg?.color ?? D.red}33`, padding: "5px 12px", borderRadius: 2, flexShrink: 0 }}>
+                          Upgrade to {needsTier} →
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Upgrade prompt */}
-          {(lockedVideos.length > 0 || lockedWorkouts.length > 0) && (
+          {(lockedVideos.length > 0 || lockedWorkouts.length > 0) && libraryTab !== "nutrition" && (
             <UpgradePrompt
               lockedCount={lockedVideos.length + lockedWorkouts.length}
               nextTier={nextTier}

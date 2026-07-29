@@ -8,7 +8,7 @@ const FEATURES = ['Film', 'Nutrition', 'Workouts', 'Attendance', 'Check-ins'];
 
 export default async function handler(req) {
   const { searchParams } = new URL(req.url);
-  const query = searchParams.get('q') || 'Programmatic athlete accountability.';
+  const query = searchParams.get('q') || 'Program-wide athlete accountability.';
 
   // First sentence = headline, strip trailing punctuation
   const dotIdx  = query.search(/[.!?]/);

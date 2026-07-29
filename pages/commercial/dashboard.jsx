@@ -829,6 +829,29 @@ function ClientsTab({ trainer, clients, clientsLoading, loadClients, setClients 
   );
 }
 
+// ─── Creator Agreement Text ───────────────────────────────────────────────────
+
+const CREATOR_AGREEMENT_SECTIONS = [
+  { heading: "CHECKPEAK — CREATOR PARTNER AGREEMENT", body: "Effective Date: July 29, 2026\n\nThis Creator Partner Agreement (\"Agreement\") is entered into between CheckPeak LLC, a Florida limited liability company (\"CheckPeak\" or \"Company\"), and the individual identified by signature below (\"Creator\")." },
+  { heading: "1. PARTIES", body: "Company: CheckPeak LLC, a Florida limited liability company.\nCreator: The individual identified by signature below." },
+  { heading: "2. DEFINITIONS", body: "\"Active Athlete\" — an athlete enrolled in a Referred Trainer's CheckPeak account who has logged in at least once during the thirty (30) days preceding the last day of the applicable billing period.\n\n\"Creator Code\" — the unique alphanumeric referral code assigned exclusively by CheckPeak to Creator.\n\n\"Qualified Referral\" — a trainer who (a) registers using Creator's Code at account creation, (b) activates a Subscription with 10+ Active Athletes, and (c) completes a first billing cycle with cleared payment.\n\n\"Referred Trainer\" — a trainer who satisfies all conditions to become a Qualified Referral.\n\n\"Recurring Commission Period\" — each calendar month a Referred Trainer maintains an active Subscription with 10+ Active Athletes and a successfully processed payment." },
+  { heading: "3. PROGRAM OVERVIEW", body: "Creator agrees to participate in the CheckPeak Creator Partner Program by referring fitness trainers using Creator's unique Creator Code. Creator may promote CheckPeak through lawful means including personal outreach, social media, and in-person referrals. Creator has no authority to guarantee specific pricing, features, uptime, or performance outcomes to prospective trainers." },
+  { heading: "4. CREATOR CODE & PROHIBITED CONDUCT", body: "Creator shall not:\n(a) Transfer, sell, sublicense, or share the Creator Code for compensation purposes;\n(b) Use the Creator Code with false, misleading, or deceptive promotion;\n(c) Artificially inflate referrals through self-referral, fictitious signups, bots, or collusion;\n(d) Promote CheckPeak alongside a competing platform in a misleading manner;\n(e) Use CheckPeak brand assets to promote a directly competing service.\n\nViolation shall constitute cause for immediate termination and may result in forfeiture of accrued compensation." },
+  { heading: "5. COMPENSATION", body: "5.1 One-Time Referral Bonus: $49.99 per Qualified Referral, payable within 14 business days after the Referred Trainer's first billing cycle clears and their account reflects 10+ Active Athletes with no pending Clawback Event.\n\n5.2 Recurring Monthly Commission: $10.00 per Referred Trainer per calendar month during each active Recurring Commission Period. Terminates immediately if the Referred Trainer cancels, drops below 10 Active Athletes, or payment fails.\n\n5.3 No Cap: There is no limit on the number of Qualified Referrals Creator may generate.\n\n5.4 Clawback: If a payment is reversed within 90 days, CheckPeak will provide written notice within 5 business days and may deduct $49.99 from Creator's next payout. Clawback rights do not apply to recurring commissions." },
+  { heading: "6. PAYMENT TERMS", body: "Payments via ACH bank transfer. Recurring commissions paid by the 15th of each month for prior month activity. One-time bonuses paid within 14 business days of qualification. Minimum payout threshold: $10.00. Undisputed amounts carry forward without expiration.\n\nPayment disputes must be submitted in writing within 60 days of the scheduled payment date. Late payments accrue simple interest at 1.5% per month after a 10-business-day cure period." },
+  { heading: "7. TAX RESPONSIBILITY", body: "Creator is an independent contractor solely responsible for all applicable taxes. Creator must provide a completed IRS Form W-9 before receiving payment. CheckPeak will issue Form 1099-NEC for calendar years with total payments ≥ $600.00." },
+  { heading: "8. QUALIFYING CONDITIONS & VERIFICATION", body: "CheckPeak's platform and payment processor records are authoritative for qualification determinations. Creator's Code must be entered at the time of initial account creation — no retroactive application under any circumstances. Disputed qualifications must be submitted in writing within 60 days of the relevant payment date." },
+  { heading: "9. INTELLECTUAL PROPERTY", body: "All CheckPeak IP remains the exclusive property of CheckPeak LLC. Creator receives a limited, non-exclusive, revocable license to use CheckPeak's publicly available name and brand assets solely for truthful promotion of Creator's participation in the Program. Creator shall not alter brand assets, imply endorsements beyond this Agreement, or register any domain or handle containing \"CheckPeak.\"" },
+  { heading: "10. CONFIDENTIALITY", body: "Creator shall hold all non-public CheckPeak information — including pricing strategy, compensation structure, business plans, and trainer/athlete data — in strict confidence. This obligation survives termination for three (3) years." },
+  { heading: "11. MUTUAL NON-DISPARAGEMENT", body: "For two (2) years following termination, neither Party shall make false, misleading, or materially harmful public statements about the other Party. This does not prohibit truthful statements, legal testimony, or the pursuit of legal claims." },
+  { heading: "12. INDEMNIFICATION", body: "Creator shall indemnify CheckPeak against claims arising from Creator's misrepresentations, Agreement violations, or unlawful promotional activity. CheckPeak shall indemnify Creator against claims arising from CheckPeak's material breach or third-party IP infringement claims against the Platform." },
+  { heading: "13. INDEPENDENT CONTRACTOR", body: "Creator is an independent contractor. Creator has no authority to enter contracts on CheckPeak's behalf and is not entitled to employee benefits, workers' compensation, or unemployment insurance." },
+  { heading: "14. LIMITATION OF LIABILITY", body: "TO THE MAXIMUM EXTENT PERMITTED BY LAW, CHECKPEAK SHALL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES. CHECKPEAK'S TOTAL CUMULATIVE LIABILITY SHALL NOT EXCEED THE TOTAL COMPENSATION PAID TO CREATOR IN THE THREE (3) CALENDAR MONTHS PRECEDING THE CLAIM." },
+  { heading: "15. PROGRAM MODIFICATIONS", body: "CheckPeak may modify compensation rates, eligibility thresholds, and payment schedules upon 30 days written notice. Modifications do not affect already-earned bonuses or commissions in progress. Creator may terminate without penalty if modifications are not accepted." },
+  { heading: "16. TERM & TERMINATION", body: "Either Party may terminate with 30 days written notice. CheckPeak may terminate immediately for material Agreement violations, fraudulent referral activity, or Creator conviction of a qualifying felony. Upon termination, all licenses are revoked immediately and earned, unpaid compensation is issued within 30 days." },
+  { heading: "17–19. DISPUTE RESOLUTION, GOVERNING LAW & GENERAL", body: "Disputes proceed through negotiation (30 days), then non-binding mediation in Florida, then litigation. This Agreement is governed by Florida law. Venue is exclusively in Florida state or federal courts. This Agreement is the entire agreement between the Parties and supersedes all prior understandings. Electronic signatures are legally valid and binding under the Florida Electronic Signature Act and the federal ESIGN Act." },
+];
+
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
 function SettingSection({ title, color, children }) {
@@ -996,6 +1019,22 @@ function SettingsTab({ trainer }) {
   const [lockSaving, setLockSaving] = useState(false);
   const [lockMsg,    setLockMsg]    = useState("");
 
+  // ── Creator Program ──
+  const [creatorAgreement,  setCreatorAgreement]  = useState(null);
+  const [creatorLoaded,     setCreatorLoaded]     = useState(false);
+  const [creatorReferrals,  setCreatorReferrals]  = useState(0);
+  const [showCreatorModal, setShowCreatorModal] = useState(false);
+  const [creatorName,      setCreatorName]      = useState("");
+  const [creatorCodeSuffix, setCreatorCodeSuffix] = useState("");
+  const [creatorChecked,    setCreatorChecked]   = useState(false);
+  const [creatorSaving,     setCreatorSaving]    = useState(false);
+  const [creatorMsg,        setCreatorMsg]       = useState("");
+  const [codeCopied,        setCodeCopied]       = useState(false);
+  const [changingCode,      setChangingCode]     = useState(false);
+  const [newCodeSuffix,     setNewCodeSuffix]    = useState("");
+  const [changeCodeSaving,  setChangeCodeSaving] = useState(false);
+  const [changeCodeMsg,     setChangeCodeMsg]    = useState("");
+
   async function toggleLock() {
     const next = !locked;
     setLockSaving(true); setLockMsg("");
@@ -1009,6 +1048,65 @@ function SettingsTab({ trainer }) {
     else setLockMsg("Failed to update.");
   }
 
+  useEffect(() => {
+    fetch("/api/commercial/creator-agreement", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { setCreatorAgreement(d.agreement ?? null); setCreatorReferrals(d.referralCount ?? 0); setCreatorLoaded(true); })
+      .catch(() => setCreatorLoaded(true));
+  }, []);
+
+  async function signCreatorAgreement() {
+    if (!creatorName.trim() || !creatorChecked || creatorSaving) return;
+    setCreatorSaving(true); setCreatorMsg("");
+    try {
+      const res = await fetch("/api/commercial/creator-agreement", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legalName: creatorName.trim(), creatorCode: `CP-${creatorCodeSuffix}` }),
+      });
+      const data = await res.json();
+      if (res.ok || res.status === 409) {
+        setCreatorAgreement(data.agreement);
+        setShowCreatorModal(false);
+      } else {
+        setCreatorMsg(data.error || "Failed to sign agreement.");
+      }
+    } catch {
+      setCreatorMsg("Something went wrong. Please try again.");
+    }
+    setCreatorSaving(false);
+  }
+
+  async function changeCreatorCode() {
+    if (newCodeSuffix.length < 3 || changeCodeSaving) return;
+    setChangeCodeSaving(true); setChangeCodeMsg("");
+    try {
+      const res = await fetch("/api/commercial/creator-agreement", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creatorCode: `CP-${newCodeSuffix}` }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCreatorAgreement(data.agreement);
+        setChangingCode(false);
+        setNewCodeSuffix("");
+      } else {
+        setChangeCodeMsg(data.error || "Failed to update code.");
+      }
+    } catch {
+      setChangeCodeMsg("Something went wrong.");
+    }
+    setChangeCodeSaving(false);
+  }
+
+  function copyCreatorCode() {
+    const code = creatorAgreement?.fields?.creatorCode ?? "";
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
 
   return (
     <div>
@@ -1136,6 +1234,255 @@ function SettingsTab({ trainer }) {
         </SettingSection>
 
       </div>
+
+      {/* ── Row 4: Creator Partner Program ── */}
+      <SettingSection title="Creator Partner Program" color={creatorAgreement ? DS.safe : DS.brand}>
+        {!creatorLoaded ? (
+          <p className="text-xs" style={{ color: DS.dimText }}>Loading…</p>
+        ) : creatorAgreement ? (
+          // ── Signed — show code ──
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="px-2 py-0.5 rounded-sm text-[10px] font-black tracking-wider uppercase"
+                style={{ backgroundColor: DS.safeBg, color: DS.safe, border: `1px solid ${DS.safeBorder}` }}>
+                Active Creator Partner
+              </div>
+              <span className="text-[11px]" style={{ color: DS.dimText }}>
+                Signed {new Date(creatorAgreement.fields?.signedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              </span>
+            </div>
+
+            <p className="text-[11px] mb-2 font-bold" style={{ color: DS.labelText }}>Your Creator Code</p>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex-1 px-3 py-2 rounded-sm font-black text-sm tracking-widest select-all"
+                style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.brand, fontFamily: "monospace" }}>
+                {creatorAgreement.fields?.creatorCode}
+              </div>
+              <button type="button" onClick={copyCreatorCode}
+                className="px-3 py-2 rounded-sm text-xs font-black transition shrink-0"
+                style={{ backgroundColor: codeCopied ? DS.safeBg : DS.brand, color: codeCopied ? DS.safe : "#fff", border: codeCopied ? `1px solid ${DS.safeBorder}` : "none" }}>
+                {codeCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+
+            {(() => {
+              const lastChanged = creatorAgreement.fields?.codeChangedAt ?? creatorAgreement.fields?.signedAt;
+              const nextAllowed = lastChanged ? new Date(new Date(lastChanged).setMonth(new Date(lastChanged).getMonth() + 6)) : null;
+              const locked = nextAllowed && new Date() < nextAllowed;
+              if (locked && !changingCode) return (
+                <p className="text-[11px] mb-4" style={{ color: DS.dimText }}>
+                  Code locked until <span className="font-bold" style={{ color: DS.labelText }}>
+                    {nextAllowed.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                  </span> — codes can be changed once every 6 months.
+                </p>
+              );
+              return null;
+            })()}
+            {changingCode ? (
+              <div className="mb-4">
+                <p className="text-[11px] font-bold mb-1.5" style={{ color: DS.labelText }}>New Creator Code</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center rounded-sm overflow-hidden flex-1"
+                    style={{ border: `1px solid ${DS.brandBorder}` }}>
+                    <span className="px-2.5 py-1.5 text-xs font-black shrink-0"
+                      style={{ backgroundColor: DS.brandBg, color: DS.brand, borderRight: `1px solid ${DS.brandBorder}` }}>
+                      CP-
+                    </span>
+                    <input
+                      className="flex-1 px-2.5 py-1.5 text-xs font-black outline-none tracking-widest"
+                      style={{ backgroundColor: DS.cardBg, color: DS.bodyText }}
+                      placeholder="NEWNAME"
+                      maxLength={12}
+                      autoFocus
+                      value={newCodeSuffix}
+                      onChange={e => { setNewCodeSuffix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "")); setChangeCodeMsg(""); }}
+                    />
+                  </div>
+                  <button type="button" onClick={changeCreatorCode}
+                    disabled={newCodeSuffix.length < 3 || changeCodeSaving}
+                    className="px-3 py-1.5 rounded-sm text-xs font-black transition disabled:opacity-40"
+                    style={{ backgroundColor: DS.brand, color: "#fff" }}>
+                    {changeCodeSaving ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" onClick={() => { setChangingCode(false); setNewCodeSuffix(""); setChangeCodeMsg(""); }}
+                    className="px-3 py-1.5 rounded-sm text-xs font-bold transition"
+                    style={{ color: DS.labelText }}>
+                    Cancel
+                  </button>
+                </div>
+                {changeCodeMsg && <p className="text-[11px] font-bold mt-1.5" style={{ color: DS.banned }}>{changeCodeMsg}</p>}
+              </div>
+            ) : (() => {
+              const lastChanged = creatorAgreement.fields?.codeChangedAt ?? creatorAgreement.fields?.signedAt;
+              const nextAllowed = lastChanged ? new Date(new Date(lastChanged).setMonth(new Date(lastChanged).getMonth() + 6)) : null;
+              const locked = nextAllowed && new Date() < nextAllowed;
+              if (locked) return null;
+              return (
+                <button type="button" onClick={() => { setChangingCode(true); setNewCodeSuffix(""); setChangeCodeMsg(""); }}
+                  className="text-[11px] font-bold mb-4 transition"
+                  style={{ color: DS.brand }}>
+                  Change code
+                </button>
+              );
+            })()}
+
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {[
+                { label: "Referral Bonus", value: "$49.99", sub: "per qualified trainer" },
+                { label: "Monthly Commission", value: "$10.00", sub: "per active trainer/mo" },
+                { label: "Trainers Referred", value: creatorReferrals, sub: "signed up with your code" },
+              ].map(({ label, value, sub }) => (
+                <div key={label} className="p-3 rounded-sm text-center"
+                  style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}>
+                  <p className="text-[10px] font-black uppercase tracking-wider mb-1" style={{ color: DS.dimText }}>{label}</p>
+                  <p className="text-lg font-black" style={{ color: DS.brand, fontFamily: "'Barlow Condensed', sans-serif" }}>{value}</p>
+                  <p className="text-[10px]" style={{ color: DS.dimText }}>{sub}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-[11px]" style={{ color: DS.dimText }}>
+              Share your code with trainers at signup. When they activate with 10+ athletes and complete their first billing cycle, you earn the referral bonus — plus $10/month for as long as they stay active.
+            </p>
+          </div>
+        ) : (
+          // ── Not signed — invite to join ──
+          <div>
+            <p className="text-xs mb-3" style={{ color: DS.bodyText }}>
+              Refer fitness trainers to CheckPeak and earn for every coach who joins and grows their program.
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                { label: "Referral Bonus", value: "$49.99", sub: "one-time per qualified trainer" },
+                { label: "Monthly Commission", value: "$10/mo", sub: "per active trainer, no cap" },
+              ].map(({ label, value, sub }) => (
+                <div key={label} className="p-3 rounded-sm"
+                  style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}>
+                  <p className="text-[10px] font-black uppercase tracking-wider mb-1" style={{ color: DS.dimText }}>{label}</p>
+                  <p className="text-base font-black" style={{ color: DS.brand, fontFamily: "'Barlow Condensed', sans-serif" }}>{value}</p>
+                  <p className="text-[10px]" style={{ color: DS.dimText }}>{sub}</p>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setShowCreatorModal(true)}
+              className="px-4 py-2 rounded-sm text-xs font-black transition"
+              style={{ backgroundColor: DS.brand, color: "#fff" }}>
+              View Agreement &amp; Join
+            </button>
+          </div>
+        )}
+      </SettingSection>
+
+      {/* ── Creator Agreement Modal ── */}
+      {showCreatorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCreatorModal(false); }}>
+          <div className="w-full max-w-2xl rounded-sm shadow-2xl flex flex-col"
+            style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, maxHeight: "90vh" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 shrink-0"
+              style={{ borderBottom: `1px solid ${DS.border}` }}>
+              <div>
+                <p className="text-sm font-black" style={{ color: DS.bodyText }}>Creator Partner Agreement</p>
+                <p className="text-[11px] mt-0.5" style={{ color: DS.dimText }}>CheckPeak LLC · State of Florida</p>
+              </div>
+              <button type="button" onClick={() => setShowCreatorModal(false)}
+                className="p-1 rounded-sm transition" style={{ color: DS.dimText }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable agreement */}
+            <div className="overflow-y-auto px-5 py-4 flex-1" style={{ minHeight: 0 }}>
+              {CREATOR_AGREEMENT_SECTIONS.map(({ heading, body }) => (
+                <div key={heading} className="mb-5">
+                  <p className="text-[10px] font-black uppercase tracking-wider mb-1.5"
+                    style={{ color: DS.brand }}>{heading}</p>
+                  <p className="text-[11px] leading-relaxed whitespace-pre-line"
+                    style={{ color: DS.bodyText }}>{body}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Signature fields */}
+            <div className="px-5 py-4 shrink-0" style={{ borderTop: `1px solid ${DS.border}`, backgroundColor: DS.pageBg }}>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-[11px] font-bold mb-1" style={{ color: DS.labelText }}>
+                    Legal Name <span style={{ color: DS.banned }}>*</span>
+                  </label>
+                  <input
+                    className="w-full px-2.5 py-1.5 rounded-sm text-xs outline-none"
+                    style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.brandBorder}`, color: DS.bodyText }}
+                    placeholder="Your full legal name"
+                    value={creatorName}
+                    onChange={e => setCreatorName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold mb-1" style={{ color: DS.labelText }}>Date</label>
+                  <div className="w-full px-2.5 py-1.5 rounded-sm text-xs"
+                    style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.labelText }}>
+                    {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-[11px] font-bold mb-1" style={{ color: DS.labelText }}>
+                  Choose Your Creator Code <span style={{ color: DS.banned }}>*</span>
+                </label>
+                <div className="flex items-center rounded-sm overflow-hidden"
+                  style={{ border: `1px solid ${DS.brandBorder}` }}>
+                  <span className="px-2.5 py-1.5 text-xs font-black shrink-0"
+                    style={{ backgroundColor: DS.brandBg, color: DS.brand, borderRight: `1px solid ${DS.brandBorder}` }}>
+                    CP-
+                  </span>
+                  <input
+                    className="flex-1 px-2.5 py-1.5 text-xs font-black outline-none tracking-widest"
+                    style={{ backgroundColor: DS.cardBg, color: DS.bodyText }}
+                    placeholder="YOURNAME"
+                    maxLength={12}
+                    value={creatorCodeSuffix}
+                    onChange={e => setCreatorCodeSuffix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                  />
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: DS.dimText }}>
+                  Letters and numbers only, 3–12 characters. This is permanent and unique to you.
+                </p>
+              </div>
+
+              <label className="flex items-start gap-2 mb-4 cursor-pointer">
+                <input type="checkbox" className="mt-0.5 shrink-0"
+                  checked={creatorChecked} onChange={e => setCreatorChecked(e.target.checked)} />
+                <span className="text-[11px] leading-relaxed" style={{ color: DS.bodyText }}>
+                  I have read, understand, and agree to the CheckPeak Creator Partner Agreement, including all terms regarding compensation, prohibited conduct, confidentiality, and dispute resolution. I confirm I have the full legal authority to enter into this Agreement.
+                </span>
+              </label>
+
+              <div className="flex items-center gap-3">
+                <button type="button"
+                  onClick={signCreatorAgreement}
+                  disabled={!creatorName.trim() || creatorCodeSuffix.length < 3 || !creatorChecked || creatorSaving}
+                  className="px-5 py-2 rounded-sm text-xs font-black transition disabled:opacity-40"
+                  style={{ backgroundColor: DS.brand, color: "#fff" }}>
+                  {creatorSaving ? "Signing…" : "Sign Agreement & Get My Code"}
+                </button>
+                <button type="button" onClick={() => setShowCreatorModal(false)}
+                  className="px-4 py-2 rounded-sm text-xs font-bold transition"
+                  style={{ color: DS.labelText }}>
+                  Cancel
+                </button>
+                {creatorMsg && (
+                  <p className="text-[11px] font-bold" style={{ color: DS.banned }}>{creatorMsg}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -182,7 +182,7 @@ export default function NavBarLoginModal({
   const [signupSuccess, setSignupSuccess] = useState(null);
 
   const [athleteSignup, setAthleteSignup] = useState({ name: "", email: "", password: "", token: "" });
-  const [orgSignup, setOrgSignup] = useState({ name: "", email: "", password: "", contactName: "", phoneNumber: "", website: "" });
+  const [orgSignup, setOrgSignup] = useState({ name: "", email: "", password: "", referralCode: "", contactName: "", phoneNumber: "", website: "" });
 
   const emailRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
@@ -362,6 +362,9 @@ export default function NavBarLoginModal({
       if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
       if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
       const data = await signupOrganization({ name: orgSignup.name, email: orgSignup.email, password: orgSignup.password, contactName: orgSignup.contactName, phoneNumber: orgSignup.phoneNumber, website: orgSignup.website });
+      if (orgSignup.referralCode.trim()) {
+        try { localStorage.setItem("cp_creator_referral", orgSignup.referralCode.trim().toUpperCase()); } catch {}
+      }
       trackSignupConversion(orgSignup.email, "organization");
       setSignupSuccess(data); closeAndReset(); router.push("/org/workouts-calendar");
     } catch (err) {
@@ -753,6 +756,16 @@ export default function NavBarLoginModal({
                             onChange={(e) => setOrgSignup((p) => ({ ...p, [e.target.name]: e.target.value }))}
                             style={INPUT_STYLE} {...INPUT_FOCUS}
                             required autoComplete="new-password" disabled={signupLoading}
+                          />
+                        </Field>
+
+                        <Field label="Creator Code (optional)">
+                          <input
+                            type="text" name="referralCode" placeholder="e.g. CP-YOURNAME"
+                            value={orgSignup.referralCode}
+                            onChange={(e) => setOrgSignup((p) => ({ ...p, referralCode: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 15) }))}
+                            style={INPUT_STYLE} {...INPUT_FOCUS}
+                            autoComplete="off" disabled={signupLoading}
                           />
                         </Field>
 

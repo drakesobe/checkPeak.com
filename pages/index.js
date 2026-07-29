@@ -2291,7 +2291,7 @@ function PromoVideo() {
 // ---------------------------------------------------------------------------
 export default function HomePage() {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
-  const ogDesc  = "Programmatic athlete accountability. Film, nutrition, workouts, attendance, and check-ins — all in one platform.";
+  const ogDesc  = "Program-wide athlete accountability. Film, nutrition, workouts, attendance, and check-ins — all in one platform.";
 
   return (
     <>
@@ -2299,15 +2299,18 @@ export default function HomePage() {
       <Head>
         <title>CheckPeak - The Arena & Collegiate Performance Platform</title>
         <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
-        <meta property="og:title"       content="CheckPeak - When athletes leave campus, you still know." />
-        <meta property="og:description" content={ogDesc} />
-        <meta property="og:type"        content="website" />
-        <meta property="og:url"         content={siteUrl} />
-        <meta property="og:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
-        <meta name="twitter:card"       content="summary_large_image" />
-        <meta name="twitter:site"       content="@checkPeak_" />
-        <meta name="twitter:title"      content="CheckPeak - When athletes leave campus, you still know." />
-        <meta name="twitter:image"      content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
+        <meta property="og:title"        content="CheckPeak — Program-Wide Athlete Accountability" />
+        <meta property="og:description"  content={ogDesc} />
+        <meta property="og:type"         content="website" />
+        <meta property="og:url"          content={siteUrl} />
+        <meta property="og:image"        content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
+        <meta property="og:image:width"  content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta name="twitter:card"        content="summary_large_image" />
+        <meta name="twitter:site"        content="@checkPeak_" />
+        <meta name="twitter:title"       content="CheckPeak — Program-Wide Athlete Accountability" />
+        <meta name="twitter:description" content={ogDesc} />
+        <meta name="twitter:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
       </Head>
 
       <Cursor />

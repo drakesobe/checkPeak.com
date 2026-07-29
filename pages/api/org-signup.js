@@ -12,12 +12,13 @@ export default async function handler(req, res) {
     name,
     email,
     password,
-    contactName = "",
-    phoneNumber = "",
-    website     = "",
-    address     = "",
-    notes       = "",
-    type        = "Organization",
+    contactName   = "",
+    phoneNumber   = "",
+    website       = "",
+    address       = "",
+    notes         = "",
+    type          = "Organization",
+    referralCode  = "",
   } = req.body || {};
 
   if (!name || !email || !password) {
@@ -33,14 +34,15 @@ export default async function handler(req, res) {
 
     const { data: org, error, token } = await createOrg({
       name,
-      email:       emailLower,
+      email:          emailLower,
       password,
       contactName,
-      phone:       phoneNumber,
+      phone:          phoneNumber,
       website,
       address,
       notes,
       type,
+      referredByCode: referralCode || null,
     });
 
     if (error) {

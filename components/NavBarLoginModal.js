@@ -361,10 +361,7 @@ export default function NavBarLoginModal({
       if (!orgSignup.name || !orgSignup.email || !orgSignup.password) throw new Error("Please provide organization name, email, and password.");
       if (!orgSignup.email.includes("@")) throw new Error("Please enter a valid email.");
       if (orgSignup.password.length < 6) throw new Error("Password must be at least 6 characters.");
-      const data = await signupOrganization({ name: orgSignup.name, email: orgSignup.email, password: orgSignup.password, contactName: orgSignup.contactName, phoneNumber: orgSignup.phoneNumber, website: orgSignup.website });
-      if (orgSignup.referralCode.trim()) {
-        try { localStorage.setItem("cp_creator_referral", orgSignup.referralCode.trim().toUpperCase()); } catch {}
-      }
+      const data = await signupOrganization({ name: orgSignup.name, email: orgSignup.email, password: orgSignup.password, contactName: orgSignup.contactName, phoneNumber: orgSignup.phoneNumber, website: orgSignup.website, referralCode: orgSignup.referralCode });
       trackSignupConversion(orgSignup.email, "organization");
       setSignupSuccess(data); closeAndReset(); router.push("/org/workouts-calendar");
     } catch (err) {

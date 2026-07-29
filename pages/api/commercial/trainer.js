@@ -5,6 +5,7 @@ import {
   createTrainer,
   updateTrainer,
 } from "@/lib/commercial/db";
+import { getOrgByEmail } from "@/lib/supabaseOrg";
 
 function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -27,8 +28,12 @@ export default async function handler(req, res) {
     if (existing) return res.status(409).json({ error: "Profile already exists" });
 
     const { name, specialty, bio, basicPrice, premiumPrice, ultraPrice,
-        clientCount, orgType, goal, sport, referredByCode } = req.body;
+        clientCount, orgType, goal, sport } = req.body;
     if (!name || !specialty) return res.status(400).json({ error: "Name and specialty required" });
+
+    // Look up referred_by_code from the org record saved at signup time
+    const { data: org } = await getOrgByEmail(userId);
+    const referredByCode = org?.referred_by_code ?? null;
 
     const slug = slugify(name) + "-" + Math.random().toString(36).slice(2, 6);
 
@@ -46,7 +51,7 @@ export default async function handler(req, res) {
       orgType:           orgType     ?? "",
       goal:              goal        ?? "",
       sport:             sport       ?? "",
-      ...(referredByCode ? { referredByCode: String(referredByCode).toUpperCase().trim() } : {}),
+      ...(referredByCode ? { referredByCode } : {}),
     });
 
     return res.status(201).json({ trainer: record });

@@ -235,9 +235,6 @@ export default function CommercialOnboard() {
     setError("");
 
     try {
-      let referredByCode = null;
-      try { referredByCode = localStorage.getItem("cp_creator_referral") || null; } catch {}
-
       const res = await fetch("/api/commercial/trainer", {
         method:      "POST",
         credentials: "include",
@@ -248,12 +245,10 @@ export default function CommercialOnboard() {
           premiumPrice: prices.Premium,
           ultraPrice:   prices.Ultra,
           clientCount, orgType, goal, sport,
-          ...(referredByCode ? { referredByCode } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      try { localStorage.removeItem("cp_creator_referral"); } catch {}
       router.push("/commercial/dashboard");
     } catch (err) {
       setError(err.message || "Something went wrong.");

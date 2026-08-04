@@ -122,7 +122,7 @@ export default async function handler(req, res) {
       const fetchLimit  = isTrending ? 50 : limit;   // was 200 — reduced to 50
       const fetchOffset = isTrending ? 0  : offset;
       const cutoffDate  = new Date(
-        Date.now() - (isTrending ? 30 : 365) * 24 * 3_600_000
+        Date.now() - (isTrending ? 180 : 365) * 24 * 3_600_000
       ).toISOString();
 
       ({ data: rows, error: queryError } = await supabase

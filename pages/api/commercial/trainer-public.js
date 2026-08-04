@@ -1,8 +1,7 @@
 // ─── pages/api/commercial/trainer-public.js ───────────────────────────────────
-// Public - no auth needed. Returns trainer profile by slug.
-// Used by the client library page to show trainer name/info.
+// Public - no auth needed. Returns trainer profile, preview videos, and workout count by slug.
 
-import { getTrainerBySlug } from "@/lib/commercial/db";
+import { getTrainerBySlug, getVideosByTrainer, getWorkoutsByTrainer } from "@/lib/commercial/db";
 
 export default async function handler(req, res) {
   const { slug } = req.query;
@@ -11,5 +10,10 @@ export default async function handler(req, res) {
   const trainer = await getTrainerBySlug(slug);
   if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
-  return res.status(200).json({ trainer });
+  const [videos, workouts] = await Promise.all([
+    getVideosByTrainer(trainer.id, { publishedOnly: true }),
+    getWorkoutsByTrainer(trainer.id, { publishedOnly: true }),
+  ]);
+
+  return res.status(200).json({ trainer, videos, workouts });
 }

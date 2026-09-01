@@ -192,14 +192,6 @@ export default function MyApp({ Component, pageProps }) {
       {/* Clarity (consent-gated) */}
       {clarityScript}
 
-      {/* OpenCV — lazyOnload so it doesn't block the critical path on every page */}
-      <Script
-        src="https://docs.opencv.org/4.x/opencv.js"
-        strategy="lazyOnload"
-        onLoad={() => console.log("✅ OpenCV.js loaded")}
-        onError={(e) => console.error("❌ Failed to load OpenCV.js", e)}
-      />
-
       <AuthProvider>
         {/* CookieBanner lives outside AppCore so consent state stays
             at the MyApp level and drives GA/Clarity gating */}

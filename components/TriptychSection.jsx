@@ -248,6 +248,7 @@ function Panel({ src, alt, imgPosition = "center", overlayClass, className = "",
         alt={alt}
         fill
         quality={88}
+        sizes="(max-width: 767px) 50vw, 33vw"
         className="cp-panel-img"
         style={{ objectFit: "cover", objectPosition: imgPosition }}
       />

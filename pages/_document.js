@@ -7,6 +7,9 @@ export default function Document() {
         {/* ✅ Required for responsive breakpoints + correct mobile sizing */}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
+        {/* Preconnect to Sentry (used globally for error reporting) */}
+        <link rel="preconnect" href="https://o4511531175706624.ingest.us.sentry.io" />
+
         {/* Standard favicon */}
         <link rel="icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

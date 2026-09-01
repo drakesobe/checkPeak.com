@@ -489,7 +489,7 @@ function Hero() {
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 32 }} animate={{ opacity: 1, y: 0 }}
+          initial={{ y: 32 }} animate={{ y: 0 }}
           transition={{ duration: 0.9, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
           style={{
             fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",

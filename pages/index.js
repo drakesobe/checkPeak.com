@@ -5,7 +5,7 @@ import Head from "next/head";
 import Image from "next/image";
 import TriptychSection from "@/components/TriptychSection";
 import { useRef, useState, useEffect } from "react";
-import { motion, useInView, useScroll, useTransform } from "framer-motion";
+import { motion, useInView } from "framer-motion";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -397,13 +397,39 @@ function TrainerShowcase() {
         so content is fully readable while still in viewport
 ══════════════════════════════════════════════════════════════════════════ */
 function Hero() {
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
-  const bgY     = useTransform(scrollYProgress, [0, 1], ["0%", "20%"]);
-  const opacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
+  const ref        = useRef(null);
+  const bgRef      = useRef(null);
+  const contentRef = useRef(null);
   const [showVideo, setShowVideo] = useState(false);
+
   useEffect(() => {
     if (window.matchMedia("(min-width: 768px)").matches) setShowVideo(true);
+  }, []);
+
+  // Passive scroll listener — no forced layout reflow on mount
+  useEffect(() => {
+    const section = ref.current;
+    const bg      = bgRef.current;
+    const content = contentRef.current;
+    if (!section) return;
+
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        const h    = section.offsetHeight || 1;
+        const frac = Math.max(0, Math.min(1, window.scrollY / h));
+        if (bg)      bg.style.transform  = `translateY(${(frac * 20).toFixed(2)}%)`;
+        if (content) content.style.opacity = Math.max(0, 1 - frac / 0.6).toFixed(3);
+        raf = null;
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
@@ -418,8 +444,8 @@ function Hero() {
       alignItems:     "center",
       justifyContent: "center",
     }}>
-      {/* Background */}
-      <motion.div style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%", y: bgY }} aria-hidden="true">
+      {/* Background — plain div avoids framer-motion MotionValue forced-reflow on mount */}
+      <div ref={bgRef} style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%", willChange: "transform" }} aria-hidden="true">
         <style>{`
           .hero-video {
             position: absolute; inset: 0;
@@ -428,7 +454,7 @@ function Hero() {
             object-position: 55% center;
           }
         `}</style>
-        {/* LCP image: Next.js injects <link rel="preload fetchpriority=high> in <head> */}
+        {/* LCP image: Next.js injects <link rel="preload" fetchpriority="high"> in <head> */}
         <Image
           src="/images/athlete-barbell-squat-rack-offseason-training.jpg"
           alt=""
@@ -446,7 +472,7 @@ function Hero() {
         <div style={{ position: "absolute", inset: 0, background: "rgba(6,8,16,0.62)" }} />
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 80% at 50% 50%, transparent 30%, rgba(6,8,16,0.5) 100%)" }} />
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to bottom, transparent, ${BLACK})` }} />
-      </motion.div>
+      </div>
 
       {/* Nav */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.6 }}
@@ -474,8 +500,8 @@ function Hero() {
         )}
       </motion.div>
 
-      {/* Center headline */}
-      <motion.div initial={{ opacity: 1 }} style={{ opacity, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
+      {/* Center headline — plain div so opacity is driven by scroll handler, not MotionValue */}
+      <div ref={contentRef} style={{ opacity: 1, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
 
         {/* CheckPeak brand chip */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
@@ -524,7 +550,7 @@ function Hero() {
             Already have an account? <span style={{ textDecoration: "underline" }}>Log in</span>
           </button>
         </motion.div>
-      </motion.div>
+      </div>
 
       {/* Scroll indicator */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.8 }}

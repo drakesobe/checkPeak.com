@@ -192,10 +192,10 @@ export default function MyApp({ Component, pageProps }) {
       {/* Clarity (consent-gated) */}
       {clarityScript}
 
-      {/* OpenCV */}
+      {/* OpenCV — lazyOnload so it doesn't block the critical path on every page */}
       <Script
         src="https://docs.opencv.org/4.x/opencv.js"
-        strategy="beforeInteractive"
+        strategy="lazyOnload"
         onLoad={() => console.log("✅ OpenCV.js loaded")}
         onError={(e) => console.error("❌ Failed to load OpenCV.js", e)}
       />

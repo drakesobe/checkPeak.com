@@ -403,6 +403,10 @@ function Hero() {
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const bgY     = useTransform(scrollYProgress, [0, 1], ["0%", "20%"]);
   const opacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
+  const [showVideo, setShowVideo] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 768px)").matches) setShowVideo(true);
+  }, []);
 
   return (
     <section ref={ref} style={{
@@ -417,33 +421,30 @@ function Hero() {
       justifyContent: "center",
     }}>
       {/* Background */}
-      <motion.div className="hero-bg-wrap" style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%", y: bgY }} aria-hidden="true">
+      <motion.div style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%", y: bgY }} aria-hidden="true">
         <style>{`
-          .hero-bg-wrap { width: 100%; height: 100%; }
           .hero-video {
+            position: absolute; inset: 0;
             width: 100%; height: 100%;
             object-fit: cover;
-            object-position: center center;
-          }
-          @media (min-width: 768px) {
-            .hero-video { object-position: 55% center; }
-          }
-          /* Mobile: hide the 3MB video entirely — CSS bg loads without blocking LCP */
-          @media (max-width: 767px) {
-            .hero-video { display: none; }
-            .hero-bg-wrap {
-              background-image: url('/images/athlete-barbell-squat-rack-offseason-training.jpg');
-              background-size: cover;
-              background-position: center;
-            }
+            object-position: 55% center;
           }
         `}</style>
-        <video autoPlay muted loop playsInline preload="none"
-          className="hero-video"
-          poster="/images/athlete-barbell-squat-rack-offseason-training.jpg"
-        >
-          <source src="/video/hero-loop.mp4" type="video/mp4" />
-        </video>
+        {/* LCP image: Next.js injects <link rel="preload fetchpriority=high> in <head> */}
+        <Image
+          src="/images/athlete-barbell-squat-rack-offseason-training.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          style={{ objectFit: "cover", objectPosition: "center" }}
+        />
+        {/* Desktop only: video is never added to the DOM on mobile */}
+        {showVideo && (
+          <video autoPlay muted loop playsInline preload="none" className="hero-video">
+            <source src="/video/hero-loop.mp4" type="video/mp4" />
+          </video>
+        )}
         <div style={{ position: "absolute", inset: 0, background: "rgba(6,8,16,0.62)" }} />
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 80% at 50% 50%, transparent 30%, rgba(6,8,16,0.5) 100%)" }} />
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: `linear-gradient(to bottom, transparent, ${BLACK})` }} />
@@ -2305,8 +2306,6 @@ export default function HomePage() {
     <>
       <style>{GLOBAL_STYLE + ARENA_STYLE}</style>
       <Head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <title>CheckPeak - The Arena & Collegiate Performance Platform</title>
         <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
         <meta property="og:title"        content="CheckPeak — Program-Wide Athlete Accountability" />

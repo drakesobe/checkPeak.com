@@ -35,8 +35,6 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 // FIX: Added .sm-show rule so product mock nav tabs appear on wider screens.
 // ---------------------------------------------------------------------------
 const GLOBAL_STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   html { scroll-behavior: smooth; }
@@ -430,7 +428,7 @@ function Hero() {
             .hero-video { object-position: 55% center; }
           }
         `}</style>
-        <video autoPlay muted loop playsInline
+        <video autoPlay muted loop playsInline preload="none"
           className="hero-video"
           poster="/images/athlete-barbell-squat-rack-offseason-training.jpg"
         >
@@ -2297,6 +2295,9 @@ export default function HomePage() {
     <>
       <style>{GLOBAL_STYLE + ARENA_STYLE}</style>
       <Head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap" />
         <title>CheckPeak - The Arena & Collegiate Performance Platform</title>
         <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
         <meta property="og:title"        content="CheckPeak — Program-Wide Athlete Accountability" />

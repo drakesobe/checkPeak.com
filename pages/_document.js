@@ -10,6 +10,10 @@ export default function Document() {
         {/* Preconnect to Sentry (used globally for error reporting) */}
         <link rel="preconnect" href="https://o4511531175706624.ingest.us.sentry.io" crossOrigin="anonymous" />
 
+        {/* Preload the two above-fold fonts with high priority so they arrive in parallel with CSS */}
+        <link rel="preload" href="/fonts/barlow-condensed-900i.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/barlow-condensed-900.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+
         {/* Self-hosted fonts — eliminates external Google Fonts request chain entirely */}
         <style dangerouslySetInnerHTML={{ __html: `
           @font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/barlow-400.woff2') format('woff2'); }

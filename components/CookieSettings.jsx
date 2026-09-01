@@ -23,7 +23,7 @@ export default function CookieSettings({ onChange }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs font-semibold text-gray-500 hover:text-gray-700 hover:underline"
+        className="text-xs font-semibold text-gray-400 hover:text-white hover:underline"
       >
         Cookie settings
       </button>

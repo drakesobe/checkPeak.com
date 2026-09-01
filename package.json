@@ -2,6 +2,20 @@
   "name": "checksupp",
   "version": "1.0.0",
   "private": true,
+  "browserslist": {
+    "production": [
+      "Chrome >= 90",
+      "Firefox >= 89",
+      "Safari >= 15",
+      "Edge >= 90",
+      "iOS >= 15"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

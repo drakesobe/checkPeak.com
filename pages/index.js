@@ -475,7 +475,7 @@ function Hero() {
       </motion.div>
 
       {/* Center headline */}
-      <motion.div style={{ opacity, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
+      <motion.div initial={{ opacity: 1 }} style={{ opacity, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
 
         {/* CheckPeak brand chip */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
@@ -2184,6 +2184,7 @@ function PromoVideo() {
             ref={videoRef}
             controls={playing}
             playsInline
+            preload="none"
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             style={{
@@ -2192,6 +2193,7 @@ function PromoVideo() {
             }}
           >
             <source src="/video/app-promo.mp4" type="video/mp4" />
+            <track kind="captions" src="/video/app-promo.vtt" srcLang="en" label="English" default />
           </video>
 
           {!playing && (

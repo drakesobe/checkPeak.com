@@ -183,7 +183,7 @@ export default function Footer() {
           <div>
             <h3
               className="text-[10px] font-bold uppercase tracking-widest mb-3"
-              style={{ color: "rgba(255,255,255,0.38)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               Product
             </h3>
@@ -199,7 +199,7 @@ export default function Footer() {
           <div>
             <h3
               className="text-[10px] font-bold uppercase tracking-widest mb-3"
-              style={{ color: "rgba(255,255,255,0.38)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               Scanners
             </h3>
@@ -216,7 +216,7 @@ export default function Footer() {
           <div>
             <h3
               className="text-[10px] font-bold uppercase tracking-widest mb-3"
-              style={{ color: "rgba(255,255,255,0.38)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               Support
             </h3>
@@ -275,7 +275,7 @@ export default function Footer() {
           <div>
             <h3
               className="text-[10px] font-bold uppercase tracking-widest mb-3"
-              style={{ color: "rgba(255,255,255,0.38)", fontFamily: "'Barlow Condensed', sans-serif" }}
+              style={{ color: "rgba(255,255,255,0.55)", fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               Follow Along
             </h3>
@@ -348,19 +348,19 @@ export default function Footer() {
           className="py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
           style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
         >
-          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>
             © {new Date().getFullYear()} CheckPeak. All rights reserved.
           </p>
 
           <div
             className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]"
-            style={{ color: "rgba(255,255,255,0.45)" }}
+            style={{ color: "rgba(255,255,255,0.6)" }}
           >
             <a
               href="/privacy"
               className="transition-colors"
               onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
             >
               Privacy
             </a>
@@ -368,7 +368,7 @@ export default function Footer() {
               href="/terms"
               className="transition-colors"
               onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
             >
               Terms
             </a>

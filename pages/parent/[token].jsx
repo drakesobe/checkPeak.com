@@ -528,8 +528,7 @@ export default function ParentPortal() {
       <Head>
         <title>{athlete.name} · Parent Portal | CheckPeak</title>
         <meta name="robots" content="noindex,nofollow" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,700;1,900&family=Barlow+Condensed:ital,wght@0,700;0,800;0,900;1,700;1,900&display=swap" rel="stylesheet" />
+        {/* Fonts are self-hosted via _document.js — no Google Fonts request needed */}
       </Head>
 
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: C.font, color: C.white }}>

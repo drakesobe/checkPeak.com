@@ -35,8 +35,6 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 // FIX: Added .sm-show rule so product mock nav tabs appear on wider screens.
 // ---------------------------------------------------------------------------
 const GLOBAL_STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   html { scroll-behavior: smooth; }
@@ -2192,21 +2190,29 @@ function PromoVideo() {
               width: "100%", height: "100%",
               display: "block", objectFit: "cover",
             }}
-            poster="/images/promo-poster.jpg"
           >
             <source src="/video/app-promo.mp4" type="video/mp4" />
           </video>
 
           {!playing && (
-            <div
-              onClick={handlePlay}
-              style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "rgba(6,8,16,0.35)",
-                cursor: "none",
-              }}
-            >
+            <>
+              {/* Lazy-loaded poster image — sibling of overlay so it's visible behind it */}
+              <Image
+                src="/images/promo-poster.jpg"
+                alt=""
+                fill
+                sizes="(max-width: 767px) 100vw, 60vw"
+                style={{ objectFit: "cover" }}
+              />
+              <div
+                onClick={handlePlay}
+                style={{
+                  position: "absolute", inset: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "rgba(6,8,16,0.35)",
+                  cursor: "none",
+                }}
+              >
               <motion.div
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.96 }}
@@ -2227,7 +2233,8 @@ function PromoVideo() {
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
               </motion.div>
-            </div>
+              </div>
+            </>
           )}
         </motion.div>
 

@@ -41,8 +41,6 @@ function openAuthModal({ tab = "signup", role = "organization" } = {}) {
 // Styles
 // ---------------------------------------------------------------------------
 const STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,900;1,900&family=Barlow:wght@600&display=swap');
-
   .cp-triptych-wrap {
     background: #080E1A;
     border-top:    0.5px solid rgba(255,255,255,0.1);

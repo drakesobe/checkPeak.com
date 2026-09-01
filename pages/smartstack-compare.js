@@ -1391,9 +1391,7 @@ export default function SmartStackComparePage() {
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:title" content={pageTitle} />
         <meta name="twitter:description" content={pageDesc} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,700;1,900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        {/* Fonts are self-hosted via _document.js — no Google Fonts request needed */}
         <style>{`
           @keyframes cmp-spin { to { transform:rotate(360deg); } }
           @media (min-width:480px) { .ss-cat-grid { grid-template-columns:repeat(3,1fr) !important; } }

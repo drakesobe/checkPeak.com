@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { getConsent, setConsent } from "@/lib/consent";
 import { motion, AnimatePresence } from "framer-motion";
 
+const ACCENT = "#4FABFF";
+const BLACK  = "#060810";
+
 export default function CookieSettings({ onChange }) {
   const [open, setOpen] = useState(false);
   const [analytics, setAnalytics] = useState(false);
@@ -23,7 +26,21 @@ export default function CookieSettings({ onChange }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs font-semibold text-gray-400 hover:text-white hover:underline"
+        style={{
+          fontFamily:    "'Barlow Condensed', sans-serif",
+          fontWeight:    700,
+          fontSize:      "0.72rem",
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color:         "rgba(255,255,255,0.38)",
+          background:    "none",
+          border:        "none",
+          cursor:        "pointer",
+          padding:       0,
+          transition:    "color 0.18s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
+        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.38)"; }}
       >
         Cookie settings
       </button>
@@ -34,7 +51,19 @@ export default function CookieSettings({ onChange }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4"
+            transition={{ duration: 0.2 }}
+            style={{
+              position:             "fixed",
+              inset:                0,
+              zIndex:               200,
+              display:              "flex",
+              alignItems:           "center",
+              justifyContent:       "center",
+              background:           "rgba(6,8,16,0.75)",
+              backdropFilter:       "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              padding:              "1rem",
+            }}
             onClick={() => setOpen(false)}
           >
             <motion.div
@@ -42,83 +71,227 @@ export default function CookieSettings({ onChange }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 16, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 420, damping: 32 }}
-              className="w-full max-w-md rounded-3xl bg-white border border-blue-100 shadow-xl p-6"
-              onClick={(e) => e.stopPropagation()}
+              style={{
+                width:      "100%",
+                maxWidth:   440,
+                background: "#0B0F17",
+                border:     "0.5px solid rgba(255,255,255,0.1)",
+                padding:    "clamp(1.5rem, 4vw, 2rem)",
+                position:   "relative",
+              }}
+              onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-start justify-between gap-3">
+              {/* Top accent */}
+              <div style={{
+                position:   "absolute",
+                top:        0,
+                left:       0,
+                right:      0,
+                height:     "1.5px",
+                background: `linear-gradient(to right, ${ACCENT}66, ${ACCENT}22, transparent)`,
+              }} />
+
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1.5rem" }}>
                 <div>
-                  <p className="text-xs font-semibold tracking-wide text-[#46769B]">PRIVACY</p>
-                  <h2 className="text-lg font-extrabold text-gray-900 mt-1">
+                  <p style={{
+                    fontFamily:    "'Barlow Condensed', sans-serif",
+                    fontWeight:    900,
+                    fontSize:      "0.68rem",
+                    letterSpacing: "0.22em",
+                    textTransform: "uppercase",
+                    color:         ACCENT,
+                    marginBottom:  "0.35rem",
+                  }}>
+                    Privacy
+                  </p>
+                  <h2 style={{
+                    fontFamily:    "'Barlow Condensed', sans-serif",
+                    fontWeight:    900,
+                    fontStyle:     "italic",
+                    fontSize:      "clamp(1.6rem, 5vw, 2rem)",
+                    lineHeight:    0.9,
+                    letterSpacing: "-0.02em",
+                    textTransform: "uppercase",
+                    color:         "#fff",
+                    marginBottom:  "0.5rem",
+                  }}>
                     Cookie settings
                   </h2>
-                  <p className="text-[12px] text-gray-600 mt-1">
+                  <p style={{
+                    fontFamily: "'Barlow', sans-serif",
+                    fontSize:   "0.82rem",
+                    color:      "rgba(255,255,255,0.45)",
+                    lineHeight: 1.55,
+                    margin:     0,
+                  }}>
                     Control optional analytics. Essential cookies are always on.
                   </p>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setOpen(false)}
-                  className="h-9 w-9 rounded-2xl border border-gray-200 grid place-items-center text-gray-600 hover:bg-gray-50 transition"
                   aria-label="Close"
+                  style={{
+                    width:      36,
+                    height:     36,
+                    flexShrink: 0,
+                    display:    "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,0.05)",
+                    border:     "0.5px solid rgba(255,255,255,0.1)",
+                    color:      "rgba(255,255,255,0.5)",
+                    cursor:     "pointer",
+                    fontSize:   "0.9rem",
+                    transition: "background 0.18s, color 0.18s",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                    e.currentTarget.style.color = "#fff";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                    e.currentTarget.style.color = "rgba(255,255,255,0.5)";
+                  }}
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="mt-5 space-y-4">
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">Analytics</p>
-                      <p className="text-[12px] text-gray-600 mt-1">
-                        Helps us understand usage and improve 
-                        user experience. We do not sell your data.
-                      </p>
-                    </div>
-
-                    <label className="inline-flex items-center cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={analytics}
-                        onChange={(e) => setAnalytics(e.target.checked)}
-                      />
-                      <span
-                        className={[
-                          "w-11 h-6 rounded-full transition relative",
-                          analytics ? "bg-[#46769B]" : "bg-gray-300",
-                        ].join(" ")}
-                      >
-                        <span
-                          className={[
-                            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition",
-                            analytics ? "left-5" : "left-0.5",
-                          ].join(" ")}
-                        />
-                      </span>
-                    </label>
+              {/* Analytics toggle row */}
+              <div style={{
+                background: "rgba(255,255,255,0.03)",
+                border:     "0.5px solid rgba(255,255,255,0.08)",
+                padding:    "1rem",
+                marginBottom: "1.5rem",
+              }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+                  <div>
+                    <p style={{
+                      fontFamily:    "'Barlow Condensed', sans-serif",
+                      fontWeight:    700,
+                      fontSize:      "0.9rem",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      color:         "#fff",
+                      marginBottom:  "0.3rem",
+                    }}>
+                      Analytics
+                    </p>
+                    <p style={{
+                      fontFamily: "'Barlow', sans-serif",
+                      fontSize:   "0.8rem",
+                      color:      "rgba(255,255,255,0.42)",
+                      lineHeight: 1.55,
+                      margin:     0,
+                      maxWidth:   "28ch",
+                    }}>
+                      Helps us understand usage and improve your experience. We do not sell your data.
+                    </p>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => setOpen(false)}
-                    className="px-4 py-2 rounded-2xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={save}
-                    className="px-4 py-2 rounded-2xl bg-[#46769B] text-white font-semibold hover:brightness-110 transition"
-                  >
-                    Save
-                  </button>
+                  {/* Toggle */}
+                  <label style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", flexShrink: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={analytics}
+                      onChange={e => setAnalytics(e.target.checked)}
+                      style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                    />
+                    <span
+                      onClick={() => setAnalytics(v => !v)}
+                      style={{
+                        display:        "inline-flex",
+                        alignItems:     "center",
+                        width:          44,
+                        height:         24,
+                        borderRadius:   12,
+                        padding:        "2px",
+                        background:     analytics ? ACCENT : "rgba(255,255,255,0.12)",
+                        border:         analytics ? "none" : "0.5px solid rgba(255,255,255,0.15)",
+                        transition:     "background 0.2s",
+                        cursor:         "pointer",
+                        position:       "relative",
+                      }}
+                    >
+                      <span style={{
+                        width:      20,
+                        height:     20,
+                        borderRadius: "50%",
+                        background: analytics ? BLACK : "rgba(255,255,255,0.6)",
+                        transform:  analytics ? "translateX(20px)" : "translateX(0)",
+                        transition: "transform 0.2s, background 0.2s",
+                        flexShrink: 0,
+                      }} />
+                    </span>
+                  </label>
                 </div>
-
-                <p className="text-[11px] text-gray-500">
-                  Tip: You can update this anytime from the footer.
-                </p>
               </div>
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: "0.6rem", justifyContent: "flex-end", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  style={{
+                    fontFamily:    "'Barlow Condensed', sans-serif",
+                    fontWeight:    700,
+                    fontSize:      "0.75rem",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color:         "rgba(255,255,255,0.38)",
+                    background:    "none",
+                    border:        "0.5px solid rgba(255,255,255,0.12)",
+                    padding:       "0.6rem 1rem",
+                    cursor:        "pointer",
+                    transition:    "color 0.18s, border-color 0.18s",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.65)";
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.28)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = "rgba(255,255,255,0.38)";
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={save}
+                  style={{
+                    fontFamily:    "'Barlow Condensed', sans-serif",
+                    fontWeight:    900,
+                    fontSize:      "0.78rem",
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color:         BLACK,
+                    background:    ACCENT,
+                    border:        "none",
+                    padding:       "0.65rem 1.4rem",
+                    cursor:        "pointer",
+                    transition:    "filter 0.18s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.12)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+                >
+                  Save preferences
+                </button>
+              </div>
+
+              <p style={{
+                fontFamily:   "'Barlow', sans-serif",
+                fontSize:     "0.72rem",
+                color:        "rgba(255,255,255,0.22)",
+                marginTop:    "1rem",
+                margin:       "1rem 0 0",
+              }}>
+                You can update this anytime from the footer.
+              </p>
             </motion.div>
           </motion.div>
         )}

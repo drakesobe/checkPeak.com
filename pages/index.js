@@ -444,8 +444,8 @@ function Hero() {
       alignItems:     "center",
       justifyContent: "center",
     }}>
-      {/* Background — plain div avoids framer-motion MotionValue forced-reflow on mount */}
-      <div ref={bgRef} style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%", willChange: "transform" }} aria-hidden="true">
+      {/* Background — plain div; no willChange so the browser doesn't eagerly promote a large compositor layer */}
+      <div ref={bgRef} style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%" }} aria-hidden="true">
         <style>{`
           .hero-video {
             position: absolute; inset: 0;

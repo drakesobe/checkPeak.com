@@ -9,7 +9,6 @@ const WHITE  = "#FFFFFF";
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   input, textarea { outline: none; font-family: 'Barlow', sans-serif; }
   input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.28); }
@@ -42,7 +41,7 @@ const CONTACTS = [
   {
     label: "Programs & Universities",
     desc: "Walkthrough requests, onboarding, and org questions.",
-    email: "programs@checkpeak.com",
+    email: "Matthew@checkpeak.com",
     cta: { label: "Book a walkthrough instead", href: "/book" },
     accent: ACCENT,
   },
@@ -56,7 +55,7 @@ const CONTACTS = [
   {
     label: "Partnerships & Press",
     desc: "Arena trainer applications, media, and partnership inquiries.",
-    email: "hello@checkpeak.com",
+    email: "Matthew@checkpeak.com",
     cta: null,
     accent: "#A78BFA",
   },

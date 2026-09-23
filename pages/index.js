@@ -97,8 +97,6 @@ const GLOBAL_STYLE = `
   }
 `;
 
-// ARENA_STYLE injected alongside GLOBAL_STYLE in <style> tags
-
 // ---------------------------------------------------------------------------
 // Grain overlay - SVG noise, same technique as A24/Nike editorial pages
 // ---------------------------------------------------------------------------
@@ -163,19 +161,6 @@ function PilotButton({ source, size = "md" }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Trainer showcase grid styles (added to GLOBAL_STYLE via injection)
-// ---------------------------------------------------------------------------
-const ARENA_STYLE = `
-  .trainer-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: clamp(1rem, 2vw, 1.5rem);
-  }
-  @media (max-width: 860px) { .trainer-grid { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 520px) { .trainer-grid { grid-template-columns: 1fr; } }
-  .hero-dual-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
-`;
 
 // Get Started — low-friction signup for individual coaches & trainers
 function GetStartedButton({ source, size = "md" }) {
@@ -236,156 +221,6 @@ function OrgButton({ source }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// TRAINER SHOWCASE - Who's in The Arena
-// ---------------------------------------------------------------------------
-const ARENA_TRAINERS = [
-  {
-    initials: "JC", name: "Joe Coy", specialty: "Strength & Conditioning Coach",
-    bio: "UK-based coach specialising in athlete testing, performance profiling, and evidence-based training. Founder of ATHLETE35.",
-    tags: ["Athlete Testing", "Performance Profiling", "Evidence-Based"],
-    tiers: [{ label: "Basic", price: 24.99 }, { label: "Premium", price: 54.99 }, { label: "Ultra", price: 149.99 }],
-    accent: ACCENT, slug: "joe-coy-6leb",
-  },
-  {
-    initials: "HT", name: "Hunter Tuck", specialty: "Massage Therapist & Personal Trainer",
-    bio: "12 years as a Massage Therapist, 5 as a Personal Trainer and Corrective Exercise Specialist. Focused on overcoming pain and movement dysfunction.",
-    tags: ["Corrective Exercise", "Recovery", "Pain Relief"],
-    tiers: [{ label: "Basic", price: 25 }, { label: "Premium", price: 65 }, { label: "Ultra", price: 150 }],
-    accent: "#3FB950", slug: "hunter-tuck-snaa",
-  },
-];
-
-function TrainerShowcase() {
-  const ref    = useRef(null);
-  const inView = useInView(ref, { once: true, margin: "-10%" });
-
-  return (
-    <section id="arena-trainers" style={{
-      width: "100%", background: BLACK,
-      padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 7vw, 7rem)",
-      borderTop: "0.5px solid rgba(255,255,255,0.08)",
-      position: "relative", overflow: "hidden",
-    }}>
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: GRAIN_URL, backgroundRepeat: "repeat", backgroundSize: "256px 256px", opacity: 0.04, mixBlendMode: "screen", pointerEvents: "none" }} />
-
-      <div ref={ref} style={{ position: "relative", zIndex: 1 }}>
-        {/* Eyebrow */}
-        <motion.div initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}} transition={{ duration: 0.5 }}
-          style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.25rem, 2.5vw, 2rem)" }}
-        >
-          <motion.div initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}} transition={{ duration: 0.8 }}
-            style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: ACCENT, transformOrigin: "left" }}
-          />
-          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: ACCENT }}>
-            The Arena
-          </span>
-        </motion.div>
-
-        <motion.h2 initial={{ opacity: 0, y: 32 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.9, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-          style={{
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",
-            fontSize: "clamp(2.5rem, 7vw, 7rem)", lineHeight: 0.88, letterSpacing: "-0.025em",
-            textTransform: "uppercase", color: WHITE, marginBottom: "clamp(3rem, 6vw, 5rem)",
-          }}
-        >
-          Train with<br />
-          <span style={{ color: ACCENT }}>coaches.</span>
-        </motion.h2>
-
-        <div className="trainer-grid">
-          {/* Real trainer cards */}
-          {ARENA_TRAINERS.map((t, i) => (
-            <motion.div key={t.slug}
-              initial={{ opacity: 0, y: 32 }}
-              animate={inView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.7, delay: 0.18 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
-              style={{ background: "#0B0F17", border: "0.5px solid rgba(255,255,255,0.1)", borderTop: `3px solid ${t.accent}`, borderRadius: 2, overflow: "hidden" }}
-            >
-              <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${t.accent}1A`, border: `1.5px solid ${t.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "0.85rem" }}>
-                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.95rem", color: t.accent }}>{t.initials}</span>
-                </div>
-                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "clamp(1.3rem, 2.2vw, 1.65rem)", lineHeight: 1, color: WHITE, marginBottom: "0.3rem" }}>{t.name}</p>
-                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.65)", marginBottom: "0.75rem" }}>{t.specialty}</p>
-                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", lineHeight: 1.7, color: "rgba(255,255,255,0.68)", marginBottom: "0.9rem" }}>{t.bio}</p>
-                <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                  {t.tags.map(tag => (
-                    <span key={tag} style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 8px", border: "0.5px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.55)" }}>{tag}</span>
-                  ))}
-                </div>
-              </div>
-              {/* Pricing tiers */}
-              <div style={{ display: "flex", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
-                {t.tiers.map(({ label, price }, idx) => (
-                  <div key={label} style={{ flex: 1, padding: "0.75rem 0.5rem", textAlign: "center", borderLeft: idx > 0 ? "0.5px solid rgba(255,255,255,0.07)" : "none" }}>
-                    <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "1rem", color: idx === 0 ? "rgba(255,255,255,0.6)" : idx === 1 ? t.accent : WHITE, lineHeight: 1, marginBottom: "0.15rem" }}>${price}</p>
-                    <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>{label}</p>
-                  </div>
-                ))}
-              </div>
-              <div style={{ padding: "0.85rem 1rem" }}>
-                <a href={`/trainer/${t.slug}`}
-                  onClick={() => track("trainer_card_view", { trainer: t.slug })}
-                  style={{ width: "100%", padding: "0.65rem 1rem", background: "transparent", border: `0.5px solid ${t.accent}44`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.75rem", letterSpacing: "0.12em", textTransform: "uppercase", color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.45rem", transition: "background 0.18s, border-color 0.18s", textDecoration: "none" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = `${t.accent}0F`; e.currentTarget.style.borderColor = t.accent; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = `${t.accent}44`; }}
-                >
-                  View Program
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-                  </svg>
-                </a>
-              </div>
-            </motion.div>
-          ))}
-
-          {/* Trainer recruitment card */}
-          <motion.div
-            initial={{ opacity: 0, y: 32 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.7, delay: 0.38, ease: [0.16, 1, 0.3, 1] }}
-            style={{ background: "transparent", border: "1px dashed rgba(255,255,255,0.12)", borderRadius: 2, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "clamp(2rem, 4vw, 3rem) 1.5rem", textAlign: "center", minHeight: "260px" }}
-          >
-            <div style={{ width: 44, height: 44, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "1.25rem" }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </div>
-            <div style={{ marginBottom: "0.75rem" }}>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "2px 8px", border: "0.5px solid rgba(79,171,255,0.35)", color: ACCENT, background: "rgba(79,171,255,0.06)" }}>
-                Applications open
-              </span>
-            </div>
-            <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "1.1rem", color: WHITE, letterSpacing: "-0.01em", marginBottom: "0.5rem" }}>
-              8 of 10 spots filled.
-            </p>
-            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.58)", lineHeight: 1.65, marginBottom: "1.5rem", maxWidth: "22ch" }}>
-              Partner spots in The Arena are limited. Apply to launch your library and earn recurring revenue.
-            </p>
-            <a href="/commercial/onboard"
-              onClick={() => track("trainer_recruitment_cta")}
-              style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.75rem", letterSpacing: "0.12em", textTransform: "uppercase", color: ACCENT, textDecoration: "none", border: `0.5px solid ${ACCENT}55`, padding: "0.6rem 1rem", transition: "color 0.18s, border-color 0.18s, background 0.18s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = `${ACCENT}12`; e.currentTarget.style.borderColor = ACCENT; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = `${ACCENT}55`; }}
-            >
-              Apply for a Spot
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-              </svg>
-            </a>
-          </motion.div>
-        </div>
-
-        <motion.p initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}} transition={{ duration: 0.5, delay: 0.7 }}
-          style={{ textAlign: "center", marginTop: "clamp(2rem, 4vw, 3.5rem)", fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.48)", letterSpacing: "0.05em" }}
-        >
-          More trainers joining The Arena every month.
-        </motion.p>
-      </div>
-    </section>
-  );
-}
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -480,7 +315,6 @@ function Hero() {
         style={{ position: "absolute", top: "clamp(1.25rem, 3vw, 2rem)", right: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 10, gap: "1.75rem" }}
       >
         {[
-          { label: "The Arena",        href: null,       action: () => { track("nav_click", { label: "The Arena" });        document.getElementById("arena-trainers")?.scrollIntoView({ behavior: "smooth" }); } },
           { label: "For universities", href: null,       action: () => { track("nav_click", { label: "For universities" });  document.getElementById("for-organizations")?.scrollIntoView({ behavior: "smooth" }); } },
           { label: "Pricing",          href: "/pricing", action: () => track("nav_click", { label: "Pricing" }) },
         ].map(({ label, href, action }) =>
@@ -787,11 +621,11 @@ const BEATS = [
     threeLines: false,
   },
   {
-    lines:      [{ text: "Built around" }, { text: "the rules.", accent: true }],
-    footnote:   "Bylaw 16. Bylaw 17. VARA. CARA. Most platforms ignore them and hope nobody checks. We built CheckPeak around them from day one - because a compliance violation isn't a bug. It's a career. Every feature exists inside the line. Not despite it.",
+    lines:      [{ text: "Built" }, { text: "different.", accent: true }],
+    footnote:   "Other platforms do one thing well. CheckPeak puts game film, nutrition tracking, workout discipline, and NCAA compliance in a single platform — with features nobody else has built.",
     isClimax:   false,
     threeLines: false,
-    watermark:  "COMPLIANT",
+    watermark:  "EDGE",
   },
 ];
 
@@ -961,27 +795,29 @@ function ProofMoment() {
   );
 }
 
-// Colours used in ComplianceMoment product mock
-const UI = {
-  void:    "#F7F9FC",   // page background
-  surface: "#FFFFFF",   // card backgrounds
-  raised:  "#F2F5F9",   // secondary panels
-  panel:   "#EBF0F7",   // tertiary
-  rim:     "#DDE4EE",   // borders
-  wire:    "#C8D3E3",   // stronger border
-  ghost:   "#6B7E99",   // secondary text
-  chalk:   "#2D3E56",   // primary dark text
-  ink:     "#0D1B2A",   // headline text
-  brand:   "#0070CC",   // brand blue
-  red:     "#D92B3A",
-  amber:   "#C47A00",
-  green:   "#0A8A4A",
+// Colours used in FilmReviewMoment product mock
+const FR = {
+  bg:      "#0A0E16",
+  surface: "#111827",
+  raised:  "#1C2333",
+  rim:     "rgba(255,255,255,0.09)",
+  wire:    "rgba(255,255,255,0.15)",
+  ghost:   "rgba(255,255,255,0.38)",
+  green:   "#3FB950",
+  amber:   "#E3A21A",
+  red:     "#F85149",
 };
 
-function _ProductMoment_REMOVED() {
-  const ref    = useRef(null);
-  const inView = useInView(ref, { once: true, margin: "-10%" });
+// UI palette kept so the _ProductMoment_REMOVED dead code below still parses
+const UI = {
+  void:    "#F7F9FC", surface: "#FFFFFF",   raised:  "#F2F5F9",
+  rim:     "#DDE4EE", wire:    "#C8D3E3",   ghost:   "#6B7E99",
+  chalk:   "#2D3E56", ink:     "#0D1B2A",   brand:   "#0070CC",
+  red:     "#D92B3A", amber:   "#C47A00",   green:   "#0A8A4A",
+};
 
+// _ProductMoment_REMOVED — dead code kept below, not rendered anywhere
+function _ProductMoment_REMOVED() {
   // Faithful mock data matching the Nutrition page structure
   const actionCount = 4;
   const totalCount  = 12;
@@ -1465,24 +1301,199 @@ function _ProductMoment_REMOVED() {
    4. "the line." accent period is blue like the rest of the word.
 ══════════════════════════════════════════════════════════════════════════ */
 
-function ComplianceMoment() {
+function ComparisonMoment() {
   const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
+  const [w, setW] = useState(0);
 
-  const periods = [
-    { name: "Fall Season",      dates: "Sep 1 – Nov 30",  tone: "safe",    vara: null             },
-    { name: "Winter Break",     dates: "Dec 15 – Jan 5",  tone: "banned",  vara: "VARA Required"  },
-    { name: "Spring Preseason", dates: "Jan 20 – Feb 28", tone: "brand",   vara: null             },
-    { name: "Out of Season",    dates: "Mar 1 – Aug 15",  tone: "caution", vara: "VARA Preferred" },
+  useEffect(() => {
+    const upd = () => setW(window.innerWidth);
+    upd();
+    window.addEventListener("resize", upd);
+    return () => window.removeEventListener("resize", upd);
+  }, []);
+
+  const mobile = w > 0 && w < 680;
+
+  // y = full, $ = paid add-on / higher tier, p = partial, x = not available
+  const rows = [
+    { feature: "Film, workouts & nutrition — one platform",                         cp: "y", hudl: "x",  tw: "x"  },
+    { feature: "See who watched the film — and who didn't",                         cp: "y", hudl: "p",  tw: "x"  },
+    { feature: "Photo / video proof workouts were done",                            cp: "y", hudl: "x",  tw: "p"  },
+    { feature: "Daily athlete check-ins — wellness & readiness in one tap",         cp: "y", hudl: "x",  tw: "p"  },
+    { feature: "Nutrition plan adherence — macro targets at a glance",              cp: "y", hudl: "x",  tw: "$"  },
+    { feature: "Supplement scanner — know it's safe before they take it",           cp: "y", hudl: "x",  tw: "x"  },
+    { feature: "CARA / VARA compliance — your designated compliance calendar",      cp: "y", hudl: "x",  tw: "$"  },
+    { feature: "Parent portal — families in the loop",                              cp: "y", hudl: "p",  tw: "p"  },
+    { feature: "Recruiting profile for every athlete",                              cp: "y", hudl: "$",  tw: "x"  },
+    { feature: "Unlimited roster — no per-seat fees",                               cp: "y", hudl: "$",  tw: "$"  },
   ];
 
-  const toneColor = {
-    brand:   { bg: "rgba(0,112,204,0.09)",  border: "rgba(0,112,204,0.25)",  text: "#0070CC", dot: "#0070CC" },
-    safe:    { bg: "rgba(10,138,74,0.09)",  border: "rgba(10,138,74,0.25)",  text: "#0A8A4A", dot: "#0A8A4A" },
-    caution: { bg: "rgba(196,122,0,0.09)",  border: "rgba(196,122,0,0.25)",  text: "#C47A00", dot: "#C47A00" },
-    banned:  { bg: "rgba(217,43,58,0.11)",  border: "rgba(217,43,58,0.38)",  text: "#D92B3A", dot: "#D92B3A" },
+  const platforms = [
+    { key: "cp",   name: "CheckPeak", highlight: true  },
+    { key: "hudl", name: "Hudl",      highlight: false },
+    { key: "tw",   name: "TeamWorks", highlight: false },
+  ];
+
+  // Unified status indicator — adapts size for mobile vs desktop
+  // compact=true uses abbreviated labels that fit narrow mobile columns
+  const Status = ({ val, highlight, size = 16, compact = false }) => {
+    if (val === "y") return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke={highlight ? ACCENT : "rgba(255,255,255,0.35)"}
+        strokeWidth={highlight ? "2.5" : "2"}
+        strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+    if (val === "$") return (
+      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: compact ? size - 3 : size - 4, letterSpacing: "0.06em", color: FR.amber, textAlign: "center", lineHeight: 1.3 }}>
+        {compact ? "+$" : "+ Add-on"}
+      </span>
+    );
+    if (val === "p") return (
+      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: compact ? size - 3 : size - 5, letterSpacing: "0.06em", textTransform: "uppercase", color: FR.amber }}>
+        {compact ? "~" : "Partial"}
+      </span>
+    );
+    if (val === "x") return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke={FR.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    );
+    return <span style={{ color: "rgba(255,255,255,0.2)", fontSize: size + 2, lineHeight: 1 }}>—</span>;
   };
 
+  // Shared decorative layers
+  const Grain = () => (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 1, backgroundImage: GRAIN_URL, backgroundRepeat: "repeat", backgroundSize: "256px 256px", opacity: 0.04, mixBlendMode: "screen", pointerEvents: "none" }} />
+  );
+  const Glow = () => (
+    <div aria-hidden="true" style={{ position: "absolute", left: "-6%", top: "50%", transform: "translateY(-50%)", width: "40vw", height: "40vw", borderRadius: "50%", zIndex: 0, pointerEvents: "none", background: "radial-gradient(circle, rgba(79,171,255,0.04) 0%, transparent 65%)" }} />
+  );
+
+  // ── MOBILE LAYOUT (<680px) ──
+  if (mobile) return (
+    <section ref={ref} style={{ width: "100%", background: BLACK, padding: "clamp(3rem, 8vw, 4.5rem) clamp(1rem, 5vw, 1.5rem)", overflow: "hidden", position: "relative", borderTop: "0.5px solid rgba(255,255,255,0.08)" }}>
+      <Grain /><Glow />
+      <div style={{ position: "relative", zIndex: 2 }}>
+
+        {/* Header */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.7 }} style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+            <div style={{ width: "1.75rem", height: "0.5px", background: "rgba(255,255,255,0.22)" }} />
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>Why CheckPeak</span>
+          </div>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(0.95rem, 4.2vw, 1.05rem)", lineHeight: 1.7, color: "rgba(255,255,255,0.68)" }}>
+            Hudl does film. TeamWorks does scheduling. Neither one tracks nutrition, proves workouts were done, or keeps your compliance calendar clean.
+          </p>
+        </motion.div>
+
+        {/* Table */}
+        <div style={{ border: "0.5px solid rgba(255,255,255,0.1)", overflow: "hidden", boxShadow: "0 16px 48px rgba(0,0,0,0.4)" }}>
+
+          {/* Column headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", background: FR.raised, borderBottom: `1px solid ${FR.rim}` }}>
+            <div style={{ padding: "11px 14px" }} />
+            {platforms.map(({ name, highlight }) => (
+              <div key={name} style={{ padding: "11px 6px", textAlign: "center", background: highlight ? "rgba(79,171,255,0.1)" : "transparent", borderLeft: highlight ? "1px solid rgba(79,171,255,0.2)" : `1px solid ${FR.rim}` }}>
+                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: highlight ? ACCENT : "rgba(255,255,255,0.4)" }}>
+                  {name === "TeamWorks" ? "TW" : name}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Feature rows */}
+          {rows.map(({ feature, cp, hudl, tw }, i) => (
+            <motion.div key={i}
+              initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
+              transition={{ duration: 0.35, delay: 0.2 + i * 0.05 }}
+              style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", borderTop: `1px solid ${FR.rim}`, background: i % 2 === 0 ? FR.surface : FR.bg }}
+            >
+              <div style={{ padding: "11px 10px 11px 13px", fontFamily: "'Barlow', sans-serif", fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.88)", lineHeight: 1.4 }}>
+                {feature}
+              </div>
+              {[{ val: cp, hl: true }, { val: hudl, hl: false }, { val: tw, hl: false }].map(({ val, hl }, j) => (
+                <div key={j} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "11px 4px", background: hl ? "rgba(79,171,255,0.07)" : "transparent", borderLeft: hl ? "1px solid rgba(79,171,255,0.15)" : `1px solid ${FR.rim}` }}>
+                  <Status val={val} highlight={hl} size={17} compact />
+                </div>
+              ))}
+            </motion.div>
+          ))}
+
+          {/* Pricing row */}
+          <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", borderTop: "1px solid rgba(79,171,255,0.2)", background: "rgba(79,171,255,0.04)" }}>
+            <div style={{ padding: "14px 14px" }}>
+              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Pricing</span>
+            </div>
+            {[
+              { label: "Flat rate", sub: "all in",    highlight: true  },
+              { label: "Base +",    sub: "add-ons",   highlight: false },
+              { label: "Quote",     sub: "per seat",  highlight: false },
+            ].map(({ label, sub, highlight }, i) => (
+              <div key={i} style={{ padding: "12px 6px", textAlign: "center", background: highlight ? "rgba(79,171,255,0.09)" : "transparent", borderLeft: highlight ? "1px solid rgba(79,171,255,0.2)" : `1px solid ${FR.rim}` }}>
+                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: highlight ? ACCENT : FR.amber }}>{label}</div>
+                <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 3 }}>{sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Legend */}
+          <div style={{ padding: "9px 14px", background: FR.raised, borderTop: `1px solid ${FR.rim}`, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            {[
+              { color: ACCENT,   label: "Included",          icon: null  },
+              { color: FR.amber, label: "+$ add-on  ~ partial", icon: null },
+              { color: FR.red,   label: "Not available",      icon: "x"   },
+            ].map(({ color, label, icon }) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                {icon === "x" ? (
+                  <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                ) : (
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                )}
+                <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.38)" }}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Value callout — mobile stacked */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.7, delay: 0.8 }}
+          style={{ position: "relative", marginTop: "clamp(1.75rem, 5vw, 2.5rem)", border: "0.5px solid rgba(79,171,255,0.18)", background: "rgba(79,171,255,0.03)", padding: "clamp(1.25rem, 5vw, 1.75rem)" }}
+        >
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "1.5px", background: `linear-gradient(to right, ${ACCENT}55, ${ACCENT}22, transparent)` }} />
+          <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.4rem, 6vw, 1.9rem)", lineHeight: 1, letterSpacing: "-0.02em", textTransform: "uppercase", color: WHITE, marginBottom: "0.65rem" }}>
+            Everything above.<br /><span style={{ color: ACCENT }}>One price. No add-ons.</span>
+          </p>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(0.9rem, 3.8vw, 1rem)", lineHeight: 1.72, color: "rgba(255,255,255,0.62)", marginBottom: "1.25rem" }}>
+            Every feature competitors charge extra for is included from day one. Price doesn&apos;t change as your roster grows.
+          </p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.7rem", letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", marginBottom: "0.15rem" }}>Starting from</div>
+              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "clamp(2.4rem, 10vw, 3rem)", lineHeight: 0.9, letterSpacing: "-0.03em", color: ACCENT }}>
+                $99<span style={{ fontSize: "0.45em", opacity: 0.7 }}>/mo</span>
+              </div>
+            </div>
+            <a href="/pricing" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.8rem 1.75rem", background: ACCENT, color: BLACK, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.88rem", letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none" }}>
+              See pricing
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+            </a>
+          </div>
+        </motion.div>
+
+      </div>
+    </section>
+  );
+
+  // ── DESKTOP LAYOUT (≥680px) ──
   return (
     <section
       ref={ref}
@@ -1495,21 +1506,7 @@ function ComplianceMoment() {
         borderTop:  "0.5px solid rgba(255,255,255,0.08)",
       }}
     >
-      {/* Film grain */}
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0, zIndex: 1,
-        backgroundImage: GRAIN_URL, backgroundRepeat: "repeat",
-        backgroundSize: "256px 256px", opacity: 0.04,
-        mixBlendMode: "screen", pointerEvents: "none",
-      }} />
-
-      {/* Accent glow */}
-      <div aria-hidden="true" style={{
-        position: "absolute", left: "-8%", top: "50%",
-        transform: "translateY(-50%)", width: "45vw", height: "45vw",
-        borderRadius: "50%", zIndex: 0, pointerEvents: "none",
-        background: "radial-gradient(circle, rgba(79,171,255,0.04) 0%, transparent 65%)",
-      }} />
+      <Grain /><Glow />
 
       {/* Two-column layout */}
       <div style={{
@@ -1520,14 +1517,14 @@ function ComplianceMoment() {
         flexWrap:   "wrap",
       }}>
 
-        {/* ── LEFT: editorial declaration ── */}
-        <div style={{ flex: "0 0 clamp(240px, 28%, 320px)", minWidth: 0 }}>
+        {/* ── LEFT: context ── */}
+        <div style={{ flex: "0 0 clamp(220px, 23%, 280px)", minWidth: 0 }}>
 
           {/* Eyebrow */}
           <motion.div
             initial={{ opacity: 0, x: -12 }} animate={inView ? { opacity: 1, x: 0 } : {}}
             transition={{ duration: 0.5 }}
-            style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.5rem, 3vw, 2.25rem)" }}
+            style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "clamp(1.5rem, 3vw, 2rem)" }}
           >
             <motion.div
               initial={{ scaleX: 0 }} animate={inView ? { scaleX: 1 } : {}}
@@ -1535,319 +1532,194 @@ function ComplianceMoment() {
               style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "left" }}
             />
             <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)" }}>
-              Built around the rules
+              Why CheckPeak
             </span>
           </motion.div>
-
-          {/* Headline - 4 lines, last line in ACCENT */}
-          {[
-            { text: "You set",    accent: false },
-            { text: "the dates.", accent: false },
-            { text: "We hold",    accent: false },
-            { text: "the line.",  accent: true  },
-          ].map(({ text, accent }, i) => (
-            <motion.p key={i}
-              initial={{ opacity: 0, y: 40, skewY: 2 }}
-              animate={inView ? { opacity: 1, y: 0, skewY: 0 } : {}}
-              transition={{ duration: 0.9, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] }}
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic",
-                fontSize:   "clamp(2.8rem, 6vw, 6rem)", lineHeight: 0.88, letterSpacing: "-0.03em",
-                textTransform: "uppercase", color: accent ? ACCENT : WHITE, display: "block",
-                textShadow: "0 2px 60px rgba(0,0,0,0.8)",
-              }}
-            >{text}</motion.p>
-          ))}
 
           {/* Body copy */}
           <motion.div
             initial={{ opacity: 0, y: 16 }} animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.7, delay: 0.55 }}
-            style={{ marginTop: "clamp(2rem, 4vw, 3rem)", paddingLeft: "1.25rem", borderLeft: "1.5px solid rgba(255,255,255,0.18)", maxWidth: "36ch" }}
+            transition={{ duration: 0.7, delay: 0.3 }}
+            style={{ paddingLeft: "1.25rem", borderLeft: "1.5px solid rgba(255,255,255,0.18)", maxWidth: "34ch" }}
           >
-            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(1rem, 1.3vw, 1.1rem)", fontWeight: 400, lineHeight: 1.8, color: "rgba(255,255,255,0.72)" }}>
-              Configure your season once. Add break periods, preseason,
-              out-of-season, and more. Every workout scheduled on a restricted
-              date triggers an automatic compliance warning before it&apos;s ever saved.
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(1rem, 1.2vw, 1.08rem)", fontWeight: 400, lineHeight: 1.8, color: "rgba(255,255,255,0.72)" }}>
+              You know Hudl for film. TeamWorks for scheduling. But neither one
+              proves your athletes watched the tape, tracks what they&apos;re eating,
+              or keeps your compliance calendar clean.
             </p>
           </motion.div>
 
-          {/* In-app note */}
-          <motion.p
+          {/* Unique-only callout */}
+          <motion.div
             initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.8 }}
-            style={{ marginTop: "clamp(1.5rem, 3vw, 2.25rem)", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.85rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.52)", lineHeight: 1.6 }}
+            transition={{ duration: 0.6, delay: 0.45 }}
+            style={{ marginTop: "clamp(1.5rem, 3vw, 2rem)", display: "flex", flexDirection: "column", gap: "0.65rem" }}
           >
-            Full CARA / VARA reference available in-app at any time.
-          </motion.p>
+            {[
+              "Watch receipts — not the honor system",
+              "Nutrition & supplement safety — nobody else has it",
+              "Offseason accountability your AD will notice",
+            ].map((line, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: ACCENT, flexShrink: 0 }} />
+                <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.58)", lineHeight: 1.45 }}>{line}</span>
+              </div>
+            ))}
+          </motion.div>
         </div>
 
-        {/* ── RIGHT: product mock ── */}
+        {/* ── RIGHT: comparison table ── */}
         <motion.div
-          initial={{ opacity: 0, y: 48, rotateX: 4 }}
-          animate={inView ? { opacity: 1, y: 0, rotateX: 0 } : {}}
-          transition={{ duration: 1.2, delay: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          style={{
-            flex: "1 1 420px", minWidth: 0,
-            borderRadius: "10px", overflow: "hidden",
-            boxShadow: "0 2px 0 rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.75), 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)",
-            transform: "perspective(1400px) rotateX(1.5deg)", transformOrigin: "center top",
-            fontFamily: "'Barlow Condensed', sans-serif",
-          }}
+          initial={{ opacity: 0, y: 32 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 1.0, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          style={{ flex: "1 1 420px", minWidth: 0, overflowX: "auto" }}
         >
-
-          {/* Browser chrome */}
-          <div style={{ background: "#16202E", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "0 16px", height: 44, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              {["#FF5F57","#FFBD2E","#28C840"].map((c,i) => (
-                <div key={i} style={{ width: 12, height: 12, borderRadius: "50%", background: c, opacity: 0.85 }} />
-              ))}
-            </div>
-            <div style={{ flex: 1, maxWidth: 380, margin: "0 auto", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, height: 26, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 10px" }}>
-              <svg width="9" height="10" viewBox="0 0 12 14" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
-                <rect x="1" y="6" width="10" height="8" rx="1.5" fill="rgba(255,255,255,0.8)" />
-                <path d="M3.5 6V4a2.5 2.5 0 015 0v2" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-              </svg>
-              <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.68rem", color: "rgba(255,255,255,0.45)", letterSpacing: "0.01em", whiteSpace: "nowrap" }}>
-                checkpeak.com<span style={{ opacity: 0.5 }}>/org/workouts-calendar</span>
-              </span>
-            </div>
-          </div>
-
-          {/* App NavBar */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", height: 48, background: UI.surface, borderBottom: `1px solid ${UI.rim}`, flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 15, letterSpacing: "0.12em", color: UI.brand, textTransform: "uppercase" }}>PEAK</span>
-              <div style={{ width: 1, height: 20, background: UI.rim }} />
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", color: UI.ghost, textTransform: "uppercase" }}>Workouts Calendar</span>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {[
-                { label: "Season Dates", active: true  },
-                { label: "Compliance",   active: false },
-                { label: "+ Create",     primary: true },
-              ].map(({ label, active, primary }) => (
-                <div key={label} style={{ padding: "5px 10px", borderRadius: 3, background: primary ? UI.brand : active ? UI.raised : "transparent", border: primary ? "none" : active ? `1px solid ${UI.wire}` : `1px solid ${UI.rim}`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: primary ? "#fff" : active ? UI.ink : UI.ghost }}>
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Calendar area with modal overlay ──
-              FIX: explicit minHeight so the modal is never clipped.
-              Ghost grid is purely decorative horizontal strips -
-              not height-determining cells.
-          ── */}
           <div style={{
-            position:  "relative",
-            /* Tall enough to show the full modal without clipping */
-            minHeight: 520,
-            background: UI.void,
-            overflow:  "hidden",
+            minWidth: 420,
+            border: "0.5px solid rgba(255,255,255,0.1)",
+            overflow: "hidden",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)",
           }}>
 
-            {/* Ghost calendar strips (decorative, low opacity) */}
-            <div aria-hidden="true" style={{ position: "absolute", inset: 0, padding: "14px 20px 0", opacity: 0.13, pointerEvents: "none" }}>
-              {/* Day-of-week header row */}
-              <div style={{ display: "flex", gap: 3, marginBottom: 6 }}>
-                {["S","M","T","W","T","F","S"].map((d,i) => (
-                  <div key={i} style={{ flex: 1, textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", fontSize: 9, fontWeight: 900, color: UI.ghost }}>{d}</div>
-                ))}
-              </div>
-              {/* Four week rows as solid strips */}
-              {[0,1,2,3].map(r => (
-                <div key={r} style={{ display: "flex", gap: 3, marginBottom: 3 }}>
-                  {[0,1,2,3,4,5,6].map(c => (
-                    <div key={c} style={{ flex: 1, height: 32, background: UI.surface, border: `1px solid ${UI.rim}`, borderRadius: 2 }} />
-                  ))}
+            {/* Table header row */}
+            <div style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1fr", background: FR.raised, borderBottom: `1px solid ${FR.rim}` }}>
+              <div style={{ padding: "13px 18px" }} />
+              {platforms.map(({ name, highlight }) => (
+                <div key={name} style={{ padding: "13px 12px", textAlign: "center", background: highlight ? "rgba(79,171,255,0.08)" : "transparent", borderLeft: highlight ? "1px solid rgba(79,171,255,0.18)" : `1px solid ${FR.rim}` }}>
+                  <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: highlight ? ACCENT : "rgba(255,255,255,0.45)" }}>
+                    {name}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* Modal backdrop */}
-            <div style={{ position: "absolute", inset: 0, background: "rgba(13,27,42,0.52)", display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 16, paddingBottom: 16 }}>
-
-              {/* ── Season Calendar Setup Modal ── */}
-              <motion.div
-                initial={{ opacity: 0, y: 14, scale: 0.97 }}
-                animate={inView ? { opacity: 1, y: 0, scale: 1 } : {}}
-                transition={{ duration: 0.55, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                style={{ width: "100%", maxWidth: 520, background: UI.surface, border: `1px solid ${UI.rim}`, borderTop: `3px solid ${UI.brand}`, borderRadius: 4, overflow: "hidden", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
+            {/* Feature rows */}
+            {rows.map(({ feature, cp, hudl, tw }, i) => (
+              <motion.div key={i}
+                initial={{ opacity: 0, x: 12 }} animate={inView ? { opacity: 1, x: 0 } : {}}
+                transition={{ duration: 0.4, delay: 0.35 + i * 0.06 }}
+                style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1fr", borderTop: `1px solid ${FR.rim}`, background: i % 2 === 0 ? FR.surface : FR.bg }}
               >
-                {/* Header */}
-                <div style={{ padding: "11px 18px", background: UI.raised, borderBottom: `1px solid ${UI.rim}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={UI.brand} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                        <line x1="3" y1="10" x2="21" y2="10"/>
-                      </svg>
-                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: UI.ink }}>Season Calendar Setup</span>
-                    </div>
-                    <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org - synced to Airtable.</p>
-                  </div>
-                  <div style={{ width: 26, height: 26, border: `1px solid ${UI.rim}`, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, color: UI.ghost, fontSize: 14, flexShrink: 0, lineHeight: 1 }}>×</div>
+                <div style={{ padding: "14px 18px", fontFamily: "'Barlow', sans-serif", fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.84)", lineHeight: 1.45 }}>
+                  {feature}
                 </div>
-
-                {/* Info banner */}
-                <div style={{ padding: "8px 18px", background: "rgba(0,112,204,0.06)", borderBottom: "1px solid rgba(0,112,204,0.18)", display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={UI.brand} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="16" x2="12" y2="12"/>
-                    <line x1="12" y1="8" x2="12.01" y2="8"/>
-                  </svg>
-                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, lineHeight: 1.55, color: UI.brand, margin: 0 }}>
-                    When creating a workout on a <strong>break or vacation date</strong>, CheckPeak flags it with a red warning and prompts you to switch to <strong>Voluntary Activity (VARA)</strong>. <strong>Out of season</strong> dates show amber.
-                  </p>
-                </div>
-
-                {/* Summary tags + period rows */}
-                <div style={{ padding: "11px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
-                  {/* Tags */}
-                  <div style={{ display: "flex", gap: 6, marginBottom: 3 }}>
-                    {[
-                      { label: "4 periods",       bg: UI.raised,               border: UI.rim,                color: UI.ghost  },
-                      { label: "1 VARA-required", bg: "rgba(217,43,58,0.07)",  border: "rgba(217,43,58,0.2)", color: "#D92B3A" },
-                      { label: "1 out-of-season", bg: "rgba(196,122,0,0.07)", border: "rgba(196,122,0,0.2)", color: "#C47A00" },
-                    ].map(({ label, bg, border, color }) => (
-                      <span key={label} style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, fontWeight: 700, padding: "3px 9px", background: bg, border: `1px solid ${border}`, color }}>{label}</span>
-                    ))}
+                {[{ val: cp, hl: true }, { val: hudl, hl: false }, { val: tw, hl: false }].map(({ val, hl }, j) => (
+                  <div key={j} style={{ padding: "14px 12px", display: "flex", alignItems: "center", justifyContent: "center", background: hl ? "rgba(79,171,255,0.05)" : "transparent", borderLeft: hl ? "1px solid rgba(79,171,255,0.12)" : `1px solid ${FR.rim}` }}>
+                    <Status val={val} highlight={hl} size={16} />
                   </div>
-
-                  {/* Periods */}
-                  {periods.map((p, i) => {
-                    const t = toneColor[p.tone];
-                    const isWinter = p.tone === "banned";
-                    return (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", background: t.bg, border: `1px solid ${isWinter ? t.border : "rgba(0,0,0,0.05)"}`, borderLeft: `3px solid ${t.dot}`, outline: isWinter ? `1.5px solid ${t.dot}` : "none", outlineOffset: "-1.5px", position: "relative" }}>
-                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: t.dot, flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, color: isWinter ? t.text : UI.ink, textTransform: "uppercase", letterSpacing: "0.04em" }}>{p.name}</span>
-                          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 10, color: UI.ghost, marginLeft: 8 }}>{p.dates}</span>
-                        </div>
-                        {p.vara && (
-                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 6px", background: t.bg, border: `1px solid ${t.border}`, color: t.text, flexShrink: 0 }}>{p.vara}</span>
-                        )}
-                        <div style={{ width: 22, height: 22, border: `1px solid ${UI.rim}`, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, color: UI.ghost, fontSize: 12, flexShrink: 0 }}>×</div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Add period */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px", border: `2px dashed ${UI.rim}`, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: UI.ghost }}>
-                    + Add Period
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div style={{ padding: "10px 18px", borderTop: `1px solid ${UI.rim}`, background: UI.raised, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: UI.ghost, margin: 0 }}>Shared across all coaches in your org.</p>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <div style={{ padding: "6px 14px", border: `1px solid ${UI.rim}`, background: UI.surface, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: UI.ghost }}>Cancel</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", background: UI.brand, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff" }}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-                        <polyline points="17 21 17 13 7 13 7 21"/>
-                        <polyline points="7 3 7 8 15 8"/>
-                      </svg>
-                      Save Calendar
-                    </div>
-                  </div>
-                </div>
+                ))}
               </motion.div>
-            </div>
-          </div>
+            ))}
 
-          {/* ── Connector - FIX: centered pill, not full-width ── */}
-          <div style={{ background: UI.void, padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", borderTop: `1px solid ${UI.rim}` }}>
-            <div style={{ width: 1, height: 14, borderLeft: "1.5px dashed rgba(217,43,58,0.35)" }} />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92 }} animate={inView ? { opacity: 1, scale: 1 } : {}}
-              transition={{ duration: 0.5, delay: 0.65 }}
-              style={{
-                /* FIX: inline-flex keeps pill width to its content */
-                display: "inline-flex", alignItems: "center",
-                padding: "4px 16px",
-                background: "rgba(217,43,58,0.07)",
-                border: "1px solid rgba(217,43,58,0.22)",
-                borderRadius: 20,
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontWeight: 900, fontSize: 11,
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "#D92B3A", whiteSpace: "nowrap",
-              }}
-            >
-              Dec 20 falls in Winter Break - warning fires
-            </motion.div>
-            <div style={{ width: 1, height: 14, borderLeft: "1.5px dashed rgba(217,43,58,0.35)" }} />
-          </div>
-
-          {/* ── VARA warning fires ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.55, delay: 0.78 }}
-            style={{ padding: "14px 20px", background: "rgba(217,43,58,0.05)", borderTop: "1px solid rgba(217,43,58,0.18)" }}
-          >
-            {/* Step label */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#D92B3A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: "#fff", lineHeight: 1 }}>!</span>
+            {/* Pricing row */}
+            <div style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1fr", borderTop: `1px solid rgba(79,171,255,0.2)`, background: "rgba(79,171,255,0.04)" }}>
+              <div style={{ padding: "15px 18px" }}>
+                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>
+                  Pricing model
+                </span>
               </div>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#D92B3A", opacity: 0.82 }}>
-                Fires automatically - before the workout is saved
-              </span>
-            </div>
-
-            {/* Warning card */}
-            <div style={{ padding: "13px 15px", background: "rgba(217,43,58,0.07)", border: "1px solid rgba(217,43,58,0.25)", borderLeft: "4px solid #D92B3A", borderRadius: 3 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                {/* FIX: ⚠ character in a circle, not the word "warning" */}
-                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(217,43,58,0.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, fontSize: 14, lineHeight: 1 }}>
-                  ⚠
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#D92B3A", marginBottom: 5 }}>
-                    VARA Required - Break Period
-                  </p>
-                  <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, lineHeight: 1.65, color: "#D92B3A", opacity: 0.88, marginBottom: 12 }}>
-                    <strong>Winter Break (Dec 15 – Jan 5):</strong> Coach-directed workouts are NOT permitted. All activities must be Voluntary (VARA) - athlete-initiated, no coach presence.
-                  </p>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#D92B3A", borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fff" }}>
-                      Set as Voluntary Activity (VARA)
-                    </div>
-                    <div style={{ padding: "7px 12px", background: "transparent", border: `1px solid ${UI.rim}`, borderRadius: 3, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: UI.ghost }}>
-                      Cancel
-                    </div>
+              {[
+                { label: "One flat rate",     sub: "all features included", highlight: true  },
+                { label: "Base + add-ons",    sub: "cost adds up fast",     highlight: false },
+                { label: "Enterprise quote",  sub: "per-seat pricing",      highlight: false },
+              ].map(({ label, sub, highlight }, i) => (
+                <div key={i} style={{
+                  padding: "13px 12px", textAlign: "center",
+                  background: highlight ? "rgba(79,171,255,0.08)" : "transparent",
+                  borderLeft: highlight ? "1px solid rgba(79,171,255,0.2)" : `1px solid ${FR.rim}`,
+                }}>
+                  <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: highlight ? ACCENT : FR.amber, marginBottom: 3 }}>
+                    {label}
+                  </div>
+                  <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+                    {sub}
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
-          </motion.div>
 
-        </motion.div>{/* /product mock */}
+            {/* Legend */}
+            <div style={{ padding: "10px 18px", background: FR.raised, borderTop: `1px solid ${FR.rim}`, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+              {[
+                { color: ACCENT,   label: "Included",           icon: null },
+                { color: FR.amber, label: "+ Add-on / higher tier", icon: null },
+                { color: FR.red,   label: "Not available",       icon: "x"  },
+              ].map(({ color, label, icon }) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {icon === "x" ? (
+                    <svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  ) : (
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                  )}
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+
       </div>{/* /two-column */}
 
-      {/* Caption */}
-      <motion.p
-        initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
-        transition={{ duration: 0.6, delay: 1.0 }}
-        style={{ position: "relative", zIndex: 2, textAlign: "center", marginTop: "clamp(2rem, 4vw, 3.5rem)", fontFamily: "'Barlow', sans-serif", fontSize: "0.95rem", color: "rgba(255,255,255,0.62)", letterSpacing: "0.05em", lineHeight: 1.75 }}
+      {/* ── Value callout ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={inView ? { opacity: 1, y: 0 } : {}}
+        transition={{ duration: 0.7, delay: 1.0 }}
+        style={{
+          position:   "relative", zIndex: 2,
+          marginTop:  "clamp(2.5rem, 5vw, 4rem)",
+          border:     "0.5px solid rgba(79,171,255,0.18)",
+          background: "rgba(79,171,255,0.03)",
+          padding:    "clamp(1.5rem, 4vw, 2.25rem) clamp(1.5rem, 5vw, 3rem)",
+          display:    "flex", flexWrap: "wrap",
+          gap:        "clamp(1.5rem, 4vw, 3rem)",
+          alignItems: "center", justifyContent: "space-between",
+        }}
       >
-        Set your season once. CheckPeak flags every restricted date before it becomes a violation.
-        <br />
-        <a
-          href="/compliance/ncaa"
-          style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.88rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.52)", textDecoration: "none", transition: "color 0.18s" }}
-          onMouseEnter={e => { e.currentTarget.style.color = ACCENT; }}
-          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; }}
-        >
-          Read our full NCAA Compliance reference →
-        </a>
-      </motion.p>
+        {/* Accent line at top */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "1.5px", background: `linear-gradient(to right, ${ACCENT}55, ${ACCENT}22, transparent)` }} />
+
+        {/* Left: copy */}
+        <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+          <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(1.4rem, 3vw, 2.2rem)", lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: WHITE, marginBottom: "0.75rem" }}>
+            Everything above.<br />
+            <span style={{ color: ACCENT }}>One price. No add-ons.</span>
+          </p>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "clamp(0.88rem, 1.1vw, 0.95rem)", lineHeight: 1.75, color: "rgba(255,255,255,0.6)", maxWidth: "52ch", margin: 0 }}>
+            Every feature your competitors charge extra for, CheckPeak includes from day one.
+            Unlimited athletes, unlimited seasons — price doesn&apos;t change as your roster grows.
+          </p>
+        </div>
+
+        {/* Right: price badge + CTA */}
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.75rem" }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontStyle: "italic", fontSize: "clamp(0.7rem, 1vw, 0.78rem)", letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", marginBottom: "0.2rem" }}>
+              Starting from
+            </div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "clamp(2.4rem, 5vw, 3.5rem)", lineHeight: 0.9, letterSpacing: "-0.03em", color: ACCENT }}>
+              $99<span style={{ fontSize: "0.45em", opacity: 0.7 }}>/mo</span>
+            </div>
+            <div style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "rgba(255,255,255,0.38)", marginTop: "0.3rem" }}>
+              Film · Nutrition · Compliance · Recruiting · All included
+            </div>
+          </div>
+          <a
+            href="/pricing"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.65rem 1.5rem", background: ACCENT, color: BLACK, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.82rem", letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "filter 0.18s" }}
+            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+          >
+            See pricing
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </a>
+        </div>
+      </motion.div>
+
     </section>
   );
 }
@@ -2046,20 +1918,6 @@ function FinalCta() {
             30 days free · No credit card · Unlimited athletes
           </p>
         </motion.div>
-      </div>
-
-      {/* Bottom-left: Arena link */}
-      <div style={{ position: "absolute", bottom: "clamp(1.25rem, 2.5vw, 2rem)", left: "clamp(1.25rem, 4vw, 2.5rem)", zIndex: 1 }}>
-        <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.82rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)", lineHeight: 1.6 }}>
-          Athlete?&nbsp;
-          <a href="/trainers" onClick={() => track("footer_arena_link")}
-            style={{ color: "rgba(255,255,255,0.78)", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.82rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "color 0.18s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = ACCENT; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.78)"; }}
-          >
-            Browse The Arena →
-          </a>
-        </p>
       </div>
 
       {/* Bottom-right legal - FIX: opacity 0.12→0.25, size 0.55→0.68rem */}
@@ -2339,10 +2197,10 @@ export default function HomePage() {
 
   return (
     <>
-      <style>{GLOBAL_STYLE + ARENA_STYLE}</style>
+      <style>{GLOBAL_STYLE}</style>
       <Head>
-        <title>CheckPeak - The Arena & Collegiate Performance Platform</title>
-        <meta name="description" content="CheckPeak: browse elite trainer programs in The Arena, or give your college program full off-campus accountability. Built for athletes and the staffs who coach them." />
+        <title>CheckPeak — Collegiate Athlete Accountability Platform</title>
+        <meta name="description" content="CheckPeak gives collegiate strength programs full off-campus accountability — film, nutrition, workouts, and NCAA compliance in one platform." />
         <meta property="og:title"        content="CheckPeak — Program-Wide Athlete Accountability" />
         <meta property="og:description"  content={ogDesc} />
         <meta property="og:type"         content="website" />
@@ -2365,9 +2223,6 @@ export default function HomePage() {
         {/* Triptych: visual proof immediately after hero - image before copy */}
         <TriptychSection />
 
-        {/* THE ARENA - trainer marketplace */}
-        <TrainerShowcase />
-
         {/* Beat 1: "The offseason doesn't lie." - first beat signals the org product */}
         <DeclarationBeat index={0} lines={BEATS[0].lines} footnote={BEATS[0].footnote}
           isClimax={false} threeLines={false} bgImage={BEAT_IMAGES[0]} watermark={BEAT_WATERMARKS[0]} total={4}
@@ -2381,17 +2236,18 @@ export default function HomePage() {
         <DeclarationBeat index={2} lines={BEATS[2].lines} footnote={BEATS[2].footnote}
           isClimax={true} threeLines={false} bgImage={BEAT_IMAGES[2]} watermark={BEAT_WATERMARKS[2]} total={4} />
 
-        {/* Promo Video */}
-        <PromoVideo />
-
         {/* Beat 4: "Built around the rules." */}
         <DeclarationBeat index={3} lines={BEATS[3].lines} footnote={BEATS[3].footnote}
           isClimax={false} threeLines={false} watermark={BEATS[3].watermark} total={4} />
 
-        <ComplianceMoment />
+        <ComparisonMoment />
 
         <ProofMoment />
         <SocialProof />
+
+        {/* Proof video + CTA — closes the argument after testimonials */}
+        <PromoVideo />
+
         <FinalCta />
       </main>
     </>

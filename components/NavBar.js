@@ -320,6 +320,11 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             {isAdmin    && nl({ href: "/org/trainers", label: "Trainers" })}
 
             <NavDivider />
+            <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
+            {nl({ href: "/commercial/dashboard", label: "Dashboard" })}
+            {trainerSlug && nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
+
+            <NavDivider />
 
             <NavSection>Tools</NavSection>
             {nl({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
@@ -327,11 +332,6 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             {nl({ href: "/smartstack-compare",      label: "SmartStack"    })}
             {nl({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
             {nl({ href: "/info",                    label: "Info"          })}
-
-            <NavDivider />
-            <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
-            {nl({ href: "/commercial/dashboard", label: "Dashboard" })}
-            {trainerSlug && nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
             <div style={{ height: 10 }} />
           </>
         )}
@@ -501,16 +501,16 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 {isOrgAdmin && ml({ href: "/org/athletes", label: "Athletes & Stats" })}
                 {isAdmin    && ml({ href: "/org/trainers", label: "Trainers" })}
                 {mDivider()}
+                {mSection("Studio", "rgba(70,118,155,0.9)")}
+                {ml({ href: "/commercial/dashboard", label: "Dashboard" })}
+                {trainerSlug && ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
+                {mDivider()}
                 {mSection("Tools")}
                 {ml({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
                 {ml({ href: "/search",                  label: "Search"        })}
                 {ml({ href: "/smartstack-compare",      label: "SmartStack"    })}
                 {ml({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
                 {ml({ href: "/info",                    label: "Info"          })}
-                {mDivider()}
-                {mSection("Studio", "rgba(70,118,155,0.9)")}
-                {ml({ href: "/commercial/dashboard", label: "Dashboard" })}
-                {trainerSlug && ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
               </>
             )}
 

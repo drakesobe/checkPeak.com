@@ -185,6 +185,8 @@ export default function NavBarLoginModal({
   const [orgSignup, setOrgSignup] = useState({ name: "", email: "", password: "", referralCode: "", contactName: "", phoneNumber: "", website: "" });
 
   const emailRef = useRef(null);
+  // Role requested by whoever opened the modal; survives the reset that runs on open
+  const requestedRoleRef = useRef(null);
   const isMobile = useMediaQuery({ maxWidth: 768 });
 
   /* ── Global open hook ─────────────────────────────────────────────── */
@@ -197,8 +199,11 @@ export default function NavBarLoginModal({
         try { window.localStorage.setItem("cp_prefill_login_email", String(d.email)); } catch {}
       }
       if (d?.tab === "login" || d?.tab === "signup") setTab(d.tab);
-      if (d?.role === "athlete" || d?.role === "organization" || d?.role === "staff") setAuthRole(d.role);
-      if (d?.staffRole === "trainer" || d?.staffRole === "admin") setStaffRole(d.staffRole);
+      const role      = ["athlete", "organization", "staff"].includes(d?.role) ? d.role : null;
+      const staffRole = ["trainer", "admin"].includes(d?.staffRole) ? d.staffRole : null;
+      requestedRoleRef.current = role || staffRole ? { role, staffRole } : null;
+      if (role)      setAuthRole(role);
+      if (staffRole) setStaffRole(staffRole);
       if (typeof onRequestOpen === "function") onRequestOpen(d);
     };
 
@@ -219,7 +224,10 @@ export default function NavBarLoginModal({
       setShowForgot(false); setForgotEmail(""); setForgotLoading(false);
       setForgotError(""); setForgotOk(false);
       setSignupLoading(false); setSignupError(""); setSignupSuccess(null);
-      setAuthRole("athlete"); setStaffRole("trainer");
+      const requested = requestedRoleRef.current;
+      requestedRoleRef.current = null;
+      setAuthRole(requested?.role || "athlete");
+      setStaffRole(requested?.staffRole || "trainer");
       try {
         if (typeof window !== "undefined") {
           const pre = window.localStorage.getItem("cp_prefill_login_email");

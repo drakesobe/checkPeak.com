@@ -2,11 +2,11 @@
 "use client";
 import Head from "next/head";
 import { useState } from "react";
+import { GRAIN_URL } from "@/lib/grain";
 
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
 const WHITE  = "#FFFFFF";
-const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
@@ -356,13 +356,16 @@ export default function BookPage() {
             </div>
 
             <p style={{ marginTop: "1.25rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65 }}>
-              Already a coach or trainer?{" "}
-              <a href="/commercial/onboard" style={{ color: ACCENT, textDecoration: "none", fontWeight: 600, transition: "opacity 0.18s" }}
+              Rather skip the call?{" "}
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("auth:open", { detail: { tab: "signup", role: "organization" } }))}
+                style={{ color: ACCENT, background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 600, cursor: "pointer", transition: "opacity 0.18s" }}
                 onMouseEnter={e => { e.currentTarget.style.opacity = "0.7"; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
               >
-                Start your Studio →
-              </a>
+                Sign up free →
+              </button>
             </p>
           </div>
 

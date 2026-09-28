@@ -5,10 +5,9 @@ import { Resend } from "resend";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { ratelimiter } from "@/lib/ratelimiter";
+import { escapeHtml as esc, OWNER_EMAIL as TO, NOTIFY_FROM as FROM } from "@/lib/notifyOwner";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM   = `CheckPeak <noreply@${process.env.RESEND_FROM_DOMAIN ?? "checkpeak.com"}>`;
-const TO     = "Matthew@checkpeak.com";
 
 // Returns true if a string looks like a bot-generated random token
 // (all alphanumeric, no spaces, mixed case, length 10+)
@@ -86,11 +85,11 @@ export default async function handler(req, res) {
             <!-- Fields -->
             <table style="width:100%;border-collapse:collapse;">
               ${[
-                ["Name",         name],
-                ["Email",        `<a href="mailto:${email}" style="color:#4FABFF;text-decoration:none;">${email}</a>`],
-                ["Organization", organization],
-                ["Role",         role],
-                ["Athletes",     athletes || "—"],
+                ["Name",         esc(name)],
+                ["Email",        `<a href="mailto:${esc(email)}" style="color:#4FABFF;text-decoration:none;">${esc(email)}</a>`],
+                ["Organization", esc(organization)],
+                ["Role",         esc(role)],
+                ["Athletes",     esc(athletes) || "—"],
               ].map(([label, value]) => `
                 <tr>
                   <td style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.07);vertical-align:top;width:130px;">
@@ -110,14 +109,14 @@ export default async function handler(req, res) {
                 Their message
               </p>
               <p style="margin:0;font-size:15px;line-height:1.65;color:rgba(255,255,255,0.82);">
-                ${message.replace(/\n/g, "<br>")}
+                ${esc(message).replace(/\n/g, "<br>")}
               </p>
             </div>
             ` : ""}
 
             <!-- CTA -->
             <div style="margin-top:32px;text-align:center;">
-              <a href="mailto:${email}?subject=Your%20CheckPeak%20walkthrough&body=Hi%20${encodeURIComponent(name)}%2C%0A%0AThanks%20for%20reaching%20out%20about%20CheckPeak!%20I%27d%20love%20to%20set%20up%20a%20time%20that%20works%20for%20you.%0A%0AHere%20is%20a%20Google%20Meet%20link%3A%20%5Badd%20link%5D%0A%0AWhat%20times%20work%20best%20for%20you%3F%0A%0A%E2%80%94%20Matthew"
+              <a href="mailto:${esc(email)}?subject=Your%20CheckPeak%20walkthrough&body=Hi%20${encodeURIComponent(name)}%2C%0A%0AThanks%20for%20reaching%20out%20about%20CheckPeak!%20I%27d%20love%20to%20set%20up%20a%20time%20that%20works%20for%20you.%0A%0AHere%20is%20a%20Google%20Meet%20link%3A%20%5Badd%20link%5D%0A%0AWhat%20times%20work%20best%20for%20you%3F%0A%0A%E2%80%94%20Matthew"
                 style="display:inline-block;padding:12px 28px;background:#4FABFF;color:#060810;font-size:13px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;text-decoration:none;border-radius:2px;">
                 Reply with Google Meet Link
               </a>

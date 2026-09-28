@@ -1,63 +1,64 @@
 /** @type {import('next-sitemap').IConfig} */
-const fs = require("fs");
-const path = require("path");
 
-// Helper to get last modified timestamp of a file
-const getLastMod = (filePath) => {
-  try {
-    const stats = fs.statSync(filePath);
-    return stats.mtime.toISOString();
-  } catch (err) {
-    console.warn(`Could not get lastmod for ${filePath}:`, err);
-    return new Date().toISOString();
-  }
+// Only these routes are indexed. Everything else (app, auth, API, share tokens) is left out.
+const PUBLIC_PATHS = {
+  "/":                             { priority: 1.0, changefreq: "weekly"  },
+  "/pricing":                      { priority: 0.9, changefreq: "weekly"  },
+  "/book":                         { priority: 0.9, changefreq: "monthly" },
+  "/info":                         { priority: 0.7, changefreq: "monthly" },
+  "/compliance/ncaa":              { priority: 0.7, changefreq: "monthly" },
+  "/smartstack-compare":           { priority: 0.6, changefreq: "weekly"  },
+  "/nutrition-label-scanner":      { priority: 0.6, changefreq: "monthly" },
+  "/supplement-label-scanner":     { priority: 0.6, changefreq: "monthly" },
+  "/pre-workout-label-scanner":    { priority: 0.6, changefreq: "monthly" },
+  "/protein-powder-label-scanner": { priority: 0.6, changefreq: "monthly" },
+  "/banned-substance-checker":     { priority: 0.6, changefreq: "monthly" },
+  "/trainers":                     { priority: 0.5, changefreq: "weekly"  },
+  "/faq":                          { priority: 0.5, changefreq: "monthly" },
+  "/contact":                      { priority: 0.4, changefreq: "yearly"  },
+  "/privacy":                      { priority: 0.2, changefreq: "yearly"  },
+  "/terms":                        { priority: 0.2, changefreq: "yearly"  },
 };
 
-// Recursively read pages directory to get dynamic routes
-const getDynamicPages = (dir, baseUrl = "") => {
-  const paths = [];
-  if (!fs.existsSync(dir)) return paths;
-
-  const entries = fs.readdirSync(dir);
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry);
-    const stat = fs.statSync(fullPath);
-
-    if (stat.isDirectory()) {
-      paths.push(...getDynamicPages(fullPath, path.join(baseUrl, entry)));
-    } else if (entry.endsWith(".js") || entry.endsWith(".tsx")) {
-      let route = path.join(baseUrl, entry.replace(/\.(js|tsx)$/, ""));
-      // Skip index pages since root is handled automatically
-      if (route.endsWith("/index")) route = route.replace("/index", "");
-
-      // Exclude API routes
-      if (!route.startsWith("/api")) {
-        paths.push({
-          loc: route.startsWith("/") ? route : `/${route}`,
-          lastmod: getLastMod(fullPath),
-        });
-      }
-    }
-  }
-
-  return paths;
-};
+const entryFor = (loc) => ({
+  loc,
+  ...PUBLIC_PATHS[loc],
+  lastmod: new Date().toISOString(),
+});
 
 module.exports = {
   siteUrl: "https://checkpeak.com",
+  generateIndexSitemap: false,
   generateRobotsTxt: true,
-  sitemapSize: 5000,
 
-  additionalPaths: async (config) => {
-    const pagesDir = path.join(process.cwd(), "pages");
-    const dynamicPaths = getDynamicPages(pagesDir);
+  transform: async (_config, path) => (PUBLIC_PATHS[path] ? entryFor(path) : null),
+  additionalPaths: async () => Object.keys(PUBLIC_PATHS).map(entryFor),
 
-    // Manually add any routes that may not exist as files (like smartstack or search)
-    const extraRoutes = [
-      { loc: "/smartstack", lastmod: new Date().toISOString() },
-      { loc: "/search", lastmod: new Date().toISOString() },
-    ];
-
-    return [...dynamicPaths, ...extraRoutes];
+  robotsTxtOptions: {
+    policies: [
+      {
+        userAgent: "*",
+        // og-image must stay crawlable or link previews (Slack, X, iMessage) lose their image
+        allow: ["/", "/api/og-image"],
+        disallow: [
+          "/api/",
+          "/account",
+          "/dashboard",
+          "/org/",
+          "/org-login",
+          "/athlete/",
+          "/athlete-signup/",
+          "/commercial/",
+          "/setup/",
+          "/onboarding",
+          "/finish-setup",
+          "/reset-password",
+          "/parent/",
+          "/conversation/",
+          "/scans",
+          "/saved-stacks",
+        ],
+      },
+    ],
   },
 };

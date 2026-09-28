@@ -85,7 +85,7 @@ export default function SupplementLabelScannerPage() {
         <meta name="description" content={description} />
 
         {/* Canonical */}
-        <link rel="canonical" href={canonical} />
+        <link rel="canonical" href={canonical} key="canonical" />
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />

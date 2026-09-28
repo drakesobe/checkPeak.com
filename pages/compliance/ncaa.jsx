@@ -9,6 +9,7 @@ import ComplianceSection from "@/components/info/ComplianceSection";
 
 import { ncaaWordingCallouts }                      from "@/lib/compliance/ncaaWording";
 import { ncaaResourceBackbone, NCAA_LAST_REVIEWED } from "@/lib/compliance/ncaaSources";
+import { GRAIN_URL } from "@/lib/grain";
 
 // ── Brand tokens - match index.js exactly ────────────────────────────────────
 const ACCENT = "#4FABFF";
@@ -17,7 +18,6 @@ const WHITE  = "#FFFFFF";
 const RED    = "#C8102E";
 
 // ── Film grain - same as index ────────────────────────────────────────────────
-const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const GLOBAL_STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,700;1,900&family=Barlow:wght@400;500;600;700&display=swap');

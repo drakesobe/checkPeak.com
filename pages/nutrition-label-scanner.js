@@ -85,7 +85,7 @@ export default function NutritionLabelScannerPage() {
 
         {/* Basic SEO */}
         <meta name="description" content={DESCRIPTION} />
-        <link rel="canonical" href={CANONICAL} />
+        <link rel="canonical" href={CANONICAL} key="canonical" />
 
         {/* Open Graph */}
         <meta property="og:type"        content="website"    />

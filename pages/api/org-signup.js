@@ -3,6 +3,7 @@
 
 import { createOrg, getOrgByEmail, normalizeEmail } from "@/lib/supabaseOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { notifyOwner } from "@/lib/notifyOwner";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -61,6 +62,22 @@ export default async function handler(req, res) {
       console.error("[org-signup] billing row creation failed:", billingError);
       // Non-fatal: org was created; billing can be fixed manually
     }
+
+    // Awaited so the serverless function isn't frozen before the email goes out; never throws
+    await notifyOwner({
+      subject: `New sign-up: ${name}`,
+      heading: "New Organization Sign-up",
+      fields: {
+        Organization: name,
+        Email:        emailLower,
+        Contact:      contactName,
+        Phone:        phoneNumber,
+        Website:      website,
+        Referral:     referralCode,
+        Plan:         "Free (Starter)",
+      },
+      footer: "Created via checkpeak.com sign-up",
+    });
 
     return res.status(200).json({
       success:  true,

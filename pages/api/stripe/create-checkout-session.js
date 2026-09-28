@@ -30,8 +30,8 @@ export default async function handler(req, res) {
   // Growth annual   ($599.88/yr) → STRIPE_PRICE_GROWTH_YEARLY
   // Pro monthly     ($499/mo)    → STRIPE_PRICE_PRO_MONTHLY
   // Pro annual      ($4,188/yr)  → STRIPE_PRICE_PRO_YEARLY
-  // Note: Pro pricing reflects full rate. FOUNDER promo code at Stripe checkout
-  //       drops Pro to $99/mo or $1,188/yr - handled entirely by Stripe coupon,
+  // Note: Pro pricing reflects full rate. Promo codes FOUNDING (monthly) / FOUNDING26 (annual)
+  //       drop Pro to $99/mo or $1,188/yr - handled entirely by Stripe coupon,
   //       no code changes needed (allow_promotion_codes: true is set below).
   const { tier = "large", interval = "yearly" } = req.body || {};
   const tierKey     = String(tier     || "large").toLowerCase();

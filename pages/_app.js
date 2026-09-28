@@ -114,6 +114,9 @@ export default function MyApp({ Component, pageProps }) {
 
   const analyticsEnabled = !!consent.analytics;
 
+  const canonicalPath = (router.asPath || "/").split(/[?#]/)[0];
+  const canonicalUrl  = `https://checkpeak.com${canonicalPath === "/" ? "" : canonicalPath}`;
+
   // Fire GA pageviews only if consented
   useEffect(() => {
     if (!analyticsEnabled) return;
@@ -166,6 +169,7 @@ export default function MyApp({ Component, pageProps }) {
       <Head>
         <meta name="mobile-web-app-capable"       content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <link rel="canonical" href={canonicalUrl} key="canonical" />
       </Head>
 
       {/* Google tag — lazyOnload keeps GTM off the main thread until browser idle */}

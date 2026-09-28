@@ -3,12 +3,13 @@ import Head from "next/head";
 import { useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import ComparisonMoment from "@/components/ComparisonMoment";
+import { useAuthContext } from "@/hooks/useAuth";
+import { GRAIN_URL } from "@/lib/grain";
 
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
 const WHITE  = "#FFFFFF";
 const GREEN  = "#3FB950";
-const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,700;0,900;1,900&family=Barlow:wght@400;500;600&display=swap');
@@ -22,6 +23,11 @@ function Check({ color = ACCENT }) {
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
+}
+
+function startSignup(plan) {
+  if (typeof window.gtag === "function") window.gtag("event", "cta_pricing_signup", { plan });
+  window.dispatchEvent(new CustomEvent("auth:open", { detail: { tab: "signup", role: "organization" } }));
 }
 
 function CopyCode({ code }) {
@@ -64,24 +70,24 @@ function CopyCode({ code }) {
 const BILLING = {
   monthly: {
     founder: "$99",
-    regular: "$499",
-    period:  "/month",
-    savings: "−$400",
+    regular: "$499/mo",
+    period:  "/mo",
+    savings: "−$400/mo",
     code:    "FOUNDING",
-    subNote: null,
+    subNote: "Billed monthly",
   },
   annual: {
-    founder: "$1,188",
-    regular: "$4,188",
-    period:  "/year",
-    savings: "−$3,000",
+    founder: "$99",
+    regular: "$349/mo",
+    period:  "/mo",
+    savings: "−$3,000/yr",
     code:    "FOUNDING26",
-    subNote: "$99 / mo, billed annually",
+    subNote: "Billed $1,188 yearly",
   },
 };
 
 // Free tier — up to 10 athletes
-const STUDIO_FEATURES = [
+const STARTER_FEATURES = [
   "Up to 10 athletes",
   "Training program builder",
   "Nutrition plan & macro targets",
@@ -113,15 +119,22 @@ export default function PricingPage() {
   const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-8%" });
   const [billing, setBilling] = useState("monthly");
+  const { user } = useAuthContext();
+  const role = String(user?.role || user?.Role || "").toLowerCase();
+  const isOrgSide = /org|admin|train/.test(role);
 
   const b = BILLING[billing];
+
+  // Logged-in coaches already have an account: send them to their dashboard / billing instead of sign-up
+  const goStarter  = () => { if (isOrgSide) window.location.href = "/org/workouts-calendar"; else startSignup("starter"); };
+  const goProgram = () => { if (isOrgSide) window.location.href = "/account"; else startSignup("program"); };
 
   return (
     <>
       <style>{STYLE}</style>
       <Head>
         <title>Pricing | CheckPeak</title>
-        <meta name="description" content="CheckPeak is free for studios up to 10 athletes. Full programs start at $99/month — unlimited athletes, film, nutrition, and NCAA compliance included." />
+        <meta name="description" content="CheckPeak is free for programs up to 10 athletes. Full programs start at $99/month — unlimited athletes, film, nutrition, and NCAA compliance included." />
       </Head>
 
       <main style={{ background: BLACK, color: WHITE, minHeight: "100vh", position: "relative", overflow: "hidden" }}>
@@ -230,7 +243,7 @@ export default function PricingPage() {
             alignItems: "start",
           }}>
 
-            {/* ─── Studio Card (Free) ─── */}
+            {/* ─── Starter Card (Free) ─── */}
             <motion.div
               initial={{ opacity: 0, y: 28 }}
               animate={inView ? { opacity: 1, y: 0 } : {}}
@@ -245,7 +258,7 @@ export default function PricingPage() {
               {/* Price header */}
               <div style={{ padding: "clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
                 <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: "1.25rem" }}>
-                  Studio
+                  Starter
                 </p>
 
                 <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", marginBottom: "0.5rem" }}>
@@ -267,14 +280,14 @@ export default function PricingPage() {
               {/* Description */}
               <div style={{ padding: "1rem clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
                 <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", lineHeight: 1.65, color: "rgba(255,255,255,0.52)" }}>
-                  Perfect for small coaching operations getting started. All the core tools — no commitment.
+                  For small programs and teams getting started. All the core tools — no commitment.
                 </p>
               </div>
 
               {/* Features */}
               <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.7rem" }}>
-                  {STUDIO_FEATURES.map(f => (
+                  {STARTER_FEATURES.map(f => (
                     <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
                       <span style={{ flexShrink: 0, marginTop: "1px" }}><Check color="rgba(255,255,255,0.32)" /></span>
                       <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.68)", lineHeight: 1.5 }}>{f}</span>
@@ -285,9 +298,11 @@ export default function PricingPage() {
 
               {/* CTA */}
               <div style={{ padding: "0 clamp(1.75rem, 3.5vw, 2.25rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
-                <a
-                  href="/commercial/onboard"
+                <button
+                  type="button"
+                  onClick={goStarter}
                   style={{
+                    width: "100%",
                     display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
                     padding: "0.9rem 1.5rem",
                     background: "transparent", color: WHITE,
@@ -295,16 +310,16 @@ export default function PricingPage() {
                     fontSize: "0.88rem", fontWeight: 900,
                     letterSpacing: "0.12em", textTransform: "uppercase",
                     border: "1px solid rgba(255,255,255,0.22)", borderRadius: 2,
-                    textDecoration: "none", transition: "border-color 0.18s, background 0.18s",
+                    transition: "border-color 0.18s, background 0.18s",
                   }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; e.currentTarget.style.background = "transparent"; }}
                 >
-                  Get Started Free
+                  {isOrgSide ? "Go to Dashboard" : "Get Started Free"}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                   </svg>
-                </a>
+                </button>
                 <p style={{ textAlign: "center", marginTop: "0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>
                   No credit card · No expiry · Upgrade anytime
                 </p>
@@ -354,18 +369,7 @@ export default function PricingPage() {
                           display: "flex", alignItems: "center", gap: "5px",
                         }}
                       >
-                        {v === "monthly" ? "Monthly" : (
-                          <>
-                            Annual
-                            <span style={{
-                              fontSize: "0.52rem", fontWeight: 900, letterSpacing: "0.08em",
-                              color: billing === "annual" ? GREEN : "rgba(63,185,80,0.7)",
-                              transition: "color 0.15s",
-                            }}>
-                              SAVE MORE
-                            </span>
-                          </>
-                        )}
+                        {v === "monthly" ? "Monthly" : "Annual"}
                       </button>
                     ))}
                   </div>
@@ -392,7 +396,7 @@ export default function PricingPage() {
                     fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem",
                     color: "rgba(255,255,255,0.28)", textDecoration: "line-through",
                   }}>
-                    {b.regular}{b.period}
+                    {b.regular}
                   </span>
                   <span style={{
                     fontFamily: "'Barlow Condensed', sans-serif",
@@ -441,27 +445,29 @@ export default function PricingPage() {
 
               {/* CTA */}
               <div style={{ padding: "0 clamp(1.75rem, 3.5vw, 2.25rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
-                <a
-                  href="/commercial/onboard"
+                <button
+                  type="button"
+                  onClick={goProgram}
                   style={{
+                    width: "100%",
                     display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
                     padding: "0.9rem 1.5rem",
                     background: ACCENT, color: BLACK,
                     fontFamily: "'Barlow Condensed', sans-serif",
                     fontSize: "0.88rem", fontWeight: 900,
                     letterSpacing: "0.12em", textTransform: "uppercase",
-                    textDecoration: "none", borderRadius: 2, transition: "filter 0.18s",
+                    border: "none", borderRadius: 2, transition: "filter 0.18s",
                   }}
                   onMouseEnter={e => { e.currentTarget.style.filter = "brightness(1.1)"; }}
                   onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
                 >
-                  Get Started
+                  {isOrgSide ? "Upgrade in Billing" : "Get Started"}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                   </svg>
-                </a>
+                </button>
                 <p style={{ textAlign: "center", marginTop: "0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>
-                  30-day free trial · No credit card required · Cancel anytime
+                  Start free · 30-day trial when you upgrade · Cancel anytime
                 </p>
               </div>
             </motion.div>

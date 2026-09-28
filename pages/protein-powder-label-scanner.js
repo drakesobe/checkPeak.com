@@ -74,7 +74,7 @@ export default function ProteinPowderLabelScannerPage() {
       <Head>
         <title>{title}</title>
         <meta name="description" content={description} />
-        <link rel="canonical" href={canonical} />
+        <link rel="canonical" href={canonical} key="canonical" />
 
         <meta property="og:type" content="website" />
         <meta property="og:title" content={title} />

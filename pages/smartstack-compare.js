@@ -1382,7 +1382,7 @@ export default function SmartStackComparePage() {
       <Head>
         <title>{pageTitle}</title>
         <meta name="description" content={pageDesc} />
-        <link rel="canonical" href={pageUrl} />
+        <link rel="canonical" href={pageUrl} key="canonical" />
         <meta property="og:title" content={pageTitle} />
         <meta property="og:description" content={pageDesc} />
         <meta property="og:url" content={pageUrl} />

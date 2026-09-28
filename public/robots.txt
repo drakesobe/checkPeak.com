@@ -1,0 +1,26 @@
+# *
+User-agent: *
+Allow: /
+Allow: /api/og-image
+Disallow: /api/
+Disallow: /account
+Disallow: /dashboard
+Disallow: /org/
+Disallow: /org-login
+Disallow: /athlete/
+Disallow: /athlete-signup/
+Disallow: /commercial/
+Disallow: /setup/
+Disallow: /onboarding
+Disallow: /finish-setup
+Disallow: /reset-password
+Disallow: /parent/
+Disallow: /conversation/
+Disallow: /scans
+Disallow: /saved-stacks
+
+# Host
+Host: https://checkpeak.com
+
+# Sitemaps
+Sitemap: https://checkpeak.com/sitemap.xml

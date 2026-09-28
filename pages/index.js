@@ -163,7 +163,7 @@ function PilotButton({ source, size = "md" }) {
 }
 
 
-// Get Started â€” low-friction signup for individual coaches & trainers
+// Get Started - low-friction signup for individual coaches & trainers
 function GetStartedButton({ source, size = "md" }) {
   const lg = size === "lg";
   return (
@@ -194,7 +194,7 @@ function GetStartedButton({ source, size = "md" }) {
   );
 }
 
-// For Athletic Programs / ADs â€” higher-touch walkthrough booking
+// For Athletic Programs / ADs - higher-touch walkthrough booking
 function OrgButton({ source }) {
   return (
     <a
@@ -242,7 +242,7 @@ function Hero() {
     if (window.matchMedia("(min-width: 768px)").matches) setShowVideo(true);
   }, []);
 
-  // Passive scroll listener â€” no forced layout reflow on mount
+  // Passive scroll listener - no forced layout reflow on mount
   useEffect(() => {
     const section = ref.current;
     const bg      = bgRef.current;
@@ -280,7 +280,7 @@ function Hero() {
       alignItems:     "center",
       justifyContent: "center",
     }}>
-      {/* Background â€” plain div; no willChange so the browser doesn't eagerly promote a large compositor layer */}
+      {/* Background - plain div; no willChange so the browser doesn't eagerly promote a large compositor layer */}
       <div ref={bgRef} style={{ position: "absolute", top: "-10%", left: 0, right: 0, bottom: "-10%" }} aria-hidden="true">
         <style>{`
           .hero-video {
@@ -335,7 +335,7 @@ function Hero() {
         )}
       </motion.div>
 
-      {/* Center headline â€” plain div so opacity is driven by scroll handler, not MotionValue */}
+      {/* Center headline - plain div so opacity is driven by scroll handler, not MotionValue */}
       <div ref={contentRef} style={{ opacity: 1, position: "relative", zIndex: 10, textAlign: "center", padding: "0 clamp(1.25rem, 5vw, 3rem)" }}>
 
         {/* CheckPeak brand chip */}
@@ -623,7 +623,7 @@ const BEATS = [
   },
   {
     lines:      [{ text: "Built" }, { text: "different.", accent: true }],
-    footnote:   "Other platforms do one thing well. CheckPeak puts game film, nutrition tracking, workout discipline, and NCAA compliance in a single platform â€” with features nobody else has built.",
+    footnote:   "Other platforms do one thing well. CheckPeak puts game film, nutrition tracking, workout discipline, and NCAA compliance in a single platform - with features nobody else has built.",
     isClimax:   false,
     threeLines: false,
     watermark:  "EDGE",
@@ -817,7 +817,7 @@ const UI = {
   red:     "#D92B3A", amber:   "#C47A00",   green:   "#0A8A4A",
 };
 
-// _ProductMoment_REMOVED â€” dead code kept below, not rendered anywhere
+// _ProductMoment_REMOVED - dead code kept below, not rendered anywhere
 function _ProductMoment_REMOVED() {
   // Faithful mock data matching the Nutrition page structure
   const actionCount = 4;
@@ -1324,7 +1324,7 @@ function SocialProof() {
       accent: "#3FB950",
     },
     {
-      text: "Pushing film directly to their phone â€” and seeing who watched it â€” changed how we run film study completely.",
+      text: "Pushing film directly to their phone - and seeing who watched it - changed how we run film study completely.",
       credit: "Head Coach",
       program: "Division III Basketball",
       accent: "#A78BFA",
@@ -1661,7 +1661,7 @@ function PromoVideo() {
 
           {!playing && (
             <>
-              {/* Lazy-loaded poster image â€” sibling of overlay so it's visible behind it */}
+              {/* Lazy-loaded poster image - sibling of overlay so it's visible behind it */}
               <Image
                 src="/images/promo-poster.jpg"
                 alt=""
@@ -1772,15 +1772,15 @@ function PromoVideo() {
 // ---------------------------------------------------------------------------
 export default function HomePage() {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://checkpeak.com";
-  const ogDesc  = "Program-wide athlete accountability. Film, nutrition, workouts, attendance, and check-ins â€” all in one platform.";
+  const ogDesc  = "Program-wide athlete accountability. Film, nutrition, workouts, attendance, and check-ins - all in one platform.";
 
   return (
     <>
       <style>{GLOBAL_STYLE}</style>
       <Head>
-        <title>CheckPeak â€” Collegiate Athlete Accountability Platform</title>
-        <meta name="description" content="CheckPeak gives collegiate strength programs full off-campus accountability â€” film, nutrition, workouts, and NCAA compliance in one platform." />
-        <meta property="og:title"        content="CheckPeak â€” Program-Wide Athlete Accountability" />
+        <title>CheckPeak - Collegiate Athlete Accountability Platform</title>
+        <meta name="description" content="CheckPeak gives collegiate strength programs full off-campus accountability - film, nutrition, workouts, and NCAA compliance in one platform." />
+        <meta property="og:title"        content="CheckPeak - Program-Wide Athlete Accountability" />
         <meta property="og:description"  content={ogDesc} />
         <meta property="og:type"         content="website" />
         <meta property="og:url"          content={siteUrl} />
@@ -1789,7 +1789,7 @@ export default function HomePage() {
         <meta property="og:image:height" content="630" />
         <meta name="twitter:card"        content="summary_large_image" />
         <meta name="twitter:site"        content="@checkPeak_" />
-        <meta name="twitter:title"       content="CheckPeak â€” Program-Wide Athlete Accountability" />
+        <meta name="twitter:title"       content="CheckPeak - Program-Wide Athlete Accountability" />
         <meta name="twitter:description" content={ogDesc} />
         <meta name="twitter:image"       content={`${siteUrl}/api/og-image?q=${encodeURIComponent(ogDesc)}`} />
       </Head>
@@ -1824,7 +1824,7 @@ export default function HomePage() {
         <ProofMoment />
         <SocialProof />
 
-        {/* Proof video + CTA â€” closes the argument after testimonials */}
+        {/* Proof video + CTA - closes the argument after testimonials */}
         <PromoVideo />
 
         <FinalCta />

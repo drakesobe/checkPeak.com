@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { canonicalGtin } from "@/lib/gtin";
 import { DS } from "@/components/scanResultsTokens";
+import Viewfinder from "@/components/scanner/Viewfinder";
 
 const F = { cond: "'Barlow Condensed', sans-serif", body: "'Barlow', sans-serif" };
 const NATIVE_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e"];
@@ -49,14 +50,13 @@ function cameraErrorMessage(err) {
 
 const formatCode = (c) => (c.length === 12 ? `${c[0]} ${c.slice(1, 6)} ${c.slice(6, 11)} ${c[11]}` : c);
 
-function Tab({ active, onClick, children }) {
+function TextLink({ onClick, children, disabled }) {
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
       onClick={onClick}
-      style={{ flex: 1, minHeight: 40, fontFamily: F.cond, fontSize: 13, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", border: "none", borderBottom: `2px solid ${active ? DS.bodyText : "transparent"}`, background: "none", color: active ? DS.bodyText : DS.labelText, cursor: "pointer" }}
+      disabled={disabled}
+      style={{ minHeight: 44, padding: "0 4px", fontFamily: F.body, fontSize: 15, fontWeight: 600, color: DS.bodyText, background: "none", border: "none", textDecoration: "underline", textUnderlineOffset: 4, textDecorationColor: DS.border, cursor: disabled ? "not-allowed" : "pointer" }}
     >
       {children}
     </button>
@@ -77,7 +77,7 @@ function PrimaryButton({ onClick, children, disabled, type = "button" }) {
 }
 
 export default function BarcodeCapture({ onStart, onResult }) {
-  const [mode, setMode]       = useState("camera");
+  const [showTyping, setShowTyping] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [torch, setTorch]     = useState({ available: false, on: false });
   const [busyCode, setBusyCode] = useState("");   // barcode being looked up
@@ -107,7 +107,6 @@ export default function BarcodeCapture({ onStart, onResult }) {
   }, []);
 
   useEffect(() => stopCamera, [stopCamera]);
-  useEffect(() => { if (mode !== "camera") stopCamera(); }, [mode, stopCamera]);
   useEffect(() => {
     const onHide = () => { if (document.hidden) stopCamera(); };
     document.addEventListener("visibilitychange", onHide);
@@ -248,15 +247,8 @@ export default function BarcodeCapture({ onStart, onResult }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div role="tablist" aria-label="How to enter the barcode" style={{ display: "flex", borderBottom: `1px solid ${DS.border}` }}>
-        <Tab active={mode === "camera"} onClick={() => { setMode("camera"); setError(""); }}>Camera</Tab>
-        <Tab active={mode === "photo"}  onClick={() => { setMode("photo");  setError(""); }}>Photo</Tab>
-        <Tab active={mode === "type"}   onClick={() => { setMode("type");   setError(""); }}>Type number</Tab>
-      </div>
-
-      {mode === "camera" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", background: "#0D1B2A", overflow: "hidden", display: cameraOn ? "block" : "none" }}>
+      {/* Live camera shares the viewfinder's footprint so nothing jumps when it starts */}
+      <div className="bc-live" style={{ display: cameraOn ? "block" : "none" }}>
             <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             {/* Guide strip matches the region scanFrame reads */}
             <div aria-hidden="true" style={{ position: "absolute", left: "8%", right: "8%", top: "29%", bottom: "29%", border: "2px solid rgba(255,255,255,0.9)", boxShadow: "0 0 0 100vmax rgba(13,27,42,0.45)" }}>
@@ -275,29 +267,25 @@ export default function BarcodeCapture({ onStart, onResult }) {
                 Stop
               </button>
             </div>
-          </div>
-          {!cameraOn && (
-            <>
-              <p style={{ fontFamily: F.body, fontSize: 14, lineHeight: 1.55, color: DS.labelText, margin: 0 }}>
-                Point your camera at the barcode and it reads automatically.
-              </p>
-              <div><PrimaryButton onClick={startCamera} disabled={busy}>Start camera</PrimaryButton></div>
-            </>
-          )}
-        </div>
+      </div>
+
+      {!cameraOn && (
+        <Viewfinder variant="barcode" onActivate={() => { setShowTyping(false); startCamera(); }} disabled={busy} />
       )}
 
-      {mode === "photo" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ fontFamily: F.body, fontSize: 14, lineHeight: 1.55, color: DS.labelText, margin: 0 }}>
-            Take or choose a photo where the barcode fills most of the frame. No cropping needed.
-          </p>
-          <div><PrimaryButton onClick={() => photoRef.current?.click()} disabled={busy}>{decoding ? "Reading photo…" : "Choose photo"}</PrimaryButton></div>
-          <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => { decodePhoto(e.target.files?.[0]); e.target.value = ""; }} />
+      {!cameraOn && (
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "4px 22px" }}>
+          <TextLink onClick={() => { setError(""); photoRef.current?.click(); }} disabled={busy}>
+            {decoding ? "Reading photo…" : "Upload a photo"}
+          </TextLink>
+          <TextLink onClick={() => { setError(""); setShowTyping((v) => !v); }} disabled={busy}>
+            Type the number
+          </TextLink>
         </div>
       )}
+      <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => { decodePhoto(e.target.files?.[0]); e.target.value = ""; }} />
 
-      {mode === "type" && (
+      {showTyping && !cameraOn && (
         <form onSubmit={submitTyped} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <label htmlFor="barcode-digits" style={{ fontFamily: F.body, fontSize: 14, lineHeight: 1.55, color: DS.labelText }}>
             Type the numbers printed under the barcode.
@@ -305,6 +293,7 @@ export default function BarcodeCapture({ onStart, onResult }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <input
               id="barcode-digits"
+              autoFocus
               inputMode="numeric"
               autoComplete="off"
               value={typed}
@@ -332,6 +321,8 @@ export default function BarcodeCapture({ onStart, onResult }) {
       <style>{`
         @keyframes bc-sweep { 0%, 100% { transform: translateY(-18px); } 50% { transform: translateY(18px); } }
         .bc-scanline { animation: bc-sweep 1.6s ease-in-out infinite; }
+        .bc-live { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 56vh; min-height: 240px; background: #0D1B2A; overflow: hidden; }
+        @media (min-width: 720px) { .bc-live { aspect-ratio: 16 / 9; max-height: 400px; } }
         @media (prefers-reduced-motion: reduce) { .bc-scanline { animation: none; } }
       `}</style>
     </div>

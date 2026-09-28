@@ -104,6 +104,103 @@ function UnlockGate({ status, onUnlocked }) {
 }
 
 // ---------------------------------------------------------------------------
+// Empty-state pieces
+// ---------------------------------------------------------------------------
+
+function ModeIcon({ mode }) {
+  return mode === "Label" ? (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <rect x="5" y="3" width="14" height="18" /><path d="M8 7h8M8 11h8M8 15h5" />
+    </svg>
+  ) : (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 5v14M7 5v14M11 5v14M14 5v14M17 5v14M20 5v14" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function TrustLine({ overview }) {
+  const count = overview?.bannedCount;
+  const orgs = overview?.organizations || [];
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px", marginTop: 14, minHeight: 28 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, color: DS.bodyText }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={DS.brand} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" /><path d="M8.5 12l2.5 2.5 4.5-5" />
+        </svg>
+        {count
+          ? <span><strong style={{ fontVariantNumeric: "tabular-nums" }}>{count.toLocaleString()}</strong> banned substances checked</span>
+          : <span>Checked against league banned lists</span>}
+      </span>
+      {orgs.length > 0 && (
+        <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6 }} aria-label={`Lists from ${orgs.join(", ")}`}>
+          {orgs.map((o) => (
+            <span key={o} style={{ fontFamily: F.cond, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", padding: "3px 8px", border: `1px solid ${DS.border}`, background: DS.cardBg, color: DS.labelText }}>
+              {o}
+            </span>
+          ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const STEPS = {
+  Label:   ["Photograph the label", "We read every ingredient", "Get a clear verdict"],
+  Barcode: ["Scan the barcode", "We find the product", "Get a clear verdict"],
+};
+
+function HowItWorks({ mode }) {
+  return (
+    <ol style={{ listStyle: "none", margin: "0 0 20px", padding: 0, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "clamp(8px, 2.5vw, 16px)" }}>
+      {STEPS[mode].map((text, i) => (
+        <li key={text} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 10, borderTop: `2px solid ${i === 0 ? DS.brand : DS.border}` }}>
+          <span style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 13, letterSpacing: "0.12em", color: i === 0 ? DS.brand : DS.labelText }}>0{i + 1}</span>
+          <span style={{ fontSize: "clamp(13px, 3.4vw, 15px)", lineHeight: 1.35, color: DS.bodyText, fontWeight: 600 }}>{text}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const RECENT_STYLE = {
+  flagged:  { color: DS.banned,  label: "Flagged" },
+  review:   { color: DS.caution, label: "Review" },
+  no_match: { color: "#94A3B8",  label: "No match" },
+};
+
+function RecentScans({ scans }) {
+  return (
+    <section style={{ marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+        <h2 style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 15, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>Your recent scans</h2>
+        <a href="/scans" style={{ fontSize: 14, fontWeight: 600, color: DS.bodyText, textDecoration: "underline", textUnderlineOffset: 4, textDecorationColor: DS.border }}>See all</a>
+      </div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, background: DS.cardBg, border: `1px solid ${DS.border}` }}>
+        {scans.map((s, i) => {
+          const st = RECENT_STYLE[s.status] || RECENT_STYLE.no_match;
+          return (
+            <li key={s.id} style={{ borderTop: i ? `1px solid ${DS.border}` : "none" }}>
+              <a href={`/scans/${s.id}`} style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 56, padding: "8px 14px 8px 0", color: DS.bodyText, textDecoration: "none" }}>
+                <span aria-hidden="true" style={{ alignSelf: "stretch", width: 4, background: st.color }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontWeight: 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                  <span style={{ fontSize: 13, color: DS.labelText }}>
+                    {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
+                </span>
+                <span style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: st.color }}>{st.label}</span>
+                <span aria-hidden="true" style={{ color: DS.dimText, fontSize: 18 }}>›</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -119,11 +216,20 @@ export default function OCRPage() {
   const [showFinishSetup, setShowFinishSetup] = useState(false);
   const [missingBarcode, setMissingBarcode] = useState(null); // looked up but not found
   const [pendingBarcode, setPendingBarcode] = useState(null); // label scan in progress for this barcode
+  const [overview, setOverview] = useState(null);   // { bannedCount, organizations, recent }
   const resultRef = useRef(null);
 
   useEffect(() => {
     if (loggedIn || getLs("cp_unlocked") === "1") setUnlocked(true);
   }, [loggedIn]);
+
+  // Refreshes after each result so a new scan shows up in "recent" when the user goes back
+  useEffect(() => {
+    fetch("/api/scan/overview", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setOverview(d))
+      .catch(() => {});
+  }, [loggedIn, result]);
 
   useEffect(() => { track("page_view_scan", { eventType: "page_view", userEmail, source: "ocr_page" }); }, [userEmail]);
 
@@ -199,12 +305,13 @@ export default function OCRPage() {
             Check it <span style={{ color: DS.brand }}>before you take it.</span>
           </h1>
           <p style={{ fontSize: 15, lineHeight: 1.6, color: DS.labelText, margin: 0, maxWidth: "56ch" }}>
-            Photograph the label and we'll read every ingredient and check it against the banned-substance list.
+            Photograph the label or scan the barcode. We read every ingredient and check it against the banned lists athletes are tested on.
           </p>
+          <TrustLine overview={overview} />
         </header>
 
         {/* Mode switch */}
-        <div role="tablist" aria-label="Scan method" style={{ display: "inline-flex", border: `1px solid ${DS.border}`, background: DS.cardBg, marginBottom: 12 }}>
+        <div role="tablist" aria-label="Scan method" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", border: `1px solid ${DS.border}`, borderBottom: "none", background: DS.cardBg }}>
           {MODES.map((m) => (
             <button
               key={m}
@@ -212,14 +319,15 @@ export default function OCRPage() {
               role="tab"
               aria-selected={mode === m}
               onClick={() => { setMode(m); setNotice(""); setMissingBarcode(null); if (m === "Barcode") setPendingBarcode(null); }}
-              style={{ minHeight: 42, padding: "0 20px", fontFamily: F.cond, fontSize: 14, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", cursor: "pointer", background: mode === m ? DS.bodyText : "transparent", color: mode === m ? "#fff" : DS.labelText }}
+              style={{ minHeight: 52, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: F.cond, fontSize: 15, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderBottom: `3px solid ${mode === m ? DS.brand : DS.border}`, cursor: "pointer", background: mode === m ? DS.cardBg : DS.hoverBg, color: mode === m ? DS.bodyText : DS.labelText }}
             >
+              <ModeIcon mode={m} />
               {m === "Label" ? "Label photo" : "Barcode"}
             </button>
           ))}
         </div>
 
-        <section style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, padding: "clamp(1rem, 4vw, 1.5rem)", marginBottom: 16 }}>
+        <section style={{ background: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: "none", padding: "clamp(0.85rem, 3.5vw, 1.5rem)", marginBottom: 16 }}>
           {mode === "Label" ? (
             <LabelCapture
               barcode={pendingBarcode}
@@ -237,6 +345,9 @@ export default function OCRPage() {
             <BarcodeCapture onStart={() => startScan("barcode")} onResult={(data) => finishScan("barcode", data)} />
           )}
         </section>
+
+        {!result && <HowItWorks mode={mode} />}
+        {!result && loggedIn && overview?.recent?.length > 0 && <RecentScans scans={overview.recent} />}
 
         {notice && (
           <div role="alert" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 15, lineHeight: 1.55, padding: "12px 16px", margin: "0 0 16px", background: DS.cautionBg, border: `1px solid ${DS.cautionBorder}`, color: DS.cautionText }}>

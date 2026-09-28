@@ -172,7 +172,12 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             {nl({ href: "/athlete/journal",    label: "Journal"            })}
             {nl({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
             {nl({ href: "/athlete/stats",      label: "Stats"              })}
-            {nl({ href: "/scans",              label: "My Scans"           })}
+            <NavDivider />
+
+            <NavSection>Supplement Check</NavSection>
+            {nl({ href: "/nutrition-label-scanner", label: "Scan a Label"      })}
+            {nl({ href: "/search",                  label: "Search Ingredients" })}
+            {nl({ href: "/scans",                   label: "My Scans"          })}
 
             <NavDivider />
 
@@ -349,7 +354,11 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 {ml({ href: "/athlete/journal",    label: "Journal"             })}
                 {ml({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
                 {ml({ href: "/athlete/stats",      label: "Stats"               })}
-                {ml({ href: "/scans",              label: "My Scans"            })}
+                {mDivider()}
+                {mSection("Supplement Check")}
+                {ml({ href: "/nutrition-label-scanner", label: "Scan a Label"       })}
+                {ml({ href: "/search",                  label: "Search Ingredients" })}
+                {ml({ href: "/scans",                   label: "My Scans"           })}
                 {mDivider()}
                 {mSection("Discover", "rgba(255,123,53,0.85)")}
                 {ml({ href: "/trainers",           label: "Marketplace"  })}

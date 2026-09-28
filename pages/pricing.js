@@ -2,6 +2,7 @@
 import Head from "next/head";
 import { useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
+import ComparisonMoment from "@/components/ComparisonMoment";
 
 const ACCENT = "#4FABFF";
 const BLACK  = "#060810";
@@ -43,7 +44,7 @@ function CopyCode({ code }) {
         borderRadius: 3, transition: "all 0.18s",
       }}
       onMouseEnter={e => { if (!copied) e.currentTarget.style.background = "rgba(79,171,255,0.14)"; }}
-      onMouseLeave={e => { if (!copied) e.currentTarget.style.background = "rgba(79,171,255,0.07)"; }}
+      onMouseLeave={e => { if (!copied) e.currentTarget.style.background = copied ? "rgba(63,185,80,0.08)" : "rgba(79,171,255,0.07)"; }}
     >
       <span style={{
         fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900,
@@ -62,24 +63,35 @@ function CopyCode({ code }) {
 
 const BILLING = {
   monthly: {
-    founder:     "$99",
-    regular:     "$499",
-    period:      "/month",
-    savings:     "−$400",
-    code:        "FOUNDING",
-    subNote:     null,
+    founder: "$99",
+    regular: "$499",
+    period:  "/month",
+    savings: "−$400",
+    code:    "FOUNDING",
+    subNote: null,
   },
   annual: {
-    founder:     "$1,188",
-    regular:     "$4,188",
-    period:      "/year",
-    savings:     "−$3,000",
-    code:        "FOUNDING26",
-    subNote:     "$99 / mo, billed annually",
+    founder: "$1,188",
+    regular: "$4,188",
+    period:  "/year",
+    savings: "−$3,000",
+    code:    "FOUNDING26",
+    subNote: "$99 / mo, billed annually",
   },
 };
 
+// Free tier — up to 10 athletes
 const STUDIO_FEATURES = [
+  "Up to 10 athletes",
+  "Training program builder",
+  "Nutrition plan & macro targets",
+  "Film room with draw tools",
+  "Mobile app for athletes",
+  "Team messaging",
+];
+
+// Paid tier — unlimited, full platform
+const PROGRAM_FEATURES = [
   "Unlimited athletes",
   "Training library builder",
   "Nutrition programming & macros",
@@ -88,25 +100,18 @@ const STUDIO_FEATURES = [
   "Streak leaderboards",
   "Analytics dashboard",
   "Team messaging",
-  "The Arena marketplace listing",
-];
-
-const PROGRAM_FEATURES = [
-  "Everything in Studio",
-  "CARA / VARA compliance monitoring",
+  "CARA / VARA compliance calendar",
   "Off-campus accountability tracking",
   "Multi-sport roster management",
-  "Custom season & break calendar",
   "Film delivery to athlete phones",
   "Multi-coach staff access",
-  "Airtable sync",
-  "Dedicated onboarding call",
+  "Recruiting profile for every athlete",
   "Priority support",
 ];
 
 export default function PricingPage() {
-  const ref      = useRef(null);
-  const inView   = useInView(ref, { once: true, margin: "-8%" });
+  const ref    = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-8%" });
   const [billing, setBilling] = useState("monthly");
 
   const b = BILLING[billing];
@@ -116,7 +121,7 @@ export default function PricingPage() {
       <style>{STYLE}</style>
       <Head>
         <title>Pricing | CheckPeak</title>
-        <meta name="description" content="CheckPeak Studio starts at $99/month with code FOUNDING, or $1,188/year with FOUNDING26. Programs book a walkthrough." />
+        <meta name="description" content="CheckPeak is free for studios up to 10 athletes. Full programs start at $99/month — unlimited athletes, film, nutrition, and NCAA compliance included." />
       </Head>
 
       <main style={{ background: BLACK, color: WHITE, minHeight: "100vh", position: "relative", overflow: "hidden" }}>
@@ -171,7 +176,7 @@ export default function PricingPage() {
               lineHeight: 1.7, color: "rgba(255,255,255,0.52)",
               maxWidth: "44ch", margin: "0 auto",
             }}>
-              One platform for coaches, trainers, and athletic programs.
+              Free for small programs. One flat rate when you&apos;re ready to scale.
             </p>
           </motion.div>
 
@@ -181,7 +186,7 @@ export default function PricingPage() {
             animate={inView ? { opacity: 1 } : {}}
             transition={{ duration: 0.6, delay: 0.25 }}
             style={{
-              maxWidth: 900, margin: "0 auto clamp(2.5rem, 5vw, 4rem)",
+              maxWidth: 860, margin: "0 auto clamp(2.5rem, 5vw, 4rem)",
               padding: "0.85rem 1.25rem",
               background: "rgba(79,171,255,0.04)",
               border: "0.5px solid rgba(79,171,255,0.18)",
@@ -220,16 +225,97 @@ export default function PricingPage() {
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
             gap: "clamp(1.25rem, 2.5vw, 2rem)",
-            maxWidth: 900,
+            maxWidth: 860,
             margin: "0 auto clamp(3.5rem, 7vw, 6rem)",
             alignItems: "start",
           }}>
 
-            {/* ─── Studio Card ─── */}
+            {/* ─── Studio Card (Free) ─── */}
             <motion.div
               initial={{ opacity: 0, y: 28 }}
               animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                background: "#0B0F17",
+                border: "0.5px solid rgba(255,255,255,0.1)",
+                borderTop: "3px solid rgba(255,255,255,0.22)",
+                borderRadius: 2,
+              }}
+            >
+              {/* Price header */}
+              <div style={{ padding: "clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
+                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: "1.25rem" }}>
+                  Studio
+                </p>
+
+                <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", marginBottom: "0.5rem" }}>
+                  <span style={{
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontWeight: 900, fontStyle: "italic",
+                    fontSize: "clamp(3.5rem, 7vw, 5rem)",
+                    lineHeight: 0.9, color: WHITE,
+                  }}>
+                    Free
+                  </span>
+                </div>
+
+                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "rgba(255,255,255,0.38)", marginBottom: "0rem" }}>
+                  Up to 10 athletes — no credit card, no expiry.
+                </p>
+              </div>
+
+              {/* Description */}
+              <div style={{ padding: "1rem clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
+                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", lineHeight: 1.65, color: "rgba(255,255,255,0.52)" }}>
+                  Perfect for small coaching operations getting started. All the core tools — no commitment.
+                </p>
+              </div>
+
+              {/* Features */}
+              <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
+                <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+                  {STUDIO_FEATURES.map(f => (
+                    <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
+                      <span style={{ flexShrink: 0, marginTop: "1px" }}><Check color="rgba(255,255,255,0.32)" /></span>
+                      <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.68)", lineHeight: 1.5 }}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* CTA */}
+              <div style={{ padding: "0 clamp(1.75rem, 3.5vw, 2.25rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
+                <a
+                  href="/commercial/onboard"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+                    padding: "0.9rem 1.5rem",
+                    background: "transparent", color: WHITE,
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: "0.88rem", fontWeight: 900,
+                    letterSpacing: "0.12em", textTransform: "uppercase",
+                    border: "1px solid rgba(255,255,255,0.22)", borderRadius: 2,
+                    textDecoration: "none", transition: "border-color 0.18s, background 0.18s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; e.currentTarget.style.background = "transparent"; }}
+                >
+                  Get Started Free
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </a>
+                <p style={{ textAlign: "center", marginTop: "0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>
+                  No credit card · No expiry · Upgrade anytime
+                </p>
+              </div>
+            </motion.div>
+
+            {/* ─── Program Card (Paid) ─── */}
+            <motion.div
+              initial={{ opacity: 0, y: 28 }}
+              animate={inView ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.8, delay: 0.28, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 background: "#0B0F17",
                 border: "0.5px solid rgba(255,255,255,0.1)",
@@ -242,10 +328,10 @@ export default function PricingPage() {
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.75rem" }}>
                   <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.2em", textTransform: "uppercase", color: ACCENT }}>
-                    Studio
+                    Program
                   </p>
 
-                  {/* Billing toggle — lives here, tied to the price */}
+                  {/* Billing toggle */}
                   <div style={{
                     display: "inline-flex",
                     background: "rgba(255,255,255,0.04)",
@@ -285,7 +371,7 @@ export default function PricingPage() {
                   </div>
                 </div>
 
-                {/* Founder price — the hero number */}
+                {/* Founder price */}
                 <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", marginBottom: "0.5rem" }}>
                   <span style={{
                     fontFamily: "'Barlow Condensed', sans-serif",
@@ -300,7 +386,7 @@ export default function PricingPage() {
                   </span>
                 </div>
 
-                {/* Savings row — regular price + badge */}
+                {/* Savings row */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: b.subNote ? "0.4rem" : "1rem", flexWrap: "wrap" }}>
                   <span style={{
                     fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem",
@@ -337,14 +423,14 @@ export default function PricingPage() {
               {/* Description */}
               <div style={{ padding: "1rem clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
                 <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", lineHeight: 1.65, color: "rgba(255,255,255,0.52)" }}>
-                  For solo coaches, gym trainers, and online businesses building a recurring revenue library.
+                  For coaches and athletic programs that need the full platform — film, nutrition, compliance, and accountability with no roster limits.
                 </p>
               </div>
 
               {/* Features */}
               <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.7rem" }}>
-                  {STUDIO_FEATURES.map(f => (
+                  {PROGRAM_FEATURES.map(f => (
                     <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
                       <span style={{ flexShrink: 0, marginTop: "1px" }}><Check /></span>
                       <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.68)", lineHeight: 1.5 }}>{f}</span>
@@ -376,106 +462,6 @@ export default function PricingPage() {
                 </a>
                 <p style={{ textAlign: "center", marginTop: "0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>
                   30-day free trial · No credit card required · Cancel anytime
-                </p>
-              </div>
-            </motion.div>
-
-            {/* ─── Program Card ─── */}
-            <motion.div
-              initial={{ opacity: 0, y: 28 }}
-              animate={inView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.8, delay: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              style={{
-                background: "#0B0F17",
-                border: "1px solid rgba(255,255,255,0.13)",
-                borderTop: "3px solid rgba(255,255,255,0.28)",
-                borderRadius: 2,
-                position: "relative",
-              }}
-            >
-              {/* Badge */}
-              <div style={{
-                position: "absolute", top: "clamp(1.75rem, 3.5vw, 2.25rem)", right: "clamp(1.75rem, 3.5vw, 2.25rem)",
-              }}>
-                <span style={{
-                  fontFamily: "'Barlow Condensed', sans-serif",
-                  fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
-                  padding: "2px 8px",
-                  border: "0.5px solid rgba(255,255,255,0.18)",
-                  color: "rgba(255,255,255,0.42)",
-                  borderRadius: 2,
-                }}>
-                  Universities &amp; programs
-                </span>
-              </div>
-
-              {/* Price header */}
-              <div style={{ padding: "clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
-                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", marginBottom: "1.25rem" }}>
-                  Program
-                </p>
-                <div style={{ marginBottom: "0.75rem" }}>
-                  <span style={{
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                    fontWeight: 900, fontStyle: "italic",
-                    fontSize: "clamp(2rem, 4.5vw, 3.25rem)",
-                    lineHeight: 0.9, color: WHITE,
-                  }}>
-                    Let&apos;s talk.
-                  </span>
-                </div>
-                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", lineHeight: 1.65, color: "rgba(255,255,255,0.48)" }}>
-                  Pricing is based on program size and sport count. We scope it with you.
-                </p>
-              </div>
-
-              {/* Description */}
-              <div style={{ padding: "1rem clamp(1.75rem, 3.5vw, 2.25rem)", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
-                <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", lineHeight: 1.65, color: "rgba(255,255,255,0.52)" }}>
-                  For collegiate programs and athletic departments that need full compliance monitoring, multi-coach tools, and off-campus accountability.
-                </p>
-              </div>
-
-              {/* Features */}
-              <div style={{ padding: "clamp(1.25rem, 2.5vw, 1.75rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
-                <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.7rem" }}>
-                  {PROGRAM_FEATURES.map(f => (
-                    <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
-                      <span style={{ flexShrink: 0, marginTop: "1px" }}>
-                        <Check color="rgba(255,255,255,0.32)" />
-                      </span>
-                      <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.88rem", color: "rgba(255,255,255,0.68)", lineHeight: 1.5 }}>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* CTA */}
-              <div style={{ padding: "0 clamp(1.75rem, 3.5vw, 2.25rem) clamp(1.75rem, 3.5vw, 2.25rem)" }}>
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = "/book"; }}
-                  style={{
-                    width: "100%",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
-                    padding: "0.9rem 1.5rem",
-                    background: "transparent", color: WHITE,
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                    fontSize: "0.88rem", fontWeight: 900,
-                    letterSpacing: "0.12em", textTransform: "uppercase",
-                    border: "1px solid rgba(255,255,255,0.22)", borderRadius: 2,
-                    transition: "border-color 0.18s, background 0.18s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.22)"; e.currentTarget.style.background = "transparent"; }}
-                >
-                  Book a Walkthrough
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </button>
-                <p style={{ textAlign: "center", marginTop: "0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>
-                  Dedicated onboarding · Compliance-ready from day one
                 </p>
               </div>
             </motion.div>
@@ -524,7 +510,7 @@ export default function PricingPage() {
               fontSize: "0.88rem", lineHeight: 1.8,
               color: "rgba(255,255,255,0.35)",
             }}>
-              Questions about pricing or which plan is right for you?{" "}
+              Questions about which plan fits your program?{" "}
               <a href="mailto:support@checkpeak.com" style={{ color: ACCENT, textDecoration: "none", fontWeight: 600 }}
                 onMouseEnter={e => { e.currentTarget.style.opacity = "0.75"; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
@@ -536,6 +522,9 @@ export default function PricingPage() {
           </motion.div>
 
         </div>
+
+        <ComparisonMoment />
+
       </main>
     </>
   );

@@ -1,12 +1,17 @@
 // pages/api/athlete/scanner/scan.js
 //
 // Mobile supplement scanner endpoint.
-// Accepts multipart image → calls Textract OCR → calls /api/check → returns results.
+// Accepts a multipart label photo, reads it with Claude vision, and checks it against the banned database.
 // Same _authUser cookie fallback pattern as completeItem.js.
 
 import formidable from "formidable";
 import fs         from "fs";
 import { requireAthlete } from "@/lib/requireAthlete";
+import { extractLabel } from "@/lib/labelVision";
+import { checkLabel, saveScan, getSupplementData, BANNED_LIST_MISSING } from "@/lib/supplementCheck";
+import { hourlyLimit } from "@/lib/ratelimiter";
+
+const SUPPORTED_MEDIA = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export const config = { api: { bodyParser: false } };
 
@@ -45,14 +50,6 @@ function deleteTempFile(path) {
   try { if (path) fs.unlinkSync(path); } catch {}
 }
 
-// Build internal base URL - works on local dev and Vercel production
-function siteUrl(req) {
-  if (process.env.SITE_URL) return process.env.SITE_URL;
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  const host  = req.headers["x-forwarded-host"] || req.headers.host || "www.checkpeak.com";
-  return `${proto}://${host}`;
-}
-
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -88,7 +85,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Image is required" });
   }
 
-  const base = siteUrl(req);
+  const data = await getSupplementData();
+  if (!data) return res.status(503).json({ ok: false, error: BANNED_LIST_MISSING });
+  if (!hourlyLimit(req, res, "label-scan-mobile", 60)) return;
+
   let imageBuffer;
   try {
     imageBuffer = fs.readFileSync(imageFile.filepath);
@@ -98,74 +98,48 @@ export default async function handler(req, res) {
     deleteTempFile(imageFile.filepath);
   }
 
-  // ── Step 1: OCR via Textract ──────────────────────────────────────────────
-  let extractedText = "";
+  const mediaType = SUPPORTED_MEDIA.includes(imageFile.mimetype) ? imageFile.mimetype : "image/jpeg";
+
+  let extraction;
   try {
-    const ocrRes = await fetch(`${base}/api/ocr/textract`, {
-      method:  "POST",
-      headers: { "Content-Type": imageFile.mimetype || "image/jpeg" },
-      body:    imageBuffer,
-    });
-
-    if (!ocrRes.ok) {
-      const err = await ocrRes.json().catch(() => ({}));
-      return res.status(500).json({ ok: false, error: err?.error || `OCR failed (${ocrRes.status})` });
-    }
-
-    const ocrData = await ocrRes.json();
-    extractedText = String(ocrData?.text ?? "").trim();
+    extraction = await extractLabel([{ data: imageBuffer.toString("base64"), mediaType }]);
   } catch (e) {
-    return res.status(500).json({ ok: false, error: `OCR service error: ${e.message}` });
+    console.error("[athlete/scanner/scan] extraction failed:", e);
+    return res.status(502).json({ ok: false, error: "We couldn't read the label right now. Please try again." });
   }
 
-  if (!extractedText) {
+  if (!extraction.readable) {
     return res.status(200).json({
       ok:               true,
       found:            false,
       text:             "",
       bannedSubstances: [],
       ingredients:      [],
-      productName:      null,
-      message:          "No text detected. Try taking a clearer photo, closer to the ingredients panel.",
+      productName:      extraction.product_name,
+      message:          extraction.unreadable_reason || "No ingredient list found. Take a clear photo of the ingredients panel.",
     });
   }
 
-  // ── Step 2: Check against banned substance database ───────────────────────
-  try {
-    const checkRes = await fetch(`${base}/api/check`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        text:      extractedText,
-        userEmail: asString(auth.athlete?.email || auth.user?.email || ""),
-      }),
-    });
+  const result = checkLabel(extraction, data);
+  const productName = [extraction.brand, extraction.product_name].filter(Boolean).join(" ") || null;
 
-    const checkData = await checkRes.json().catch(() => ({}));
+  await saveScan({
+    email:           asString(auth.athlete?.email || auth.user?.email || "").toLowerCase(),
+    productName,
+    ingredientsText: result.ingredientsText,
+    bannedDetails:   result.bannedDetails,
+  });
 
-    if (!checkData?.found) {
-      return res.status(200).json({
-        ok:               true,
-        found:            false,
-        text:             extractedText,
-        bannedSubstances: [],
-        ingredients:      [],
-        productName:      checkData?.productName || null,
-        message:          "No substances matched in the database.",
-      });
-    }
-
-    return res.status(200).json({
-      ok:               true,
-      found:            true,
-      text:             extractedText,
-      productName:      checkData.productName      || null,
-      bannedSubstances: checkData.matchedBanned    || checkData.bannedSubstances || [],
-      ingredients:      checkData.matchedIngredients || checkData.ingredients    || [],
-      bannedDetails:    checkData.bannedDetails    || null,
-    });
-
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: `Check service error: ${e.message}` });
-  }
+  return res.status(200).json({
+    ok:                   true,
+    found:                true,
+    text:                 result.ingredientsText,
+    productName,
+    bannedSubstances:     result.matchedBanned,
+    ingredients:          result.matchedIngredients,
+    bannedDetails:        result.bannedDetails,
+    verdict:              result.verdict,
+    extractedIngredients: result.ingredients,
+    certifications:       extraction.certifications,
+  });
 }

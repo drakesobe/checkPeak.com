@@ -4,7 +4,8 @@
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import Head from "next/head";
-import OCRUpload from "../../components/OCRUpload";
+import LabelCapture from "@/components/scanner/LabelCapture";
+import ScanVerdict from "@/components/scanner/ScanVerdict";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaFileUpload } from "react-icons/fa";
 
@@ -35,6 +36,7 @@ export default function AthleteProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
 
   useEffect(() => {
     if (!idStr) return;
@@ -149,7 +151,6 @@ export default function AthleteProfile() {
   const displayOrg = athlete?.organization || athlete?.Organization || athlete?.fields?.Organization || "";
   const displayEmail = athlete?.email || athlete?.Email || athlete?.fields?.Email || "";
   const displayPhone = athlete?.phone || athlete?.Phone || athlete?.fields?.Phone || "";
-  const athleteIdForUpload = athlete?.id || athlete?.recordId || athlete?.raw?.id || idStr;
 
   return (
     <>
@@ -192,7 +193,11 @@ export default function AthleteProfile() {
                 transition={{ duration: 0.6 }}
                 className="max-w-4xl mx-auto mt-6"
               >
-                <OCRUpload multiple={true} athleteId={athleteIdForUpload} />
+                <div className="text-left bg-white p-4 flex flex-col gap-4">
+                  <LabelCapture onStart={() => setScanResult(null)} onResult={setScanResult} />
+                  {scanResult?.found === false && <p className="text-sm text-amber-800">{scanResult.message}</p>}
+                  {scanResult?.found && <ScanVerdict result={scanResult} />}
+                </div>
               </motion.div>
             ) : null}
           </AnimatePresence>

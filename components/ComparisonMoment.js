@@ -28,7 +28,7 @@ const rows = [
   { feature: "Photo / video proof workouts were done",                            cp: "y", hudl: "x",  tw: "p"  },
   { feature: "Daily athlete check-ins — wellness & readiness in one tap",         cp: "y", hudl: "x",  tw: "p"  },
   { feature: "Nutrition plan adherence — macro targets at a glance",              cp: "y", hudl: "x",  tw: "$"  },
-  { feature: "Supplement scanner — know it's safe before they take it",           cp: "y", hudl: "x",  tw: "x"  },
+  { feature: "Supplement scanner — catch banned ingredients before they take it", cp: "y", hudl: "x",  tw: "x"  },
   { feature: "CARA / VARA compliance — your designated compliance calendar",      cp: "y", hudl: "x",  tw: "$"  },
   { feature: "Parent portal — families in the loop",                              cp: "y", hudl: "p",  tw: "p"  },
   { feature: "Recruiting profile for every athlete",                              cp: "y", hudl: "$",  tw: "x"  },

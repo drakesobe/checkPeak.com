@@ -7,6 +7,7 @@
 // Same response shape - nothing in OCRUpload or OCRScanResults changes.
 
 import { TextractClient, DetectDocumentTextCommand } from "@aws-sdk/client-textract";
+import { hourlyLimit } from "@/lib/ratelimiter";
 
 export const config = {
   api: { bodyParser: false }, // we receive raw multipart
@@ -63,6 +64,8 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
+  if (!hourlyLimit(req, res, "textract", 40)) return;
 
   if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
     return res.status(500).json({ error: "AWS credentials not configured" });

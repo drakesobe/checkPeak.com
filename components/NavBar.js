@@ -328,17 +328,10 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
             {nl({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
             {nl({ href: "/info",                    label: "Info"          })}
 
-            {trainerSlug && (
-              <>
-                <NavDivider />
-                <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
-                {nl({ href: "/commercial/dashboard",   label: "Dashboard"      })}
-                {nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
-              </>
-            )}
-
             <NavDivider />
-            {nl({ href: "/org/help", label: "Help Center" })}
+            <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
+            {nl({ href: "/commercial/dashboard", label: "Dashboard" })}
+            {trainerSlug && nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
             <div style={{ height: 10 }} />
           </>
         )}
@@ -514,16 +507,10 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
                 {ml({ href: "/smartstack-compare",      label: "SmartStack"    })}
                 {ml({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
                 {ml({ href: "/info",                    label: "Info"          })}
-                {trainerSlug && (
-                  <>
-                    {mDivider()}
-                    {mSection("Studio", "rgba(70,118,155,0.9)")}
-                    {ml({ href: "/commercial/dashboard",   label: "Dashboard"      })}
-                    {ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
-                  </>
-                )}
                 {mDivider()}
-                {ml({ href: "/org/help", label: "Help Center" })}
+                {mSection("Studio", "rgba(70,118,155,0.9)")}
+                {ml({ href: "/commercial/dashboard", label: "Dashboard" })}
+                {trainerSlug && ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
               </>
             )}
 

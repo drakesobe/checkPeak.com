@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { Toaster, toast } from "react-hot-toast";
+import { PageHeader, APP } from "@/components/app/ui";
 import {
   Film, Upload, Users, Users2, Plus, Trash2, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Video, Zap, Activity,
@@ -1446,37 +1447,18 @@ export default function FilmPage() {
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
       `}</style>
 
-      <div style={{ minHeight: "100vh", background: DS.pageBg, padding: "32px 16px", fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ maxWidth: 920, margin: "0 auto" }}>
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 12 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: DS.brandBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Film size={18} color={DS.brand} />
-                </div>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: DS.bodyText }}>Film Intelligence</h1>
-              </div>
-              <p style={{ margin: 0, fontSize: 13, color: DS.labelText }}>
-                Upload game film, tag plays, and share with your team — all in one place.
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <button onClick={() => router.push("/org/leaderboard")} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
-                <Trophy size={14} /> Leaderboard
-              </button>
-              <button onClick={() => setShowGroups(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
-                <Shield size={14} /> Groups
-              </button>
-              <button onClick={() => setShowRoster(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.cardBg, border: `1px solid ${DS.border}`, borderRadius: 8, padding: "9px 14px", fontWeight: 600, fontSize: 13, color: DS.bodyText, cursor: "pointer" }}>
-                <Users size={14} /> Roster
-              </button>
-              <button onClick={() => setShowUpload(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: DS.brand, border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, color: "#fff", cursor: "pointer" }}>
-                <Upload size={14} /> Upload Film
-              </button>
-            </div>
-          </div>
+      <div style={{ minHeight: "100vh", background: APP.canvas, fontFamily: APP.font }}>
+        <PageHeader
+          title="Film"
+          subtitle="Upload game film, tag plays, and share with your team."
+          primaryAction={{ label: "Upload film", icon: Upload, onClick: () => setShowUpload(true) }}
+          secondaryActions={[
+            { label: "Leaderboard", icon: Trophy, onClick: () => router.push("/org/leaderboard") },
+            { label: "Groups", icon: Shield, onClick: () => setShowGroups(true) },
+            { label: "Roster", icon: Users, onClick: () => setShowRoster(true) },
+          ]}
+        />
+        <div style={{ maxWidth: 920, margin: "0 auto", padding: "24px 16px 32px" }}>
 
           {/* Stats header */}
           {!loading && <StatsHeader films={films} />}

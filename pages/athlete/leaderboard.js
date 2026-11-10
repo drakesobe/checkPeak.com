@@ -173,7 +173,7 @@ export default function AthleteLeaderboard() {
                         {/* Stat value */}
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: 24, fontWeight: 900, color: isGold ? C.gold : isMe ? C.accent : C.white, letterSpacing: "-0.04em", lineHeight: 1 }}>
-                            {e.value}
+                            {e.display ?? e.value}
                           </div>
                           {e.verified && (
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 5 }}>

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import NavBar        from "@/components/NavBar";
 import MarketingNav  from "@/components/MarketingNav";
+import AppShell      from "@/components/nav/AppShell";
 import Footer        from "@/components/Footer";
 import CookieBanner  from "@/components/CookieBanner";
 import { getConsent, setConsent } from "@/lib/consent";
@@ -79,12 +80,16 @@ function AppCore({ Component, pageProps, analyticsEnabled }) {
           auth pages      → no nav                                     */}
       {navType === "marketing" && <MarketingNav />}
       {navType === "app"       && <NavBar />}
+      {navType === "app"       && <AppShell />}
 
-      <main className="flex-grow" style={navType === "marketing" && router.pathname !== "/" ? { paddingTop: 72 } : {}}>
-        <Component {...pageProps} />
-      </main>
+      {/* cp-shell-offset makes room for the coach sidebar / tab bar when AppShell is showing */}
+      <div className="cp-shell-offset flex flex-col flex-grow">
+        <main className="flex-grow" style={navType === "marketing" && router.pathname !== "/" ? { paddingTop: 72 } : {}}>
+          <Component {...pageProps} />
+        </main>
 
-      <Footer />
+        <Footer />
+      </div>
     </div>
   );
 }

@@ -46,6 +46,7 @@ export default function Logo({ size = "medium", className = "" }) {
   }, []);
 
   const sizeClasses = {
+    xs: "h-6 md:h-7",
     small: "h-8 md:h-10",
     medium: "h-10 md:h-14",
     large: "h-14 md:h-16",

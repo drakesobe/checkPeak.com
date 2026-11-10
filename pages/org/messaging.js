@@ -25,6 +25,9 @@ import {
   Check, Radio, Users,
 } from "lucide-react";
 import { useAuthContext } from "@/hooks/useAuth";
+import { isConversationUnread } from "@/lib/messagingUnread";
+import { refreshNavCounts } from "@/components/nav/menu";
+import { PageHeader } from "@/components/app/ui";
 import { db, storage } from "@/lib/firebase";
 import { useBillingGate }   from "@/hooks/org/useBillingGate";
 import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
@@ -525,9 +528,15 @@ function ConversationView({ convId, myId, myName, onBack, isMobile }) {
       setMessages(list);
       setLoading(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+      // The coach is looking at this thread, so everything in it is now read
+      if (myId) {
+        updateDoc(doc(db, "conversations", convId), { [`lastReadAt.${myId}`]: serverTimestamp() })
+          .then(() => refreshNavCounts({ fresh: true }))
+          .catch(() => {});
+      }
     }, err => { console.error("[messages]", err); setLoading(false); });
     return unsub;
-  }, [convId]);
+  }, [convId, myId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -651,6 +660,7 @@ function ConversationRow({ conv, myId, isActive, onClick }) {
   const name    = getConvName(conv, myId);
   const color   = avatarColor(conv.id);
   const preview = conv.lastMessage ? (conv.lastSenderId === myId ? `You: ${conv.lastMessage}` : conv.lastMessage) : "No messages yet";
+  const unread  = !isActive && isConversationUnread(conv, myId);
   return (
     <button type="button" onClick={onClick}
       style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", width: "100%", textAlign: "left", background: isActive ? DS.brandBg : DS.cardBg, borderLeft: `3px solid ${isActive ? DS.brand : "transparent"}`, border: "none", borderBottom: `1px solid ${DS.border}`, cursor: "pointer" }}
@@ -661,11 +671,12 @@ function ConversationRow({ conv, myId, isActive, onClick }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-          <span style={{ fontSize: 11, color: DS.dimText, flexShrink: 0 }}>{fmtTimeAgo(conv.lastMessageAt)}</span>
+          <span style={{ fontSize: 14, fontWeight: unread ? 800 : 700, color: DS.bodyText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+          <span style={{ fontSize: 11, color: unread ? DS.brand : DS.dimText, fontWeight: unread ? 700 : 400, flexShrink: 0 }}>{fmtTimeAgo(conv.lastMessageAt)}</span>
         </div>
-        <div style={{ fontSize: 12, color: DS.dimText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{preview}</div>
+        <div style={{ fontSize: 12, color: unread ? DS.bodyText : DS.dimText, fontWeight: unread ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{preview}</div>
       </div>
+      {unread && <span aria-label="Unread" style={{ width: 10, height: 10, borderRadius: "50%", background: DS.brand, flexShrink: 0 }} />}
     </button>
   );
 }
@@ -932,18 +943,11 @@ export default function OrgMessagingPage() {
     <div style={{ minHeight: "100vh", background: DS.pageBg, color: DS.bodyText, display: "flex", flexDirection: "column" }}>
     
       {/* ── Page header ───────────────────────────────────────────────────── */}
-      <div style={{ background: DS.brand, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", flexShrink: 0 }}>
-        <div>
-          <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", color: "rgba(255,255,255,0.5)", marginBottom: 3 }}>Coach</p>
-          <h1 style={{ fontSize: 20, fontWeight: 900, color: "#fff", margin: 0, letterSpacing: "-0.3px" }}>Command Center</h1>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>
-            {posts.length} posts · {conversations.length} conversations · {leaderboard.length} athletes tracked
-          </p>
-        </div>
-        <button type="button" onClick={() => router.push("/org/workouts-calendar")}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 8, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
-          ← Dashboard
-        </button>
+      <div style={{ flexShrink: 0 }}>
+        <PageHeader
+          title="Messaging"
+          subtitle={`${conversations.length} conversation${conversations.length === 1 ? "" : "s"} · ${posts.length} team post${posts.length === 1 ? "" : "s"}`}
+        />
       </div>
 
       {showBillingWarning && (
@@ -961,7 +965,7 @@ export default function OrgMessagingPage() {
       )}
 
       {/* ── Tab bar ───────────────────────────────────────────────────────── */}
-      <div style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, display: "flex", flexShrink: 0 }}>
+      <div role="tablist" aria-label="Messaging sections" style={{ background: DS.cardBg, borderBottom: `1px solid ${DS.border}`, display: "flex", flexShrink: 0, padding: "0 8px", overflowX: "auto" }}>
         {TABS.map(({ key, label, icon: Icon, accent, count }) => {
           const active = activeTab === key;
           return (

@@ -1,95 +1,66 @@
 // components/org/workoutsCalendar/WorkoutCard.jsx
 "use client";
 
-import { ArrowRight, Users, Dumbbell } from "lucide-react";
-import { DS } from "@/components/org/dashboard/DashboardUI";
+import { Users, Dumbbell } from "lucide-react";
+import { APP } from "@/components/app/ui";
 import { titleSport } from "@/lib/org/workoutsCalendar/sports";
 
 function statusTone(s) {
   const v = String(s || "").toLowerCase();
-  if (v.includes("complete"))  return { bg: DS.safeBg,    border: DS.safeBorder,    text: DS.safe    };
-  if (v.includes("assign"))    return { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution };
-  if (v.includes("pending"))   return { bg: DS.cautionBg, border: DS.cautionBorder, text: DS.caution };
-  if (v.includes("reject"))    return { bg: DS.bannedBg,  border: DS.bannedBorder,  text: DS.banned  };
-  return { bg: DS.pageBg, border: DS.border, text: DS.dimText };
+  if (v.includes("complete")) return { dot: "#15803D", label: "Completed" };
+  if (v.includes("reject"))   return { dot: "#B91C1C", label: "Needs changes" };
+  if (v.includes("pending"))  return { dot: "#B45309", label: "In review" };
+  if (v.includes("assign"))   return { dot: "#D97706", label: "Assigned" };
+  return { dot: APP.faint, label: s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : "Draft" };
 }
 
+const CARD_CSS = `
+  .wc { width: 100%; display: block; text-align: left; border: 1px solid ${APP.line}; border-radius: 8px; background: #fff;
+    cursor: pointer; font-family: ${APP.font}; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s; }
+  .wc:hover { border-color: #CBD5E1; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }
+  .wc:focus-visible { outline: 2px solid ${APP.brand}; outline-offset: 1px; }
+  .wc-title { margin: 0; color: ${APP.ink}; font-weight: 600; line-height: 1.3; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .wc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; font-size: 12px; color: ${APP.muted}; }
+  .wc-meta span { display: inline-flex; align-items: center; gap: 4px; }
+`;
+
 export default function WorkoutCard({ w, onOpen, compact = false }) {
-  const title       = w?.Title       || "Workout";
-  const status      = w?.Status      || "assigned";
+  const title       = w?.Title || "Workout";
   const sport       = titleSport(w?.Sport || "");
   const athletes    = Number(w?.athleteCount || 0);
-  const items       = Number(w?.itemCount    || 0);
-  const athleteName = String(w?.athleteName  || "").trim();
-  const tone        = statusTone(status);
+  const items       = Number(w?.itemCount || 0);
+  const athleteName = String(w?.athleteName || "").trim();
+  const tone        = statusTone(w?.Status || "assigned");
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen?.(w)}
-      className="w-full text-left transition-colors"
-      style={{
-        backgroundColor: DS.cardBg,
-        border:          `1px solid ${DS.border}`,
-        borderLeft:      `3px solid ${tone.text}`,
-        padding:         compact ? "7px 10px" : "10px 12px",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; }}
-      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.cardBg; }}
-      title="Open workout"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-
-          {/* Title */}
-          <p
-            className="font-bold truncate"
-            style={{ color: DS.bodyText, fontSize: compact ? "11px" : "12px" }}
-          >
-            {title}
+    <>
+      <style>{CARD_CSS}</style>
+      <button
+        type="button"
+        className="wc"
+        onClick={() => onOpen?.(w)}
+        style={{ padding: compact ? "8px 10px" : "10px 12px" }}
+        aria-label={`${title}, ${tone.label}${sport ? `, ${sport}` : ""}`}
+      >
+        <p className="wc-title" style={{ fontSize: compact ? 13 : 14 }}>{title}</p>
+        {athleteName && (
+          <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 600, color: APP.brand, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {athleteName}
           </p>
-
-          {/* Athlete name - shown when available */}
-          {athleteName && (
-            <p
-              className="truncate font-semibold"
-              style={{ color: DS.brand, fontSize: "11px", marginTop: "1px" }}
-            >
-              {athleteName}
-            </p>
-          )}
-
-          {/* Meta row */}
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {/* Status pill */}
-            <span
-              className="px-1.5 py-0.5 font-bold uppercase tracking-wide"
-              style={{ backgroundColor: tone.bg, color: tone.text, border: `1px solid ${tone.border}`, fontSize: "10px" }}
-            >
-              {status}
-            </span>
-
-            {sport && (
-              <span className="text-xs font-bold" style={{ color: DS.dimText }}>{sport}</span>
-            )}
-
-            <span className="inline-flex items-center gap-1 text-xs" style={{ color: DS.dimText }}>
-              <Users className="w-3 h-3" />
-              {athletes}
-            </span>
-
-            <span className="inline-flex items-center gap-1 text-xs" style={{ color: DS.dimText }}>
-              <Dumbbell className="w-3 h-3" />
-              {items}
-            </span>
-          </div>
+        )}
+        <div className="wc-meta">
+          <span style={{ color: APP.text, fontWeight: 600 }}>
+            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: tone.dot }} />
+            {tone.label}
+          </span>
+          {sport && !compact && <span>{sport}</span>}
+          <span title={`${athletes} athlete${athletes === 1 ? "" : "s"}`}><Users size={12} aria-hidden="true" />{athletes}</span>
+          {/* Narrow week columns: keep the card to two lines */}
+          {!compact && <span title={`${items} exercise${items === 1 ? "" : "s"}`}><Dumbbell size={12} aria-hidden="true" />{items}</span>}
         </div>
-
-        <ArrowRight
-          className="shrink-0 mt-0.5"
-          style={{ width: compact ? "12px" : "14px", height: compact ? "12px" : "14px", color: DS.dimText }}
-        />
-      </div>
-    </button>
+      </button>
+    </>
   );
 }

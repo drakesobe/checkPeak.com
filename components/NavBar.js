@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useAuthContext } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import NavBarLoginModal from "@/components/NavBarLoginModal";
+import { buildMenu, splitColumns, MenuSection, MENU_STYLE, useNavCounts, useTrainerSlug, isShellRoute } from "@/components/nav/menu";
 
 function getInitials(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -29,62 +30,60 @@ const MOBILE_PUBLIC = [
   { name: "Pricing", href: "/pricing" },
 ];
 
-// ─── Dropdown nav primitives ──────────────────────────────────────────────────
-
-function NavLink({ href, label, badge, onClick, external, isActiveFn }) {
-  const [hov, setHov] = useState(false);
-  const active = isActiveFn?.(href) ?? false;
+function AccountButtons({ onClose, onLogout }) {
   return (
-    <Link
-      href={href}
-      onClick={onClick}
-      target={external ? "_blank" : undefined}
-      rel={external ? "noopener noreferrer" : undefined}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        display: "flex", alignItems: "center",
-        padding: "9px 20px 9px 18px",
-        borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}`,
-        fontSize: 14, fontWeight: active ? 700 : 500,
-        color: active ? "#fff" : hov ? "#fff" : "rgba(255,255,255,0.62)",
-        textDecoration: "none",
-        transition: "color 0.12s, border-color 0.12s",
-        letterSpacing: "0.01em",
-      }}
-    >
-      <span style={{ flex: 1 }}>{label}</span>
-      {badge && (
-        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4FABFF" }}>
-          {badge}
-        </span>
-      )}
-    </Link>
-  );
-}
-
-function NavSection({ children, color = "rgba(255,255,255,0.28)" }) {
-  return (
-    <div style={{ padding: "14px 20px 4px", fontSize: 10, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color }}>
-      {children}
+    <div style={{ display: "flex", gap: 8 }}>
+      <Link
+        href="/account" onClick={onClose}
+        style={{ flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, textDecoration: "none" }}
+      >
+        Account
+      </Link>
+      <button
+        type="button" onClick={onLogout}
+        style={{ flex: 1, minHeight: 40, borderRadius: 8, background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.22)", color: "#FF7A7A", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+      >
+        Sign out
+      </button>
     </div>
   );
 }
 
-function NavDivider() {
-  return <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "8px 0" }} />;
+function Identity({ name, email, roleLabel, orgName, avatarUrl, size = 40 }) {
+  const color = avatarColor(name);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ width: size, height: size, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+        {avatarUrl
+          ? <img src={avatarUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : <span style={{ fontSize: 14, fontWeight: 900, color }}>{getInitials(name)}</span>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
+        {roleLabel && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4FABFF", flexShrink: 0 }} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {roleLabel}{orgName && orgName !== name ? ` · ${orgName}` : ""}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// ─── Profile dropdown ─────────────────────────────────────────────────────────
+// ─── Profile dropdown (desktop) ───────────────────────────────────────────────
 
-function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug, isActiveFn, avatarUrl = "" }) {
-  const name     = user?.Name || user?.name || "Profile";
-  const email    = user?.Email || user?.email || "";
-  const color    = avatarColor(name);
-  const initials = getInitials(name);
+// compact: the sidebar already shows the navigation, so the dropdown only holds the account
+function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, onClose, onLogout, trainerSlug, isActiveFn, avatarUrl = "", counts, compact = false }) {
+  const name  = user?.Name || user?.name || "Profile";
+  const email = user?.Email || user?.email || "";
   const isOrgAdmin = role === "organization" || role === "admin";
-
-  const nl = (props) => <NavLink {...props} onClick={onClose} isActiveFn={isActiveFn} />;
+  const sections = compact ? [] : buildMenu({ isOrgSide, isAthlete, isOrgAdmin, isAdmin, trainerSlug });
+  const twoColumns = sections.length >= 3;
+  const columns = twoColumns ? splitColumns(sections) : [sections];
 
   return (
     <motion.div
@@ -94,121 +93,33 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
       transition={{ duration: 0.16, ease: "easeOut" }}
       style={{
         position: "absolute", right: 0, marginTop: 8,
-        width: 280, borderRadius: 14,
+        width: twoColumns ? 540 : 300, maxWidth: "calc(100vw - 24px)", borderRadius: 14,
         maxHeight: "calc(100vh - 90px)",
         display: "flex", flexDirection: "column",
         background: "#0D1119",
-        border: "1px solid rgba(255,255,255,0.08)",
+        border: "1px solid rgba(255,255,255,0.1)",
         boxShadow: "0 24px 64px rgba(0,0,0,0.65), 0 4px 16px rgba(0,0,0,0.35)",
         overflow: "hidden", zIndex: 200,
       }}
-      role="menu"
     >
-      {/* ── Identity — pinned top ── */}
-      <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-            {avatarUrl
-              ? <img src={avatarUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              : <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
-            }
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.42)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#4FABFF", flexShrink: 0 }} />
-              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.38)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                {roleLabel}{orgName ? ` · ${orgName}` : ""}
-              </span>
+      <style>{MENU_STYLE}</style>
+
+      <div style={{ padding: "16px 18px 14px", borderBottom: sections.length ? "1px solid rgba(255,255,255,0.08)" : "none", flexShrink: 0 }}>
+        <Identity name={name} email={email} roleLabel={roleLabel} orgName={orgName} avatarUrl={avatarUrl} />
+      </div>
+
+      {sections.length > 0 && (
+        <nav aria-label="Main menu" style={{ overflowY: "auto", flex: 1, padding: "14px 10px", display: "grid", gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, gap: "0 10px" }}>
+          {columns.map((col, ci) => (
+            <div key={ci} style={{ display: "flex", flexDirection: "column", gap: 16, paddingLeft: ci ? 10 : 0, borderLeft: ci ? "1px solid rgba(255,255,255,0.07)" : "none" }}>
+              {col.map((s) => <MenuSection key={s.title} section={s} isActive={isActiveFn} onClose={onClose} counts={counts} />)}
             </div>
-          </div>
-        </div>
-      </div>
+          ))}
+        </nav>
+      )}
 
-      {/* ── Scrollable nav body ── */}
-      <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none" }}>
-
-        {/* Org / Coach context */}
-        {isOrgSide && (
-          <>
-            <NavSection>Coaching</NavSection>
-            {nl({ href: "/org/film",              label: "Film",         badge: "Beta" })}
-            {nl({ href: "/org/plays",             label: "Play Library"               })}
-            {nl({ href: "/org/workouts-calendar", label: "Schedule"                   })}
-            {nl({ href: "/org/review-queue",      label: "Review Queue"               })}
-
-            <NavDivider />
-
-            <NavSection>Team</NavSection>
-            {nl({ href: "/org/messaging",     label: "Messaging" })}
-            {nl({ href: "/org/prescriptions", label: "Nutrition"  })}
-            {isOrgAdmin && nl({ href: "/org/athletes", label: "Athletes & Stats" })}
-            {isAdmin    && nl({ href: "/org/trainers", label: "Trainers" })}
-
-            <NavDivider />
-            <NavSection color="rgba(70,118,155,0.9)">Studio</NavSection>
-            {nl({ href: "/commercial/dashboard", label: "Dashboard" })}
-            {trainerSlug && nl({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
-
-            <NavDivider />
-
-            <NavSection>Tools</NavSection>
-            {nl({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
-            {nl({ href: "/search",                  label: "Search"        })}
-            {nl({ href: "/smartstack-compare",      label: "SmartStack"    })}
-            {nl({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
-            {nl({ href: "/info",                    label: "Info"          })}
-            <div style={{ height: 10 }} />
-          </>
-        )}
-
-        {/* Athlete context */}
-        {isAthlete && (
-          <>
-            <NavSection>My Space</NavSection>
-            {nl({ href: "/dashboard",          label: "Dashboard"          })}
-            {nl({ href: "/athlete/today",      label: "Today"              })}
-            {nl({ href: "/athlete/journal",    label: "Journal"            })}
-            {nl({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
-            {nl({ href: "/athlete/stats",      label: "Stats"              })}
-            <NavDivider />
-
-            <NavSection>Supplement Check</NavSection>
-            {nl({ href: "/nutrition-label-scanner", label: "Scan a Label"      })}
-            {nl({ href: "/search",                  label: "Search Ingredients" })}
-            {nl({ href: "/scans",                   label: "My Scans"          })}
-
-            <NavDivider />
-
-            <NavSection color="rgba(255,123,53,0.85)">Discover</NavSection>
-            {nl({ href: "/trainers",           label: "Marketplace"  })}
-            {nl({ href: "/smartstack-compare", label: "SmartStack"   })}
-            {nl({ href: "/athlete/libraries",  label: "My Libraries" })}
-            <div style={{ height: 10 }} />
-          </>
-        )}
-
-      </div>
-
-      {/* ── Footer — pinned bottom ── */}
-      <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", gap: 8, flexShrink: 0 }}>
-        <Link
-          href="/account" onClick={onClose}
-          style={{ flex: 1, padding: "9px 12px", borderRadius: 7, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center", transition: "all 0.12s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
-        >
-          Account
-        </Link>
-        <button
-          type="button" onClick={onLogout}
-          style={{ flex: 1, padding: "9px 12px", borderRadius: 7, background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.22)", color: "#FF7A7A", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.12s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(217,43,58,0.2)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(217,43,58,0.1)"; }}
-        >
-          Sign out
-        </button>
+      <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+        <AccountButtons onClose={onClose} onLogout={onLogout} />
       </div>
     </motion.div>
   );
@@ -216,50 +127,11 @@ function ProfileDropdown({ user, role, roleLabel, orgName, isOrgSide, isAthlete,
 
 // ─── Mobile menu ──────────────────────────────────────────────────────────────
 
-function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug, avatarUrl = "" }) {
-  const name     = user?.Name || user?.name || "Profile";
-  const email    = user?.Email || user?.email || "";
-  const color    = avatarColor(name);
-  const initials = getInitials(name);
+function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, isActive, onClose, onLogout, loggedIn, openAuthModal, trainerSlug, avatarUrl = "", counts }) {
+  const name  = user?.Name || user?.name || "Profile";
+  const email = user?.Email || user?.email || "";
   const isOrgAdmin = role === "organization" || role === "admin";
-
-  const ml = ({ href, label, badge, external }) => {
-    const active = isActive(href);
-    return (
-      <Link
-        key={href}
-        href={href}
-        onClick={onClose}
-        target={external ? "_blank" : undefined}
-        rel={external ? "noopener noreferrer" : undefined}
-        style={{
-          display: "flex", alignItems: "center",
-          padding: "12px 20px 12px 18px",
-          borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}`,
-          fontSize: 16, fontWeight: active ? 700 : 500,
-          color: active ? "#fff" : "rgba(255,255,255,0.65)",
-          textDecoration: "none",
-        }}
-      >
-        <span style={{ flex: 1 }}>{label}</span>
-        {badge && (
-          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4FABFF" }}>
-            {badge}
-          </span>
-        )}
-      </Link>
-    );
-  };
-
-  const mSection = (label, color = "rgba(255,255,255,0.28)") => (
-    <div style={{ padding: "16px 20px 4px", fontSize: 10, fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color }}>
-      {label}
-    </div>
-  );
-
-  const mDivider = () => (
-    <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "6px 0" }} />
-  );
+  const sections = buildMenu({ isOrgSide, isAthlete, isOrgAdmin, isAdmin, trainerSlug });
 
   return (
     <motion.div
@@ -267,27 +139,24 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
       animate={{ opacity: 1, height: "auto" }}
       exit={{    opacity: 0, height: 0    }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      style={{ background: "#0D1119", borderTop: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}
+      style={{ background: "#0D1119", borderTop: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}
     >
+      <style>{MENU_STYLE}</style>
       <div style={{
-        paddingBottom: "calc(env(safe-area-inset-bottom) + 72px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
         maxHeight: "calc(100dvh - 64px)",
         overflowY: "auto",
         WebkitOverflowScrolling: "touch",
       }}>
-
         {!loggedIn ? (
           <>
-            {MOBILE_PUBLIC.map(tab => {
-              const active = isActive(tab.href);
-              return (
-                <Link key={tab.href} href={tab.href} onClick={onClose}
-                  style={{ display: "flex", alignItems: "center", padding: "14px 20px", fontSize: 16, fontWeight: active ? 700 : 500, color: active ? "#fff" : "rgba(255,255,255,0.6)", textDecoration: "none", borderLeft: `2px solid ${active ? "#4FABFF" : "transparent"}` }}>
+            <div style={{ padding: "12px 10px 4px" }}>
+              {MOBILE_PUBLIC.map((tab) => (
+                <Link key={tab.href} href={tab.href} onClick={onClose} className={`cp-mi${isActive(tab.href) ? " is-active" : ""}`} style={{ minHeight: 48, fontSize: 16 }}>
                   {tab.name}
                 </Link>
-              );
-            })}
-            {mDivider()}
+              ))}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 16px" }}>
               <Link href="/book" onClick={onClose}
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px", background: "#46769B", color: "#fff", fontSize: 13, fontWeight: 800, textDecoration: "none", letterSpacing: "0.07em" }}>
@@ -304,79 +173,14 @@ function MobileMenu({ user, role, roleLabel, orgName, isOrgSide, isAthlete, isAd
           </>
         ) : (
           <>
-            <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: "50%", background: color + "20", border: `1.5px solid ${color}60`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-                  {avatarUrl
-                    ? <img src={avatarUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 14, fontWeight: 900, color }}>{initials}</span>
-                  }
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</div>
-                </div>
-              </div>
+            <div style={{ padding: "16px 18px 14px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <Identity name={name} email={email} roleLabel={roleLabel} orgName={orgName} avatarUrl={avatarUrl} />
             </div>
-
-            {isOrgSide && (
-              <>
-                {mSection("Coaching")}
-                {ml({ href: "/org/film",              label: "Film",         badge: "Beta" })}
-                {ml({ href: "/org/plays",             label: "Play Library"               })}
-                {ml({ href: "/org/workouts-calendar", label: "Schedule"                   })}
-                {ml({ href: "/org/review-queue",      label: "Review Queue"               })}
-                {mDivider()}
-                {mSection("Team")}
-                {ml({ href: "/org/messaging",     label: "Messaging" })}
-                {ml({ href: "/org/prescriptions", label: "Nutrition"  })}
-                {isOrgAdmin && ml({ href: "/org/athletes", label: "Athletes & Stats" })}
-                {isAdmin    && ml({ href: "/org/trainers", label: "Trainers" })}
-                {mDivider()}
-                {mSection("Studio", "rgba(70,118,155,0.9)")}
-                {ml({ href: "/commercial/dashboard", label: "Dashboard" })}
-                {trainerSlug && ml({ href: `/trainer/${trainerSlug}`, label: "Public Profile", external: true })}
-                {mDivider()}
-                {mSection("Tools")}
-                {ml({ href: "/nutrition-label-scanner", label: "Label Scanner" })}
-                {ml({ href: "/search",                  label: "Search"        })}
-                {ml({ href: "/smartstack-compare",      label: "SmartStack"    })}
-                {ml({ href: "/compliance/ncaa",         label: "NCAA Rules"    })}
-                {ml({ href: "/info",                    label: "Info"          })}
-              </>
-            )}
-
-            {isAthlete && (
-              <>
-                {mSection("My Space")}
-                {ml({ href: "/dashboard",          label: "Dashboard"           })}
-                {ml({ href: "/athlete/today",      label: "Today"               })}
-                {ml({ href: "/athlete/journal",    label: "Journal"             })}
-                {ml({ href: "/athlete/profile",    label: "Recruiting Profile", badge: "New" })}
-                {ml({ href: "/athlete/stats",      label: "Stats"               })}
-                {mDivider()}
-                {mSection("Supplement Check")}
-                {ml({ href: "/nutrition-label-scanner", label: "Scan a Label"       })}
-                {ml({ href: "/search",                  label: "Search Ingredients" })}
-                {ml({ href: "/scans",                   label: "My Scans"           })}
-                {mDivider()}
-                {mSection("Discover", "rgba(255,123,53,0.85)")}
-                {ml({ href: "/trainers",           label: "Marketplace"  })}
-                {ml({ href: "/smartstack-compare", label: "SmartStack"   })}
-                {ml({ href: "/athlete/libraries",  label: "My Libraries" })}
-              </>
-            )}
-
-            {mDivider()}
-            <div style={{ display: "flex", gap: 8, padding: "10px 16px 12px" }}>
-              <Link href="/account" onClick={onClose}
-                style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
-                Account
-              </Link>
-              <button type="button" onClick={onLogout}
-                style={{ flex: 1, padding: "11px", background: "rgba(217,43,58,0.1)", border: "1px solid rgba(217,43,58,0.22)", color: "#FF7A7A", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                Sign out
-              </button>
+            <nav aria-label="Main menu" style={{ display: "flex", flexDirection: "column", gap: 20, padding: "16px 10px 18px" }}>
+              {sections.map((s) => <MenuSection key={s.title} section={s} isActive={isActive} onClose={onClose} large counts={counts} />)}
+            </nav>
+            <div style={{ padding: "12px 16px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <AccountButtons onClose={onClose} onLogout={onLogout} />
             </div>
           </>
         )}
@@ -397,8 +201,8 @@ export default function NavBar() {
   const [profileOpen,     setProfileOpen]     = useState(false);
   const [loginModalOpen,  setLoginModalOpen]  = useState(false);
   const [defaultAuthTab,  setDefaultAuthTab]  = useState("login");
-  const [trainerSlug,     setTrainerSlug]     = useState("");
   const [scrolled,        setScrolled]        = useState(false);
+  const [wideScreen,      setWideScreen]      = useState(false);
   const [navAvatarUrl,    setNavAvatarUrl]    = useState("");
 
   // Pages with dark editorial backgrounds — nav switches to transparent/dark mode
@@ -425,7 +229,8 @@ export default function NavBar() {
       ro.observe(navRef.current);
     }
     return () => { window.removeEventListener("resize", setVar); ro?.disconnect(); };
-  }, [isMounted]);
+    // Re-attach when the route/user changes: coach app pages swap in a different (slimmer) header element
+  }, [isMounted, pathname, user]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 48);
@@ -465,13 +270,30 @@ export default function NavBar() {
     String(user?.OrgName || user?.OrganizationName || user?.organizationName || user?.OrganizationDisplay || user?.organizationDisplay || "").trim()
   ), [user]);
 
+  const trainerSlug = useTrainerSlug(isOrgSide && !!user);
+  const counts      = useNavCounts(isOrgSide && !!user);
+
+  // Matches the sidebar breakpoint in AppShell
   useEffect(() => {
-    if (!isOrgSide || !user) return;
-    fetch("/api/commercial/trainer", { credentials: "include" })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.trainer?.fields?.slug) setTrainerSlug(data.trainer.fields.slug); })
-      .catch(() => {});
-  }, [isOrgSide, user]);
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setWideScreen(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // The sidebar already lists every destination, so the avatar dropdown only holds the account
+  const compactDropdown = wideScreen && isShellRoute(pathname, isOrgSide && !!user);
+
+  // "More" in the phone/tablet tab bar opens the full menu
+  useEffect(() => {
+    const open = () => {
+      if (window.innerWidth < 768) setMenuOpen(true);
+      else setProfileOpen(true);
+    };
+    window.addEventListener("cp:open-app-menu", open);
+    return () => window.removeEventListener("cp:open-app-menu", open);
+  }, []);
 
   useEffect(() => {
     if (!isMounted || !isAthlete) return;
@@ -530,12 +352,13 @@ export default function NavBar() {
 
   const sharedRoleProps = { role, roleLabel, orgName, isOrgSide, isAthlete, isAdmin, trainerSlug };
 
+  // Org accounts are named after the school/team, so show the whole name; people show a first name
   const profileButtonLabel = useMemo(() => {
     if (!loggedIn) return "Login";
-    const name  = user?.Name || user?.name || "";
-    const first = name.trim().split(/\s+/)[0];
-    return first || "Profile";
-  }, [loggedIn, user]);
+    const name = String(user?.Name || user?.name || "").trim();
+    if (isOrgSide) return name || orgName || "Account";
+    return name.split(/\s+/)[0] || "Profile";
+  }, [loggedIn, user, isOrgSide, orgName]);
 
   // Nav container styles — dark pages start transparent, solidify on scroll
   const navStyle = isDark ? {
@@ -583,6 +406,89 @@ export default function NavBar() {
     burgerBorder:"#E5E7EB",
     burgerBg:    menuOpen ? "#111827" : "#ffffff",
   };
+
+  // ── Coach app pages: slim header that pairs with the AppShell sidebar / tab bar ──
+  const shellRoute = isMounted && isShellRoute(pathname, isOrgSide && loggedIn);
+
+  if (shellRoute) {
+    const name = user?.Name || user?.name || "";
+    const color = avatarColor(name);
+    const toggleAccount = () => {
+      if (window.innerWidth < 768) setMenuOpen((v) => !v);
+      else setProfileOpen((v) => !v);
+    };
+    return (
+      <>
+        <style>{`
+          .cp-apphdr { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 12px 0 6px; }
+          .cp-apphdr-logo { display: inline-flex; align-items: center; flex-shrink: 0; text-decoration: none; }
+          .cp-apphdr-name { display: none; }
+          @media (min-width: 1024px) {
+            .cp-apphdr { height: 56px; padding: 0 20px 0 6px; }
+            .cp-apphdr-name { display: inline; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          }
+        `}</style>
+        <nav ref={navRef} aria-label="Main navigation" style={{ position: "sticky", top: 0, zIndex: 150, background: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
+          <div className="cp-apphdr">
+            <Link href="/" className="cp-apphdr-logo" aria-label="CheckPeak home">
+              <Logo size="xs" />
+            </Link>
+
+            <div className="relative" style={{ marginLeft: "auto" }}>
+              <button
+                type="button"
+                onClick={toggleAccount}
+                aria-expanded={profileOpen || menuOpen}
+                aria-haspopup="true"
+                aria-label={`Account menu for ${name || "your account"}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 40, padding: "4px 6px 4px 4px", border: "1px solid transparent", borderRadius: 999, background: profileOpen || menuOpen ? "#EEF3F9" : "transparent", color: "#1A2535", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                <span style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", background: color + "22", border: `1.5px solid ${color}88`, color, fontSize: 11, fontWeight: 800 }}>
+                  {getInitials(name)}
+                </span>
+                <span className="cp-apphdr-name">{profileButtonLabel}</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true" style={{ opacity: 0.45, transform: profileOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+                  <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <AnimatePresence>
+                {profileOpen && (
+                  <ProfileDropdown
+                    user={user}
+                    {...sharedRoleProps}
+                    avatarUrl={navAvatarUrl}
+                    onClose={() => setProfileOpen(false)}
+                    onLogout={logoutAndClose}
+                    isActiveFn={isActive}
+                    counts={counts}
+                    compact={compactDropdown}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {menuOpen && (
+              <div className="md:hidden">
+                <MobileMenu
+                  user={user}
+                  {...sharedRoleProps}
+                  avatarUrl={navAvatarUrl}
+                  isActive={isActive}
+                  loggedIn={loggedIn}
+                  onClose={() => setMenuOpen(false)}
+                  onLogout={logoutAndClose}
+                  openAuthModal={openAuthModal}
+                  counts={counts}
+                />
+              </div>
+            )}
+          </AnimatePresence>
+        </nav>
+      </>
+    );
+  }
 
   return (
     <>
@@ -677,7 +583,10 @@ export default function NavBar() {
                         }
                       </div>
                     )}
-                    {profileButtonLabel}
+                    <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profileButtonLabel}</span>
+                    {counts.reviewQueue + counts.messages > 0 && compactDropdown === false && isOrgSide && (
+                      <span aria-label="Items waiting" style={{ width: 8, height: 8, borderRadius: "50%", background: "#DC2626", flexShrink: 0 }} />
+                    )}
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.45, transform: profileOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
                       <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -692,6 +601,8 @@ export default function NavBar() {
                         onClose={() => setProfileOpen(false)}
                         onLogout={logoutAndClose}
                         isActiveFn={isActive}
+                        counts={counts}
+                        compact={compactDropdown}
                       />
                     )}
                   </AnimatePresence>
@@ -747,6 +658,7 @@ export default function NavBar() {
                 onClose={() => setMenuOpen(false)}
                 onLogout={logoutAndClose}
                 openAuthModal={openAuthModal}
+                counts={counts}
               />
             </div>
           )}

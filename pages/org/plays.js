@@ -5,9 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { Toaster } from "react-hot-toast";
+import { PageHeader, APP } from "@/components/app/ui";
 import {
-  ArrowLeft, Search, Play, Filter, ChevronDown, X,
-  Film, Tag, Loader2, ArrowRight, Pencil,
+  Search, Play, Filter, ChevronDown, X,
+  Film, Loader2, ArrowRight, Pencil, Clapperboard,
 } from "lucide-react";
 
 const DS = {
@@ -337,44 +338,31 @@ export default function PlaysPage() {
         * { box-sizing: border-box; }
       `}</style>
 
-      <div style={{ minHeight: "100vh", background: DS.pageBg, fontFamily: "system-ui, sans-serif" }}>
+      <div style={{ minHeight: "100vh", background: APP.canvas, fontFamily: APP.font }}>
 
         {/* ── Sticky header ── */}
-        <div style={{
-          background: DS.cardBg, borderBottom: `1px solid ${DS.border}`,
-          padding: "13px 20px", position: "sticky", top: 0, zIndex: 100,
-        }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 14 }}>
-            <button onClick={() => router.push("/org/film")}
-              style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: DS.labelText, fontSize: 13, padding: 0, flexShrink: 0 }}>
-              <ArrowLeft size={15} /> Films
-            </button>
-            <div style={{ width: 1, height: 18, background: DS.border, flexShrink: 0 }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-              <Tag size={16} color={DS.brand} />
-              <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: DS.bodyText }}>Play Library</h1>
-              {total > 0 && (
-                <span style={{ fontSize: 11, color: DS.dimText, fontWeight: 500 }}>{total.toLocaleString()} plays</span>
-              )}
-            </div>
-
-            {/* Search */}
-            <div style={{ position: "relative", width: 240 }}>
-              <Search size={12} color={DS.dimText} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+        <PageHeader
+          title="Play Library"
+          subtitle={total > 0 ? `${total.toLocaleString()} play${total === 1 ? "" : "s"} tagged across your film` : "Plays you tag in film show up here"}
+          secondaryActions={[{ label: "Film room", icon: Clapperboard, onClick: () => router.push("/org/film") }]}
+          toolbar={
+            <div style={{ position: "relative", width: "100%", maxWidth: 420 }}>
+              <Search size={15} color={APP.faint} aria-hidden="true" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               <input
                 ref={searchRef}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search plays, films, notes…"
+                aria-label="Search plays"
                 style={{
-                  width: "100%", padding: "7px 10px 7px 30px",
-                  border: `1px solid ${DS.border}`, borderRadius: 8,
-                  fontSize: 12, color: DS.bodyText, background: DS.pageBg, outline: "none",
+                  width: "100%", height: 38, padding: "0 12px 0 36px",
+                  border: `1px solid ${APP.line}`, borderRadius: 8,
+                  fontSize: 14, color: APP.ink, background: "#fff", outline: "none", fontFamily: APP.font,
                 }}
               />
             </div>
-          </div>
-        </div>
+          }
+        />
 
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 20px" }}>
 

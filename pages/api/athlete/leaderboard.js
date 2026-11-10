@@ -1,38 +1,13 @@
 // pages/api/athlete/leaderboard.js
-// GET — leaderboard for the athlete's own org.
-// Reads the athlete's org_token from their profile, then runs same logic as /api/org/leaderboard.
-// Query: sport, season
+// GET — per-stat team leaderboards for the athlete's own org.
+// Query: sport, season, limit (entries per board; default 5, max 200)
+// Response: { ok, boards: [{ statKey, label, group, kind, better, qualifier, total,
+//             entries: [{ athleteToken, name, value, display, gp, verified, isMe, rank }], me }],
+//             myToken, teamGames }
+// Board logic lives in lib/teamBoards.js.
 
-import { requireUser }         from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
-import { SPORT_STATS }         from "@/lib/sportStats";
-
-const TOP_N = 5;
-
-const FOOTBALL_BOARDS = [
-  { statKey: "pass_yds",  label: "Pass Yards"  },
-  { statKey: "pass_td",   label: "Pass TDs"    },
-  { statKey: "rush_yds",  label: "Rush Yards"  },
-  { statKey: "rush_td",   label: "Rush TDs"    },
-  { statKey: "rec_yds",   label: "Rec Yards"   },
-  { statKey: "rec",       label: "Receptions"  },
-  { statKey: "tackles",   label: "Tackles"     },
-  { statKey: "sacks",     label: "Sacks"       },
-];
-
-function getBoardsForSport(sport) {
-  if (sport === "football") return FOOTBALL_BOARDS;
-  const cfg = SPORT_STATS[sport];
-  if (!cfg) return [];
-  let allFields = [];
-  if (cfg.type === "flat")    allFields = cfg.fields || [];
-  if (cfg.type === "grouped") for (const g of Object.values(cfg.groups || {})) allFields.push(...(g.fields || []));
-  if (cfg.type === "role")    for (const r of Object.values(cfg.roles  || {})) allFields.push(...(r.fields || []));
-  const displayKeys = cfg.display || allFields.slice(0, 6).map(f => f.key);
-  return displayKeys
-    .map(key => { const f = allFields.find(ff => ff.key === key); return f ? { statKey: key, label: f.label } : null; })
-    .filter(Boolean).slice(0, 8);
-}
+import { buildBoards }         from "@/lib/teamBoards";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -53,6 +28,7 @@ export default async function handler(req, res) {
 
   const sport  = String(req.query.sport  || "football").toLowerCase().trim();
   const season = Number(req.query.season || new Date().getFullYear());
+  const limit  = Math.min(Math.max(parseInt(String(req.query.limit || "5"), 10) || 5, 1), 200);
 
   try {
     // Get athlete's own org_token
@@ -80,7 +56,7 @@ export default async function handler(req, res) {
     // Fetch game logs
     const { data: logs, error: logErr } = await db
       .from("athlete_game_logs")
-      .select("athlete_token, stats, result, logged_by")
+      .select("athlete_token, stats, result, logged_by, role_key")
       .in("athlete_token", tokens)
       .ilike("sport", sport)
       .eq("season_year", season);
@@ -88,40 +64,11 @@ export default async function handler(req, res) {
     if (logErr) return res.status(500).json({ error: logErr.message });
     if (!logs?.length) return res.status(200).json({ ok: true, boards: [], myToken: athleteToken });
 
-    // Aggregate per athlete
-    const aggMap = {};
-    for (const log of logs) {
-      const tok = log.athlete_token;
-      if (!aggMap[tok]) aggMap[tok] = { stats: {}, gp: 0, wins: 0, coachCount: 0 };
-      const a = aggMap[tok];
-      a.gp++;
-      if (log.result === "W") a.wins++;
-      if (log.logged_by === "coach") a.coachCount++;
-      for (const [k, v] of Object.entries(log.stats || {})) {
-        a.stats[k] = (a.stats[k] || 0) + (Number(v) || 0);
-      }
-    }
+    const { boards, teamGames } = buildBoards({
+      sport, logs, tokenToName, myToken: athleteToken, limit,
+    });
 
-    const boardDefs = getBoardsForSport(sport);
-    const boards = boardDefs
-      .map(({ statKey, label }) => {
-        const entries = Object.entries(aggMap)
-          .map(([tok, agg]) => ({
-            athleteToken: tok,
-            name:         tokenToName[tok] || "Unknown",
-            value:        agg.stats[statKey] || 0,
-            gp:           agg.gp,
-            verified:     agg.coachCount > 0,
-            isMe:         tok === athleteToken,
-          }))
-          .filter(e => e.value > 0)
-          .sort((a, b) => b.value - a.value)
-          .slice(0, TOP_N);
-        return { statKey, label, entries };
-      })
-      .filter(b => b.entries.length > 0);
-
-    return res.status(200).json({ ok: true, boards, myToken: athleteToken });
+    return res.status(200).json({ ok: true, boards, myToken: athleteToken, teamGames });
   } catch (err) {
     console.error("[athlete/leaderboard]", err);
     return res.status(500).json({ error: err?.message });

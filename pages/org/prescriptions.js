@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
-import { X, Zap, Users, RefreshCw } from "lucide-react";
+import { X, Zap, Users, RefreshCw, ScanLine } from "lucide-react";
+import { PageHeader, APP } from "@/components/app/ui";
 
 import { DEFAULT_STRUCTURED } from "@/lib/org/prescriptions/prescriptions-utils";
 import { useOrgPrescriptionsData } from "@/hooks/org/useOrgPrescriptionsData";
@@ -356,7 +357,7 @@ export default function OrgPrescriptionsPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
+    <div className="min-h-screen" style={{ backgroundColor: APP.canvas, color: DS.bodyText, fontFamily: APP.font }}>
 
       {/* ── Billing warning ── */}
       {showBillingWarning && (
@@ -373,113 +374,18 @@ export default function OrgPrescriptionsPage() {
         </div>
       )}
 
+      <PageHeader
+        title="Nutrition"
+        subtitle={statusLoading ? "Updating plan status…" : (progressLabel || "Meal plans and macro targets for your roster")}
+        secondaryActions={[
+          { label: "Speed Mode", icon: Zap, onClick: () => setSpeedMode(true) },
+          { label: "Group Blast", icon: Users, onClick: () => setShowGroupBlast(true) },
+          { label: "Scan Queue", icon: ScanLine, onClick: () => router.push("/org/nutrition") },
+          { label: "Refresh", icon: RefreshCw, onClick: async () => { await refreshAll(); await refreshRosterPlanStatus(); } },
+        ]}
+      />
+
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-5">
-
-        {/* ── Page header ── */}
-        <div
-          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-5 py-4"
-          style={{ backgroundColor: DS.cardBg, borderTop: `3px solid ${DS.brand}`, border: `1px solid ${DS.border}` }}
-        >
-          <div>
-            <h1 className="text-xl font-black uppercase tracking-wide" style={{ color: DS.bodyText }}>
-              Nutrition Plans
-            </h1>
-            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-              <span className="text-xs" style={{ color: DS.dimText }}>
-                Logged in as{" "}
-                <span className="font-bold" style={{ color: DS.labelText }}>{orgName}</span>
-              </span>
-              {progressLabel && (
-                <span
-                  className="text-xs font-bold px-2 py-0.5 rounded-sm"
-                  style={{
-                    backgroundColor: activePlanCount === totalAthletes && totalAthletes > 0 ? DS.safeBg : DS.brandBg,
-                    color:           activePlanCount === totalAthletes && totalAthletes > 0 ? DS.safe  : DS.brand,
-                    border:          `1px solid ${activePlanCount === totalAthletes && totalAthletes > 0 ? "#A8DFB8" : DS.brandBorder}`,
-                  }}
-                >
-                  {progressLabel}
-                </span>
-              )}
-              {statusLoading && (
-                <span className="text-xs" style={{ color: DS.dimText }}>· updating…</span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Speed Mode toggle */}
-            <button
-              type="button"
-              onClick={() => setSpeedMode(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
-              style={{ border: `1px solid ${DS.brandBorder}`, backgroundColor: DS.brandBg, color: DS.brand }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brand; e.currentTarget.style.color = "#fff"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brandBg; e.currentTarget.style.color = DS.brand; }}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              Speed Mode
-            </button>
-
-            {/* Group blast */}
-            <button
-              type="button"
-              onClick={() => setShowGroupBlast(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
-              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
-            >
-              <Users className="h-3.5 w-3.5" />
-              Group Blast
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.push("/org/nutrition")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
-              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
-            >
-              Scan Queue
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.push("/org/workouts-calendar")}
-              className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
-              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
-            >
-              Dashboard
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.push("/org/athletes")}
-              className="px-3 py-1.5 text-xs font-bold rounded-sm transition-all"
-              style={{ border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg, color: DS.labelText }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DS.brandBorder; e.currentTarget.style.color = DS.brand; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = DS.border; e.currentTarget.style.color = DS.labelText; }}
-            >
-              Athletes
-            </button>
-
-            <button
-              type="button"
-              onClick={async () => { await refreshAll(); await refreshRosterPlanStatus(); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black uppercase tracking-wide rounded-sm transition-all"
-              style={{ backgroundColor: DS.brand, color: "#fff" }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = DS.brandLight; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = DS.brand; }}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </button>
-          </div>
-        </div>
 
         {/* ── Status banners ── */}
         {isBusy && (

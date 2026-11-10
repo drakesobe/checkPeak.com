@@ -3,46 +3,42 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  RefreshCcw,
-  X, ChevronDown, Bookmark, Users, Upload,
-} from "lucide-react";
+import { RefreshCcw, X, ChevronDown, Bookmark, Upload } from "lucide-react";
+import { PageHeader, APP } from "@/components/app/ui";
 
-function cx(...xs) { return xs.filter(Boolean).join(" "); }
-
-const DS = {
-  brand:       "#1E3A5F",
-  brandBg:     "#EEF3F9",
-  brandBorder: "#C0D0E0",
-  border:      "#E8ECF0",
-  pageBg:      "#F4F7FB",
-  cardBg:      "#FFFFFF",
-  bodyText:    "#1A2535",
-  labelText:   "#5A6A7D",
-  dimText:     "#9BA8B4",
-};
-
-function NavBtn({ onClick, disabled, children, title = "" }) {
+function SavedViews({ savedViews, onApplyView, onDeleteView }) {
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{
-        padding:    "7px 11px",
-        background: DS.cardBg,
-        border:     `1px solid ${DS.border}`,
-        color:      DS.labelText,
-        fontFamily: "inherit",
-        whiteSpace: "nowrap",
-      }}
-      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = DS.brandBg; }}
-      onMouseLeave={e => { e.currentTarget.style.background = DS.cardBg; }}
-    >
-      {children}
-    </button>
+    <div style={{ position: "relative" }}>
+      <button type="button" className="app-btn app-btn--secondary" onClick={() => setOpen((o) => !o)} aria-expanded={open} style={{ height: 32, fontSize: 13 }}>
+        <Bookmark size={15} aria-hidden="true" />
+        Saved views
+        <span className="app-btn-count">{savedViews.length}</span>
+        <ChevronDown size={14} aria-hidden="true" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div style={{ position: "fixed", inset: 0, zIndex: 10 }} onClick={() => setOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.14 }}
+              className="app-menu"
+              style={{ left: 0, right: "auto", zIndex: 20, minWidth: 240 }}
+            >
+              {savedViews.map((v) => (
+                <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button type="button" onClick={() => { onApplyView?.(v); setOpen(false); }}>{v.name}</button>
+                  <button type="button" onClick={() => onDeleteView?.(v.id)} aria-label={`Delete saved view ${v.name}`} style={{ width: 36, flex: "0 0 36px", justifyContent: "center", color: APP.muted }}>
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -53,140 +49,22 @@ export default function AthletesHeader({
   onApplyView,
   onDeleteView,
   onImport,
+  athleteCount,
 }) {
-  const [viewsOpen, setViewsOpen] = useState(false);
   const hasSavedViews = Array.isArray(savedViews) && savedViews.length > 0;
+  const subtitle = refreshing && !athleteCount
+    ? "Loading roster…"
+    : `${athleteCount || 0} athlete${athleteCount === 1 ? "" : "s"} on your roster`;
 
   return (
-    <div
-      className="rounded-2xl overflow-hidden shadow-sm"
-      style={{ background: DS.cardBg, border: `1px solid ${DS.border}` }}
-    >
-      {/* Top brand accent */}
-      <div className="h-1 w-full" style={{ background: `linear-gradient(to right, ${DS.brand}, #4A7FA5, transparent)` }} />
-
-      <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-
-        {/* Left: icon + title */}
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ background: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}
-          >
-            <Users className="w-4 h-4" style={{ color: DS.brand }} />
-          </span>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: DS.dimText }}>Org</p>
-            <h1 className="text-lg font-extrabold leading-none" style={{ color: DS.bodyText }}>Athletes</h1>
-          </div>
-        </div>
-
-        {/* Right: nav actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
-
-          {/* Upload roster */}
-          {onImport && (
-            <button
-              type="button"
-              onClick={onImport}
-              title="Import athletes from CSV or Excel"
-              className="inline-flex items-center gap-1.5 rounded-xl text-xs font-bold transition-all"
-              style={{
-                padding:    "7px 13px",
-                background: DS.brand,
-                border:     `1px solid ${DS.brand}`,
-                color:      "#fff",
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = "0.88"; }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Upload roster</span>
-            </button>
-          )}
-
-          {/* Saved views dropdown */}
-          {hasSavedViews && (
-            <div className="relative">
-              <NavBtn onClick={() => setViewsOpen(o => !o)} title="Saved views">
-                <Bookmark className="w-3.5 h-3.5" style={{ color: DS.brand }} />
-                <span className="hidden sm:inline">Views</span>
-                <span
-                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-black"
-                  style={{ background: DS.brandBg, color: DS.brand }}
-                >
-                  {savedViews.length}
-                </span>
-                <ChevronDown
-                  className="w-3 h-3 transition-transform"
-                  style={{
-                    transform: viewsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                    color:     DS.labelText,
-                  }}
-                />
-              </NavBtn>
-
-              <AnimatePresence>
-                {viewsOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setViewsOpen(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0,  scale: 1    }}
-                      exit={{   opacity: 0, y: -4, scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-full mt-2 z-20 rounded-xl overflow-hidden min-w-[220px] shadow-lg"
-                      style={{ background: DS.cardBg, border: `1px solid ${DS.border}` }}
-                    >
-                      <div className="px-3 py-2 border-b" style={{ borderColor: DS.border }}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DS.dimText }}>
-                          Saved views
-                        </p>
-                      </div>
-                      {savedViews.map(v => (
-                        <div
-                          key={v.id}
-                          className="flex items-center justify-between gap-2 px-3 py-2.5 transition-colors"
-                          style={{ borderBottom: `1px solid ${DS.border}` }}
-                          onMouseEnter={e => { e.currentTarget.style.background = DS.brandBg; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => { onApplyView?.(v); setViewsOpen(false); }}
-                            className="flex-1 text-left text-sm font-medium"
-                            style={{ color: DS.bodyText, background: "none", border: "none", cursor: "pointer" }}
-                            onMouseEnter={e => { e.currentTarget.style.color = DS.brand; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = DS.bodyText; }}
-                          >
-                            {v.name}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteView?.(v.id)}
-                            className="shrink-0 opacity-40 hover:opacity-100 transition-opacity"
-                            style={{ color: DS.labelText, background: "none", border: "none", cursor: "pointer" }}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* Refresh */}
-          <NavBtn onClick={onRefresh} disabled={refreshing} title="Refresh">
-            <RefreshCcw className={cx("w-3.5 h-3.5", refreshing ? "animate-spin" : "")} style={{ color: DS.brand }} />
-          </NavBtn>
-
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      title="Athletes"
+      subtitle={subtitle}
+      primaryAction={onImport ? { label: "Upload roster", icon: Upload, onClick: onImport } : null}
+      secondaryActions={[
+        { label: refreshing ? "Refreshing…" : "Refresh", icon: RefreshCcw, onClick: onRefresh, disabled: refreshing },
+      ]}
+      toolbar={hasSavedViews ? <SavedViews savedViews={savedViews} onApplyView={onApplyView} onDeleteView={onDeleteView} /> : null}
+    />
   );
 }

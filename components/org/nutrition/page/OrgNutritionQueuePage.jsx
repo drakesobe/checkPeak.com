@@ -778,7 +778,7 @@ function BatchActionBar({ selected, rows, onClear, onReminderSent }) {
   }
 
   return (
-    <div className="batch-bar" style={{ position:"fixed", bottom:0, left:0, right:0, background:"var(--ink)", borderTop:"1px solid rgba(255,255,255,0.08)", padding:"12px 20px", display:"flex", alignItems:"center", gap:12, zIndex:80 }}>
+    <div className="batch-bar" style={{ position:"fixed", bottom:"var(--app-bottom-nav-h, 0px)", left:"var(--app-sidebar-w, 0px)", right:0, background:"var(--ink)", borderTop:"1px solid rgba(255,255,255,0.08)", padding:"12px 20px", display:"flex", alignItems:"center", gap:12, zIndex:80 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
         <div style={{ width:24, height:24, borderRadius:"50%", background:"var(--brand)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"var(--font-display)", fontWeight:800, fontSize:12, color:"#fff", flexShrink:0 }}>{count}</div>
         <span style={{ fontFamily:"var(--font-display)", fontWeight:600, fontSize:14, color:"rgba(255,255,255,0.85)" }}>

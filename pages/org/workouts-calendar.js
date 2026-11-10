@@ -19,7 +19,7 @@ import {
   isoToDate, nyDateISO, startOfMonth, startOfWeek,
 } from "@/lib/org/workoutsCalendar/date";
 import { normalizeSport, titleSport } from "@/lib/org/workoutsCalendar/sports";
-import { DS } from "@/components/org/dashboard/DashboardUI";
+import { APP } from "@/components/app/ui";
 
 import { useBillingGate }   from "@/hooks/org/useBillingGate";
 import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
@@ -300,9 +300,11 @@ export default function WorkoutsCalendarPage() {
   const weekLabel = useMemo(() => {
     const s = isoToDate(range.start);
     const e = isoToDate(range.end);
-    const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
-    const left  = s.toLocaleString(undefined, { month: "short", day: "numeric" });
-    const right = e.toLocaleString(undefined, { month: sameMonth ? undefined : "short", day: "numeric", year: "numeric" });
+    // "Nov 8 – 14, 2026", "Nov 29 – Dec 5, 2026", "Dec 27, 2026 – Jan 2, 2027"
+    const sameYear  = s.getFullYear() === e.getFullYear();
+    const sameMonth = sameYear && s.getMonth() === e.getMonth();
+    const left  = s.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+    const right = sameMonth ? `${e.getDate()}, ${e.getFullYear()}` : e.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
     return `${left} – ${right}`;
   }, [range.start, range.end]);
 
@@ -332,12 +334,6 @@ export default function WorkoutsCalendarPage() {
     () => (selectedSports.length === 1 ? titleSport(selectedSports[0]) : ""),
     [selectedSports]
   );
-
-  const filterLabel = useMemo(() => {
-    if (!selectedSports.length) return "";
-    const names = selectedSports.map((s) => titleSport(s)).filter(Boolean);
-    return names.length <= 3 ? names.join(", ") : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
-  }, [selectedSports]);
 
   const rangeSummary = useMemo(() => {
     const list    = Array.isArray(workouts) ? workouts : [];
@@ -369,10 +365,10 @@ export default function WorkoutsCalendarPage() {
 
   return (
     <div style={{
-      backgroundColor: DS.pageBg,
+      backgroundColor: APP.canvas,
       minHeight: "100vh",
-      color: DS.bodyText,
-      fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif",
+      color: APP.ink,
+      fontFamily: APP.font,
     }}>
 
       {/* ── Responsive layout CSS ── */}
@@ -385,28 +381,32 @@ export default function WorkoutsCalendarPage() {
         .cal-main {
           width: 100%;
           min-width: 0;
-          padding: 16px 14px;
+          padding: 12px;
+        }
+        .cal-card {
+          background: ${APP.surface};
+          border: 1px solid ${APP.line};
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 1px 2px rgba(15,23,42,0.04);
         }
         .cal-sidebar {
           width: 100%;
-          border-top: 1px solid ${DS.border};
+          border-top: 1px solid ${APP.line};
+          background: ${APP.surface};
           min-height: 420px;
         }
-        @media (min-width: 900px) {
+        @media (min-width: 700px) { .cal-main { padding: 20px 24px; } }
+        @media (min-width: 1100px) {
           .cal-layout { flex-direction: row; }
-          .cal-main {
-            flex: 0 0 75%;
-            padding: 16px 20px;
-          }
+          .cal-main { flex: 1 1 auto; }
           .cal-sidebar {
-            flex: 0 0 25%;
-            min-width: 260px;
-            max-width: 360px;
+            flex: 0 0 320px;
             border-top: none;
-            border-left: 1px solid ${DS.border};
+            border-left: 1px solid ${APP.line};
             position: sticky;
-            top: 0;
-            height: 100vh;
+            top: var(--app-header-h, 56px);
+            height: calc(100vh - var(--app-header-h, 56px));
             overflow-y: auto;
             min-height: unset;
           }
@@ -456,37 +456,8 @@ export default function WorkoutsCalendarPage() {
         {/* Calendar */}
         <div className="cal-main">
 
-          {/* Filter strip */}
-          {!loading && filterLabel && (
-            <div style={{
-              marginBottom: 8, padding: "8px 14px",
-              backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`,
-              display: "flex", alignItems: "center", gap: 8,
-            }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: DS.brand }}>
-                Filtered: {filterLabel}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedSports([])}
-                style={{
-                  fontSize: 10, fontWeight: 900, color: DS.brand,
-                  background: "none", border: "none", cursor: "pointer",
-                  textTransform: "uppercase", letterSpacing: "0.06em", marginLeft: 4,
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          )}
-
           {/* Calendar card */}
-          <div style={{
-            backgroundColor: DS.cardBg,
-            border: `1px solid ${DS.border}`,
-            borderTop: `3px solid ${DS.brand}`,
-            overflow: "hidden",
-          }}>
+          <div className="cal-card">
             {!mounted ? (
               <div style={{ minHeight: 320 }} />
             ) : viewMode === "week" ? (

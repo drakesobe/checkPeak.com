@@ -273,7 +273,7 @@ export default function OrgAthletesPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: "#F4F7FB", color: "#1A2535" }}>
+    <div className="min-h-screen" style={{ background: "#F7F8FA", color: "#1A2535" }}>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -307,6 +307,16 @@ export default function OrgAthletesPage() {
         }}
       />
 
+      <AthletesHeader
+        onRefresh={refresh}
+        refreshing={loading}
+        savedViews={savedViews}
+        onApplyView={applyView}
+        onDeleteView={deleteView}
+        onImport={handleImport}
+        athleteCount={athletes.length}
+      />
+
       <main className="max-w-6xl mx-auto px-4 py-6 pb-28 space-y-4">
 
         {showBillingWarning && (
@@ -322,18 +332,6 @@ export default function OrgAthletesPage() {
             </button>
           </div>
         )}
-
-        {/* ── Header ── */}
-        <AthletesHeader
-          onDashboard={() => router.push("/org/workouts-calendar")}
-          onSaveView={saveCurrentView}
-          onRefresh={refresh}
-          refreshing={loading}
-          savedViews={savedViews}
-          onApplyView={applyView}
-          onDeleteView={deleteView}
-          onImport={handleImport}
-        />
 
         {/* ── Plan limit indicator ── */}
         {athleteLimit !== Infinity && (

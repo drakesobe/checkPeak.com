@@ -14,6 +14,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { DS } from "@/components/org/dashboard/DashboardUI";
@@ -176,10 +177,8 @@ function SportBadge({ sport, color }) {
   const label = titleSport(sport);
   if (!label) return null;
   return (
-    <span style={{
-      fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase",
-      color, background: `${color}14`, padding: "2px 6px", borderRadius: 4,
-    }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: T.dim }}>
+      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
       {label}
     </span>
   );
@@ -210,7 +209,7 @@ function NowCard({ items, nowMin }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, animation: "now-pulse 1.8s ease-in-out infinite" }} />
-            <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase", color }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color }}>
               Right now
             </span>
           </div>
@@ -241,7 +240,7 @@ function NowCard({ items, nowMin }) {
       padding: "11px 13px",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase", color: T.amber }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.amber }}>
           Up next
         </span>
         <span style={{ fontSize: 10, fontWeight: 700, color: T.amberText, fontVariantNumeric: "tabular-nums" }}>
@@ -294,7 +293,7 @@ function AssignedRow({ item, onClick }) {
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
           <SportBadge sport={item.sport} color={color} />
           <span style={{
-            fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
+            fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
             color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4,
           }}>
             Assigned
@@ -360,7 +359,7 @@ function PersonalRow({ item, isNow, onEdit, onDelete }) {
       <div style={{ flex: 1, padding: "11px 10px", borderLeft: `1px solid ${color}1C`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           {item.sport && item.sport !== "personal" && (
-            <div style={{ fontSize: 8, fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase", color, marginBottom: 3 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color, marginBottom: 3 }}>
               {titleSport(item.sport)}
             </div>
           )}
@@ -414,7 +413,7 @@ function GapRow({ startMin, endMin, onAdd }) {
 function SectionLabel({ children }) {
   return (
     <div style={{ padding: "0 2px", marginBottom: 8, marginTop: 12 }}>
-      <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: ".16em", textTransform: "uppercase", color: T.faint }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.faint }}>
         {children}
       </span>
     </div>
@@ -466,7 +465,7 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
           return (
             <button key={s} onClick={() => { set("sport", s); set("title", ""); }} style={{
               padding: "3px 10px", borderRadius: 20, cursor: "pointer",
-              fontSize: 9, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase",
+              fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
               fontFamily: "inherit",
               background: sel ? c : "transparent",
               border: `1.5px solid ${sel ? c : T.border}`,
@@ -507,7 +506,7 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
 
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, marginBottom: 4 }}>Start</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.faint, marginBottom: 4 }}>Start</div>
           <div style={{ display: "flex", gap: 4 }}>
             <select value={f.startH} onChange={e => set("startH", Number(e.target.value))} style={{ ...inp, flex: 1, padding: "7px 4px" }}>
               {Array.from({ length: 19 }, (_, i) => i + 5).map(h => (
@@ -520,7 +519,7 @@ function BlockForm({ initial, allSports, onSave, onCancel }) {
           </div>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, marginBottom: 4 }}>Duration</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.faint, marginBottom: 4 }}>Duration</div>
           <select value={f.durationMinutes} onChange={e => set("durationMinutes", Number(e.target.value))} style={inp}>
             {[15,30,45,60,75,90,120,150,180,240].map(d => (
               <option key={d} value={d}>{d<60?`${d}m`:d%60===0?`${d/60}h`:`${Math.floor(d/60)}h${d%60}m`}</option>
@@ -656,7 +655,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <SportBadge sport={sport} color={color} />
               <span style={{
-                fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
+                fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
                 color: T.faint, background: T.pageBg, padding: "2px 6px", borderRadius: 4,
               }}>
                 Assigned
@@ -685,7 +684,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
         <div style={{ padding: "16px 18px 18px" }}>
           <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, marginBottom: 5 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.faint, marginBottom: 5 }}>
                 Start time
               </div>
               <div style={{ display: "flex", gap: 5 }}>
@@ -714,7 +713,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
               </div>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.faint, marginBottom: 5 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.faint, marginBottom: 5 }}>
                 Duration
               </div>
               <select
@@ -751,7 +750,7 @@ function ScheduleTimeModal({ workout, onSave, onClose }) {
               </div>
             </div>
             {isEdit && (
-              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: T.amber, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: T.amber, flexShrink: 0 }}>
                 Editing
               </span>
             )}
@@ -967,68 +966,51 @@ export default function CoachDaySchedule({
       <div style={{
         background: T.card,
         borderBottom: `1px solid ${T.border}`,
-        padding: "12px 14px",
+        padding: "16px",
         flexShrink: 0,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button className="cds-nav-btn" onClick={() => goDay(-1)} style={{
-            width: 28, height: 28, borderRadius: 7, border: `1px solid ${T.border}`,
-            background: "transparent", cursor: "pointer", color: T.dim, fontSize: 13,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, transition: "background .12s",
-          }}>←</button>
-
-          <button className="cds-nav-btn" onClick={() => goDay(1)} style={{
-            width: 28, height: 28, borderRadius: 7, border: `1px solid ${T.border}`,
-            background: "transparent", cursor: "pointer", color: T.dim, fontSize: 13,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, transition: "background .12s",
-          }}>→</button>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: T.faint, lineHeight: 1, marginBottom: 2 }}>
-              {isToday ? "Today · " : ""}{dayName}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: isToday ? T.brand : T.dim, marginBottom: 2 }}>
+              {isToday ? `Today · ${dayName}` : dayName}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1, color: isToday ? T.safe : T.body }}>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.01em", lineHeight: 1.2, color: T.body }}>
               {dateLabel}
             </div>
           </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            {plannedMin > 0 && (
-              <div style={{
-                fontSize: 10, fontWeight: 700, color: T.dim,
-                background: T.pageBg, border: `1px solid ${T.border}`,
-                borderRadius: 6, padding: "3px 8px",
-                fontVariantNumeric: "tabular-nums",
-              }}>
-                {plannedMin >= 60
-                  ? `${Math.floor(plannedMin/60)}h${plannedMin%60>0?` ${plannedMin%60}m`:""}`
-                  : `${plannedMin}m`}
-              </div>
-            )}
-            {!isToday && (
-              <button onClick={() => setCurrentDate(todayISO)} style={{
-                padding: "5px 9px", borderRadius: 7,
-                border: `1px solid ${T.brandBdr}`, background: T.brandBg,
-                color: T.brand, fontSize: 10, fontWeight: 700,
-                cursor: "pointer", fontFamily: "inherit",
-              }}>
-                Today
-              </button>
-            )}
-            {!formSeg && (
-              <button onClick={() => setFormSeg({ startMinutes: isToday ? snapMin(nowMin) : 9*60, durationMinutes: 60 })} style={{
-                background: T.brand, border: "none", borderRadius: 7,
-                padding: "6px 12px", cursor: "pointer",
-                fontSize: 11, fontWeight: 800, color: "#fff",
-                letterSpacing: ".05em", textTransform: "uppercase",
-                fontFamily: "inherit",
-              }}>
-                + Add
-              </button>
-            )}
+            <button type="button" className="app-icon-btn" onClick={() => goDay(-1)} aria-label="Previous day" style={{ width: 32, height: 32 }}>
+              <ChevronLeft size={16} aria-hidden="true" />
+            </button>
+            <button type="button" className="app-icon-btn" onClick={() => goDay(1)} aria-label="Next day" style={{ width: 32, height: 32 }}>
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
           </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {!formSeg && (
+            <button
+              type="button"
+              className="app-btn app-btn--primary"
+              onClick={() => setFormSeg({ startMinutes: isToday ? snapMin(nowMin) : 9*60, durationMinutes: 60 })}
+              style={{ height: 34, flex: 1 }}
+            >
+              <Plus size={15} aria-hidden="true" /> Add block
+            </button>
+          )}
+          {!isToday && (
+            <button type="button" className="app-btn app-btn--secondary" onClick={() => setCurrentDate(todayISO)} style={{ height: 34 }}>
+              Today
+            </button>
+          )}
+          {plannedMin > 0 && (
+            <span title="Planned time" style={{ fontSize: 13, fontWeight: 600, color: T.dim, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", marginLeft: "auto" }}>
+              {plannedMin >= 60
+                ? `${Math.floor(plannedMin/60)}h${plannedMin%60>0?` ${plannedMin%60}m`:""}`
+                : `${plannedMin}m`} planned
+            </span>
+          )}
         </div>
       </div>
 
@@ -1124,45 +1106,46 @@ export default function CoachDaySchedule({
               {unscheduledWorkouts.map((w, i) => {
                 const sport = String(w?.Sport || "").toLowerCase().trim();
                 const color = sportColor(sport);
+                const sportLabel = sport ? titleSport(sport) : "";
                 return (
-                  <div
+                  <button
                     key={w.id || i}
+                    type="button"
                     className="cds-row cds-unscheduled"
                     onClick={() => setScheduleTarget(w)}
+                    aria-label={`Schedule ${w.Title || "workout"}`}
                     style={{
+                      width: "100%", textAlign: "left", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
                       background: T.card,
                       border: `1px solid ${T.border}`,
-                      borderLeft: `4px solid ${color}`,
                       borderRadius: 10,
-                      padding: "11px 13px",
+                      padding: "12px 14px",
                       cursor: "pointer",
-                      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                      boxShadow: "0 1px 2px rgba(15,23,42,.04)",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
-                      <SportBadge sport={sport} color={color} />
-                      <span style={{
-                        fontSize: 8, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase",
-                        color: T.brand, background: T.brandBg, padding: "2px 6px", borderRadius: 4,
-                        border: `1px solid ${T.brandBdr}`,
-                      }}>
-                        Tap to schedule
+                    <span style={{ minWidth: 0 }}>
+                      {sportLabel && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: T.dim, marginBottom: 3 }}>
+                          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
+                          {sportLabel}
+                        </span>
+                      )}
+                      <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: T.body, lineHeight: 1.3 }}>
+                        {w.Title || "Workout"}
                       </span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: T.body, letterSpacing: "-.01em" }}>
-                          {w.Title || "Workout"}
-                        </div>
-                        {w._total > 0 && (
-                          <div style={{ fontSize: 10, color: T.dim, marginTop: 2 }}>
-                            {w._total} athlete{w._total !== 1 ? "s" : ""}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 18, color: T.brand, opacity: .4, flexShrink: 0, fontWeight: 300 }}>+</div>
-                    </div>
-                  </div>
+                      {w._total > 0 && (
+                        <span style={{ display: "block", fontSize: 12, color: T.dim, marginTop: 2 }}>
+                          {w._total} athlete{w._total !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0, fontSize: 13, fontWeight: 600, color: T.brand }}>
+                      Schedule
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </span>
+                  </button>
                 );
               })}
             </div>

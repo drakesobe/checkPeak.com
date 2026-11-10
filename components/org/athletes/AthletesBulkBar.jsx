@@ -79,7 +79,8 @@ export default function AthletesBulkBar({
     <AnimatePresence>
       {selectedCount > 0 && (
         <motion.div
-          className="fixed bottom-0 left-0 right-0 z-30"
+          className="fixed right-0 z-30"
+          style={{ left: "var(--app-sidebar-w, 0px)", bottom: "var(--app-bottom-nav-h, 0px)" }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}

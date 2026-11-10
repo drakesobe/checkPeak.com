@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthContext } from "@/hooks/useAuth";
 import { useReviewQueue } from "@/hooks/org/useReviewQueue";
+import { refreshNavCounts } from "@/components/nav/menu";
+import { PageHeader, APP } from "@/components/app/ui";
 import { useReviewQueueFilters } from "@/hooks/org/useReviewQueueFilters";
 import { useBillingGate } from "@/hooks/org/useBillingGate";
 
@@ -15,7 +17,7 @@ import ReviewQueueLightbox  from "@/components/org/reviewQueue/ReviewQueueLightb
 import { safeJson, getRole } from "@/components/org/reviewQueue/reviewQueue.helpers";
 
 import {
-  ArrowLeft, Calendar, CheckCircle2, CheckSquare, ChevronLeft, ChevronRight,
+  Calendar, CheckCircle2, CheckSquare, ChevronLeft, ChevronRight,
   Clock, Download, ExternalLink, Eye, HelpCircle, Image as ImageIcon,
   MessageSquare, Paperclip, RefreshCcw, RotateCcw, Search,
   Square, ThumbsUp, Video as VideoIcon, X, Zap, Dumbbell, GraduationCap,
@@ -88,7 +90,7 @@ function TypeBadge({ type, size = "sm" }) {
   const Icon    = isClass ? GraduationCap : Dumbbell;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-sm font-black whitespace-nowrap ${pad}`}
+      className={`inline-flex items-center gap-1 rounded-md font-black whitespace-nowrap ${pad}`}
       style={{
         backgroundColor: isClass ? CLASS_BG  : DS.brandBg,
         border:          isClass ? `1px solid ${CLASS_BORDER}` : `1px solid ${DS.brandBorder}`,
@@ -106,7 +108,7 @@ function StatusBadge({ status, size = "sm" }) {
   const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]";
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-sm font-bold whitespace-nowrap ${pad}`}
+      className={`inline-flex items-center gap-1 rounded-md font-bold whitespace-nowrap ${pad}`}
       style={{ backgroundColor: color + "18", border: `1px solid ${color}44`, color }}
     >
       <Icon className={size === "xs" ? "w-2.5 h-2.5" : "w-3 h-3"} />
@@ -147,62 +149,33 @@ function normalizeAttachments(item) {
 }
 
 async function postReview(id, status, coachNotes = "", type = "workout") {
-  return fetch("/api/org/reviewQueue/reviewQueueUpdate", {
+  const res = await fetch("/api/org/reviewQueue/reviewQueueUpdate", {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, status, coachNotes, type }),
   });
+  refreshNavCounts({ fresh: true }); // keep the nav badge in step with the queue
+  return res;
 }
 
 // ── Top Bar ──────────────────────────────────────────────────────────────────
 
-function TopBar({ orgName, loading, onBack, onRefresh, onExport, disableExport, counts }) {
+function TopBar({ loading, onRefresh, onExport, disableExport, counts }) {
+  const pending = counts?.pending || 0;
+  const subtitle = loading
+    ? "Loading submissions…"
+    : pending
+      ? `${pending} submission${pending === 1 ? "" : "s"} waiting for your review`
+      : "You're all caught up";
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 gap-4" style={{ backgroundColor: DS.brand }}>
-      <div className="flex items-center gap-3 min-w-0">
-        <button type="button" onClick={onBack}
-          className="flex items-center gap-1.5 text-xs font-bold transition shrink-0"
-          style={{ color: "rgba(255,255,255,0.55)" }}
-          onMouseEnter={e => { e.currentTarget.style.color = "#fff"; }}
-          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Calendar
-        </button>
-        <div className="w-px h-4 shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-        <span className="font-black uppercase tracking-wider text-xs"
-          style={{ color: "rgba(255,255,255,0.9)", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
-          Review Queue
-        </span>
-        {orgName && (
-          <span className="text-xs truncate hidden sm:inline" style={{ color: "rgba(255,255,255,0.35)" }}>
-            · {orgName}
-          </span>
-        )}
-        {counts?.pending > 0 && (
-          <span className="hidden sm:inline px-2 py-0.5 rounded-sm text-[10px] font-black tabular-nums"
-            style={{ backgroundColor: "rgba(255,255,255,0.15)", color: "#fff" }}>
-            {counts.pending} pending
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        <button type="button" onClick={onExport} disabled={disableExport}
-          className="text-xs font-bold px-2.5 py-1.5 rounded-sm transition-all disabled:opacity-30"
-          style={{ color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" }}
-          onMouseEnter={e => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.35)"; }}
-          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-        >
-          <Download className="w-3.5 h-3.5 inline mr-1" />Export
-        </button>
-        <button type="button" onClick={onRefresh} disabled={loading}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-sm transition-all"
-          style={{ backgroundColor: loading ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.12)", color: loading ? "rgba(255,255,255,0.3)" : "#fff" }}
-        >
-          <RefreshCcw className={cx("w-3.5 h-3.5", loading && "animate-spin")} />
-          <span className="hidden sm:inline">{loading ? "Loading…" : "Refresh"}</span>
-        </button>
-      </div>
-    </div>
+    <PageHeader
+      title="Review Queue"
+      subtitle={subtitle}
+      secondaryActions={[
+        { label: "Export", icon: Download, onClick: onExport, disabled: disableExport },
+        { label: loading ? "Refreshing…" : "Refresh", icon: RefreshCcw, onClick: onRefresh, disabled: loading },
+      ]}
+    />
   );
 }
 
@@ -233,7 +206,7 @@ function FilterBar({
             const count  = counts?.[countKey] ?? 0;
             return (
               <button key={id} type="button" onClick={() => setFilterMode(id)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-bold transition"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition"
                 style={{
                   backgroundColor: active ? color + "15" : "transparent",
                   border: `1px solid ${active ? color + "55" : DS.border}`,
@@ -241,7 +214,7 @@ function FilterBar({
                 }}
               >
                 {label}
-                <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-black tabular-nums"
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black tabular-nums"
                   style={{ backgroundColor: active ? color + "20" : DS.pageBg, color: active ? color : DS.dimText }}>
                   {count}
                 </span>
@@ -261,7 +234,7 @@ function FilterBar({
             const color  = id === "class" ? CLASS_COLOR : DS.brand;
             return (
               <button key={id} type="button" onClick={() => setTypeFilter(id)}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-sm text-xs font-bold transition"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold transition"
                 style={{
                   backgroundColor: active ? (id === "class" ? CLASS_BG : DS.brandBg) : "transparent",
                   border: `1px solid ${active ? (id === "class" ? CLASS_BORDER : DS.brandBorder) : DS.border}`,
@@ -281,7 +254,7 @@ function FilterBar({
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: DS.dimText }} />
           <input
-            className="pl-8 pr-7 py-1.5 rounded-sm text-xs outline-none transition w-44 sm:w-56"
+            className="pl-8 pr-7 py-1.5 rounded-md text-xs outline-none transition w-44 sm:w-56"
             style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}`, color: DS.bodyText }}
             placeholder="Search athlete, title…"
             value={search} onChange={e => setSearch(e.target.value)}
@@ -297,14 +270,14 @@ function FilterBar({
 
         {/* Sort */}
         <button type="button" onClick={() => setSortMode(s => s === "newest" ? "oldest" : "newest")}
-          className="text-xs font-bold px-2.5 py-1.5 rounded-sm border transition"
+          className="text-xs font-bold px-2.5 py-1.5 rounded-md border transition"
           style={{ borderColor: DS.border, color: DS.labelText }}>
           {sortMode === "newest" ? "Newest" : "Oldest"}
         </button>
 
         {/* Date range toggle */}
         <button type="button" onClick={() => setShowDates(v => !v)}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-sm border text-xs font-bold transition"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md border text-xs font-bold transition"
           style={{
             borderColor: hasDate ? DS.brand + "55" : DS.border,
             color: hasDate ? DS.brand : DS.labelText,
@@ -320,11 +293,11 @@ function FilterBar({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px]" style={{ color: DS.dimText }}>From</span>
           <input type="date" value={dateFrom || ""} onChange={e => setDateFrom(e.target.value)}
-            className="px-2 py-1 rounded-sm text-xs outline-none border"
+            className="px-2 py-1 rounded-md text-xs outline-none border"
             style={{ backgroundColor: DS.brandBg, borderColor: DS.brandBorder, color: DS.bodyText }} />
           <span className="text-[11px]" style={{ color: DS.dimText }}>to</span>
           <input type="date" value={dateTo || ""} onChange={e => setDateTo(e.target.value)}
-            className="px-2 py-1 rounded-sm text-xs outline-none border"
+            className="px-2 py-1 rounded-md text-xs outline-none border"
             style={{ backgroundColor: DS.brandBg, borderColor: DS.brandBorder, color: DS.bodyText }} />
           {hasDate && (
             <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
@@ -349,12 +322,12 @@ function ListHeader({ total, selected, onSelectAll, onClear, onBulkApprove, onBu
           <button type="button" onClick={onClear} style={{ color: DS.dimText }}><X className="w-3.5 h-3.5" /></button>
           <span className="text-xs font-black flex-1" style={{ color: DS.brand }}>{selected.size} selected</span>
           <button type="button" onClick={onBulkNeedsInfo} disabled={bulkSaving}
-            className="px-2.5 py-1 rounded-sm text-[11px] font-black border transition"
+            className="px-2.5 py-1 rounded-md text-[11px] font-black border transition"
             style={{ borderColor: DS.cautionBorder, color: DS.caution, backgroundColor: DS.cautionBg }}>
             Needs Info
           </button>
           <button type="button" onClick={onBulkApprove} disabled={bulkSaving}
-            className="px-2.5 py-1 rounded-sm text-[11px] font-black transition"
+            className="px-2.5 py-1 rounded-md text-[11px] font-black transition"
             style={{ backgroundColor: DS.brand, color: "#fff" }}>
             {bulkSaving ? "…" : "Approve"}
           </button>
@@ -468,7 +441,7 @@ function ListEmpty({ filterMode }) {
 function DetailEmpty() {
   return (
     <div className="flex flex-col items-center justify-center h-full py-20 px-8 text-center">
-      <div className="w-14 h-14 rounded-sm flex items-center justify-center mb-4"
+      <div className="w-14 h-14 rounded-md flex items-center justify-center mb-4"
         style={{ backgroundColor: DS.brandBg, border: `1px solid ${DS.brandBorder}` }}>
         <Zap className="w-6 h-6" style={{ color: DS.brandBorder }} />
       </div>
@@ -478,9 +451,9 @@ function DetailEmpty() {
       </p>
       <p className="text-xs mt-2 max-w-[200px] leading-relaxed" style={{ color: DS.dimText }}>
         Click a row or use{" "}
-        <kbd className="px-1 py-0.5 rounded-sm text-[10px]" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>J</kbd>
+        <kbd className="px-1 py-0.5 rounded-md text-[10px]" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>J</kbd>
         {" "}/{" "}
-        <kbd className="px-1 py-0.5 rounded-sm text-[10px]" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>K</kbd>
+        <kbd className="px-1 py-0.5 rounded-md text-[10px]" style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>K</kbd>
         {" "}to navigate
       </p>
     </div>
@@ -492,7 +465,7 @@ function DetailEmpty() {
 function KbdHint({ kbd, label }) {
   return (
     <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: DS.dimText }}>
-      <kbd className="px-1 py-0.5 rounded-sm font-mono"
+      <kbd className="px-1 py-0.5 rounded-md font-mono"
         style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.border}`, color: DS.labelText }}>
         {kbd}
       </kbd>
@@ -521,7 +494,7 @@ function BulkNeedsInfoModal({ count, open, onClose, onConfirm, saving }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button type="button" onClick={onClose} className="absolute inset-0" aria-label="Close"
         style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
-      <div className="relative w-full max-w-sm rounded-sm overflow-hidden"
+      <div className="relative w-full max-w-sm rounded-md overflow-hidden"
         style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: DS.border }}>
           <p className="text-sm font-black" style={{ color: DS.bodyText }}>
@@ -536,7 +509,7 @@ function BulkNeedsInfoModal({ count, open, onClose, onConfirm, saving }) {
             ref={textRef}
             value={note}
             onChange={e => setNote(e.target.value)}
-            className="w-full rounded-sm px-3 py-2.5 text-xs outline-none resize-none"
+            className="w-full rounded-md px-3 py-2.5 text-xs outline-none resize-none"
             style={{
               backgroundColor: DS.pageBg,
               border: `1px solid ${DS.brandBorder}`,
@@ -549,13 +522,13 @@ function BulkNeedsInfoModal({ count, open, onClose, onConfirm, saving }) {
           />
           <div className="flex gap-2">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2 text-xs font-bold rounded-sm border transition"
+              className="flex-1 py-2 text-xs font-bold rounded-md border transition"
               style={{ borderColor: DS.border, color: DS.labelText }}>
               Cancel
             </button>
             <button type="button" onClick={() => canSubmit && onConfirm(note)}
               disabled={!canSubmit || saving}
-              className="flex-1 py-2 text-xs font-black rounded-sm transition disabled:opacity-40"
+              className="flex-1 py-2 text-xs font-black rounded-md transition disabled:opacity-40"
               style={{ backgroundColor: DS.caution, color: "#fff" }}>
               {saving ? "Sending…" : `Send to ${count}`}
             </button>
@@ -623,7 +596,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button type="button" onClick={onPrev} disabled={currentIndex <= 0}
-            className="w-7 h-7 rounded-sm flex items-center justify-center border transition disabled:opacity-30"
+            className="w-7 h-7 rounded-md flex items-center justify-center border transition disabled:opacity-30"
             style={{ borderColor: DS.border, color: DS.labelText, backgroundColor: DS.pageBg }}>
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -631,7 +604,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
             {currentIndex + 1}/{total}
           </span>
           <button type="button" onClick={onNext} disabled={currentIndex >= total - 1}
-            className="w-7 h-7 rounded-sm flex items-center justify-center border transition disabled:opacity-30"
+            className="w-7 h-7 rounded-md flex items-center justify-center border transition disabled:opacity-30"
             style={{ borderColor: DS.border, color: DS.labelText, backgroundColor: DS.pageBg }}>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -643,7 +616,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
         <div className="p-5 space-y-4">
 
           {saveErr && (
-            <div className="px-3 py-2 rounded-sm text-xs font-bold"
+            <div className="px-3 py-2 rounded-md text-xs font-bold"
               style={{ backgroundColor: DS.bannedBg, borderLeft: `3px solid ${DS.banned}`, color: DS.banned }}>
               {saveErr}
             </div>
@@ -651,7 +624,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
 
           {/* Athlete viewed banner */}
           {item?.athleteAcknowledged && (
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-sm"
+            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md"
               style={{ backgroundColor: DS.safeBg, border: `1px solid ${DS.safeBorder}` }}>
               <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: DS.safe }} />
               <div>
@@ -671,7 +644,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
 
           {/* Context badge */}
           {(item?.exerciseName || (isClass && item?.title)) && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-sm"
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-md"
               style={{
                 backgroundColor: isClass ? CLASS_BG  : DS.brandBg,
                 border:          isClass ? `1px solid ${CLASS_BORDER}` : `1px solid ${DS.brandBorder}`,
@@ -696,7 +669,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
 
           {/* Media */}
           {attachments.length > 0 && (
-            <div className="rounded-sm overflow-hidden" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+            <div className="rounded-md overflow-hidden" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
               <div className="flex items-center gap-2 px-4 py-2 border-b" style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}>
                 {isMediaVideo
                   ? <VideoIcon className="w-3.5 h-3.5" style={{ color: DS.labelText }} />
@@ -715,7 +688,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
                     const isVid = isVideoUrl(url);
                     return (
                       <button key={i} type="button" onClick={() => setSelIdx(i)}
-                        className="shrink-0 w-14 h-14 rounded-sm overflow-hidden border transition flex items-center justify-center"
+                        className="shrink-0 w-14 h-14 rounded-md overflow-hidden border transition flex items-center justify-center"
                         style={{
                           borderColor: isSel ? DS.brand : DS.border,
                           boxShadow: isSel ? `0 0 0 2px ${DS.brand}30` : "none",
@@ -742,13 +715,13 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
                   {selUrl && (
                     <>
                       <a href={selUrl} target="_blank" rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border text-[11px] font-bold transition"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold transition"
                         style={{ borderColor: DS.border, color: DS.labelText, backgroundColor: DS.pageBg }}>
                         <ExternalLink className="w-3 h-3" /> Open
                       </a>
                       {!isMediaVideo && (
                         <button type="button" onClick={() => onOpenLightbox?.(selUrl)}
-                          className="px-2 py-1 rounded-sm text-[11px] font-black transition"
+                          className="px-2 py-1 rounded-md text-[11px] font-black transition"
                           style={{ backgroundColor: DS.brand, color: "#fff" }}>
                           Fullscreen
                         </button>
@@ -761,14 +734,14 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
               <div className="p-3">
                 {selUrl ? (
                   isPdfUrl(selUrl) ? (
-                    <iframe src={selUrl} title={selName} className="w-full rounded-sm" style={{ height: 280 }} />
+                    <iframe src={selUrl} title={selName} className="w-full rounded-md" style={{ height: 280 }} />
                   ) : isVideoUrl(selUrl) ? (
                     // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video src={selUrl} controls className="w-full rounded-sm" style={{ maxHeight: 280, backgroundColor: "#000" }} />
+                    <video src={selUrl} controls className="w-full rounded-md" style={{ maxHeight: 280, backgroundColor: "#000" }} />
                   ) : isImgUrl(selUrl) ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={selUrl} alt={selName}
-                      className="w-full rounded-sm object-contain cursor-zoom-in"
+                      className="w-full rounded-md object-contain cursor-zoom-in"
                       style={{ maxHeight: 280, backgroundColor: DS.pageBg, border: `1px solid ${DS.border}` }}
                       onClick={() => onOpenLightbox?.(selUrl)}
                       loading="lazy"
@@ -792,7 +765,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
           )}
 
           {/* Coach note */}
-          <div className="rounded-sm overflow-hidden" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
+          <div className="rounded-md overflow-hidden" style={{ backgroundColor: DS.cardBg, border: `1px solid ${DS.border}` }}>
             <div className="px-4 py-2 border-b" style={{ borderColor: DS.border, backgroundColor: DS.pageBg }}>
               <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: DS.labelText }}>
                 Message to athlete
@@ -801,7 +774,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
             </div>
             <div className="p-3">
               <textarea
-                className="w-full rounded-sm px-3 py-2.5 text-xs outline-none transition resize-none"
+                className="w-full rounded-md px-3 py-2.5 text-xs outline-none transition resize-none"
                 style={{ backgroundColor: DS.pageBg, border: `1px solid ${DS.brandBorder}`, color: DS.bodyText, minHeight: 80 }}
                 onFocus={e => { e.target.style.borderColor = DS.brand; e.target.style.boxShadow = `0 0 0 2px ${DS.brand}15`; }}
                 onBlur={e  => { e.target.style.borderColor = DS.brandBorder; e.target.style.boxShadow = "none"; }}
@@ -828,14 +801,14 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
         <div className="flex gap-2">
           <button type="button" onClick={() => onNeedsInfo?.(note)}
             disabled={saving || !item?.id || !canNeedsInfo}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-sm text-sm font-black uppercase tracking-wide border transition disabled:opacity-40"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-black uppercase tracking-wide border transition disabled:opacity-40"
             style={{ borderColor: DS.cautionBorder, color: DS.caution, backgroundColor: DS.cautionBg }}
             title={!canNeedsInfo ? "Add a message first (min 3 chars)" : ""}>
             <HelpCircle className="w-4 h-4" /> Needs Info
           </button>
           <button type="button" onClick={() => onApprove?.()}
             disabled={saving || !item?.id}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-sm text-sm font-black uppercase tracking-wide transition disabled:opacity-40"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-black uppercase tracking-wide transition disabled:opacity-40"
             style={{ backgroundColor: DS.brand, color: "#fff" }}>
             <ThumbsUp className="w-4 h-4" />
             {saving ? "Saving…" : "Approve"}
@@ -845,7 +818,7 @@ function DetailPanel({ item, saving, saveErr, onApprove, onNeedsInfo, onReopen, 
         {/* Reopen - only shown for already-reviewed items */}
         {item?.reviewStatus !== "pending" && (
           <button type="button" onClick={() => onReopen?.()} disabled={saving}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold border rounded-sm transition disabled:opacity-40"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold border rounded-md transition disabled:opacity-40"
             style={{ borderColor: DS.border, color: DS.labelText, backgroundColor: DS.pageBg }}>
             <RotateCcw className="w-3 h-3" /> Reopen as pending
           </button>
@@ -1103,11 +1076,10 @@ export default function ReviewQueuePage() {
   const showBillingWarning = isAdminBypass && !rawIsPaidOk;
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ backgroundColor: DS.pageBg, color: DS.bodyText }}>
+    <div className="flex flex-col min-h-screen" style={{ backgroundColor: APP.canvas, color: DS.bodyText, fontFamily: APP.font }}>
 
       <TopBar
-        orgName={orgName} loading={loading} counts={counts}
-        onBack={() => router.push("/org/workouts-calendar")}
+        loading={loading} counts={counts}
         onRefresh={refreshQueue}
         onExport={exportCSV}
         disableExport={!items?.length}
@@ -1162,10 +1134,10 @@ export default function ReviewQueuePage() {
                 {[...Array(6)].map((_, i) => (
                   <div key={i} className="animate-pulse px-4 py-3 border-b" style={{ borderColor: DS.border }}>
                     <div className="flex gap-2 mb-2">
-                      <div className="h-3 rounded-sm flex-1" style={{ backgroundColor: DS.pageBg }} />
-                      <div className="h-3 rounded-sm w-14" style={{ backgroundColor: DS.pageBg }} />
+                      <div className="h-3 rounded-md flex-1" style={{ backgroundColor: DS.pageBg }} />
+                      <div className="h-3 rounded-md w-14" style={{ backgroundColor: DS.pageBg }} />
                     </div>
-                    <div className="h-2 rounded-sm" style={{ backgroundColor: DS.pageBg, width: "60%" }} />
+                    <div className="h-2 rounded-md" style={{ backgroundColor: DS.pageBg, width: "60%" }} />
                   </div>
                 ))}
               </div>

@@ -1,5 +1,6 @@
 // pages/api/stripe/webhook.js
 import stripe from "@/lib/stripe";
+import { publishPeakverseEvent, organizationReference } from "@/lib/peakverseEvents";
 import {
   findBillingRecordByStripeCustomerId,
   upsertBillingForOrgToken,
@@ -125,6 +126,28 @@ export default async function handler(req, res) {
     if (Object.keys(patch).length) {
       // ✅ Token-canonical upsert; org link optional
       await upsertBillingForOrgToken(token, patch, orgRecordId);
+    }
+
+    // Only signature-verified live Stripe events enter the business ledger.
+    // An active subscription event isn't itself a payment; a positive invoice is
+    // reported as a gross receipt, not MRR or net revenue.
+    const orgRef = organizationReference(token);
+    let receipt;
+    if (event.livemode && orgRef) {
+      if (type.startsWith("customer.subscription.")) {
+        const kind = obj.status === "trialing" ? "trial_started" : obj.status === "active" ? "subscription_active"
+          : ["canceled", "unpaid", "incomplete_expired"].includes(obj.status) ? "subscription_ended" : null;
+        if (kind) receipt = { kind, id: kind === "trial_started" ? "trial:" + obj.id : "stripe:" + event.id };
+      } else if (["invoice.payment_succeeded", "invoice.paid"].includes(type) && Number.isSafeInteger(obj.amount_paid) && obj.amount_paid > 0) {
+        receipt = { kind: "invoice_paid", id: "invoice:" + obj.id, amount_minor: obj.amount_paid, currency: obj.currency };
+      } else if (type === "invoice.payment_failed") {
+        receipt = { kind: "invoice_failed", id: "stripe:" + event.id };
+      }
+      if (receipt) {
+        const result = await publishPeakverseEvent({ ...receipt, org_ref: orgRef, at: new Date(event.created * 1000).toISOString() });
+        // Stripe will retry; the product ledger deduplicates by event/invoice ID.
+        if (result.configured && !result.ok) return res.status(503).send("Event receipt pending");
+      }
     }
 
     return res.json({ received: true });

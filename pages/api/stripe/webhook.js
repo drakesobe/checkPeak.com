@@ -136,7 +136,8 @@ export default async function handler(req, res) {
     if (event.livemode && orgRef) {
       if (type.startsWith("customer.subscription.")) {
         const kind = obj.status === "trialing" ? "trial_started" : obj.status === "active" ? "subscription_active"
-          : ["canceled", "unpaid", "incomplete_expired"].includes(obj.status) ? "subscription_ended" : null;
+          : ["canceled", "incomplete_expired"].includes(obj.status) ? "subscription_ended"
+          : ["past_due", "unpaid", "paused", "incomplete"].includes(obj.status) ? "subscription_at_risk" : null;
         if (kind) receipt = { kind, id: kind === "trial_started" ? "trial:" + obj.id : "stripe:" + event.id };
       } else if (["invoice.payment_succeeded", "invoice.paid"].includes(type) && Number.isSafeInteger(obj.amount_paid) && obj.amount_paid > 0) {
         receipt = { kind: "invoice_paid", id: "invoice:" + obj.id, amount_minor: obj.amount_paid, currency: obj.currency };

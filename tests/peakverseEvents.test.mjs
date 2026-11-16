@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { organizationReference, publishPeakverseEvent } from "../lib/peakverseEvents.js";
+import health from "../pages/api/peakverse-health.js";
 
 test("disabled bridge cannot send or derive a token reference", async () => {
   const previous = process.env.PEAKVERSE_PRODUCT_SECRET;
@@ -14,6 +15,25 @@ test("disabled bridge cannot send or derive a token reference", async () => {
   } finally {
     globalThis.fetch = before;
     if (previous !== undefined) process.env.PEAKVERSE_PRODUCT_SECRET = previous;
+  }
+});
+
+test("connectivity check is read-only, coalesced and cached", async () => {
+  const before = globalThis.fetch;
+  const old = process.env.PEAKVERSE_PRODUCT_SECRET;
+  process.env.PEAKVERSE_PRODUCT_SECRET = "example-test-secret-".repeat(3);
+  let calls = 0;
+  const makeRes = () => ({ code: 0, value: null, setHeader(){}, status(n){this.code=n;return this}, json(v){this.value=v;return this}, end(){return this} });
+  try {
+    globalThis.fetch = async (_, req) => {calls++; assert.deepEqual(JSON.parse(req.body), {kind:"bridge_check"});return {ok:true}};
+    const a=makeRes(), b=makeRes(), c=makeRes(), wrong=makeRes();
+    await Promise.all([health({method:"GET"},a),health({method:"GET"},b)]);
+    await health({method:"GET"},c);
+    await health({method:"POST"},wrong);
+    assert.equal(calls,1); assert.equal(a.code,200); assert.deepEqual(b.value,{connected:true});assert.equal(c.code,200);assert.equal(wrong.code,405);
+  } finally {
+    globalThis.fetch=before;
+    if(old===undefined) delete process.env.PEAKVERSE_PRODUCT_SECRET; else process.env.PEAKVERSE_PRODUCT_SECRET=old;
   }
 });
 

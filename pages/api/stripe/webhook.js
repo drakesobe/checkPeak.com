@@ -146,8 +146,9 @@ export default async function handler(req, res) {
       }
       if (receipt) {
         const result = await publishPeakverseEvent({ ...receipt, org_ref: orgRef, at: new Date(event.created * 1000).toISOString() });
-        // Stripe will retry; the product ledger deduplicates by event/invoice ID.
-        if (result.configured && !result.ok) return res.status(503).send("Event receipt pending");
+        // Billing remains authoritative and independent of the optional dashboard.
+        // A missed receipt requires reconciliation; never fail a fulfilled billing webhook.
+        if (result.configured && !result.ok) console.warn("[peakverse-events] billing receipt needs reconciliation");
       }
     }
 

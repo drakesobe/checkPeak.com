@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { ratelimiter } from "@/lib/ratelimiter";
 import { escapeHtml as esc, OWNER_EMAIL as TO, NOTIFY_FROM as FROM } from "@/lib/notifyOwner";
+import { publishPeakverseEvent } from "@/lib/peakverseEvents";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -52,13 +53,16 @@ export default async function handler(req, res) {
 
   try {
     // 1. Save to Firestore
-    await addDoc(collection(db, "walkthrough_requests"), {
+    const receipt = await addDoc(collection(db, "walkthrough_requests"), {
       name, email, organization, role,
       athletes: athletes || "",
       message:  message  || "",
       status:   "pending",
       createdAt: serverTimestamp(),
     });
+
+    await publishPeakverseEvent({ id: "walkthrough:" + receipt.id, kind: "walkthrough_requested",
+      at: new Date().toISOString(), school: String(organization).trim().slice(0, 160) });
 
     // 2. Notify Matthew
     await resend.emails.send({
@@ -139,3 +143,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to submit. Please try again." });
   }
 }
+

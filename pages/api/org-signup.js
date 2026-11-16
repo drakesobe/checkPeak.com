@@ -4,6 +4,7 @@
 import { createOrg, getOrgByEmail, normalizeEmail } from "@/lib/supabaseOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { notifyOwner } from "@/lib/notifyOwner";
+import { publishPeakverseEvent, organizationReference } from "@/lib/peakverseEvents";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -62,6 +63,9 @@ export default async function handler(req, res) {
       console.error("[org-signup] billing row creation failed:", billingError);
       // Non-fatal: org was created; billing can be fixed manually
     }
+    const orgRef = organizationReference(token);
+    if (orgRef) await publishPeakverseEvent({ id: "org:" + orgRef, kind: "organization_created",
+      org_ref: orgRef, school: String(org.name || name).trim().slice(0, 160), at: new Date().toISOString() });
 
     // Awaited so the serverless function isn't frozen before the email goes out; never throws
     await notifyOwner({
@@ -90,3 +94,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to create organization.", details: err?.message });
   }
 }
+

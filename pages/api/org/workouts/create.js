@@ -6,6 +6,10 @@ import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { createOrgWorkout, upsertAthleteByToken } from "@/lib/supabaseOrg";
 import { sendNotification } from "@/lib/sendNotification";
+import { publishPeakverseEvent, organizationReference } from "@/lib/peakverseEvents";
+
+// Warm-instance cache only; the receiver deduplicates across instances.
+const reportedOrganizations = new Set();
 
 function toStr(v)   { return v == null ? "" : String(v); }
 function toTrimmed(v) { return toStr(v).trim(); }
@@ -140,6 +144,17 @@ export default async function handler(req, res) {
       });
     }
 
+    if (createdDailyWorkouts.some(w => w.createdItemCount > 0)) {
+      const orgRef = organizationReference(orgToken);
+      if (orgRef && !reportedOrganizations.has(orgRef)) {
+        const result = await publishPeakverseEvent({ id: "workout:" + orgRef, kind: "first_workout_assigned",
+          org_ref: orgRef, at: new Date().toISOString() });
+        if (result.ok) {
+          if (reportedOrganizations.size >= 1000) reportedOrganizations.clear();
+          reportedOrganizations.add(orgRef);
+        }
+      }
+    }
     return res.status(200).json({
       ok:                true,
       createdDailyWorkouts,
@@ -153,3 +168,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to create workout", details: err?.message });
   }
 }
+

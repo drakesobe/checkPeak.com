@@ -7,6 +7,7 @@ import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { verifySession, parseSessionString } from "@/lib/session";
 
 export const config = { api: { bodyParser: false } };
 
@@ -91,7 +92,7 @@ export default async function handler(req, res) {
 
   if (cookieMissingOrBroken(req)) {
     const authUserField = asString(getValue("_authUser") || getValue("authUser"));
-    if (authUserField) injectAuthFromField(req, authUserField);
+    if (authUserField && await verifySession(parseSessionString(authUserField))) injectAuthFromField(req, authUserField);
   }
 
   const auth = requireAthlete(req);

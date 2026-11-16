@@ -10,6 +10,7 @@ import {
   getMemberByEmail,
   createMemberInvite,
 } from "@/lib/supabaseOrg";
+import { signSession } from "@/lib/session";
 
 function normalizeRole(role) {
   const r = String(role || "").trim().toLowerCase();
@@ -121,11 +122,9 @@ export default async function handler(req, res) {
         sport:         athlete.sport || "",
       };
 
-      setUserCookie(res, toSessionUser(userOut));
-      return res.status(200).json({
-        user: stripPassword(userOut),
-        debug: { athleteTokenPresent: Boolean(athlete.athlete_token) },
-      });
+      const [cookieUser, bodyUser] = await signSession(toSessionUser(userOut), stripPassword(userOut));
+      setUserCookie(res, cookieUser);
+      return res.status(200).json({ user: bodyUser });
     }
 
     // ── Org owner login ──────────────────────────────────────────
@@ -180,8 +179,9 @@ export default async function handler(req, res) {
           org_name:  org.name,
         };
 
-        setUserCookie(res, toSessionUser(userOut));
-        return res.status(200).json({ user: stripPassword(userOut) });
+        const [cookieUser, bodyUser] = await signSession(toSessionUser(userOut), stripPassword(userOut));
+        setUserCookie(res, cookieUser);
+        return res.status(200).json({ user: bodyUser });
       }
     }
 
@@ -215,8 +215,9 @@ export default async function handler(req, res) {
       org_name:  orgName,
     };
 
-    setUserCookie(res, toSessionUser(userOut));
-    return res.status(200).json({ user: stripPassword(userOut) });
+    const [cookieUser, bodyUser] = await signSession(toSessionUser(userOut), stripPassword(userOut));
+    setUserCookie(res, cookieUser);
+    return res.status(200).json({ user: bodyUser });
 
   } catch (err) {
     console.error("[lookupUser]", err);

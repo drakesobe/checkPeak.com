@@ -2,10 +2,8 @@
 // POST { id, type: "workout"|"class", reviewStatus, reviewedNotes?, coachNotes? }
 // Updates a workout completion or class attendance review status.
 
-import Airtable from "airtable";
 import { requireOrg } from "@/lib/requireOrg";
 import { requireActiveOrgSubscription } from "@/lib/requireActiveOrgSubscription";
-import { readUserFromRequest } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function asString(v)   { return String(v ?? "").trim(); }
@@ -32,37 +30,24 @@ function normalizeCompletionStatus(nextUi) {
   return "pending_review";
 }
 
-async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId }) {
-  // Handle legacy Airtable IDs
-  if (recordId.startsWith("at:")) {
-    const airtableId = recordId.slice(3);
-    if (!process.env.DAILYWORKOUTS_API_KEY || !process.env.DAILYWORKOUTS_BASE_ID) {
-      throw new Error("DAILYWORKOUTS env vars missing");
-    }
-    const base               = new Airtable({ apiKey: process.env.DAILYWORKOUTS_API_KEY }).base(process.env.DAILYWORKOUTS_BASE_ID);
-    const WorkoutCompletions = base(process.env.WORKOUTCOMPLETIONS_TABLE_ID || "WorkoutCompletions");
-    const nextStatus         = normalizeCompletionStatus(nextUi);
-    await WorkoutCompletions.update(airtableId, {
-      Status:     nextStatus,
-      ReviewNote: nextUi === "needs_info" ? reviewNote : "",
-    });
-    return { id: recordId, cascades: {} };
-  }
-
-  // Supabase path
+async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId, orgToken }) {
   const nextStatus = normalizeCompletionStatus(nextUi);
 
   const { data: existing } = await db
     .from("workout_completions")
-    .select("id, org_id, workout_item_id")
+    .select("id, org_id, workout_item_id, athlete_id")
     .eq("id", recordId)
     .maybeSingle();
 
   if (!existing) throw Object.assign(new Error("Completion not found"), { statusCode: 404 });
-  // org_id is often null on older records (completeItem never wrote it); only block if both are set and mismatch
-  if (existing.org_id && orgId && existing.org_id !== orgId) {
-    throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  // Must belong to this coach's program. org_id is null on older records (completeItem never
+  // wrote it), so fall back to the athlete's team.
+  let belongs = Boolean(existing.org_id && orgId && existing.org_id === orgId);
+  if (!belongs && !existing.org_id && existing.athlete_id && orgToken) {
+    const { data: ath } = await db.from("athletes").select("org_token").eq("id", existing.athlete_id).maybeSingle();
+    belongs = asString(ath?.org_token).toUpperCase() === orgToken.toUpperCase();
   }
+  if (!belongs) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
 
   // Always persist notes when provided; only wipe when explicitly clearing (empty + not needs_info)
   const noteUpdate = reviewNote ? { review_note: reviewNote } : (nextUi === "needs_info" ? { review_note: null } : {});
@@ -107,24 +92,6 @@ async function updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId }) 
 }
 
 async function updateClassAttendance({ recordId, nextUi, reviewNote, orgToken }) {
-  if (recordId.startsWith("at:")) {
-    const airtableId = recordId.slice(3);
-    if (!process.env.ORGANIZATIONS_API_KEY || !process.env.ORGANIZATIONS_BASE_ID) {
-      throw new Error("ORGANIZATIONS env vars missing");
-    }
-    const base  = new Airtable({ apiKey: process.env.ORGANIZATIONS_API_KEY }).base(process.env.ORGANIZATIONS_BASE_ID);
-    const table = base(process.env.CLASSATTENDANCE_TABLE_ID || "tblgYFnNsVt1VhA4i");
-    const reviewStatusMap = { approved: "approved", needs_info: "needs_info", pending: "pending" };
-    const record = await table.find(airtableId);
-    const f      = record?.fields || {};
-    await table.update(airtableId, {
-      ReviewStatus: reviewStatusMap[nextUi] || "pending",
-      CoachNotes:   nextUi === "needs_info" ? reviewNote : asString(f?.CoachNotes || ""),
-    });
-    return { id: recordId, cascades: {} };
-  }
-
-  // Supabase path
   const { data: existing } = await db
     .from("class_attendance")
     .select("id, org_token")
@@ -132,7 +99,7 @@ async function updateClassAttendance({ recordId, nextUi, reviewNote, orgToken })
     .maybeSingle();
 
   if (!existing) throw Object.assign(new Error("Class attendance not found"), { statusCode: 404 });
-  if (existing.org_token !== orgToken) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  if (asString(existing.org_token).toUpperCase() !== orgToken.toUpperCase()) throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
 
   const reviewStatusMap = { approved: "approved", needs_info: "needs_info", pending: "pending" };
   const classNoteUpdate = reviewNote ? { coach_notes: reviewNote } : (nextUi === "needs_info" ? { coach_notes: null } : {});
@@ -150,26 +117,17 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    let orgToken = "";
-    let orgId    = "";
-
-    // Mobile path: _authUser in body bypasses requireOrg + subscription check
-    const mobileSession = readUserFromRequest(req);
+    // Coaches and staff only (requireOrg rejects athlete sessions). The mobile coach app sends its
+    // session as _authUser and skips the web subscription gate, as before.
+    const auth = requireOrg(req);
+    if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
     const isMobile = !!(req.query._authUser || req.body?._authUser);
-    if (isMobile && mobileSession) {
-      orgToken = asString(mobileSession.Token || mobileSession.org_token || "").toUpperCase();
-      if (!orgToken) return res.status(401).json({ error: "Unauthorized" });
-      orgId = await resolveOrgId({ org: { id: "", token: orgToken } });
-    } else {
-      const auth = requireOrg(req);
-      if (!auth?.ok) return res.status(401).json({ error: auth?.error || "Unauthorized" });
-
+    if (!isMobile) {
       const sub = await requireActiveOrgSubscription(req, res, auth);
       if (!sub) return;
-
-      orgToken = asString(auth?.org?.token || "");
-      orgId    = await resolveOrgId(auth);
     }
+    const orgToken = asString(auth?.org?.token || "").toUpperCase();
+    const orgId    = await resolveOrgId(auth);
     if (!orgToken && !orgId) return res.status(401).json({ error: "Unauthorized." });
 
     const body       = req.body || {};
@@ -190,7 +148,7 @@ export default async function handler(req, res) {
     if (itemType === "class") {
       result = await updateClassAttendance({ recordId, nextUi, reviewNote, orgToken });
     } else {
-      result = await updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId });
+      result = await updateWorkoutCompletion({ recordId, nextUi, reviewNote, orgId, orgToken });
     }
 
     return res.status(200).json({

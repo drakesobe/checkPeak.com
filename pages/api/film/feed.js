@@ -1,5 +1,6 @@
 // pages/api/film/feed.js
-// GET ?sort=recent|trending&limit=20&offset=0&filmId=uuid
+// GET ?sort=recent|trending&limit=20&offset=0&filmId=uuid&mine=1
+//   mine=1 → only plays the signed-in athlete appears in (player_tracks → roster.athlete_token).
 //
 // Returns enriched play clips for the social feed.
 // When filmId is provided, returns only plays from that film (ignoring sort/pagination).
@@ -79,9 +80,39 @@ export default async function handler(req, res) {
   const sort   = req.query.sort === "trending" ? "trending" : "recent";
   const limit  = Math.min(Number(req.query.limit  || 20), 100);
   const offset = Math.max(Number(req.query.offset || 0),   0);
+  const mine   = String(req.query.mine || "") === "1";
 
   try {
     let rows, queryError;
+
+    // ── "My plays": resolve the plays this athlete appears in ────────────────
+    let minePlayIds = null;
+    if (mine) {
+      const athleteToken = String(user.AthleteToken || user.athleteToken || "").trim();
+      if (!athleteToken) return res.status(200).json({ ok: true, plays: [] });
+      const { data: rosterRows } = await supabase
+        .from("roster")
+        .select("id, jersey_number")
+        .eq("org_id", orgId)
+        .eq("athlete_token", athleteToken);
+      const ids     = (rosterRows ?? []).map(r => r.id).filter(Boolean);
+      const jerseys = (rosterRows ?? []).map(r => r.jersey_number).filter(n => n != null);
+      if (!ids.length && !jerseys.length) return res.status(200).json({ ok: true, plays: [] });
+
+      const ors = [];
+      if (ids.length)     ors.push(`roster_id.in.(${ids.join(",")})`);
+      if (jerseys.length) ors.push(`and(jersey_number.in.(${jerseys.join(",")}),jersey_confirmed.eq.true)`);
+      const { data: tracks } = await supabase
+        .from("player_tracks")
+        .select("play_id")
+        .eq("org_id", orgId)
+        .or(ors.join(","))
+        .limit(2000);
+      minePlayIds = [...new Set((tracks ?? []).map(t => t.play_id))];
+      if (!minePlayIds.length) return res.status(200).json({ ok: true, plays: [] });
+    }
+    // Restricts a standard-feed query to the athlete's plays when mine=1.
+    const applyMine = q => (minePlayIds ? q.in("id", minePlayIds) : q);
 
     if (filmId) {
       // ── Film-scoped: all plays from a specific film, ordered by play number ──
@@ -125,7 +156,7 @@ export default async function handler(req, res) {
         Date.now() - (isTrending ? 180 : 365) * 24 * 3_600_000
       ).toISOString();
 
-      ({ data: rows, error: queryError } = await supabase
+      ({ data: rows, error: queryError } = await applyMine(supabase
         .from("game_plays")
         .select(PLAY_SELECT)
         .eq("game_films.org_id", orgId)
@@ -134,10 +165,10 @@ export default async function handler(req, res) {
         .gte("created_at", cutoffDate)
         .order("game_date", { foreignTable: "game_films", ascending: false })
         .order("play_number", { ascending: true })
-        .range(fetchOffset, fetchOffset + fetchLimit - 1));
+        .range(fetchOffset, fetchOffset + fetchLimit - 1)));
 
       if (queryError?.code === "42703" || queryError?.message?.includes("coach_annotation")) {
-        ({ data: rows, error: queryError } = await supabase
+        ({ data: rows, error: queryError } = await applyMine(supabase
           .from("game_plays")
           .select(PLAY_SELECT_NO_ANNOTATION)
           .eq("game_films.org_id", orgId)
@@ -146,7 +177,7 @@ export default async function handler(req, res) {
           .gte("created_at", cutoffDate)
           .order("game_date", { foreignTable: "game_films", ascending: false })
           .order("play_number", { ascending: true })
-          .range(fetchOffset, fetchOffset + fetchLimit - 1));
+          .range(fetchOffset, fetchOffset + fetchLimit - 1)));
       }
     }
 

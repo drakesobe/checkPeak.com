@@ -13,6 +13,7 @@ function normalizeTemplate(t) {
     category:    String(t?.category    || "strength"),
     description: String(t?.description || ""),
     exercises:   Array.isArray(t?.exercises) ? t.exercises : [],
+    athleteVisible: t?.athleteVisible !== false,
     createdAt:   String(t?.createdAt   || ""),
     updatedAt:   String(t?.updatedAt   || ""),
   };

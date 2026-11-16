@@ -1,5 +1,6 @@
 // pages/api/update-organization.js
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireOrgOwner } from "@/lib/requireUser";
 
 function pickString(v) {
   return String(v ?? "").trim();
@@ -18,11 +19,16 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Only the signed-in organization owner can edit their own organization
+    const owner = requireOrgOwner(req, res);
+    if (!owner) return;
+    const ownOrgId = pickString(owner.orgId || owner.org_id || owner.organizationId || owner.id);
+
     const { organizationId, updates } = req.body || {};
-    const id = pickString(organizationId);
+    const id = pickString(organizationId) || ownOrgId;
     const u  = updates && typeof updates === "object" ? updates : null;
 
-    if (!id) return res.status(400).json({ error: "organizationId is required." });
+    if (!id || id !== ownOrgId) return res.status(403).json({ error: "You can only edit your own organization." });
     if (!u)  return res.status(400).json({ error: "updates object is required." });
 
     const fields = {};

@@ -1,5 +1,5 @@
 // pages/api/sync-prices.js
-// Syncs live Amazon data back into your Affiliate Products DB (tblF4rxxbnn6z9lGr).
+// Syncs live Amazon data into the product catalog (Supabase affiliate_products).
 // Run daily via Vercel Cron or manually via POST.
 //
 // What it updates (all writable fields):
@@ -14,18 +14,11 @@
 //   Product Name, Category, Servings, Nutrition Label URL,
 //   Sh. Amazon/Stripe Link, Value Rating (formula field)
 //
-// Requires: ASIN field (Single line text) added to your Airtable table.
+// Products come from lib/affiliateProducts.js (Supabase affiliate_products).
 
 import { getItems } from "@/lib/amazon/creatorsApi";
 
-const AT_KEY   = process.env.AFFILIATE_API_KEY;
-const AT_BASE  = process.env.AFFILIATE_BASE_ID;
-const AT_TABLE = process.env.AFFILIATE_TABLE_NAME;
-
-const AT_HEADERS = {
-  Authorization:  `Bearer ${AT_KEY}`,
-  "Content-Type": "application/json",
-};
+import { listProducts, updateProduct } from "@/lib/affiliateProducts";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function chunk(arr, n) {
@@ -35,36 +28,10 @@ function chunk(arr, n) {
 }
 
 async function fetchRecordsWithAsins() {
-  const records = [];
-  let offset = null;
-  do {
-    const params = new URLSearchParams({ filterByFormula: "NOT({ASIN} = '')" });
-    if (offset) params.set("offset", offset);
-    const res  = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}?${params}`,
-      { headers: AT_HEADERS }
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Airtable fetch failed ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    records.push(...(data.records ?? []));
-    offset = data.offset ?? null;
-  } while (offset);
-  return records;
+  return (await listProducts()).filter((r) => String(r.fields?.ASIN || "").trim());
 }
 
-async function patchRecord(recordId, fields) {
-  const res = await fetch(
-    `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}/${recordId}`,
-    { method: "PATCH", headers: AT_HEADERS, body: JSON.stringify({ fields }) }
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Patch ${recordId} failed ${res.status}: ${text.slice(0, 200)}`);
-  }
-}
+const patchRecord = updateProduct;
 
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).end();
@@ -73,15 +40,11 @@ export default async function handler(req, res) {
   const validManual = req.headers["x-sync-secret"] === process.env.SYNC_SECRET;
   if (!validCron && !validManual) return res.status(401).json({ error: "Unauthorized" });
 
-  if (!AT_KEY || !AT_BASE || !AT_TABLE) {
-    return res.status(503).json({ error: "Missing Airtable config." });
-  }
-
   let records;
   try {
     records = await fetchRecordsWithAsins();
   } catch (err) {
-    return res.status(500).json({ error: "Failed to fetch Airtable records.", detail: err.message });
+    return res.status(500).json({ error: "Failed to load products.", detail: err.message });
   }
 
   if (!records.length) {
@@ -111,7 +74,7 @@ export default async function handler(req, res) {
         const item = byAsin.get(asin);
         if (!item) { errors++; errorList.push(`ASIN not found on Amazon: ${asin}`); return; }
 
-        // Map Amazon fields → your Airtable column names exactly
+        // Field names are mapped to columns in lib/affiliateProducts.js
         const fields = {
           "Lo. Amazon/Stripe Link": item.affiliateLink,  // always refresh tag
         };
@@ -121,6 +84,7 @@ export default async function handler(req, res) {
         if (item.imageUrl                ) fields["Image URL"]    = item.imageUrl;
         if (item.boughtLastMonth != null) fields["Bought"]        = item.boughtLastMonth;
         if (item.brand                   ) fields["Brand"]        = item.brand;
+        fields["Last Synced"] = new Date().toISOString();
 
         try {
           await patchRecord(recordId, fields);

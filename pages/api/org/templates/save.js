@@ -1,6 +1,7 @@
 // pages/api/org/templates/save.js
 // POST { template } - creates or updates a single workout template.
-// Templates are stored as JSONB array in organizations.workout_templates
+// Templates are stored as JSONB array in organizations.workout_templates. Saved workouts make up the
+// team's Workout Library; athleteVisible (default true) controls whether athletes can pick them.
 
 import { requireOrgSideUser } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
@@ -31,6 +32,7 @@ function sanitizeTemplate(t, now) {
     exercises:   (Array.isArray(t?.exercises) ? t.exercises : [])
       .slice(0, 60)
       .map(sanitizeExercise),
+    athleteVisible: t?.athleteVisible !== false,
     createdAt:   isNew ? now : String(t?.createdAt || now),
     updatedAt:   now,
   };
@@ -72,6 +74,8 @@ export default async function handler(req, res) {
 
     const idx = templates.findIndex(t => t.id === clean.id);
     if (idx >= 0) {
+      // Editors that don't know about the athlete toggle must not reset it
+      if (template.athleteVisible === undefined) clean.athleteVisible = templates[idx].athleteVisible !== false;
       templates[idx] = clean;
     } else {
       templates.push(clean);

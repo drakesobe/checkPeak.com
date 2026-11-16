@@ -11,7 +11,7 @@
 
 import { requireOrg }          from "@/lib/requireOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
-import { buildBoards }         from "@/lib/teamBoards";
+import { buildBoardsWithMovement, daysAgoISO } from "@/lib/teamBoards";
 
 const EMPTY_SUMMARY = { athletesWithStats: 0, rosterSize: 0, gamesLogged: 0, coachLogged: 0, verifiedPct: 0 };
 
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     // 2. Game logs for this sport + season
     const { data: allLogs, error: logErr } = await db
       .from("athlete_game_logs")
-      .select("athlete_token, stats, result, logged_by, role_key")
+      .select("athlete_token, stats, result, logged_by, role_key, game_date")
       .in("athlete_token", tokens)
       .ilike("sport", sport)
       .eq("season_year", season);
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     if (!logs.length) return res.status(200).json({ ok: true, boards: [], summary, teamGames: 0 });
 
     // 3. Boards (shared with /api/athlete/leaderboard)
-    const { boards, teamGames } = buildBoards({ sport, logs, tokenToName, myToken: null, limit });
+    const { boards, teamGames } = buildBoardsWithMovement({ sport, logs, tokenToName, myToken: null, limit, cutoff: daysAgoISO(7) });
     for (const b of boards) {
       for (const e of b.entries) e.email = tokenToEmail[e.athleteToken] || null;
     }

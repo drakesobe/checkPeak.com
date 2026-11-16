@@ -48,6 +48,11 @@ function useReveal(options = {}) {
   return { ref, inView };
 }
 
+// Render-prop wrapper so sections can use the reveal hook inline (hooks can't run in callbacks)
+function Reveal({ children }) {
+  return children(useReveal());
+}
+
 // ── Shared grain overlay ──────────────────────────────────────────────────────
 function Grain({ opacity = 0.04 }) {
   return (
@@ -560,9 +565,7 @@ export default function InfoPage() {
         {/* ══════════════════════════════════════════════════════════════════
             2. RISK CALLOUT
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden",
               backgroundColor: "#080C14",
@@ -629,15 +632,13 @@ export default function InfoPage() {
                 </motion.div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             3. WHAT YOU GET
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden", backgroundColor: BLACK,
               padding: "clamp(4rem, 8vw, 8rem) clamp(1.25rem, 8vw, 8rem)",
@@ -667,15 +668,13 @@ export default function InfoPage() {
                 </div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             4. HOW IT WORKS
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section
               id="how-it-works"
               ref={ref}
@@ -719,15 +718,13 @@ export default function InfoPage() {
                 </div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             5. STATS SCOREBOARD
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden", backgroundColor: BLACK,
               padding: "clamp(4rem, 8vw, 7rem) clamp(1.25rem, 8vw, 8rem)",
@@ -787,15 +784,13 @@ export default function InfoPage() {
                 </p>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             6. WHY TEAMS USE CHECKPEAK
            ══════════════════════════════════════════════════════════════════ */}
-        {cards.length > 0 && (() => {
-          const { ref, inView } = useReveal();
-          return (
+        {cards.length > 0 && (<Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden", backgroundColor: "#060C16",
               padding: "clamp(4rem, 8vw, 8rem) clamp(1.25rem, 8vw, 8rem)",
@@ -825,8 +820,8 @@ export default function InfoPage() {
                 </div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>)}
 
         {/* ══════════════════════════════════════════════════════════════════
             7. NCAA COMPLIANCE
@@ -852,9 +847,7 @@ export default function InfoPage() {
         {/* ══════════════════════════════════════════════════════════════════
             8. TRUSTED RESOURCES
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden", backgroundColor: "#060C16",
               padding: "clamp(4rem, 8vw, 7rem) clamp(1.25rem, 8vw, 8rem)",
@@ -933,15 +926,13 @@ export default function InfoPage() {
                 </div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             9. DISCLAIMER
            ══════════════════════════════════════════════════════════════════ */}
-        {safety && (() => {
-          const { ref, inView } = useReveal();
-          return (
+        {safety && (<Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               backgroundColor: BLACK,
               padding: "clamp(2.5rem, 5vw, 4rem) clamp(1.25rem, 8vw, 8rem)",
@@ -980,15 +971,13 @@ export default function InfoPage() {
                 </motion.div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>)}
 
         {/* ══════════════════════════════════════════════════════════════════
             10. CTA CLOSER
            ══════════════════════════════════════════════════════════════════ */}
-        {(() => {
-          const { ref, inView } = useReveal();
-          return (
+        <Reveal>{({ ref, inView }) => (
             <section ref={ref} style={{
               position: "relative", overflow: "hidden", backgroundColor: "#060C16",
               padding: "clamp(5rem, 10vw, 9rem) clamp(1.25rem, 8vw, 8rem)",
@@ -1049,8 +1038,8 @@ export default function InfoPage() {
                 </motion.div>
               </div>
             </section>
-          );
-        })()}
+          )}
+        </Reveal>
 
         {/* ══════════════════════════════════════════════════════════════════
             FOOTER

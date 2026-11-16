@@ -5,16 +5,21 @@
 // Migration: ALTER TABLE organizations ADD COLUMN IF NOT EXISTS push_token TEXT;
 
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireOrgSideUser } from "@/lib/requireUser";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { orgId, token } = req.body || {};
+  // Only staff of this organization can register for its notifications
+  const me = requireOrgSideUser(req, res);
+  if (!me) return;
+  const orgId = String(me.orgId || me.org_id || (me.role === "organization" ? me.id : "") || "").trim();
+  const { token } = req.body || {};
 
   if (!orgId || !token) {
-    return res.status(400).json({ error: "orgId and token are required" });
+    return res.status(400).json({ error: "A push token is required." });
   }
 
   try {

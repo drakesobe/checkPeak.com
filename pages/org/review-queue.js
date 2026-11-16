@@ -874,7 +874,7 @@ function MobileSheet({ item, open, onClose, saving, saveErr, onApprove, onNeedsI
 
 export default function ReviewQueuePage() {
   const router = useRouter();
-  const { user, logout } = useAuthContext();
+  const { user, authReady, logout } = useAuthContext();
   const { loading, error, items, setItems, refreshQueue, counts, fmtDate } = useReviewQueue();
 
   const role      = useMemo(() => getRole(user), [user]);
@@ -888,9 +888,10 @@ export default function ReviewQueuePage() {
   }, [user, role]);
 
   useEffect(() => {
+    if (!authReady) return; // saved session not read yet
     if (!user)              { router.push("/");          return; }
     if (role && !isOrgSide) { router.push("/dashboard"); return; }
-  }, [user, role, isOrgSide, router]);
+  }, [authReady, user, role, isOrgSide, router]);
 
   const { billingLoading, billingErr, billing, isPaidOk, rawIsPaidOk, isAdminBypass } =
     useBillingGate({ user, role, isOrgSide });

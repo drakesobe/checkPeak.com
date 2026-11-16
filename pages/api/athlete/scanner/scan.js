@@ -10,6 +10,7 @@ import { requireAthlete } from "@/lib/requireAthlete";
 import { extractLabel } from "@/lib/labelVision";
 import { checkLabel, saveScan, getSupplementData, BANNED_LIST_MISSING } from "@/lib/supplementCheck";
 import { hourlyLimit } from "@/lib/ratelimiter";
+import { verifySession, parseSessionString } from "@/lib/session";
 
 const SUPPORTED_MEDIA = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -72,7 +73,7 @@ export default async function handler(req, res) {
   // ── Auth fallback for React Native ───────────────────────────────────────
   if (cookieMissingOrBroken(req)) {
     const authField = asString(getValue("_authUser") || getValue("authUser"));
-    if (authField) injectAuthFromField(req, authField);
+    if (authField && await verifySession(parseSessionString(authField))) injectAuthFromField(req, authField);
   }
 
   const auth = requireAthlete(req);

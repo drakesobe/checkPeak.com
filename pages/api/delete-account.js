@@ -5,12 +5,15 @@
 import bcrypt from "bcryptjs";
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { getAthleteById, getAthleteByToken } from "@/lib/supabaseOrg";
+import { readUserFromRequest } from "@/lib/requireUser";
+import { hourlyLimit } from "@/lib/ratelimiter";
 
 function asString(v) { return String(v ?? "").trim(); }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!hourlyLimit(req, res, "delete-account", 10)) return;
 
   const { athleteId, athleteToken, password } = req.body || {};
   if (!password) return res.status(400).json({ error: "Password confirmation is required." });
@@ -29,6 +32,14 @@ export default async function handler(req, res) {
     }
 
     if (!athlete) return res.status(404).json({ error: "Athlete not found." });
+
+    // Must be the signed-in athlete deleting their own account
+    const session = readUserFromRequest(req);
+    const sessionIds = [session?.id, session?.athleteId, session?.AthleteToken, session?.athleteToken, session?.athlete_token]
+      .map(asString).filter(Boolean);
+    if (!sessionIds.includes(asString(athlete.id)) && !sessionIds.includes(asString(athlete.athlete_token))) {
+      return res.status(403).json({ error: "Please sign in to delete your account." });
+    }
     if (!athlete.password_hash) return res.status(400).json({ error: "Account has no password set." });
 
     const match = await bcrypt.compare(String(password), athlete.password_hash);

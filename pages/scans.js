@@ -423,7 +423,7 @@ function ScanSkeleton() {
 // ---------------------------------------------------------------------------
 export default function ScansPage() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, authReady } = useAuthContext();
 
   const [scans,     setScans]     = useState([]);
   const [loading,   setLoading]   = useState(false);
@@ -432,6 +432,7 @@ export default function ScansPage() {
   const [sortBy,    setSortBy]    = useState("Newest");
 
   useEffect(() => {
+    if (!authReady) return; // saved session not read yet
     if (!user) { router.push("/login"); return; }
 
     try {
@@ -457,9 +458,7 @@ export default function ScansPage() {
     }
 
     fetchScans();
-  }, [user, router]);
-
-  if (!user) return null;
+  }, [authReady, user, router]);
 
   /* ── Summary stats ── */
   const summary = useMemo(() => {
@@ -511,6 +510,9 @@ export default function ScansPage() {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+  // After every hook: returning earlier changes the hook count between renders and crashes React
+  if (!user) return null;
+
   return (
     <>
       <style>{SCANS_CSS}</style>

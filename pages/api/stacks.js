@@ -1,46 +1,10 @@
 // pages/api/stacks.js
 
+import { listProducts } from "@/lib/affiliateProducts";
+
 export default async function handler(req, res) {
-  const AIRTABLE_API_KEY = process.env.AFFILIATE_API_KEY;
-  const BASE_ID          = process.env.AFFILIATE_BASE_ID;
-  const TABLE_ID         = process.env.AFFILIATE_TABLE_NAME;
-  const VIEW_ID          = "viwUcs1qpyxyLqkIM";
-
-  if (!AIRTABLE_API_KEY) return res.status(500).json({ error: "Missing AFFILIATE_API_KEY env var" });
-  if (!BASE_ID)          return res.status(500).json({ error: "Missing AFFILIATE_BASE_ID env var" });
-  if (!TABLE_ID)         return res.status(500).json({ error: "Missing AFFILIATE_TABLE_NAME env var" });
-
-  const buildUrl = (offset) => {
-    const params = new URLSearchParams();
-    if (VIEW_ID) params.set("view", VIEW_ID);
-    params.set("pageSize", "100");
-    if (offset) params.set("offset", offset);
-    return `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_ID)}?${params.toString()}`;
-  };
-
   try {
-    let allRecords = [];
-    let offset     = null;
-
-    while (true) {
-      const response = await fetch(buildUrl(offset), {
-        headers: {
-          Authorization:  `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Airtable fetch error:", response.status, text);
-        return res.status(500).json({ error: "Failed to fetch Airtable: " + response.status });
-      }
-
-      const data = await response.json();
-      allRecords  = allRecords.concat(data.records || []);
-      offset      = data.offset;
-      if (!offset) break;
-    }
+    const allRecords = await listProducts();
 
     const stacks = allRecords.map((record) => {
       const f = record.fields || {};
@@ -95,6 +59,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ records: stacks });
   } catch (error) {
     console.error("[stacks] API error:", error);
-    return res.status(500).json({ error: "Failed to fetch Airtable data" });
+    return res.status(500).json({ error: "Could not load products. Try again shortly." });
   }
 }

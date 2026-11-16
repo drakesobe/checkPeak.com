@@ -1,6 +1,6 @@
 // pages/api/org/billing/update.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { upsertBillingForOrgToken, F } from "@/lib/airtableBilling";
+import { upsertBillingForOrgToken, F } from "@/lib/billingStore";
 
 function cleanText(v) {
   return String(v ?? "").trim();
@@ -18,9 +18,6 @@ function cleanLast4(v) {
   return String(v || "").replace(/\D/g, "").slice(-4);
 }
 
-function isAirtableRecordId(v = "") {
-  return /^rec[a-zA-Z0-9]{14,}$/.test(String(v || "").trim());
-}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -38,9 +35,9 @@ export default async function handler(req, res) {
 
   if (!token) return res.status(400).json({ error: "Missing organization token in session." });
 
-  // ✅ Optional: link to org record id ONLY if it's actually a rec...
+  // Link the billing row to this organization (Supabase id)
   const rawOrgId = String(user?.orgId || user?.OrgId || user?.OrganizationId || user?.organizationId || "").trim();
-  const orgRecordId = isAirtableRecordId(rawOrgId) ? rawOrgId : "";
+  const orgRecordId = rawOrgId;
 
   try {
     const { billing = {} } = req.body || {};

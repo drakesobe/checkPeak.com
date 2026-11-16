@@ -599,7 +599,7 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
   if (mode === "saved") {
     return (
       <span style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: DS.safe, display: "flex", alignItems: "center", gap: 5 }}>
-        ✓ Saved as template
+        ✓ Saved to Workout Library
       </span>
     );
   }
@@ -612,14 +612,14 @@ function SaveAsTemplateButton({ items, derivedSport, onSaved }) {
         style={{ padding: "9px 16px", border: `1px solid ${DS.border}`, background: "transparent", fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: meaningfulItems.length ? DS.brand : DS.dimText, cursor: meaningfulItems.length ? "pointer" : "not-allowed", opacity: meaningfulItems.length ? 1 : 0.4 }}
         onMouseEnter={e => { if (meaningfulItems.length) { e.currentTarget.style.background = DS.brandBg; e.currentTarget.style.borderColor = DS.brandBorder; }}}
         onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = DS.border; }}>
-        Save as template
+        Save to Workout Library
       </button>
     );
   }
 
   return (
     <div style={{ position: "absolute", bottom: "100%", right: 20, width: 300, background: DS.cardBg, border: `1px solid ${DS.border}`, borderTop: `2px solid ${DS.brand}`, padding: "14px", boxShadow: "0 -8px 32px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column", gap: 10 }}>
-      <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.brand, margin: 0 }}>Save as Template</p>
+      <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: DS.brand, margin: 0 }}>Save to Workout Library</p>
       {err && <p style={{ fontFamily: F.body, fontSize: 11, color: DS.banned, margin: 0 }}>⚠ {err}</p>}
       <div>
         <span style={lbl}>Name *</span>

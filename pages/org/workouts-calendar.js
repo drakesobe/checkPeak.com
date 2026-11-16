@@ -329,6 +329,18 @@ export default function WorkoutsCalendarPage() {
     setCreateOpen(true);
   }, [todayISO]);
 
+  // Deep links from the Today checklist: ?setup=season opens season dates, ?setup=workout starts a workout
+  useEffect(() => {
+    if (!router.isReady || todayISO === "2000-01-01") return;
+    const step = router.query.setup;
+    if (step === "season") setSeasonCalendarOpen(true);
+    else if (step === "workout") openCreateForDay(todayISO);
+    else return;
+    const { setup, ...rest } = router.query;
+    router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.setup, todayISO]);
+
   // ── Derived labels ──
   const defaultSportForCreate = useMemo(
     () => (selectedSports.length === 1 ? titleSport(selectedSports[0]) : ""),

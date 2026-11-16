@@ -1,194 +1,91 @@
 // pages/api/org/athlete/bulk-import.js
-// POST { athletes: [{ firstName, lastName, email, sport, phone }] }
-// Creates Athlete records in Airtable, deduplicates against existing emails,
-// returns { created, skipped, errors: [{ email, reason }] }
+// POST { athletes: [{ firstName, lastName, email, sport?, phone? }] }
+// Adds athletes to the coach's roster in Supabase. Athletes are created without a password:
+// they finish their account in the CheckPeak app by signing up with the same email and the
+// team code (see /api/athlete-signup), which links them to this row.
+// Each new athlete gets an invite email with the app link and team code.
+// Response: { ok, created, skipped, errors: [{ email, reason }], invites: { sent, failed, skipped } }
 
 import { requireOrgSideUser } from "@/lib/requireUser";
-import { AT, base, F } from "@/lib/airtableOrgWorkoutConfig";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
+import { supabaseAdmin as db } from "@/lib/supabase";
+import { generateAthleteToken, normalizeEmail } from "@/lib/supabaseOrg";
+import { sendAthleteInvites } from "@/lib/email/athleteInvite";
 
-// ─── Field map - adjust these to match your Athletes table ───────────────────
-const A = {
-  NAME:    F?.ATH_NAME    || "Name",
-  EMAIL:   F?.ATH_EMAIL   || "Email",
-  SPORT:   F?.ATH_SPORT   || "sport",
-  PHONE:   F?.ATH_PHONE   || "Phone",
-  TOKEN:   F?.ATH_TOKEN   || "AthleteToken",
-  ORG:     F?.ATH_ORG     || "Organization",
-  ORGID:   F?.ATH_ORGID   || "Token",
-  PASS:    F?.ATH_PASS    || "Password",
-  ROLE:    F?.ATH_ROLE    || "Role",
-  STATUS:  F?.ATH_STATUS  || "Status",
-  CREATED:   F?.ATH_CREATED || "CreatedAt",
-};
-
-function chunk(arr, n = 10) {
-  const out = [];
-  for (let i = 0; i < (arr || []).length; i += n) out.push(arr.slice(i, i + n));
-  return out;
-}
-
-function escapeAirtableString(str = "") {
-  return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function generateAthleteToken() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let id = "ATH-";
-  for (let i = 0; i < 8; i++) id += chars[Math.floor(Math.random() * chars.length)];
-  return id;
-}
-
-function generateTempPassword() {
-  // Readable temp password - athlete will be prompted to change on first login
-  return `Peak${crypto.randomBytes(4).toString("hex").toUpperCase()}!`;
-}
-
-function validateEmail(e) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || "").trim());
-}
-
-async function getExistingEmails(b, emails) {
-  const Athletes = b(AT.tables.athletes);
-  const emailField = A.EMAIL;
-  const existing = new Set();
-
-  for (const emailChunk of chunk(emails, 30)) {
-    const orParts = emailChunk.map(e => `LOWER({${emailField}})='${escapeAirtableString(e.toLowerCase())}'`).join(",");
-    const rows = await Athletes.select({
-      filterByFormula: `OR(${orParts})`,
-      fields: [emailField],
-      maxRecords: emailChunk.length,
-    }).firstPage();
-    for (const r of rows || []) {
-      const e = String(r?.fields?.[emailField] || "").trim().toLowerCase();
-      if (e) existing.add(e);
-    }
-  }
-  return existing;
-}
+const MAX_ROWS = 1000;
+const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const clip = (v, n) => String(v ?? "").trim().slice(0, n);
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const user = requireOrgSideUser(req, res);
   if (!user) return;
 
+  const orgToken = String(user.orgToken || user.org_token || "").trim();
+  if (!orgToken) return res.status(400).json({ error: "Your session is missing a team. Please sign in again." });
+
   const { athletes } = req.body || {};
+  if (!Array.isArray(athletes) || !athletes.length) return res.status(400).json({ error: "Add at least one athlete." });
+  if (athletes.length > MAX_ROWS) return res.status(400).json({ error: `Import at most ${MAX_ROWS} athletes at a time.` });
 
-  if (!Array.isArray(athletes) || !athletes.length) {
-    return res.status(400).json({ error: "athletes array is required" });
-  }
-  if (athletes.length > 1000) {
-    return res.status(400).json({ error: "Maximum 1,000 athletes per import" });
-  }
-
-  const orgId    = user.orgId;
-  const orgRecId = user.orgRecordId || user.orgId;
-  const orgToken = String(user.Token || user.token || user["Organization Token"] || "").trim();
-  if (!orgId) return res.status(400).json({ error: "Missing orgId on session" });
-
-  // ── Validate incoming rows ────────────────────────────────────────────────
-  const valid   = [];
-  const errors  = [];
-
+  const errors = [];
+  const valid = new Map(); // email -> row (later duplicates in the file are skipped)
   for (const a of athletes) {
-    const email = String(a.email || "").trim().toLowerCase();
-    if (!email || !validateEmail(email)) {
-      errors.push({ email: email || "(blank)", reason: "Invalid email" });
-      continue;
-    }
-    const firstName = String(a.firstName || "").trim();
-    const lastName  = String(a.lastName  || "").trim();
-    if (!firstName || !lastName) {
-      errors.push({ email, reason: "Missing first or last name" });
-      continue;
-    }
-    valid.push({ ...a, email, firstName, lastName });
+    const email = normalizeEmail(a?.email);
+    const firstName = clip(a?.firstName, 60);
+    const lastName = clip(a?.lastName, 60);
+    if (!isEmail(email)) { errors.push({ email: email || "(blank)", reason: "Invalid email" }); continue; }
+    if (!firstName || !lastName) { errors.push({ email, reason: "Missing first or last name" }); continue; }
+    if (valid.has(email)) { errors.push({ email, reason: "Listed twice in the file" }); continue; }
+    valid.set(email, { email, name: `${firstName} ${lastName}`, sport: clip(a?.sport, 60) || null, phone: clip(a?.phone, 30) || null });
   }
 
-  if (!valid.length) {
-    return res.status(400).json({ ok: false, created: 0, skipped: 0, errors });
-  }
-
-  const b = base();
-
-  // ── Deduplicate against existing Athletes in Airtable ────────────────────
-  const incomingEmails  = valid.map(a => a.email);
-  const existingEmails  = await getExistingEmails(b, incomingEmails);
-
-  const toCreate = [];
-  let   skipped  = 0;
-
-  for (const a of valid) {
-    if (existingEmails.has(a.email)) {
-      errors.push({ email: a.email, reason: "Email already exists in roster" });
+  let skipped = 0;
+  const emails = [...valid.keys()];
+  for (let i = 0; i < emails.length; i += 200) {
+    const { data: existing, error } = await db.from("athletes").select("email, org_token").in("email", emails.slice(i, i + 200));
+    if (error) return res.status(500).json({ error: "Could not check your roster. Try again." });
+    for (const row of existing ?? []) {
+      const email = normalizeEmail(row.email);
+      if (!valid.has(email)) continue;
+      valid.delete(email);
       skipped++;
-      continue;
+      errors.push({
+        email,
+        reason: String(row.org_token || "").toUpperCase() === orgToken.toUpperCase()
+          ? "Already on your roster"
+          : "Already has a CheckPeak account. Ask them to join with your team code.",
+      });
     }
-    toCreate.push(a);
   }
 
-  // ── Create Airtable records in batches of 10 ─────────────────────────────
   let created = 0;
-
-  for (const batch of chunk(toCreate, 10)) {
-    const records = await Promise.all(batch.map(async a => {
-      const tempPassword = generateTempPassword();
-      const hashedPass   = await bcrypt.hash(tempPassword, 10);
-      const token        = generateAthleteToken();
-      const name         = `${a.firstName} ${a.lastName}`;
-
-      const fields = {
-        [A.NAME]:   name,
-        [A.EMAIL]:  a.email,
-        [A.TOKEN]:  token,
-        [A.PASS]:   hashedPass,
-        [A.ROLE]:   "athlete",
-        [A.CREATED]: new Date().toISOString(),
-        // Optional fields - only write if value exists
-        ...(a.sport ? { [A.SPORT]: a.sport } : {}),
-        ...(a.phone ? { [A.PHONE]: a.phone } : {}),
-        // Org link - adjust field name/format to match your Airtable setup
-        ...(orgToken ? { [A.ORGID]: orgToken } : {}),
-        ...(orgRecId ? { [A.ORG]:   [orgRecId] } : {}), 
-      };
-
-      // Remove any undefined keys
-      for (const k of Object.keys(fields)) {
-        if (!k || k === "undefined") delete fields[k];
-      }
-
-      return { fields, _tempPassword: tempPassword, _email: a.email, _name: name };
-    }));
-
-    // Write to Airtable
-    try {
-      const creates = records.map(({ fields }) => ({ fields }));
-      await b(AT.tables.athletes).create(creates);
-      created += records.length;
-
-      // TODO: Send invite emails here if you have an email service set up.
-      // Example with your existing email infrastructure:
-      // for (const r of records) {
-      //   await sendInviteEmail({ to: r._email, name: r._name, tempPassword: r._tempPassword });
-      // }
-    } catch (e) {
-      console.error("[bulk-import] Airtable create error:", e?.message);
-      for (const r of records) {
-        errors.push({ email: r._email, reason: e?.message || "Airtable write failed" });
-      }
+  const added = [];
+  const rows = [...valid.values()].map((a) => ({ ...a, athlete_token: generateAthleteToken(), org_token: orgToken, status: "active" }));
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const { error } = await db.from("athletes").insert(batch);
+    if (error) {
+      console.error("[bulk-import]", error.message);
+      for (const r of batch) errors.push({ email: r.email, reason: "Could not be added. Try again." });
+    } else {
+      created += batch.length;
+      added.push(...batch);
     }
   }
 
-  return res.status(200).json({
-    ok:      true,
-    created,
-    skipped,
-    errors,
-  });
+  let invites = { sent: 0, failed: 0, skipped: 0 };
+  if (added.length) {
+    const { data: org } = await db.from("organizations").select("name").eq("token", orgToken).maybeSingle();
+    invites = await sendAthleteInvites({
+      athletes: added,
+      orgName: org?.name || user.orgName,
+      coachName: user.name || user.Name || "",
+      teamCode: orgToken,
+      replyTo: user.email,
+    });
+  }
+
+  return res.status(200).json({ ok: true, created, skipped, errors, invites });
 }

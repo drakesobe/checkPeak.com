@@ -11,14 +11,12 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const auth = requireOrg(req);
-  const headerToken = req.headers["x-org-token"];
-  const queryToken  = req.query?.token;
   const cookieToken = auth?.ok ? String(auth?.org?.token || "").trim() : "";
-  const orgToken    = cookieToken || String(headerToken || queryToken || "").trim();
+  const orgToken    = cookieToken;
 
   if (!orgToken) {
     return res.status(401).json({
-      error: "Missing organization token. Log in (cookie auth) or provide x-org-token / ?token=.",
+      error: "Not authenticated",
     });
   }
 

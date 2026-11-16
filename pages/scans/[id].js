@@ -274,7 +274,7 @@ function DeleteModal({ onConfirm, onCancel, deleting, error }) {
 // ---------------------------------------------------------------------------
 export default function ScanDetailPage() {
   const router   = useRouter();
-  const { user } = useAuthContext();
+  const { user, authReady } = useAuthContext();
 
   const [scan,           setScan]           = useState(null);
   const [loading,        setLoading]        = useState(true);
@@ -293,6 +293,7 @@ export default function ScanDetailPage() {
   const scanId = router.query?.id;
 
   useEffect(() => {
+    if (!authReady) return; // saved session not read yet
     if (!router.isReady) return;
     if (!user) { router.push("/login"); return; }
     if (!scanId) return;
@@ -313,11 +314,9 @@ export default function ScanDetailPage() {
       finally { setLoading(false); }
     }
     loadScan();
-  }, [router.isReady, scanId, user, router]);
+  }, [authReady, router.isReady, scanId, user, router]);
 
   useEffect(() => { if (scan) setPendingName(scan.name||scan.ScanName||"Unnamed Scan"); }, [scan]);
-
-  if (!user) return null;
 
   const counts = useMemo(()=>getCounts(scan),[scan]);
   const risk   = useMemo(()=>computeRiskFromCounts(counts),[counts]);
@@ -391,6 +390,9 @@ export default function ScanDetailPage() {
     } catch(err){ setActionError(err.message||"Failed to rename scan."); }
     finally { setRenameSaving(false); }
   };
+
+  // After every hook: returning earlier changes the hook count between renders and crashes React
+  if (!user) return null;
 
   return (
     <>

@@ -1,7 +1,7 @@
 // pages/api/stripe/customer-portal.js
 import stripe from "@/lib/stripe";
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgToken, F } from "@/lib/airtableBilling";
+import { findBillingRecordByOrgToken, F } from "@/lib/billingStore";
 
 function asString(v) {
   return String(v ?? "").trim();

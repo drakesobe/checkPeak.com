@@ -9,7 +9,8 @@ import { useBillingGate }   from "@/hooks/org/useBillingGate";
 import BillingGateScreen    from "@/components/org/reviewQueue/BillingGateScreen";
 import BillingLoadingScreen from "@/components/org/reviewQueue/BillingLoadingScreen";
 
-import OrgTrainersHeader from "@/components/org/trainers/OrgTrainersHeader";
+import { PageHeader, APP } from "@/components/app/ui";
+import { UserPlus, RefreshCw, Search } from "lucide-react";
 import TrainersTable     from "@/components/org/trainers/TrainersTable";
 import InviteModal       from "@/components/org/trainers/InviteModal";
 import EditMemberPanel   from "@/components/org/trainers/EditMemberPanel";
@@ -63,7 +64,7 @@ function parseRole(user) {
 
 export default function TrainersPage() {
   const router = useRouter();
-  const { user, logout } = useAuthContext();
+  const { user, authReady, logout } = useAuthContext();
 
   /* ── Auth + role ── */
   const role            = useMemo(() => parseRole(user), [user]);
@@ -74,9 +75,10 @@ export default function TrainersPage() {
   const showBillingWarning = isAdminBypass && !rawIsPaidOk;
 
   useEffect(() => {
+    if (!authReady) return; // saved session not read yet
     if (!user)       { router.push("/");          return; }
     if (!isOrgSide)  { router.push("/dashboard"); return; }
-  }, [user, isOrgSide, router]);
+  }, [authReady, user, isOrgSide, router]);
 
   /* ── Session validation - surfaces field casing mismatches immediately ── */
   useEffect(() => {
@@ -118,6 +120,14 @@ export default function TrainersPage() {
 
   /* ── Panel state ── */
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Deep link from the Today checklist: /org/trainers?invite=1 opens the invite dialog
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("invite") !== "1") return;
+    setInviteOpen(true);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [editTarget, setEditTarget] = useState(null);
   const [removeOpen,   setRemoveOpen]   = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
@@ -241,7 +251,32 @@ export default function TrainersPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#F4F7FB" }}>
+    <div className="min-h-screen" style={{ backgroundColor: APP.canvas, fontFamily: APP.font }}>
+      <PageHeader
+        title="Staff"
+        subtitle={loading ? "Loading staff…" : `${counts.total} staff member${counts.total === 1 ? "" : "s"} · Assistant coaches and trainers share your roster`}
+        primaryAction={canManageMembers ? { label: "Invite staff", icon: UserPlus, onClick: () => setInviteOpen(true) } : undefined}
+        secondaryActions={[{ label: "Refresh", icon: RefreshCw, onClick: refresh }]}
+        toolbar={
+          <>
+            <div className="app-seg" role="group" aria-label="Filter staff">
+              {[["all", "All", counts.total], ["admin", "Head coaches", counts.admins], ["trainer", "Trainers", counts.coaches], ["inactive", "Inactive", counts.inactive]].map(([key, label, n]) => (
+                <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>
+                  {label} <span style={{ color: APP.faint, fontVariantNumeric: "tabular-nums" }}>{n ?? 0}</span>
+                </button>
+              ))}
+            </div>
+            <label style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 220px", maxWidth: 320 }}>
+              <span className="sr-only">Search staff</span>
+              <Search size={15} aria-hidden="true" style={{ position: "absolute", left: 10, color: APP.faint }} />
+              <input
+                type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email or role"
+                style={{ width: "100%", height: 36, padding: "0 10px 0 32px", borderRadius: 8, border: `1px solid ${APP.line}`, font: `400 14px ${APP.font}`, color: APP.ink, background: "#fff" }}
+              />
+            </label>
+          </>
+        }
+      />
 
       {showBillingWarning && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs font-bold"
@@ -259,27 +294,12 @@ export default function TrainersPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 pb-12 space-y-5">
 
-        {/* Header: title, filter chips, search, actions */}
-        <OrgTrainersHeader
-          orgName={orgName}
-          orgEmail={orgEmail}
-          orgToken={orgToken}
-          counts={counts}
-          canManageMembers={canManageMembers}
-          loading={loading}
-          filter={filter}
-          onFilterChange={setFilter}
-          search={search}
-          onSearchChange={setSearch}
-          onBack={() => router.push("/org/workouts-calendar")}
-          onRefresh={refresh}
-          onLogout={onLogout}
-          onInvite={() => setInviteOpen(true)}
-          inviteErr={inviteErr}
-          saveErr={saveErr}
-          inviteOk={inviteOk}
-          saveOk={saveOk}
-        />
+        {(inviteErr || saveErr) && (
+          <div role="alert" style={{ padding: "10px 14px", borderRadius: 10, background: APP.dangerTint, border: "1px solid #FECACA", color: APP.danger, fontSize: 14 }}>{inviteErr || saveErr}</div>
+        )}
+        {(inviteOk || saveOk) && (
+          <div role="status" style={{ padding: "10px 14px", borderRadius: 10, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", fontSize: 14 }}>{saveOk || inviteOk}</div>
+        )}
 
         {/* Full-width team table */}
         <TrainersTable

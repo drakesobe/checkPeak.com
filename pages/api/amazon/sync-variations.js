@@ -1,53 +1,23 @@
 // pages/api/amazon/sync-variations.js
 // Weekly cron (Monday 7 AM UTC): fetches flavor/size variations for all products
-// with an ASIN and stores them in Airtable as JSON in a "Variations" field.
+// with an ASIN and stores them in the product catalog (affiliate_products.variations).
 //
 // Variations field stores: JSON array of { asin, flavor, size, price, image, affiliateLink }
 // SmartStack cards use this to show a flavor picker when browsing.
 //
-// Airtable field required: "Variations" (Long text / JSON)
+// Stored via lib/affiliateProducts.js.
 
 import { getVariations } from "@/lib/amazon/creatorsApi";
 
-const AT_KEY   = process.env.AFFILIATE_API_KEY;
-const AT_BASE  = process.env.AFFILIATE_BASE_ID;
-const AT_TABLE = process.env.AFFILIATE_TABLE_NAME;
-
-const AT_HEADERS = {
-  Authorization:  `Bearer ${AT_KEY}`,
-  "Content-Type": "application/json",
-};
+import { listProducts, updateProduct } from "@/lib/affiliateProducts";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function fetchRecordsWithAsins() {
-  const records = [];
-  let offset = null;
-  do {
-    const params = new URLSearchParams({ filterByFormula: "NOT({ASIN} = '')" });
-    if (offset) params.set("offset", offset);
-    const res  = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}?${params}`,
-      { headers: AT_HEADERS }
-    );
-    if (!res.ok) throw new Error(`Airtable fetch failed ${res.status}`);
-    const data = await res.json();
-    records.push(...(data.records ?? []));
-    offset = data.offset ?? null;
-  } while (offset);
-  return records;
+  return (await listProducts()).filter((r) => String(r.fields?.ASIN || "").trim());
 }
 
-async function patchRecord(recordId, fields) {
-  const res = await fetch(
-    `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}/${recordId}`,
-    { method: "PATCH", headers: AT_HEADERS, body: JSON.stringify({ fields }) }
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Patch ${recordId} failed ${res.status}: ${text.slice(0, 200)}`);
-  }
-}
+const patchRecord = updateProduct;
 
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).end();
@@ -55,10 +25,6 @@ export default async function handler(req, res) {
   const validCron   = req.headers["authorization"] === `Bearer ${process.env.CRON_SECRET}`;
   const validManual = req.headers["x-sync-secret"] === process.env.SYNC_SECRET;
   if (!validCron && !validManual) return res.status(401).json({ error: "Unauthorized" });
-
-  if (!AT_KEY || !AT_BASE || !AT_TABLE) {
-    return res.status(503).json({ error: "Missing Airtable config." });
-  }
 
   let records;
   try {

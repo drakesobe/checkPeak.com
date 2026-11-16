@@ -1,13 +1,17 @@
 // pages/api/org/workouts/range.js
 // GET ?start=YYYY-MM-DD&end=YYYY-MM-DD[&sport=x] - workouts across a date range.
 
-import { readUserCookie } from "@/lib/requireUser";
+import { readUserCookie, requireOwnOrgToken } from "@/lib/requireUser";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 function parseOrgUser(req) {
-  // Direct org_token bypass – mobile uses this (same pattern as getAthletesByToken)
+  // ?org_token= (mobile) is only honored when it is the signed-in coach's own team
   const directToken = String(req.query?.org_token || "").trim();
-  if (directToken) return { Token: directToken, orgToken: directToken, role: "Organization" };
+  if (directToken) {
+    const silent = { status: () => ({ json: () => {} }) };
+    const ok = requireOwnOrgToken(req, silent, directToken, { staffOnly: true });
+    return ok ? { Token: directToken, orgToken: directToken, role: "Organization" } : null;
+  }
 
   const raw = req.query?._authUser ?? req.body?._authUser;
   if (raw) {

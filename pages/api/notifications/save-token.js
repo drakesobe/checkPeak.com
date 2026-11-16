@@ -3,16 +3,22 @@
 // POST { athleteId?, athleteToken?, token }
 
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireAthleteUser } from "@/lib/requireUser";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { athleteId, athleteToken, token } = req.body || {};
+  // Push tokens can only be registered for the signed-in athlete
+  const me = requireAthleteUser(req, res);
+  if (!me) return;
+  const athleteId    = String(me.id || me.athleteId || "").trim();
+  const athleteToken = String(me.AthleteToken || me.athleteToken || me.athlete_token || "").trim();
+  const { token } = req.body || {};
 
   if ((!athleteId && !athleteToken) || !token) {
-    return res.status(400).json({ error: "athleteId or athleteToken, and token are required" });
+    return res.status(400).json({ error: "A push token is required." });
   }
 
   try {

@@ -62,7 +62,7 @@ function perGameView(b) {
     .sort((x, y) => y.value - x.value || String(x.name).localeCompare(String(y.name)));
   let prev = null, prevRank = 0;
   entries.forEach((e, i) => { if (e.value !== prev) { prevRank = i + 1; prev = e.value; } e.rank = prevRank; });
-  return { ...b, entries };
+  return { ...b, entries, hasPrev: false };   // week movement doesn't apply to per-game ranks
 }
 
 function kindLabel(b, perGame) {
@@ -145,7 +145,18 @@ function Tile({ icon, label, value, sub }) {
   );
 }
 
-function EntryRow({ e, last, spotlight, sport, onOpen }) {
+function Move({ m }) {
+  if (m === 0 || m === undefined) return null;
+  if (m === null) return <span style={{ fontSize: 10, fontWeight: 900, color: DS.accent, letterSpacing: "0.04em" }}>NEW</span>;
+  const up = m > 0;
+  return (
+    <span title={`${up ? "Up" : "Down"} ${Math.abs(m)} this week`} style={{ fontSize: 10, fontWeight: 900, color: up ? DS.safe : "#DC2626" }}>
+      {up ? "▲" : "▼"}{Math.abs(m)}
+    </span>
+  );
+}
+
+function EntryRow({ e, last, spotlight, sport, onOpen, showMove }) {
   const top = e.rank <= 3;
   const clickable = !!e.email;
   return (
@@ -163,6 +174,7 @@ function EntryRow({ e, last, spotlight, sport, onOpen }) {
       <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: top ? MEDAL_BG[e.rank - 1] : DS.line }}>
         <span style={{ fontSize: 12, fontWeight: 900, color: top ? MEDAL[e.rank - 1] : DS.dim }}>{e.rank}</span>
       </div>
+      <div style={{ width: 24, marginLeft: -6, flexShrink: 0 }}>{showMove && <Move m={e.movement} />}</div>
       <div style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: DS.brandBg }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: DS.brand }}>{initials(e.name)}</span>
       </div>
@@ -204,7 +216,7 @@ function BoardCard({ b, perGame, spotTokens, sport, onOpen }) {
 
       <div style={{ flex: 1 }}>
         {head.map((e, i) => (
-          <EntryRow key={e.athleteToken} e={e} sport={sport} onOpen={onOpen}
+          <EntryRow key={e.athleteToken} e={e} sport={sport} onOpen={onOpen} showMove={!!b.hasPrev}
             spotlight={spotTokens.has(e.athleteToken)}
             last={i === head.length - 1 && extra.length === 0} />
         ))}
@@ -212,7 +224,7 @@ function BoardCard({ b, perGame, spotTokens, sport, onOpen }) {
           <>
             <div style={{ textAlign: "center", fontSize: 11, color: DS.muted, letterSpacing: 3, padding: "2px 0", borderBottom: `1px solid ${DS.line}` }}>···</div>
             {extra.map((e, i) => (
-              <EntryRow key={e.athleteToken} e={e} sport={sport} onOpen={onOpen} spotlight last={i === extra.length - 1} />
+              <EntryRow key={e.athleteToken} e={e} sport={sport} onOpen={onOpen} showMove={!!b.hasPrev} spotlight last={i === extra.length - 1} />
             ))}
           </>
         )}
@@ -321,9 +333,9 @@ export default function Leaderboard() {
   };
 
   const exportCsv = () => {
-    const rows = [["Board", "Group", "View", "Rank", "Athlete", "Value", "Games", "Verified"]];
+    const rows = [["Board", "Group", "View", "Rank", "Change (7 days)", "Athlete", "Value", "Games", "Verified"]];
     for (const b of boards) for (const e of b.entries) {
-      rows.push([b.label, b.group || "", kindLabel(b, perGame), e.rank, e.name, e.display ?? e.value, e.gp, e.verified ? "Yes" : "No"]);
+      rows.push([b.label, b.group || "", kindLabel(b, perGame), e.rank, !b.hasPrev ? "" : e.movement === null ? "new" : e.movement > 0 ? `+${e.movement}` : String(e.movement || 0), e.name, e.display ?? e.value, e.gp, e.verified ? "Yes" : "No"]);
     }
     downloadCsv(`${sport}-${season}-leaderboard${verifiedOnly ? "-verified" : ""}${perGame ? "-per-game" : ""}.csv`, rows);
   };

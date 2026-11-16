@@ -1,9 +1,10 @@
 // pages/api/saveStack.js
 // POST { UserEmail, stack: { id, notes? } } - saves a stack for a user.
 
+import { sessionEmail } from "@/lib/supplementCheck";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
-function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
+
 function normalizeStackId(id) { return String(id ?? "").trim(); }
 
 async function fetchAllSaved(email) {
@@ -27,8 +28,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { UserEmail, stack } = req.body || {};
-    const normalizedEmail = normalizeEmail(UserEmail);
+    // Always the signed-in user's list; UserEmail in the body is ignored
+    const { stack } = req.body || {};
+    const normalizedEmail = sessionEmail(req);
+    if (!normalizedEmail) return res.status(401).json({ error: "Please sign in to save stacks." });
     const stackId = normalizeStackId(stack?.id);
 
     if (!normalizedEmail || !normalizedEmail.includes("@") || !stackId) {

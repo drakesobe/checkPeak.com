@@ -2,6 +2,7 @@
 // POST { scanId, newName } - updates scan_name in Supabase.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { loadOwnedScan } from "@/lib/scanAccess";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,7 +15,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing scanId or newName in request body." });
     }
 
-    const trimmedName = String(newName).trim();
+    const trimmedName = String(newName).trim().slice(0, 120);
+    const owned = await loadOwnedScan(req, res, scanId, "id");
+    if (!owned) return;
 
     const { data, error } = await db
       .from("scans")

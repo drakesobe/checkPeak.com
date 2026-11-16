@@ -1,5 +1,5 @@
 // pages/api/getScanDetail.js
-import { supabaseAdmin as db } from "@/lib/supabase";
+import { loadOwnedScan } from "@/lib/scanAccess";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -16,16 +16,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data: scan, error } = await db
-      .from("scans")
-      .select("id, scan_name, scan_date, stack_details, banned_details, share_enabled, share_token")
-      .eq("id", scanId)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!scan) {
-      return res.status(404).json({ ok: false, error: "Scan not found for that ID." });
-    }
+    const scan = await loadOwnedScan(req, res, scanId, "id, scan_name, scan_date, stack_details, banned_details, share_enabled, share_token");
+    if (!scan) return;
 
     let bannedDetails = { ProhibitedCount: 0, LimitedCount: 0, OtherBannedCount: 0 };
     if (scan.banned_details) {

@@ -35,7 +35,7 @@ function TopBar({ trainerName, router }) {
   return (
     <div className="flex items-center justify-between px-4 py-2.5 gap-4" style={{ backgroundColor: DS.brand }}>
       <div className="flex items-center gap-3 min-w-0">
-        <button type="button" onClick={() => router.push("/org/workouts-calendar")}
+        <button type="button" onClick={() => router.push("/org/dashboard")}
           className="flex items-center gap-1.5 text-xs font-bold transition shrink-0"
           style={{ color: "rgba(255,255,255,0.55)" }}
           onMouseEnter={e => { e.currentTarget.style.color = "#fff"; }}

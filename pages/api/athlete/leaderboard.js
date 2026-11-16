@@ -7,7 +7,7 @@
 // Board logic lives in lib/teamBoards.js.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
-import { buildBoards }         from "@/lib/teamBoards";
+import { buildBoardsWithMovement, daysAgoISO } from "@/lib/teamBoards";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     // Fetch game logs
     const { data: logs, error: logErr } = await db
       .from("athlete_game_logs")
-      .select("athlete_token, stats, result, logged_by, role_key")
+      .select("athlete_token, stats, result, logged_by, role_key, game_date")
       .in("athlete_token", tokens)
       .ilike("sport", sport)
       .eq("season_year", season);
@@ -64,8 +64,8 @@ export default async function handler(req, res) {
     if (logErr) return res.status(500).json({ error: logErr.message });
     if (!logs?.length) return res.status(200).json({ ok: true, boards: [], myToken: athleteToken });
 
-    const { boards, teamGames } = buildBoards({
-      sport, logs, tokenToName, myToken: athleteToken, limit,
+    const { boards, teamGames } = buildBoardsWithMovement({
+      sport, logs, tokenToName, myToken: athleteToken, limit, cutoff: daysAgoISO(7),
     });
 
     return res.status(200).json({ ok: true, boards, myToken: athleteToken, teamGames });

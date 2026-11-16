@@ -676,18 +676,6 @@ export default function SmartStackPage() {
     setVisibleLimit(itemsPerChunk);
   }, [activeCategory, activeVitaminCategory, activeValueFilters, activePriceFilters, activeSort, debouncedSearchQuery, showSavedOnly, itemsPerChunk]);
 
-  // Infinite scroll - auto-load next chunk when sentinel enters viewport
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !canLoadMore) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisibleLimit((prev) => prev + itemsPerChunk); },
-      { rootMargin: "300px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [canLoadMore, itemsPerChunk]);
-
   // ── Filtering ──────────────────────────────────────────────────────────────
   const filteredStacks = useMemo(() => {
     let result = allStacks;
@@ -764,6 +752,19 @@ export default function SmartStackPage() {
     comparisonBucket: getComparisonBucket(stack),
   })).slice(0, effectiveLimit);
   const canLoadMore = effectiveLimit < visibleCount;
+
+  // Infinite scroll - auto-load next chunk when sentinel enters viewport
+  // (declared after canLoadMore: its dependency list is read during render)
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !canLoadMore) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisibleLimit((prev) => prev + itemsPerChunk); },
+      { rootMargin: "300px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [canLoadMore, itemsPerChunk]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const togglePriceFilter = useCallback((key) => {

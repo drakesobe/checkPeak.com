@@ -453,7 +453,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
                 <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
                   {isEditing
                     ? "Edit period details - click All periods to return"
-                    : "Shared across all coaches in your org - synced to Airtable."}
+                    : "Shared across all coaches in your org."}
                 </p>
               </div>
             </div>
@@ -578,7 +578,7 @@ export default function SeasonCalendarModal({ open, onClose, onSaved }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <p style={{ fontFamily: F.body, fontSize: 11, color: DS.dimText, margin: 0 }}>
                 {saved
-                  ? "✓ Saved to Airtable - all coaches will see these dates."
+                  ? "✓ Saved. All coaches will see these dates."
                   : isEditing
                     ? "Changes are saved when you click Save Calendar."
                     : "Shared across all coaches in your org."}

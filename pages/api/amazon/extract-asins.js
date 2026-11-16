@@ -1,7 +1,7 @@
 // pages/api/amazon/extract-asins.js
 // One-time (or periodic) endpoint that reads your Affiliate Products DB,
 // extracts ASINs from existing Amazon URLs in the link fields,
-// then patches the ASIN (and Brand via a live Amazon lookup) back into Airtable.
+// then saves the ASIN (and Brand via a live Amazon lookup) to the product catalog.
 //
 // Run once: POST /api/amazon/extract-asins
 // Returns a summary of what was patched and what still needs manual attention.
@@ -14,14 +14,7 @@
 
 import { getItems } from "@/lib/amazon/creatorsApi";
 
-const AT_KEY   = process.env.AFFILIATE_API_KEY;
-const AT_BASE  = process.env.AFFILIATE_BASE_ID;
-const AT_TABLE = process.env.AFFILIATE_TABLE_NAME;
-
-const AT_HEADERS = {
-  Authorization:  `Bearer ${AT_KEY}`,
-  "Content-Type": "application/json",
-};
+import { listProducts, updateProduct } from "@/lib/affiliateProducts";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -47,42 +40,9 @@ function extractAsin(url = "") {
   return null;
 }
 
-// ─── Fetch all Airtable records ───────────────────────────────────────────────
-async function fetchAllRecords() {
-  const records = [];
-  let offset = null;
-
-  do {
-    const params = new URLSearchParams();
-    if (offset) params.set("offset", offset);
-
-    const res  = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}?${params}`,
-      { headers: AT_HEADERS }
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Airtable fetch failed ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    records.push(...(data.records ?? []));
-    offset = data.offset ?? null;
-  } while (offset);
-
-  return records;
-}
-
-// ─── Patch Airtable record ────────────────────────────────────────────────────
-async function patchRecord(recordId, fields) {
-  const res = await fetch(
-    `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}/${recordId}`,
-    { method: "PATCH", headers: AT_HEADERS, body: JSON.stringify({ fields }) }
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Patch failed ${res.status}: ${text.slice(0, 200)}`);
-  }
-}
+// ─── Products (lib/affiliateProducts.js) ──────────────────────────────────────
+const fetchAllRecords = listProducts;
+const patchRecord = updateProduct;
 
 function chunk(arr, n) {
   const out = [];

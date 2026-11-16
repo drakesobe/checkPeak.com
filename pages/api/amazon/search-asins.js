@@ -11,48 +11,20 @@
 
 import { searchItems } from "@/lib/amazon/creatorsApi";
 
-const AT_KEY   = process.env.AFFILIATE_API_KEY;
-const AT_BASE  = process.env.AFFILIATE_BASE_ID;
-const AT_TABLE = process.env.AFFILIATE_TABLE_NAME;
-
-const AT_HEADERS = {
-  Authorization:  `Bearer ${AT_KEY}`,
-  "Content-Type": "application/json",
-};
+import { listProducts, updateProduct } from "@/lib/affiliateProducts";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function fetchRecordsMissingAsins(recordIds = null) {
-  const records = [];
-  let offset = null;
-
-  const formula = recordIds?.length
-    ? `OR(${recordIds.map(id => `RECORD_ID()="${id}"`).join(",")})`
-    : "AND({ASIN} = '', NOT({Product Name} = ''))";
-
-  do {
-    const params = new URLSearchParams({ filterByFormula: formula });
-    if (offset) params.set("offset", offset);
-
-    const res  = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}?${params}`,
-      { headers: AT_HEADERS }
-    );
-    if (!res.ok) throw new Error(`Airtable fetch failed ${res.status}`);
-    const data = await res.json();
-    records.push(...(data.records ?? []));
-    offset = data.offset ?? null;
-  } while (offset);
-
-  return records;
+  const all = await listProducts();
+  if (recordIds?.length) {
+    const wanted = new Set(recordIds);
+    return all.filter((r) => wanted.has(r.id));
+  }
+  return all.filter((r) => !String(r.fields?.ASIN || "").trim() && String(r.fields?.["Product Name"] || "").trim());
 }
 
-async function patchRecord(recordId, fields) {
-  await fetch(
-    `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}/${recordId}`,
-    { method: "PATCH", headers: AT_HEADERS, body: JSON.stringify({ fields }) }
-  );
-}
+const patchRecord = updateProduct;
 
 // Score how well a product name matches the search query
 // Simple heuristic: count matching words

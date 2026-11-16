@@ -72,11 +72,12 @@ async function safeJson(res) {
 
 export default function AccountPage() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, authReady } = useAuthContext();
 
+  // Wait until the saved session has been read, or a refresh would bounce signed-in users
   useEffect(() => {
-    if (!user) router.push("/");
-  }, [user, router]);
+    if (authReady && !user) router.push("/");
+  }, [authReady, user, router]);
 
   if (!user) {
     return (
@@ -438,22 +439,22 @@ function AccountInner({ user }) {
     return formData.organization?.trim() ? formData.organization : "Organization";
   }, [isAthlete, isOrgPrimary, isOrgMember, formData.organization, formData.organizationId, user, orgNameFromSession, orgIdFromSession]);
 
-  const dashboardHref  = isOrgSide ? "/org/workouts-calendar" : "/dashboard";
+  const dashboardHref  = isOrgSide ? "/org/dashboard" : "/dashboard";
   const canSeeBilling  = role === "admin" || role === "organization";
 
   /* ---------------------------- render ---------------------------- */
 
   return (
-    <AccountShell>
+    <AccountShell coach={isOrgSide} subtitle={formData.email ? `${roleLabel} · ${formData.email}` : ""}>
       <div className="space-y-6">
-        <HeaderBlock
+        {!isOrgSide && <HeaderBlock
           roleLabel={roleLabel}
           email={formData.email}
           isOrgMember={isOrgMember}
           memberId={memberIdFromSession}
           dashboardHref={dashboardHref}
           isOrgSide={isOrgSide}
-        />
+        />}
 
         <FeedbackBanner message={message} error={error} />
 

@@ -3,6 +3,7 @@
 
 import crypto from "crypto";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { loadOwnedScan } from "@/lib/scanAccess";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,17 +22,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Load existing record to get/preserve share token
-    const { data: existing, error: fetchErr } = await db
-      .from("scans")
-      .select("id, share_token")
-      .eq("id", scanId)
-      .maybeSingle();
-
-    if (fetchErr) throw fetchErr;
-    if (!existing) {
-      return res.status(404).json({ error: "Scan not found for the given scanId." });
-    }
+    // Only the owner can share or unshare a scan
+    const existing = await loadOwnedScan(req, res, scanId, "id, share_token");
+    if (!existing) return;
 
     let token = existing.share_token || "";
     if (enable && !token) {

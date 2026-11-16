@@ -4,6 +4,9 @@
 
 import { hashPassword, normalizeEmail, getAthleteByEmail, getMemberByInviteToken } from "@/lib/supabaseOrg";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { hourlyLimit } from "@/lib/ratelimiter";
+
+const ALREADY_SET = "This account already has a password. Sign in, or use \"Forgot password\" to reset it.";
 
 function normalizeRole(role) {
   return String(role || "").trim().toLowerCase() === "organization" ? "organization" : "athlete";
@@ -12,6 +15,7 @@ function normalizeRole(role) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!hourlyLimit(req, res, "finish-setup", 20)) return;
 
   const { email, password, role, inviteToken } = req.body || {};
 
@@ -58,6 +62,8 @@ export default async function handler(req, res) {
 
       const { data: athlete } = await getAthleteByEmail(emailLower);
       if (!athlete) return res.status(404).json({ error: "Athlete not found." });
+      // First password only. Changing an existing password requires the emailed reset link.
+      if (athlete.password_hash) return res.status(409).json({ error: ALREADY_SET });
 
       const { error } = await db
         .from("athletes")
@@ -77,11 +83,12 @@ export default async function handler(req, res) {
 
     const { data: org, error: orgErr } = await db
       .from("organizations")
-      .select("id")
+      .select("id, password_hash")
       .eq("email", emailLower)
       .maybeSingle();
 
     if (orgErr || !org) return res.status(404).json({ error: "Organization not found." });
+    if (org.password_hash) return res.status(409).json({ error: ALREADY_SET });
 
     const { error } = await db
       .from("organizations")

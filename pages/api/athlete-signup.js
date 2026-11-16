@@ -2,7 +2,8 @@
 // Creates a new athlete account in Supabase.
 // Optionally links to an org via org token.
 
-import { createAthlete, getAthleteByEmail, getOrgByToken, normalizeEmail } from "@/lib/supabaseOrg";
+import { createAthlete, getAthleteByEmail, getOrgByToken, normalizeEmail, hashPassword } from "@/lib/supabaseOrg";
+import { supabaseAdmin as db } from "@/lib/supabase";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -19,7 +20,27 @@ export default async function handler(req, res) {
 
     // 1) Prevent duplicate email
     const { data: existing } = await getAthleteByEmail(emailLower);
-    if (existing) return res.status(409).json({ error: "An account with this email already exists." });
+    if (existing) {
+      // A coach added this athlete to their roster (CSV import) before they had an account.
+      // They claim it by signing up with the same email and that team's code.
+      const preAdded = !existing.password_hash && existing.org_token && token &&
+        String(token).trim().toUpperCase() === String(existing.org_token).trim().toUpperCase();
+      if (!preAdded) return res.status(409).json({ error: "An account with this email already exists." });
+      if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+      const { error: claimErr } = await db
+        .from("athletes")
+        .update({ password_hash: await hashPassword(password), name: String(name).trim() || existing.name })
+        .eq("id", existing.id)
+        .is("password_hash", null);
+      if (claimErr) return res.status(500).json({ error: "Failed to create athlete.", details: claimErr.message });
+      return res.status(200).json({
+        success:        true,
+        athleteId:      existing.id,
+        athleteToken:   existing.athlete_token,
+        organization:   existing.org_token,
+        tokenValidated: true,
+      });
+    }
 
     // 2) Validate org token if provided
     const tokenNorm = token ? String(token).trim() : "";

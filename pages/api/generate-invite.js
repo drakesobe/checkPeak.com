@@ -1,15 +1,27 @@
 // pages/api/generate-invite.js
 import nodemailer from "nodemailer";
+import crypto from "crypto";
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireOrgSideUser } from "@/lib/requireUser";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { athleteId } = req.body;
+  // Only staff can invite, and only athletes on their own roster
+  const me = requireOrgSideUser(req, res);
+  if (!me) return;
+  const orgToken = String(me.orgToken || me.Token || me.org_token || "").trim().toUpperCase();
+
+  const { athleteId } = req.body || {};
   if (!athleteId) return res.status(400).json({ error: "Athlete ID required" });
 
-  // Generate a random invite token
-  const token = Math.random().toString(36).substr(2, 10);
+  const { data: rosterCheck } = await db.from("athletes").select("id, org_token").eq("id", athleteId).maybeSingle();
+  if (!rosterCheck || String(rosterCheck.org_token || "").toUpperCase() !== orgToken) {
+    return res.status(404).json({ error: "Athlete not found on your roster." });
+  }
+
+  // Unguessable invite token
+  const token = crypto.randomBytes(16).toString("hex");
 
   try {
     // Save invite token to athlete record

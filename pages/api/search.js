@@ -1,244 +1,93 @@
 // pages/api/search.js
-import Airtable from "airtable";
+// POST { query } -> { records: [...] }
+// Ingredient search: banned substances first, then general ingredients, matched by name or synonym.
+// Both come from Supabase (banned_substances, ingredients), the same tables the label scanner uses.
+// Each record: { id, name, synonyms, bannedBy, banType, dosageLimit, notes, source, benefits, weaknesses, antagonisms }
 
-/**
- * Search API - v2
- *
- * Changes from v1:
- *
- * 1. SERVER-SIDE FILTERING
- *    Was: fetchAllRecords() - pulled every row into memory, then filtered in JS.
- *    Now: filterByFormula passed directly to Airtable so only matching rows
- *    are transferred. Dramatically faster and avoids rate limit issues under
- *    real traffic.
- *
- * 2. MAP-BASED INGREDIENT LOOKUP
- *    Was: findIngredientMatch() ran a .find() loop over all ingredients for
- *    every banned record - O(n²) complexity.
- *    Now: ingredients are indexed into a Map keyed by lowercase name before
- *    the merge step - O(1) lookup per banned record.
- *
- * 3. PROPER NULL HANDLING
- *    Was: banType: banned.fields["Ban Type"] || "" - empty string is falsy
- *    but inconsistent with ingredient records which used null.
- *    Now: all optional fields use ?? null so the frontend gets a consistent
- *    null when a field is absent.
- *
- * 4. INPUT SANITIZATION
- *    Was: query string used directly in Airtable formula with no escaping.
- *    Now: sanitizeForFormula() strips characters that could break the formula
- *    string before interpolation.
- *
- * 5. PARALLEL FETCHING
- *    Was: banned and ingredient queries ran sequentially (implicit await chain).
- *    Now: Promise.all() runs both Airtable queries in parallel - roughly 2x
- *    faster on cold requests.
- *
- * 6. FIELD NORMALIZATION IN ONE PLACE
- *    normalizeRecord() is the single source of truth for mapping Airtable
- *    field names to the shape the frontend expects. Easier to maintain when
- *    Airtable column names change.
- */
+import { supabaseAdmin as db } from "@/lib/supabase";
 
-// ---------------------------------------------------------------------------
-// Airtable clients - one per base
-// ---------------------------------------------------------------------------
+const MAX_RESULTS = 60;
 
-const bannedBase = new Airtable({ apiKey: process.env.BANNED_API_KEY }).base(
-  process.env.BANNED_BASE_ID
-);
-
-const ingredientBase = new Airtable({ apiKey: process.env.INGREDIENT_API_KEY }).base(
-  process.env.INGREDIENT_BASE_ID
-);
-
-// ---------------------------------------------------------------------------
-// Input sanitization
-//
-// Airtable formulas use single-quoted strings. A raw apostrophe or backslash
-// in the query would break the formula and potentially expose unintended rows.
-// We strip anything that isn't alphanumeric, space, hyphen, comma, or period.
-// ---------------------------------------------------------------------------
-
-function sanitizeForFormula(query = "") {
-  return String(query)
-    .trim()
-    .replace(/[^a-zA-Z0-9\s\-,.()+]/g, "")
-    .slice(0, 100); // hard cap - no query needs to be longer than this
+// Letters, numbers and a little punctuation (no PostgREST filter syntax like "(" or ")")
+function clean(query = "") {
+  return String(query).trim().replace(/[^a-zA-Z0-9\s\-.+',]/g, " ").replace(/\s+/g, " ").slice(0, 100);
 }
 
-// ---------------------------------------------------------------------------
-// Airtable formula builder
-//
-// Builds an OR() formula that checks the name field AND the synonyms field
-// for a case-insensitive substring match. SEARCH() returns the 0-based index
-// of the match (or blank if not found), so we compare with >= 0.
-//
-// Example output for query "DMAA":
-//   OR(
-//     SEARCH('dmaa', LOWER({Substance Name})) >= 0,
-//     SEARCH('dmaa', LOWER({Synonyms})) >= 0
-//   )
-// ---------------------------------------------------------------------------
-
-function buildBannedFormula(query) {
-  const q = sanitizeForFormula(query).toLowerCase();
-  return (
-    `OR(` +
-    `FIND('${q}', LOWER({Substance Name})) > 0,` +
-    `FIND('${q}', LOWER({Synonyms})) > 0` +
-    `)`
-  );
-}
-
-function buildIngredientFormula(query) {
-  const q = sanitizeForFormula(query).toLowerCase();
-  return (
-    `OR(` +
-    `FIND('${q}', LOWER({Name})) > 0,` +
-    `FIND('${q}', LOWER({Synonyms (Extended)})) > 0` +
-    `)`
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Airtable fetchers - server-side filtered
-// ---------------------------------------------------------------------------
-
-async function fetchBannedMatches(query) {
-  const formula = buildBannedFormula(query);
-  const records = await bannedBase(process.env.BANNED_TABLE_NAME)
-    .select({ filterByFormula: formula, view: "Grid view" })
-    .all();
-  return records.map((rec) => ({ id: rec.id, fields: rec.fields }));
-}
-
-async function fetchIngredientMatches(query) {
-  const formula = buildIngredientFormula(query);
-  const records = await ingredientBase(process.env.INGREDIENT_TABLE_NAME)
-    .select({ filterByFormula: formula, view: "Grid view" })
-    .all();
-  return records.map((rec) => ({ id: rec.id, fields: rec.fields }));
-}
-
-// ---------------------------------------------------------------------------
-// Record normalization
-//
-// Single source of truth for mapping Airtable field names → frontend shape.
-// Both banned and ingredient records are normalized to the same structure so
-// the frontend doesn't need to handle two different shapes.
-// ---------------------------------------------------------------------------
-
-function normalizeBannedRecord(rec, ingredientMap) {
-  const f = rec.fields;
-  const name = (f["Substance Name"] ?? "").trim();
-
-  // O(1) ingredient lookup via Map keyed by lowercase name
-  const ing = ingredientMap.get(name.toLowerCase()) ?? null;
-
-  return {
-    id:           rec.id,
-    // Core identity
-    name,
-    synonyms:     f["Synonyms"]          ?? null,
-    bannedBy:     f["Banned By"]          ?? null,
-    banType:      f["Ban Type"]           ?? null,  // null = not banned
-    dosageLimit:  f["Dosage Limit"]       ?? null,
-    notes:        f["Notes"]              ?? null,
-    source:       f["Source / Citation"]  ?? null,
-    // Enriched from ingredient table if a match exists
-    benefits:     ing?.fields["Benefits"]            ?? null,
-    weaknesses:   ing?.fields["Weaknesses"]          ?? null,
-    antagonisms:  ing?.fields["Nutrient Antagonism"] ?? null,
-  };
-}
-
-function normalizeIngredientRecord(rec) {
-  const f = rec.fields;
-  return {
-    id:           rec.id,
-    name:         (f["Name"] ?? "").trim(),
-    synonyms:     f["Synonyms (Extended)"]   ?? null,
-    bannedBy:     null,
-    banType:      null,
-    dosageLimit:  null,
-    notes:        f["Pharmacology Notes"]    ?? null,
-    source:       f["Sources / References"]  ?? null,
-    benefits:     f["Benefits"]              ?? null,
-    weaknesses:   f["Weaknesses"]            ?? null,
-    antagonisms:  f["Nutrient Antagonism"]   ?? null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Handler
-// ---------------------------------------------------------------------------
+// Commas become wildcards (and never reach the filter string), so "1,3-dimethyl" also
+// matches "1, 3-dimethylamylamine"
+const pattern = (q) => `%${q.replace(/[%_\\]/g, (c) => `\\${c}`).replace(/\s*,\s*/g, "%")}%`;
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { query } = req.body ?? {};
-
-  // Validate
-  if (!query || typeof query !== "string" || query.trim().length < 2) {
-    return res
-      .status(400)
-      .json({ error: "Query is required and must be at least 2 characters." });
-  }
-
-  // Sanitize early - reject if nothing remains after sanitization
-  const sanitized = sanitizeForFormula(query);
-  if (sanitized.length < 2) {
-    return res
-      .status(400)
-      .json({ error: "Query contains unsupported characters. Please use letters and numbers." });
+  const q = clean(req.body?.query);
+  if (q.replace(/[^a-zA-Z0-9]/g, "").length < 2) {
+    return res.status(400).json({ error: "Type at least 2 letters or numbers to search." });
   }
 
   try {
-    // FIX 5: Run both Airtable queries in parallel instead of sequentially
-    const [bannedRecords, ingredientRecords] = await Promise.all([
-      fetchBannedMatches(sanitized),
-      fetchIngredientMatches(sanitized),
+    const like = pattern(q);
+    const [banned, ingredients] = await Promise.all([
+      db.from("banned_substances")
+        .select("id, substance_name, synonyms, banned_by, ban_type, dosage_limit, notes, citation")
+        .or(`substance_name.ilike.${like},synonyms.ilike.${like}`)
+        .limit(MAX_RESULTS),
+      db.from("ingredients")
+        .select("id, name, synonyms, pharmacology_notes, benefits, weaknesses, nutrient_antagonism, sources")
+        .or(`name.ilike.${like},synonyms.ilike.${like}`)
+        .limit(MAX_RESULTS),
     ]);
+    if (banned.error) throw banned.error;
+    if (ingredients.error) throw ingredients.error;
 
-    // FIX 2: Build ingredient lookup Map - O(1) per lookup vs O(n) per lookup
-    // Keyed by lowercase name for case-insensitive matching
-    const ingredientMap = new Map(
-      ingredientRecords.map((rec) => [
-        (rec.fields["Name"] ?? "").toLowerCase().trim(),
-        rec,
-      ])
-    );
+    const ingByName = new Map((ingredients.data ?? []).map((r) => [String(r.name || "").trim().toLowerCase(), r]));
 
-    // Normalize banned records (enriched with ingredient data where available)
-    const normalizedBanned = bannedRecords.map((rec) =>
-      normalizeBannedRecord(rec, ingredientMap)
-    );
-
-    // Build a Set of banned substance names so we can exclude duplicates
-    // from the ingredient results (same substance shouldn't appear twice)
-    const bannedNameSet = new Set(
-      normalizedBanned.map((r) => r.name.toLowerCase())
-    );
-
-    // Normalize ingredient records - exclude any already covered by banned
-    const normalizedIngredients = ingredientRecords
-      .filter((rec) => !bannedNameSet.has((rec.fields["Name"] ?? "").toLowerCase().trim()))
-      .map(normalizeIngredientRecord);
-
-    // Banned first, then ingredients
-    const results = [...normalizedBanned, ...normalizedIngredients];
-
-    return res.status(200).json({ records: results });
-
-  } catch (err) {
-    console.error("[search API] Error:", err);
-
-    // Don't leak internal error details to the client
-    return res.status(500).json({
-      error: "Search is temporarily unavailable. Please try again shortly.",
+    const bannedRecords = (banned.data ?? []).map((r) => {
+      const name = String(r.substance_name || "").trim();
+      const ing = ingByName.get(name.toLowerCase());
+      return {
+        id:          r.id,
+        name,
+        synonyms:    r.synonyms ?? null,
+        bannedBy:    r.banned_by ?? null,
+        banType:     r.ban_type ?? null,
+        dosageLimit: r.dosage_limit ?? null,
+        notes:       r.notes ?? null,
+        source:      r.citation ?? null,
+        benefits:    ing?.benefits ?? null,
+        weaknesses:  ing?.weaknesses ?? null,
+        antagonisms: ing?.nutrient_antagonism ?? null,
+      };
     });
+
+    const bannedNames = new Set(bannedRecords.map((r) => r.name.toLowerCase()));
+    const ingredientRecords = (ingredients.data ?? [])
+      .filter((r) => !bannedNames.has(String(r.name || "").trim().toLowerCase()))
+      .map((r) => ({
+        id:          r.id,
+        name:        String(r.name || "").trim(),
+        synonyms:    r.synonyms ?? null,
+        bannedBy:    null,
+        banType:     null,
+        dosageLimit: null,
+        notes:       r.pharmacology_notes ?? null,
+        source:      r.sources ?? null,
+        benefits:    r.benefits ?? null,
+        weaknesses:  r.weaknesses ?? null,
+        antagonisms: r.nutrient_antagonism ?? null,
+      }));
+
+    // Exact and prefix matches first within each group
+    const rank = (r) => {
+      const n = r.name.toLowerCase(), s = q.toLowerCase();
+      return n === s ? 0 : n.startsWith(s) ? 1 : 2;
+    };
+    bannedRecords.sort((a, b) => rank(a) - rank(b));
+    ingredientRecords.sort((a, b) => rank(a) - rank(b));
+
+    return res.status(200).json({ records: [...bannedRecords, ...ingredientRecords] });
+  } catch (err) {
+    console.error("[search API]", err?.message || err);
+    return res.status(500).json({ error: "Search is temporarily unavailable. Please try again shortly." });
   }
 }

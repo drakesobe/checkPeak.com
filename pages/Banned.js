@@ -15,7 +15,11 @@ export default function BannedPage() {
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed");
       setResults(data.records || []);

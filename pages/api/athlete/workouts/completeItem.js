@@ -5,6 +5,7 @@ import formidable from "formidable";
 import { requireAthlete } from "@/lib/requireAthlete";
 import { supabaseAdmin as db } from "@/lib/supabase";
 import { sendNotificationToToken } from "@/lib/sendNotification";
+import { verifySession, parseSessionString } from "@/lib/session";
 
 export const config = {
   api: { bodyParser: false },
@@ -108,7 +109,7 @@ export default async function handler(req, res) {
 
     if (cookieMissingOrBroken) {
       const authUserField = asString(fields._authUser || fields.authUser || "");
-      if (authUserField) {
+      if (authUserField && await verifySession(parseSessionString(authUserField))) {
         req.cookies        = req.cookies || {};
         req.cookies.user   = authUserField;
         req.headers.cookie = `user=${encodeURIComponent(authUserField)}`;

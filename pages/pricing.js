@@ -126,7 +126,7 @@ export default function PricingPage() {
   const b = BILLING[billing];
 
   // Logged-in coaches already have an account: send them to their dashboard / billing instead of sign-up
-  const goStarter  = () => { if (isOrgSide) window.location.href = "/org/workouts-calendar"; else startSignup("starter"); };
+  const goStarter  = () => { if (isOrgSide) window.location.href = "/org/dashboard"; else startSignup("starter"); };
   const goProgram = () => { if (isOrgSide) window.location.href = "/account"; else startSignup("program"); };
 
   return (

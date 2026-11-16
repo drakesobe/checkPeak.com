@@ -5,7 +5,7 @@ import {
   upsertBillingForOrgToken,
   F,
   isoDateFromUnixSeconds,
-} from "@/lib/airtableBilling";
+} from "@/lib/billingStore";
 
 export const config = {
   api: {

@@ -2,255 +2,103 @@
 import { useMemo, useState } from "react";
 import Head from "next/head";
 
+const dot = (
+  <span aria-hidden="true" className="block h-2 w-2 rounded-full bg-sky-400" />
+);
+
 const rawFaqs = [
   {
     id: "what-is-checkpeak",
-    category: "Getting Started",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M12 8v6m0 4h.01"
-        />
-      </svg>
-    ),
-    question: "What does CheckPeak actually do?",
+    category: "Getting started",
+    icon: dot,
+    question: "What is CheckPeak?",
     answer: `
-      CheckPeak gives you a fast, clear breakdown of the ingredients in your supplements.
-      You scan a label, and we highlight banned substances, risky compounds, and ingredients worth a second look.
-      The goal isn't fear - it's clarity. You shouldn't need a chemistry degree to know what's going into your body.
+      CheckPeak is an accountability platform for college strength and conditioning programs. Coaches build the
+      schedule, assign workouts and nutrition plans, and review proof that work was done. Athletes see what's due
+      today on their phone, log it with a photo or video, and check supplements before they take them.
     `,
   },
   {
-    id: "how-scanning-works",
-    category: "Getting Started",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <rect x="4" y="5" width="16" height="14" rx="2" ry="2" />
-        <path d="M8 9h8M8 13h5" />
-      </svg>
-    ),
-    question: "How does the scanner work?",
+    id: "who-is-it-for",
+    category: "Getting started",
+    icon: dot,
+    question: "Who is it built for?",
     answer: `
-      Our OCR system reads your label photo, extracts the ingredient list, and matches everything against
-      the CheckPeak Ingredient Database. This includes banned substances, synonyms, derivatives, and common blend names.
-      You get a simple status result that tells you where to focus your attention - nothing more, nothing less.
+      Strength coaches, sport coaches and athletic staff at college programs, and the athletes on their roster.
+      Staff accounts manage the program; athletes join with their team code and use the mobile app.
     `,
   },
   {
-    id: "accuracy",
-    category: "Accuracy & Data",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    question: "How accurate are scans?",
+    id: "coach-setup",
+    category: "For coaches",
+    icon: dot,
+    question: "How long does setup take?",
     answer: `
-      Accuracy mostly depends on the label image. Curved bottles, glossy backgrounds, tiny font sizes, and uneven lighting
-      can make OCR struggle. A clear, straight photo gives the best results.
-
-      That said - we update both the scanner and ingredient classifications consistently to stay ahead of new products.
+      Most programs are running the same day. After you sign up, a short checklist on your Today page walks you
+      through getting athletes on the team (they join with your team code), setting season dates, assigning your
+      first workout and inviting your staff.
     `,
   },
   {
-    id: "why-flagged",
-    category: "Flags & Safety",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <path d="M6 4v16" strokeLinecap="round" strokeLinejoin="round" />
-        <path
-          d="M6 5h8l-2 3 2 3H6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-    question: "Why was an ingredient flagged?",
+    id: "coach-proof",
+    category: "For coaches",
+    icon: dot,
+    question: "How do I know athletes actually did the work?",
     answer: `
-      Flags appear for one of several reasons:
-      • It’s banned or restricted for competition.
-      • It’s chemically similar to a banned compound.
-      • It’s under-researched or frequently mislabeled by brands.
-      • It’s part of a proprietary blend with unknown dosage.
-
-      A flag is not a verdict - it’s simply a signal that this ingredient deserves closer attention.
+      Workouts can require photo or video proof. Every submission lands in your Review Queue, timestamped, where you
+      approve it or ask for more. You see who's done, who's behind and who hasn't checked in today.
     `,
   },
   {
-    id: "unknown",
-    category: "Flags & Safety",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path
-          d="M9.5 9.5A2.5 2.5 0 0112 8a2.5 2.5 0 012.5 2.5c0 1.5-1.25 2.1-1.9 2.5-.4.25-.6.5-.6 1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path d="M12 16.5h.01" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    question: "What does “Unknown” or “Needs Review” mean?",
+    id: "coach-compliance",
+    category: "Compliance & safety",
+    icon: dot,
+    question: "Does it help with NCAA countable-hour rules?",
     answer: `
-      Sometimes ingredient names are vague, stylized, extremely new, or intentionally branded to avoid detection.
-      When we can’t match a compound with high confidence, we mark it as “Unknown.”
-
-      You can submit it through our “Suggest an Ingredient” page - we review user submissions regularly.
+      Yes. You set your season dates once, and CheckPeak tracks required (countable) and voluntary activity against
+      them so your schedule stays inside the rules. It supports your compliance office; it doesn't replace it.
     `,
   },
   {
-    id: "safety",
-    category: "Flags & Safety",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <path d="M12 4l7 4v4c0 4-3 7-7 8-4-1-7-4-7-8V8l7-4z" />
-        <path d="M12 10v4" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M12 16.5h.01" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    question: "Is this medical or drug-testing advice?",
+    id: "supplement-scanner",
+    category: "Compliance & safety",
+    icon: dot,
+    question: "How does the supplement check work?",
     answer: `
-      No. CheckPeak is an educational and reference tool only.
-      It does not replace your doctor, pharmacist, coach, or testing organization.
-      Always follow the rules of your sport and get professional advice before making decisions about supplements.
+      Athletes photograph a supplement label or scan its barcode. We read every ingredient and check it against
+      banned-substance lists from the NCAA, WADA and the major pro leagues, then give a clear result: flagged,
+      needs review, or no match. "No match" is never a guarantee: banned lists cover whole classes of substances and
+      products can be contaminated, so third-party certified products are always the safest choice.
     `,
   },
   {
-    id: "database-updates",
-    category: "Accuracy & Data",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <path
-          d="M4 12a8 8 0 0114-5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M20 12a8 8 0 01-14 5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M4 4v4h4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M20 20v-4h-4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-    question: "How often do you update the ingredient database?",
+    id: "athlete-app",
+    category: "For athletes",
+    icon: dot,
+    question: "What do athletes need?",
     answer: `
-      We keep a close eye on new research, regulatory changes, and supplement trends.
-      On top of that, athlete and coach submissions help us spot new compounds early.
-      Updates happen regularly - not once a year.
+      The CheckPeak app and the team code from their coach. The app shows today's workouts, nutrition and classes,
+      lets them log proof, message their coaches and check supplements.
     `,
   },
   {
-    id: "suggest",
-    category: "Submissions & Support",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <path d="M12 4v16" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M4 12h16" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    question: "Can I suggest a new ingredient or correction?",
+    id: "privacy",
+    category: "Compliance & safety",
+    icon: dot,
+    question: "Who can see an athlete's data?",
     answer: `
-      Yes - and it genuinely helps. As brands launch new products and rebrand old compounds,
-      athlete feedback keeps our database ahead of the curve.
-
-      Use the “Suggest an Ingredient” page in the footer to send us details directly.
+      Only the athlete and staff on their own program. Athletes' supplement scans stay private to them unless they
+      choose to share one.
     `,
   },
   {
     id: "pricing",
-    category: "Submissions & Support",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4 text-emerald-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path
-          d="M12 7v2m0 8v-2m-2.5-3A2.5 2.5 0 0112 11a2.5 2.5 0 012.5 2.5c0 1.5-1.25 2.1-1.9 2.5-.4.25-.6.5-.6 1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-    question: "Is CheckPeak free?",
+    category: "Pricing",
+    icon: dot,
+    question: "How much does it cost?",
     answer: `
-      Yes - core scanning is currently free while we build and refine the platform.
-      If we introduce paid features later, we’ll be transparent about what’s changing and why,
-      and we’ll always keep core safety insight a priority.
+      Free for programs with up to 10 athletes. Unlimited athletes, staff and every feature is one flat monthly or
+      annual price, with no per-seat fees. See the pricing page for current rates.
     `,
   },
 ];
@@ -287,7 +135,7 @@ export default function FAQPage() {
         <title>FAQs | CheckPeak</title>
         <meta
           name="description"
-          content="Frequently asked questions about CheckPeak-scanning, ingredient flags, safety, and accuracy in plain language."
+          content="Answers for college coaches and athletes: setup, workout proof, NCAA compliance, supplement checks and pricing."
         />
       </Head>
 
@@ -296,22 +144,21 @@ export default function FAQPage() {
           {/* Top header block */}
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-300">
+              <div className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-300">
                 Frequently Asked Questions
               </div>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-3xl">
                 Quick answers, no jargon.
               </h1>
               <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-                Learn how CheckPeak works, what our flags mean, and how to use scans
-                alongside your own research, coaches, and doctors. Written for athletes,
-                not chemists.
+                How CheckPeak works for college programs: setup, accountability,
+                compliance and supplement checks.
               </p>
             </div>
 
             <div className="text-right text-[11px] text-gray-500">
               <p>Last updated: {new Date().getFullYear()}</p>
-              <p>More questions? <a href="/contact" className="text-emerald-300 hover:text-emerald-200 underline underline-offset-4">Contact support</a></p>
+              <p>More questions? <a href="/contact" className="text-sky-300 hover:text-sky-200 underline underline-offset-4">Contact support</a></p>
             </div>
           </div>
 
@@ -368,8 +215,8 @@ export default function FAQPage() {
                       className={[
                         "rounded-full border px-3 py-1 text-[11px] transition",
                         isActive
-                          ? "border-emerald-400 bg-emerald-500/15 text-emerald-200"
-                          : "border-gray-700 bg-black/40 text-gray-400 hover:border-emerald-400/60 hover:text-emerald-200",
+                          ? "border-sky-400 bg-sky-500/15 text-sky-200"
+                          : "border-gray-700 bg-black/40 text-gray-400 hover:border-sky-400/60 hover:text-sky-200",
                       ].join(" ")}
                     >
                       {cat}
@@ -391,7 +238,7 @@ export default function FAQPage() {
             {filteredFaqs.map((faq) => (
               <div
                 key={faq.id}
-                className="rounded-lg border border-gray-800 bg-gray-900/40 transition hover:border-emerald-500/40 hover:bg-gray-900/60"
+                className="rounded-lg border border-gray-800 bg-gray-900/40 transition hover:border-sky-500/40 hover:bg-gray-900/60"
               >
                 <button
                   type="button"
@@ -416,7 +263,7 @@ export default function FAQPage() {
 
                   <svg
                     className={`h-4 w-4 transform text-gray-400 transition ${
-                      openId === faq.id ? "rotate-180 text-emerald-300" : ""
+                      openId === faq.id ? "rotate-180 text-sky-300" : ""
                     }`}
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"

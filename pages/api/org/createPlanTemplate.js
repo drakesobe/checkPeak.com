@@ -28,15 +28,13 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const auth = requireOrg(req);
-  const headerToken = asString(req.headers["x-org-token"]);
   const body = req.body && typeof req.body === "object" ? req.body : {};
-  const bodyToken = asString(body.token);
   const cookieToken = auth?.ok ? asString(auth?.org?.token || "") : "";
-  const orgToken = cookieToken || headerToken || bodyToken;
+  const orgToken = cookieToken;
 
   if (!orgToken) {
     return res.status(401).json({
-      error: "Missing organization token. Log in (cookie auth) or provide x-org-token / body.token.",
+      error: "Not authenticated",
     });
   }
 

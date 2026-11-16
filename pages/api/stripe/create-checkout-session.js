@@ -1,7 +1,7 @@
 // pages/api/stripe/create-checkout-session.js
 import stripe from "@/lib/stripe";
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgToken, upsertBillingForOrgToken, F } from "@/lib/airtableBilling";
+import { findBillingRecordByOrgToken, upsertBillingForOrgToken, F } from "@/lib/billingStore";
 
 function asString(v) {
   return String(v ?? "").trim();

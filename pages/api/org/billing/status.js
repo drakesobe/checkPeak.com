@@ -1,6 +1,6 @@
 // pages/api/org/billing/status.js
 import { requireBillingAdmin } from "@/lib/requireBillingAdmin";
-import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/airtableBilling";
+import { findBillingRecordByOrgToken, findBillingRecordByOrgId, F, firstLookupValue } from "@/lib/billingStore";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
 // In-memory cache - survives across warm serverless invocations.

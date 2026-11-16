@@ -1,5 +1,6 @@
 // pages/api/org/getAthletesByToken.js
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireOwnOrgToken } from "@/lib/requireUser";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -8,6 +9,8 @@ export default async function handler(req, res) {
 
   const { token } = req.query || {};
   if (!token) return res.status(400).json({ error: "Missing token" });
+  // Rosters include emails: staff of this team only
+  if (!requireOwnOrgToken(req, res, token, { staffOnly: true })) return;
 
   try {
     const { data: rows, error } = await db

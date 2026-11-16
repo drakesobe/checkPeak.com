@@ -3,29 +3,9 @@
 // Used by the mobile app to sync teammates to Firestore once per day.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireUser } from "@/lib/requireUser";
 
 function asString(v) { return String(v ?? "").trim(); }
-
-function getSessionUser(req) {
-  // _authUser query param (React Native — cookie header unreliable on iOS/Android)
-  const authUserRaw = req.query?._authUser;
-  if (authUserRaw) {
-    try { return JSON.parse(decodeURIComponent(String(authUserRaw))); } catch {}
-  }
-  // Cookie fallback (web browser)
-  try {
-    const cookieHeader = req.headers.cookie || "";
-    const cookies = {};
-    cookieHeader.split(";").forEach(part => {
-      const eqIdx = part.indexOf("=");
-      if (eqIdx === -1) return;
-      cookies[part.slice(0, eqIdx).trim()] = decodeURIComponent(part.slice(eqIdx + 1).trim());
-    });
-    const raw = cookies["user"];
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch { return null; }
-}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -35,21 +15,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  let orgToken = asString(req.query?.token || req.query?.orgToken || "");
-
-  if (!orgToken) {
-    const session = getSessionUser(req);
-    if (!session) return res.status(401).json({ error: "Not authenticated" });
-    orgToken = asString(
-      session.Token || session.token ||
-      session.OrgToken || session.orgToken ||
-      session.org_token || ""
-    );
+  // Only your own team. Staff team codes are signed into the session; an athlete's team
+  // is read from the database because athletes can switch teams from the app.
+  const session = requireUser(req, res);
+  if (!session) return;
+  let myTeam = "";
+  if (session.role === "athlete") {
+    const athleteToken = asString(session.athlete_token || session.AthleteToken || session.athleteToken);
+    const q = db.from("athletes").select("org_token").limit(1);
+    const { data: rows } = athleteToken ? await q.eq("athlete_token", athleteToken) : await q.eq("email", session.email);
+    const me = rows?.[0];
+    myTeam = asString(me?.org_token);
+  } else {
+    myTeam = asString(session.orgToken || session.org_token);
   }
-
-  if (!orgToken) {
-    return res.status(400).json({ error: "No organization token found" });
+  const asked = asString(req.query?.token || req.query?.orgToken || "");
+  if (!myTeam) return res.status(400).json({ error: "You are not on a team yet." });
+  if (asked && asked.toUpperCase() !== myTeam.toUpperCase()) {
+    return res.status(403).json({ error: "Not authorized for this team." });
   }
+  const orgToken = myTeam;
 
   try {
     const { data: records, error } = await db

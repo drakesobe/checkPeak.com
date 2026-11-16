@@ -1,9 +1,10 @@
 // pages/api/removeSavedStack.js
 // DELETE { UserEmail, recordId? | stackId? } - removes a saved stack.
 
+import { sessionEmail } from "@/lib/supplementCheck";
 import { supabaseAdmin as db } from "@/lib/supabase";
 
-function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
+
 function normalizeStackId(id) { return String(id ?? "").trim(); }
 
 async function fetchAllSaved(email) {
@@ -27,8 +28,10 @@ export default async function handler(req, res) {
   if (req.method !== "DELETE") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { recordId, UserEmail, stackId } = req.body || {};
-    const normalizedEmail = normalizeEmail(UserEmail);
+    // Always the signed-in user's list; UserEmail in the body is ignored
+    const { recordId, stackId } = req.body || {};
+    const normalizedEmail = sessionEmail(req);
+    if (!normalizedEmail) return res.status(401).json({ error: "Please sign in to manage saved stacks." });
 
     if (!normalizedEmail || !normalizedEmail.includes("@")) {
       return res.status(400).json({ error: "UserEmail is required" });

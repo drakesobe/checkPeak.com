@@ -8,7 +8,7 @@ import Link from "next/link";
 import {
   CalendarDays, ClipboardCheck, Clapperboard, BookOpen, Users, MessageSquare, Apple, UserCog,
   LayoutDashboard, ExternalLink, ScanLine, Search, Layers, ShieldCheck, Sun, NotebookPen, Award,
-  BarChart3, History, Store, Library, Menu as MenuIcon,
+  BarChart3, History, Store, Library, Home, Settings, Menu as MenuIcon,
 } from "lucide-react";
 
 export { MenuIcon };
@@ -20,28 +20,39 @@ export function buildMenu({ isOrgSide, isAthlete, isOrgAdmin, isAdmin, trainerSl
   if (isOrgSide) {
     return [
       { title: "Coaching", items: [
+        { href: "/org/dashboard",         label: "Today",        short: "Today",    icon: Home },
         { href: "/org/workouts-calendar", label: "Schedule",     short: "Schedule", icon: CalendarDays },
         { href: "/org/review-queue",      label: "Review Queue", short: "Review",   icon: ClipboardCheck, countKey: "reviewQueue" },
-        { href: "/org/film",              label: "Film",         short: "Film",     icon: Clapperboard, badge: "Beta" },
-        { href: "/org/plays",             label: "Play Library", icon: BookOpen },
+        // Saved workouts athletes can pick on their own (off days, extra work)
+        { href: "/org/library",           label: "Workout Library", icon: Library },
       ] },
       { title: "Team", items: [
         isOrgAdmin && { href: "/org/athletes", label: "Athletes & Stats", icon: Users },
         { href: "/org/messaging",     label: "Messaging", short: "Messages", icon: MessageSquare, countKey: "messages" },
         { href: "/org/prescriptions", label: "Nutrition", icon: Apple },
-        isAdmin && { href: "/org/trainers", label: "Trainers", icon: UserCog },
-      ].filter(Boolean) },
-      { title: "Studio", items: [
-        { href: "/commercial/dashboard", label: "Studio Dashboard", icon: LayoutDashboard },
-        trainerSlug && { href: `/trainer/${trainerSlug}`, label: "Public Profile", icon: ExternalLink, external: true },
+        // Program owners and head coaches manage staff (role "admin" alone hid it from owners)
+        isOrgAdmin && { href: "/org/trainers", label: "Staff", icon: UserCog },
       ].filter(Boolean) },
       { title: "Compliance", items: [
         { href: "/nutrition-label-scanner", label: "Scan a Label",       icon: ScanLine },
         { href: "/search",                  label: "Search Ingredients", icon: Search },
-        { href: "/smartstack-compare",      label: "SmartStack",         icon: Layers },
         { href: "/compliance/ncaa",         label: "NCAA Rules",         icon: ShieldCheck },
       ] },
-    ];
+      // Add-on features, kept below the core program tools
+      { title: "Film (beta)", items: [
+        { href: "/org/film",  label: "Film",         icon: Clapperboard },
+        { href: "/org/plays", label: "Play Library", icon: BookOpen },
+      ] },
+      // Marketplace (formerly Studio): independent trainers selling paid workouts. Only for coaches
+      // with a seller profile; it is separate from the team Workout Library, which is free for the team.
+      trainerSlug && { title: "Marketplace", items: [
+        { href: "/commercial/dashboard", label: "Seller Dashboard", icon: LayoutDashboard },
+        { href: `/trainer/${trainerSlug}`, label: "Public Profile", icon: ExternalLink, external: true },
+      ] },
+      { title: "Account", items: [
+        { href: "/account", label: "Settings & Billing", icon: Settings },
+      ] },
+    ].filter(Boolean);
   }
   if (isAthlete) {
     return [
@@ -88,7 +99,7 @@ export function splitColumns(sections) {
 // ─── Where the sidebar / tab bar shell appears ────────────────────────────────
 
 const SHELL_PREFIXES = ["/org/", "/scans"];
-const SHELL_EXACT = ["/commercial/dashboard", "/account"];
+const SHELL_EXACT = ["/commercial/dashboard", "/commercial/onboard", "/account"];
 
 // Coach/org accounts on in-app pages. Athlete pages have their own mobile-app style layout.
 export function isShellRoute(pathname, isOrgSide) {

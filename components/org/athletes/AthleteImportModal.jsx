@@ -330,8 +330,8 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
             <p style={{ fontSize: 11, color: "#6B7A8D", marginTop: 3 }}>
               {step === "upload"    && "Upload a CSV or Excel file to add athletes in bulk."}
               {step === "preview"   && `${rows.length} rows detected - review before importing.`}
-              {step === "importing" && "Creating athlete accounts…"}
-              {step === "done"      && `${result?.created ?? 0} athletes added to your roster.`}
+              {step === "importing" && "Adding athletes and sending invites…"}
+              {step === "done"      && `${result?.created ?? 0} athletes added to your roster and invited.`}
             </p>
           </div>
           <button onClick={handleClose} style={{ padding: 6, border: "1px solid #E8ECF0", background: "#fff", cursor: "pointer", borderRadius: 4 }}>
@@ -570,6 +570,20 @@ export default function AthleteImportModal({ open, onClose, onImported }) {
                   </div>
                 ))}
               </div>
+
+              {/* Invite emails */}
+              {(result.created ?? 0) > 0 && result.invites && (
+                <div role="status" style={{
+                  padding: "12px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.5,
+                  ...(result.invites.sent > 0 && !result.invites.failed
+                    ? { background: "#F0F7FF", border: "1px solid #BFDBFE", color: "#1E3A5F" }
+                    : { background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E" }),
+                }}>
+                  {result.invites.sent > 0 && !result.invites.failed
+                    ? `Invite emails sent to ${result.invites.sent} athlete${result.invites.sent === 1 ? "" : "s"} with the app link and your team code. They sign up with the email you imported.`
+                    : `Invite emails couldn't be sent${result.invites.sent ? ` to ${result.invites.failed} athletes` : ""}. Share your team code with them: they download the CheckPeak app and sign up with the email you imported.`}
+                </div>
+              )}
 
               {/* Error details */}
               {result.errors?.length > 0 && (

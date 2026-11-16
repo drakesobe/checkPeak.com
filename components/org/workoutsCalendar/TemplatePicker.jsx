@@ -224,7 +224,7 @@ function TemplateCard({ template, onApply, onDelete, isApplied }) {
           onMouseLeave={e => { if (!isApplied) { e.currentTarget.style.background = "transparent"; } }}>
           {isApplied
             ? <><Check style={{ width: 12, height: 12 }} /> Applied</>
-            : <>Apply template <ChevronDown style={{ width: 12, height: 12, transform: "rotate(-90deg)" }} /></>
+            : <>From Workout Library <ChevronDown style={{ width: 12, height: 12, transform: "rotate(-90deg)" }} /></>
           }
         </button>
       </div>
@@ -352,7 +352,7 @@ function SaveTemplateForm({ currentExercises, derivedSport, onSaved, onCancel })
 
       {/* Name */}
       <div>
-        <span style={lbl}>Template name *</span>
+        <span style={lbl}>Workout name *</span>
         <input value={name} onChange={e => setName(e.target.value)}
           placeholder="e.g. Upper Body Strength A"
           autoFocus style={inp}
@@ -409,7 +409,7 @@ function SaveTemplateForm({ currentExercises, derivedSport, onSaved, onCancel })
             opacity: saving ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
           }}>
           <Save style={{ width: 12, height: 12 }} />
-          {saving ? "Saving..." : "Save template"}
+          {saving ? "Saving..." : "Save to Workout Library"}
         </button>
         <button type="button" onClick={onCancel}
           style={{
@@ -520,7 +520,7 @@ export default function TemplatePicker({
             <div style={{ position: "relative" }}>
               <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, color: DS.dimText, pointerEvents: "none" }} />
               <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search templates..."
+                placeholder="Search your library..."
                 style={{
                   width: "100%", padding: "7px 12px 7px 30px", fontSize: "12px",
                   border: `1px solid ${DS.border}`, backgroundColor: DS.cardBg,
@@ -579,11 +579,11 @@ export default function TemplatePicker({
               <div style={{ padding: "32px 16px", textAlign: "center" }}>
                 <BookOpen style={{ width: 24, height: 24, color: DS.dimText, margin: "0 auto 10px" }} />
                 <p style={{ fontFamily: F.cond, fontWeight: 900, fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase", color: DS.bodyText, margin: "0 0 4px" }}>
-                  {(templates?.length || 0) === 0 ? "No templates yet" : "No matches"}
+                  {(templates?.length || 0) === 0 ? "Your library is empty" : "No matches"}
                 </p>
                 <p style={{ fontFamily: F.body, fontSize: 12, color: DS.dimText, margin: 0 }}>
                   {(templates?.length || 0) === 0
-                    ? "Build your first workout below, then save it as a template."
+                    ? "Build a workout below, then save it to your Workout Library."
                     : "Try a different filter."}
                 </p>
               </div>

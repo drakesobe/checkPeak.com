@@ -13,6 +13,7 @@ import Footer        from "@/components/Footer";
 import CookieBanner  from "@/components/CookieBanner";
 import { getConsent, setConsent } from "@/lib/consent";
 import { usePageView } from "@/hooks/usePageView";
+import { isShellRoute, isOrgSideRole, normalizeRole } from "@/components/nav/menu";
 
 const GA_ID      = "G-0HXXN1SJ9K";
 const ADS_ID     = "AW-17990566633";
@@ -66,6 +67,8 @@ function AppCore({ Component, pageProps, analyticsEnabled }) {
   const { user } = useAuthContext();
   const router   = useRouter();
   const navType  = getNavType(router.pathname);
+  // Coach app pages are a workspace: no consumer marketing footer under them
+  const inCoachShell = navType === "app" && isShellRoute(router.pathname, isOrgSideRole(normalizeRole(user)));
 
   // ── Fire page_view + scroll/time milestones on every route change ───────
   usePageView({
@@ -88,7 +91,7 @@ function AppCore({ Component, pageProps, analyticsEnabled }) {
           <Component {...pageProps} />
         </main>
 
-        <Footer />
+        {!inCoachShell && <Footer />}
       </div>
     </div>
   );

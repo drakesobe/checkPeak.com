@@ -73,7 +73,7 @@ export default function MarketingNav() {
   }, [user]);
 
   const isOrgSide = role === "organization" || role === "admin" || role === "trainer";
-  const dashHref  = isOrgSide ? "/org/workouts-calendar" : "/dashboard";
+  const dashHref  = isOrgSide ? "/org/dashboard" : "/dashboard";
 
   const isHeroPage = HERO_PAGES.some(p =>
     p === "/" ? pathname === "/" : (pathname || "").startsWith(p)

@@ -140,7 +140,7 @@ const ROUTES = {
   smartstack:   "/smartstack-compare",
   account:      "/account",
   login:        "/login",
-  orgDashboard: "/org/workouts-calendar",
+  orgDashboard: "/org/dashboard",
 };
 
 function Eyebrow({ children, style }) {
@@ -602,7 +602,7 @@ function PanelSkeleton({ height = "120px" }) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, logout } = useAuthContext();
+  const { user, authReady, logout } = useAuthContext();
 
   const role = useMemo(() => {
     const raw = String(user?.role || user?.Role || "").toLowerCase();
@@ -619,6 +619,7 @@ export default function DashboardPage() {
   const { loadingToday, todaySummary } = useTodaySummary({ userEmail });
 
   useEffect(() => {
+    if (!authReady) return; // saved session not read yet
     if (!user)          { router.push(ROUTES.login);       return; }
     if (role === "org") router.push(ROUTES.orgDashboard);
     // First-time athlete onboarding — localStorage is a cache; Supabase is the source of truth
@@ -635,7 +636,7 @@ export default function DashboardPage() {
         }
       } catch {}
     })();
-  }, [user, role, router]);
+  }, [authReady, user, role, router]);
 
   if (!user || role !== "athlete") return null;
 

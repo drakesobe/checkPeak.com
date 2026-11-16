@@ -3,34 +3,10 @@
 // Updates athlete.org_token in Supabase.
 
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { readUserFromRequest } from "@/lib/requireUser";
 
-function escapeRegex(str = "") { return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
 function normalizeToken(token) { return String(token || "").trim(); }
-
-function parseCookieHeader(cookieHeader = "") {
-  return cookieHeader.split(";").reduce((acc, part) => {
-    const [k, ...v] = part.trim().split("=");
-    if (!k) return acc;
-    acc[k] = decodeURIComponent(v.join("="));
-    return acc;
-  }, {});
-}
-
-function safeJsonParse(str) {
-  try { return JSON.parse(str); } catch { return null; }
-}
-
-function readUserCookie(req) {
-  let raw = req?.cookies?.user;
-  if (!raw) {
-    const header = req?.headers?.cookie || "";
-    if (header) raw = parseCookieHeader(header).user;
-  }
-  if (!raw || typeof raw !== "string") return null;
-  const decoded = raw.includes("%7B") || raw.includes("%22") ? decodeURIComponent(raw) : raw;
-  return safeJsonParse(decoded);
-}
 
 function setUserCookie(res, sessionUser) {
   const value = encodeURIComponent(JSON.stringify(sessionUser));
@@ -49,12 +25,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const sessionUser = readUserCookie(req);
-    const { token, email } = req.body || {};
+    // Only the signed-in athlete can change their own team (sessions are verified by middleware)
+    const sessionUser = readUserFromRequest(req);
+    const { token } = req.body || {};
     const cleanToken = normalizeToken(token);
 
     const cookieEmail = normalizeEmail(sessionUser?.Email || sessionUser?.email || "");
-    const cleanEmail  = cookieEmail || normalizeEmail(email);
+    const cleanEmail  = cookieEmail;
+    if (!cleanEmail) return res.status(401).json({ error: "Please sign in to join a team." });
 
     if (!cleanToken) {
       return res.status(400).json({ error: "Organization code is required." });

@@ -772,23 +772,24 @@ function SocialProof() {
   const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-10%" });
 
+  // Concrete problems programs bring us. Replace with named, permissioned quotes when available.
   const quotes = [
     {
-      text: "We spent all spring building accountability. Then they'd leave campus and it'd disappear. Now that standard travels with them.",
-      credit: "Head S&C Coach",
-      program: "Division II Football",
+      text: "Accountability disappears the day athletes leave campus.",
+      credit: "Off-campus work, verified",
+      program: "Workouts can require photo or video proof. Every submission is timestamped and lands in your Review Queue.",
       accent: ACCENT,
     },
     {
-      text: "We cut three separate subscriptions and replaced them all with one platform. It's the first tool my athletes actually open every day.",
-      credit: "Athletic Director",
-      program: "NAIA Athletic Program",
+      text: "One supplement can cost an athlete their season.",
+      credit: "Supplement checks in seconds",
+      program: "Athletes scan a label or barcode and see every ingredient checked against NCAA and WADA banned lists.",
       accent: "#3FB950",
     },
     {
-      text: "Pushing film directly to their phone - and seeing who watched it - changed how we run film study completely.",
-      credit: "Head Coach",
-      program: "Division III Basketball",
+      text: "Countable hours get tracked on a whiteboard and a prayer.",
+      credit: "Built around the rules",
+      program: "Set your season dates once. Required and voluntary activity is tracked against them automatically.",
       accent: "#A78BFA",
     },
   ];
@@ -824,7 +825,7 @@ function SocialProof() {
             style={{ width: "clamp(1.5rem, 4vw, 3rem)", height: "0.5px", background: "rgba(255,255,255,0.22)", transformOrigin: "left" }}
           />
           <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 900, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)" }}>
-            What coaches are saying
+            Built for how programs actually run
           </span>
         </motion.div>
 
@@ -851,7 +852,7 @@ function SocialProof() {
                 fontWeight: 900, fontSize: "2.5rem",
                 color: q.accent, lineHeight: 0.8,
                 marginBottom: "0.65rem", opacity: 0.55,
-              }}>&ldquo;</div>
+              }} aria-hidden="true">&mdash;</div>
 
               <p style={{
                 fontFamily: "'Barlow Condensed', sans-serif",
@@ -879,20 +880,6 @@ function SocialProof() {
           ))}
         </div>
 
-        <motion.p
-          initial={{ opacity: 0 }} animate={inView ? { opacity: 1 } : {}}
-          transition={{ duration: 0.6, delay: 0.7 }}
-          style={{
-            textAlign: "center",
-            marginTop: "clamp(2.5rem, 5vw, 4rem)",
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontWeight: 700, fontSize: "0.7rem",
-            letterSpacing: "0.18em", textTransform: "uppercase",
-            color: "rgba(255,255,255,0.40)",
-          }}
-        >
-          Names withheld by request Â· Pilot program participants
-        </motion.p>
       </div>
     </section>
   );

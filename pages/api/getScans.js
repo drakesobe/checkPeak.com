@@ -1,12 +1,11 @@
 // pages/api/getScans.js
 import { supabaseAdmin as db } from "@/lib/supabase";
+import { requireScanUser } from "@/lib/scanAccess";
 
 export default async function handler(req, res) {
-  const { userEmail } = req.query;
-
-  if (!userEmail) {
-    return res.status(400).json({ error: "Missing userEmail" });
-  }
+  // Always the signed-in user's own scans; the old ?userEmail= param is ignored
+  const userEmail = requireScanUser(req, res);
+  if (!userEmail) return;
 
   try {
     const { data, error } = await db

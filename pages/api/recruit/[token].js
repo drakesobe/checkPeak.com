@@ -3,6 +3,7 @@
 // Returns everything needed to render a recruiter-facing athlete profile.
 
 import { createClient } from "@supabase/supabase-js";
+import { notifyProfileView } from "@/lib/profileViewAlerts";
 
 const db = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -177,13 +178,18 @@ export default async function handler(req, res) {
 
   // 7. Log view (fire-and-forget: both view_count and profile_views table)
   const newViewCount = (profile.view_count || 0) + 1;
-  Promise.all([
+  // Awaited (capped at 1.5s) so serverless doesn't cut it off after the response is sent.
+  const logView = Promise.all([
     db.from("athlete_profiles")
       .update({ view_count: newViewCount })
       .eq("share_token", token),
     db.from("profile_views")
       .insert({ share_token: token }),
-  ]).catch(() => {});
+  ])
+    // After the view is recorded: push the athlete (first view of the day / milestones).
+    .then(() => notifyProfileView({ athleteToken: profile.athlete_token, shareToken: token, totalViews: newViewCount }))
+    .catch(() => {});
+  await Promise.race([logView, new Promise(r => setTimeout(r, 1500))]);
 
   return res.status(200).json({
     ok: true,
